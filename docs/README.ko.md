@@ -59,7 +59,7 @@ flowchart TD
 
 - Python 3.10+
 - SQLAlchemy 2.0 – 2.2
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C 확장) **또는** [pycubrid](https://github.com/sqlalchemy-cubrid/pycubrid) (순수 Python)
+- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C 확장) **또는** [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python)
 
 ## 설치
 

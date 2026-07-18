@@ -67,7 +67,7 @@ flowchart TD
 
 - Python 3.10+
 - SQLAlchemy 2.0 – 2.2
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-extension) **or** [pycubrid](https://github.com/sqlalchemy-cubrid/pycubrid) (pure Python)
+- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-extension) **or** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python)
 
 ## Installation
 
@@ -142,6 +142,37 @@ async with AsyncSession(engine) as session:
     print(result.scalar())
 ```
 
+#### Async insert with PK retrieval
+
+CUBRID has no `RETURNING` clause. For ORM inserts, call `await session.flush()`
+inside the transaction block to populate the auto-increment PK on the object before commit:
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100))
+
+engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
+
+async with AsyncSession(engine) as session:
+    async with session.begin():
+        user = User(name="Alice")
+        session.add(user)
+        await session.flush()  # populates user.id without committing
+        print(f"Inserted id={user.id}")
+```
+
+For raw Core inserts where you need the auto-increment PK, run `SELECT LAST_INSERT_ID()`
+after the statement (see [Known Limitations](#known-limitations)).
+
 ## Features
 
 - Type mapping for SQLAlchemy standard and CUBRID-specific types — numeric, string, date/time, bit, LOB, collection, and JSON types
@@ -155,7 +186,7 @@ async with AsyncSession(engine) as session:
 
 ## Known Limitations
 
-- **No `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` not supported; use `cursor.lastrowid` or `SELECT LAST_INSERT_ID()` after the statement
+- **No `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` not supported; for ORM use `await session.flush()` to populate `id` on the object (see [Async Quick Start](#async)), or for Core use `cursor.lastrowid` / `SELECT LAST_INSERT_ID()` after the statement
 - **No sequences** — CUBRID uses `AUTO_INCREMENT` only
 - **No multi-schema** — single schema per database
 - **DDL auto-commits** — migrations are not transactional (`transactional_ddl = False`); use Alembic batch migrations and test rollback scenarios manually
