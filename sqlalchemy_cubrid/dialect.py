@@ -258,6 +258,9 @@ class CubridDialect(default.DefaultDialect):
 
     postfetch_lastrowid = True
 
+    # Two-phase commit not supported by CUBRID
+    supports_twophase_commit = False
+
     def __init__(
         self,
         isolation_level: str | None = None,

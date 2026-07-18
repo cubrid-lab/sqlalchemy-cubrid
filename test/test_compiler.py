@@ -226,6 +226,25 @@ class TestJoinCompilation:
             _compile(stmt)
 
 
+class TestReturningCompilation:
+    """Test that RETURNING raises CompileError (CUBRID does not support it)."""
+
+    def test_returning_on_insert_raises(self):
+        stmt = sa.insert(users).values(name="test").returning(users.c.id, users.c.name)
+        with pytest.raises(CompileError, match="RETURNING"):
+            _compile(stmt)
+
+    def test_returning_on_update_raises(self):
+        stmt = sa.update(users).where(users.c.id == 1).values(name="test").returning(users.c.id)
+        with pytest.raises(CompileError, match="RETURNING"):
+            _compile(stmt)
+
+    def test_returning_on_delete_raises(self):
+        stmt = sa.delete(users).where(users.c.id == 1).returning(users.c.id)
+        with pytest.raises(CompileError, match="RETURNING"):
+            _compile(stmt)
+
+
 class TestMultiTableUpdateCompilation:
     def test_multi_table_update(self):
         t1 = sa.table("t1", sa.column("id"), sa.column("val"))

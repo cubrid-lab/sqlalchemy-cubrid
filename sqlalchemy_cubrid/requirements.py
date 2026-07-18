@@ -274,3 +274,10 @@ class Requirements(SuiteRequirements):
     def for_update(self) -> compound:
         """CUBRID supports SELECT ... FOR UPDATE [OF col1, col2]."""
         return _OPEN
+
+    # ----- Two-phase commit -----
+
+    @property
+    def two_phase_transactions(self) -> compound:
+        """CUBRID does not support two-phase commit (XA)."""
+        return _CLOSED
