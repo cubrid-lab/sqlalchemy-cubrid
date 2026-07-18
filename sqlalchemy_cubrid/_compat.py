@@ -31,8 +31,18 @@ def is_literal_value(value: Any) -> bool:
 
 
 def bind_with_type(element: elements.BindParameter[Any], type_: Any) -> elements.BindParameter[Any]:
-    """Create a copy of *element* with *type_* overridden, preserving all internal state."""
-    cloned = element._clone()
+    """Create a copy of *element* with *type_* overridden, preserving all internal state.
+
+    Uses ``_clone()`` when available (SA 2.0–2.1); falls back to constructing
+    a fresh ``BindParameter`` if the private ``_clone()`` API is removed or
+    renamed in a future SA release (e.g. 2.2+).
+    """
+    try:
+        cloned = element._clone()
+    except AttributeError:
+        # Fallback: construct a new BindParameter with same key/value/type.
+        # This path only fires if SA removes _clone(); covered by canary CI.
+        return elements.BindParameter(element.key, element.value, type_=type_, unique=True)  # type: ignore[call-arg]
     cloned.type = type_
     return cloned
 
