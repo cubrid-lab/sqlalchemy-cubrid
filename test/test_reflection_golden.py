@@ -26,7 +26,7 @@ class _MockConnection:
     _show_indexes: list[tuple[Any, ...]]
     _show_create: list[tuple[Any, ...]]
     _db_index: list[tuple[Any, ...]]
-    _db_constraint: list[tuple[Any, ...]]
+    _db_unique_names: list[tuple[Any, ...]]
     _db_attribute: list[tuple[Any, ...]]
 
     def __init__(self) -> None:
@@ -65,7 +65,7 @@ CREATE TABLE [users] (
             ("idx_users_team_id", False, False),
             ("uq_users_email", False, False),
         ]
-        self._db_constraint = [("pk_users",)]
+        self._db_unique_names = [("uq_users_email",)]
         self._db_attribute = [
             ("id", "identifier"),
             ("email", "email address"),
@@ -81,10 +81,17 @@ CREATE TABLE [users] (
             return _Result(self._show_indexes)
         if sql.startswith("SHOW CREATE TABLE"):
             return _Result(self._show_create)
+        # The UNIQUE-constraint catalog query filters is_unique = 1.
+        # Dispatch it separately from the general _db_index flag query
+        # used by get_indexes() so the mock returns pre-filtered results.
+        if "is_unique = 1" in sql:
+            return _Result(self._db_unique_names)
+        # The PK-name catalog query filters is_primary_key = 1.
+        # Dispatch it separately so the mock returns only the PK row.
+        if "is_primary_key = 1" in sql:
+            return _Result([("pk_users",)])
         if "FROM _db_index" in sql:
             return _Result(self._db_index)
-        if "FROM db_constraint" in sql:
-            return _Result(self._db_constraint)
         if "FROM _db_attribute" in sql:
             return _Result(self._db_attribute)
         raise AssertionError(f"Unexpected SQL: {sql}, params={params}")
@@ -212,6 +219,10 @@ CREATE TABLE [items] (
                     )
                 ]
             )
+        if "is_primary_key = 1" in sql:
+            return _Result([("pk_items",)])
+        if "is_unique = 1" in sql:
+            return _Result([("uq_items_tenant_sku",)])
         if "FROM _db_index" in sql:
             return _Result(
                 [
@@ -221,8 +232,6 @@ CREATE TABLE [items] (
                     ("fk_items_tenant", False, True),
                 ]
             )
-        if "FROM db_constraint" in sql:
-            return _Result([("pk_items",)])
         if "FROM _db_attribute" in sql:
             return _Result(
                 [
