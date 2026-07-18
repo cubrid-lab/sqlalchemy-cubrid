@@ -310,6 +310,21 @@ class TestCompatHelpers:
         assert typed_element.unique == element.unique
         assert isinstance(typed_element.type, users.c.name.type.__class__)
 
+    def test_bind_with_type_fallback_when_clone_missing(self):
+        """Verify graceful degradation if SA removes _clone() in a future release."""
+        from unittest.mock import PropertyMock, patch
+
+        element = sa.bindparam("name", "value", unique=True)
+        # Simulate _clone being unavailable (hypothetical SA 2.2+ rename)
+        with patch.object(type(element), "_clone", new_callable=PropertyMock) as mock_clone:
+            mock_clone.side_effect = AttributeError("_clone removed")
+            typed_element = bind_with_type(element, users.c.name.type)
+
+        assert typed_element is not element
+        assert typed_element.value == "value"
+        assert typed_element.unique is True
+        assert isinstance(typed_element.type, users.c.name.type.__class__)
+
 
 class TestFunctionCompilation:
     """Test function compilation (SYSDATE, UTC_TIMESTAMP)."""
