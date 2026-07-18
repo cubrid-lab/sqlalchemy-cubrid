@@ -284,7 +284,7 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 > **Tip**: `pycubrid` is a pure Python implementation — it works anywhere Python runs,
-> with no native library dependencies. See [pycubrid on GitHub](https://github.com/sqlalchemy-cubrid/pycubrid).
+> with no native library dependencies. See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 ---
 
 ## Connection String Format

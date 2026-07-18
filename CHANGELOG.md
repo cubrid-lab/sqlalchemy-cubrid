@@ -241,7 +241,7 @@ and breaking changes will only occur in major version bumps (2.0+).
 
 ### Added
 - **pycubrid dialect variant**: New `PyCubridDialect` class (`cubrid+pycubrid://` URL scheme)
-  for using the [pycubrid](https://github.com/sqlalchemy-cubrid/pycubrid) pure Python DB-API 2.0
+  for using the [pycubrid](https://github.com/cubrid-lab/pycubrid) pure Python DB-API 2.0
   driver. Subclasses `CubridDialect` — inherits all SQL compilation, type mapping, and schema
   reflection. Overrides only driver-specific methods: `import_dbapi()`, `create_connect_args()`,
   `on_connect()`, `do_ping()`.
