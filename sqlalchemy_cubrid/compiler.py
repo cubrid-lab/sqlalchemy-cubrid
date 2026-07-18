@@ -94,6 +94,33 @@ class CubridCompiler(compiler.SQLCompiler):
     def visit_lateral(self, lateral_: Any, **kw: Any) -> str:
         raise CompileError("CUBRID does not support LATERAL")
 
+    @staticmethod
+    def _check_returning(stmt: Any, operation: str) -> None:
+        """Raise CompileError if RETURNING is requested (not supported by CUBRID).
+
+        CUBRID does not support INSERT/UPDATE/DELETE ... RETURNING.
+        For auto-increment PK retrieval on INSERT, the dialect uses
+        LAST_INSERT_ID() automatically via ``result.inserted_primary_key``.
+        """
+        if getattr(stmt, "_returning", None):
+            raise CompileError(
+                f"CUBRID does not support {operation} ... RETURNING. "
+                "For auto-increment PK retrieval on INSERT, use "
+                "result.inserted_primary_key (uses LAST_INSERT_ID() automatically)."
+            )
+
+    def visit_insert(self, insert_stmt: Any, **kw: Any) -> Any:
+        self._check_returning(insert_stmt, "INSERT")
+        return super().visit_insert(insert_stmt, **kw)
+
+    def visit_update(self, update_stmt: Any, **kw: Any) -> Any:
+        self._check_returning(update_stmt, "UPDATE")
+        return super().visit_update(update_stmt, **kw)
+
+    def visit_delete(self, delete_stmt: Any, **kw: Any) -> Any:
+        self._check_returning(delete_stmt, "DELETE")
+        return super().visit_delete(delete_stmt, **kw)
+
     def for_update_clause(self, select: Any, **kw: Any) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Render FOR UPDATE clause.
 

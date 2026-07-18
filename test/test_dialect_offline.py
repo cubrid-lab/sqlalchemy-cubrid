@@ -55,6 +55,11 @@ class TestDialectBasics:
         custom_dialect = CubridDialect(isolation_level="SERIALIZABLE")
         assert custom_dialect.isolation_level == "SERIALIZABLE"
 
+    def test_supports_twophase_commit_is_false(self):
+        """CUBRID does not support two-phase commit."""
+        dialect = CubridDialect()
+        assert dialect.supports_twophase_commit is False
+
     def test_import_dbapi_success(self):
         fake_module = types.ModuleType("CUBRIDdb")
         with patch.dict(sys.modules, {"CUBRIDdb": fake_module}):
