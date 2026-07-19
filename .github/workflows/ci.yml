@@ -44,6 +44,14 @@ jobs:
           fi
           echo "CHANGELOG check passed"
 
+
+  doc-lint:
+    name: Documentation lint
+    uses: cubrid-lab/.github/.github/workflows/doc-lint.yml@main
+    with:
+      exclude: "node_modules/,vendor/"
+      fail-on-issue: false  # advisory mode during initial rollout
+
   # ──────────────────────────────────────────
   # Job 1: Lint (fast, no DB needed)
   # ──────────────────────────────────────────
