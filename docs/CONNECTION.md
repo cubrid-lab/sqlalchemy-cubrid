@@ -454,9 +454,9 @@ flowchart TD
     check -->|cubrid or cubrid+cubrid| cext[Build CUBRID native DSN]
     check -->|cubrid+pycubrid| pykw[Build pycubrid kwargs]
     check -->|cubrid+aiopycubrid| aio[Build pycubrid.aio kwargs]
-    cext --> connect1[CUBRIDdb.connect(url, user, password)]
-    pykw --> connect2[pycubrid.connect(host, port, database, user, password)]
-    aio --> connect3[pycubrid.aio.connect(...)]
+    cext --> connect1["CUBRIDdb.connect(url, user, password)"]
+    pykw --> connect2["pycubrid.connect(host, port, database, user, password)"]
+    aio --> connect3["pycubrid.aio.connect(...)"]
     connect1 --> session[Dialect on_connect sets autocommit=False]
     connect2 --> session
     connect3 --> session
