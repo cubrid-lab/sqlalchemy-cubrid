@@ -70,7 +70,7 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 > **Tip**: `pycubrid` is a pure Python implementation — it works anywhere Python runs,
-> with no native library dependencies. See [pycubrid on GitHub](https://github.com/sqlalchemy-cubrid/pycubrid).
+> with no native library dependencies. See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 ---
 
 ## Connection String Format
@@ -139,6 +139,38 @@ async with engine.connect() as conn:
     result = await conn.execute(text("SELECT 1"))
     print(result.scalar())
 ```
+
+### Async insert with PK retrieval
+
+CUBRID has no `RETURNING` clause. To obtain an auto-increment primary key after an
+async ORM insert, call `await session.flush()` inside the transaction block to populate
+the PK on the object before commit:
+
+```python
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy import String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+class Base(DeclarativeBase):
+    pass
+
+class User(Base):
+    __tablename__ = "users"
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(100))
+
+engine = create_async_engine("cubrid+aiopycubrid://dba@localhost:33000/testdb")
+
+async with AsyncSession(engine) as session:
+    async with session.begin():
+        user = User(name="Alice")
+        session.add(user)
+        await session.flush()  # populates user.id without committing
+        print(f"Inserted id={user.id}")
+```
+
+For Core-level inserts where you need the PK, run `SELECT LAST_INSERT_ID()` after the
+statement (see README → Known Limitations).
 
 ## How the Dialect Translates URLs
 

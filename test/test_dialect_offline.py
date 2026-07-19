@@ -55,6 +55,11 @@ class TestDialectBasics:
         custom_dialect = CubridDialect(isolation_level="SERIALIZABLE")
         assert custom_dialect.isolation_level == "SERIALIZABLE"
 
+    def test_supports_twophase_commit_is_false(self):
+        """CUBRID does not support two-phase commit."""
+        dialect = CubridDialect()
+        assert dialect.supports_twophase_commit is False
+
     def test_import_dbapi_success(self):
         fake_module = types.ModuleType("CUBRIDdb")
         with patch.dict(sys.modules, {"CUBRIDdb": fake_module}):
@@ -685,6 +690,122 @@ class TestReflectionMethods:
         failed_conn.execute.side_effect = RuntimeError("uc lookup failed")
 
         assert _invoke_reflection(dialect, "get_unique_constraints", failed_conn, "users") == []
+
+    def test_get_unique_constraints_from_catalog_success(self):
+        """Primary path: _db_index catalog query returns unique index names,
+        SHOW INDEXES resolves column names."""
+        dialect = CubridDialect()
+
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        # First execute: _db_index returns unique index names (excluding PK/FK)
+        # Second execute: SHOW INDEXES returns column details
+        unique_name_rows = [
+            ("uq_users_email",),
+            ("uq_users_name",),
+        ]
+        show_indexes_rows = [
+            (None, 0, "uq_users_email", 1, "email"),
+            (None, 0, "uq_users_email", 2, "tenant_id"),
+            (None, 0, "uq_users_name", 1, "name"),
+            (None, 1, "pk_users", 1, "id"),  # PK — should be excluded
+        ]
+        connection.execute.side_effect = [unique_name_rows, show_indexes_rows]
+
+        uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
+
+        assert uqs == [
+            {"name": "uq_users_email", "column_names": ["email", "tenant_id"]},
+            {"name": "uq_users_name", "column_names": ["name"]},
+        ]
+
+    def test_get_unique_constraints_catalog_empty_falls_back_to_ddl(self):
+        """When _db_index returns no unique indexes, fall back to DDL regex."""
+        dialect = CubridDialect()
+
+        ddl = (
+            "CREATE TABLE [users] (\n"
+            "  [id] INTEGER NOT NULL,\n"
+            "  CONSTRAINT [uq_users_email] UNIQUE KEY ([email])\n"
+            ")"
+        )
+
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        # First execute: _db_index returns empty list (no unique indexes found)
+        # Second execute: SHOW CREATE TABLE for DDL fallback
+        ddl_result = MagicMock()
+        ddl_result.fetchone.return_value = ("users", ddl)
+        connection.execute.side_effect = [[], ddl_result]
+
+        uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
+
+        assert uqs == [{"name": "uq_users_email", "column_names": ["email"]}]
+
+    def test_get_unique_constraints_catalog_exception_falls_back_to_ddl(self):
+        """When _db_index query raises an exception, fall back to DDL regex."""
+        dialect = CubridDialect()
+
+        ddl = (
+            "CREATE TABLE [users] (\n"
+            "  [id] INTEGER NOT NULL,\n"
+            "  CONSTRAINT [uq_users_email] UNIQUE KEY ([email])\n"
+            ")"
+        )
+
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        # First execute: _db_index raises an exception
+        # Second execute: SHOW CREATE TABLE for DDL fallback
+        ddl_result = MagicMock()
+        ddl_result.fetchone.return_value = ("users", ddl)
+        connection.execute.side_effect = [RuntimeError("catalog unavailable"), ddl_result]
+
+        uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
+
+        assert uqs == [{"name": "uq_users_email", "column_names": ["email"]}]
+
+    def test_get_pk_constraint_name_from_index(self):
+        """PK constraint name is fetched from _db_index (not the phantom db_constraint)."""
+        dialect = CubridDialect()
+
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        show_columns_rows = [
+            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
+        ]
+        index_result = MagicMock()
+        index_result.fetchone.return_value = ("pk_users",)
+        connection.execute.side_effect = [show_columns_rows, index_result]
+
+        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
+
+        assert pk == {"name": "pk_users", "constrained_columns": ["id"]}
+
+    def test_get_pk_constraint_name_query_failure_returns_none(self):
+        """When _db_index query fails, PK name should be None but columns still returned."""
+        dialect = CubridDialect()
+
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        show_columns_rows = [
+            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
+        ]
+        connection.execute.side_effect = [show_columns_rows, RuntimeError("index query failed")]
+
+        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
+
+        assert pk == {"name": None, "constrained_columns": ["id"]}
 
     def test_get_check_constraints_get_table_comment_and_schema_names(self):
         dialect = CubridDialect()

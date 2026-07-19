@@ -5,8 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2026-07-18
+
+### Fixed
+- **RETURNING now raises explicit `CompileError` (#229)** — the dialect previously set `insert_returning = update_returning = delete_returning = False` and silently fell back to `LAST_INSERT_ID()` for any `.returning()` call. Users had no signal that RETURNING wasn't actually executing server-side. `visit_insert`/`visit_update`/`visit_delete` now check `stmt._returning` before compilation and raise `CompileError` pointing to `result.inserted_primary_key` as the auto-increment PK retrieval path.
+- **Two-phase commit explicitly disabled (#230)** — `supports_twophase_commit = False` added to `CubridDialect`, and `two_phase_transactions` is now a `_CLOSED` requirement flag in `requirements.py` so the SA test suite properly skips two-phase tests.
+
 ## [Unreleased]
 
+## [1.6.0] - 2026-07-18
+
+### Fixed
+- **`bind_with_type` private API insulation (#231)** — `bind_with_type()` in `_compat.py` called `element._clone()` without a guard. If SQLAlchemy renames or removes `_clone()` in a future release (e.g. 2.2+), the dialect would crash with `AttributeError`. Added `try/except AttributeError` fallback that constructs a fresh `BindParameter` with the same key, value, type, and unique flag. This path only fires if SA changes the private API; the existing `_clone()` path remains the primary code path for SA 2.0–2.1.
+- **PK constraint name reflection fixed (#120)** — `get_pk_constraint()` queried the non-existent `db_constraint` system view (CUBRID has no such view in any version), causing the PK constraint name to always be `None` in production. The query now targets `_db_index` (`is_primary_key = 1`), the authoritative system catalog for index metadata. Constraint names like `pk_users` are now correctly reflected.
+- **Unique constraint reflection hardened via system catalog (#120)** — `get_unique_constraints()` now queries `_db_index` (`is_unique = 1`, excluding PK/FK auto-indexes) and resolves column names via `SHOW INDEXES` as the primary path, with the DDL regex as a fallback. This eliminates brittle regex parsing when the system catalog is available, matching the proven pattern already used by `get_indexes()`.
+
+### Changed
+- **FK reflection code extracted into testable helper (#120)** — `_get_foreign_keys_from_ddl()` is now a standalone method. CUBRID system catalog views do not expose FK referenced-table/column metadata, so DDL parsing remains the sole FK reflection path. The extraction improves unit test isolation.
+
+### CI
+- **SA 2.2 canary bumped (#231)** — the `sqlalchemy-22-canary` CI job now installs `sqlalchemy>=2.2.0b1` (was `>=2.1.0b1`, which is no longer a pre-release). Added `continue-on-error: true` so canary failures warn but don't gate PRs — pre-release breakage is expected and shouldn't block development.
 ## [1.5.0] - 2026-05-23
 
 ### Added
@@ -241,7 +259,7 @@ and breaking changes will only occur in major version bumps (2.0+).
 
 ### Added
 - **pycubrid dialect variant**: New `PyCubridDialect` class (`cubrid+pycubrid://` URL scheme)
-  for using the [pycubrid](https://github.com/sqlalchemy-cubrid/pycubrid) pure Python DB-API 2.0
+  for using the [pycubrid](https://github.com/cubrid-lab/pycubrid) pure Python DB-API 2.0
   driver. Subclasses `CubridDialect` — inherits all SQL compilation, type mapping, and schema
   reflection. Overrides only driver-specific methods: `import_dbapi()`, `create_connect_args()`,
   `on_connect()`, `do_ping()`.

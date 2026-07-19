@@ -123,8 +123,8 @@ _RE_FOREIGN_KEY = re.compile(
     re.IGNORECASE,
 )
 # Parses ``CONSTRAINT [name] UNIQUE KEY ([col1], [col2])`` from
-# ``SHOW CREATE TABLE`` output.  Same rationale as ``_RE_FOREIGN_KEY`` —
-# CUBRID's ``db_constraint`` view is not queryable in 11.x.
+# ``SHOW CREATE TABLE`` output. Used as a fallback when the
+# ``_db_index`` system catalog query fails.
 _RE_UNIQUE_KEY = re.compile(
     r"CONSTRAINT\s+\[(?P<name>[^\]]+)\]\s+UNIQUE\s+KEY\s*"
     r"\((?P<cols>[^)]+)\)",
@@ -257,6 +257,9 @@ class CubridDialect(default.DefaultDialect):
     delete_returning = False
 
     postfetch_lastrowid = True
+
+    # Two-phase commit not supported by CUBRID
+    supports_twophase_commit = False
 
     def __init__(
         self,
@@ -446,13 +449,14 @@ class CubridDialect(default.DefaultDialect):
             if row[3] == "PRI":
                 constrained_columns.append(row[0])
 
-        # Try to find constraint name from db_constraint
+        # Find the PK constraint name from _db_index (the authoritative
+        # system catalog view for index metadata).
         if constrained_columns:
             try:
                 constraint_result = connection.execute(
                     text(
-                        "SELECT index_name FROM db_constraint "
-                        "WHERE class_name = :table AND type = 0"
+                        "SELECT index_name FROM _db_index "
+                        "WHERE class_of.class_name = :table AND is_primary_key = 1"
                     ),
                     {"table": table_name},
                 )
@@ -477,11 +481,24 @@ class CubridDialect(default.DefaultDialect):
     ) -> list[ReflectedForeignKeyConstraint]:
         """Return foreign key information for *table_name*.
 
-        Parses ``SHOW CREATE TABLE`` output to extract FK constraints.
-        CUBRID exposes no queryable ``db_constraint`` view (despite older
-        documentation referencing it), so the DDL string is the only
-        reliable source for FK metadata that includes the referenced table
-        and columns. See cubrid-lab/sqlalchemy-cubrid#120.
+        CUBRID does not expose FK metadata (referenced table, columns,
+        ON DELETE/UPDATE actions) in any system catalog view. The DDL
+        output of ``SHOW CREATE TABLE`` is the only reliable source.
+        See cubrid-lab/sqlalchemy-cubrid#120.
+        """
+        return self._get_foreign_keys_from_ddl(connection, table_name, schema)
+
+    def _get_foreign_keys_from_ddl(
+        self,
+        connection: Any,
+        table_name: str,
+        schema: str | None,
+    ) -> list[ReflectedForeignKeyConstraint]:
+        """Parse SHOW CREATE TABLE output for FK constraints.
+
+        This is the sole FK reflection path — no system catalog alternative
+        exists because CUBRID's system views do not expose referenced table
+        or column metadata for foreign keys.
         """
         foreign_keys: list[ReflectedForeignKeyConstraint] = []
         try:
@@ -637,7 +654,71 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> list[ReflectedUniqueConstraint]:
-        """Return unique constraints for *table_name*."""
+        """Return unique constraints for *table_name*.
+
+        Primary path: query the ``_db_index`` system catalog for unique
+        indexes (excluding PK and FK auto-indexes), then resolve column
+        names via ``SHOW INDEXES``. Fallback: parse ``SHOW CREATE TABLE``
+        DDL output via regex.
+        """
+        # Primary path: system catalog + SHOW INDEXES
+        try:
+            uqs = self._get_unique_constraints_from_catalog(connection, table_name)
+            if uqs:
+                return uqs
+        except Exception:  # nosec B110 — graceful fallback
+            log.debug(
+                "Catalog query failed for unique constraints on %s; falling back to DDL regex",
+                table_name,
+                exc_info=True,
+            )
+
+        # Fallback: DDL regex (legacy path)
+        return self._get_unique_constraints_from_ddl(connection, table_name)
+
+    def _get_unique_constraints_from_catalog(
+        self,
+        connection: Any,
+        table_name: str,
+    ) -> list[ReflectedUniqueConstraint]:
+        """Query _db_index + SHOW INDEXES for UNIQUE constraints.
+
+        Uses the same two-query pattern as ``get_indexes()``: first fetch
+        unique index names from ``_db_index`` (filtering out PK and FK
+        auto-indexes), then resolve column names from ``SHOW INDEXES``.
+        """
+        # Step 1: get unique index names (excluding PK and FK auto-indexes)
+        unique_names: set[str] = set()
+        name_result = connection.execute(
+            text(
+                "SELECT index_name FROM _db_index "
+                "WHERE class_of.class_name = :table "
+                "AND is_unique = 1 AND is_primary_key = 0 AND is_foreign_key = 0"
+            ),
+            {"table": table_name},
+        )
+        for row in name_result:
+            unique_names.add(row[0])
+        if not unique_names:
+            return []
+
+        # Step 2: resolve column names from SHOW INDEXES
+        quoted = self.identifier_preparer.quote_identifier(table_name)
+        col_result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        constraints: dict[str, list[str]] = {}
+        for row in col_result:
+            index_name = row[2]
+            if index_name in unique_names:
+                constraints.setdefault(index_name, []).append(row[4])
+
+        return [{"name": name, "column_names": cols} for name, cols in constraints.items()]
+
+    def _get_unique_constraints_from_ddl(
+        self,
+        connection: Any,
+        table_name: str,
+    ) -> list[ReflectedUniqueConstraint]:
+        """Parse SHOW CREATE TABLE output for UNIQUE constraints (legacy fallback)."""
         unique_constraints: list[ReflectedUniqueConstraint] = []
         try:
             quoted = self.identifier_preparer.quote_identifier(table_name)

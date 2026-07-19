@@ -26,7 +26,7 @@ class _MockConnection:
     _show_indexes: list[tuple[Any, ...]]
     _show_create: list[tuple[Any, ...]]
     _db_index: list[tuple[Any, ...]]
-    _db_constraint: list[tuple[Any, ...]]
+    _db_unique_names: list[tuple[Any, ...]]
     _db_attribute: list[tuple[Any, ...]]
 
     def __init__(self) -> None:
@@ -65,7 +65,7 @@ CREATE TABLE [users] (
             ("idx_users_team_id", False, False),
             ("uq_users_email", False, False),
         ]
-        self._db_constraint = [("pk_users",)]
+        self._db_unique_names = [("uq_users_email",)]
         self._db_attribute = [
             ("id", "identifier"),
             ("email", "email address"),
@@ -81,10 +81,17 @@ CREATE TABLE [users] (
             return _Result(self._show_indexes)
         if sql.startswith("SHOW CREATE TABLE"):
             return _Result(self._show_create)
+        # The UNIQUE-constraint catalog query filters is_unique = 1.
+        # Dispatch it separately from the general _db_index flag query
+        # used by get_indexes() so the mock returns pre-filtered results.
+        if "is_unique = 1" in sql:
+            return _Result(self._db_unique_names)
+        # The PK-name catalog query filters is_primary_key = 1.
+        # Dispatch it separately so the mock returns only the PK row.
+        if "is_primary_key = 1" in sql:
+            return _Result([("pk_users",)])
         if "FROM _db_index" in sql:
             return _Result(self._db_index)
-        if "FROM db_constraint" in sql:
-            return _Result(self._db_constraint)
         if "FROM _db_attribute" in sql:
             return _Result(self._db_attribute)
         raise AssertionError(f"Unexpected SQL: {sql}, params={params}")
@@ -212,6 +219,10 @@ CREATE TABLE [items] (
                     )
                 ]
             )
+        if "is_primary_key = 1" in sql:
+            return _Result([("pk_items",)])
+        if "is_unique = 1" in sql:
+            return _Result([("uq_items_tenant_sku",)])
         if "FROM _db_index" in sql:
             return _Result(
                 [
@@ -221,8 +232,6 @@ CREATE TABLE [items] (
                     ("fk_items_tenant", False, True),
                 ]
             )
-        if "FROM db_constraint" in sql:
-            return _Result([("pk_items",)])
         if "FROM _db_attribute" in sql:
             return _Result(
                 [
@@ -289,3 +298,158 @@ def test_indexes_exclude_pk_and_unique(
         {"name": "uq_items_tenant_sku", "column_names": ["tenant_id", "sku"], "unique": True},
         {"name": "idx_items_category", "column_names": ["category"], "unique": False},
     ]
+
+
+# ---------------------------------------------------------------------------
+# Edge-case tests: empty result sets, NULL metadata, missing constraints
+# These test the mock-bypass gaps — scenarios where CUBRID returns less data
+# than the happy-path golden tests expect.
+# ---------------------------------------------------------------------------
+
+
+class _MockEmptyTable:
+    """Mock connection for a table with NO indexes, NO PK, NO FK, NO comments.
+
+    This simulates a heap table (no constraints at all). Every reflection
+    method should return an empty list/dict, not crash.
+    """
+
+    def execute(self, statement: Any, params: Any = None) -> _Result:
+        sql = str(statement)
+        if sql.startswith("SHOW COLUMNS IN"):
+            return _Result(
+                [
+                    ("data", "VARCHAR(100)", "YES", "", None, ""),
+                ]
+            )
+        if sql.startswith("SHOW INDEXES IN"):
+            return _Result([])  # no indexes
+        if sql.startswith("SHOW CREATE TABLE"):
+            return _Result([])  # no DDL
+        if "is_primary_key = 1" in sql:
+            return _Result([])  # no PK
+        if "is_unique = 1" in sql:
+            return _Result([])  # no unique
+        if "FROM _db_index" in sql:
+            return _Result([])  # no indexes at all
+        if "FROM _db_attribute" in sql:
+            return _Result([])  # no column comments
+        if "FROM db_class" in sql or "comment FROM db_class" in sql:
+            return _Result([(None,)])  # table comment is NULL
+        raise AssertionError(f"Unexpected SQL: {sql}, params={params}")
+
+
+@pytest.fixture
+def mock_empty_table() -> _MockEmptyTable:
+    return _MockEmptyTable()
+
+
+def test_get_indexes_empty_table(
+    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
+) -> None:
+    """A table with no indexes should return an empty list, not crash."""
+    indexes = dialect.get_indexes(mock_empty_table, "heap_table")
+    assert indexes == []
+
+
+def test_get_pk_constraint_empty_table(
+    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
+) -> None:
+    """A table with no PK should return an empty constraint dict."""
+    pk = dialect.get_pk_constraint(mock_empty_table, "heap_table")
+    assert pk == {"name": None, "constrained_columns": []}
+
+
+def test_get_foreign_keys_empty_table(
+    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
+) -> None:
+    """A table with no foreign keys should return an empty list."""
+    fks = dialect.get_foreign_keys(mock_empty_table, "heap_table")
+    assert fks == []
+
+
+def test_get_unique_constraints_empty_table(
+    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
+) -> None:
+    """A table with no unique constraints should return an empty list."""
+    ucs = dialect.get_unique_constraints(mock_empty_table, "heap_table")
+    assert ucs == []
+
+
+def test_get_columns_no_comment(
+    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
+) -> None:
+    """A column with no comment should reflect comment as None."""
+    columns = [dict(c) for c in dialect.get_columns(mock_empty_table, "heap_table")]
+    assert len(columns) == 1
+    assert columns[0]["name"] == "data"
+    assert columns[0]["comment"] is None
+
+
+def test_get_table_comment_empty(
+    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
+) -> None:
+    """A table with no comment should return {"text": None}."""
+    comment = dialect.get_table_comment(mock_empty_table, "heap_table")
+    assert comment == {"text": None}
+
+
+class _MockNullFlags:
+    """Mock connection where _db_index returns NULL for is_primary_key/is_foreign_key.
+
+    Some CUBRID versions may return NULL instead of 0 for boolean flags.
+    The parsing code should handle both (truthy check via `if flag_row[1]`).
+    """
+
+    def __init__(self) -> None:
+        self._show_columns = [
+            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
+        ]
+        self._show_indexes = [
+            ("test", 1, "pk_test", 1, "id"),
+        ]
+
+    def execute(self, statement: Any, params: Any = None) -> _Result:
+        sql = str(statement)
+        if sql.startswith("SHOW COLUMNS IN"):
+            return _Result(self._show_columns)
+        if sql.startswith("SHOW INDEXES IN"):
+            return _Result(self._show_indexes)
+        if sql.startswith("SHOW CREATE TABLE"):
+            return _Result([])
+        if "is_primary_key = 1" in sql:
+            return _Result([("pk_test",)])
+        if "is_unique = 1" in sql:
+            return _Result([])
+        if "FROM _db_index" in sql:
+            # Return NULL for boolean flags instead of False (0)
+            return _Result([("pk_test", None, None)])
+        if "FROM _db_attribute" in sql:
+            return _Result([])
+        raise AssertionError(f"Unexpected SQL: {sql}")
+
+
+@pytest.fixture
+def mock_null_flags() -> _MockNullFlags:
+    return _MockNullFlags()
+
+
+def test_get_indexes_null_flags(
+    dialect: CubridDialect, mock_null_flags: _MockNullFlags
+) -> None:
+    """Document behavior when _db_index returns NULL for boolean flags.
+
+    In CUBRID's ``_db_index`` system view, ``is_primary_key`` and
+    ``is_foreign_key`` are NOT NULL boolean columns. However, if a future
+    schema change or corruption introduces NULL, the parsing code uses
+    Python truthiness (``if flag_row[1]:``), so NULL is treated as
+    ``False`` — the index is NOT excluded from ``get_indexes()``.
+
+    This is a known limitation: the batch flag query relies on truthy
+    values, not an explicit ``== 1`` check. In practice, CUBRID always
+    returns 0 or 1 for these columns, so this scenario does not arise.
+    """
+    indexes = dialect.get_indexes(mock_null_flags, "test")
+    # NULL is falsy → pk_indexes is empty → pk_test is NOT excluded
+    assert len(indexes) == 1
+    assert indexes[0]["name"] == "pk_test"

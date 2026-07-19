@@ -124,6 +124,7 @@ class TestRequirements:
             "unusual_column_name_characters",
             "implicitly_named_constraints",
             "update_nowait",
+            "two_phase_transactions",
         ],
     )
     def test_unsupported_features_are_closed(self, requirements, property_name):

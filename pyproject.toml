@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sqlalchemy-cubrid"
-version = "1.5.0"
+version = "1.6.0"
 description = "CUBRID dialect for SQLAlchemy"
 readme = "README.md"
 license = "MIT"
@@ -44,7 +44,7 @@ dev = [
     "pytest-cov",
     "pytest-asyncio",
     "ruff==0.15.21",
-    "mypy==2.1.0",
+    "mypy==2.3.0",
     "bandit[toml]==1.9.4",
     "pre-commit",
     "tox",
