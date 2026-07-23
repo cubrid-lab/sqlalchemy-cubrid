@@ -178,6 +178,7 @@ def merge(target: _DMLTableArgument) -> Merge:
 class Merge(Executable, ClauseElement, Generative):
     __visit_name__ = "merge"
     stringify_dialect = "cubrid"
+    inherit_cache = True
 
     _target: _DMLTableArgument
     _using_source: Optional[Any]

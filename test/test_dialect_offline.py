@@ -1001,14 +1001,14 @@ class TestDoPing:
         assert result is True
         dbapi_conn.ping.assert_called_once()
 
-    def test_ping_propagates_exception(self):
-        """do_ping() lets exceptions propagate (SA catches them)."""
+    def test_ping_returns_false_on_exception(self):
+        """do_ping() returns False on failure instead of propagating."""
         dialect = CubridDialect()
         dbapi_conn = MagicMock()
         dbapi_conn.ping.side_effect = RuntimeError("connection lost")
 
-        with pytest.raises(RuntimeError, match="connection lost"):
-            dialect.do_ping(dbapi_conn)
+        result = dialect.do_ping(dbapi_conn)
+        assert result is False
 
 
 class TestPostfetchLastRowId:

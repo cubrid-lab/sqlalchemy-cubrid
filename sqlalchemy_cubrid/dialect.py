@@ -627,7 +627,11 @@ class CubridDialect(default.DefaultDialect):
         except Exception:
             # Fallback: if the catalog query fails, both sets stay empty so
             # no indexes will be wrongly excluded.
-            log.debug("Batch index-flag query failed for table %s, falling back", table_name)
+            log.debug(
+                "Batch index-flag query failed for table %s, falling back",
+                table_name,
+                exc_info=True,
+            )
 
         quoted = self.identifier_preparer.quote_identifier(table_name)
         result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
@@ -1038,8 +1042,11 @@ class CubridDialect(default.DefaultDialect):
         Python driver exposes a ``ping()`` method on the connection
         that delegates to the C-level CCI ping.
         """
-        dbapi_connection.ping()
-        return True
+        try:
+            dbapi_connection.ping()
+            return True
+        except Exception:
+            return False
 
 
 dialect = CubridDialect
