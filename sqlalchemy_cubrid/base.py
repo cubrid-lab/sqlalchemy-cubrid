@@ -391,10 +391,6 @@ class CubridIdentifierPreparer(compiler.IdentifierPreparer):
     ) -> None:
         super().__init__(dialect, initial_quote, final_quote, escape_quote, omit_schema)
 
-    def _quote_free_identifiers(self, *ids: str | None) -> tuple[str, ...]:
-        """Unilaterally identifier-quote any number of strings."""
-        return tuple(self.quote_identifier(i) for i in ids if i is not None)
-
 
 class CubridExecutionContext(default.DefaultExecutionContext):
     """Execution context for CUBRID connections."""

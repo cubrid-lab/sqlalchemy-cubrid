@@ -61,13 +61,6 @@ class TestIdentifierPreparer:
         assert preparer.escape_quote == '"'
         assert preparer.omit_schema is False
 
-    def test_quote_free_identifiers_skips_none(self):
-        preparer = CubridIdentifierPreparer(CubridDialect())
-
-        quoted = preparer._quote_free_identifiers("users", None, "order")
-
-        assert quoted == ('"users"', '"order"')
-
 
 class TestExecutionContext:
     def test_should_autocommit_text(self):

@@ -62,6 +62,9 @@ class CubridCompiler(compiler.SQLCompiler):
         return f"CAST({self.process(cast.clause)} AS {type_})"
 
     def render_literal_value(self, value: Any, type_: Any) -> str:
+        # SQLAlchemy's base render_literal_value only escapes single quotes.
+        # CUBRID uses backslash escaping (like MySQL), so we must also double
+        # backslashes to prevent them from being interpreted as escape sequences.
         rendered = str(super().render_literal_value(value, type_))
         rendered = rendered.replace("\\", "\\\\")
         return rendered
@@ -428,7 +431,9 @@ class CubridCompiler(compiler.SQLCompiler):
             return text.replace("INSERT INTO", "REPLACE INTO", 1)
         if text.startswith("INSERT"):
             return "REPLACE" + text[len("INSERT") :]
-        return text
+        raise NotImplementedError(
+            f"Could not convert INSERT to REPLACE: unexpected SQL format: {text!r}"
+        )
 
     def _render_json_extract_from_binary(
         self, binary: elements.BinaryExpression[Any], operator: Any, **kw: Any

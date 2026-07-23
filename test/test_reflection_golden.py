@@ -344,9 +344,7 @@ def mock_empty_table() -> _MockEmptyTable:
     return _MockEmptyTable()
 
 
-def test_get_indexes_empty_table(
-    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
-) -> None:
+def test_get_indexes_empty_table(dialect: CubridDialect, mock_empty_table: _MockEmptyTable) -> None:
     """A table with no indexes should return an empty list, not crash."""
     indexes = dialect.get_indexes(mock_empty_table, "heap_table")
     assert indexes == []
@@ -376,9 +374,7 @@ def test_get_unique_constraints_empty_table(
     assert ucs == []
 
 
-def test_get_columns_no_comment(
-    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
-) -> None:
+def test_get_columns_no_comment(dialect: CubridDialect, mock_empty_table: _MockEmptyTable) -> None:
     """A column with no comment should reflect comment as None."""
     columns = [dict(c) for c in dialect.get_columns(mock_empty_table, "heap_table")]
     assert len(columns) == 1
@@ -386,9 +382,7 @@ def test_get_columns_no_comment(
     assert columns[0]["comment"] is None
 
 
-def test_get_table_comment_empty(
-    dialect: CubridDialect, mock_empty_table: _MockEmptyTable
-) -> None:
+def test_get_table_comment_empty(dialect: CubridDialect, mock_empty_table: _MockEmptyTable) -> None:
     """A table with no comment should return {"text": None}."""
     comment = dialect.get_table_comment(mock_empty_table, "heap_table")
     assert comment == {"text": None}
@@ -434,9 +428,7 @@ def mock_null_flags() -> _MockNullFlags:
     return _MockNullFlags()
 
 
-def test_get_indexes_null_flags(
-    dialect: CubridDialect, mock_null_flags: _MockNullFlags
-) -> None:
+def test_get_indexes_null_flags(dialect: CubridDialect, mock_null_flags: _MockNullFlags) -> None:
     """Document behavior when _db_index returns NULL for boolean flags.
 
     In CUBRID's ``_db_index`` system view, ``is_primary_key`` and
