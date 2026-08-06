@@ -250,18 +250,3 @@ jobs:
           needs.packaging-smoke-test.result == 'failure' ||
           needs.integration-tests.result == 'failure'
         run: exit 1
-
-  upstream-canary:
-    name: Test against pycubrid@main
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    schedule:
-      - cron: "0 6 * * 1"
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -e ".[dev]"
-      - run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
-      - run: pytest test/ --ignore=test/test_integration.py --ignore=test/test_aio_integration.py -q
