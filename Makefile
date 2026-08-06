@@ -79,15 +79,16 @@ doctor: ## Check development environment
 	@pre-commit --version || echo "ERROR: pre-commit not found"
 	@echo "All checks passed!"
 
-release: ## Bump version in pyproject.toml and __init__.py
-	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=x.y.z"; exit 1; fi
-	@echo "Bumping version to $(VERSION)..."
-	@sed -i 's/^version = ".*"/version = "$(VERSION)"/' pyproject.toml
-	@sed -i 's/^__version__ = ".*"/__version__ = "$(VERSION)"/' sqlalchemy_cubrid/__init__.py
-	@echo "Verifying consistency..."
-	@PYPROJECT_VER=$$(grep -oP '^version = "\K[^"]+' pyproject.toml); \
-	 INIT_VER=$$(python3 -c "import ast; print(next(node.value.value for node in ast.walk(ast.parse(open('sqlalchemy_cubrid/__init__.py').read())) if isinstance(node, ast.Assign) and any(t.id == '__version__' for t in node.targets if isinstance(t, ast.Name))))"); \
-	 if [ "$$PYPROJECT_VER" != "$$INIT_VER" ]; then \
-	   echo "ERROR: Version mismatch — pyproject.toml=$$PYPROJECT_VER, __init__.py=$$INIT_VER"; exit 1; \
-	 fi
-	@echo "Version $(VERSION) set in pyproject.toml and sqlalchemy_cubrid/__init__.py"
+release: ## Bump version + promote CHANGELOG + commit + tag. Usage: make release VERSION=x.y.z
+	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=1.7.0"; exit 1; fi
+	@CURRENT=$$(python3 -c "from $(SRC) import __version__; print(__version__)"); \
+	 if [ "$$CURRENT" = "$(VERSION)" ]; then echo "Version is already $(VERSION)"; exit 1; fi
+	@echo "Bumping $$CURRENT → $(VERSION)..."
+	@sed -i '/__version__/s/".*"/"$(VERSION)"/' $(SRC)/__init__.py
+	@sed -i 's/## \[Unreleased\]/## [Unreleased]\n\n## [$(VERSION)] - $$(date +%Y-%m-%d)/' CHANGELOG.md
+	@git add $(SRC)/__init__.py CHANGELOG.md
+	@git commit -m "release: v$(VERSION)"
+	@git tag "v$(VERSION)"
+	@echo ""
+	@echo "Done. Review the diff, then push:"
+	@echo "  git push origin main v$(VERSION)"
