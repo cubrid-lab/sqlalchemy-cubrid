@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sqlalchemy-cubrid"
-version = "1.6.0"
+dynamic = ["version"]
 description = "CUBRID dialect for SQLAlchemy"
 readme = "README.md"
 license = "MIT"
@@ -76,6 +76,9 @@ cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 [tool.setuptools]
 packages = ["sqlalchemy_cubrid"]
 include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "sqlalchemy_cubrid.__version__"}
 
 [tool.ruff]
 line-length = 100
