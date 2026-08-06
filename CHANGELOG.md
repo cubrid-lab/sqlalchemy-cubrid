@@ -5,12 +5,6 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.1] - 2026-07-18
-
-### Fixed
-- **RETURNING now raises explicit `CompileError` (#229)** — the dialect previously set `insert_returning = update_returning = delete_returning = False` and silently fell back to `LAST_INSERT_ID()` for any `.returning()` call. Users had no signal that RETURNING wasn't actually executing server-side. `visit_insert`/`visit_update`/`visit_delete` now check `stmt._returning` before compilation and raise `CompileError` pointing to `result.inserted_primary_key` as the auto-increment PK retrieval path.
-- **Two-phase commit explicitly disabled (#230)** — `supports_twophase_commit = False` added to `CubridDialect`, and `two_phase_transactions` is now a `_CLOSED` requirement flag in `requirements.py` so the SA test suite properly skips two-phase tests.
-
 ## [Unreleased]
 
 ## [1.6.0] - 2026-07-18
@@ -25,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 - **SA 2.2 canary bumped (#231)** — the `sqlalchemy-22-canary` CI job now installs `sqlalchemy>=2.2.0b1` (was `>=2.1.0b1`, which is no longer a pre-release). Added `continue-on-error: true` so canary failures warn but don't gate PRs — pre-release breakage is expected and shouldn't block development.
+- **CI lint now uses pinned ruff version (#252)** — the lint job used `pip install ruff` (unpinned). Now installs from `.[dev]` extras to match the pinned `ruff==0.15.21` in `pyproject.toml`.
+
+## [1.5.1] - 2026-07-18
+
+### Fixed
+- **RETURNING now raises explicit `CompileError` (#229)** — the dialect previously set `insert_returning = update_returning = delete_returning = False` and silently fell back to `LAST_INSERT_ID()` for any `.returning()` call. Users had no signal that RETURNING wasn't actually executing server-side. `visit_insert`/`visit_update`/`visit_delete` now check `stmt._returning` before compilation and raise `CompileError` pointing to `result.inserted_primary_key` as the auto-increment PK retrieval path.
+- **Two-phase commit explicitly disabled (#230)** — `supports_twophase_commit = False` added to `CubridDialect`, and `two_phase_transactions` is now a `_CLOSED` requirement flag in `requirements.py` so the SA test suite properly skips two-phase tests.
 ## [1.5.0] - 2026-05-23
 
 ### Added
