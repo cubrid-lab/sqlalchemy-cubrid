@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """Validate CHANGELOG.md structure.
-
+Checks:
+    1. First section is [Unreleased]
+    2. Exactly one [Unreleased] section
+    3. No duplicate version sections
+    4. Released versions in descending semver order
 Usage:
     python scripts/lint_changelog.py
 
@@ -42,13 +46,22 @@ def main() -> int:
         )
         return 1
 
-    versions = headers[1:]  # exclude Unreleased
+    # Rule 2: Exactly one [Unreleased] section
+    unreleased_count = headers.count("Unreleased")
+    if unreleased_count > 1:
+        print(
+            f"ERROR: Found {unreleased_count} [Unreleased] sections, expected exactly 1",
+            file=sys.stderr,
+        )
+        return 1
+
+    versions = [h for h in headers if h != "Unreleased"]
 
     if not versions:
         print("WARNING: No released versions in CHANGELOG (only [Unreleased])")
         return 0
 
-    # Rule 2: No duplicate version sections
+    # Rule 3: No duplicate version sections
     seen: set[str] = set()
     for v in versions:
         if v in seen:
@@ -56,24 +69,34 @@ def main() -> int:
             return 1
         seen.add(v)
 
-    # Rule 3: Versions in descending semver order
+    # Rule 4: Released versions in descending semver order
+    # Validate per-version so one bad entry doesn't disable all checking.
     try:
         from packaging.version import InvalidVersion, Version
 
-        parsed = [(v, Version(v)) for v in versions]
-        for i in range(len(parsed) - 1):
-            if parsed[i][1] < parsed[i + 1][1]:
+        prev_version: Version | None = None
+        prev_name: str | None = None
+        for v in versions:
+            try:
+                current = Version(v)
+            except InvalidVersion:
                 print(
-                    f"ERROR: [{parsed[i][0]}] should come after [{parsed[i + 1][0]}] "
+                    f"WARNING: [{v}] is not valid PEP 440, skipping ordering check for this entry",
+                    file=sys.stderr,
+                )
+                continue
+
+            if prev_version is not None and current > prev_version:
+                print(
+                    f"ERROR: [{v}] should come before [{prev_name}] "
                     f"(versions must be in descending order)",
                     file=sys.stderr,
                 )
                 return 1
+            prev_version = current
+            prev_name = v
     except ImportError:
-        # packaging not available — skip ordering check
         print("NOTE: 'packaging' not installed, skipping semver ordering check")
-    except InvalidVersion as exc:
-        print(f"WARNING: Non-semver version found: {exc}", file=sys.stderr)
 
     print(f"OK: {len(versions)} version(s), order valid")
     return 0
