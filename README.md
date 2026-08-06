@@ -18,6 +18,7 @@
 ---
 
 > **Status: Production/Stable** — `sqlalchemy-cubrid` is a maintained SQLAlchemy dialect for CUBRID supporting SQLAlchemy 2.0–2.2 and CUBRID 10.2–11.4.
+> **Note:** Versions prior to 1.0.0 used inconsistent numbering (0.x, 2.x). The canonical version history starts at 1.0.0.
 
 ## Why sqlalchemy-cubrid?
 
