@@ -62,8 +62,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
-      - name: Install ruff
-        run: pip install ruff
+      - name: Install pinned ruff from pyproject.toml
+        run: pip install -e ".[dev]"
       - name: Ruff check
         run: ruff check sqlalchemy_cubrid/ test/
       - name: Ruff format check
