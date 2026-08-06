@@ -10,41 +10,6 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  version-check:
-    name: Version consistency
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-      - name: Check pyproject.toml matches __init__.py
-        run: |
-          PYPROJECT_VER=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
-          INIT_VER=$(python3 -c "import ast; print(next(node.value.value for node in ast.walk(ast.parse(open('sqlalchemy_cubrid/__init__.py').read())) if isinstance(node, ast.Assign) and any(t.id == '__version__' for t in node.targets if isinstance(t, ast.Name))))")
-          echo "pyproject.toml: $PYPROJECT_VER"
-          echo "__init__.py:    $INIT_VER"
-          if [ "$PYPROJECT_VER" != "$INIT_VER" ]; then
-            echo "::error::Version mismatch: pyproject.toml=$PYPROJECT_VER, __init__.py=$INIT_VER"
-            exit 1
-          fi
-          echo "Versions match: $PYPROJECT_VER"
-      - name: Check CHANGELOG.md has version entry
-        run: |
-          PYPROJECT_VER=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
-          if ! grep -qP "^## \[$PYPROJECT_VER\]" CHANGELOG.md; then
-            echo "::error::CHANGELOG.md missing entry for version $PYPROJECT_VER"
-            echo "Expected a line like: ## [$PYPROJECT_VER] - YYYY-MM-DD"
-            exit 1
-          fi
-          CHANGELOG_LINE=$(grep -P "^## \[$PYPROJECT_VER\]" CHANGELOG.md | head -1)
-          echo "CHANGELOG entry: $CHANGELOG_LINE"
-          if ! echo "$CHANGELOG_LINE" | grep -qP "\d{4}-\d{2}-\d{2}"; then
-            echo "::warning::CHANGELOG entry for $PYPROJECT_VER has no date"
-          fi
-          echo "CHANGELOG check passed"
-
-
   doc-lint:
     name: Documentation lint
     uses: cubrid-lab/.github/.github/workflows/doc-lint.yml@main

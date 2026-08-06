@@ -66,9 +66,12 @@ class TestExports:
             assert getattr(sqlalchemy_cubrid, export_name) is not None
 
     def test_version_consistency(self):
-        match = re.search(r'^version = "([^"]+)"', _read_pyproject(), re.MULTILINE)
-        assert match is not None
-        assert sqlalchemy_cubrid.__version__ == match.group(1)
+        # Version is now dynamic (derived from __version__), so check
+        # importlib.metadata instead of parsing pyproject.toml.
+        import importlib.metadata
+
+        dist_version = importlib.metadata.version("sqlalchemy-cubrid")
+        assert sqlalchemy_cubrid.__version__ == dist_version
 
     def test_py_typed_marker_exists(self):
         marker = importlib.resources.files("sqlalchemy_cubrid").joinpath("py.typed")

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "sqlalchemy-cubrid"
-version = "1.6.0"
+dynamic = ["version"]
 description = "CUBRID dialect for SQLAlchemy"
 readme = "README.md"
 license = "MIT"
@@ -43,7 +43,7 @@ dev = [
     "pytest>=7.0",
     "pytest-cov",
     "pytest-asyncio",
-    "ruff==0.16.1",
+    "ruff==0.15.21",
     "mypy==2.3.0",
     "bandit[toml]==1.9.4",
     "pre-commit",
@@ -76,6 +76,9 @@ cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 [tool.setuptools]
 packages = ["sqlalchemy_cubrid"]
 include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "sqlalchemy_cubrid.__version__"}
 
 [tool.ruff]
 line-length = 100
