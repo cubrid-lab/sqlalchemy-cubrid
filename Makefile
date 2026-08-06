@@ -81,11 +81,15 @@ doctor: ## Check development environment
 
 release: ## Bump version + promote CHANGELOG + commit + tag. Usage: make release VERSION=x.y.z
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make release VERSION=1.7.0"; exit 1; fi
-	@CURRENT=$$(python3 -c "from $(SRC) import __version__; print(__version__)"); \
-	 if [ "$$CURRENT" = "$(VERSION)" ]; then echo "Version is already $(VERSION)"; exit 1; fi
+	@git diff --quiet || { echo "ERROR: Working tree is dirty. Commit or stash first."; exit 1; }
+	@[ "$$(git branch --show-current)" = "main" ] || { echo "ERROR: Must be on main branch."; exit 1; }
+	@CURRENT=$$(python3 -c "from $(SRC) import __version__; print(__version__)" 2>/dev/null) || \
+		{ echo "ERROR: Cannot import $(SRC). Run 'make install' first."; exit 1; }
+	@if [ "$$CURRENT" = "$(VERSION)" ]; then echo "Version is already $(VERSION)"; exit 1; fi
 	@echo "Bumping $$CURRENT → $(VERSION)..."
-	@sed -i '/__version__/s/".*"/"$(VERSION)"/' $(SRC)/__init__.py
-	@sed -i 's/## \[Unreleased\]/## [Unreleased]\n\n## [$(VERSION)] - $$(date +%Y-%m-%d)/' CHANGELOG.md
+	@TODAY=$$(date +%Y-%m-%d) && \
+		perl -pi -e 's/__version__ = ".*"/__version__ = "$(VERSION)"/' $(SRC)/__init__.py && \
+		perl -pi -e "s/## \[Unreleased\]/## [Unreleased]\n\n## [$(VERSION)] - $$TODAY/" CHANGELOG.md
 	@git add $(SRC)/__init__.py CHANGELOG.md
 	@git commit -m "release: v$(VERSION)"
 	@git tag "v$(VERSION)"
