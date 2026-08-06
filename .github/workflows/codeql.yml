@@ -15,18 +15,6 @@ permissions:
 jobs:
   analyze:
     name: Analyze
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v4.37.4
-        with:
-          languages: python
-          queries: security-extended
-
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v4.37.4
-        with:
-          category: "/language:python"
+    uses: cubrid-lab/.github/.github/workflows/codeql.yml@main
+    with:
+      language: python
