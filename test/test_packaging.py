@@ -13,7 +13,6 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import importlib.resources
-import re
 from pathlib import Path
 from typing import cast
 
