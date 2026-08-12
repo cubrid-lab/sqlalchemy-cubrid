@@ -1,0 +1,22 @@
+name: Notify Cookbook
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch smoke test to cookbook
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.COOKBOOK_DISPATCH_TOKEN }}
+          repository: cubrid-lab/cubrid-cookbook-python
+          event-type: upstream-released
+          client-payload: |
+            {"package": "sqlalchemy-cubrid", "ref": "${{ github.ref_name }}"}
