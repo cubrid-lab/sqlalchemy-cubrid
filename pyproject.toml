@@ -84,6 +84,14 @@ version = {attr = "sqlalchemy_cubrid.__version__"}
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint]
+# Pin the rule set explicitly instead of inheriting ruff's implicit defaults.
+# Ruff expanded its default selection in 0.16 (59 -> 413 rules against this
+# config), which turns every routine ruff bump into a CI-breaking change
+# unrelated to our own code. These four groups are exactly what ruff selected
+# by default through 0.15.x.
+select = ["E4", "E7", "E9", "F"]
+
 [tool.ruff.lint.isort]
 known-first-party = ["sqlalchemy_cubrid"]
 
