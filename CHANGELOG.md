@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Lint job red on `main` (#268)** — `#257` removed the only use of `re` in `test/test_packaging.py` but left `import re` behind, so `ruff check sqlalchemy_cubrid/ test/` failed with `F401` and took `matrix-result` down with it. Removed the orphaned import.
+
 ## [1.6.0] - 2026-07-18
 
 ### Fixed
