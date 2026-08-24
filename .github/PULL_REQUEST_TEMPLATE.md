@@ -25,7 +25,7 @@
 - [ ] I have run `make check` (lint + typecheck)
 - [ ] I have run `make test` and all tests pass
 - [ ] I have added tests for new functionality (if applicable)
-- [ ] I have updated documentation (if applicable)
+- [ ] I have updated documentation for any behavior/API/version/config change (or set `Docs: not needed - <reason>` / applied the `docs-not-needed` label)
 - [ ] My changes do not introduce new warnings
 
 ## Related Issues

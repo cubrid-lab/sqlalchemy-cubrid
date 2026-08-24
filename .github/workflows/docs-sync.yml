@@ -1,0 +1,94 @@
+name: docs-sync
+
+# Fails a PR when behavior-relevant source changes land without a matching
+# documentation/changelog update. Escape hatch: add the `docs-not-needed`
+# label OR put `Docs: not needed - <reason>` in the PR body.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled, edited]
+
+jobs:
+  docs-sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check behavior changes have docs updates
+        env:
+          BASE_REF: ${{ github.base_ref }}
+          EVENT_PATH: ${{ github.event_path }}
+
+          # Behavior-relevant source/config. Override per repo.
+          IMPACT_GLOBS: |
+            sqlalchemy_cubrid/**
+            pyproject.toml
+            setup.cfg
+            setup.py
+
+          # Docs that count as "kept in sync".
+          DOC_GLOBS: |
+            CHANGELOG*
+            README*
+            docs/**
+            SUPPORT_MATRIX*
+
+          # Changes that never require doc churn.
+          IGNORE_GLOBS: |
+            tests/**
+            **/tests/**
+            .github/**
+            **/*.md
+            **/*.rst
+            **/*.txt
+        run: |
+          git fetch origin "$BASE_REF"
+          python - <<'PY'
+          import fnmatch, json, os, subprocess, sys
+
+          base = f"origin/{os.environ['BASE_REF']}"
+          changed = subprocess.check_output(
+              ["git", "diff", "--name-only", f"{base}...HEAD"], text=True
+          ).splitlines()
+
+          def globs(name):
+              return [x.strip() for x in os.environ[name].splitlines() if x.strip()]
+
+          impact_globs = globs("IMPACT_GLOBS")
+          doc_globs = globs("DOC_GLOBS")
+          ignore_globs = globs("IGNORE_GLOBS")
+
+          def matches(path, patterns):
+              return any(fnmatch.fnmatch(path, pat) for pat in patterns)
+
+          with open(os.environ["EVENT_PATH"]) as _f:
+              event = json.load(_f)
+          pr = event.get("pull_request", {})
+          labels = {label["name"] for label in pr.get("labels", [])}
+          body = pr.get("body") or ""
+
+          skipped = "docs-not-needed" in labels or "Docs: not needed -" in body
+          doc_changed = any(matches(p, doc_globs) for p in changed)
+          relevant = [
+              p for p in changed
+              if matches(p, impact_globs) and not matches(p, ignore_globs)
+          ]
+
+          print("Changed files:")
+          for p in changed:
+              print(f"  {p}")
+
+          if relevant and not doc_changed and not skipped:
+              print("\nDocs-sync guard failed.")
+              print("Behavior-relevant files changed without a matching docs/changelog update.")
+              print("Either update docs, or add the `docs-not-needed` label / PR body marker:")
+              print("  Docs: not needed - <reason>")
+              print("\nRelevant files:")
+              for p in relevant:
+                  print(f"  {p}")
+              sys.exit(1)
+
+          print("\nDocs-sync guard passed.")
+          PY
