@@ -95,7 +95,7 @@ pip install "sqlalchemy-cubrid[alembic]"
 ```python
 from sqlalchemy import create_engine, text
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 with engine.connect() as conn:
     result = conn.execute(text("SELECT 1"))
@@ -121,7 +121,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
 
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -230,10 +230,10 @@ after the statement (see [Known Limitations](#known-limitations)).
 
 ```python
 from sqlalchemy import create_engine
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
-For the pure Python driver (no C build needed): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
+The bare `cubrid://` URL uses the legacy `CUBRID-Python` C-extension driver (requires compilation): `create_engine("cubrid://dba:password@localhost:33000/demodb")`.
 
 ### Does sqlalchemy-cubrid support SQLAlchemy 2.0–2.2?
 
