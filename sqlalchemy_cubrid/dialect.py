@@ -918,14 +918,24 @@ class CubridDialect(default.DefaultDialect):
         "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES": 1,
     }
 
+    # Canonical spelling returned per integer code. Multiple input aliases map
+    # to the same code (e.g. "READ COMMITTED" / "CURSOR STABILITY" / the long
+    # granular spelling all map to 4); get_isolation_level() returns the single
+    # canonical name below so that set -> get round-trips to the same code. The
+    # short standard names are used for 4/5/6 (the values users actually pass);
+    # levels 1-3 have no short name so the granular spelling is canonical. Every
+    # value here is also present in get_isolation_level_values().
     _ISOLATION_LEVEL_REVERSE: dict[int, str] = {
         6: "SERIALIZABLE",
-        5: "REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES",
-        4: "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES",
+        5: "REPEATABLE READ",
+        4: "READ COMMITTED",
         3: "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES",
         2: "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES",
         1: "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
     }
+
+    # CUBRID's default transaction isolation level (level 4 = READ COMMITTED).
+    _DEFAULT_ISOLATION_CODE: int = 4
 
     def get_isolation_level(self, dbapi_connection: DBAPIConnection) -> str:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
         """Return the current isolation level for *dbapi_conn*."""
@@ -936,7 +946,7 @@ class CubridDialect(default.DefaultDialect):
             cursor.execute("SELECT X")
             row = cursor.fetchone()
             if row is None:
-                return "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES"
+                return self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE]
             val = row[0]
         finally:
             cursor.close()
@@ -987,7 +997,9 @@ class CubridDialect(default.DefaultDialect):
 
     def reset_isolation_level(self, dbapi_conn: DBAPIConnection) -> None:
         """Revert isolation level to the CUBRID default (level 4)."""
-        self.set_isolation_level(dbapi_conn, "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES")
+        self.set_isolation_level(
+            dbapi_conn, self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE]
+        )
 
     def do_release_savepoint(self, connection: Any, name: str) -> None:
         """CUBRID does not support RELEASE SAVEPOINT; no-op."""

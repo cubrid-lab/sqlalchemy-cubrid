@@ -202,7 +202,7 @@ class TestIsolationLevelMethods:
         dbapi_conn.cursor.return_value = cursor
 
         level = dialect.get_isolation_level(dbapi_conn)
-        assert level == "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES"
+        assert level == "READ COMMITTED"
 
     def test_get_isolation_level_values(self):
         dialect = CubridDialect()
@@ -268,6 +268,31 @@ class TestIsolationLevelMethods:
 
         dialect.reset_isolation_level(dbapi_conn)
         cursor.execute.assert_any_call("SET TRANSACTION ISOLATION LEVEL 4")
+
+    def test_isolation_level_set_get_roundtrip(self):
+        """Every accepted input name round-trips to the same numeric code.
+
+        Multiple aliases collapse onto one canonical name per code, so the
+        invariant is semantic: MAP[name] == MAP[REVERSE[MAP[name]]].
+        """
+        dialect = CubridDialect()
+        for name in dialect.get_isolation_level_values():
+            code = dialect._ISOLATION_LEVEL_MAP[name.upper()]
+            canonical = dialect._ISOLATION_LEVEL_REVERSE[code]
+            # get_isolation_level() returns a value SA recognizes ...
+            assert canonical in dialect.get_isolation_level_values()
+            # ... and it maps back to the same underlying code.
+            assert dialect._ISOLATION_LEVEL_MAP[canonical.upper()] == code
+
+    def test_isolation_level_reverse_covers_all_codes(self):
+        """Reverse map has one canonical name for every code in the forward map."""
+        dialect = CubridDialect()
+        forward_codes = set(dialect._ISOLATION_LEVEL_MAP.values())
+        assert set(dialect._ISOLATION_LEVEL_REVERSE) == forward_codes
+        # Short standard names are canonical for 4/5/6.
+        assert dialect._ISOLATION_LEVEL_REVERSE[6] == "SERIALIZABLE"
+        assert dialect._ISOLATION_LEVEL_REVERSE[5] == "REPEATABLE READ"
+        assert dialect._ISOLATION_LEVEL_REVERSE[4] == "READ COMMITTED"
 
 
 class TestExistenceChecks:
