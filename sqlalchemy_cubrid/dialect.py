@@ -997,7 +997,9 @@ class CubridDialect(default.DefaultDialect):
 
     def reset_isolation_level(self, dbapi_conn: DBAPIConnection) -> None:
         """Revert isolation level to the CUBRID default (level 4)."""
-        self.set_isolation_level(dbapi_conn, self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE])
+        self.set_isolation_level(
+            dbapi_conn, self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE]
+        )
 
     def do_release_savepoint(self, connection: Any, name: str) -> None:
         """CUBRID does not support RELEASE SAVEPOINT; no-op."""
