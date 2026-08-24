@@ -934,6 +934,9 @@ class CubridDialect(default.DefaultDialect):
         1: "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
     }
 
+    # CUBRID's default transaction isolation level (level 4 = READ COMMITTED).
+    _DEFAULT_ISOLATION_CODE: int = 4
+
     def get_isolation_level(self, dbapi_connection: DBAPIConnection) -> str:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
         """Return the current isolation level for *dbapi_conn*."""
         # https://www.cubrid.org/manual/en/11.0/sql/transaction.html
@@ -943,7 +946,7 @@ class CubridDialect(default.DefaultDialect):
             cursor.execute("SELECT X")
             row = cursor.fetchone()
             if row is None:
-                return "READ COMMITTED"
+                return self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE]
             val = row[0]
         finally:
             cursor.close()
@@ -994,7 +997,7 @@ class CubridDialect(default.DefaultDialect):
 
     def reset_isolation_level(self, dbapi_conn: DBAPIConnection) -> None:
         """Revert isolation level to the CUBRID default (level 4)."""
-        self.set_isolation_level(dbapi_conn, "READ COMMITTED")
+        self.set_isolation_level(dbapi_conn, self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE])
 
     def do_release_savepoint(self, connection: Any, name: str) -> None:
         """CUBRID does not support RELEASE SAVEPOINT; no-op."""
