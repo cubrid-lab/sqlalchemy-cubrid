@@ -552,7 +552,7 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> list[str]:
         """Return a list of table names for *schema*."""
-        if schema is not None:
+        if not self._schema_is_default(schema):
             return []
         result = connection.execute(
             text(
@@ -570,6 +570,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> list[str]:
         """Return a list of view names."""
+        if not self._schema_is_default(schema):
+            return []
         result = connection.execute(
             text("SELECT class_name FROM db_class WHERE class_type = 'VCLASS'")
         )
@@ -783,8 +785,36 @@ class CubridDialect(default.DefaultDialect):
         return {"text": row[0] if row and row[0] else None}
 
     def get_schema_names(self, connection: Any, **kw: Any) -> list[str]:
-        """Return schema names.  CUBRID does not support schemas."""
-        return []
+        """Return the schema names visible to this connection.
+
+        CUBRID exposes a single effective schema per connection (the current
+        user's schema, as reported by ``SELECT SCHEMA()``; see
+        :meth:`_get_default_schema_name`).  This dialect therefore operates in a
+        consistent single-schema mode: the only schema name it recognises is the
+        default one.  Returning ``[default_schema_name]`` (rather than the empty
+        list it historically returned) keeps this method consistent with
+        :meth:`_get_default_schema_name` and makes Alembic autogenerate with
+        ``include_schemas=True`` usable.
+
+        Owner-qualified cross-schema reflection is intentionally *not* attempted
+        here; every reflection method applies the same single-schema policy via
+        :meth:`_schema_is_default`.
+        """
+        if self.default_schema_name is None:
+            return []
+        return [self.default_schema_name]
+
+    def _schema_is_default(self, schema: str | None) -> bool:
+        """Return whether *schema* refers to this connection's only schema.
+
+        ``schema is None`` means "the default schema" in SQLAlchemy, so it is
+        always accepted.  A non-``None`` schema is accepted only when it matches
+        :attr:`default_schema_name`.  Every list/existence reflection method uses
+        this so that ``schema=`` is honoured uniformly instead of some methods
+        silently ignoring it (which previously produced, e.g., 0 tables but all
+        views for ``MetaData.reflect(schema=...)``).
+        """
+        return schema is None or schema == self.default_schema_name
 
     def has_table(
         self,
@@ -794,6 +824,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> bool:
         """Check if *table_name* exists."""
+        if not self._schema_is_default(schema):
+            return False
         result = connection.execute(
             text(
                 "SELECT COUNT(*) FROM db_class "
@@ -814,6 +846,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> bool:
         """Check if an index named *index_name* exists on *table_name*."""
+        if not self._schema_is_default(schema):
+            return False
         try:
             result = connection.execute(
                 text(
