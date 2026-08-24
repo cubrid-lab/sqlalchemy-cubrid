@@ -280,9 +280,11 @@ class CubridDialect(default.DefaultDialect):
             import CUBRIDdb as cubrid_dbapi  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
         except ImportError as e:
             raise ImportError(
-                "Could not import CUBRIDdb. Install 'CUBRID-Python' for "
-                "cubrid:// URLs, or use cubrid+pycubrid:// with 'pycubrid': "
-                "pip install CUBRID-Python"
+                "Could not import CUBRIDdb. The bare cubrid:// URL uses the "
+                "legacy CUBRID-Python C-extension driver. Either install it "
+                "(pip install CUBRID-Python), or switch to the maintained "
+                "pure-Python driver with a cubrid+pycubrid:// URL "
+                "(pip install \"sqlalchemy-cubrid[pycubrid]\")."
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
 
