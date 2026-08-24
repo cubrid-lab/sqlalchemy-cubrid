@@ -189,7 +189,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 
 - **No `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` not supported; for ORM use `await session.flush()` to populate `id` on the object (see [Async Quick Start](#async)), or for Core use `cursor.lastrowid` / `SELECT LAST_INSERT_ID()` after the statement
 - **No sequences** — CUBRID uses `AUTO_INCREMENT` only
-- **No multi-schema** — single schema per database
+- **Single effective schema** — CUBRID exposes one schema per connection (the current user's schema); `get_schema_names()` reports that one schema and every reflection method honours `schema=` consistently (the default schema is reflected; any other schema yields no tables/views). Owner-qualified cross-schema reflection is not supported.
 - **DDL auto-commits** — migrations are not transactional (`transactional_ddl = False`); use Alembic batch migrations and test rollback scenarios manually
 - **SQLAlchemy 2.0–2.2 only** — pinned to `<2.3`; SA 2.2 is forward-supported via shims and a `--pre` canary CI job ([details](docs/ARCHITECTURE.md))
 - **Async requires pycubrid >= 1.3.2,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project

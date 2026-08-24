@@ -544,6 +544,54 @@ class TestReflectionMethods:
         views = _invoke_reflection(dialect, "get_view_names", connection)
         assert views == ["active_users", "recent_orders"]
 
+    def test_get_view_names_rejects_non_default_schema(self):
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.return_value = [("active_users",)]
+        # default_schema_name is None on an uninitialized dialect, so any
+        # explicit schema is non-default and must yield [] -- previously this
+        # method ignored schema= and returned ALL views (issue #280).
+        assert _invoke_reflection(dialect, "get_view_names", connection, schema="main") == []
+
+    def test_schema_reflection_is_consistent_single_schema(self):
+        """All list/existence methods honour schema= uniformly (issue #280)."""
+        dialect = CubridDialect()
+        dialect.default_schema_name = "dba"
+
+        # get_schema_names now agrees with the default schema instead of [].
+        conn = MagicMock()
+        conn.info_cache = {}
+        conn.dialect_options = {}
+        assert dialect.get_schema_names(conn) == ["dba"]
+
+        # The default schema is honoured across list methods ...
+        tbl_conn = MagicMock()
+        tbl_conn.info_cache = {}
+        tbl_conn.dialect_options = {}
+        tbl_conn.execute.return_value = [("users",)]
+        assert _invoke_reflection(dialect, "get_table_names", tbl_conn, schema="dba") == ["users"]
+
+        view_conn = MagicMock()
+        view_conn.info_cache = {}
+        view_conn.dialect_options = {}
+        view_conn.execute.return_value = [("v_users",)]
+        assert _invoke_reflection(dialect, "get_view_names", view_conn, schema="dba") == ["v_users"]
+
+        # ... and a non-default schema is uniformly rejected: tables AND views
+        # both return [] (no more "0 tables + all views" divergence).
+        assert _invoke_reflection(dialect, "get_table_names", tbl_conn, schema="other") == []
+        assert _invoke_reflection(dialect, "get_view_names", view_conn, schema="other") == []
+
+        # Existence checks reject non-default schemas without touching the DB.
+        has_conn = MagicMock()
+        has_conn.info_cache = {}
+        has_conn.dialect_options = {}
+        assert dialect.has_table(has_conn, "users", schema="other") is False
+        assert dialect.has_index(has_conn, "users", "idx", schema="other") is False
+        has_conn.execute.assert_not_called()
+
     def test_get_view_definition_with_and_without_row(self):
         dialect = CubridDialect()
 
