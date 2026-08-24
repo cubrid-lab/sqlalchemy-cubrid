@@ -284,7 +284,7 @@ class CubridDialect(default.DefaultDialect):
                 "legacy CUBRID-Python C-extension driver. Either install it "
                 "(pip install CUBRID-Python), or switch to the maintained "
                 "pure-Python driver with a cubrid+pycubrid:// URL "
-                "(pip install \"sqlalchemy-cubrid[pycubrid]\")."
+                '(pip install "sqlalchemy-cubrid[pycubrid]").'
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
 
