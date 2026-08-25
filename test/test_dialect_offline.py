@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
+from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.engine import url
+from sqlalchemy.sql.elements import quoted_name
 
 from sqlalchemy_cubrid.dialect import CubridDialect
 from sqlalchemy_cubrid.dialect import _split_collection_members
@@ -149,6 +151,29 @@ class TestDialectBasics:
 
         assert dialect._get_default_schema_name(connection) == "dba"
 
+    def test_get_default_schema_name_null_returns_none(self):
+        """SCHEMA() returning SQL NULL must yield None, not the string 'None'."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.execute.return_value.scalar.return_value = None
+
+        assert dialect._get_default_schema_name(connection) is None
+
+    def test_get_schema_names_empty_when_default_is_none(self):
+        """With no default schema, get_schema_names() returns [] (not ['None'])."""
+        dialect = CubridDialect()
+        dialect.default_schema_name = None
+        connection = MagicMock()
+
+        assert dialect.get_schema_names(connection) == []
+
+    def test_get_schema_names_returns_default(self):
+        dialect = CubridDialect()
+        dialect.default_schema_name = "dba"
+        connection = MagicMock()
+
+        assert dialect.get_schema_names(connection) == ["dba"]
+
     def test_initialize_delegates_to_default_dialect(self):
         dialect = CubridDialect()
         connection = MagicMock()
@@ -202,7 +227,7 @@ class TestIsolationLevelMethods:
         dbapi_conn.cursor.return_value = cursor
 
         level = dialect.get_isolation_level(dbapi_conn)
-        assert level == "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES"
+        assert level == "READ COMMITTED"
 
     def test_get_isolation_level_values(self):
         dialect = CubridDialect()
@@ -268,6 +293,31 @@ class TestIsolationLevelMethods:
 
         dialect.reset_isolation_level(dbapi_conn)
         cursor.execute.assert_any_call("SET TRANSACTION ISOLATION LEVEL 4")
+
+    def test_isolation_level_set_get_roundtrip(self):
+        """Every accepted input name round-trips to the same numeric code.
+
+        Multiple aliases collapse onto one canonical name per code, so the
+        invariant is semantic: MAP[name] == MAP[REVERSE[MAP[name]]].
+        """
+        dialect = CubridDialect()
+        for name in dialect.get_isolation_level_values():
+            code = dialect._ISOLATION_LEVEL_MAP[name.upper()]
+            canonical = dialect._ISOLATION_LEVEL_REVERSE[code]
+            # get_isolation_level() returns a value SA recognizes ...
+            assert canonical in dialect.get_isolation_level_values()
+            # ... and it maps back to the same underlying code.
+            assert dialect._ISOLATION_LEVEL_MAP[canonical.upper()] == code
+
+    def test_isolation_level_reverse_covers_all_codes(self):
+        """Reverse map has one canonical name for every code in the forward map."""
+        dialect = CubridDialect()
+        forward_codes = set(dialect._ISOLATION_LEVEL_MAP.values())
+        assert set(dialect._ISOLATION_LEVEL_REVERSE) == forward_codes
+        # Short standard names are canonical for 4/5/6.
+        assert dialect._ISOLATION_LEVEL_REVERSE[6] == "SERIALIZABLE"
+        assert dialect._ISOLATION_LEVEL_REVERSE[5] == "REPEATABLE READ"
+        assert dialect._ISOLATION_LEVEL_REVERSE[4] == "READ COMMITTED"
 
 
 class TestExistenceChecks:
@@ -474,6 +524,9 @@ class TestReflectionMethods:
 
     def test_get_foreign_keys_success_and_exception(self):
         dialect = CubridDialect()
+        # ``main`` is this connection's effective schema; passing it must not
+        # trip the non-default-schema guard (#291) while we verify FK parsing.
+        dialect.default_schema_name = "main"
 
         ddl = (
             "CREATE TABLE [orders] (\n"
@@ -543,6 +596,54 @@ class TestReflectionMethods:
 
         views = _invoke_reflection(dialect, "get_view_names", connection)
         assert views == ["active_users", "recent_orders"]
+
+    def test_get_view_names_rejects_non_default_schema(self):
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.return_value = [("active_users",)]
+        # default_schema_name is None on an uninitialized dialect, so any
+        # explicit schema is non-default and must yield [] -- previously this
+        # method ignored schema= and returned ALL views (issue #280).
+        assert _invoke_reflection(dialect, "get_view_names", connection, schema="main") == []
+
+    def test_schema_reflection_is_consistent_single_schema(self):
+        """All list/existence methods honour schema= uniformly (issue #280)."""
+        dialect = CubridDialect()
+        dialect.default_schema_name = "dba"
+
+        # get_schema_names now agrees with the default schema instead of [].
+        conn = MagicMock()
+        conn.info_cache = {}
+        conn.dialect_options = {}
+        assert dialect.get_schema_names(conn) == ["dba"]
+
+        # The default schema is honoured across list methods ...
+        tbl_conn = MagicMock()
+        tbl_conn.info_cache = {}
+        tbl_conn.dialect_options = {}
+        tbl_conn.execute.return_value = [("users",)]
+        assert _invoke_reflection(dialect, "get_table_names", tbl_conn, schema="dba") == ["users"]
+
+        view_conn = MagicMock()
+        view_conn.info_cache = {}
+        view_conn.dialect_options = {}
+        view_conn.execute.return_value = [("v_users",)]
+        assert _invoke_reflection(dialect, "get_view_names", view_conn, schema="dba") == ["v_users"]
+
+        # ... and a non-default schema is uniformly rejected: tables AND views
+        # both return [] (no more "0 tables + all views" divergence).
+        assert _invoke_reflection(dialect, "get_table_names", tbl_conn, schema="other") == []
+        assert _invoke_reflection(dialect, "get_view_names", view_conn, schema="other") == []
+
+        # Existence checks reject non-default schemas without touching the DB.
+        has_conn = MagicMock()
+        has_conn.info_cache = {}
+        has_conn.dialect_options = {}
+        assert dialect.has_table(has_conn, "users", schema="other") is False
+        assert dialect.has_index(has_conn, "users", "idx", schema="other") is False
+        has_conn.execute.assert_not_called()
 
     def test_get_view_definition_with_and_without_row(self):
         dialect = CubridDialect()
@@ -1103,3 +1204,126 @@ class TestDisconnectMessages:
 
     def test_disconnect_messages_not_empty(self):
         assert len(CubridDialect._disconnect_messages) > 0
+
+
+class TestSchemaGuard:
+    """Schema-argument handling is consistent across reflection methods.
+
+    CUBRID exposes a single effective schema per connection.  Object-detail
+    methods must raise :class:`NoSuchTableError` for a non-default schema;
+    list/existence methods must return empty/false; ``schema=None`` and the
+    default schema are always accepted.
+    """
+
+    DETAIL_METHODS = [
+        "get_columns",
+        "get_pk_constraint",
+        "get_foreign_keys",
+        "get_indexes",
+        "get_unique_constraints",
+        "get_table_comment",
+    ]
+
+    def _dialect(self) -> CubridDialect:
+        dialect = CubridDialect()
+        dialect.default_schema_name = "dba"
+        return dialect
+
+    @pytest.mark.parametrize("method_name", DETAIL_METHODS)
+    def test_detail_methods_raise_for_non_default_schema(self, method_name: str) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        method = getattr(dialect, method_name)
+        with pytest.raises(NoSuchTableError):
+            method(connection, "t", schema="other")
+        connection.execute.assert_not_called()
+
+    def test_get_view_definition_raises_for_non_default_schema(self) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        with pytest.raises(NoSuchTableError):
+            dialect.get_view_definition(connection, "v", schema="other")
+        connection.execute.assert_not_called()
+
+    def test_list_methods_return_empty_for_non_default_schema(self) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        assert dialect.get_table_names(connection, schema="other") == []
+        assert dialect.get_view_names(connection, schema="other") == []
+        connection.execute.assert_not_called()
+
+    def test_existence_methods_return_false_for_non_default_schema(self) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        assert dialect.has_table(connection, "t", schema="other") is False
+        assert dialect.has_index(connection, "t", "ix", schema="other") is False
+        connection.execute.assert_not_called()
+
+    def test_schema_is_default(self) -> None:
+        dialect = self._dialect()
+        assert dialect._schema_is_default(None) is True
+        assert dialect._schema_is_default("dba") is True
+        assert dialect._schema_is_default("other") is False
+
+    def test_raise_if_non_default_schema_allows_default(self) -> None:
+        dialect = self._dialect()
+        dialect._raise_if_non_default_schema(None, "t")
+        dialect._raise_if_non_default_schema("dba", "t")
+
+    def test_raise_if_non_default_schema_raises_qualified(self) -> None:
+        dialect = self._dialect()
+        with pytest.raises(NoSuchTableError):
+            dialect._raise_if_non_default_schema("other", "t")
+
+
+class TestSchemaNameNormalization:
+    """``_schema_is_default`` compares schema names case-insensitively (#292).
+
+    CUBRID reports catalog names uppercased while SQLAlchemy works in lower
+    case, so the guard must normalize both sides.  Explicitly-quoted names
+    (``quoted_name`` with ``quote=True``) remain case-sensitive.
+    """
+
+    def _dialect(self, default_schema: str | quoted_name | None) -> CubridDialect:
+        dialect = CubridDialect()
+        dialect.default_schema_name = default_schema  # type: ignore[assignment]
+        return dialect
+
+    def test_lowercase_schema_matches_uppercase_default(self) -> None:
+        dialect = self._dialect("DBA")
+        assert dialect._schema_is_default("dba") is True
+
+    def test_uppercase_schema_matches_lowercase_default(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default("DBA") is True
+
+    def test_exact_match_still_accepted(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default("dba") is True
+
+    def test_none_schema_always_accepted(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default(None) is True
+
+    def test_non_matching_schema_rejected(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default("other") is False
+
+    def test_none_default_rejects_non_none_schema(self) -> None:
+        dialect = self._dialect(None)
+        assert dialect._schema_is_default("dba") is False
+        assert dialect._schema_is_default(None) is True
+
+    def test_explicitly_quoted_schema_is_case_sensitive(self) -> None:
+        dialect = self._dialect("dba")
+        quoted = quoted_name("DBA", quote=True)
+        assert dialect._schema_is_default(quoted) is False
+
+    def test_explicitly_quoted_default_is_case_sensitive(self) -> None:
+        dialect = self._dialect(quoted_name("dba", quote=True))
+        assert dialect._schema_is_default("DBA") is False
+
+    def test_explicitly_quoted_exact_match_accepted(self) -> None:
+        dialect = self._dialect("dba")
+        quoted = quoted_name("dba", quote=True)
+        assert dialect._schema_is_default(quoted) is True

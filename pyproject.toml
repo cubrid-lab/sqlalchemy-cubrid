@@ -43,8 +43,8 @@ dev = [
     "pytest>=7.0",
     "pytest-cov",
     "pytest-asyncio",
-    "ruff==0.15.21",
-    "mypy==2.3.0",
+    "ruff==0.16.4",
+    "mypy==2.3.1",
     "bandit[toml]==1.9.4",
     "pre-commit",
     "tox",
@@ -60,7 +60,7 @@ pycubrid = [
 [project.urls]
 Homepage = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
 Repository = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
-Documentation = "https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/docs"
+Documentation = "https://cubrid-lab.github.io/sqlalchemy-cubrid/"
 Changelog = "https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md"
 Issues = "https://github.com/cubrid-lab/sqlalchemy-cubrid/issues"
 
@@ -83,6 +83,14 @@ version = {attr = "sqlalchemy_cubrid.__version__"}
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+# Pin the rule set explicitly instead of inheriting ruff's implicit defaults.
+# Ruff expanded its default selection in 0.16 (59 -> 413 rules against this
+# config), which turns every routine ruff bump into a CI-breaking change
+# unrelated to our own code. These four groups are exactly what ruff selected
+# by default through 0.15.x.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["sqlalchemy_cubrid"]

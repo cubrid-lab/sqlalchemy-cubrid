@@ -205,6 +205,16 @@ SELECT X
 
 The returned numeric value is mapped back to a descriptive string.
 
+> **Note — canonical names on read-back.** `get_isolation_level()` returns the
+> **canonical** name for a level, which may differ from the alias you passed to
+> `set_isolation_level()`. CUBRID accepts several aliases that map to the same
+> numeric level (see [Accepted Level Names](#accepted-level-names)) — for
+> example both `"REPEATABLE READ"` and `"REPEATABLE READ SCHEMA, REPEATABLE READ
+> INSTANCES"` map to level 5 — but reading the level resolves the numeric code
+> back through a single canonical entry. A `set` → `get` round-trip therefore
+> returns the canonical name (e.g. `"REPEATABLE READ"`), not necessarily the
+> exact string you supplied.
+
 ### Reset on Connection Return
 
 When a connection is returned to the pool, the dialect resets isolation to level 4 (`READ COMMITTED`) to ensure a clean state for the next checkout.

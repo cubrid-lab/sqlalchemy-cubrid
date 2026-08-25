@@ -254,6 +254,14 @@ The dialect translates automatically in `create_connect_args()`.
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 
+## Documentation definition of done
+
+Any change that affects public behavior, compatibility, installation, configuration, APIs, supported versions, error handling, or SQL/dialect behavior MUST update the matching documentation in the **same PR**. At minimum keep in sync: `CHANGELOG.md`, the relevant files under `docs/` (e.g. `FEATURE_SUPPORT.md`, `ISOLATION_LEVELS.md`, `TYPES.md`), the `SUPPORT_MATRIX.md`, and version/compatibility claims in `README*`.
+
+If no documentation change is needed, state the reason explicitly in the PR body as `Docs: not needed - <reason>` or apply the `docs-not-needed` label. This is enforced by the `docs-sync` CI check.
+
+Do not mark work complete until code, tests, and documentation are consistent.
+
 ## Commit Convention
 
 ### Format

@@ -14,6 +14,7 @@ import re
 from typing import Any, Callable, Optional, Sequence, cast
 
 from sqlalchemy import types as sqltypes
+from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
     DBAPIConnection,
@@ -30,6 +31,7 @@ from sqlalchemy.engine.interfaces import (
 from sqlalchemy_cubrid._compat import DBAPIModule
 from sqlalchemy.engine.url import URL
 from sqlalchemy.sql import text
+from sqlalchemy.sql.elements import quoted_name
 from sqlalchemy.sql.compiler import IdentifierPreparer
 from sqlalchemy.sql.compiler import InsertmanyvaluesSentinelOpts
 
@@ -82,6 +84,16 @@ log = logging.getLogger(__name__)
 _RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
 _RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*\((.+)\)$", re.IGNORECASE)
 _RE_LENGTH = re.compile(r"\((\d+)\)")
+
+
+def _is_explicitly_quoted_name(value: object) -> bool:
+    """Return whether *value* is a name the user forced to be case-sensitive.
+
+    A :class:`~sqlalchemy.sql.elements.quoted_name` with ``quote is True`` was
+    explicitly quoted by the user, so its case is significant and must not be
+    normalized away when comparing schema names.
+    """
+    return isinstance(value, quoted_name) and value.quote is True
 
 
 def _split_collection_members(inner: str) -> list[str]:
@@ -280,9 +292,11 @@ class CubridDialect(default.DefaultDialect):
             import CUBRIDdb as cubrid_dbapi  # type: ignore[import-not-found]  # pyright: ignore[reportMissingImports]
         except ImportError as e:
             raise ImportError(
-                "Could not import CUBRIDdb. Install 'CUBRID-Python' for "
-                "cubrid:// URLs, or use cubrid+pycubrid:// with 'pycubrid': "
-                "pip install CUBRID-Python"
+                "Could not import CUBRIDdb. The bare cubrid:// URL uses the "
+                "legacy CUBRID-Python C-extension driver. Either install it "
+                "(pip install CUBRID-Python), or switch to the maintained "
+                "pure-Python driver with a cubrid+pycubrid:// URL "
+                '(pip install "sqlalchemy-cubrid[pycubrid]").'
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
 
@@ -333,6 +347,8 @@ class CubridDialect(default.DefaultDialect):
 
         Uses ``SHOW COLUMNS IN <table>`` which is available since CUBRID 9.x.
         """
+        self._raise_if_non_default_schema(schema, table_name)
+
         columns: list[ReflectedColumn] = []
         quoted = self.identifier_preparer.quote_identifier(table_name)
         result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
@@ -440,6 +456,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> ReflectedPrimaryKeyConstraint:
         """Return the primary key constraint for *table_name*."""
+        self._raise_if_non_default_schema(schema, table_name)
+
         constraint_name = None
         constrained_columns: list[str] = []
 
@@ -486,6 +504,8 @@ class CubridDialect(default.DefaultDialect):
         output of ``SHOW CREATE TABLE`` is the only reliable source.
         See cubrid-lab/sqlalchemy-cubrid#120.
         """
+        self._raise_if_non_default_schema(schema, table_name)
+
         return self._get_foreign_keys_from_ddl(connection, table_name, schema)
 
     def _get_foreign_keys_from_ddl(
@@ -552,7 +572,7 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> list[str]:
         """Return a list of table names for *schema*."""
-        if schema is not None:
+        if not self._schema_is_default(schema):
             return []
         result = connection.execute(
             text(
@@ -570,6 +590,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> list[str]:
         """Return a list of view names."""
+        if not self._schema_is_default(schema):
+            return []
         result = connection.execute(
             text("SELECT class_name FROM db_class WHERE class_type = 'VCLASS'")
         )
@@ -580,6 +602,8 @@ class CubridDialect(default.DefaultDialect):
         self, connection: Any, view_name: str, schema: str | None = None, **kw: Any
     ) -> str:
         """Return the CREATE VIEW definition."""
+        self._raise_if_non_default_schema(schema, view_name)
+
         quoted = self.identifier_preparer.quote_identifier(view_name)
         result = connection.execute(text(f"SHOW CREATE VIEW {quoted}"))
         row = result.fetchone()
@@ -596,6 +620,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> list[ReflectedIndex]:
         """Return index information for *table_name*."""
+        self._raise_if_non_default_schema(schema, table_name)
+
         idict: dict[str, ReflectedIndex] = {}
 
         # Batch-fetch primary-key and foreign-key flags for all indexes on
@@ -665,6 +691,8 @@ class CubridDialect(default.DefaultDialect):
         names via ``SHOW INDEXES``. Fallback: parse ``SHOW CREATE TABLE``
         DDL output via regex.
         """
+        self._raise_if_non_default_schema(schema, table_name)
+
         # Primary path: system catalog + SHOW INDEXES
         try:
             uqs = self._get_unique_constraints_from_catalog(connection, table_name)
@@ -775,6 +803,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> ReflectedTableComment:
         """Return table comment from CUBRID system catalog."""
+        self._raise_if_non_default_schema(schema, table_name)
+
         result = connection.execute(
             text("SELECT comment FROM db_class WHERE class_name = :name"),
             {"name": table_name},
@@ -783,8 +813,67 @@ class CubridDialect(default.DefaultDialect):
         return {"text": row[0] if row and row[0] else None}
 
     def get_schema_names(self, connection: Any, **kw: Any) -> list[str]:
-        """Return schema names.  CUBRID does not support schemas."""
-        return []
+        """Return the schema names visible to this connection.
+
+        CUBRID exposes a single effective schema per connection (the current
+        user's schema, as reported by ``SELECT SCHEMA()``; see
+        :meth:`_get_default_schema_name`).  This dialect therefore operates in a
+        consistent single-schema mode: the only schema name it recognises is the
+        default one.  Returning ``[default_schema_name]`` (rather than the empty
+        list it historically returned) keeps this method consistent with
+        :meth:`_get_default_schema_name` and makes Alembic autogenerate with
+        ``include_schemas=True`` usable.
+
+        Owner-qualified cross-schema reflection is intentionally *not* attempted
+        here; every reflection method applies the same single-schema policy via
+        :meth:`_schema_is_default`.
+        """
+        if self.default_schema_name is None:
+            return []
+        return [self.default_schema_name]
+
+    def _schema_is_default(self, schema: str | None) -> bool:
+        """Return whether *schema* refers to this connection's only schema.
+
+        ``schema is None`` means "the default schema" in SQLAlchemy, so it is
+        always accepted; a non-``None`` schema is accepted only when it matches
+        :attr:`default_schema_name`.  The comparison normalizes case via
+        :meth:`normalize_name` (CUBRID reports catalog names uppercased while
+        SQLAlchemy works in lower case), so ``schema="dba"`` matches a default
+        of ``"DBA"``.  Explicitly-quoted names (``quoted_name`` with
+        ``quote=True``) are compared case-sensitively, honouring the user's
+        intent to preserve case.  List/existence reflection methods
+        (:meth:`get_table_names`, :meth:`get_view_names`, :meth:`has_table`,
+        :meth:`has_index`) use this directly to return empty/false for a
+        non-default schema, while object-detail methods go through
+        :meth:`_raise_if_non_default_schema`.
+        """
+        if schema is None:
+            return True
+        default = self.default_schema_name
+        if default is None:
+            return False
+        if schema == default:
+            return True
+        # A name the user explicitly quoted is case-sensitive; do not normalize.
+        if _is_explicitly_quoted_name(schema) or _is_explicitly_quoted_name(default):
+            return False
+        return self.normalize_name(str(schema)) == self.normalize_name(str(default))
+
+    def _raise_if_non_default_schema(self, schema: str | None, object_name: str) -> None:
+        """Raise :class:`NoSuchTableError` if *schema* is not the default schema.
+
+        CUBRID exposes a single effective schema per connection, so an object
+        qualified with any non-default schema cannot exist.  Object-detail
+        reflection methods (columns, PK/FK/unique constraints, indexes, view
+        definition, table comment) call this to report the object as missing
+        rather than silently returning empty metadata (which would mask a real
+        "not found").  List/existence methods instead return empty/false via
+        :meth:`_schema_is_default` directly.
+        """
+        if not self._schema_is_default(schema):
+            qualified = f"{schema}.{object_name}" if schema else object_name
+            raise NoSuchTableError(qualified)
 
     def has_table(
         self,
@@ -794,6 +883,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> bool:
         """Check if *table_name* exists."""
+        if not self._schema_is_default(schema):
+            return False
         result = connection.execute(
             text(
                 "SELECT COUNT(*) FROM db_class "
@@ -814,6 +905,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> bool:
         """Check if an index named *index_name* exists on *table_name*."""
+        if not self._schema_is_default(schema):
+            return False
         try:
             result = connection.execute(
                 text(
@@ -864,9 +957,24 @@ class CubridDialect(default.DefaultDialect):
             return (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)))
         return None
 
-    def _get_default_schema_name(self, connection: Any) -> str:
-        """Return the default schema name."""
-        return str(connection.execute(text("SELECT SCHEMA()")).scalar())
+    def _get_default_schema_name(  # type: ignore[override]  # SQLAlchemy stub typing is inconsistent: Dialect.default_schema_name is Optional[str] but Dialect._get_default_schema_name() is annotated -> str; we must be able to return None.
+        self, connection: Any
+    ) -> Optional[str]:
+        """Return the default schema name, or ``None`` if unavailable.
+
+        CUBRID's ``SCHEMA()`` can return SQL ``NULL`` (surfaced as Python
+        ``None``) when the connection has no current schema.  We must return
+        ``None`` in that case rather than ``str(None)`` -> the literal string
+        ``"None"``, which would otherwise leak as a fake schema name through
+        :meth:`get_schema_names` and :meth:`_schema_is_default` (both of which
+        test the object against ``None``).  SQLAlchemy declares
+        :attr:`default_schema_name` as ``Optional[str]`` and
+        :meth:`DefaultDialect.initialize` already tolerates a ``None`` value.
+        """
+        schema = connection.execute(text("SELECT SCHEMA()")).scalar()
+        if schema is None:
+            return None
+        return str(schema)
 
     # ----- Isolation level -----
 
@@ -884,17 +992,38 @@ class CubridDialect(default.DefaultDialect):
         "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES": 1,
     }
 
+    # Canonical spelling returned per integer code. Multiple input aliases map
+    # to the same code (e.g. "READ COMMITTED" / "CURSOR STABILITY" / the long
+    # granular spelling all map to 4); get_isolation_level() returns the single
+    # canonical name below so that set -> get round-trips to the same code. The
+    # short standard names are used for 4/5/6 (the values users actually pass);
+    # levels 1-3 have no short name so the granular spelling is canonical. Every
+    # value here is also present in get_isolation_level_values().
     _ISOLATION_LEVEL_REVERSE: dict[int, str] = {
         6: "SERIALIZABLE",
-        5: "REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES",
-        4: "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES",
+        5: "REPEATABLE READ",
+        4: "READ COMMITTED",
         3: "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES",
         2: "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES",
         1: "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
     }
 
+    # CUBRID's default transaction isolation level (level 4 = READ COMMITTED).
+    _DEFAULT_ISOLATION_CODE: int = 4
+
     def get_isolation_level(self, dbapi_connection: DBAPIConnection) -> str:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
-        """Return the current isolation level for *dbapi_conn*."""
+        """Return the current isolation level for *dbapi_conn*.
+
+        The returned name is the **canonical** name for the level, which may
+        differ from the alias passed to :meth:`set_isolation_level`.  CUBRID's
+        ``_ISOLATION_LEVEL_MAP`` accepts several aliases per numeric level (for
+        example both ``"REPEATABLE READ"`` and
+        ``"REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES"`` map to code 5),
+        but ``get_isolation_level`` resolves the numeric code back through a
+        single canonical entry.  A ``set`` -> ``get`` round-trip therefore
+        returns the canonical name (e.g. ``"REPEATABLE READ"``), not
+        necessarily the exact string originally supplied.
+        """
         # https://www.cubrid.org/manual/en/11.0/sql/transaction.html
         cursor = dbapi_connection.cursor()
         try:
@@ -902,7 +1031,7 @@ class CubridDialect(default.DefaultDialect):
             cursor.execute("SELECT X")
             row = cursor.fetchone()
             if row is None:
-                return "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES"
+                return self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE]
             val = row[0]
         finally:
             cursor.close()
@@ -953,7 +1082,9 @@ class CubridDialect(default.DefaultDialect):
 
     def reset_isolation_level(self, dbapi_conn: DBAPIConnection) -> None:
         """Revert isolation level to the CUBRID default (level 4)."""
-        self.set_isolation_level(dbapi_conn, "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES")
+        self.set_isolation_level(
+            dbapi_conn, self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE]
+        )
 
     def do_release_savepoint(self, connection: Any, name: str) -> None:
         """CUBRID does not support RELEASE SAVEPOINT; no-op."""
