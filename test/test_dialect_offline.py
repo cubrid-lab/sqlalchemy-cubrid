@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy import types as sqltypes
 from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.engine import url
+from sqlalchemy.sql.elements import quoted_name
 
 from sqlalchemy_cubrid.dialect import CubridDialect
 from sqlalchemy_cubrid.dialect import _split_collection_members
@@ -1273,3 +1274,56 @@ class TestSchemaGuard:
         dialect = self._dialect()
         with pytest.raises(NoSuchTableError):
             dialect._raise_if_non_default_schema("other", "t")
+
+
+class TestSchemaNameNormalization:
+    """``_schema_is_default`` compares schema names case-insensitively (#292).
+
+    CUBRID reports catalog names uppercased while SQLAlchemy works in lower
+    case, so the guard must normalize both sides.  Explicitly-quoted names
+    (``quoted_name`` with ``quote=True``) remain case-sensitive.
+    """
+
+    def _dialect(self, default_schema: str | quoted_name | None) -> CubridDialect:
+        dialect = CubridDialect()
+        dialect.default_schema_name = default_schema  # type: ignore[assignment]
+        return dialect
+
+    def test_lowercase_schema_matches_uppercase_default(self) -> None:
+        dialect = self._dialect("DBA")
+        assert dialect._schema_is_default("dba") is True
+
+    def test_uppercase_schema_matches_lowercase_default(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default("DBA") is True
+
+    def test_exact_match_still_accepted(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default("dba") is True
+
+    def test_none_schema_always_accepted(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default(None) is True
+
+    def test_non_matching_schema_rejected(self) -> None:
+        dialect = self._dialect("dba")
+        assert dialect._schema_is_default("other") is False
+
+    def test_none_default_rejects_non_none_schema(self) -> None:
+        dialect = self._dialect(None)
+        assert dialect._schema_is_default("dba") is False
+        assert dialect._schema_is_default(None) is True
+
+    def test_explicitly_quoted_schema_is_case_sensitive(self) -> None:
+        dialect = self._dialect("dba")
+        quoted = quoted_name("DBA", quote=True)
+        assert dialect._schema_is_default(quoted) is False
+
+    def test_explicitly_quoted_default_is_case_sensitive(self) -> None:
+        dialect = self._dialect(quoted_name("dba", quote=True))
+        assert dialect._schema_is_default("DBA") is False
+
+    def test_explicitly_quoted_exact_match_accepted(self) -> None:
+        dialect = self._dialect("dba")
+        quoted = quoted_name("dba", quote=True)
+        assert dialect._schema_is_default(quoted) is True
