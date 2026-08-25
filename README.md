@@ -88,6 +88,18 @@ With Alembic support:
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
+With the legacy CUBRID-Python C-extension driver (requires a C build toolchain):
+
+```bash
+pip install "sqlalchemy-cubrid[cubrid]"
+```
+
+> The `[cubrid]` extra installs the legacy [CUBRID-Python](https://github.com/CUBRID/cubrid-python)
+> C-extension driver, used by the bare `cubrid://` URL. Prefer the pure-Python
+> `[pycubrid]` driver (the `cubrid+pycubrid://` URL) unless you specifically need
+> the C-extension — it installs with pip alone, needs no build tools, and is the
+> default/recommended driver for this dialect.
+
 ## Quick Start
 
 ### Core (Connection-Level)
