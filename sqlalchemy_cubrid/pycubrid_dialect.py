@@ -71,6 +71,17 @@ class PyCubridDialect(CubridDialect):
     @classmethod
     def import_dbapi(cls) -> DBAPIModule:
         """Import and return the pycubrid DBAPI module."""
+        try:
+            dbapi_module = import_module("pycubrid")
+        except ImportError as exc:  # pragma: no cover - exercised via message
+            raise ImportError(
+                "The bare 'cubrid://' URL uses the pure-Python pycubrid driver "
+                "(since sqlalchemy-cubrid 2.0), but pycubrid is not installed. "
+                "Install it with 'pip install sqlalchemy-cubrid[cubrid]' or "
+                "'pip install sqlalchemy-cubrid[pycubrid]', or use the "
+                "'cubrid+cubriddb://' URL (with the [cubriddb] extra) for the "
+                "legacy CUBRIDdb C-extension driver."
+            ) from exc
         dbapi_module = import_module("pycubrid")
         log.debug("Loaded pycubrid DBAPI (version %s)", getattr(dbapi_module, "__version__", "?"))
         return cast(DBAPIModule, dbapi_module)  # pyright: ignore[reportInvalidCast]

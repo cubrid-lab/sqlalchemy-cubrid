@@ -113,16 +113,19 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 ## Entry Points
 
-The dialect registers three SQLAlchemy entry points:
+The dialect registers these SQLAlchemy entry points:
 
 | URL Scheme           | Driver      | Description                          |
 |----------------------|-------------|--------------------------------------|
-| `cubrid://`          | CUBRIDdb    | Default C-extension driver           |
-| `cubrid+cubrid://`   | CUBRIDdb    | Explicit C-extension driver          |
+| `cubrid://`          | pycubrid    | Default pure Python driver (since 2.0) |
+| `cubrid+cubrid://`   | CUBRIDdb    | Explicit legacy C-extension driver   |
+| `cubrid+cubriddb://` | CUBRIDdb    | Explicit legacy C-extension driver   |
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no C build)      |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-Use `cubrid://` for the C-extension driver (best performance), or `cubrid+pycubrid://` for the pure Python driver (easiest installation, no native build step).
+Use `cubrid://` (or `cubrid+pycubrid://`) for the pure Python driver (easiest installation, no native build step). Use `cubrid+cubriddb://` with the `[cubriddb]` extra for the legacy C-extension driver.
+
+> **Default changed in 2.0:** the bare `cubrid://` URL now binds the pure-Python `pycubrid` driver. In 1.x it bound the legacy CUBRIDdb C-extension and emitted a `DeprecationWarning`. To keep CUBRIDdb, use the explicit `cubrid+cubriddb://` URL.
 ---
 
 ## Async Connection

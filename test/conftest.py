@@ -12,8 +12,9 @@ import sys
 if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
     from sqlalchemy.dialects import registry
 
-    registry.register("cubrid", "sqlalchemy_cubrid.dialect", "CubridDialect")
+    registry.register("cubrid", "sqlalchemy_cubrid.pycubrid_dialect", "PyCubridDialect")
     registry.register("cubrid.cubrid", "sqlalchemy_cubrid.dialect", "CubridDialect")
+    registry.register("cubrid.cubriddb", "sqlalchemy_cubrid.dialect", "CubridDialect")
     registry.register("cubrid.pycubrid", "sqlalchemy_cubrid.pycubrid_dialect", "PyCubridDialect")
 
     import pytest

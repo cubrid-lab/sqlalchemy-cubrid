@@ -36,8 +36,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# In 2.0 the [cubrid] extra installs the pure-Python pycubrid driver (was
+# CUBRID-Python in 1.x), matching the bare cubrid:// URL default flip. Use the
+# [cubriddb] extra + cubrid+cubriddb:// URL to keep the legacy C-extension.
 cubrid = [
-    "CUBRID-Python",
+    "pycubrid>=1.3.2,<2.0",
 ]
 cubriddb = [
     "CUBRID-Python",
@@ -68,7 +71,7 @@ Changelog = "https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG
 Issues = "https://github.com/cubrid-lab/sqlalchemy-cubrid/issues"
 
 [project.entry-points."sqlalchemy.dialects"]
-cubrid = "sqlalchemy_cubrid.dialect:_DeprecatedDefaultCubridDialect"
+cubrid = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.cubrid" = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.cubriddb" = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
