@@ -900,9 +900,24 @@ class CubridDialect(default.DefaultDialect):
             return (int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4)))
         return None
 
-    def _get_default_schema_name(self, connection: Any) -> str:
-        """Return the default schema name."""
-        return str(connection.execute(text("SELECT SCHEMA()")).scalar())
+    def _get_default_schema_name(  # type: ignore[override]  # SQLAlchemy stub typing is inconsistent: Dialect.default_schema_name is Optional[str] but Dialect._get_default_schema_name() is annotated -> str; we must be able to return None.
+        self, connection: Any
+    ) -> Optional[str]:
+        """Return the default schema name, or ``None`` if unavailable.
+
+        CUBRID's ``SCHEMA()`` can return SQL ``NULL`` (surfaced as Python
+        ``None``) when the connection has no current schema.  We must return
+        ``None`` in that case rather than ``str(None)`` -> the literal string
+        ``"None"``, which would otherwise leak as a fake schema name through
+        :meth:`get_schema_names` and :meth:`_schema_is_default` (both of which
+        test the object against ``None``).  SQLAlchemy declares
+        :attr:`default_schema_name` as ``Optional[str]`` and
+        :meth:`DefaultDialect.initialize` already tolerates a ``None`` value.
+        """
+        schema = connection.execute(text("SELECT SCHEMA()")).scalar()
+        if schema is None:
+            return None
+        return str(schema)
 
     # ----- Isolation level -----
 

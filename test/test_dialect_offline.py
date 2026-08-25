@@ -149,6 +149,29 @@ class TestDialectBasics:
 
         assert dialect._get_default_schema_name(connection) == "dba"
 
+    def test_get_default_schema_name_null_returns_none(self):
+        """SCHEMA() returning SQL NULL must yield None, not the string 'None'."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.execute.return_value.scalar.return_value = None
+
+        assert dialect._get_default_schema_name(connection) is None
+
+    def test_get_schema_names_empty_when_default_is_none(self):
+        """With no default schema, get_schema_names() returns [] (not ['None'])."""
+        dialect = CubridDialect()
+        dialect.default_schema_name = None
+        connection = MagicMock()
+
+        assert dialect.get_schema_names(connection) == []
+
+    def test_get_schema_names_returns_default(self):
+        dialect = CubridDialect()
+        dialect.default_schema_name = "dba"
+        connection = MagicMock()
+
+        assert dialect.get_schema_names(connection) == ["dba"]
+
     def test_initialize_delegates_to_default_dialect(self):
         dialect = CubridDialect()
         connection = MagicMock()
