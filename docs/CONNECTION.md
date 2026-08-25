@@ -25,33 +25,17 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | Latest          |
+| CUBRID Python Driver | pycubrid (recommended) or CUBRID-Python (legacy) |
 
 ---
 
 ## Installing the CUBRID Python Driver
 
-The dialect requires the [CUBRID-Python](https://github.com/CUBRID/cubrid-python) driver:
+### Recommended: Pure Python Driver (pycubrid)
 
-```bash
-pip install CUBRID-Python
-```
-
-Or install both the dialect and driver together:
-
-```bash
-pip install sqlalchemy-cubrid
-pip install CUBRID-Python
-```
-
-> **Note**: `CUBRID-Python` is a C-extension driver. On some platforms you may need
-> the CUBRID CCI library installed. See the
-> [CUBRID Python driver documentation](https://www.cubrid.org/manual/en/11.0/api/python.html)
-> for platform-specific instructions.
-
-### Alternative: Pure Python Driver (pycubrid)
-
-If you prefer a pure Python driver with no C build dependencies:
+For new projects, use the pure-Python [pycubrid](https://github.com/cubrid-lab/pycubrid)
+driver — it installs with pip alone, needs no C build toolchain, and works anywhere
+Python runs:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
@@ -71,6 +55,27 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 > **Tip**: `pycubrid` is a pure Python implementation — it works anywhere Python runs,
 > with no native library dependencies. See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
+
+### Legacy: C-extension Driver (CUBRID-Python)
+
+The legacy [CUBRID-Python](https://github.com/CUBRID/cubrid-python) C-extension driver
+is the driver bound to the bare `cubrid://` URL. Install it via the `[cubriddb]` extra
+and select it explicitly with the `cubrid+cubriddb://` URL scheme:
+
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"
+```
+
+Or install the driver directly:
+
+```bash
+pip install sqlalchemy-cubrid CUBRID-Python
+```
+
+> **Note**: `CUBRID-Python` is a C-extension driver. On some platforms you may need
+> the CUBRID CCI library installed. See the
+> [CUBRID Python driver documentation](https://www.cubrid.org/manual/en/11.0/api/python.html)
+> for platform-specific instructions.
 ---
 
 ## Connection String Format
@@ -452,7 +457,7 @@ engine = create_engine(
 flowchart TD
     input[SQLAlchemy URL string] --> parse[SQLAlchemy URL parser]
     parse --> check{Driver name}
-    check -->|cubrid or cubrid+cubrid| cext[Build CUBRID native DSN]
+    check -->|cubrid or cubrid+cubrid or cubrid+cubriddb| cext[Build CUBRID native DSN]
     check -->|cubrid+pycubrid| pykw[Build pycubrid kwargs]
     check -->|cubrid+aiopycubrid| aio[Build pycubrid.aio kwargs]
     cext --> connect1["CUBRIDdb.connect(url, user, password)"]
