@@ -14,6 +14,7 @@ import re
 from typing import Any, Callable, Optional, Sequence, cast
 
 from sqlalchemy import types as sqltypes
+from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
     DBAPIConnection,
@@ -335,6 +336,8 @@ class CubridDialect(default.DefaultDialect):
 
         Uses ``SHOW COLUMNS IN <table>`` which is available since CUBRID 9.x.
         """
+        self._raise_if_non_default_schema(schema, table_name)
+
         columns: list[ReflectedColumn] = []
         quoted = self.identifier_preparer.quote_identifier(table_name)
         result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
@@ -442,6 +445,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> ReflectedPrimaryKeyConstraint:
         """Return the primary key constraint for *table_name*."""
+        self._raise_if_non_default_schema(schema, table_name)
+
         constraint_name = None
         constrained_columns: list[str] = []
 
@@ -488,6 +493,8 @@ class CubridDialect(default.DefaultDialect):
         output of ``SHOW CREATE TABLE`` is the only reliable source.
         See cubrid-lab/sqlalchemy-cubrid#120.
         """
+        self._raise_if_non_default_schema(schema, table_name)
+
         return self._get_foreign_keys_from_ddl(connection, table_name, schema)
 
     def _get_foreign_keys_from_ddl(
@@ -584,6 +591,8 @@ class CubridDialect(default.DefaultDialect):
         self, connection: Any, view_name: str, schema: str | None = None, **kw: Any
     ) -> str:
         """Return the CREATE VIEW definition."""
+        self._raise_if_non_default_schema(schema, view_name)
+
         quoted = self.identifier_preparer.quote_identifier(view_name)
         result = connection.execute(text(f"SHOW CREATE VIEW {quoted}"))
         row = result.fetchone()
@@ -600,6 +609,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> list[ReflectedIndex]:
         """Return index information for *table_name*."""
+        self._raise_if_non_default_schema(schema, table_name)
+
         idict: dict[str, ReflectedIndex] = {}
 
         # Batch-fetch primary-key and foreign-key flags for all indexes on
@@ -669,6 +680,8 @@ class CubridDialect(default.DefaultDialect):
         names via ``SHOW INDEXES``. Fallback: parse ``SHOW CREATE TABLE``
         DDL output via regex.
         """
+        self._raise_if_non_default_schema(schema, table_name)
+
         # Primary path: system catalog + SHOW INDEXES
         try:
             uqs = self._get_unique_constraints_from_catalog(connection, table_name)
@@ -779,6 +792,8 @@ class CubridDialect(default.DefaultDialect):
         **kw: Any,
     ) -> ReflectedTableComment:
         """Return table comment from CUBRID system catalog."""
+        self._raise_if_non_default_schema(schema, table_name)
+
         result = connection.execute(
             text("SELECT comment FROM db_class WHERE class_name = :name"),
             {"name": table_name},
@@ -810,13 +825,29 @@ class CubridDialect(default.DefaultDialect):
         """Return whether *schema* refers to this connection's only schema.
 
         ``schema is None`` means "the default schema" in SQLAlchemy, so it is
-        always accepted.  A non-``None`` schema is accepted only when it matches
-        :attr:`default_schema_name`.  Every list/existence reflection method uses
-        this so that ``schema=`` is honoured uniformly instead of some methods
-        silently ignoring it (which previously produced, e.g., 0 tables but all
-        views for ``MetaData.reflect(schema=...)``).
+        always accepted; a non-``None`` schema is accepted only when it matches
+        :attr:`default_schema_name`.  List/existence reflection methods
+        (:meth:`get_table_names`, :meth:`get_view_names`, :meth:`has_table`,
+        :meth:`has_index`) use this directly to return empty/false for a
+        non-default schema, while object-detail methods go through
+        :meth:`_raise_if_non_default_schema`.
         """
         return schema is None or schema == self.default_schema_name
+
+    def _raise_if_non_default_schema(self, schema: str | None, object_name: str) -> None:
+        """Raise :class:`NoSuchTableError` if *schema* is not the default schema.
+
+        CUBRID exposes a single effective schema per connection, so an object
+        qualified with any non-default schema cannot exist.  Object-detail
+        reflection methods (columns, PK/FK/unique constraints, indexes, view
+        definition, table comment) call this to report the object as missing
+        rather than silently returning empty metadata (which would mask a real
+        "not found").  List/existence methods instead return empty/false via
+        :meth:`_schema_is_default` directly.
+        """
+        if not self._schema_is_default(schema):
+            qualified = f"{schema}.{object_name}" if schema else object_name
+            raise NoSuchTableError(qualified)
 
     def has_table(
         self,
