@@ -31,6 +31,7 @@ from sqlalchemy.engine.interfaces import (
 from sqlalchemy_cubrid._compat import DBAPIModule
 from sqlalchemy.engine.url import URL
 from sqlalchemy.sql import text
+from sqlalchemy.sql.elements import quoted_name
 from sqlalchemy.sql.compiler import IdentifierPreparer
 from sqlalchemy.sql.compiler import InsertmanyvaluesSentinelOpts
 
@@ -83,6 +84,16 @@ log = logging.getLogger(__name__)
 _RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
 _RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*\((.+)\)$", re.IGNORECASE)
 _RE_LENGTH = re.compile(r"\((\d+)\)")
+
+
+def _is_explicitly_quoted_name(value: object) -> bool:
+    """Return whether *value* is a name the user forced to be case-sensitive.
+
+    A :class:`~sqlalchemy.sql.elements.quoted_name` with ``quote is True`` was
+    explicitly quoted by the user, so its case is significant and must not be
+    normalized away when comparing schema names.
+    """
+    return isinstance(value, quoted_name) and value.quote is True
 
 
 def _split_collection_members(inner: str) -> list[str]:
@@ -826,13 +837,28 @@ class CubridDialect(default.DefaultDialect):
 
         ``schema is None`` means "the default schema" in SQLAlchemy, so it is
         always accepted; a non-``None`` schema is accepted only when it matches
-        :attr:`default_schema_name`.  List/existence reflection methods
+        :attr:`default_schema_name`.  The comparison normalizes case via
+        :meth:`normalize_name` (CUBRID reports catalog names uppercased while
+        SQLAlchemy works in lower case), so ``schema="dba"`` matches a default
+        of ``"DBA"``.  Explicitly-quoted names (``quoted_name`` with
+        ``quote=True``) are compared case-sensitively, honouring the user's
+        intent to preserve case.  List/existence reflection methods
         (:meth:`get_table_names`, :meth:`get_view_names`, :meth:`has_table`,
         :meth:`has_index`) use this directly to return empty/false for a
         non-default schema, while object-detail methods go through
         :meth:`_raise_if_non_default_schema`.
         """
-        return schema is None or schema == self.default_schema_name
+        if schema is None:
+            return True
+        default = self.default_schema_name
+        if default is None:
+            return False
+        if schema == default:
+            return True
+        # A name the user explicitly quoted is case-sensitive; do not normalize.
+        if _is_explicitly_quoted_name(schema) or _is_explicitly_quoted_name(default):
+            return False
+        return self.normalize_name(str(schema)) == self.normalize_name(str(default))
 
     def _raise_if_non_default_schema(self, schema: str | None, object_name: str) -> None:
         """Raise :class:`NoSuchTableError` if *schema* is not the default schema.
