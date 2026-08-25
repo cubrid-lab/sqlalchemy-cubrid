@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 - **Documented canonical isolation-level names on read-back (#293)** — clarified that `get_isolation_level()` returns the *canonical* name for a level, which may differ from the alias passed to `set_isolation_level()` (CUBRID accepts several aliases per numeric level). Added a note to `docs/ISOLATION_LEVELS.md` and the `get_isolation_level()` docstring. Behavior is unchanged; the reverse mapping was already correct.
+- **Aligned the `Documentation` project URL with the README docs badge (#294)** — `pyproject.toml` pointed `Documentation` at the repo tree (`.../tree/main/docs`) while the README badge pointed at the published site `https://cubrid-lab.github.io/sqlalchemy-cubrid/`. Both now use the published site so PyPI metadata and the README agree.
 ### Changed
 - **Ruff lint rule selection now declared explicitly (#271)** — `pyproject.toml` configured ruff but never set `[tool.ruff.lint] select`, so `ruff check` inherited ruff's implicit defaults. Ruff expanded that default set in 0.16 (59 → 413 rules against this repo's config), which is why #267 (`0.15.21 → 0.16.2`) failed lint with 151 errors in untouched code. Pinning the ruff *version* in #252 stopped unpinned installs from drifting, but could not survive the bump itself — the rule set is now pinned too, via `select = ["E4", "E7", "E9", "F"]`, which is exactly what ruff selected by default through 0.15.x (same 59 rules under both versions).
 
