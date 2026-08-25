@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import re
-import warnings
 
 from typing import Any, Callable, Optional, Sequence, cast
 
@@ -1180,37 +1179,6 @@ class CubridDialect(default.DefaultDialect):
             return True
         except Exception:
             return False
-
-
-class _DeprecatedDefaultCubridDialect(CubridDialect):
-    """Bare ``cubrid://`` dialect that warns about the upcoming 2.0 driver flip.
-
-    In sqlalchemy-cubrid 1.x the bare ``cubrid://`` URL uses the legacy CUBRIDdb
-    C-extension driver.  In sqlalchemy-cubrid **2.0** the bare ``cubrid://`` URL
-    will default to the pure-Python ``pycubrid`` driver instead.  This subclass
-    backs only the bare ``cubrid`` entry point and emits a
-    :class:`DeprecationWarning` so users can pin the driver explicitly before the
-    default changes:
-
-    * ``cubrid+cubriddb://`` — keep the legacy CUBRIDdb C-extension driver
-    * ``cubrid+pycubrid://`` — opt in to the pure-Python driver now
-
-    The explicit ``cubrid+cubriddb://``, ``cubrid+cubrid://`` and
-    ``cubrid+pycubrid://`` URLs (which resolve to :class:`CubridDialect` and
-    ``PyCubridDialect`` directly) do **not** warn.
-    """
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        warnings.warn(
-            "The bare cubrid:// URL currently uses the legacy CUBRIDdb "
-            "C-extension driver, but will default to the pure-Python pycubrid "
-            "driver in sqlalchemy-cubrid 2.0. Pin the driver explicitly to avoid "
-            "a breaking change: use cubrid+cubriddb:// to keep CUBRIDdb, or "
-            "cubrid+pycubrid:// to switch to the pure-Python driver now.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        super().__init__(*args, **kwargs)
 
 
 dialect = CubridDialect
