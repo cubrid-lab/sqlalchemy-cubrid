@@ -1012,7 +1012,18 @@ class CubridDialect(default.DefaultDialect):
     _DEFAULT_ISOLATION_CODE: int = 4
 
     def get_isolation_level(self, dbapi_connection: DBAPIConnection) -> str:  # type: ignore[override]  # pyright: ignore[reportIncompatibleMethodOverride]
-        """Return the current isolation level for *dbapi_conn*."""
+        """Return the current isolation level for *dbapi_conn*.
+
+        The returned name is the **canonical** name for the level, which may
+        differ from the alias passed to :meth:`set_isolation_level`.  CUBRID's
+        ``_ISOLATION_LEVEL_MAP`` accepts several aliases per numeric level (for
+        example both ``"REPEATABLE READ"`` and
+        ``"REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES"`` map to code 5),
+        but ``get_isolation_level`` resolves the numeric code back through a
+        single canonical entry.  A ``set`` -> ``get`` round-trip therefore
+        returns the canonical name (e.g. ``"REPEATABLE READ"``), not
+        necessarily the exact string originally supplied.
+        """
         # https://www.cubrid.org/manual/en/11.0/sql/transaction.html
         cursor = dbapi_connection.cursor()
         try:
