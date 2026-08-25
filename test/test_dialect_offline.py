@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
+from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.engine import url
 
 from sqlalchemy_cubrid.dialect import CubridDialect
@@ -522,6 +523,9 @@ class TestReflectionMethods:
 
     def test_get_foreign_keys_success_and_exception(self):
         dialect = CubridDialect()
+        # ``main`` is this connection's effective schema; passing it must not
+        # trip the non-default-schema guard (#291) while we verify FK parsing.
+        dialect.default_schema_name = "main"
 
         ddl = (
             "CREATE TABLE [orders] (\n"
@@ -1199,3 +1203,73 @@ class TestDisconnectMessages:
 
     def test_disconnect_messages_not_empty(self):
         assert len(CubridDialect._disconnect_messages) > 0
+
+
+class TestSchemaGuard:
+    """Schema-argument handling is consistent across reflection methods.
+
+    CUBRID exposes a single effective schema per connection.  Object-detail
+    methods must raise :class:`NoSuchTableError` for a non-default schema;
+    list/existence methods must return empty/false; ``schema=None`` and the
+    default schema are always accepted.
+    """
+
+    DETAIL_METHODS = [
+        "get_columns",
+        "get_pk_constraint",
+        "get_foreign_keys",
+        "get_indexes",
+        "get_unique_constraints",
+        "get_table_comment",
+    ]
+
+    def _dialect(self) -> CubridDialect:
+        dialect = CubridDialect()
+        dialect.default_schema_name = "dba"
+        return dialect
+
+    @pytest.mark.parametrize("method_name", DETAIL_METHODS)
+    def test_detail_methods_raise_for_non_default_schema(self, method_name: str) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        method = getattr(dialect, method_name)
+        with pytest.raises(NoSuchTableError):
+            method(connection, "t", schema="other")
+        connection.execute.assert_not_called()
+
+    def test_get_view_definition_raises_for_non_default_schema(self) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        with pytest.raises(NoSuchTableError):
+            dialect.get_view_definition(connection, "v", schema="other")
+        connection.execute.assert_not_called()
+
+    def test_list_methods_return_empty_for_non_default_schema(self) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        assert dialect.get_table_names(connection, schema="other") == []
+        assert dialect.get_view_names(connection, schema="other") == []
+        connection.execute.assert_not_called()
+
+    def test_existence_methods_return_false_for_non_default_schema(self) -> None:
+        dialect = self._dialect()
+        connection = MagicMock()
+        assert dialect.has_table(connection, "t", schema="other") is False
+        assert dialect.has_index(connection, "t", "ix", schema="other") is False
+        connection.execute.assert_not_called()
+
+    def test_schema_is_default(self) -> None:
+        dialect = self._dialect()
+        assert dialect._schema_is_default(None) is True
+        assert dialect._schema_is_default("dba") is True
+        assert dialect._schema_is_default("other") is False
+
+    def test_raise_if_non_default_schema_allows_default(self) -> None:
+        dialect = self._dialect()
+        dialect._raise_if_non_default_schema(None, "t")
+        dialect._raise_if_non_default_schema("dba", "t")
+
+    def test_raise_if_non_default_schema_raises_qualified(self) -> None:
+        dialect = self._dialect()
+        with pytest.raises(NoSuchTableError):
+            dialect._raise_if_non_default_schema("other", "t")
