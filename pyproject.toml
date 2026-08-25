@@ -43,8 +43,8 @@ dev = [
     "pytest>=7.0",
     "pytest-cov",
     "pytest-asyncio",
-    "ruff==0.15.21",
-    "mypy==2.3.0",
+    "ruff==0.16.4",
+    "mypy==2.3.1",
     "bandit[toml]==1.9.4",
     "pre-commit",
     "tox",
@@ -60,7 +60,7 @@ pycubrid = [
 [project.urls]
 Homepage = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
 Repository = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
-Documentation = "https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/docs"
+Documentation = "https://cubrid-lab.github.io/sqlalchemy-cubrid/"
 Changelog = "https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md"
 Issues = "https://github.com/cubrid-lab/sqlalchemy-cubrid/issues"
 

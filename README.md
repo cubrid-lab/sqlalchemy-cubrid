@@ -88,6 +88,18 @@ With Alembic support:
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
+With the legacy CUBRID-Python C-extension driver (requires a C build toolchain):
+
+```bash
+pip install "sqlalchemy-cubrid[cubrid]"
+```
+
+> The `[cubrid]` extra installs the legacy [CUBRID-Python](https://github.com/CUBRID/cubrid-python)
+> C-extension driver, used by the bare `cubrid://` URL. Prefer the pure-Python
+> `[pycubrid]` driver (the `cubrid+pycubrid://` URL) unless you specifically need
+> the C-extension — it installs with pip alone, needs no build tools, and is the
+> default/recommended driver for this dialect.
+
 ## Quick Start
 
 ### Core (Connection-Level)
@@ -95,7 +107,7 @@ pip install "sqlalchemy-cubrid[alembic]"
 ```python
 from sqlalchemy import create_engine, text
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 with engine.connect() as conn:
     result = conn.execute(text("SELECT 1"))
@@ -121,7 +133,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
 
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -189,7 +201,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 
 - **No `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` not supported; for ORM use `await session.flush()` to populate `id` on the object (see [Async Quick Start](#async)), or for Core use `cursor.lastrowid` / `SELECT LAST_INSERT_ID()` after the statement
 - **No sequences** — CUBRID uses `AUTO_INCREMENT` only
-- **No multi-schema** — single schema per database
+- **Single effective schema** — CUBRID exposes one schema per connection (the current user's schema); `get_schema_names()` reports that one schema and every reflection method honours `schema=` consistently (the default schema is reflected; any other schema yields no tables/views). Owner-qualified cross-schema reflection is not supported.
 - **DDL auto-commits** — migrations are not transactional (`transactional_ddl = False`); use Alembic batch migrations and test rollback scenarios manually
 - **SQLAlchemy 2.0–2.2 only** — pinned to `<2.3`; SA 2.2 is forward-supported via shims and a `--pre` canary CI job ([details](docs/ARCHITECTURE.md))
 - **Async requires pycubrid >= 1.3.2,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project
@@ -230,10 +242,10 @@ after the statement (see [Known Limitations](#known-limitations)).
 
 ```python
 from sqlalchemy import create_engine
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
-For the pure Python driver (no C build needed): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
+The bare `cubrid://` URL uses the legacy `CUBRID-Python` C-extension driver (requires compilation): `create_engine("cubrid://dba:password@localhost:33000/demodb")`.
 
 ### Does sqlalchemy-cubrid support SQLAlchemy 2.0–2.2?
 
