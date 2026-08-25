@@ -82,8 +82,9 @@ class TestEntryPoints:
     @pytest.mark.parametrize(
         "entry_line",
         [
-            'cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"',
+            'cubrid = "sqlalchemy_cubrid.dialect:_DeprecatedDefaultCubridDialect"',
             '"cubrid.cubrid" = "sqlalchemy_cubrid.dialect:CubridDialect"',
+            '"cubrid.cubriddb" = "sqlalchemy_cubrid.dialect:CubridDialect"',
             '"cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"',
             (
                 '"cubrid.aiopycubrid" = '
@@ -106,8 +107,9 @@ class TestEntryPoints:
     @pytest.mark.parametrize(
         ("entry_name", "expected_module", "expected_class_name"),
         [
-            ("cubrid", "sqlalchemy_cubrid.dialect", "CubridDialect"),
+            ("cubrid", "sqlalchemy_cubrid.dialect", "_DeprecatedDefaultCubridDialect"),
             ("cubrid.cubrid", "sqlalchemy_cubrid.dialect", "CubridDialect"),
+            ("cubrid.cubriddb", "sqlalchemy_cubrid.dialect", "CubridDialect"),
             ("cubrid.pycubrid", "sqlalchemy_cubrid.pycubrid_dialect", "PyCubridDialect"),
             (
                 "cubrid.aiopycubrid",
@@ -150,8 +152,13 @@ class TestDialectResolution:
     @pytest.mark.parametrize(
         ("url", "expected_module", "expected_class_name"),
         [
-            ("cubrid://host/db", "sqlalchemy_cubrid.dialect", "CubridDialect"),
+            (
+                "cubrid://host/db",
+                "sqlalchemy_cubrid.dialect",
+                "_DeprecatedDefaultCubridDialect",
+            ),
             ("cubrid+cubrid://host/db", "sqlalchemy_cubrid.dialect", "CubridDialect"),
+            ("cubrid+cubriddb://host/db", "sqlalchemy_cubrid.dialect", "CubridDialect"),
             (
                 "cubrid+pycubrid://host/db",
                 "sqlalchemy_cubrid.pycubrid_dialect",
@@ -169,3 +176,36 @@ class TestDialectResolution:
 
         assert dialect.__module__ == expected_module
         assert dialect.__name__ == expected_class_name
+
+
+class TestBareDefaultDeprecation:
+    """The bare ``cubrid://`` URL warns about the upcoming 2.0 pycubrid flip."""
+
+    def test_bare_default_dialect_warns_on_init(self):
+        from sqlalchemy_cubrid.dialect import _DeprecatedDefaultCubridDialect
+
+        with pytest.warns(DeprecationWarning, match=r"cubrid\+pycubrid://"):
+            _DeprecatedDefaultCubridDialect()
+
+    def test_bare_url_dialect_class_warns_when_instantiated(self):
+        dialect_cls = make_url("cubrid://host/db").get_dialect()
+        with pytest.warns(DeprecationWarning, match=r"cubrid\+cubriddb://"):
+            dialect_cls()
+
+    def test_explicit_legacy_dialect_does_not_warn(self):
+        import warnings
+
+        from sqlalchemy_cubrid.dialect import CubridDialect
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            CubridDialect()
+
+    def test_explicit_pycubrid_dialect_does_not_warn(self):
+        import warnings
+
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            PyCubridDialect()
