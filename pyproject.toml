@@ -60,7 +60,7 @@ pycubrid = [
 [project.urls]
 Homepage = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
 Repository = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
-Documentation = "https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/docs"
+Documentation = "https://cubrid-lab.github.io/sqlalchemy-cubrid/"
 Changelog = "https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md"
 Issues = "https://github.com/cubrid-lab/sqlalchemy-cubrid/issues"
 
