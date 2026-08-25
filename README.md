@@ -99,6 +99,13 @@ pip install "sqlalchemy-cubrid[cubrid]"
 > `[pycubrid]` driver (the `cubrid+pycubrid://` URL) unless you specifically need
 > the C-extension — it installs with pip alone, needs no build tools, and is the
 > default/recommended driver for this dialect.
+>
+> **Upcoming default change (2.0):** the bare `cubrid://` URL currently binds the
+> legacy CUBRIDdb driver, but will default to the pure-Python `pycubrid` driver in
+> sqlalchemy-cubrid **2.0**. Since 1.7 the bare `cubrid://` URL emits a
+> `DeprecationWarning`. Pin the driver explicitly to avoid a breaking change: use
+> `cubrid+cubriddb://` (with the `[cubriddb]` extra) to keep CUBRIDdb, or
+> `cubrid+pycubrid://` to adopt pycubrid now.
 
 ## Quick Start
 
@@ -245,7 +252,7 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
-The bare `cubrid://` URL uses the legacy `CUBRID-Python` C-extension driver (requires compilation): `create_engine("cubrid://dba:password@localhost:33000/demodb")`.
+The bare `cubrid://` URL uses the legacy `CUBRID-Python` C-extension driver (requires compilation): `create_engine("cubrid://dba:password@localhost:33000/demodb")`. Note that this bare-URL default will switch to the pure-Python `pycubrid` driver in sqlalchemy-cubrid 2.0 (it already emits a `DeprecationWarning`); use `cubrid+cubriddb://` to keep the CUBRIDdb driver explicitly.
 
 ### Does sqlalchemy-cubrid support SQLAlchemy 2.0–2.2?
 
@@ -273,6 +280,8 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 ### What's the difference between `cubrid://` and `cubrid+pycubrid://`?
 
 `cubrid://` uses the C-extension driver (CUBRIDdb) which requires compilation. `cubrid+pycubrid://` uses the pure Python driver which installs with pip alone — no build tools needed. `cubrid+aiopycubrid://` uses the async variant of the pure Python driver for use with `create_async_engine` and `AsyncSession`.
+
+> **Note (deprecation):** the bare `cubrid://` default driver will change from CUBRIDdb to `pycubrid` in sqlalchemy-cubrid 2.0, and the bare URL emits a `DeprecationWarning` since 1.7. Pin the driver explicitly: `cubrid+cubriddb://` keeps the legacy CUBRIDdb driver, `cubrid+pycubrid://` selects the pure-Python driver.
 
 ### Does sqlalchemy-cubrid support async?
 

@@ -39,6 +39,9 @@ dependencies = [
 cubrid = [
     "CUBRID-Python",
 ]
+cubriddb = [
+    "CUBRID-Python",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
@@ -65,8 +68,9 @@ Changelog = "https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG
 Issues = "https://github.com/cubrid-lab/sqlalchemy-cubrid/issues"
 
 [project.entry-points."sqlalchemy.dialects"]
-cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
+cubrid = "sqlalchemy_cubrid.dialect:_DeprecatedDefaultCubridDialect"
 "cubrid.cubrid" = "sqlalchemy_cubrid.dialect:CubridDialect"
+"cubrid.cubriddb" = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
 
