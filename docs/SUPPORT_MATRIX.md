@@ -51,7 +51,7 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` | `cubrid://` | ✅ Supported |
+| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` or `[cubriddb]` | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
 
@@ -63,7 +63,7 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Feature | Status | Notes |
 |---|---|---|
-| `create_engine()` | ✅ | `cubrid://`, `cubrid+cubrid://`, and `cubrid+pycubrid://` schemes |
+| `create_engine()` | ✅ | `cubrid://`, `cubrid+cubrid://`, `cubrid+cubriddb://`, and `cubrid+pycubrid://` schemes |
 | Async engine | ✅ | `create_async_engine("cubrid+aiopycubrid://...")` |
 | SQL compilation | ✅ | SELECT, INSERT, UPDATE, DELETE, JOIN, subqueries |
 | DDL compilation | ✅ | CREATE TABLE, ALTER, DROP, AUTO_INCREMENT, COMMENT |
