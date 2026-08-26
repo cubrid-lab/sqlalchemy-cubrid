@@ -263,6 +263,19 @@ The CUBRID Alembic implementation maps `alter_column()` to native CUBRID DDL:
 Type changes reconstruct the full column definition from `existing_*` metadata
 so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 
+> **Important — hand-written type-changing migrations must pass `existing_*`.**
+> Because CUBRID's `MODIFY` / `CHANGE` restate the *entire* column definition,
+> the dialect can only preserve an attribute it is told about. Alembic
+> autogenerate populates `existing_type`, `existing_nullable`,
+> `existing_server_default`, and `existing_comment` from the reflected column,
+> but a manual `op.alter_column(..., type_=...)` does **not**. When editing a
+> migration by hand, pass `existing_nullable=`, `existing_server_default=`,
+> `existing_comment=`, and `existing_autoincrement=` for any attribute that must
+> survive the type change — otherwise it will be dropped. To *intentionally*
+> remove an attribute (e.g. a default), pass it explicitly (`server_default=None`),
+> which overrides the `existing_*` value.
+so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
+
 ### Summary
 
 | Operation | Supported | Workaround |

@@ -282,6 +282,32 @@ class TestCubridImpl:
         )
         assert sql == "ALTER TABLE users CHANGE age years BIGINT"
 
+    def test_alter_column_type_preserves_existing_comment(self):
+        """MODIFY restates the column, so an existing COMMENT is re-emitted."""
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="age",
+            type_=sa.BigInteger(),
+            existing_comment="age in years",
+        )
+        assert sql == "ALTER TABLE users MODIFY age BIGINT COMMENT 'age in years'"
+
+    def test_alter_column_type_explicit_default_removal(self):
+        """Passing ``server_default=None`` drops the default even if one existed.
+
+        Because CUBRID MODIFY restates the whole column, an explicit
+        ``server_default=None`` must win over ``existing_server_default`` so
+        callers can intentionally remove a default.
+        """
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="age",
+            type_=sa.BigInteger(),
+            server_default=None,
+            existing_server_default="0",
+        )
+        assert sql == "ALTER TABLE users MODIFY age BIGINT"
+
     def test_modify_column_requires_type(self):
         """The DDL element guards against a missing column type."""
         from sqlalchemy_cubrid.alembic_impl import CubridModifyColumn
