@@ -195,6 +195,9 @@ ischema_names = {
     "BLOB": BLOB,
     "CLOB": CLOB,
     # Collection
+    # Note: CUBRID's LIST is a synonym for SEQUENCE and is normalized to
+    # SEQUENCE at DDL-parse time, so the catalog never reports "LIST" — there is
+    # deliberately no "LIST" entry here (it would be unreachable dead code).
     "SET": SET,
     "MULTISET": MULTISET,
     "SEQUENCE": SEQUENCE,
@@ -988,25 +991,19 @@ class CubridDialect(default.DefaultDialect):
         "READ COMMITTED": 4,
         "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES": 4,
         "CURSOR STABILITY": 4,
-        "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES": 3,
-        "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES": 2,
-        "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES": 1,
     }
 
     # Canonical spelling returned per integer code. Multiple input aliases map
     # to the same code (e.g. "READ COMMITTED" / "CURSOR STABILITY" / the long
     # granular spelling all map to 4); get_isolation_level() returns the single
     # canonical name below so that set -> get round-trips to the same code. The
-    # short standard names are used for 4/5/6 (the values users actually pass);
-    # levels 1-3 have no short name so the granular spelling is canonical. Every
-    # value here is also present in get_isolation_level_values().
+    # short standard names are used for the three MVCC levels 4/5/6 (the only
+    # levels CUBRID's MVCC engine accepts). Every value here is also present in
+    # get_isolation_level_values().
     _ISOLATION_LEVEL_REVERSE: dict[int, str] = {
         6: "SERIALIZABLE",
         5: "REPEATABLE READ",
         4: "READ COMMITTED",
-        3: "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES",
-        2: "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES",
-        1: "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
     }
 
     # CUBRID's default transaction isolation level (level 4 = READ COMMITTED).
@@ -1053,9 +1050,6 @@ class CubridDialect(default.DefaultDialect):
             "READ COMMITTED",
             "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES",
             "CURSOR STABILITY",
-            "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES",
-            "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES",
-            "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
         ]
 
     def set_isolation_level(
@@ -1116,11 +1110,14 @@ class CubridDialect(default.DefaultDialect):
     def is_disconnect(self, e: Exception, connection: Any, cursor: Any) -> bool:
         """Return True if *e* indicates a dropped connection.
 
-        CUBRID's Python driver exposes a limited exception hierarchy:
+        This dialect supports multiple drivers with different exception
+        hierarchies: the legacy CUBRIDdb C-extension exposes only
         ``Error``, ``InterfaceError``, ``DatabaseError``, and
-        ``NotSupportedError``.  There is no ``OperationalError`` class,
-        so we rely primarily on string-based message matching (similar
-        to psycopg2) supplemented by known numeric error codes.
+        ``NotSupportedError`` (no ``OperationalError``), whereas pycubrid
+        provides the full PEP 249 set (including ``OperationalError``).
+        To stay robust across every driver, we rely primarily on
+        string-based message matching (similar to psycopg2) supplemented
+        by known numeric error codes rather than on exception class alone.
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):

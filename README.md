@@ -1,6 +1,6 @@
 # sqlalchemy-cubrid
 
-**SQLAlchemy 2.0–2.2 dialect for the CUBRID database** — Python ORM, schema reflection, Alembic migrations, and type mapping for SQLAlchemy and CUBRID-specific types.
+**SQLAlchemy 2.0–2.1 dialect for the CUBRID database** — Python ORM, schema reflection, Alembic migrations, and type mapping for SQLAlchemy and CUBRID-specific types.
 
 [🇰🇷 한국어](docs/README.ko.md) · [🇺🇸 English](README.md) · [🇨🇳 中文](docs/README.zh.md) · [🇮🇳 हिन्दी](docs/README.hi.md) · [🇩🇪 Deutsch](docs/README.de.md) · [🇷🇺 Русский](docs/README.ru.md)
 
@@ -17,21 +17,21 @@
 
 ---
 
-> **Status: Production/Stable** — `sqlalchemy-cubrid` is a maintained SQLAlchemy dialect for CUBRID supporting SQLAlchemy 2.0–2.2 and CUBRID 10.2–11.4.
+> **Status: Production/Stable** — `sqlalchemy-cubrid` is a maintained SQLAlchemy dialect for CUBRID supporting SQLAlchemy 2.0–2.1 and CUBRID 10.2–11.4.
 > **Note:** Versions prior to 1.0.0 used inconsistent numbering (0.x, 2.x). The canonical version history starts at 1.0.0.
 
 ## Why sqlalchemy-cubrid?
 
 CUBRID is a high-performance open-source relational database, widely adopted in
 Korean public-sector and enterprise applications. Until now, there was no
-actively maintained SQLAlchemy dialect that supports the modern 2.0–2.2 API.
+actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 
 **sqlalchemy-cubrid** bridges that gap:
 
-- Full SQLAlchemy 2.0–2.2 dialect with **statement caching** and **PEP 561 typing**
+- Full SQLAlchemy 2.0–2.1 dialect with **statement caching** and **PEP 561 typing**
 - **Extensive offline test suite** with **high code coverage** ([CI badge above](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)) — no database required to run them
 - **Concurrency stress tests** — `QueuePool` sync threaded + asyncio.gather workloads validated against live CUBRID
-- **SQLAlchemy 2.2-ready compat shim** — private API access wrapped in `_compat.py`; dependency pin now `>=2.0,<2.3` covering SA 2.0, 2.1, and the upcoming 2.2 release line
+- **SQLAlchemy 2.1-ready compat shim** — private API access wrapped in `_compat.py`; dependency pin now `>=2.0,<2.3` covering SA 2.0 and 2.1
 - Tested against **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) across **Python 3.10 -- 3.14**
 - CUBRID-specific DML constructs: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic migration support out of the box
@@ -42,7 +42,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.2 API.
 - **Status**: Production/Stable [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
 - Supported matrix: SQLAlchemy `>=2.0,<2.3`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.10`–`3.14`
 - Integration CI exercises Python 3.10 and 3.14 against all four CUBRID versions on every PR; intermediate versions (3.11–3.13) are supported and validated via the offline test suite
-- SQLAlchemy `2.2` remains canary-only until explicitly added to the supported matrix
+- SQLAlchemy 2.1 pre-releases are exercised by a non-gating `--pre` canary CI job
 - See [Known Limitations](#known-limitations) for behavior boundaries and unsupported features
 
 ## Architecture
@@ -67,7 +67,7 @@ flowchart TD
 ## Requirements
 
 - Python 3.10+
-- SQLAlchemy 2.0 – 2.2
+- SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-extension) **or** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python)
 
 ## Installation
@@ -195,7 +195,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 - DDL support -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema reflection -- tables, views, columns, PKs, FKs, indexes, unique constraints, comments
 - Alembic migrations via `CubridImpl` (auto-discovered entry point)
-- All 6 CUBRID isolation levels (dual-granularity: class-level + instance-level)
+- Three CUBRID MVCC isolation levels — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - Async support — `create_async_engine("cubrid+aiopycubrid://...")` via pycubrid.aio
 
 ## Known Limitations
@@ -204,7 +204,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 - **No sequences** — CUBRID uses `AUTO_INCREMENT` only
 - **Single effective schema** — CUBRID exposes one schema per connection (the current user's schema); `get_schema_names()` reports that one schema and every reflection method honours `schema=` consistently (the default schema is reflected; any other schema yields no tables/views). Owner-qualified cross-schema reflection is not supported.
 - **DDL auto-commits** — migrations are not transactional (`transactional_ddl = False`); use Alembic batch migrations and test rollback scenarios manually
-- **SQLAlchemy 2.0–2.2 only** — pinned to `<2.3`; SA 2.2 is forward-supported via shims and a `--pre` canary CI job ([details](docs/ARCHITECTURE.md))
+- **SQLAlchemy 2.0–2.1 only** — pinned to `<2.3`; SA 2.1 pre-releases are forward-tested via shims and a `--pre` canary CI job ([details](docs/ARCHITECTURE.md))
 - **Async requires pycubrid >= 1.3.2,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project
 - **CARDINALITY() broken** — `func.cardinality()` raises `CompileError` with workaround guidance; the CUBRID server has a [known bug](https://github.com/cubrid-lab/.github/issues/3)
 - **Reserved words auto-quoted** — Column names matching CUBRID reserved words (`day`, `count`, `value`, etc.) are automatically double-quoted in DDL; see [reserved word list](https://github.com/cubrid-lab/.github/issues/5)
@@ -217,7 +217,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 | [Connection](docs/CONNECTION.md) | Connection strings, URL format, driver setup, pool tuning |
 | [Type Mapping](docs/TYPES.md) | Full type mapping, CUBRID-specific types, collection types |
 | [DML Extensions](docs/DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, query trace |
-| [Isolation Levels](docs/ISOLATION_LEVELS.md) | All 6 CUBRID isolation levels, configuration |
+| [Isolation Levels](docs/ISOLATION_LEVELS.md) | The three CUBRID MVCC isolation levels, configuration |
 | [Alembic Migrations](docs/ALEMBIC.md) | Setup, configuration, limitations, batch workarounds |
 | [Feature Support](docs/FEATURE_SUPPORT.md) | Comparison with MySQL, PostgreSQL, SQLite |
 | [ORM Cookbook](docs/ORM_COOKBOOK.md) | Practical ORM examples, relationships, queries |
@@ -232,7 +232,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 |---|---|
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
-| SQLAlchemy | 2.0–2.2 |
+| SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7 |
 | pycubrid (sync) | >=1.3.2,<2.0 |
 | pycubrid (async) | >=1.3.2,<2.0 |
@@ -248,9 +248,9 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 The recommended way is the pure-Python `pycubrid` driver, which installs with pip alone (no compilation): `create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")`. The bare `cubrid://` URL uses the legacy `CUBRID-Python` C-extension driver (requires a C build toolchain); to select it explicitly and unambiguously use `cubrid+cubriddb://` with the `[cubriddb]` extra.
 
-### Does sqlalchemy-cubrid support SQLAlchemy 2.0–2.2?
+### Does sqlalchemy-cubrid support SQLAlchemy 2.0–2.1?
 
-Yes. sqlalchemy-cubrid is built for SQLAlchemy 2.0–2.2 and supports the 2.0-style API including `Session.execute()`, typed `Mapped[]` columns, and statement caching.
+Yes. sqlalchemy-cubrid is built for SQLAlchemy 2.0–2.1 and supports the 2.0-style API including `Session.execute()`, typed `Mapped[]` columns, and statement caching.
 
 ### Does sqlalchemy-cubrid support Alembic migrations?
 

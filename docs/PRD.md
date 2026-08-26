@@ -1,4 +1,4 @@
-# PRD: sqlalchemy-cubrid — CUBRID Dialect for SQLAlchemy 2.0–2.2
+# PRD: sqlalchemy-cubrid — CUBRID Dialect for SQLAlchemy 2.0–2.1
 
 ## 1. Overview
 
@@ -18,9 +18,9 @@ The original `sqlalchemy-cubrid` project was abandoned and broken:
 
 ### 1.2 What Was Built
 
-A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2.0–2.2:
+A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2.0–2.1:
 
-- **Full SQLAlchemy 2.0–2.2 dialect** with statement caching
+- **Full SQLAlchemy 2.0–2.1 dialect** with statement caching
 - **Complete SQL feature coverage** — everything CUBRID supports is enabled
 - **Comprehensive type system** — 20+ types including CUBRID-specific collections and JSON
 - **Schema reflection** — tables, views, columns, PKs, FKs, indexes, unique constraints, comments
@@ -36,7 +36,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 | Criterion | Target | Achieved |
 |---|---|---|
 | Installable on Python 3.10+ | ✅ | ✅ `pip install sqlalchemy-cubrid` |
-| SQLAlchemy 2.0 – 2.2 compatible | ✅ | ✅ Full API compliance |
+| SQLAlchemy 2.0 – 2.1 compatible | ✅ | ✅ Full API compliance |
 | Offline tests (no live DB) | ✅ | ✅ 619 tests, ~98.26% coverage |
 | All dialect methods implemented | ✅ | ✅ Reflection, compilation, types |
 | CI/CD with version matrix | ✅ | ✅ Py 3.10–3.14 × CUBRID 10.2–11.4 |
@@ -87,7 +87,7 @@ graph TD
 
 | Package | Version | Purpose |
 |---|---|---|
-| SQLAlchemy | ≥ 2.0, < 2.2 | Core ORM/engine framework |
+| SQLAlchemy | ≥ 2.0, < 2.3 | Core ORM/engine framework |
 | Python | ≥ 3.10 | Runtime |
 | CUBRID-Python | any | DBAPI driver (optional extra) |
 | Alembic | ≥ 1.7 | Migration support (optional extra) |
@@ -227,7 +227,7 @@ class CubridDialect(default.DefaultDialect):
 #### Connection & Isolation
 
 - **URL translation**: `cubrid://user:pass@host:port/db` → `CUBRID:host:port:db:::`
-- **6 isolation levels** including dual-granularity (class + instance)
+- **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - **Autocommit detection**: `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, `TRUNCATE`
 - **Savepoints**: Supported; `RELEASE SAVEPOINT` is a no-op
 
@@ -335,7 +335,7 @@ Limitations imposed by CUBRID itself (not the dialect):
 | [`README.md`](../README.md) | 80 | Concise landing page |
 | [`docs/CONNECTION.md`](CONNECTION.md) | 258 | Connection strings, URL format, driver setup |
 | [`docs/TYPES.md`](TYPES.md) | 313 | Full type mapping, CUBRID-specific types |
-| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | 230 | All 6 CUBRID isolation levels |
+| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | 206 | The three CUBRID MVCC isolation levels |
 | [`docs/DML_EXTENSIONS.md`](DML_EXTENSIONS.md) | 361 | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
 | [`docs/ALEMBIC.md`](ALEMBIC.md) | 376 | Alembic migration guide, limitations |
 | [`docs/FEATURE_SUPPORT.md`](FEATURE_SUPPORT.md) | 442 | Feature comparison with MySQL/PG/SQLite |

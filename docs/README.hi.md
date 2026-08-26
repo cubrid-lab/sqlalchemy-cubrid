@@ -1,6 +1,6 @@
 # sqlalchemy-cubrid
 
-**CUBRID डेटाबेस के लिए SQLAlchemy 2.0–2.2 dialect** — SQLAlchemy और CUBRID-विशिष्ट types के लिए Python ORM, schema reflection, Alembic migrations, और type mapping प्रदान करता है।
+**CUBRID डेटाबेस के लिए SQLAlchemy 2.0–2.1 dialect** — SQLAlchemy और CUBRID-विशिष्ट types के लिए Python ORM, schema reflection, Alembic migrations, और type mapping प्रदान करता है।
 
 [🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
@@ -17,20 +17,20 @@
 
 ---
 
-> **स्थिति: Production/Stable** — CUBRID 10.2–11.4 और SQLAlchemy 2.0–2.2 के लिए स्थिर रूप से रखरखाव किया गया dialect। प्रत्येक PR को लाइव DB इंटीग्रेशन CI द्वारा सत्यापित किया जाता है।
+> **स्थिति: Production/Stable** — CUBRID 10.2–11.4 और SQLAlchemy 2.0–2.1 के लिए स्थिर रूप से रखरखाव किया गया dialect। प्रत्येक PR को लाइव DB इंटीग्रेशन CI द्वारा सत्यापित किया जाता है।
 
 ## sqlalchemy-cubrid क्यों?
 
 CUBRID एक उच्च-प्रदर्शन ओपन-सोर्स रिलेशनल डेटाबेस है, जिसका उपयोग कोरियाई सार्वजनिक
 क्षेत्र और एंटरप्राइज़ अनुप्रयोगों में व्यापक रूप से किया जाता है। अब तक ऐसा कोई
-सक्रिय रूप से maintained SQLAlchemy dialect नहीं था जो आधुनिक 2.0–2.2 API को सपोर्ट करे।
+सक्रिय रूप से maintained SQLAlchemy dialect नहीं था जो आधुनिक 2.0–2.1 API को सपोर्ट करे।
 
 **sqlalchemy-cubrid** इस कमी को पूरा करता है:
 
-- **statement caching** और **PEP 561 typing** के साथ पूर्ण SQLAlchemy 2.0–2.2 dialect
+- **statement caching** और **PEP 561 typing** के साथ पूर्ण SQLAlchemy 2.0–2.1 dialect
 - **619 ऑफ़लाइन टेस्ट** और **लगभग 98.26% code coverage** — इन्हें चलाने के लिए डेटाबेस की आवश्यकता नहीं
 - **Concurrency stress tests** — `QueuePool` sync threaded + `asyncio.gather` workloads को live CUBRID पर validate किया गया है
-- **SQLAlchemy 2.2-ready compat shim** — private API access को `_compat.py` में wrap किया गया है (पूर्ण SA 2.2 validation तक अभी भी `<2.3` पर pinned)
+- **SQLAlchemy 2.1-ready compat shim** — private API access को `_compat.py` में wrap किया गया है (पूर्ण SA 2.1 validation तक अभी भी `<2.3` पर pinned)
 - **Python 3.10 -- 3.14** पर **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) के खिलाफ टेस्ट किया गया
 - CUBRID-विशिष्ट DML constructs: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic migration support box से बाहर उपलब्ध
@@ -58,7 +58,7 @@ flowchart TD
 ## आवश्यकताएँ
 
 - Python 3.10+
-- SQLAlchemy 2.0 – 2.2
+- SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-extension) **या** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python)
 
 ## इंस्टॉलेशन
@@ -142,7 +142,7 @@ async with AsyncSession(engine) as session:
 - DDL support -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema reflection -- tables, views, columns, PKs, FKs, indexes, unique constraints, comments
 - `CubridImpl` के जरिए Alembic migrations (auto-discovered entry point)
-- सभी 6 CUBRID isolation levels (dual-granularity: class-level + instance-level)
+- तीन CUBRID MVCC isolation levels — `READ COMMITTED` (डिफ़ॉल्ट), `REPEATABLE READ`, `SERIALIZABLE`
 - Async support — pycubrid.aio के जरिए `create_async_engine("cubrid+aiopycubrid://...")`
 
 ## ज्ञात सीमाएँ
@@ -151,7 +151,7 @@ async with AsyncSession(engine) as session:
 - **कोई sequences नहीं** — CUBRID केवल `AUTO_INCREMENT` का उपयोग करता है
 - **कोई multi-schema नहीं** — प्रति डेटाबेस एक single schema
 - **DDL auto-commit करता है** — migrations transactional नहीं हैं (`transactional_ddl = False`)
-- **केवल SQLAlchemy 2.0–2.2** — internal API dependencies के कारण `<2.3` पर pinned ([details](ARCHITECTURE.md))
+- **केवल SQLAlchemy 2.0–2.1** — internal API dependencies के कारण `<2.3` पर pinned ([details](ARCHITECTURE.md))
 - **Async के लिए pycubrid >= 1.2.0,<2.0 आवश्यक है** — `cubrid+aiopycubrid://` driver को वही async-capable pycubrid package line चाहिए जिसे यह परियोजना वर्तमान में सपोर्ट करती है
 
 ## दस्तावेज़ीकरण
@@ -161,7 +161,7 @@ async with AsyncSession(engine) as session:
 | [कनेक्शन](CONNECTION.md) | कनेक्शन स्ट्रिंग, URL प्रारूप, driver setup, pool tuning |
 | [टाइप मैपिंग](TYPES.md) | पूर्ण टाइप मैपिंग, CUBRID-विशिष्ट टाइप, collection types |
 | [DML एक्सटेंशन](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, query trace |
-| [आइसोलेशन लेवल](ISOLATION_LEVELS.md) | सभी 6 CUBRID isolation levels, configuration |
+| [आइसोलेशन लेवल](ISOLATION_LEVELS.md) | तीन CUBRID MVCC isolation levels, configuration |
 | [Alembic migrations](ALEMBIC.md) | setup, configuration, limitations, batch workarounds |
 | [फ़ीचर सपोर्ट](FEATURE_SUPPORT.md) | MySQL, PostgreSQL, SQLite से तुलना |
 | [ORM cookbook](ORM_COOKBOOK.md) | व्यावहारिक ORM उदाहरण, relationships, queries |
@@ -176,7 +176,7 @@ async with AsyncSession(engine) as session:
 |---|---|
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
-| SQLAlchemy | 2.0–2.2 |
+| SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7 |
 | pycubrid (sync) | >=1.2.0,<2.0 |
 | pycubrid (async) | >=1.2.0,<2.0 |
@@ -192,9 +192,9 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 Pure Python driver के लिए (C build की आवश्यकता नहीं): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
 
-### क्या sqlalchemy-cubrid SQLAlchemy 2.0–2.2 को सपोर्ट करता है?
+### क्या sqlalchemy-cubrid SQLAlchemy 2.0–2.1 को सपोर्ट करता है?
 
-हाँ। sqlalchemy-cubrid, SQLAlchemy 2.0–2.2 के लिए बनाया गया है और `Session.execute()`, typed `Mapped[]` columns, और statement caching सहित 2.0-style API को सपोर्ट करता है।
+हाँ। sqlalchemy-cubrid, SQLAlchemy 2.0–2.1 के लिए बनाया गया है और `Session.execute()`, typed `Mapped[]` columns, और statement caching सहित 2.0-style API को सपोर्ट करता है।
 
 ### क्या sqlalchemy-cubrid Alembic migrations को सपोर्ट करता है?
 

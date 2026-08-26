@@ -233,7 +233,7 @@ class TestIsolationLevelMethods:
         dialect = CubridDialect()
         levels = dialect.get_isolation_level_values()
 
-        assert len(levels) == 9
+        assert len(levels) == 6
         assert "SERIALIZABLE" in levels
         assert "READ COMMITTED" in levels
         assert "REPEATABLE READ" in levels
@@ -281,6 +281,29 @@ class TestIsolationLevelMethods:
 
         with pytest.raises(ValueError, match="Invalid isolation level"):
             dialect.set_isolation_level(dbapi_conn, "NONEXISTENT LEVEL")
+
+    def test_set_isolation_level_obsolete_levels_rejected(self):
+        """Legacy pre-MVCC levels (codes 1-3) are no longer accepted.
+
+        CUBRID's MVCC engine (10.0+) supports only READ COMMITTED (4),
+        REPEATABLE READ (5) and SERIALIZABLE (6); the server rejects
+        SET TRANSACTION ISOLATION LEVEL 1|2|3, so the dialect must not
+        offer names that resolve to those codes.
+        """
+        dialect = CubridDialect()
+        obsolete = [
+            "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES",
+            "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES",
+            "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
+        ]
+        for name in obsolete:
+            dbapi_conn = MagicMock()
+            dbapi_conn.cursor.return_value = MagicMock()
+            with pytest.raises(ValueError, match="Invalid isolation level"):
+                dialect.set_isolation_level(dbapi_conn, name)
+        # And none of the surviving codes are the obsolete ones.
+        assert set(dialect._ISOLATION_LEVEL_MAP.values()) == {4, 5, 6}
+        assert set(dialect._ISOLATION_LEVEL_REVERSE) == {4, 5, 6}
 
     def test_reset_isolation_level(self):
         dialect = CubridDialect()

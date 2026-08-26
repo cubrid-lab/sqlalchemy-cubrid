@@ -1,6 +1,6 @@
 # sqlalchemy-cubrid
 
-**CUBRID 데이터베이스를 위한 SQLAlchemy 2.0–2.2 방언** — SQLAlchemy 및 CUBRID 전용 타입을 위한 Python ORM, 스키마 리플렉션, Alembic 마이그레이션, 타입 매핑을 제공합니다.
+**CUBRID 데이터베이스를 위한 SQLAlchemy 2.0–2.1 방언** — SQLAlchemy 및 CUBRID 전용 타입을 위한 Python ORM, 스키마 리플렉션, Alembic 마이그레이션, 타입 매핑을 제공합니다.
 
 [🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
@@ -17,20 +17,20 @@
 
 ---
 
-> **상태: Production/Stable** — CUBRID 10.2–11.4 및 SQLAlchemy 2.0–2.2을 지원하는 유지보수 다이얼렉트입니다. 모든 PR에 대해 라이브 DB 통합 CI가 실행됩니다.
+> **상태: Production/Stable** — CUBRID 10.2–11.4 및 SQLAlchemy 2.0–2.1을 지원하는 유지보수 다이얼렉트입니다. 모든 PR에 대해 라이브 DB 통합 CI가 실행됩니다.
 
 ## 왜 sqlalchemy-cubrid인가?
 
 CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공기관 및 기업 환경에서
-널리 사용되고 있습니다. 지금까지 최신 2.0–2.2 API를 지원하는 SQLAlchemy 방언은
+널리 사용되고 있습니다. 지금까지 최신 2.0–2.1 API를 지원하는 SQLAlchemy 방언은
 활발히 유지보수되지 않았습니다.
 
 **sqlalchemy-cubrid**는 이 공백을 메웁니다:
 
-- **statement caching**과 **PEP 561 타입 지원**을 갖춘 완전한 SQLAlchemy 2.0–2.2 방언
+- **statement caching**과 **PEP 561 타입 지원**을 갖춘 완전한 SQLAlchemy 2.0–2.1 방언
 - **오프라인 테스트 619개**, **약 98.26% 코드 커버리지** — 데이터베이스 없이도 실행 가능
 - **동시성 스트레스 테스트** — `QueuePool` 기반 동기 스레드 + `asyncio.gather` 워크로드를 실 CUBRID에서 검증
-- **SQLAlchemy 2.2 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.2 검증 전까지는 `<2.3`로 고정
+- **SQLAlchemy 2.1 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.1 검증 전까지는 `<2.3`로 고정
 - **Python 3.10 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
 - CUBRID 전용 DML 구문: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic 마이그레이션 기본 지원
@@ -58,7 +58,7 @@ flowchart TD
 ## 요구 사항
 
 - Python 3.10+
-- SQLAlchemy 2.0 – 2.2
+- SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C 확장) **또는** [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python)
 
 ## 설치
@@ -142,7 +142,7 @@ async with AsyncSession(engine) as session:
 - DDL 지원 -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - 스키마 리플렉션 -- 테이블, 뷰, 컬럼, PK, FK, 인덱스, 유니크 제약 조건, 코멘트
 - `CubridImpl`을 통한 Alembic 마이그레이션 (자동 탐색 엔트리 포인트)
-- CUBRID의 6가지 격리 수준 모두 지원 (이중 세분화: 클래스 수준 + 인스턴스 수준)
+- CUBRID의 세 가지 MVCC 격리 수준 — `READ COMMITTED`(기본값), `REPEATABLE READ`, `SERIALIZABLE`
 - Async 지원 — pycubrid.aio 기반 `create_async_engine("cubrid+aiopycubrid://...")`
 
 ## 알려진 제한 사항
@@ -151,7 +151,7 @@ async with AsyncSession(engine) as session:
 - **시퀀스 없음** — CUBRID는 `AUTO_INCREMENT`만 사용합니다
 - **멀티 스키마 미지원** — 데이터베이스당 단일 스키마 모델입니다
 - **DDL 자동 커밋** — 마이그레이션은 트랜잭션 처리되지 않습니다(`transactional_ddl = False`)
-- **SQLAlchemy 2.0–2.2만 지원** — 내부 API 의존성 때문에 `<2.3`로 고정되어 있습니다([자세한 내용](ARCHITECTURE.md))
+- **SQLAlchemy 2.0–2.1만 지원** — 내부 API 의존성 때문에 `<2.3`로 고정되어 있습니다([자세한 내용](ARCHITECTURE.md))
 - **Async는 pycubrid >= 1.2.0,<2.0 필요** — `cubrid+aiopycubrid://` 드라이버는 현재 이 프로젝트가 지원하는 async 가능 pycubrid 패키지 라인이 필요합니다
 
 ## 문서
@@ -161,7 +161,7 @@ async with AsyncSession(engine) as session:
 | [연결](CONNECTION.md) | 연결 문자열, URL 형식, 드라이버 설정, 풀 튜닝 |
 | [타입 매핑](TYPES.md) | 전체 타입 매핑, CUBRID 전용 타입, 컬렉션 타입 |
 | [DML 확장](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, 쿼리 추적 |
-| [격리 수준](ISOLATION_LEVELS.md) | CUBRID의 6가지 격리 수준, 설정 |
+| [격리 수준](ISOLATION_LEVELS.md) | CUBRID의 세 가지 MVCC 격리 수준, 설정 |
 | [Alembic 마이그레이션](ALEMBIC.md) | 설정, 구성, 제한 사항, 배치 우회 방법 |
 | [기능 지원](FEATURE_SUPPORT.md) | MySQL, PostgreSQL, SQLite와의 비교 |
 | [ORM 활용 가이드](ORM_COOKBOOK.md) | 실용적인 ORM 예제, 관계, 쿼리 |
@@ -176,7 +176,7 @@ async with AsyncSession(engine) as session:
 |---|---|
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
-| SQLAlchemy | 2.0–2.2 |
+| SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7 |
 | pycubrid (sync) | >=1.2.0,<2.0 |
 | pycubrid (async) | >=1.2.0,<2.0 |
@@ -192,9 +192,9 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 순수 Python 드라이버(C 빌드 불필요)를 쓰려면: `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
 
-### sqlalchemy-cubrid는 SQLAlchemy 2.0–2.2을 지원하나요?
+### sqlalchemy-cubrid는 SQLAlchemy 2.0–2.1을 지원하나요?
 
-예. sqlalchemy-cubrid는 SQLAlchemy 2.0–2.2용으로 만들어졌으며, `Session.execute()`, 타입이 지정된 `Mapped[]` 컬럼, statement caching을 포함한 2.0 스타일 API를 지원합니다.
+예. sqlalchemy-cubrid는 SQLAlchemy 2.0–2.1용으로 만들어졌으며, `Session.execute()`, 타입이 지정된 `Mapped[]` 컬럼, statement caching을 포함한 2.0 스타일 API를 지원합니다.
 
 ### sqlalchemy-cubrid는 Alembic 마이그레이션을 지원하나요?
 

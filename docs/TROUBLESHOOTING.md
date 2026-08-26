@@ -984,7 +984,7 @@ alembic stamp <revision_id>
 
 ### Setting Isolation Levels
 
-**CUBRID supports 6 isolation levels** (dual-granularity: class-level + instance-level):
+**CUBRID's MVCC engine (10.0+) supports three isolation levels:**
 
 ```python
 # Engine-level (applies to all connections)
@@ -1002,14 +1002,16 @@ with engine.connect().execution_options(
 
 **Available levels:**
 
-| SQLAlchemy Name | CUBRID Level |
+| SQLAlchemy Name | CUBRID Numeric Level |
 |---|---|
-| `"SERIALIZABLE"` | `TRAN_SERIALIZABLE` |
-| `"REPEATABLE READ"` | `TRAN_REP_CLASS_REP_INSTANCE` |
-| `"READ COMMITTED"` | `TRAN_REP_CLASS_COMMIT_INSTANCE` |
-| `"READ UNCOMMITTED"` | `TRAN_REP_CLASS_UNCOMMIT_INSTANCE` |
-| `"CUBRID READ COMMITTED"` | `TRAN_COMMIT_CLASS_COMMIT_INSTANCE` |
-| `"CUBRID READ UNCOMMITTED"` | `TRAN_COMMIT_CLASS_UNCOMMIT_INSTANCE` |
+| `"SERIALIZABLE"` | 6 |
+| `"REPEATABLE READ"` | 5 |
+| `"READ COMMITTED"` *(default)* | 4 |
+
+The legacy pre-MVCC levels (`READ UNCOMMITTED` and the granular
+class/instance combinations that resolved to numeric codes 1–3) were
+removed in CUBRID 10.0 and are no longer accepted; passing them raises
+`ValueError`. See [Isolation Levels](ISOLATION_LEVELS.md).
 
 ---
 

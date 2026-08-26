@@ -228,16 +228,13 @@ High-level overview by feature category.
 
 ### CUBRID Isolation Levels
 
-CUBRID supports six isolation levels — more than the SQL standard's four:
+CUBRID's MVCC engine (10.0+) supports three isolation levels:
 
 | Level | Description |
 |-------|-------------|
-| `SERIALIZABLE` | Full serialization |
-| `REPEATABLE READ CLASS, REPEATABLE READ INSTANCES` | Repeatable read for both schema and data |
-| `REPEATABLE READ CLASS, READ COMMITTED INSTANCES` | Repeatable read for schema, read committed for data |
-| `REPEATABLE READ CLASS, READ UNCOMMITTED INSTANCES` | Repeatable read for schema, read uncommitted for data |
-| `READ COMMITTED CLASS, READ COMMITTED INSTANCES` | Read committed for both |
-| `READ COMMITTED CLASS, READ UNCOMMITTED INSTANCES` | Read committed for schema, read uncommitted for data |
+| `SERIALIZABLE` (6) | Full serialization |
+| `REPEATABLE READ` (5) | Repeatable read within a transaction |
+| `READ COMMITTED` (4, default) | Reads see only committed data; non-repeatable reads possible |
 
 ### Notes
 
@@ -284,7 +281,7 @@ These types and capabilities are unique to the CUBRID dialect and have no direct
 | `SET` collection | Unordered collection of unique elements |
 | `MULTISET` collection | Unordered collection that allows duplicates |
 | `SEQUENCE` collection | Ordered collection that allows duplicates |
-| 6 isolation levels | Separate class-level and instance-level isolation granularity |
+| 3 MVCC isolation levels | `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE` |
 | 254-char identifiers | Longer than MySQL (64) and PostgreSQL (63) |
 
 ### Collection Types
@@ -478,4 +475,4 @@ Features not currently supported that may be added in future releases, depending
 
 ---
 
-*Last updated: April 2026 · sqlalchemy-cubrid v1.4.0 Beta · SQLAlchemy 2.0–2.2*
+*Last updated: April 2026 · sqlalchemy-cubrid v1.4.0 Beta · SQLAlchemy 2.0–2.1*
