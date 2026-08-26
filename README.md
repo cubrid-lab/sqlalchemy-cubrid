@@ -195,7 +195,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 - DDL support -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema reflection -- tables, views, columns, PKs, FKs, indexes, unique constraints, comments
 - Alembic migrations via `CubridImpl` (auto-discovered entry point)
-- All 6 CUBRID isolation levels (dual-granularity: class-level + instance-level)
+- Three CUBRID MVCC isolation levels — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - Async support — `create_async_engine("cubrid+aiopycubrid://...")` via pycubrid.aio
 
 ## Known Limitations
@@ -217,7 +217,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 | [Connection](docs/CONNECTION.md) | Connection strings, URL format, driver setup, pool tuning |
 | [Type Mapping](docs/TYPES.md) | Full type mapping, CUBRID-specific types, collection types |
 | [DML Extensions](docs/DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, query trace |
-| [Isolation Levels](docs/ISOLATION_LEVELS.md) | All 6 CUBRID isolation levels, configuration |
+| [Isolation Levels](docs/ISOLATION_LEVELS.md) | The three CUBRID MVCC isolation levels, configuration |
 | [Alembic Migrations](docs/ALEMBIC.md) | Setup, configuration, limitations, batch workarounds |
 | [Feature Support](docs/FEATURE_SUPPORT.md) | Comparison with MySQL, PostgreSQL, SQLite |
 | [ORM Cookbook](docs/ORM_COOKBOOK.md) | Practical ORM examples, relationships, queries |

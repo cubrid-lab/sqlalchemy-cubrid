@@ -991,25 +991,19 @@ class CubridDialect(default.DefaultDialect):
         "READ COMMITTED": 4,
         "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES": 4,
         "CURSOR STABILITY": 4,
-        "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES": 3,
-        "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES": 2,
-        "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES": 1,
     }
 
     # Canonical spelling returned per integer code. Multiple input aliases map
     # to the same code (e.g. "READ COMMITTED" / "CURSOR STABILITY" / the long
     # granular spelling all map to 4); get_isolation_level() returns the single
     # canonical name below so that set -> get round-trips to the same code. The
-    # short standard names are used for 4/5/6 (the values users actually pass);
-    # levels 1-3 have no short name so the granular spelling is canonical. Every
-    # value here is also present in get_isolation_level_values().
+    # short standard names are used for the three MVCC levels 4/5/6 (the only
+    # levels CUBRID's MVCC engine accepts). Every value here is also present in
+    # get_isolation_level_values().
     _ISOLATION_LEVEL_REVERSE: dict[int, str] = {
         6: "SERIALIZABLE",
         5: "REPEATABLE READ",
         4: "READ COMMITTED",
-        3: "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES",
-        2: "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES",
-        1: "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
     }
 
     # CUBRID's default transaction isolation level (level 4 = READ COMMITTED).
@@ -1056,9 +1050,6 @@ class CubridDialect(default.DefaultDialect):
             "READ COMMITTED",
             "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES",
             "CURSOR STABILITY",
-            "REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES",
-            "READ COMMITTED SCHEMA, READ COMMITTED INSTANCES",
-            "READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES",
         ]
 
     def set_isolation_level(

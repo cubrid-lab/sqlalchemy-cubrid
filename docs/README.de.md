@@ -143,7 +143,7 @@ async with AsyncSession(engine) as session:
 - DDL-Unterstützung -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema-Reflexion -- Tabellen, Views, Spalten, PKs, FKs, Indizes, Unique-Constraints, Kommentare
 - Alembic-Migrationen über `CubridImpl` (automatisch erkannter Entry-Point)
-- Alle 6 CUBRID-Isolationsstufen (duale Granularität: Klassenebene + Instanzebene)
+- Drei CUBRID-MVCC-Isolationsstufen — `READ COMMITTED` (Standard), `REPEATABLE READ`, `SERIALIZABLE`
 - Async-Unterstützung — `create_async_engine("cubrid+aiopycubrid://...")` über pycubrid.aio
 
 ## Bekannte Einschränkungen
@@ -162,7 +162,7 @@ async with AsyncSession(engine) as session:
 | [Verbindung](CONNECTION.md) | Verbindungszeichenfolgen, URL-Format, Treibereinrichtung, Pool-Tuning |
 | [Typzuordnung](TYPES.md) | Vollständige Typzuordnung, CUBRID-spezifische Typen, Sammlungstypen |
 | [DML-Erweiterungen](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, Query-Trace |
-| [Isolationsstufen](ISOLATION_LEVELS.md) | Alle 6 CUBRID-Isolationsstufen, Konfiguration |
+| [Isolationsstufen](ISOLATION_LEVELS.md) | Die drei CUBRID-MVCC-Isolationsstufen, Konfiguration |
 | [Alembic-Migrationen](ALEMBIC.md) | Einrichtung, Konfiguration, Einschränkungen, Batch-Workarounds |
 | [Feature-Unterstützung](FEATURE_SUPPORT.md) | Vergleich mit MySQL, PostgreSQL, SQLite |
 | [ORM-Kochbuch](ORM_COOKBOOK.md) | Praktische ORM-Beispiele, Beziehungen, Abfragen |

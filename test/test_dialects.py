@@ -106,4 +106,4 @@ class TestDialectProperties:
         dialect = CubridDialect()
         levels = dialect.get_isolation_level_values()
         assert "SERIALIZABLE" in levels
-        assert len(levels) == 9
+        assert len(levels) == 6

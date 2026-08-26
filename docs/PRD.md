@@ -227,7 +227,7 @@ class CubridDialect(default.DefaultDialect):
 #### Connection & Isolation
 
 - **URL translation**: `cubrid://user:pass@host:port/db` → `CUBRID:host:port:db:::`
-- **6 isolation levels** including dual-granularity (class + instance)
+- **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - **Autocommit detection**: `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, `TRUNCATE`
 - **Savepoints**: Supported; `RELEASE SAVEPOINT` is a no-op
 
@@ -335,7 +335,7 @@ Limitations imposed by CUBRID itself (not the dialect):
 | [`README.md`](../README.md) | 80 | Concise landing page |
 | [`docs/CONNECTION.md`](CONNECTION.md) | 258 | Connection strings, URL format, driver setup |
 | [`docs/TYPES.md`](TYPES.md) | 313 | Full type mapping, CUBRID-specific types |
-| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | 230 | All 6 CUBRID isolation levels |
+| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | 206 | The three CUBRID MVCC isolation levels |
 | [`docs/DML_EXTENSIONS.md`](DML_EXTENSIONS.md) | 361 | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
 | [`docs/ALEMBIC.md`](ALEMBIC.md) | 376 | Alembic migration guide, limitations |
 | [`docs/FEATURE_SUPPORT.md`](FEATURE_SUPPORT.md) | 442 | Feature comparison with MySQL/PG/SQLite |
