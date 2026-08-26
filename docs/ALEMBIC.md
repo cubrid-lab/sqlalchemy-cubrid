@@ -184,54 +184,64 @@ The implementation inherits all standard Alembic operations from `DefaultImpl`:
 - `add_constraint`, `drop_constraint`
 - `create_table`, `drop_table`
 - `create_index`, `drop_index`
-- `alter_column` (with limitations — see below)
+- `alter_column` (type change, rename, nullable, default — all native)
 - `bulk_insert`
 
 ---
 
 ## Limitations & Workarounds
 
-### ❌ No ALTER COLUMN TYPE
+### ✅ ALTER COLUMN TYPE (native)
 
-CUBRID does not support changing a column's data type:
+CUBRID supports changing a column's data type in place via `MODIFY`:
 
 ```sql
--- This will FAIL:
+-- This works:
 ALTER TABLE users MODIFY COLUMN name BIGINT;
 ```
 
-**In Alembic**, `alter_column(type_=...)` raises `NotImplementedError` with a
-`batch_alter_table()` workaround link.
-
-**Workaround** — use `batch_alter_table` (table recreate):
+**In Alembic**, `alter_column(type_=...)` emits native
+`ALTER TABLE ... MODIFY <col> <definition>`. Because CUBRID's `MODIFY`
+restates the *entire* column definition, the dialect reconstructs the full
+definition (`NOT NULL` / `DEFAULT` / `AUTO_INCREMENT` / `COMMENT`) from the
+`existing_*` metadata Alembic supplies, so existing attributes are not
+silently dropped:
 
 ```python
 def upgrade():
-    with op.batch_alter_table("users") as batch_op:
-        batch_op.alter_column("name", type_=sa.BigInteger())
+    op.alter_column("users", "name", type_=sa.BigInteger())
 ```
 
-This creates a new table with the desired schema, copies data, drops the
-original, and renames the new table.
+!!! warning "Lossy conversions may be rejected"
+    Incompatible or truncating conversions may be rejected by the server
+    depending on the `alter_table_change_type_strict` system parameter (when
+    `yes`, incompatible/truncating conversions raise an error; when `no`,
+    CUBRID may silently truncate). For genuinely lossy or unsupported
+    conversions, fall back to `batch_alter_table` (table recreate):
 
-### ❌ No RENAME COLUMN
+    ```python
+    def upgrade():
+        with op.batch_alter_table("users") as batch_op:
+            batch_op.alter_column("name", type_=sa.BigInteger())
+    ```
 
-CUBRID ≤ 11.x does not support renaming columns:
+### ✅ RENAME COLUMN (native)
+
+CUBRID supports renaming columns via `RENAME COLUMN`:
 
 ```sql
--- This will FAIL:
+-- This works:
 ALTER TABLE users RENAME COLUMN old_name TO new_name;
 ```
 
-**In Alembic**, `alter_column(new_column_name=...)` raises
-`NotImplementedError` with a `batch_alter_table()` workaround link.
-
-**Workaround** — use `batch_alter_table`:
+**In Alembic**, `alter_column(new_column_name=...)` emits native
+`ALTER TABLE ... RENAME COLUMN old TO new`. When a rename is combined with a
+type change, the dialect emits `ALTER TABLE ... CHANGE old new <definition>`
+in a single statement:
 
 ```python
 def upgrade():
-    with op.batch_alter_table("users") as batch_op:
-        batch_op.alter_column("old_name", new_column_name="new_name")
+    op.alter_column("users", "old_name", new_column_name="new_name")
 ```
 
 ### ⚠️ DDL Auto-Commit
@@ -242,18 +252,29 @@ As noted above, DDL is auto-committed. Be aware:
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
 
-### Known `alter_column()` behavior
+### `alter_column()` behavior
 
-The CUBRID Alembic implementation explicitly allows only the `alter_column()`
-operations that map to supported backend behavior:
+The CUBRID Alembic implementation maps `alter_column()` to native CUBRID DDL:
 
-- `nullable=` changes
-- `server_default=` changes
-- comment/default-related operations that Alembic routes through `DefaultImpl`
+- `type_=` changes → `MODIFY` (or `CHANGE` when combined with a rename)
+- `new_column_name=` renames → `RENAME COLUMN` (or `CHANGE` with a type change)
+- `nullable=` / `server_default=` / comment changes routed through `DefaultImpl`
 
-The implementation rejects unsupported type changes and column renames early so
-that migrations fail with a clear backend-specific message instead of emitting
-invalid SQL.
+Type changes reconstruct the full column definition from `existing_*` metadata
+so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
+
+> **Important — hand-written type-changing migrations must pass `existing_*`.**
+> Because CUBRID's `MODIFY` / `CHANGE` restate the *entire* column definition,
+> the dialect can only preserve an attribute it is told about. Alembic
+> autogenerate populates `existing_type`, `existing_nullable`,
+> `existing_server_default`, and `existing_comment` from the reflected column,
+> but a manual `op.alter_column(..., type_=...)` does **not**. When editing a
+> migration by hand, pass `existing_nullable=`, `existing_server_default=`,
+> `existing_comment=`, and `existing_autoincrement=` for any attribute that must
+> survive the type change — otherwise it will be dropped. To *intentionally*
+> remove an attribute (e.g. a default), pass it explicitly (`server_default=None`),
+> which overrides the `existing_*` value.
+so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 
 ### Summary
 
@@ -265,8 +286,8 @@ invalid SQL.
 | `drop_column` | ✅ | — |
 | `alter_column` (nullable) | ✅ | — |
 | `alter_column` (default) | ✅ | — |
-| `alter_column` (type) | ❌ | `batch_alter_table` |
-| `alter_column` (rename) | ❌ | `batch_alter_table` |
+| `alter_column` (type) | ✅ | `batch_alter_table` for lossy conversions |
+| `alter_column` (rename) | ✅ | — |
 | `create_index` | ✅ | — |
 | `drop_index` | ✅ | — |
 | `add_constraint` | ✅ | — |
@@ -379,11 +400,12 @@ Because CUBRID auto-commits DDL, some statements already took effect.
    completed ones
 3. Stamp the revision to the correct state: `alembic stamp <revision>`
 
-### `alter_column` raises NotImplementedError
+### `alter_column` type change rejected by the server
 
-**Cause**: Attempting to change column type or rename column directly.
+**Cause**: A lossy or incompatible type conversion when the
+`alter_table_change_type_strict` system parameter is `yes`.
 
-**Fix**: Use `batch_alter_table` — see [Limitations & Workarounds](#limitations--workarounds).
+**Fix**: For genuinely lossy/unsupported conversions, use `batch_alter_table` — see [ALTER COLUMN TYPE (native)](#-alter-column-type-native).
 
 ---
 
@@ -393,9 +415,12 @@ Because CUBRID auto-commits DDL, some statements already took effect.
     CUBRID auto-commits DDL. A failed migration can leave partial schema changes applied.
     Prefer small revisions with one logical schema change each.
 
-!!! warning "Type changes and rename require batch operations"
-    Direct `alter_column(type_=...)` and `alter_column(new_column_name=...)` are not portable for CUBRID.
-    Use `op.batch_alter_table()` with tested downgrade steps.
+!!! warning "Lossy type changes may be rejected by the server"
+    `alter_column(type_=...)` and `alter_column(new_column_name=...)` emit native
+    CUBRID DDL (`MODIFY` / `RENAME COLUMN` / `CHANGE`). Only genuinely lossy or
+    incompatible type conversions are rejected (governed by
+    `alter_table_change_type_strict`); for those, use `op.batch_alter_table()`
+    with tested downgrade steps.
 
 !!! tip "Always test upgrade + downgrade on staging"
     Validate full forward and backward migration chains before production rollout.

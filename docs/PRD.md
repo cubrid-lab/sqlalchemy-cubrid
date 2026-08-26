@@ -264,7 +264,7 @@ stmt = (
 - Auto-discovered via `alembic.ddl` entry point
 - Autogenerate: `render_type()` for SET/MULTISET/SEQUENCE rendering in migration scripts
 - Autogenerate: `compare_type()` for semantic comparison of collection types
-- Limitations: no ALTER COLUMN TYPE, no RENAME COLUMN (use `batch_alter_table`)
+- Native `alter_column`: type change (`MODIFY`), rename (`RENAME COLUMN`), combined (`CHANGE`); `batch_alter_table` only for lossy conversions (`alter_table_change_type_strict`)
 ---
 
 ## 4. Test Coverage
@@ -322,8 +322,8 @@ Limitations imposed by CUBRID itself (not the dialect):
 | Async DBAPI support | ✅ | Via pycubrid.aio async driver (`cubrid+aiopycubrid://`) |
 | Two-phase commit (XA) | ❌ | CUBRID has no distributed transaction support |
 | Server-side cursors | ❌ | CUBRID Python driver limitation |
-| Alembic ALTER COLUMN TYPE | ❌ | Use `batch_alter_table` workaround |
-| Alembic RENAME COLUMN | ❌ | Use `batch_alter_table` workaround |
+| Alembic ALTER COLUMN TYPE | ✅ | Native `MODIFY`; `batch_alter_table` for lossy conversions |
+| Alembic RENAME COLUMN | ✅ | Native `RENAME COLUMN` (`CHANGE` when combined with a type change) |
 | FOR UPDATE NOWAIT / SKIP LOCKED | ❌ | Not supported by CUBRID |
 
 ---
@@ -452,12 +452,14 @@ SA dialect bugs are subtle — wrong SQL generation, missing escaping, broken re
 High coverage catches regressions before they reach users. The 3 uncovered lines are
 verified unreachable defensive fallbacks, documented in test suite.
 
-### 9.4 Why `batch_alter_table` for Alembic Limitations
+### 9.4 Native ALTER Column Support in Alembic
 
-CUBRID lacks `ALTER COLUMN TYPE` and `RENAME COLUMN`. Rather than emulating these
-with complex DDL (which could silently lose data), we document the limitation and
-recommend Alembic's `batch_alter_table` — a proven table-recreate strategy used
-by SQLite's dialect for the same reason.
+CUBRID natively supports `ALTER TABLE ... MODIFY`, `CHANGE`, and `RENAME COLUMN`
+(MySQL-compatible syntax), so the dialect emits native DDL for column type changes
+and renames rather than raising. Type conversions are governed by the
+`alter_table_change_type_strict` system parameter. For lossy or incompatible
+conversions, users can still fall back to Alembic's `batch_alter_table`
+table-recreate strategy when they need full control over data migration.
 
 ---
 

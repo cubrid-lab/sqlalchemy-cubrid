@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import (
     Column,
     ForeignKey,
@@ -611,3 +612,108 @@ class TestFetchShapeCompatibility:
                 assert count == 10
         finally:
             _Base.metadata.drop_all(engine)
+
+
+class TestAlembicAlterColumnIntegration:
+    """Live validation that CubridImpl.alter_column emits server-accepted DDL.
+
+    Guards the native ALTER TABLE MODIFY / CHANGE / RENAME COLUMN support
+    (cubrid-lab/sqlalchemy-cubrid#305) against a real CUBRID server so we do
+    not rely on compile-only assertions. See test/test_alembic.py for the
+    offline SQL-emission tests.
+    """
+
+    def _operations(self, conn):
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+
+        import sqlalchemy_cubrid.alembic_impl  # noqa: F401  (registers CubridImpl)
+
+        ctx = MigrationContext.configure(connection=conn, opts={"as_sql": False})
+        return Operations(ctx)
+
+    def test_modify_column_type(self, engine):
+        """alter_column(type_=...) emits ALTER TABLE ... MODIFY, accepted live."""
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alter_it_modify"))
+            conn.execute(text("CREATE TABLE alter_it_modify (id INT PRIMARY KEY, age INT)"))
+            try:
+                op = self._operations(conn)
+                op.alter_column(
+                    "alter_it_modify", "age", type_=sa.BigInteger(), existing_nullable=True
+                )
+                cols = {
+                    c["name"]: str(c["type"]) for c in inspect(conn).get_columns("alter_it_modify")
+                }
+                assert cols["age"] == "BIGINT"
+            finally:
+                conn.execute(text("DROP TABLE IF EXISTS alter_it_modify"))
+                conn.commit()
+
+    def test_modify_column_full_definition(self, engine):
+        """MODIFY restates NOT NULL / DEFAULT / COMMENT without error."""
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alter_it_fulldef"))
+            conn.execute(text("CREATE TABLE alter_it_fulldef (id INT PRIMARY KEY, age INT)"))
+            try:
+                op = self._operations(conn)
+                op.alter_column(
+                    "alter_it_fulldef",
+                    "age",
+                    type_=sa.BigInteger(),
+                    existing_nullable=False,
+                    existing_server_default="0",
+                    existing_comment="age in years",
+                )
+                cols = {c["name"]: c for c in inspect(conn).get_columns("alter_it_fulldef")}
+                assert str(cols["age"]["type"]) == "BIGINT"
+                assert cols["age"]["nullable"] is False
+            finally:
+                conn.execute(text("DROP TABLE IF EXISTS alter_it_fulldef"))
+                conn.commit()
+
+    def test_rename_column(self, engine):
+        """alter_column(new_column_name=...) emits ALTER TABLE ... RENAME COLUMN."""
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alter_it_rename"))
+            conn.execute(
+                text("CREATE TABLE alter_it_rename (id INT PRIMARY KEY, note VARCHAR(50))")
+            )
+            try:
+                op = self._operations(conn)
+                op.alter_column(
+                    "alter_it_rename",
+                    "note",
+                    new_column_name="remark",
+                    existing_type=sa.String(50),
+                )
+                names = {c["name"] for c in inspect(conn).get_columns("alter_it_rename")}
+                assert "remark" in names and "note" not in names
+            finally:
+                conn.execute(text("DROP TABLE IF EXISTS alter_it_rename"))
+                conn.commit()
+
+    def test_change_column_rename_and_type(self, engine):
+        """Combined rename + type change emits ALTER TABLE ... CHANGE, accepted live."""
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS alter_it_change"))
+            conn.execute(
+                text("CREATE TABLE alter_it_change (id INT PRIMARY KEY, note VARCHAR(50))")
+            )
+            try:
+                op = self._operations(conn)
+                op.alter_column(
+                    "alter_it_change",
+                    "note",
+                    new_column_name="memo",
+                    type_=sa.String(100),
+                    existing_nullable=True,
+                )
+                cols = {
+                    c["name"]: str(c["type"]) for c in inspect(conn).get_columns("alter_it_change")
+                }
+                assert "note" not in cols
+                assert cols["memo"] == "VARCHAR(100)"
+            finally:
+                conn.execute(text("DROP TABLE IF EXISTS alter_it_change"))
+                conn.commit()
