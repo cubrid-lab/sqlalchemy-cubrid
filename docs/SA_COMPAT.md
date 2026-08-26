@@ -44,6 +44,6 @@ compiler internals in practice.
 ## Validation Plan
 
 - Keep running full offline tests on SQLAlchemy `2.0.x` and `2.1.x`.
-- Run a SQLAlchemy `2.2` pre-release canary job with `continue-on-error`.
+- Run a SQLAlchemy `2.1` pre-release canary job with `continue-on-error`.
 - If canary fails, prioritize replacing direct internal usage where public
   alternatives exist, or align with upstream dialect patterns.

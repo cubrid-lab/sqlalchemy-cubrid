@@ -1,6 +1,6 @@
 # sqlalchemy-cubrid
 
-**SQLAlchemy-2.0–2.2-Dialekt für die CUBRID-Datenbank** — Python-ORM, Schema-Reflexion, Alembic-Migrationen und Typzuordnung für SQLAlchemy und CUBRID-spezifische Typen.
+**SQLAlchemy-2.0–2.1-Dialekt für die CUBRID-Datenbank** — Python-ORM, Schema-Reflexion, Alembic-Migrationen und Typzuordnung für SQLAlchemy und CUBRID-spezifische Typen.
 
 [🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
@@ -23,15 +23,15 @@
 
 CUBRID ist eine leistungsstarke relationale Open-Source-Datenbank, die in
 koreanischen Behörden und Unternehmensanwendungen weit verbreitet ist. Bislang
-gab es keinen aktiv gepflegten SQLAlchemy-Dialekt, der die moderne 2.0–2.2-API
+gab es keinen aktiv gepflegten SQLAlchemy-Dialekt, der die moderne 2.0–2.1-API
 unterstützt.
 
 **sqlalchemy-cubrid** schließt diese Lücke:
 
-- Vollständiger SQLAlchemy-2.0–2.2-Dialekt mit **Statement-Caching** und **PEP-561-Typisierung**
+- Vollständiger SQLAlchemy-2.0–2.1-Dialekt mit **Statement-Caching** und **PEP-561-Typisierung**
 - **619 Offline-Tests** mit **~98,26 % Codeabdeckung** — zum Ausführen ist keine Datenbank erforderlich
 - **Nebenläufigkeits-Stresstests** — `QueuePool`-basierte synchrone Threads + `asyncio.gather`-Workloads gegen echtes CUBRID validiert
-- **SQLAlchemy-2.2-fähiger Compat-Shim** — Zugriff auf private APIs in `_compat.py` gekapselt (bis zur vollständigen SA-2.2-Validierung weiterhin auf `<2.3` festgelegt)
+- **SQLAlchemy-2.1-fähiger Compat-Shim** — Zugriff auf private APIs in `_compat.py` gekapselt (bis zur vollständigen SA-2.1-Validierung weiterhin auf `<2.3` festgelegt)
 - Gegen **4 CUBRID-Versionen** (10.2, 11.0, 11.2, 11.4) auf **Python 3.10 -- 3.14** getestet
 - CUBRID-spezifische DML-Konstrukte: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic-Migrationsunterstützung sofort einsatzbereit
@@ -59,7 +59,7 @@ flowchart TD
 ## Anforderungen
 
 - Python 3.10+
-- SQLAlchemy 2.0 – 2.2
+- SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-Erweiterung) **oder** [pycubrid](https://github.com/cubrid-lab/pycubrid) (reines Python)
 
 ## Installation
@@ -152,7 +152,7 @@ async with AsyncSession(engine) as session:
 - **Keine Sequenzen** — CUBRID verwendet ausschließlich `AUTO_INCREMENT`
 - **Kein Multi-Schema** — ein einzelnes Schema pro Datenbank
 - **DDL committet automatisch** — Migrationen sind nicht transaktional (`transactional_ddl = False`)
-- **Nur SQLAlchemy 2.0–2.2** — wegen interner API-Abhängigkeiten auf `<2.3` festgelegt ([Details](ARCHITECTURE.md))
+- **Nur SQLAlchemy 2.0–2.1** — wegen interner API-Abhängigkeiten auf `<2.3` festgelegt ([Details](ARCHITECTURE.md))
 - **Async erfordert pycubrid >= 1.2.0,<2.0** — der Treiber `cubrid+aiopycubrid://` benötigt die von diesem Projekt aktuell unterstützte async-fähige pycubrid-Paketlinie
 
 ## Dokumentation
@@ -177,7 +177,7 @@ async with AsyncSession(engine) as session:
 |---|---|
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
-| SQLAlchemy | 2.0–2.2 |
+| SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7 |
 | pycubrid (sync) | >=1.2.0,<2.0 |
 | pycubrid (async) | >=1.2.0,<2.0 |
@@ -193,9 +193,9 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 Für den Pure-Python-Treiber (kein C-Build erforderlich): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
 
-### Unterstützt sqlalchemy-cubrid SQLAlchemy 2.0–2.2?
+### Unterstützt sqlalchemy-cubrid SQLAlchemy 2.0–2.1?
 
-Ja. sqlalchemy-cubrid wurde für SQLAlchemy 2.0–2.2 entwickelt und unterstützt die API im 2.0-Stil einschließlich `Session.execute()`, typisierter `Mapped[]`-Spalten und Statement-Caching.
+Ja. sqlalchemy-cubrid wurde für SQLAlchemy 2.0–2.1 entwickelt und unterstützt die API im 2.0-Stil einschließlich `Session.execute()`, typisierter `Mapped[]`-Spalten und Statement-Caching.
 
 ### Unterstützt sqlalchemy-cubrid Alembic-Migrationen?
 

@@ -1,4 +1,4 @@
-# PRD: sqlalchemy-cubrid — CUBRID Dialect for SQLAlchemy 2.0–2.2
+# PRD: sqlalchemy-cubrid — CUBRID Dialect for SQLAlchemy 2.0–2.1
 
 ## 1. Overview
 
@@ -18,9 +18,9 @@ The original `sqlalchemy-cubrid` project was abandoned and broken:
 
 ### 1.2 What Was Built
 
-A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2.0–2.2:
+A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2.0–2.1:
 
-- **Full SQLAlchemy 2.0–2.2 dialect** with statement caching
+- **Full SQLAlchemy 2.0–2.1 dialect** with statement caching
 - **Complete SQL feature coverage** — everything CUBRID supports is enabled
 - **Comprehensive type system** — 20+ types including CUBRID-specific collections and JSON
 - **Schema reflection** — tables, views, columns, PKs, FKs, indexes, unique constraints, comments
@@ -36,7 +36,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 | Criterion | Target | Achieved |
 |---|---|---|
 | Installable on Python 3.10+ | ✅ | ✅ `pip install sqlalchemy-cubrid` |
-| SQLAlchemy 2.0 – 2.2 compatible | ✅ | ✅ Full API compliance |
+| SQLAlchemy 2.0 – 2.1 compatible | ✅ | ✅ Full API compliance |
 | Offline tests (no live DB) | ✅ | ✅ 619 tests, ~98.26% coverage |
 | All dialect methods implemented | ✅ | ✅ Reflection, compilation, types |
 | CI/CD with version matrix | ✅ | ✅ Py 3.10–3.14 × CUBRID 10.2–11.4 |
@@ -87,7 +87,7 @@ graph TD
 
 | Package | Version | Purpose |
 |---|---|---|
-| SQLAlchemy | ≥ 2.0, < 2.2 | Core ORM/engine framework |
+| SQLAlchemy | ≥ 2.0, < 2.3 | Core ORM/engine framework |
 | Python | ≥ 3.10 | Runtime |
 | CUBRID-Python | any | DBAPI driver (optional extra) |
 | Alembic | ≥ 1.7 | Migration support (optional extra) |
