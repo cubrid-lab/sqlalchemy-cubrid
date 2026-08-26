@@ -54,7 +54,7 @@ engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
 ```mermaid
 flowchart TD
-    app[Application Code] --> sa[SQLAlchemy 2.0–2.2]
+    app[Application Code] --> sa[SQLAlchemy 2.0–2.1]
     sa --> dialect[sqlalchemy-cubrid]
     dialect --> cext[CUBRIDdb]
     dialect --> pure[pycubrid]

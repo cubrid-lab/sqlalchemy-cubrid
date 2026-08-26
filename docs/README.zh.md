@@ -1,6 +1,6 @@
 # sqlalchemy-cubrid
 
-**适用于 CUBRID 数据库的 SQLAlchemy 2.0–2.2 方言** — 为 SQLAlchemy 与 CUBRID 特有类型提供 Python ORM、模式反射、Alembic 迁移和类型映射。
+**适用于 CUBRID 数据库的 SQLAlchemy 2.0–2.1 方言** — 为 SQLAlchemy 与 CUBRID 特有类型提供 Python ORM、模式反射、Alembic 迁移和类型映射。
 
 [🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
@@ -17,19 +17,19 @@
 
 ---
 
-> **状态：Production/Stable** — 支持 CUBRID 10.2–11.4 和 SQLAlchemy 2.0–2.2 的稳定维护方言。每个 PR 均通过实时数据库集成 CI 验证。
+> **状态：Production/Stable** — 支持 CUBRID 10.2–11.4 和 SQLAlchemy 2.0–2.1 的稳定维护方言。每个 PR 均通过实时数据库集成 CI 验证。
 
 ## 为什么选择 sqlalchemy-cubrid？
 
 CUBRID 是一款高性能开源关系型数据库，在韩国公共部门和企业应用中被广泛采用。
-此前一直没有一个积极维护、支持现代 2.0–2.2 API 的 SQLAlchemy 方言。
+此前一直没有一个积极维护、支持现代 2.0–2.1 API 的 SQLAlchemy 方言。
 
 **sqlalchemy-cubrid** 填补了这一空白：
 
-- 完整的 SQLAlchemy 2.0–2.2 方言，支持**语句缓存**和 **PEP 561 类型标注**
+- 完整的 SQLAlchemy 2.0–2.1 方言，支持**语句缓存**和 **PEP 561 类型标注**
 - **619 个离线测试**，**约 98.26% 代码覆盖率** —— 无需数据库即可运行
 - **并发压力测试** —— 已在真实 CUBRID 上验证 `QueuePool` 同步线程和 `asyncio.gather` 工作负载
-- **面向 SQLAlchemy 2.2 的兼容垫片** —— 私有 API 访问被封装在 `_compat.py` 中（在完成 SA 2.2 全面验证前仍固定为 `<2.3`）
+- **面向 SQLAlchemy 2.1 的兼容垫片** —— 私有 API 访问被封装在 `_compat.py` 中（在完成 SA 2.1 全面验证前仍固定为 `<2.3`）
 - 在 **Python 3.10 -- 3.14** 上测试 **4 个 CUBRID 版本**（10.2、11.0、11.2、11.4）
 - CUBRID 特有的 DML 构造：`ON DUPLICATE KEY UPDATE`、`MERGE`、`REPLACE INTO`
 - 开箱即用的 Alembic 迁移支持
@@ -57,7 +57,7 @@ flowchart TD
 ## 环境要求
 
 - Python 3.10+
-- SQLAlchemy 2.0 – 2.2
+- SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python)（C 扩展）**或** [pycubrid](https://github.com/cubrid-lab/pycubrid)（纯 Python）
 
 ## 安装
@@ -150,7 +150,7 @@ async with AsyncSession(engine) as session:
 - **不支持序列** —— CUBRID 仅使用 `AUTO_INCREMENT`
 - **不支持多 schema** —— 每个数据库只有单一 schema
 - **DDL 会自动提交** —— 迁移不是事务性的（`transactional_ddl = False`）
-- **仅支持 SQLAlchemy 2.0–2.2** —— 由于内部 API 依赖，版本固定为 `<2.3`（[详情](ARCHITECTURE.md)）
+- **仅支持 SQLAlchemy 2.0–2.1** —— 由于内部 API 依赖，版本固定为 `<2.3`（[详情](ARCHITECTURE.md)）
 - **Async 需要 pycubrid >= 1.2.0,<2.0** —— `cubrid+aiopycubrid://` 驱动需要本项目当前支持的 async 能力 pycubrid 包线
 
 ## 文档
@@ -175,7 +175,7 @@ async with AsyncSession(engine) as session:
 |---|---|
 | Python | 3.10、3.11、3.12、3.13、3.14 |
 | CUBRID | 10.2、11.0、11.2、11.4 |
-| SQLAlchemy | 2.0–2.2 |
+| SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7 |
 | pycubrid（sync） | >=1.2.0,<2.0 |
 | pycubrid（async） | >=1.2.0,<2.0 |
@@ -191,9 +191,9 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 对于纯 Python 驱动（无需 C 构建）：`create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
 
-### sqlalchemy-cubrid 支持 SQLAlchemy 2.0–2.2 吗？
+### sqlalchemy-cubrid 支持 SQLAlchemy 2.0–2.1 吗？
 
-支持。sqlalchemy-cubrid 是为 SQLAlchemy 2.0–2.2 构建的，并支持 2.0 风格 API，包括 `Session.execute()`、带类型标注的 `Mapped[]` 列以及语句缓存。
+支持。sqlalchemy-cubrid 是为 SQLAlchemy 2.0–2.1 构建的，并支持 2.0 风格 API，包括 `Session.execute()`、带类型标注的 `Mapped[]` 列以及语句缓存。
 
 ### sqlalchemy-cubrid 支持 Alembic 迁移吗？
 

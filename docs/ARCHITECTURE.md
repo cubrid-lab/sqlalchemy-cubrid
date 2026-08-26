@@ -3,7 +3,7 @@
 ## Design Objectives
 sqlalchemy-cubrid is designed to provide a robust, modern interface between SQLAlchemy and the CUBRID database. Its core design goals include:
 
-*   Full SQLAlchemy 2.0–2.2 dialect implementation
+*   Full SQLAlchemy 2.0–2.1 dialect implementation
 *   Three driver modes (C-extension CUBRIDdb + pure Python pycubrid + async pycubrid.aio)
 *   Schema reflection (tables, columns, constraints, indexes, comments)
 *   Custom DML extensions (ON DUPLICATE KEY UPDATE, MERGE, REPLACE)
@@ -245,7 +245,7 @@ flowchart TD
 
 ## Key Design Decisions
 
-*   **SQLAlchemy < 2.2 pin**: Uses three remaining private SA attributes (`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`) via `_compat.py` helpers at compiler.py:93, 104-105 — requires version pinning until public alternatives exist.
+*   **SQLAlchemy `<2.3` pin**: Uses three remaining private SA attributes (`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`) via `_compat.py` helpers at compiler.py:93, 104-105 — requires version pinning until public alternatives exist.
 *   **BOOLEAN → SMALLINT mapping**: CUBRID has no native BOOLEAN — dialect maps to `SMALLINT` (0/1).
 *   **JSON type support (v1.2.0+)**: Full JSON type mapping including `JSON`, `JSONIndexType`, `JSONPathType`, with path access via `json_getattr` and `json_getitem_op`. Requires CUBRID ≥ 10.2.
 *   **`transactional_ddl = False`**: CUBRID auto-commits DDL statements — Alembic cannot roll back failed migrations.
