@@ -46,8 +46,8 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [REPLACE INTO Behavior](#replace-into-behavior)
 - [Alembic Migration Issues](#alembic-migration-issues)
   - [No Implementation Found for Dialect 'cubrid'](#no-implementation-found-for-dialect-cubrid)
-  - [ALTER COLUMN TYPE Fails](#alter-column-type-fails)
-  - [RENAME COLUMN Fails](#rename-column-fails)
+  - [ALTER COLUMN TYPE Rejected (lossy conversion)](#alter-column-type-rejected-lossy-conversion)
+  - [RENAME COLUMN](#rename-column)
   - [Partial Migration (DDL Auto-Commit)](#partial-migration-ddl-auto-commit)
   - [Autogenerate Not Detecting Changes](#autogenerate-not-detecting-changes)
 - [Isolation Level Issues](#isolation-level-issues)
@@ -886,17 +886,28 @@ The `CubridImpl` class is auto-discovered via the `alembic.ddl` entry point. No 
 
 ---
 
-### ALTER COLUMN TYPE Fails
+### ALTER COLUMN TYPE Rejected (lossy conversion)
 
 **Symptom:**
 
 ```
-NotImplementedError: CUBRID does not support ALTER COLUMN TYPE
+Error: cannot coerce value ... (incompatible type change)
 ```
 
-**CUBRID does not support changing a column's data type** with `ALTER TABLE`.
+**CUBRID supports changing a column's data type** via native
+`ALTER TABLE ... MODIFY`, which the dialect emits automatically. A change is
+only rejected when it is lossy/incompatible and the
+`alter_table_change_type_strict` system parameter is `yes` (when `no`, CUBRID
+may silently truncate).
 
-**Workaround — use `batch_alter_table` (table recreate):**
+**Normal usage (emits native `MODIFY`):**
+
+```python
+def upgrade():
+    op.alter_column("users", "name", type_=sa.String(500))
+```
+
+**Workaround for genuinely lossy conversions — use `batch_alter_table` (table recreate):**
 
 ```python
 def upgrade():
@@ -912,22 +923,17 @@ def downgrade():
 
 ---
 
-### RENAME COLUMN Fails
+### RENAME COLUMN
 
-**Symptom:**
+**CUBRID supports `ALTER TABLE ... RENAME COLUMN`.** The dialect emits it
+natively; `alter_column(new_column_name=...)` no longer raises. A combined
+rename + type change is emitted as a single `CHANGE` statement.
 
-```
-NotImplementedError: CUBRID does not support RENAME COLUMN
-```
-
-**CUBRID ≤ 11.x does not support `ALTER TABLE ... RENAME COLUMN`.**
-
-**Workaround — use `batch_alter_table`:**
+**Normal usage (emits native `RENAME COLUMN`):**
 
 ```python
 def upgrade():
-    with op.batch_alter_table("users") as batch_op:
-        batch_op.alter_column("old_name", new_column_name="new_name")
+    op.alter_column("users", "old_name", new_column_name="new_name")
 ```
 
 ---

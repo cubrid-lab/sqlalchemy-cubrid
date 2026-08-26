@@ -219,21 +219,75 @@ class TestCubridImpl:
         assert "alembic" in optional_deps
         assert any("alembic" in dep for dep in optional_deps["alembic"])
 
-    def test_alter_column_type_raises(self):
+    @staticmethod
+    def _capture_alter_column_sql(**kwargs: Any) -> str:
+        """Route ``alter_column`` through CubridImpl and compile the emitted DDL.
+
+        ``_exec`` is patched to capture the DDL construct instead of running it
+        against a live connection, then the construct is compiled with the
+        CUBRID dialect so we assert on the *actual* SQL CUBRID would receive.
+        """
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
         impl = object.__new__(CubridImpl)
+        captured: list[Any] = []
+        with mock.patch.object(
+            CubridImpl, "_exec", side_effect=lambda element, *a, **k: captured.append(element)
+        ):
+            impl.alter_column(**kwargs)
+        assert len(captured) == 1
+        return str(captured[0].compile(dialect=CubridDialect())).strip()
 
-        with pytest.raises(NotImplementedError, match="ALTER COLUMN TYPE"):
-            impl.alter_column("users", "age", type_=sa.BigInteger())
+    def test_alter_column_type_emits_modify(self):
+        """A type-only change emits native ``ALTER TABLE ... MODIFY``.
 
-    def test_alter_column_rename_raises(self):
-        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+        CUBRID has supported in-place column type changes for years; the old
+        NotImplementedError was wrong (see cubrid-lab/sqlalchemy-cubrid#305).
+        """
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="age",
+            type_=sa.BigInteger(),
+        )
+        assert sql == "ALTER TABLE users MODIFY age BIGINT"
 
-        impl = object.__new__(CubridImpl)
+    def test_alter_column_type_reconstructs_existing_attributes(self):
+        """MODIFY restates the whole column, so existing_* metadata is preserved."""
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="age",
+            type_=sa.BigInteger(),
+            existing_nullable=False,
+            existing_server_default="0",
+        )
+        assert sql == "ALTER TABLE users MODIFY age BIGINT NOT NULL DEFAULT '0'"
 
-        with pytest.raises(NotImplementedError, match="RENAME COLUMN"):
-            impl.alter_column("users", "old_name", name="new_name")
+    def test_alter_column_rename_emits_rename_column(self):
+        """A rename-only change emits native ``ALTER TABLE ... RENAME COLUMN``."""
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="old_name",
+            name="new_name",
+        )
+        assert sql == "ALTER TABLE users RENAME COLUMN old_name TO new_name"
+
+    def test_alter_column_rename_and_type_emits_change(self):
+        """A combined rename + type change emits native ``ALTER TABLE ... CHANGE``."""
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="age",
+            name="years",
+            type_=sa.BigInteger(),
+            existing_nullable=True,
+        )
+        assert sql == "ALTER TABLE users CHANGE age years BIGINT"
+
+    def test_modify_column_requires_type(self):
+        """The DDL element guards against a missing column type."""
+        from sqlalchemy_cubrid.alembic_impl import CubridModifyColumn
+
+        with pytest.raises(ValueError, match="requires the column type"):
+            CubridModifyColumn("users", "age", type_=None)
 
     def test_alter_column_nullable_delegates(self):
         from alembic.ddl.impl import DefaultImpl

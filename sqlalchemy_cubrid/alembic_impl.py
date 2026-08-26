@@ -25,14 +25,17 @@ CUBRID-specific notes
 ---------------------
 * **DDL is auto-committed** — CUBRID implicitly commits every DDL
   statement, so ``transactional_ddl`` is set to ``False``.
-* **No ALTER COLUMN TYPE** — CUBRID does not support changing a
-  column's data type via ``ALTER TABLE … MODIFY``.  Alembic's
-  ``alter_column(type_=…)`` will raise.  Use ``batch_alter_table``
-  (table recreate) as a workaround.
-* **No RENAME COLUMN** — CUBRID ≤ 11.x does not support
-  ``ALTER TABLE … RENAME COLUMN``.  Alembic's ``alter_column(new_column_name=…)``
-  will raise.  Use ``batch_alter_table`` (table recreate) as a
-  workaround.
+* **Native column rename** — CUBRID supports
+  ``ALTER TABLE … RENAME COLUMN old TO new``.  Alembic's
+  ``alter_column(new_column_name=…)`` emits it directly.
+* **Native column type change** — CUBRID supports in-place type
+  changes via ``ALTER TABLE … MODIFY col <definition>`` (and
+  ``CHANGE old new <definition>`` when combined with a rename).
+  Because CUBRID restates the *entire* column definition, existing
+  attributes are reconstructed from Alembic's ``existing_*`` metadata.
+  Incompatible conversions may be rejected depending on the
+  ``alter_table_change_type_strict`` system parameter; use
+  ``batch_alter_table`` as a fallback for lossy migrations.
 """
 
 from __future__ import annotations
@@ -48,6 +51,14 @@ except ImportError:  # pragma: no cover — optional dependency
         "Alembic is required for migration support. Install it with: pip install sqlalchemy-cubrid[alembic]"
     ) from None
 
+from alembic.ddl.base import (
+    AlterColumn,
+    alter_table,
+    format_column_name,
+    format_server_default,
+)
+from sqlalchemy.ext.compiler import compiles
+
 if TYPE_CHECKING:
     from typing import Protocol
 
@@ -55,6 +66,104 @@ if TYPE_CHECKING:
 
     class AutogenContextLike(Protocol):
         imports: set[str]
+
+
+class CubridRenameColumn(AlterColumn):
+    """Represents ``ALTER TABLE t RENAME COLUMN old TO new`` for CUBRID."""
+
+    def __init__(
+        self,
+        name: str,
+        column_name: str,
+        newname: str,
+        schema: str | None = None,
+    ) -> None:
+        super(AlterColumn, self).__init__(name, schema=schema)
+        self.column_name = column_name
+        self.newname = newname
+
+
+class CubridModifyColumn(AlterColumn):
+    """Represents ``ALTER TABLE t MODIFY col <definition>`` for CUBRID."""
+
+    def __init__(
+        self,
+        name: str,
+        column_name: str,
+        *,
+        type_: Any,
+        nullable: bool | None = None,
+        default: Any = False,
+        autoincrement: bool | None = None,
+        comment: Any = False,
+        schema: str | None = None,
+    ) -> None:
+        super(AlterColumn, self).__init__(name, schema=schema)
+        self.column_name = column_name
+        self.nullable = nullable
+        self.default = default
+        self.autoincrement = autoincrement
+        self.comment = comment
+        if type_ is None:
+            raise ValueError(
+                f"CUBRID MODIFY/CHANGE COLUMN for '{column_name}' on table "
+                f"'{name}' requires the column type. Pass ``type_`` or "
+                f"``existing_type`` so the full column definition can be built."
+            )
+        self.type_ = sa.types.to_instance(type_)
+
+
+class CubridChangeColumn(CubridModifyColumn):
+    """Represents ``ALTER TABLE t CHANGE old new <definition>`` for CUBRID."""
+
+    def __init__(self, *args: Any, newname: str, **kw: Any) -> None:
+        super().__init__(*args, **kw)
+        self.newname = newname
+
+
+def _cubrid_colspec(compiler: Any, element: CubridModifyColumn) -> str:
+    """Build the CUBRID column definition for MODIFY/CHANGE clauses."""
+    spec = [compiler.dialect.type_compiler_instance.process(element.type_)]
+    if element.nullable is False:
+        spec.append("NOT NULL")
+    if element.autoincrement:
+        spec.append("AUTO_INCREMENT")
+    elif element.default is not False and element.default is not None:
+        spec.append("DEFAULT " + format_server_default(compiler, element.default))
+    if element.comment:
+        spec.append(
+            "COMMENT "
+            + compiler.sql_compiler.render_literal_value(element.comment, sa.types.String())
+        )
+    return " ".join(spec)
+
+
+@compiles(CubridRenameColumn, "cubrid")
+def _cubrid_rename_column(element: CubridRenameColumn, compiler: Any, **kw: Any) -> str:
+    return "%s RENAME COLUMN %s TO %s" % (
+        alter_table(compiler, element.table_name, element.schema),
+        format_column_name(compiler, element.column_name),
+        format_column_name(compiler, element.newname),
+    )
+
+
+@compiles(CubridChangeColumn, "cubrid")
+def _cubrid_change_column(element: CubridChangeColumn, compiler: Any, **kw: Any) -> str:
+    return "%s CHANGE %s %s %s" % (
+        alter_table(compiler, element.table_name, element.schema),
+        format_column_name(compiler, element.column_name),
+        format_column_name(compiler, element.newname),
+        _cubrid_colspec(compiler, element),
+    )
+
+
+@compiles(CubridModifyColumn, "cubrid")
+def _cubrid_modify_column(element: CubridModifyColumn, compiler: Any, **kw: Any) -> str:
+    return "%s MODIFY %s %s" % (
+        alter_table(compiler, element.table_name, element.schema),
+        format_column_name(compiler, element.column_name),
+        _cubrid_colspec(compiler, element),
+    )
 
 
 class CubridImpl(DefaultImpl):
@@ -170,20 +279,76 @@ class CubridImpl(DefaultImpl):
         type_: Any = None,
         **kw: Any,
     ) -> None:
+        """Emit CUBRID-native ALTER TABLE DDL for a column change.
+
+        CUBRID supports column rename and in-place type changes with
+        MySQL-compatible syntax::
+
+            ALTER TABLE t RENAME COLUMN old TO new
+            ALTER TABLE t MODIFY col <definition>
+            ALTER TABLE t CHANGE old new <definition>
+
+        A type change (``type_``) is emitted as ``MODIFY`` (or ``CHANGE``
+        when combined with a rename).  Because CUBRID's ``MODIFY``/``CHANGE``
+        restates the *entire* column definition, this method reconstructs the
+        definition from the ``existing_*`` metadata that Alembic supplies so
+        that attributes such as ``NOT NULL`` / ``DEFAULT`` / ``COMMENT`` are
+        not silently dropped.  Incompatible conversions may be rejected by the
+        server depending on the ``alter_table_change_type_strict`` system
+        parameter; use ``batch_alter_table`` as a fallback for lossy
+        migrations.
+        """
         if type_ is not None:
-            raise NotImplementedError(
-                f"CUBRID does not support ALTER COLUMN TYPE for column "
-                f"'{column_name}' on table '{table_name}'. "
-                f"Use batch_alter_table() as a workaround: "
-                f"https://alembic.sqlalchemy.org/en/latest/batch.html"
+            schema = kw.get("schema")
+            resolved_type = type_ if type_ is not None else kw.get("existing_type")
+            resolved_nullable = nullable if nullable is not None else kw.get("existing_nullable")
+            resolved_default = (
+                server_default if server_default is not False else kw.get("existing_server_default")
             )
+            autoincrement = kw.get("autoincrement")
+            resolved_autoincrement = (
+                autoincrement if autoincrement is not None else kw.get("existing_autoincrement")
+            )
+            comment = kw.get("comment", False)
+            resolved_comment = comment if comment is not False else kw.get("existing_comment")
+            if name is not None:
+                self._exec(
+                    CubridChangeColumn(
+                        table_name,
+                        column_name,
+                        newname=name,
+                        type_=resolved_type,
+                        nullable=resolved_nullable,
+                        default=resolved_default,
+                        autoincrement=resolved_autoincrement,
+                        comment=resolved_comment,
+                        schema=schema,
+                    )
+                )
+            else:
+                self._exec(
+                    CubridModifyColumn(
+                        table_name,
+                        column_name,
+                        type_=resolved_type,
+                        nullable=resolved_nullable,
+                        default=resolved_default,
+                        autoincrement=resolved_autoincrement,
+                        comment=resolved_comment,
+                        schema=schema,
+                    )
+                )
+            return
         if name is not None:
-            raise NotImplementedError(
-                f"CUBRID does not support RENAME COLUMN for column "
-                f"'{column_name}' on table '{table_name}'. "
-                f"Use batch_alter_table() as a workaround: "
-                f"https://alembic.sqlalchemy.org/en/latest/batch.html"
+            self._exec(
+                CubridRenameColumn(
+                    table_name,
+                    column_name,
+                    newname=name,
+                    schema=kw.get("schema"),
+                )
             )
+            return
         super().alter_column(
             table_name,
             column_name,
