@@ -53,6 +53,7 @@ except ImportError:  # pragma: no cover — optional dependency
 
 from alembic.ddl.base import (
     AlterColumn,
+    AlterTable,
     alter_table,
     format_column_name,
     format_server_default,
@@ -78,7 +79,9 @@ class CubridRenameColumn(AlterColumn):
         newname: str,
         schema: str | None = None,
     ) -> None:
-        super(AlterColumn, self).__init__(name, schema=schema)
+        # Skip AlterColumn.__init__ (which requires column_name and sets up
+        # existing_* attrs); call the grandparent AlterTable.__init__ directly.
+        AlterTable.__init__(self, name, schema=schema)
         self.column_name = column_name
         self.newname = newname
 
@@ -98,7 +101,9 @@ class CubridModifyColumn(AlterColumn):
         comment: Any = False,
         schema: str | None = None,
     ) -> None:
-        super(AlterColumn, self).__init__(name, schema=schema)
+        # Skip AlterColumn.__init__ (see CubridRenameColumn); call the
+        # grandparent AlterTable.__init__ directly.
+        AlterTable.__init__(self, name, schema=schema)
         self.column_name = column_name
         self.nullable = nullable
         self.default = default
