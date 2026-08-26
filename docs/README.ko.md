@@ -142,7 +142,7 @@ async with AsyncSession(engine) as session:
 - DDL 지원 -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - 스키마 리플렉션 -- 테이블, 뷰, 컬럼, PK, FK, 인덱스, 유니크 제약 조건, 코멘트
 - `CubridImpl`을 통한 Alembic 마이그레이션 (자동 탐색 엔트리 포인트)
-- CUBRID의 6가지 격리 수준 모두 지원 (이중 세분화: 클래스 수준 + 인스턴스 수준)
+- CUBRID의 세 가지 MVCC 격리 수준 — `READ COMMITTED`(기본값), `REPEATABLE READ`, `SERIALIZABLE`
 - Async 지원 — pycubrid.aio 기반 `create_async_engine("cubrid+aiopycubrid://...")`
 
 ## 알려진 제한 사항
@@ -161,7 +161,7 @@ async with AsyncSession(engine) as session:
 | [연결](CONNECTION.md) | 연결 문자열, URL 형식, 드라이버 설정, 풀 튜닝 |
 | [타입 매핑](TYPES.md) | 전체 타입 매핑, CUBRID 전용 타입, 컬렉션 타입 |
 | [DML 확장](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, 쿼리 추적 |
-| [격리 수준](ISOLATION_LEVELS.md) | CUBRID의 6가지 격리 수준, 설정 |
+| [격리 수준](ISOLATION_LEVELS.md) | CUBRID의 세 가지 MVCC 격리 수준, 설정 |
 | [Alembic 마이그레이션](ALEMBIC.md) | 설정, 구성, 제한 사항, 배치 우회 방법 |
 | [기능 지원](FEATURE_SUPPORT.md) | MySQL, PostgreSQL, SQLite와의 비교 |
 | [ORM 활용 가이드](ORM_COOKBOOK.md) | 실용적인 ORM 예제, 관계, 쿼리 |

@@ -142,7 +142,7 @@ async with AsyncSession(engine) as session:
 - DDL support -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema reflection -- tables, views, columns, PKs, FKs, indexes, unique constraints, comments
 - `CubridImpl` के जरिए Alembic migrations (auto-discovered entry point)
-- सभी 6 CUBRID isolation levels (dual-granularity: class-level + instance-level)
+- तीन CUBRID MVCC isolation levels — `READ COMMITTED` (डिफ़ॉल्ट), `REPEATABLE READ`, `SERIALIZABLE`
 - Async support — pycubrid.aio के जरिए `create_async_engine("cubrid+aiopycubrid://...")`
 
 ## ज्ञात सीमाएँ
@@ -161,7 +161,7 @@ async with AsyncSession(engine) as session:
 | [कनेक्शन](CONNECTION.md) | कनेक्शन स्ट्रिंग, URL प्रारूप, driver setup, pool tuning |
 | [टाइप मैपिंग](TYPES.md) | पूर्ण टाइप मैपिंग, CUBRID-विशिष्ट टाइप, collection types |
 | [DML एक्सटेंशन](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, query trace |
-| [आइसोलेशन लेवल](ISOLATION_LEVELS.md) | सभी 6 CUBRID isolation levels, configuration |
+| [आइसोलेशन लेवल](ISOLATION_LEVELS.md) | तीन CUBRID MVCC isolation levels, configuration |
 | [Alembic migrations](ALEMBIC.md) | setup, configuration, limitations, batch workarounds |
 | [फ़ीचर सपोर्ट](FEATURE_SUPPORT.md) | MySQL, PostgreSQL, SQLite से तुलना |
 | [ORM cookbook](ORM_COOKBOOK.md) | व्यावहारिक ORM उदाहरण, relationships, queries |

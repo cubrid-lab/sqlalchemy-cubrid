@@ -203,7 +203,7 @@ type mapping, and reflection logic without a database. Only `test_integration.py
 - **No multi-schema** — single-schema model
 - **No RELEASE SAVEPOINT** — `do_release_savepoint()` is a no-op
 - **DDL auto-commits** — `transactional_ddl = False`
-- **6 isolation levels** — dual-granularity (class-level + instance-level)
+- **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - **Identifier folding** — lowercase (not uppercase like SQL standard)
 - **Max identifier length** — 254 characters
 
@@ -241,7 +241,7 @@ The dialect translates automatically in `create_connect_args()`.
 | `README.md` | Concise landing page (~80 lines) |
 | `docs/CONNECTION.md` | Connection strings, URL format, driver setup |
 | `docs/TYPES.md` | Full type mapping, CUBRID-specific types |
-| `docs/ISOLATION_LEVELS.md` | All 6 CUBRID isolation levels |
+| `docs/ISOLATION_LEVELS.md` | The three CUBRID MVCC isolation levels |
 | `docs/DML_EXTENSIONS.md` | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT, TRUNCATE |
 | `docs/ALEMBIC.md` | Alembic migration guide, limitations, workarounds |
 | `docs/FEATURE_SUPPORT.md` | Feature comparison with MySQL, PostgreSQL, SQLite |

@@ -141,7 +141,7 @@ async with AsyncSession(engine) as session:
 - DDL 支持 -- `COMMENT`、`IF NOT EXISTS` / `IF EXISTS`、`AUTO_INCREMENT`
 - 模式反射 -- 表、视图、列、主键、外键、索引、唯一约束、注释
 - 通过 `CubridImpl` 提供 Alembic 迁移（自动发现入口点）
-- 支持全部 6 种 CUBRID 隔离级别（双粒度：类级别 + 实例级别）
+- 支持 CUBRID 的三种 MVCC 隔离级别 — `READ COMMITTED`（默认）、`REPEATABLE READ`、`SERIALIZABLE`
 - Async 支持 —— 通过 pycubrid.aio 使用 `create_async_engine("cubrid+aiopycubrid://...")`
 
 ## 已知限制
@@ -160,7 +160,7 @@ async with AsyncSession(engine) as session:
 | [连接](CONNECTION.md) | 连接字符串、URL 格式、驱动设置、连接池调优 |
 | [类型映射](TYPES.md) | 完整类型映射、CUBRID 特有类型、集合类型 |
 | [DML 扩展](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE、MERGE、REPLACE INTO、查询跟踪 |
-| [隔离级别](ISOLATION_LEVELS.md) | 全部 6 种 CUBRID 隔离级别、配置 |
+| [隔离级别](ISOLATION_LEVELS.md) | CUBRID 的三种 MVCC 隔离级别、配置 |
 | [Alembic 迁移](ALEMBIC.md) | 设置、配置、限制、批量解决方案 |
 | [功能支持](FEATURE_SUPPORT.md) | 与 MySQL、PostgreSQL、SQLite 的对比 |
 | [ORM 指南](ORM_COOKBOOK.md) | 实用 ORM 示例、关系、查询 |

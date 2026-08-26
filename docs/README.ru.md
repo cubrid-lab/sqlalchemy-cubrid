@@ -143,7 +143,7 @@ async with AsyncSession(engine) as session:
 - DDL-поддержка -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Рефлексия схемы -- таблицы, представления, столбцы, PK, FK, индексы, уникальные ограничения, комментарии
 - Миграции Alembic через `CubridImpl` (автоматически обнаруживаемая точка входа)
-- Все 6 уровней изоляции CUBRID (двойная гранулярность: уровень класса + уровень экземпляра)
+- Три уровня изоляции MVCC CUBRID — `READ COMMITTED` (по умолчанию), `REPEATABLE READ`, `SERIALIZABLE`
 - Async-поддержка — `create_async_engine("cubrid+aiopycubrid://...")` через pycubrid.aio
 
 ## Известные ограничения
@@ -162,7 +162,7 @@ async with AsyncSession(engine) as session:
 | [Подключение](CONNECTION.md) | Строки подключения, формат URL, настройка драйвера, тюнинг пула |
 | [Сопоставление типов](TYPES.md) | Полное сопоставление типов, CUBRID-специфичные типы, коллекции |
 | [DML-расширения](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, трассировка запросов |
-| [Уровни изоляции](ISOLATION_LEVELS.md) | Все 6 уровней изоляции CUBRID, конфигурация |
+| [Уровни изоляции](ISOLATION_LEVELS.md) | Три уровня изоляции MVCC CUBRID, конфигурация |
 | [Миграции Alembic](ALEMBIC.md) | Настройка, конфигурация, ограничения, пакетные обходные пути |
 | [Поддержка функций](FEATURE_SUPPORT.md) | Сравнение с MySQL, PostgreSQL, SQLite |
 | [ORM-рецепты](ORM_COOKBOOK.md) | Практические ORM-примеры, связи, запросы |
