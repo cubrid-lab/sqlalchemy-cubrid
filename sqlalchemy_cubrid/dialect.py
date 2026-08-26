@@ -195,6 +195,9 @@ ischema_names = {
     "BLOB": BLOB,
     "CLOB": CLOB,
     # Collection
+    # Note: CUBRID's LIST is a synonym for SEQUENCE and is normalized to
+    # SEQUENCE at DDL-parse time, so the catalog never reports "LIST" — there is
+    # deliberately no "LIST" entry here (it would be unreachable dead code).
     "SET": SET,
     "MULTISET": MULTISET,
     "SEQUENCE": SEQUENCE,

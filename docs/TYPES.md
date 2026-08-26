@@ -190,6 +190,14 @@ CREATE TABLE tagged_items (
 
 > **Note**: Collection types are CUBRID-specific. Standard SQL uses `ARRAY[]` (PostgreSQL) or has no collection support. If portability is a concern, use `SET`/`MULTISET`/`SEQUENCE` only when targeting CUBRID.
 
+> **`LIST` is a synonym for `SEQUENCE`.** CUBRID accepts `LIST(type)` in DDL but
+> normalizes it to `SEQUENCE` at parse time — a `LIST(INTEGER)` column is stored
+> and reflected as `SEQUENCE OF INTEGER` (verified on CUBRID 11.2). The dialect
+> therefore exposes only the canonical `SEQUENCE` type; declare `SEQUENCE(...)`
+> in your models and reflection will round-trip cleanly. There is intentionally
+> no separate `LIST` type, since a type compiling to `LIST(...)` would produce
+> spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`.
+
 ### JSON Type
 
 CUBRID 10.2+ supports native JSON (RFC 7159). The dialect provides full JSON type support:
