@@ -14,18 +14,18 @@
 ## Current Release Line — v1.6.x — Stable Maintenance & Polish
 
 - Documentation accuracy and consistency across README / docs / AI-facing project files
-- Continued SQLAlchemy 2.0–2.2 hardening while preparing for SA 2.2 validation
+- Continued SQLAlchemy 2.0–2.1 hardening while forward-testing against SA 2.1 pre-releases
 - Reflection/autogenerate polish and benchmark-driven performance tuning
 
 ## Next — Performance & Ecosystem
 
 - Performance profiling and benchmark integration
 - Ecosystem examples and cookbook expansion
-- SQLAlchemy 2.2 readiness investigation
+- SQLAlchemy 2.1 GA readiness and forward-compatibility investigation (SA 2.2+)
 
 ## Compatibility
 
-Python 3.10+, SQLAlchemy 2.0–2.2, CUBRID 10.2–11.4
+Python 3.10+, SQLAlchemy 2.0–2.1, CUBRID 10.2–11.4
 
 ## Completed
 

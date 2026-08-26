@@ -1,10 +1,10 @@
 # sqlalchemy-cubrid
 
-SQLAlchemy 2.0–2.2 dialect for CUBRID, built for production-ready Core and ORM workloads.
+SQLAlchemy 2.0–2.1 dialect for CUBRID, built for production-ready Core and ORM workloads.
 
 ## Key features
 
-- Native SQLAlchemy 2.0–2.2 dialect support with statement caching
+- Native SQLAlchemy 2.0–2.1 dialect support with statement caching
 - CUBRID-specific DML support including `ON DUPLICATE KEY UPDATE`, `MERGE`, and `REPLACE INTO`
 - Complete type system coverage and schema reflection support
 - Built-in Alembic migration integration for CUBRID
