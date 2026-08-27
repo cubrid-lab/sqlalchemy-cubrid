@@ -436,10 +436,13 @@ engine = create_engine(
 
 ### Disconnect Detection
 
-The dialect implements `is_disconnect()` which detects connection failures by:
+The dialect implements `is_disconnect()` which detects connection failures using a layered strategy that is resilient to driver error-message wording changes:
 
-1. **Message matching** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset")
-2. **Error code matching** — checks for CUBRID CCI error codes like `CAS_ER_COMMUNICATION` (-21003)
+1. **Numeric error code matching (primary)** — checks stable CUBRID/CCI codes such as `ER_COMMUNICATION` (-4, pycubrid), `CAS_ER_COMMUNICATION` (-21003/-21005), `ER_NET_CANT_CONNECT` (-10005), and `ER_NET_SERVER_COMM_ERROR` (-10007).
+2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver (which lacks `OperationalError`) and pycubrid's client-side string-only errors (e.g. "connection lost during receive") that carry neither a code nor an `OSError` cause.
+
+Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 
 When a disconnect is detected, SQLAlchemy automatically invalidates the connection and creates a new one from the pool.
 

@@ -1114,6 +1114,18 @@ class CubridDialect(default.DefaultDialect):
         "failed to connect",
     )
 
+    # Numeric disconnect error codes (driver-independent, wording-agnostic).
+    # These stay stable even when the driver's error *messages* change.
+    _disconnect_error_codes = frozenset(
+        {
+            -4,  # pycubrid ER_COMMUNICATION / SQLSTATE 08S01
+            -21003,  # CAS_ER_COMMUNICATION
+            -21005,  # CAS_ER_COMMUNICATION (alternate)
+            -10005,  # ER_NET_CANT_CONNECT
+            -10007,  # ER_NET_SERVER_COMM_ERROR
+        }
+    )
+
     def is_disconnect(self, e: Exception, connection: Any, cursor: Any) -> bool:
         """Return True if *e* indicates a dropped connection.
 
@@ -1122,9 +1134,15 @@ class CubridDialect(default.DefaultDialect):
         ``Error``, ``InterfaceError``, ``DatabaseError``, and
         ``NotSupportedError`` (no ``OperationalError``), whereas pycubrid
         provides the full PEP 249 set (including ``OperationalError``).
-        To stay robust across every driver, we rely primarily on
-        string-based message matching (similar to psycopg2) supplemented
-        by known numeric error codes rather than on exception class alone.
+
+        To stay robust across drivers *and* resilient to error-message
+        wording drift, detection is layered: we anchor first on stable
+        numeric error codes, then on an ``OSError`` in the exception's
+        explicit ``__cause__`` chain (which captures socket/transport
+        failures raised ``from`` a socket error without depending on
+        wording), and finally fall back to string matching for driver
+        errors that carry neither a code nor an ``OSError`` cause (e.g.
+        pycubrid's client-side "connection lost during receive").
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1133,21 +1151,43 @@ class CubridDialect(default.DefaultDialect):
             except ImportError:
                 dbapi_module = None
 
-        if dbapi_module is not None and isinstance(e, dbapi_module.Error):
-            msg = str(e).lower()
-            for pattern in self._disconnect_messages:
-                if pattern in msg:
-                    return True
+        if dbapi_module is None or not isinstance(e, dbapi_module.Error):
+            return False
 
-            # Check numeric error code for known disconnect codes
-            error_code = self._extract_error_code(e)
-            if error_code is not None and error_code in (
-                -21003,  # CAS_ER_COMMUNICATION
-                -21005,  # CAS_ER_COMMUNICATION (alternate)
-                -10005,  # ER_NET_CANT_CONNECT
-                -10007,  # ER_NET_SERVER_COMM_ERROR
-            ):
+        # 1. Stable numeric error codes (wording-independent).
+        error_code = self._extract_error_code(e)
+        if error_code is not None and error_code in self._disconnect_error_codes:
+            return True
+
+        # 2. An OSError in the explicit cause chain means a transport-level
+        #    failure (socket.error is OSError on modern Python).
+        if self._has_oserror_cause(e):
+            return True
+
+        # 3. Message fallback for string-only driver errors that carry
+        #    neither a numeric code nor an OSError cause.
+        msg = str(e).lower()
+        return any(pattern in msg for pattern in self._disconnect_messages)
+
+    @staticmethod
+    def _has_oserror_cause(exception: BaseException) -> bool:
+        """Return True if any ``OSError`` appears in *exception*'s cause chain.
+
+        Walks only the *explicit* ``__cause__`` links (with a cycle guard)
+        so that driver errors raised ``from`` a socket failure are
+        recognized as disconnects regardless of their message wording.
+        Implicit ``__context__`` is deliberately ignored: an unrelated
+        ``OSError`` merely being handled when a DBAPI error is raised
+        (or a context suppressed via ``raise ... from None``) must not
+        trigger a false pool invalidation.
+        """
+        seen: set[int] = set()
+        current: Optional[BaseException] = exception.__cause__
+        while current is not None and id(current) not in seen:
+            seen.add(id(current))
+            if isinstance(current, OSError):
                 return True
+            current = current.__cause__
         return False
 
     @staticmethod
