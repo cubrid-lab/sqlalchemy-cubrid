@@ -301,6 +301,11 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [docs/DEVELOPMENT.md](
 
 Report vulnerabilities via email -- see [SECURITY.md](SECURITY.md). Do not open public issues for security concerns.
 
+## Disclaimer
+
+> This project is part of [CUBRID Lab](https://github.com/cubrid-lab), an independent open-source initiative for CUBRID developer tooling, and is not affiliated with, sponsored by, or endorsed by CUBRID Corporation or the official CUBRID project.
+
+
 ## License
 
 MIT -- see [LICENSE](LICENSE).
