@@ -1105,9 +1105,7 @@ class TestIsDisconnect:
         exc = dbapi.OperationalError(-4, "communication error")
         assert dialect.is_disconnect(exc, None, None) is True
 
-    def test_operational_error_without_code_or_cause_is_not_disconnect(
-        self, pycubrid_dialect
-    ):
+    def test_operational_error_without_code_or_cause_is_not_disconnect(self, pycubrid_dialect):
         """OperationalError with a non-disconnect message is not a disconnect."""
         dialect, dbapi = pycubrid_dialect
         exc = dbapi.OperationalError("invalid isolation level")
