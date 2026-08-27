@@ -717,3 +717,41 @@ class TestAlembicAlterColumnIntegration:
             finally:
                 conn.execute(text("DROP TABLE IF EXISTS alter_it_change"))
                 conn.commit()
+
+
+class TestBackslashLiteralRoundtrip:
+    """Regression #313: backslashes must survive both param binding and
+    literal_binds rendering on a default CUBRID (no_backslash_escapes=yes)."""
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "C:\\temp",
+            "regex \\d+",
+            "a\\nb",
+            "C:\\it's",
+        ],
+    )
+    def test_backslash_roundtrip(self, engine, metadata, value):
+        users = metadata.tables["integration_users"]
+        with engine.begin() as conn:
+            conn.execute(users.insert().values(name=value, email="bs@example.com"))
+
+        # Read back via parameter path.
+        with engine.connect() as conn:
+            stored = conn.execute(
+                sa.select(users.c.name).where(users.c.email == "bs@example.com")
+            ).scalar()
+        assert stored == value, f"param roundtrip corrupted: {stored!r} != {value!r}"
+
+        # Match the same value via literal_binds rendering (inline SQL literal).
+        with engine.connect() as conn:
+            matched = conn.execute(
+                sa.select(users.c.name)
+                .where(users.c.name == value)
+                .compile(
+                    dialect=engine.dialect,
+                    compile_kwargs={"literal_binds": True},
+                )
+            ).scalar()
+        assert matched == value, f"literal_binds roundtrip corrupted: {matched!r}"

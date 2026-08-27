@@ -310,3 +310,10 @@ class TestFormatTypeMixinProcessors:
         monkeypatch.setattr(idx, "string_literal_processor", lambda dialect: None)
         proc = idx.literal_processor(self._dialect())
         assert proc("k") == '$."k"'
+
+    def test_index_literal_processor_backslash_not_doubled(self):
+        """Regression #313: JSON path literals must not double backslashes."""
+        proc = JSONIndexType().literal_processor(self._dialect())
+        assert proc is not None
+        result = proc("a\\b")
+        assert "\\\\" not in result

@@ -282,12 +282,19 @@ class CubridDialect(default.DefaultDialect):
         isolation_level: str | None = None,
         json_serializer: Any = None,
         json_deserializer: Any = None,
+        no_backslash_escapes: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(**kwargs)
         self.isolation_level = isolation_level
         self._json_serializer = json_serializer
         self._json_deserializer = json_deserializer
+        # CUBRID's `no_backslash_escapes` system parameter defaults to `yes`,
+        # meaning a backslash is a LITERAL character (opposite of MySQL). When
+        # True (the default) literal rendering does NOT double backslashes.
+        # Set False only for servers configured with no_backslash_escapes=no,
+        # where a backslash acts as an escape character and must be doubled.
+        self.no_backslash_escapes = no_backslash_escapes
 
     @classmethod
     def import_dbapi(cls) -> DBAPIModule:

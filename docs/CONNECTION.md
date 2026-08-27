@@ -246,6 +246,35 @@ with engine.connect().execution_options(
 
 See [Isolation Levels](ISOLATION_LEVELS.md) for all supported levels.
 
+### Backslash Escaping (`no_backslash_escapes`)
+
+CUBRID's `no_backslash_escapes` system parameter defaults to `yes`, meaning a
+backslash is a **literal character** in string literals (the opposite of MySQL).
+The dialect matches this default: inline SQL literals rendered with
+`literal_binds=True` preserve backslashes as-is and do **not** double them.
+
+```python
+# Default: backslash preserved (no_backslash_escapes=yes on the server)
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
+```
+
+If your server is explicitly configured with `no_backslash_escapes=no` (backslash
+acts as an escape character), pass `no_backslash_escapes=False` so the dialect
+doubles backslashes when rendering inline literals:
+
+```python
+# Server configured with no_backslash_escapes=no
+engine = create_engine(
+    "cubrid+pycubrid://dba@localhost:33000/testdb",
+    no_backslash_escapes=False,
+)
+```
+
+This is a static dialect option (not connection-negotiated) because
+`literal_binds` compilation may run offline with no live connection. It only
+affects inline literal rendering; parameter-bound values are always escaped
+correctly by the driver regardless of this setting.
+
 ---
 
 ## Autocommit Behavior
