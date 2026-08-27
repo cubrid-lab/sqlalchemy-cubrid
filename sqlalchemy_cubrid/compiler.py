@@ -62,10 +62,16 @@ class CubridCompiler(compiler.SQLCompiler):
         return f"CAST({self.process(cast.clause)} AS {type_})"
 
     def render_literal_value(self, value: Any, type_: Any) -> str:
-        # SQLAlchemy's base render_literal_value only escapes single quotes.
-        # CUBRID uses backslash escaping (like MySQL), so we must also double
-        # backslashes to prevent them from being interpreted as escape sequences.
+        # SQLAlchemy's base render_literal_value escapes single quotes, which is
+        # correct for CUBRID. Backslash handling depends on the server's
+        # `no_backslash_escapes` setting (default `yes` => backslash is literal).
         rendered = str(super().render_literal_value(value, type_))
+        if getattr(self.dialect, "no_backslash_escapes", True):
+            # Default CUBRID behavior: backslash is a literal character, do NOT
+            # double it. Doing so would silently corrupt data (e.g. C:\temp).
+            return rendered
+        # Legacy escape mode (no_backslash_escapes=no): backslash is an escape
+        # character, so it must be doubled to be preserved as a literal.
         rendered = rendered.replace("\\", "\\\\")
         return rendered
 

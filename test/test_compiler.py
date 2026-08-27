@@ -285,12 +285,36 @@ class TestCastCompilation:
 class TestLiteralValueCompilation:
     """Test render_literal_value method."""
 
-    def test_render_literal_with_backslash(self):
-        """Test that backslashes are escaped in literal values."""
+    def test_render_literal_with_backslash_default(self):
+        """Default CUBRID (no_backslash_escapes=yes): backslash is literal, NOT doubled."""
         stmt = select(sa.literal("path\\to\\file"))
         sql = _compile(stmt)
-        # Backslashes should be doubled
+        # Backslashes must be preserved as-is; doubling would corrupt data.
+        assert "path\\to\\file" in sql
+        assert "\\\\" not in sql
+
+    def test_render_literal_with_backslash_escape_mode(self):
+        """Legacy escape mode (no_backslash_escapes=no): backslashes are doubled."""
+        dialect = CubridDialect(no_backslash_escapes=False)
+        stmt = select(sa.literal("path\\to\\file"))
+        sql = _compile(stmt, dialect=dialect)
         assert "\\\\" in sql
+
+    def test_render_literal_backslash_preserves_quote_escaping(self):
+        """Single-quote escaping must still work alongside literal backslashes."""
+        stmt = select(sa.literal("C:\\it's"))
+        sql = _compile(stmt)
+        # Backslash stays single; quote is escaped by SQLAlchemy's base handling.
+        assert "C:\\it" in sql
+        assert "\\\\" not in sql
+
+    def test_dialect_default_option_value(self):
+        """Default dialect option matches CUBRID's default (no doubling)."""
+        assert CubridDialect().no_backslash_escapes is True
+
+    def test_dialect_option_opt_out(self):
+        """Explicit keyword construction stores the opt-out flag as given."""
+        assert CubridDialect(no_backslash_escapes=False).no_backslash_escapes is False
 
 
 class TestCompatHelpers:
@@ -800,6 +824,20 @@ class TestCommentCompilation:
         sql = str(compiled)
         assert "COMMENT" in sql
         assert "user name" in sql
+
+    def test_column_comment_with_backslash_not_doubled(self):
+        """Regression #313: DDL COMMENT literals must not double backslashes."""
+        from sqlalchemy.schema import CreateTable
+
+        t = sa.Table(
+            "t",
+            sa.MetaData(),
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("path", sa.String(50), comment="C:\\temp"),
+        )
+        sql = str(CreateTable(t).compile(dialect=CubridDialect()))
+        assert "C:\\temp" in sql
+        assert "\\\\" not in sql
 
     def test_table_comment_in_ddl(self):
         from sqlalchemy.schema import CreateTable
