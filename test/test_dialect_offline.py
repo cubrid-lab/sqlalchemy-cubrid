@@ -1071,6 +1071,93 @@ class TestIsDisconnect:
         exc = dbapi.DatabaseError()
         assert dialect.is_disconnect(exc, None, None) is False
 
+    # ----- pycubrid full hierarchy (includes OperationalError) -----
+
+    @pytest.fixture()
+    def pycubrid_dialect(self):
+        """Dialect with a pycubrid-style dbapi (full PEP 249 hierarchy)."""
+        dialect = CubridDialect()
+        dbapi = MagicMock()
+
+        class Error(Exception):
+            pass
+
+        class InterfaceError(Error):
+            pass
+
+        class DatabaseError(Error):
+            pass
+
+        class OperationalError(DatabaseError):
+            pass
+
+        dbapi.Error = Error
+        dbapi.InterfaceError = InterfaceError
+        dbapi.DatabaseError = DatabaseError
+        dbapi.OperationalError = OperationalError
+
+        dialect.dbapi = dbapi
+        return dialect, dbapi
+
+    def test_disconnect_by_communication_code_minus_four(self, pycubrid_dialect):
+        """is_disconnect() returns True for pycubrid ER_COMMUNICATION (-4)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.OperationalError(-4, "communication error")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_operational_error_without_code_or_cause_is_not_disconnect(
+        self, pycubrid_dialect
+    ):
+        """OperationalError with a non-disconnect message is not a disconnect."""
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.OperationalError("invalid isolation level")
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_disconnect_via_oserror_cause(self, pycubrid_dialect):
+        """is_disconnect() detects an OSError in the cause chain (wording-free)."""
+        dialect, dbapi = pycubrid_dialect
+        try:
+            try:
+                raise OSError("socket error 104")
+            except OSError as os_exc:
+                raise dbapi.OperationalError("transport failure xyz") from os_exc
+        except dbapi.OperationalError as exc:
+            assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_implicit_oserror_context_is_not_disconnect(self, pycubrid_dialect):
+        """Implicit __context__ (unrelated in-flight OSError) must NOT disconnect.
+
+        An OSError merely being handled when an unrelated DBAPI error is
+        raised links via __context__, not __cause__. Treating that as a
+        disconnect would falsely invalidate a live pooled connection, so
+        only the explicit ``raise ... from`` cause chain is followed.
+        """
+        dialect, dbapi = pycubrid_dialect
+        try:
+            try:
+                raise ConnectionResetError("reset")
+            except ConnectionResetError:
+                raise dbapi.OperationalError("opaque driver message")
+        except dbapi.OperationalError as exc:
+            assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_non_oserror_cause_falls_back_to_message(self, pycubrid_dialect):
+        """A non-OSError cause does not trigger; message fallback still applies."""
+        dialect, dbapi = pycubrid_dialect
+        try:
+            try:
+                raise ValueError("parse error")
+            except ValueError as val_exc:
+                raise dbapi.OperationalError("lost connection") from val_exc
+        except dbapi.OperationalError as exc:
+            assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_interface_error_misuse_is_not_disconnect(self, pycubrid_dialect):
+        """Non-fatal InterfaceError misuse must not invalidate the pool."""
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.InterfaceError("Cursor is closed")
+        assert dialect.is_disconnect(exc, None, None) is False
+
 
 class TestExtractErrorCode:
     """Tests for CubridDialect._extract_error_code()."""
