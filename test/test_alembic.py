@@ -26,6 +26,17 @@ from alembic.migration import MigrationContext
 from sqlalchemy_cubrid import types as cubrid_types
 from sqlalchemy_cubrid.dialect import CubridDialect
 
+# Older alembic shipped ``autogenerate.compare`` as a package with a ``schema``
+# submodule; alembic >=1.9 ships ``compare`` as a single module that binds
+# ``inspect`` at module level. Resolve the correct mock.patch target for the
+# installed layout so the tests do not raise ModuleNotFoundError (#323).
+import alembic.autogenerate.compare as _alembic_compare
+
+if hasattr(_alembic_compare, "schema") and hasattr(_alembic_compare.schema, "inspect"):
+    _COMPARE_INSPECT_TARGET = "alembic.autogenerate.compare.schema.inspect"
+else:
+    _COMPARE_INSPECT_TARGET = "alembic.autogenerate.compare.inspect"
+
 if sys.version_info >= (3, 11):
     import tomllib as toml_mod
 else:
@@ -576,7 +587,7 @@ class TestAutogenerateRegression:
 
         with (
             mock.patch("alembic.autogenerate.api.inspect", return_value=inspector),
-            mock.patch("alembic.autogenerate.compare.schema.inspect", return_value=inspector),
+            mock.patch(_COMPARE_INSPECT_TARGET, return_value=inspector),
         ):
             context = MigrationContext.configure(
                 connection=connection,

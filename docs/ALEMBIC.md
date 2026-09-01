@@ -386,7 +386,7 @@ installed.
 **Fix**:
 
 ```bash
-pip install alembic>=1.7
+pip install "alembic>=1.7,<2.0"
 ```
 
 ### Migration partially applied
