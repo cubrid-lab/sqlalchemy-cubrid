@@ -10,15 +10,17 @@ from sqlalchemy_cubrid.dialect import CubridDialect
 from sqlalchemy_cubrid.types import VARCHAR
 
 # Older alembic shipped ``autogenerate.compare`` as a package with a ``schema``
-# submodule; alembic >=1.9 ships ``compare`` as a single module that binds
-# ``inspect`` at module level (``from sqlalchemy import inspect``). Resolve the
-# correct mock.patch target for whichever layout is installed so the tests do
-# not raise ModuleNotFoundError on newer alembic (#323).
-import alembic.autogenerate.compare as _alembic_compare
+# submodule that binds ``inspect``; alembic >=1.9 ships ``compare`` as a single
+# module that binds ``inspect`` at module level. Importing the ``compare``
+# package does not necessarily import the ``schema`` submodule, so probe for it
+# explicitly (``hasattr`` can mis-detect) and resolve the correct mock.patch
+# target for whichever layout is installed so the tests do not raise
+# ModuleNotFoundError on newer alembic (#323).
+try:
+    import alembic.autogenerate.compare.schema  # noqa: F401
 
-if hasattr(_alembic_compare, "schema") and hasattr(_alembic_compare.schema, "inspect"):
     _COMPARE_INSPECT_TARGET = "alembic.autogenerate.compare.schema.inspect"
-else:
+except ImportError:
     _COMPARE_INSPECT_TARGET = "alembic.autogenerate.compare.inspect"
 
 
