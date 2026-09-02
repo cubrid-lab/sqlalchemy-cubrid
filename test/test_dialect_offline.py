@@ -1008,6 +1008,7 @@ class TestIsDisconnect:
             "Connection refused on port 33000",
             "connection was killed by admin",
             "Failed to connect to host",
+            "connection lost during receive",  # pycubrid sync clean-EOF (#322)
         ],
     )
     def test_disconnect_message_patterns(self, dialect_with_dbapi, message):

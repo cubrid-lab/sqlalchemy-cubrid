@@ -6150,7 +6150,7 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 
 Since the driver doesn't provide `OperationalError`, the dialect cannot use
 `isinstance(e, dbapi.OperationalError)` like MySQL dialects do. Instead, it uses:
-- String pattern matching against 14 known disconnect messages
+- String pattern matching against 15 known disconnect messages
 - Numeric error code matching for CCI communication errors
 
 ### 2. CCI Library Dependency
