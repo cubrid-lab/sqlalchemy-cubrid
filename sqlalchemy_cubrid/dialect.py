@@ -1101,6 +1101,7 @@ class CubridDialect(default.DefaultDialect):
         "connection is closed",
         "closed connection",
         "lost connection",
+        "connection lost",  # pycubrid: "connection lost during receive" (#322)
         "server has gone away",
         "connection reset",
         "broken pipe",
