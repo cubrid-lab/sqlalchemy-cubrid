@@ -312,11 +312,15 @@ Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 
 ## Release Process
 
-1. Update version in `pyproject.toml` and `sqlalchemy_cubrid/__init__.py`
-2. Add changelog entry in `CHANGELOG.md`
-3. Commit, tag (`v{major}.{minor}.{patch}`), push with tags
-4. Create GitHub release via `gh release create`
-5. PyPI publish triggers automatically from the release
+1. Bump the version in `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`.
+   `pyproject.toml` derives it dynamically (`dynamic = ["version"]` +
+   `version = {attr = "sqlalchemy_cubrid.__version__"}`), so it is the single source of truth.
+2. Add a dated changelog entry in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`)
+3. Open a PR and merge to `main` (direct pushes are not allowed)
+4. Create a GitHub Release (`v{major}.{minor}.{patch}`) on the merged commit via `gh release create`
+5. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
+   which rebuilds, verifies (tag == version, dated CHANGELOG, tag on main, smoke tests),
+   and publishes to PyPI via Trusted Publisher (OIDC).
 
 ## Project Context — Performance Loop System
 
