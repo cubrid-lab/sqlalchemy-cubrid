@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-09-02
+
 ### Docs
 - **Documented that CUBRID's `LIST` collection type is a synonym for `SEQUENCE`** — CUBRID accepts `LIST(type)` in DDL but normalizes it to `SEQUENCE` at parse time, so a `LIST(INTEGER)` column is stored and reflected as `SEQUENCE OF INTEGER` (verified on live CUBRID 11.2). Clarified in `docs/TYPES.md` and via a code comment in `ischema_names` why the dialect exposes only the canonical `SEQUENCE` type and deliberately omits a `LIST` type/reflection entry (a type compiling to `LIST(...)` would produce spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`). No behavior change.
 - **Documented canonical isolation-level names on read-back (#293)** — clarified that `get_isolation_level()` returns the *canonical* name for a level, which may differ from the alias passed to `set_isolation_level()` (CUBRID accepts several aliases per numeric level). Added a note to `docs/ISOLATION_LEVELS.md` and the `get_isolation_level()` docstring. Behavior is unchanged; the reverse mapping was already correct.
