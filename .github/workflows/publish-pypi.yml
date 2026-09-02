@@ -1,152 +1,175 @@
-# Publish to PyPI using Trusted Publisher when a GitHub release is created.
-# Requires Trusted Publisher configured at:
+# Publish to PyPI via Trusted Publisher (OIDC) when a GitHub Release is published.
+#
+# Canonical cubrid-lab publish workflow — kept identical across pycubrid,
+# sqlalchemy-cubrid, and cubrid-mcp-server. Only the package/module name and the
+# smoke-test assertions differ between repos. Do not fork this structure without
+# updating the siblings.
+#
+# Trusted Publisher config:
 # https://pypi.org/manage/project/sqlalchemy-cubrid/settings/publishing/
-
-name: Upload Python Package
+name: Publish to PyPI
 
 on:
   release:
     types: [published]
   workflow_dispatch:
     inputs:
-      confirm:
-        description: "Type 'publish' to confirm"
+      tag:
+        description: "Existing tag to (re)publish, e.g. v1.2.3"
         required: true
         type: string
 
 permissions:
   contents: read
-  id-token: write  # Required for Trusted Publisher (OIDC)
 
 jobs:
   verify:
-    name: Pre-publish verification
+    name: Build and verify release artifact
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           fetch-depth: 0
-      - uses: actions/setup-python@v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.12"
-      - name: Version consistency check
+
+      - name: Extract version from __init__.py (AST, no import)
         run: |
-          PYPROJECT_VER=$(grep -oP '^version = "\K[^"]+' pyproject.toml)
-          INIT_VER=$(python3 -c "import ast; print(next(node.value.value for node in ast.walk(ast.parse(open('sqlalchemy_cubrid/__init__.py').read())) if isinstance(node, ast.Assign) and any(t.id == '__version__' for t in node.targets if isinstance(t, ast.Name))))")
+          VERSION=$(python - <<'PY'
+          import ast, pathlib
+          tree = ast.parse(pathlib.Path("sqlalchemy_cubrid/__init__.py").read_text())
+          print(next(
+              node.value.value
+              for node in ast.walk(tree)
+              if isinstance(node, ast.Assign)
+              for target in node.targets
+              if isinstance(target, ast.Name) and target.id == "__version__"
+          ))
+          PY
+          )
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Detected package version: $VERSION"
 
-          echo "pyproject.toml: $PYPROJECT_VER"
-          echo "__init__.py:    $INIT_VER"
+      - name: Resolve release tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
+          else
+            echo "TAG=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+          fi
 
-          if [ "$PYPROJECT_VER" != "$INIT_VER" ]; then
-            echo "::error::Version mismatch: pyproject.toml=$PYPROJECT_VER, __init__.py=$INIT_VER"
+      - name: Verify tag matches package version
+        run: |
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::Release tag ($TAG) does not match package version (v$VERSION)"
             exit 1
           fi
 
-          echo "VERSION=$PYPROJECT_VER" >> $GITHUB_ENV
-
-      - name: Verify CHANGELOG entry
+      - name: Verify CHANGELOG has a dated entry
         run: |
-          if ! grep -qP "^## \[$VERSION\]" CHANGELOG.md; then
-            echo "::error::CHANGELOG.md missing entry for $VERSION"
+          if ! grep -qP "^## \[$VERSION\] - \d{4}-\d{2}-\d{2}" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md missing dated entry '## [$VERSION] - YYYY-MM-DD'"
             exit 1
           fi
-          CHANGELOG_LINE=$(grep -P "^## \[$VERSION\]" CHANGELOG.md | head -1)
-          echo "CHANGELOG: $CHANGELOG_LINE"
-          if ! echo "$CHANGELOG_LINE" | grep -qP "\d{4}-\d{2}-\d{2}"; then
-            echo "::error::CHANGELOG entry for $VERSION has no release date"
-            exit 1
-          fi
+          echo "CHANGELOG: $(grep -P "^## \[$VERSION\]" CHANGELOG.md | head -1)"
 
-      - name: Verify tag matches version (release trigger only)
-        if: github.event_name == 'release'
+      - name: Verify tag commit is contained in main
         run: |
-          EXPECTED_TAG="v$VERSION"
-          ACTUAL_TAG="${{ github.event.release.tag_name }}"
-          echo "Expected tag: $EXPECTED_TAG"
-          echo "Actual tag:   $ACTUAL_TAG"
-          if [ "$EXPECTED_TAG" != "$ACTUAL_TAG" ]; then
-            echo "::error::Tag name mismatch: expected $EXPECTED_TAG, got $ACTUAL_TAG"
-            exit 1
-          fi
-
-      - name: Verify tag commit matches release target (release trigger only)
-        if: github.event_name == 'release'
-        run: |
-          EXPECTED_TAG="v$VERSION"
-          TAG_COMMIT=$(git rev-list -n 1 "$EXPECTED_TAG" 2>/dev/null || echo "")
-          RELEASE_TARGET="${{ github.event.release.target_commitish }}"
-          if [ "$RELEASE_TARGET" = "main" ]; then
-            RELEASE_TARGET=$(git rev-parse origin/main)
-          fi
-          echo "Tag commit:      $TAG_COMMIT"
-          echo "Release target:  $RELEASE_TARGET"
+          git fetch --no-tags --quiet origin main
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG" 2>/dev/null || echo "")
           if [ -z "$TAG_COMMIT" ]; then
-            echo "::error::Tag $EXPECTED_TAG not found"
+            echo "::error::Tag $TAG not found in repository"
             exit 1
           fi
-          if [ "$TAG_COMMIT" != "$RELEASE_TARGET" ]; then
-            echo "::error::Tag $EXPECTED_TAG points to $TAG_COMMIT but release targets $RELEASE_TARGET"
+          if [ "${{ github.event_name }}" = "release" ]; then
+            TARGET="${{ github.event.release.target_commitish }}"
+            if git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
+              TARGET=$(git rev-parse "origin/$TARGET")
+            fi
+            if [ "$TAG_COMMIT" != "$TARGET" ]; then
+              echo "::error::Tag $TAG points to $TAG_COMMIT but release targets $TARGET"
+              exit 1
+            fi
+          fi
+          if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
+            echo "::error::Tag $TAG ($TAG_COMMIT) is not contained in origin/main"
+            exit 1
+          fi
+          echo "Tag $TAG commit $TAG_COMMIT verified on main"
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check distribution metadata
+        run: |
+          twine check dist/*
+          shopt -s nullglob
+          matches=(dist/sqlalchemy_cubrid-"$VERSION"*)
+          if [ ${#matches[@]} -eq 0 ]; then
+            echo "::error::Built artifacts do not carry version $VERSION"
+            ls -l dist/
             exit 1
           fi
 
-      - name: Verify tag is on main branch (release trigger only)
-        if: github.event_name == 'release'
+      - name: Smoke-test wheel install
         run: |
-          TAG_SHA="${{ github.event.release.target_commitish }}"
-          if [ "$TAG_SHA" = "main" ]; then
-            TAG_SHA=$(git rev-parse origin/main)
-          fi
-          MAIN_SHA=$(git rev-parse origin/main)
-          echo "Release target: $TAG_SHA"
-          echo "Main HEAD:      $MAIN_SHA"
-          if ! git merge-base --is-ancestor "$TAG_SHA" origin/main 2>/dev/null; then
-            echo "::error::Release target $TAG_SHA is not on main branch"
-            exit 1
-          fi
-
-      - name: Install build dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install build
-
-      - name: Build package
-        run: python -m build
-
-      - name: Smoke test wheel install
-        run: |
-          python -m venv /tmp/test-wheel
-          /tmp/test-wheel/bin/pip install dist/*.whl
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install dist/*.whl
           cd /tmp
-          /tmp/test-wheel/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
-          /tmp/test-wheel/bin/python -c "from sqlalchemy_cubrid import insert, merge, JSON, SET"
-          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='sqlalchemy.dialects') if ep.name.startswith('cubrid')}; assert 'cubrid' in eps, f'Missing cubrid entry point, found: {list(eps.keys())}'; assert 'cubrid.cubrid' in eps; assert 'cubrid.pycubrid' in eps; assert 'cubrid.aiopycubrid' in eps; print(f'Found {len(eps)} dialect entry points'); [print(f'  {name} -> {ep.load().__module__}.{ep.load().__name__}') for name, ep in sorted(eps.items())]"
-          /tmp/test-wheel/bin/pip install alembic
-          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='alembic.ddl') if ep.name == 'cubrid'}; assert 'cubrid' in eps; cls = eps['cubrid'].load(); print(f'alembic.ddl cubrid -> {cls.__module__}.{cls.__name__}')"
-          /tmp/test-wheel/bin/python -c "import pathlib, sqlalchemy_cubrid; pkg_dir = pathlib.Path(sqlalchemy_cubrid.__file__).parent; assert (pkg_dir / 'py.typed').exists(), 'py.typed marker missing'; print('py.typed marker: OK')"
+          /tmp/wheel-env/bin/python - <<'PY'
+          import os
+          import importlib.metadata as md
+          import sqlalchemy_cubrid
+          expected = os.environ["VERSION"]
+          assert sqlalchemy_cubrid.__version__ == expected, (sqlalchemy_cubrid.__version__, expected)
+          assert md.version("sqlalchemy-cubrid") == expected, (md.version("sqlalchemy-cubrid"), expected)
+          from sqlalchemy_cubrid import insert, merge, JSON, SET  # noqa: F401
+          eps = {ep.name: ep for ep in md.entry_points(group="sqlalchemy.dialects") if ep.name.startswith("cubrid")}
+          for name in ("cubrid", "cubrid.cubrid", "cubrid.pycubrid", "cubrid.aiopycubrid"):
+              assert name in eps, (name, sorted(eps))
+          alembic_eps = {ep.name: ep for ep in md.entry_points(group="alembic.ddl") if ep.name == "cubrid"}
+          assert "cubrid" in alembic_eps, sorted(alembic_eps)
+          import pathlib
+          pkg_dir = pathlib.Path(sqlalchemy_cubrid.__file__).parent
+          assert (pkg_dir / "py.typed").exists(), "py.typed marker missing"
+          print("wheel import + metadata + entry points + py.typed OK:", expected)
+          PY
 
-      - name: Smoke test sdist install
+      - name: Smoke-test sdist install
         run: |
-          python -m venv /tmp/test-sdist
-          /tmp/test-sdist/bin/pip install dist/*.tar.gz
+          python -m venv /tmp/sdist-env
+          /tmp/sdist-env/bin/pip install dist/*.tar.gz
           cd /tmp
-          /tmp/test-sdist/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
+          /tmp/sdist-env/bin/python -c "import sqlalchemy_cubrid; print('sdist import OK:', sqlalchemy_cubrid.__version__)"
+
+      - name: Upload verified distribution
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pypi-dist
+          path: dist/
+          retention-days: 1
+          if-no-files-found: error
 
   deploy:
+    name: Publish to PyPI
     runs-on: ubuntu-latest
     needs: [verify]
     environment: pypi
-
+    permissions:
+      id-token: write
     steps:
-    - uses: actions/checkout@v7
-    - name: Set up Python
-      uses: actions/setup-python@v7
-      with:
-        python-version: '3.x'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build
-    - name: Build package
-      run: python -m build
-    - name: Publish package
-      uses: pypa/gh-action-pypi-publish@release/v1
+      - name: Download verified distribution
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: pypi-dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          attestations: true
