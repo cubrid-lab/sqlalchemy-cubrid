@@ -2886,7 +2886,6 @@ so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 > survive the type change — otherwise it will be dropped. To *intentionally*
 > remove an attribute (e.g. a default), pass it explicitly (`server_default=None`),
 > which overrides the `existing_*` value.
-so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 
 ### Summary
 
@@ -2998,7 +2997,7 @@ installed.
 **Fix**:
 
 ```bash
-pip install alembic>=1.7
+pip install "alembic>=1.7,<2.0"
 ```
 
 ### Migration partially applied

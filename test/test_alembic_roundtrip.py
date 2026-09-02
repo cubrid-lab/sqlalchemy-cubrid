@@ -9,6 +9,20 @@ from alembic.migration import MigrationContext
 from sqlalchemy_cubrid.dialect import CubridDialect
 from sqlalchemy_cubrid.types import VARCHAR
 
+# Older alembic shipped ``autogenerate.compare`` as a package with a ``schema``
+# submodule that binds ``inspect``; alembic >=1.9 ships ``compare`` as a single
+# module that binds ``inspect`` at module level. Importing the ``compare``
+# package does not necessarily import the ``schema`` submodule, so probe for it
+# explicitly (``hasattr`` can mis-detect) and resolve the correct mock.patch
+# target for whichever layout is installed so the tests do not raise
+# ModuleNotFoundError on newer alembic (#323).
+try:
+    import alembic.autogenerate.compare.schema  # noqa: F401
+
+    _COMPARE_INSPECT_TARGET = "alembic.autogenerate.compare.schema.inspect"
+except ImportError:
+    _COMPARE_INSPECT_TARGET = "alembic.autogenerate.compare.inspect"
+
 
 class _MockInspector:
     def __init__(self, bind, tables):
@@ -195,7 +209,7 @@ def test_create_reflect_compare_roundtrip_no_diffs() -> None:
 
     with (
         mock.patch("alembic.autogenerate.api.inspect", return_value=inspector),
-        mock.patch("alembic.autogenerate.compare.schema.inspect", return_value=inspector),
+        mock.patch(_COMPARE_INSPECT_TARGET, return_value=inspector),
     ):
         context = MigrationContext.configure(connection=connection, opts={"compare_type": True})
         assert compare_metadata(context, metadata) == []
@@ -289,7 +303,7 @@ def test_roundtrip_composite_pk_multi_fk_defaults_no_diffs() -> None:
 
     with (
         mock.patch("alembic.autogenerate.api.inspect", return_value=inspector),
-        mock.patch("alembic.autogenerate.compare.schema.inspect", return_value=inspector),
+        mock.patch(_COMPARE_INSPECT_TARGET, return_value=inspector),
     ):
         context = MigrationContext.configure(connection=connection, opts={"compare_type": True})
         diffs = compare_metadata(context, metadata)
