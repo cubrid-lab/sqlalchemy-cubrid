@@ -317,10 +317,20 @@ Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
    `version = {attr = "sqlalchemy_cubrid.__version__"}`), so it is the single source of truth.
 2. Add a dated changelog entry in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`)
 3. Open a PR and merge to `main` (direct pushes are not allowed)
-4. Create a GitHub Release (`v{major}.{minor}.{patch}`) on the merged commit via `gh release create`
-5. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
+4. Push the tag `v{major}.{minor}.{patch}` on the merged commit:
+   `git tag vx.y.z <merged-sha> && git push origin vx.y.z` (tag pushes are allowed; only
+   direct branch pushes to `main` are forbidden).
+5. The tag push triggers `.github/workflows/create-release.yml`, which extracts the
+   `## [x.y.z] - YYYY-MM-DD` section from `CHANGELOG.md` (fail-closed — no fallback) and
+   creates the GitHub Release titled `vx.y.z` with that body, after verifying the tag is
+   an ancestor of `origin/main`.
+6. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
    which rebuilds, verifies (tag == version, dated CHANGELOG, tag on main, smoke tests),
    and publishes to PyPI via Trusted Publisher (OIDC).
+
+Release notes are never hand-written: `CHANGELOG.md` is the single source of truth and
+`scripts/extract_release_notes.py` renders the Release body. To re-create a release body,
+re-run `create-release.yml` via `workflow_dispatch` with `update_existing: true`.
 
 ## Project Context — Performance Loop System
 
