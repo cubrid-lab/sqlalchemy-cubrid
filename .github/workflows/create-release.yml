@@ -1,0 +1,93 @@
+name: Create GitHub Release
+
+# Creates a GitHub Release from the CHANGELOG section for a pushed vX.Y.Z tag.
+# The CHANGELOG is the single source of truth: release notes are the extracted
+# "## [X.Y.Z] - YYYY-MM-DD" section (fail-closed, no generated-notes fallback).
+# Publishing the Release triggers publish-pypi.yml (on: release: published).
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to (re)create the release for, e.g. v1.2.3'
+        required: true
+        type: string
+      update_existing:
+        description: 'Overwrite an existing release body if it differs'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve tag and version
+        id: resolve
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          case "$TAG" in
+            v[0-9]*) ;;
+            *) echo "ERROR: tag '$TAG' is not a vX.Y.Z tag" >&2; exit 1 ;;
+          esac
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag is on main
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.resolve.outputs.tag }}"
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$TAG" origin/main; then
+            echo "ERROR: tag '$TAG' is not an ancestor of origin/main; refusing to release" >&2
+            exit 1
+          fi
+
+      - name: Extract release notes from CHANGELOG
+        run: python3 scripts/extract_release_notes.py "${{ steps.resolve.outputs.tag }}"
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.resolve.outputs.tag }}
+          UPDATE_EXISTING: ${{ github.event.inputs.update_existing }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            EXISTING="$(gh release view "$TAG" --json body -q .body || true)"
+            NEW="$(cat RELEASE_NOTES.md)"
+            if [ "$EXISTING" = "$NEW" ]; then
+              echo "Release $TAG already up to date; nothing to do."
+              exit 0
+            fi
+            if [ "${UPDATE_EXISTING:-false}" = "true" ]; then
+              echo "Updating existing release $TAG."
+              gh release edit "$TAG" --title "$TAG" --notes-file RELEASE_NOTES.md
+            else
+              echo "ERROR: release $TAG exists and differs; re-run via workflow_dispatch with update_existing=true" >&2
+              exit 1
+            fi
+          else
+            echo "Creating release $TAG."
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --notes-file RELEASE_NOTES.md \
+              --verify-tag \
+              --target "$TAG"
+          fi
