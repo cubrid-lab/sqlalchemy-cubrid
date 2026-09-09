@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Docs
+- **Added `THIRD_PARTY_LICENSES.md` and a Provenance section in `docs/ARCHITECTURE.md`** — the license inventory covers the default runtime tree (SQLAlchemy, greenlet, typing_extensions) and the optional `[alembic]`/`[cubrid]` extras; the provenance note states that this dialect is an independent implementation, not a port of the legacy `CUBRID-Python`-bundled dialect. Documentation only.
+
 ## [1.7.0] - 2026-09-02
 
 ### Docs
