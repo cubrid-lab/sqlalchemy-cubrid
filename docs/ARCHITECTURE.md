@@ -10,6 +10,14 @@ sqlalchemy-cubrid is designed to provide a robust, modern interface between SQLA
 *   Alembic migration support
 *   PEP 561 typed
 
+## Provenance
+
+sqlalchemy-cubrid is an independent implementation written for SQLAlchemy 2.0. It
+contains no code from, and is not a port of, the legacy CUBRID SQLAlchemy dialect
+that shipped inside the old `CUBRID-Python` driver distribution. The optional
+`[cubrid]`/`[cubriddb]` extras merely allow this dialect to *run on top of* that
+legacy driver; no source from it is included or derived.
+
 ## High-Level Flow
 
 ### Phase 1: Engine Creation & Connection
