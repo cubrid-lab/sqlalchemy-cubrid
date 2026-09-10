@@ -1,0 +1,9 @@
+sqlalchemy-cubrid
+Copyright (c) 2021-2026 Yeongseon Choe and Gyeongjun Paik
+
+This product is licensed under the MIT License (see LICENSE).
+
+sqlalchemy-cubrid is an independent implementation written for
+SQLAlchemy 2.0. It contains no third-party source code and embeds no
+third-party assets; see docs/ARCHITECTURE.md (Provenance) and
+THIRD_PARTY_LICENSES.md for the dependency license inventory.
