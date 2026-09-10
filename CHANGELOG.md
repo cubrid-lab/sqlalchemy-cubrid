@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Docs
-- **CUBRID-Python BSD basis documented, server-license line added, NOTICE created, copyright unified (#333)** — `THIRD_PARTY_LICENSES.md` now records that the optional CUBRID-Python extra's `BSD` claim rests on PyPI metadata and setup.py (the upstream repository ships no LICENSE file or headers; 2- vs 3-Clause unspecified), and carries the verified CUBRID server licensing statement (engine Apache-2.0, APIs/connectors BSD per upstream `COPYING` — GPL v2+ is outdated). Added a two-line `NOTICE` (independent implementation, no third-party code). LICENSE copyright unified to `Yeongseon Choe and Gyeongjun Paik` (2021-2026).
+- **CUBRID-Python BSD basis documented, server-license line added, NOTICE created, copyright unified (#333)** — `THIRD_PARTY_LICENSES.md` now records that the optional CUBRID-Python extra's `BSD` claim rests on PyPI metadata and setup.py (the upstream repository ships no LICENSE file or headers; 2- vs 3-Clause unspecified), and carries the verified CUBRID server licensing statement (engine Apache-2.0, APIs/connectors BSD per upstream `COPYING` — GPL v2+ is outdated). Added a two-line `NOTICE` (independent implementation, no third-party code). LICENSE copyright unified to `Yeongseon Choe, Gyeongjun Paik` (2021-2026).
 
 ### Docs
 - **Added `THIRD_PARTY_LICENSES.md` and a Provenance section in `docs/ARCHITECTURE.md`** — the license inventory covers the default runtime tree (SQLAlchemy, greenlet, typing_extensions) and the optional `[alembic]`/`[cubrid]` extras; the provenance note states that this dialect is an independent implementation, not a port of the legacy `CUBRID-Python`-bundled dialect. Documentation only.
