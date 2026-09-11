@@ -1984,3 +1984,87 @@ class TestDialectReflectionExceptionPaths:
         assert result["constrained_columns"] == ["id"]
         # constraint_name should be None because the second query failed
         assert result["name"] is None
+
+
+# ---------------------------------------------------------------------------
+# Native ENUM compilation (#343)
+# ---------------------------------------------------------------------------
+
+
+class TestEnumCompilation:
+    """Native ENUM('a', 'b', ...) DDL — CUBRID supports it on 10.2–11.4."""
+
+    def test_enum_create_table(self):
+        t = Table(
+            "t_enum",
+            MetaData(),
+            Column("id", Integer, primary_key=True),
+            Column("e", sa.Enum("a", "b", "c")),
+        )
+        sql = _compile(sa.schema.CreateTable(t))
+        assert "ENUM('a', 'b', 'c')" in sql
+
+    def test_dialect_enum_type_direct(self):
+        from sqlalchemy_cubrid import ENUM
+
+        t = Table("t_enum2", MetaData(), Column("e", ENUM("x", "y")))
+        sql = _compile(sa.schema.CreateTable(t))
+        assert "ENUM('x', 'y')" in sql
+
+    def test_enum_element_quote_escaped(self):
+        from sqlalchemy_cubrid import ENUM
+
+        t = Table("t_enum3", MetaData(), Column("e", ENUM("it's", "b")))
+        sql = _compile(sa.schema.CreateTable(t))
+        assert "ENUM('it''s', 'b')" in sql
+
+    def test_enum_select_param(self):
+        t = Table("t_enum4", MetaData(), Column("e", sa.Enum("a", "b")))
+        sql = _compile(select(t.c.e).where(t.c.e == "a"))
+        assert "t_enum4.e" in sql
+
+
+class TestEnumReflectionParse:
+    """Unit tests for the ENUM(...) type-string parser (no DB needed)."""
+
+    def test_parse_simple(self):
+        from sqlalchemy_cubrid.dialect import _parse_enum_elements
+
+        assert _parse_enum_elements("'a', 'b', 'c'") == ["a", "b", "c"]
+
+    def test_parse_escaped_quote(self):
+        from sqlalchemy_cubrid.dialect import _parse_enum_elements
+
+        assert _parse_enum_elements("'it''s', 'b'") == ["it's", "b"]
+
+    def test_regex_matches_show_columns_form(self):
+        from sqlalchemy_cubrid.dialect import _RE_ENUM
+
+        m = _RE_ENUM.match("ENUM('a', 'b', 'c')")
+        assert m is not None
+        assert m.group(1) == "'a', 'b', 'c'"
+        assert _RE_ENUM.match("VARCHAR(10)") is None
+
+
+# ---------------------------------------------------------------------------
+# IS DISTINCT FROM emulation via null-safe <=> (#344)
+# ---------------------------------------------------------------------------
+
+
+class TestIsDistinctFromCompilation:
+    """a IS DISTINCT FROM b renders as NOT (a <=> b) — CUBRID has no native
+    IS [NOT] DISTINCT FROM but supports the null-safe equal operator <=>."""
+
+    def test_is_distinct_from(self):
+        sql = _compile(select(users.c.name).where(users.c.name.is_distinct_from("Alice")))
+        assert "NOT (users.name" in sql
+        assert "<=>" in sql
+        assert "'Alice'" in sql
+
+    def test_isnot_distinct_from(self):
+        sql = _compile(select(users.c.name).where(users.c.name.is_not_distinct_from("Alice")))
+        assert "users.name <=> 'Alice'" in sql
+
+    def test_null_safe_on_both_sides(self):
+        sql = _compile(select(users.c.id).where(users.c.name.is_distinct_from(users.c.email)))
+        assert "NOT (users.name <=> users.email)" in sql

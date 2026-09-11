@@ -111,7 +111,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Feature | Status | Notes |
 |---|---|---|
 | JSON type | ✅ | Since v1.2.0, requires CUBRID ≥ 10.2 |
-| Native Enum | ❌ | CUBRID lacks ENUM — use VARCHAR + CHECK constraint |
+| Native Enum | ✅ | Native `ENUM('a', 'b', ...)` — verified on 10.2–11.4 (#343) |
 | Interval type | ❌ | Not supported by CUBRID |
 | RETURNING clause | ❌ | `INSERT/UPDATE/DELETE ... RETURNING` not supported |
 | BOOLEAN | ⚠️ | Mapped to SMALLINT (0/1) — no native boolean |

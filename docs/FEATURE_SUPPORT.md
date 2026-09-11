@@ -67,7 +67,7 @@ High-level overview by feature category.
 | FOR UPDATE (row locking) | ✅ | ✅ | ✅ | ❌ |
 | UPDATE with LIMIT | ✅ | ✅ | ❌ | ❌ |
 | TRUNCATE TABLE | ✅ | ✅ | ✅ | ❌ |
-| IS DISTINCT FROM | ❌ | ❌ | ✅ | ❌ |
+| IS DISTINCT FROM | ✅ | ❌ | ✅ | ❌ |
 | Postfetch LASTROWID | ✅ | ✅ | ❌ | ✅ |
 
 ### Notes
@@ -80,7 +80,7 @@ High-level overview by feature category.
 - **UPDATE with LIMIT**: CUBRID and MySQL both support `UPDATE … LIMIT n`. PostgreSQL and SQLite do not.
 - **Multi-table UPDATE**: SQLAlchemy's multi-table UPDATE pattern compiles to `UPDATE t1, t2 SET ... WHERE ...`, which matches the MySQL-style syntax accepted by CUBRID. The dialect intentionally keeps `update_from_clause()` disabled because no extra `FROM` clause is required.
 - **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. The dialect includes `TRUNCATE` in autocommit detection.
-- **IS DISTINCT FROM**: Not a CUBRID SQL operator. SQLAlchemy may emulate it with `CASE` expressions on dialects that lack native support.
+- **IS DISTINCT FROM**: CUBRID lacks the SQL-standard syntax but supports the null-safe equal `<=>`. The dialect emulates `a IS DISTINCT FROM b` as `NOT (a <=> b)` and `a IS NOT DISTINCT FROM b` as `a <=> b` — same approach the MySQL dialect uses (#344).
 
 ---
 
@@ -167,7 +167,7 @@ High-level overview by feature category.
 
 | Type | CUBRID | MySQL | PostgreSQL | SQLite |
 |------|--------|-------|------------|--------|
-| ENUM | ❌ | ✅ | ✅ | ❌ |
+| ENUM | ✅ | ✅ | ✅ | ❌ |
 | JSON | ✅ | ✅ | ✅ | ⚠️ |
 | ARRAY | ❌ | ❌ | ✅ | ❌ |
 | UUID | ❌ | ❌ | ✅ | ❌ |
@@ -465,7 +465,7 @@ Features not currently supported that may be added in future releases, depending
 | JSON type | ✅ | Native JSON support (CUBRID 10.2+) with path expressions via `JSON_EXTRACT` |
 | Temporary tables | ❌ | CUBRID does not support `CREATE TEMPORARY TABLE` |
 | Multiple schemas | ❌ | CUBRID operates in a single-schema model |
-| IS DISTINCT FROM | ❌ | Not a CUBRID SQL operator |
+
 | Check constraint reflection | ❌ | CUBRID parses but ignores CHECK constraints |
 | Sequences | ❌ | CUBRID uses `AUTO_INCREMENT` instead |
 | Lateral joins | ❌ | `LATERAL` keyword causes syntax error in CUBRID |
