@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 - **Korean/multi-language docs governance** — every `docs/README.<lang>.md` translation now carries a sync marker, and docs-sync gained a `translation-sync` job that fails a PR when `README.md` changes without any translation changing (escape hatch: the `translations-deferred` label).
+- **한국어 문서 페이지 — 배치 2 (Usage/Reference 1차, #341)** — TYPES·ARCHITECTURE 번역 추가. ORM_COOKBOOK·DML_EXTENSIONS·ALEMBIC·FEATURE·TROUBLE·DEV는 후속.
 - **한국어 문서 페이지 — 배치 1 (Getting Started/Ref/Ops 축, #341)** — QUICKSTART·CONNECTION·DRIVER_COMPAT·ISOLATION_LEVELS·SUPPORT_MATRIX·PERFORMANCE 6페이지 번역을 `docs/ko/`에 추가. Usage 축(ORM·DML·TYPES·ALEMBIC)과 FEATURE/ARCH/TROUBLE/DEV는 후속 배치.
 - **Docs site information architecture unified across the ecosystem** — nav reorganized to the shared six-tab skeleton (Home / Getting Started / Usage / Reference / Operations / Project), the five README translations (ko/de/hi/ru/zh) are now reachable via Project → Translations (previously URL-only), palette unified to blue with search-suggest, and the homepage gains an Ecosystem section linking the three sibling sites.
 - **CUBRID-Python BSD basis documented, server-license line added, NOTICE created, copyright unified (#333)** — `THIRD_PARTY_LICENSES.md` now records that the optional CUBRID-Python extra's `BSD` claim rests on PyPI metadata and setup.py (the upstream repository ships no LICENSE file or headers; 2- vs 3-Clause unspecified), and carries the verified CUBRID server licensing statement (engine Apache-2.0, APIs/connectors BSD per upstream `COPYING` — GPL v2+ is outdated). Added a two-line `NOTICE` (independent implementation, no third-party code). LICENSE copyright unified to `Yeongseon Choe, Gyeongjun Paik` (2021-2026).
@@ -301,7 +302,6 @@ and breaking changes will only occur in major version bumps (2.0+).
 - **`get_indexes()`**: Fix PK index filtering — read `is_primary_key` from column 0 of the single-column query result instead of unreachable column 6, so primary-key indexes are properly excluded (#54).
 - **`has_table()`**: Recognize views as existing objects by accepting `class_type IN ('CLASS', 'VCLASS')` instead of only `'CLASS'` (#55).
 
-
 ## [0.7.0] - 2026-03-12
 
 ### Added
@@ -322,7 +322,6 @@ and breaking changes will only occur in major version bumps (2.0+).
 
 ### Changed
 - Version bumped to 0.7.0.
-
 
 ## [0.6.0] - 2026-03-12
 
@@ -355,7 +354,6 @@ and breaking changes will only occur in major version bumps (2.0+).
   All 396 tests pass with SA 2.0.48 — readiness confirmed.
 - **Async DBAPI support**: CUBRID Python driver has no async support — blocked.
 
-
 ## [0.5.0] - 2026-03-12
 
 ### Added
@@ -385,7 +383,6 @@ and breaking changes will only occur in major version bumps (2.0+).
 - `docs/DML_EXTENSIONS.md`: Added REPLACE INTO, ODKU subquery values, and Query Trace sections.
 - Version bumped to 0.5.0.
 
-
 ## [0.4.0] - 2026-03-12
 
 ### Added
@@ -409,7 +406,6 @@ and breaking changes will only occur in major version bumps (2.0+).
 - CI integration test matrix expanded: Python {3.10, 3.12, 3.14} × CUBRID {11.4, 11.2, 11.0, 10.2}.
 - `pyproject.toml`: Added `Programming Language :: Python :: 3.14` classifier.
 
-
 ## [0.3.2] - 2026-03-12
 
 ### Added
@@ -424,7 +420,6 @@ and breaking changes will only occur in major version bumps (2.0+).
 - `README.md`: Rewritten as a concise landing page (~80 lines); all detailed content moved to `docs/` files.
 - `docs/source/index.rst`: Added links to all new documentation files.
 - `docs/FEATURE_SUPPORT.md`: Updated version reference from v0.3.0 to v0.3.2.
-
 
 ## [0.3.1] - 2026-03-12
 

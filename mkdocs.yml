@@ -58,6 +58,8 @@ nav:
               - 격리 수준: ko/ISOLATION_LEVELS.md
               - 지원 매트릭스: ko/SUPPORT_MATRIX.md
               - 성능 가이드: ko/PERFORMANCE.md
+              - 타입 매핑: ko/TYPES.md
+              - 아키텍처: ko/ARCHITECTURE.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
           - Русский: README.ru.md
