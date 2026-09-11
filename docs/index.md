@@ -45,3 +45,12 @@ with engine.connect() as conn:
 - [PyPI](https://pypi.org/project/sqlalchemy-cubrid/)
 - [Changelog](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md)
 - [Contributing](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md)
+
+## Ecosystem
+
+Part of the cubrid-lab Python ecosystem:
+
+- pycubrid — Pure-Python DB-API 2.0 driver for CUBRID (sync + native asyncio)
+- **sqlalchemy-cubrid** — SQLAlchemy 2.0–2.2 dialect + Alembic
+- cubrid-cookbook-python — 68 runnable examples and application templates
+- cubrid-mcp-server — MCP server — natural-language access for LLM clients
