@@ -232,7 +232,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 项目方向和后续里程碑请参见 [`ROADMAP.md`](../ROADMAP.md)。
 
-生态系统全貌请参见 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md) 和 [Project Board](https://github.com/orgs/cubrid-lab/projects/2)。
+生态系统全貌请参见 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)。
 
 ## 贡献
 
