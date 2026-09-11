@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 - **Korean/multi-language docs governance** — every `docs/README.<lang>.md` translation now carries a sync marker, and docs-sync gained a `translation-sync` job that fails a PR when `README.md` changes without any translation changing (escape hatch: the `translations-deferred` label).
+- **한국어 문서 페이지 — 배치 4 (#341)** — FEATURE_SUPPORT(기능 비교)·DEVELOPMENT(개발 가이드) 번역 추가. TROUBLESHOOTING만 남음.
 - **한국어 문서 페이지 — 배치 3 (#341)** — ALEMBIC(마이그레이션 가이드) 번역 추가. FEATURE·TROUBLE·DEV만 남음.
 - **한국어 문서 페이지 — 배치 2 완결 (#341)** — ORM_COOKBOOK·DML_EXTENSIONS 번역으로 Usage 축 완성. ALEMBIC·FEATURE·TROUBLE·DEV는 후속 배치.
 - **한국어 문서 페이지 — 배치 2 (Usage/Reference 1차, #341)** — TYPES·ARCHITECTURE 번역 추가. ORM_COOKBOOK·DML_EXTENSIONS·ALEMBIC·FEATURE·TROUBLE·DEV는 후속.

@@ -63,6 +63,8 @@ nav:
               - ORM 쿡북: ko/ORM_COOKBOOK.md
               - DML 확장: ko/DML_EXTENSIONS.md
               - Alembic 마이그레이션: ko/ALEMBIC.md
+              - 기능 지원 비교: ko/FEATURE_SUPPORT.md
+              - 개발 가이드: ko/DEVELOPMENT.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
           - Русский: README.ru.md
