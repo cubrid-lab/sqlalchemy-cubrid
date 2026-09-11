@@ -1,5 +1,7 @@
 # sqlalchemy-cubrid
 
+> 🌐 Community translation of [README.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) — English is canonical; this translation may lag behind the original. The `translation-sync` CI check flags drift, and maintainers open resync PRs.
+
 **SQLAlchemy-2.0–2.1-Dialekt für die CUBRID-Datenbank** — Python-ORM, Schema-Reflexion, Alembic-Migrationen und Typzuordnung für SQLAlchemy und CUBRID-spezifische Typen.
 
 [🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
