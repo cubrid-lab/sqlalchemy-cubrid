@@ -62,6 +62,7 @@ nav:
               - 아키텍처: ko/ARCHITECTURE.md
               - ORM 쿡북: ko/ORM_COOKBOOK.md
               - DML 확장: ko/DML_EXTENSIONS.md
+              - Alembic 마이그레이션: ko/ALEMBIC.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
           - Русский: README.ru.md
