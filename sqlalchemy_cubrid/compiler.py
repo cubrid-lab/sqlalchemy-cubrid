@@ -54,6 +54,21 @@ class CubridCompiler(compiler.SQLCompiler):
         """
         return "GROUP_CONCAT(%s)" % self.function_argspec(fn, **kw)
 
+    def visit_is_distinct_from_binary(self, binary: Any, operator: Any, **kw: Any) -> str:
+        # CUBRID has no SQL-standard IS [NOT] DISTINCT FROM syntax, but
+        # supports the null-safe equal operator <=> — same emulation the
+        # MySQL dialect uses.
+        return "NOT (%s <=> %s)" % (
+            self.process(binary.left, **kw),
+            self.process(binary.right, **kw),
+        )
+
+    def visit_is_not_distinct_from_binary(self, binary: Any, operator: Any, **kw: Any) -> str:
+        return "%s <=> %s" % (
+            self.process(binary.left, **kw),
+            self.process(binary.right, **kw),
+        )
+
     def visit_cast(self, cast: Any, **kw: Any) -> str:
         # https://www.cubrid.org/manual/en/11.0/sql/function/typecast_fn.html#cast
         type_ = self.process(cast.typeclause)
@@ -582,6 +597,23 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_BOOLEAN(self, type_: Any, **kw: Any) -> str:
         # CUBRID has no native BOOLEAN; map to SMALLINT.
         return self.visit_SMALLINT(type_)
+
+    def _render_native_enum(self, type_: Any) -> str:
+        # CUBRID native ENUM('a', 'b', ...) — supported on 10.2–11.4.
+        def _quote(element: str) -> str:
+            return "'" + element.replace("'", "''") + "'"
+
+        return "ENUM(%s)" % ", ".join(_quote(e) for e in type_.enums)
+
+    def visit_enum(self, type_: Any, **kw: Any) -> str:
+        # sqltypes.Enum dispatches here (__visit_name__ is lowercase "enum").
+        if getattr(type_, "native_enum", True):
+            return self._render_native_enum(type_)
+        return super().visit_enum(type_, **kw)
+
+    def visit_ENUM(self, type_: Any, **kw: Any) -> str:
+        # The dialect-level ENUM type (and ischema reflection) land here.
+        return self._render_native_enum(type_)
 
     def visit_NUMERIC(self, type_: Any, **kw: Any) -> str:
         if type_.precision is None:

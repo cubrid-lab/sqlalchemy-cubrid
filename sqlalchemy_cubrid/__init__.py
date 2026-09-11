@@ -38,6 +38,7 @@ from .types import (
     SEQUENCE,
     SET,
     SMALLINT,
+    ENUM,
     STRING,
     VARCHAR,
 )
@@ -78,6 +79,7 @@ __all__ = (
     "VARCHAR",
     "NCHAR",
     "NVARCHAR",
+    "ENUM",
     "STRING",
     "BLOB",
     "CLOB",

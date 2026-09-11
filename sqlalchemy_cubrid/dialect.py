@@ -62,6 +62,7 @@ from sqlalchemy_cubrid.types import (
     SEQUENCE,
     SET,
     SMALLINT,
+    ENUM,
     STRING,
     TIMESTAMPLTZ,
     TIMESTAMPTZ,
@@ -83,6 +84,18 @@ log = logging.getLogger(__name__)
 # Pre-compiled patterns for column type parsing in get_columns().
 # Avoids re-compilation on every reflection call.
 _RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
+_RE_ENUM = re.compile(r"^ENUM\s*\((.*)\)\s*$", re.IGNORECASE)
+
+
+def _parse_enum_elements(raw: str) -> list[str]:
+    """Extract quoted element strings from an ENUM(...) type string.
+
+    Handles doubled single-quote escaping inside elements
+    (e.g. ENUM('it''s', 'b') -> ["it's", "b"]).
+    """
+    return [m.replace("''", "'") for m in re.findall(r"'((?:[^']|'')*)'", raw)]
+
+
 _RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*\((.+)\)$", re.IGNORECASE)
 _RE_LENGTH = re.compile(r"\((\d+)\)")
 
@@ -151,6 +164,7 @@ _RE_BRACKET_IDENT = re.compile(r"\[([^\]]+)\]")
 # -----------------------------------------------------------------------
 
 colspecs = {
+    sqltypes.Enum: ENUM,
     sqltypes.Numeric: NUMERIC,
     sqltypes.Float: FLOAT,
     sqltypes.Time: TIME,
@@ -191,6 +205,7 @@ ischema_names = {
     "CHAR VARYING": VARCHAR,
     "NCHAR VARYING": NVARCHAR,
     "STRING": STRING,
+    "ENUM": ENUM,
     # LOB
     "BLOB": BLOB,
     "CLOB": CLOB,
@@ -373,8 +388,15 @@ class CubridDialect(default.DefaultDialect):
             # Strip length/precision from type string for lookup
             coltype_key = _RE_TYPE_PARAMS.sub("", coltype_raw).strip()
 
+            coltype: Any  # noqa: F842 — type varies per branch below
+
+            # ENUM('a', 'b', ...) — native enum with its element list
+            enum_match = _RE_ENUM.match(coltype_raw.strip())
+            if enum_match:
+                coltype = ENUM(*_parse_enum_elements(enum_match.group(1)))
+
             # Collection types: SET(VARCHAR(100)), MULTISET(INT), etc.
-            collection_match = _RE_COLLECTION.match(coltype_raw)
+            collection_match = None if enum_match else _RE_COLLECTION.match(coltype_raw)
             if collection_match:
                 coll_name = collection_match.group(1).upper()
                 inner_raw = collection_match.group(2)
