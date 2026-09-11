@@ -51,6 +51,21 @@ nav:
       - Development: DEVELOPMENT.md
       - Translations:
           - 한국어: README.ko.md
+          - 한국어 문서:
+              - 빠른 시작: ko/QUICKSTART.md
+              - 연결과 드라이버 설정: ko/CONNECTION.md
+              - 드라이버 호환성: ko/DRIVER_COMPAT.md
+              - 격리 수준: ko/ISOLATION_LEVELS.md
+              - 지원 매트릭스: ko/SUPPORT_MATRIX.md
+              - 성능 가이드: ko/PERFORMANCE.md
+              - 타입 매핑: ko/TYPES.md
+              - 아키텍처: ko/ARCHITECTURE.md
+              - ORM 쿡북: ko/ORM_COOKBOOK.md
+              - DML 확장: ko/DML_EXTENSIONS.md
+              - Alembic 마이그레이션: ko/ALEMBIC.md
+              - 기능 지원 비교: ko/FEATURE_SUPPORT.md
+              - 개발 가이드: ko/DEVELOPMENT.md
+              - 문제 해결: ko/TROUBLESHOOTING.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
           - Русский: README.ru.md
