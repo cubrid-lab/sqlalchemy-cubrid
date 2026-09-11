@@ -60,6 +60,8 @@ nav:
               - 성능 가이드: ko/PERFORMANCE.md
               - 타입 매핑: ko/TYPES.md
               - 아키텍처: ko/ARCHITECTURE.md
+              - ORM 쿡북: ko/ORM_COOKBOOK.md
+              - DML 확장: ko/DML_EXTENSIONS.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
           - Русский: README.ru.md

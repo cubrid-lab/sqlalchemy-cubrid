@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Docs
 - **Korean/multi-language docs governance** — every `docs/README.<lang>.md` translation now carries a sync marker, and docs-sync gained a `translation-sync` job that fails a PR when `README.md` changes without any translation changing (escape hatch: the `translations-deferred` label).
+- **한국어 문서 페이지 — 배치 2 완결 (#341)** — ORM_COOKBOOK·DML_EXTENSIONS 번역으로 Usage 축 완성. ALEMBIC·FEATURE·TROUBLE·DEV는 후속 배치.
 - **한국어 문서 페이지 — 배치 2 (Usage/Reference 1차, #341)** — TYPES·ARCHITECTURE 번역 추가. ORM_COOKBOOK·DML_EXTENSIONS·ALEMBIC·FEATURE·TROUBLE·DEV는 후속.
 - **한국어 문서 페이지 — 배치 1 (Getting Started/Ref/Ops 축, #341)** — QUICKSTART·CONNECTION·DRIVER_COMPAT·ISOLATION_LEVELS·SUPPORT_MATRIX·PERFORMANCE 6페이지 번역을 `docs/ko/`에 추가. Usage 축(ORM·DML·TYPES·ALEMBIC)과 FEATURE/ARCH/TROUBLE/DEV는 후속 배치.
 - **Docs site information architecture unified across the ecosystem** — nav reorganized to the shared six-tab skeleton (Home / Getting Started / Usage / Reference / Operations / Project), the five README translations (ko/de/hi/ru/zh) are now reachable via Project → Translations (previously URL-only), palette unified to blue with search-suggest, and the homepage gains an Ecosystem section linking the three sibling sites.
