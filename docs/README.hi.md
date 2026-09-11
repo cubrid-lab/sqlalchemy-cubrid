@@ -1,6 +1,6 @@
 # sqlalchemy-cubrid
 
-> 🌐 Translated from [README.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) — keep this translation in sync with the original in the same PR (enforced by the `translation-sync` CI check; use the `translations-deferred` label to defer).
+> 🌐 Community translation of [README.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) — English is canonical; this translation may lag behind the original. The `translation-sync` CI check flags drift, and maintainers open resync PRs.
 
 **CUBRID डेटाबेस के लिए SQLAlchemy 2.0–2.1 dialect** — SQLAlchemy और CUBRID-विशिष्ट types के लिए Python ORM, schema reflection, Alembic migrations, और type mapping प्रदान करता है।
 
