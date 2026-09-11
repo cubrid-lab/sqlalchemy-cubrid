@@ -13,16 +13,17 @@ theme:
     - navigation.expand
     - content.code.copy
     - search.highlight
+    - search.suggest
   palette:
     - scheme: default
-      primary: indigo
-      accent: indigo
+      primary: blue
+      accent: blue
       toggle:
         icon: material/brightness-7
         name: Switch to dark mode
     - scheme: slate
-      primary: indigo
-      accent: indigo
+      primary: blue
+      accent: blue
       toggle:
         icon: material/brightness-4
         name: Switch to light mode
@@ -33,7 +34,7 @@ nav:
       - Quick Start: QUICKSTART.md
       - Connection Guide: CONNECTION.md
       - Driver Compatibility: DRIVER_COMPAT.md
-  - User Guide:
+  - Usage:
       - ORM Cookbook: ORM_COOKBOOK.md
       - DML Extensions: DML_EXTENSIONS.md
       - Type Mapping: TYPES.md
@@ -46,10 +47,16 @@ nav:
   - Operations:
       - Performance: PERFORMANCE.md
       - Troubleshooting: TROUBLESHOOTING.md
-  - Development:
-      - Development Guide: DEVELOPMENT.md
-  - Changelog: https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md
-  - Contributing: https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md
+  - Project:
+      - Development: DEVELOPMENT.md
+      - Translations:
+          - 한국어: README.ko.md
+          - Deutsch: README.de.md
+          - हिन्दी: README.hi.md
+          - Русский: README.ru.md
+          - 中文: README.zh.md
+      - Changelog: https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md
+      - Contributing: https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md
 
 markdown_extensions:
   - admonition
@@ -57,31 +64,25 @@ markdown_extensions:
       permalink: true
       toc_depth: 3
   - tables
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
+  - attr_list
+  - md_in_html
+  - pymdownx.superfences
   - pymdownx.highlight:
       anchor_linenums: true
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.details
-  - pymdownx.inlinehilite
 
 plugins:
   - search
 
 validation:
+  nav:
+    omitted_files: ignore
   links:
-    not_found: info
+    not_found: ignore
 
 extra:
   social:
     - icon: fontawesome/brands/github
       link: https://github.com/cubrid-lab/sqlalchemy-cubrid
-    - icon: fontawesome/brands/python
-      link: https://pypi.org/project/sqlalchemy-cubrid/
-
-extra_javascript:
-  - https://unpkg.com/mermaid@11/dist/mermaid.min.js
-  - javascripts/mermaid-init.js
