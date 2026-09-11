@@ -233,7 +233,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 이 프로젝트의 방향과 다음 마일스톤은 [`ROADMAP.md`](../ROADMAP.md)를 참고하세요.
 
-생태계 전체 관점은 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)과 [프로젝트 보드](https://github.com/orgs/cubrid-lab/projects/2)를 참고하세요.
+생태계 전체 관점은 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)를 참고하세요.
 
 ## 기여하기
 
