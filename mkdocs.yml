@@ -51,6 +51,13 @@ nav:
       - Development: DEVELOPMENT.md
       - Translations:
           - 한국어: README.ko.md
+          - 한국어 문서:
+              - 빠른 시작: ko/QUICKSTART.md
+              - 연결과 드라이버 설정: ko/CONNECTION.md
+              - 드라이버 호환성: ko/DRIVER_COMPAT.md
+              - 격리 수준: ko/ISOLATION_LEVELS.md
+              - 지원 매트릭스: ko/SUPPORT_MATRIX.md
+              - 성능 가이드: ko/PERFORMANCE.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
           - Русский: README.ru.md
