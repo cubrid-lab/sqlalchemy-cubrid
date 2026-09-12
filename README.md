@@ -101,6 +101,8 @@ pip install "sqlalchemy-cubrid[cubrid]"
 > this dialect. To select the legacy C-extension driver explicitly and unambiguously,
 > use the `cubrid+cubriddb://` URL together with the `[cubriddb]` install extra.
 
+<img src="docs/demo.gif" alt="sqlalchemy-cubrid in action" width="100%"/>
+
 ## Quick Start
 
 ### Core (Connection-Level)
