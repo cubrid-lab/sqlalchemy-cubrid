@@ -81,6 +81,8 @@ Alembic 지원 포함:
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
+<img src="https://github.com/cubrid-lab/sqlalchemy-cubrid/raw/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>
+
 ## 빠른 시작
 
 ### Core (연결 수준)
