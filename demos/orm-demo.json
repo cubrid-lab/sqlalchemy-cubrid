@@ -1,0 +1,25 @@
+{
+  "title": "sqlalchemy-cubrid demo",
+  "width": 1200,
+  "height": 600,
+  "steps": [
+    {"type": "type", "text": "pip install sqlalchemy-cubrid[pycubrid]", "speed": 40},
+    {"type": "enter"},
+    {"type": "output", "text": "Successfully installed sqlalchemy-cubrid-1.7.0 pycubrid-1.7.0"},
+    {"type": "sleep", "ms": 1500},
+    {"type": "python", "code": "from sqlalchemy import create_engine, text", "result": ""},
+    {"type": "sleep", "ms": 300},
+    {"type": "python", "code": "engine = create_engine(\"cubrid+pycubrid://dba@localhost:33000/testdb\")", "result": ""},
+    {"type": "sleep", "ms": 800},
+    {"type": "python", "code": "with engine.connect() as conn:", "result": ""},
+    {"type": "sleep", "ms": 300},
+    {"type": "python", "code": "    result = conn.execute(text(\"SELECT 1 + 1 AS answer\"))", "result": ""},
+    {"type": "sleep", "ms": 300},
+    {"type": "python", "code": "    print(f\"Result: {result.scalar()}\")", "result": "Result: 2"},
+    {"type": "sleep", "ms": 1000},
+    {"type": "python", "code": "print(\"SQLAlchemy 2.0 + CUBRID — full ORM support\")", "result": "SQLAlchemy 2.0 + CUBRID — full ORM support"},
+    {"type": "sleep", "ms": 1000},
+    {"type": "python", "code": "print(\"Dialect: cubrid+pycubrid | Driver: pure Python\")", "result": "Dialect: cubrid+pycubrid | Driver: pure Python"},
+    {"type": "sleep", "ms": 1500}
+  ]
+}
