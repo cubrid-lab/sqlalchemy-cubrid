@@ -68,6 +68,7 @@ from sqlalchemy_cubrid.types import (
     TIMESTAMPTZ,
     DATETIMELTZ,
     DATETIMETZ,
+    CubridUuid,
     VARCHAR,
 )
 
@@ -171,6 +172,7 @@ colspecs = {
     sqltypes.JSON: JSON,
     sqltypes.JSON.JSONIndexType: JSONIndexType,
     sqltypes.JSON.JSONPathType: JSONPathType,
+    sqltypes.Uuid: CubridUuid,
 }
 
 # ischema_names maps CUBRID type names from SHOW COLUMNS to SA types.

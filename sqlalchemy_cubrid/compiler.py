@@ -765,3 +765,7 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
 
     def visit_JSON(self, type_: Any, **kw: Any) -> str:
         return "JSON"
+
+    def visit_uuid(self, type_: Any, **kw: Any) -> str:
+        # CUBRID has no native UUID; store as CHAR(32) hex.
+        return "CHAR(32)"

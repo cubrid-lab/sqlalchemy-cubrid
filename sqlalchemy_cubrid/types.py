@@ -13,8 +13,10 @@ See: https://www.cubrid.org/manual/en/11.0/sql/datatype.html
 from __future__ import annotations
 
 import inspect
-from typing import Any, Sequence
+import uuid as _uuid
+from typing import Any, Callable, Sequence
 
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.sql import sqltypes
 
 
@@ -502,3 +504,62 @@ class JSON(sqltypes.JSON):
     """
 
     __visit_name__ = "JSON"
+
+
+# ---------------------------------------------------------------------------
+# UUID Type (CUBRID has no native UUID; stored as CHAR(32))
+# ---------------------------------------------------------------------------
+
+
+class CubridUuid(sqltypes.Uuid):
+    """CUBRID-compatible UUID type stored as CHAR(32) hex string.
+
+    CUBRID has no native UUID type.  This implementation:
+
+    - Renders DDL as ``CHAR(32)``
+    - Accepts both :class:`uuid.UUID` objects and UUID-formatted strings on bind
+    - Returns :class:`uuid.UUID` objects on result (default ``as_uuid=True``)
+    - Sets ``render_bind_cast = False`` to suppress ``CAST(? AS uuid)``
+
+    .. versionadded:: 1.8.0
+    """
+
+    render_bind_cast = False
+
+    def __init__(self, as_uuid: bool = True) -> None:
+        super().__init__(as_uuid=as_uuid)
+
+    @property
+    def impl(self) -> sqltypes.CHAR:  # type: ignore[override]
+        return sqltypes.CHAR(32)
+
+    def bind_processor(self, dialect: Dialect) -> Callable[[Any], str | None]:  # type: ignore[override]
+        def process(value: Any) -> str | None:
+            if value is not None:
+                if isinstance(value, _uuid.UUID):
+                    return value.hex
+                return str(value).replace("-", "")
+            return value
+
+        return process
+
+    def result_processor(self, dialect: Dialect, coltype: Any) -> Callable[[Any], Any]:  # type: ignore[override]
+        if self.as_uuid:
+
+            def process(value: Any) -> _uuid.UUID | None:
+                if value is not None:
+                    if isinstance(value, _uuid.UUID):
+                        return value
+                    return _uuid.UUID(str(value))
+                return value
+
+            return process
+
+        def process_str(value: Any) -> str | None:
+            if value is not None:
+                if isinstance(value, _uuid.UUID):
+                    return str(value)
+                return str(value)
+            return value
+
+        return process_str
