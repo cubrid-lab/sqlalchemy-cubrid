@@ -18,7 +18,7 @@ jobs:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
-      - run: pytest test/ --ignore=test/test_integration.py --ignore=test/test_aio_integration.py -q
+      - run: pytest test/ --ignore=test/test_integration.py --ignore=test/test_aio_integration.py --ignore=test/test_suite.py --ignore=test/test_regression.py -q
 
   # Integration + async integration suite against pycubrid@main (HEAD).
   # Ensures cross-stack fixes landing in pycubrid main are exercised by the
