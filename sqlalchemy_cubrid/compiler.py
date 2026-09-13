@@ -623,8 +623,16 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         for fk in table.foreign_key_constraints:
             fk_col_names = tuple(c.parent.name for c in fk.elements)
             if idx_col_names == fk_col_names:
-                # CUBRID rejects any CREATE INDEX on columns that already
-                # have an FK auto-index, even if the new one is UNIQUE.
+                if index.unique:
+                    import warnings
+
+                    warnings.warn(
+                        "CUBRID: skipping CREATE UNIQUE INDEX '%s' because "
+                        "an FK auto-index already exists on the same columns. "
+                        "The UNIQUE constraint is NOT enforced. Use an inline "
+                        "UNIQUE keyword in CREATE TABLE instead." % index.name,
+                        stacklevel=2,
+                    )
                 return "SELECT 1 FROM db_root"
 
         return super().visit_create_index(
