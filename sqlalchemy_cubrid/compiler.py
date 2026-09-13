@@ -240,11 +240,14 @@ class CubridCompiler(compiler.SQLCompiler):
     def visit_on_duplicate_key_update(self, on_duplicate: Any, **kw: Any) -> str:
         """Render ON DUPLICATE KEY UPDATE clause.
 
-        CUBRID uses VALUES() function to reference inserted values,
-        identical to MySQL's pre-8.0 syntax.
+        CUBRID 11.4 does **not** support the ``VALUES(col)`` function in
+        ``ON DUPLICATE KEY UPDATE`` (unlike MySQL).  When the user references
+        ``stmt.inserted.col``, we look up the INSERT bind parameter for that
+        column (already registered in ``self.binds``) and re-emit it so the
+        driver sends the value twice: once for the INSERT slot and once for
+        the UPDATE slot.
         """
         from sqlalchemy.sql import coercions, elements, roles, visitors
-        from sqlalchemy.sql.expression import literal_column
 
         statement = self.current_executable
         table = getattr(statement, "table", None)
@@ -269,6 +272,13 @@ class CubridCompiler(compiler.SQLCompiler):
             for key, value in on_duplicate.update.items()
         }
 
+        # Cache of INSERT bind parameters keyed by column name so we can
+        # re-use them for ``stmt.inserted.col`` references.
+        _insert_binds: dict[str, Any] = {}
+        for bkey, bp in self.binds.items():
+            if bkey in (c.key for c in table.c):
+                _insert_binds[bkey] = bp
+
         for column in (col for col in cols if col.key in on_duplicate_update):
             val = on_duplicate_update[column.key]
             if is_literal_value(val):
@@ -276,14 +286,28 @@ class CubridCompiler(compiler.SQLCompiler):
                 value_text = self.process(val.self_group(), use_schema=False)
             else:
 
-                def replace(element: Any, captured_column: Any = column, **kw: Any) -> Any | None:
+                def replace(
+                    element: Any,
+                    captured_column: Any = column,
+                    insert_binds: dict[str, Any] = _insert_binds,
+                    **kw: Any,
+                ) -> Any | None:
                     if isinstance(element, elements.BindParameter) and element.type._isnull:
                         return bind_with_type(element, captured_column.type)
                     elif (
                         isinstance(element, elements.ColumnClause)
                         and element.table is on_duplicate.inserted_alias
                     ):
-                        return literal_column(f"VALUES({self.preparer.quote(element.name)})")
+                        # Re-use the INSERT bind parameter so the value
+                        # appears twice in the positional parameter list.
+                        if element.name in insert_binds:
+                            return insert_binds[element.name]
+                        # Fallback: emit a new bind (caller must supply value).
+                        return elements.BindParameter(
+                            element.name,
+                            type_=captured_column.type,
+                            unique=True,
+                        )
                     else:
                         return None
 
