@@ -272,12 +272,15 @@ class CubridCompiler(compiler.SQLCompiler):
             for key, value in on_duplicate.update.items()
         }
 
-        # Cache of INSERT bind parameters keyed by column name so we can
-        # re-use them for ``stmt.inserted.col`` references.
+        # Cache of INSERT bind parameters keyed by both column key and
+        # column name so ``stmt.inserted.col`` lookup works regardless of
+        # whether the ColumnClause carries the Python key or the DB name.
         _insert_binds: dict[str, Any] = {}
         for bkey, bp in self.binds.items():
-            if bkey in (c.key for c in table.c):
-                _insert_binds[bkey] = bp
+            for c in table.c:
+                if bkey == c.key or bkey == c.name:
+                    _insert_binds[c.key] = bp
+                    _insert_binds[c.name] = bp
 
         for column in (col for col in cols if col.key in on_duplicate_update):
             val = on_duplicate_update[column.key]
@@ -302,11 +305,11 @@ class CubridCompiler(compiler.SQLCompiler):
                         # appears twice in the positional parameter list.
                         if element.name in insert_binds:
                             return insert_binds[element.name]
-                        # Fallback: emit a new bind (caller must supply value).
-                        return elements.BindParameter(
-                            element.name,
-                            type_=captured_column.type,
-                            unique=True,
+                        raise CompileError(
+                            "CUBRID ON DUPLICATE KEY UPDATE: cannot resolve "
+                            "INSERT bind parameter for column '%s'. "
+                            "Ensure the column is included in the INSERT "
+                            "values." % element.name
                         )
                     else:
                         return None
