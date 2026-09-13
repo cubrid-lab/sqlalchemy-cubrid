@@ -587,9 +587,12 @@ class CubridDDLCompiler(compiler.DDLCompiler):
             ),
         )
 
-
     def visit_create_index(  # type: ignore[override]
-        self, create: Any, include_schema: bool = False, include_table_schema: bool = True, **kw: Any
+        self,
+        create: Any,
+        include_schema: bool = False,
+        include_table_schema: bool = True,
+        **kw: Any,
     ) -> str:
         """Skip CREATE INDEX when CUBRID already created one for a FK.
 
