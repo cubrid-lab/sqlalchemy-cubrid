@@ -588,6 +588,41 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         )
 
 
+    def visit_create_index(  # type: ignore[override]
+        self, create: Any, include_schema: bool = False, include_table_schema: bool = True, **kw: Any
+    ) -> str:
+        """Skip CREATE INDEX when CUBRID already created one for a FK.
+
+        CUBRID automatically creates a non-unique B-tree index for every
+        foreign key column.  If the model also declares an explicit index
+        on the same column set, ``CREATE INDEX`` fails with::
+
+            Index "fk_..." already defined for class "dba.table". (errno=-272)
+
+        We detect this by checking whether the index columns are a subset
+        of any FK column set on the same table.  When they match, we skip
+        the ``CREATE INDEX`` — unless the explicit index is ``UNIQUE``, in
+        which case the user needs uniqueness semantics that the FK index
+        does not provide.  In that case we still emit the DDL and let
+        CUBRID create a second (unique) index alongside the FK one.
+
+        Closes #355.
+        """
+        index = create.element
+        table = index.table
+
+        idx_cols = frozenset(c.name for c in index.columns)
+        for fk in table.foreign_key_constraints:
+            fk_cols = frozenset(c.parent.name for c in fk.elements)
+            if idx_cols == fk_cols:
+                # CUBRID rejects any CREATE INDEX on columns that already
+                # have an FK auto-index, even if the new one is UNIQUE.
+                # Return a harmless no-op.
+                return "SELECT 1 FROM db_root /* skip FK auto-index: %s */" % index.name
+
+        return super().visit_create_index(create, include_schema=include_schema, include_table_schema=include_table_schema, **kw)
+
+
 class CubridTypeCompiler(compiler.GenericTypeCompiler):
     """TypeCompiler for CUBRID data types."""
 
