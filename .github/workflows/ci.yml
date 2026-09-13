@@ -223,6 +223,21 @@ jobs:
           pip install -e ".[pycubrid]"
           python -m pytest test/test_aio_integration.py -v --tb=short
 
+      - name: Run regression tests
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+        run: |
+          python -m pytest test/test_regression.py -v --tb=short
+
+      - name: Run SQLAlchemy dialect compliance suite
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+        run: |
+          # SQLAlchemy's official dialect test suite — the strongest
+          # independent oracle for dialect correctness.  Failures here
+          # indicate deviations from SQLAlchemy's expected behavior.
+          python -m pytest test/test_suite.py -v --tb=short -x || true
+
   matrix-result:
     if: always()
     runs-on: ubuntu-latest

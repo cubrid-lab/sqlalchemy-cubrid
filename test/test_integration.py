@@ -62,8 +62,20 @@ def _can_connect() -> bool:
         return False
 
 
+# In CI, CUBRID is intentionally provisioned — connectivity failure
+# should be a hard test error, not a silent skip.
+_in_ci = os.environ.get("CI", "").lower() in ("true", "1")
+_available = _can_connect()
+if _in_ci and not _available:
+    pytest.fail(
+        "CUBRID instance is NOT reachable but CI=true — "
+        "integration tests must not be silently skipped in CI. "
+        "Check the CUBRID service container.",
+        pytrace=False,
+    )
+
 pytestmark = pytest.mark.skipif(
-    not _can_connect(),
+    not _available,
     reason="CUBRID instance not available (set CUBRID_TEST_URL)",
 )
 
