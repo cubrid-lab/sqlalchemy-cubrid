@@ -29,16 +29,17 @@ def _async_url() -> str:
 
 
 def _can_connect_async() -> bool:
-    try:
+    async def _probe() -> bool:
         engine = create_async_engine(_async_url())
-
-        async def _probe() -> bool:
+        try:
             async with engine.connect() as conn:
                 _ = await conn.execute(text("SELECT 1"))
-            await engine.dispose()
             return True
+        finally:
+            await engine.dispose()
 
-        return asyncio.get_event_loop().run_until_complete(_probe())
+    try:
+        return asyncio.run(_probe())
     except Exception:
         return False
 

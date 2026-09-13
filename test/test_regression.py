@@ -21,7 +21,7 @@ from sqlalchemy import (
     select,
     text,
 )
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.orm import Session
 
 _DEFAULT_URL = "cubrid://dba@localhost:33000/testdb"
 
@@ -80,7 +80,12 @@ class TestIssue356ODKUValues:
     def test_upsert_with_inserted_ref(self, engine, metadata):
         from sqlalchemy_cubrid.dml import insert
 
-        t = Table("test_356", metadata, Column("id", Integer, primary_key=True), Column("val", String(50)))
+        t = Table(
+            "test_356",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("val", String(50)),
+        )
         metadata.create_all(engine)
 
         with Session(engine) as s:
@@ -100,7 +105,12 @@ class TestIssue356ODKUValues:
     def test_upsert_with_literal_value(self, engine, metadata):
         from sqlalchemy_cubrid.dml import insert
 
-        t = Table("test_356_lit", metadata, Column("id", Integer, primary_key=True), Column("val", String(50)))
+        t = Table(
+            "test_356_lit",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("val", String(50)),
+        )
         metadata.create_all(engine)
 
         with Session(engine) as s:
@@ -126,24 +136,38 @@ class TestIssue355FKIndexCollision:
     """
 
     def test_fk_with_explicit_index(self, engine, metadata):
-        parent = Table("test_355_parent", metadata, Column("id", Integer, primary_key=True))
+        Table("test_355_parent", metadata, Column("id", Integer, primary_key=True))
         Table(
             "test_355_child",
             metadata,
             Column("id", Integer, primary_key=True),
-            Column("pid", Integer, ForeignKey("test_355_parent.id"), nullable=False),
+            Column(
+                "pid",
+                Integer,
+                ForeignKey("test_355_parent.id"),
+                nullable=False,
+            ),
             Index("idx_355_pid", "pid"),
         )
         # Should not raise errno=-272
         metadata.create_all(engine)
 
     def test_fk_with_unique_explicit_index(self, engine, metadata):
-        parent = Table("test_355_parent_u", metadata, Column("id", Integer, primary_key=True))
+        Table(
+            "test_355_parent_u",
+            metadata,
+            Column("id", Integer, primary_key=True),
+        )
         Table(
             "test_355_child_u",
             metadata,
             Column("id", Integer, primary_key=True),
-            Column("pid", Integer, ForeignKey("test_355_parent_u.id"), nullable=False),
+            Column(
+                "pid",
+                Integer,
+                ForeignKey("test_355_parent_u.id"),
+                nullable=False,
+            ),
             Index("idx_355_pid_u", "pid", unique=True),
         )
         # Should not raise errno=-272
