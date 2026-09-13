@@ -1010,14 +1010,25 @@ class TestOnDuplicateKeyUpdateCompilation:
         assert "name" in sql
 
     def test_on_duplicate_key_update_with_values_ref(self):
-        """ON DUPLICATE KEY UPDATE referencing inserted values via VALUES()."""
+        """ON DUPLICATE KEY UPDATE referencing inserted values re-emits the bind.
+
+        CUBRID 11.4 does not support VALUES(col), so the dialect re-uses the
+        INSERT bind parameter.  The compiled SQL should contain a ``?``
+        placeholder (not ``VALUES(name)``) and ``name`` should appear twice
+        in ``positiontup``.
+        """
         from sqlalchemy_cubrid.dml import insert
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
 
         stmt = insert(users).values(id=1, name="test", email="test@example.com")
         stmt = stmt.on_duplicate_key_update(name=stmt.inserted.name)
-        sql = _compile(stmt)
+        compiled = stmt.compile(dialect=PyCubridDialect())
+        sql = compiled.string
         assert "ON DUPLICATE KEY UPDATE" in sql
-        assert "VALUES(" in sql
+        assert "VALUES(" not in sql, "CUBRID does not support VALUES() — should use bind param"
+        assert compiled.positiontup.count("name") == 2, (
+            f"'name' should appear twice in positiontup, got {compiled.positiontup}"
+        )
 
     def test_on_duplicate_key_update_dict_arg(self):
         """ON DUPLICATE KEY UPDATE with dict argument."""
