@@ -593,34 +593,43 @@ class CubridDDLCompiler(compiler.DDLCompiler):
     ) -> str:
         """Skip CREATE INDEX when CUBRID already created one for a FK.
 
-        CUBRID automatically creates a non-unique B-tree index for every
-        foreign key column.  If the model also declares an explicit index
-        on the same column set, ``CREATE INDEX`` fails with::
+        CUBRID automatically creates a B-tree index for every foreign key
+        column set.  Any subsequent ``CREATE INDEX`` or ``CREATE UNIQUE
+        INDEX`` on the exact same ordered column set fails with::
 
             Index "fk_..." already defined for class "dba.table". (errno=-272)
 
-        We detect this by checking whether the index columns are a subset
-        of any FK column set on the same table.  When they match, we skip
-        the ``CREATE INDEX`` — unless the explicit index is ``UNIQUE``, in
-        which case the user needs uniqueness semantics that the FK index
-        does not provide.  In that case we still emit the DDL and let
-        CUBRID create a second (unique) index alongside the FK one.
+        We compare the ordered column list of the explicit index against
+        each FK's ordered column list.  When they match exactly, we emit
+        a harmless no-op ``SELECT`` instead of the ``CREATE INDEX``.
+
+        .. note::
+
+            This only applies to ``metadata.create_all()`` / direct DDL.
+            Alembic's ``op.create_index()`` builds a synthetic table
+            without FK metadata, so this hook does not intercept it.
+            For Alembic migrations, suppress duplicate indexes in the
+            migration script or in ``CubridImpl``.
 
         Closes #355.
         """
         index = create.element
         table = index.table
 
-        idx_cols = frozenset(c.name for c in index.columns)
+        idx_col_names = tuple(c.name for c in index.columns)
         for fk in table.foreign_key_constraints:
-            fk_cols = frozenset(c.parent.name for c in fk.elements)
-            if idx_cols == fk_cols:
+            fk_col_names = tuple(c.parent.name for c in fk.elements)
+            if idx_col_names == fk_col_names:
                 # CUBRID rejects any CREATE INDEX on columns that already
                 # have an FK auto-index, even if the new one is UNIQUE.
-                # Return a harmless no-op.
-                return "SELECT 1 FROM db_root /* skip FK auto-index: %s */" % index.name
+                return "SELECT 1 FROM db_root"
 
-        return super().visit_create_index(create, include_schema=include_schema, include_table_schema=include_table_schema, **kw)
+        return super().visit_create_index(
+            create,
+            include_schema=include_schema,
+            include_table_schema=include_table_schema,
+            **kw,
+        )
 
 
 class CubridTypeCompiler(compiler.GenericTypeCompiler):
