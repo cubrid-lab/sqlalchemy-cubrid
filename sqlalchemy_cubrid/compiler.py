@@ -621,34 +621,33 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         include_table_schema: bool = True,
         **kw: Any,
     ) -> str:
-        """Handle CUBRID FK auto-index collisions.
+        """Handle CUBRID FK auto-index collision for UNIQUE indexes.
 
-        CUBRID creates a non-unique B-tree index for every FK.  A subsequent
-        ``CREATE INDEX`` on the exact same ordered columns is silently accepted
-        (redundant but harmless), whereas ``CREATE UNIQUE INDEX`` fails::
+        CUBRID creates a non-unique B-tree index for every FK column set.
+        A subsequent non-unique ``CREATE INDEX`` on the same columns is
+        accepted (redundant but harmless).  However, ``CREATE UNIQUE INDEX``
+        fails with::
 
             Index "fk_..." already defined for class "dba.table". (errno=-272)
 
-        Strategy:
+        ``ALTER TABLE ... ADD CONSTRAINT UNIQUE`` also fails on the same
+        column set, so the only way to get uniqueness on FK columns is via
+        an inline ``UNIQUE`` keyword in ``CREATE TABLE``.
 
-        - **Non-unique** index matching FK columns → skip (emit no-op).
-          The FK index already covers the query plan; a second identical
-          index wastes storage.
-        - **UNIQUE** index matching FK columns → raise ``CompileError``.
-          Silently dropping uniqueness would be worse than the error.
-          Users should declare ``Column(..., unique=True)`` in the model
-          so the constraint is embedded in CREATE TABLE.
+        This hook only intervenes for **UNIQUE** indexes that exactly match
+        an FK column set — raising a clear ``CompileError`` with guidance.
+        Non-unique indexes are passed through to CUBRID as-is.
 
         Closes #355.
         """
         index = create.element
         table = index.table
 
-        idx_col_names = tuple(c.name for c in index.columns)
-        for fk in table.foreign_key_constraints:
-            fk_col_names = tuple(c.parent.name for c in fk.elements)
-            if idx_col_names == fk_col_names:
-                if index.unique:
+        if index.unique:
+            idx_col_names = tuple(c.name for c in index.columns)
+            for fk in table.foreign_key_constraints:
+                fk_col_names = tuple(c.parent.name for c in fk.elements)
+                if idx_col_names == fk_col_names:
                     raise CompileError(
                         "CUBRID cannot create a UNIQUE index on columns "
                         "that already have an FK auto-index (%s). "
@@ -656,8 +655,6 @@ class CubridDDLCompiler(compiler.DDLCompiler):
                         "instead of using a separate Index(..., unique=True)."
                         % ", ".join(idx_col_names)
                     )
-                # Non-unique: skip silently.
-                return "SELECT 1 FROM db_root"
 
         return super().visit_create_index(
             create,

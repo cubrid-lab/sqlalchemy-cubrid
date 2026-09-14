@@ -2084,8 +2084,8 @@ class TestIsDistinctFromCompilation:
 class TestFKIndexCollisionDDL:
     """#355: CREATE INDEX on FK columns — DDL compiler behavior."""
 
-    def test_non_unique_index_on_fk_column_skipped(self):
-        """Non-unique index matching FK columns emits no-op."""
+    def test_non_unique_index_on_fk_column_passed_through(self):
+        """Non-unique index on FK columns is passed through (CUBRID accepts it)."""
         from sqlalchemy import ForeignKey, Index, schema
 
         m = MetaData()
@@ -2099,7 +2099,7 @@ class TestFKIndexCollisionDDL:
         )
         idx = list(child.indexes)[0]
         ddl = schema.CreateIndex(idx).compile(dialect=CubridDialect())
-        assert ddl.string.strip() == "SELECT 1 FROM db_root"
+        assert "CREATE INDEX" in ddl.string
 
     def test_unique_index_on_fk_column_raises(self):
         """UNIQUE index matching FK columns raises CompileError."""
