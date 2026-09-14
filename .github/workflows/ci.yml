@@ -225,6 +225,21 @@ jobs:
           pip install -e ".[pycubrid]"
           python -m pytest test/test_aio_integration.py -v --tb=short
 
+      - name: Run pycubrid sync integration tests
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+        run: |
+          # Preflight: verify pycubrid sync connectivity.
+          python -c "
+          from sqlalchemy import create_engine, text
+          e = create_engine('cubrid+pycubrid://dba@localhost:33000/testdb')
+          with e.connect() as c:
+              c.execute(text('SELECT 1'))
+          e.dispose()
+          print('pycubrid sync: connected')
+          "
+          python -m pytest test/test_integration.py -v --tb=short
+
       - name: Run regression tests
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
@@ -235,9 +250,6 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          # SQLAlchemy's official dialect test suite — the strongest
-          # independent oracle for dialect correctness.  Failures here
-          # indicate deviations from SQLAlchemy's expected behavior.
           python -m pytest test/test_suite.py \
             --dburi="$CUBRID_TEST_URL" \
             -v --tb=short || true
