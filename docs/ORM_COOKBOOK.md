@@ -240,7 +240,7 @@ stmt = stmt.on_duplicate_key_update(
 )
 ```
 
-> **Note**: `stmt.inserted.<column>` is the supported way to render `VALUES(column)` in CUBRID ODKU clauses.
+> **Note**: `stmt.inserted.<column>` re-emits the INSERT bind parameter in the ON DUPLICATE KEY UPDATE clause.
 
 ---
 

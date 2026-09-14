@@ -33,7 +33,7 @@
 
 ## ON DUPLICATE KEY UPDATE
 
-CUBRID는 MySQL 8.0 이전 구문과 동일하게 `VALUES()` 참조를 갖춘 `INSERT … ON DUPLICATE KEY UPDATE`를 지원합니다.
+CUBRID는 `INSERT … ON DUPLICATE KEY UPDATE`를 지원합니다. `VALUES()` 함수는 지원하지 않으며, dialect가 INSERT 바인드 파라미터를 재사용합니다.
 
 ### 기본 사용
 
@@ -54,15 +54,15 @@ ON DUPLICATE KEY UPDATE name = 'updated_alice'
 
 ### 삽입되는 값 참조
 
-`stmt.inserted`를 사용해 삽입되는 값을 참조하세요 — SQL에서 `VALUES(column_name)`으로 렌더링됩니다:
+`stmt.inserted`를 사용해 삽입되는 값을 참조하세요 — dialect가 INSERT 바인드 파라미터를 재사용합니다:
 
 ```python
 from sqlalchemy_cubrid import insert
 
 stmt = insert(users).values(id=1, name="alice", email="alice@example.com")
 stmt = stmt.on_duplicate_key_update(
-    name=stmt.inserted.name,      # → VALUES(name)
-    email=stmt.inserted.email,    # → VALUES(email)
+    name=stmt.inserted.name,
+    email=stmt.inserted.email,
 )
 ```
 
@@ -71,7 +71,7 @@ stmt = stmt.on_duplicate_key_update(
 ```sql
 INSERT INTO users (id, name, email)
 VALUES (1, 'alice', 'alice@example.com')
-ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email)
+ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
 ### 인자 형태
@@ -116,7 +116,7 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = (SELECT max(users.name) FROM users)
 ```
 
-> **참고**: `stmt.inserted.<column>`는 `VALUES(<column>)`로 컴파일되며, ON DUPLICATE KEY UPDATE 절에서 들어오는 행을 참조하는 방언의 지원되는 방식입니다.
+> **참고**: `stmt.inserted.<column>`를 사용하면 dialect가 해당 컬럼의 INSERT 바인드 파라미터를 재사용하여 값을 두 번 전달합니다.
 
 ---
 

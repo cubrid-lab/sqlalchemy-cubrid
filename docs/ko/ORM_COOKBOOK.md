@@ -236,7 +236,7 @@ stmt = stmt.on_duplicate_key_update(
 )
 ```
 
-> **참고**: `stmt.inserted.<column>`가 CUBRID ODKU 절에서 `VALUES(column)`을 렌더링하는 지원되는 방식입니다.
+> **참고**: `stmt.inserted.<column>`는 ON DUPLICATE KEY UPDATE 절에서 INSERT 바인드 파라미터를 재사용합니다.
 
 ---
 

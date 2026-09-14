@@ -74,7 +74,7 @@ High-level overview by feature category.
 
 - **RETURNING**: CUBRID has no `RETURNING` clause. Auto-generated keys cannot be fetched in the same round-trip as the INSERT, so the dialect relies on `postfetch_lastrowid = True` instead (`get_last_insert_id()` / SQL fallback for the C driver; `cursor.lastrowid` for pycubrid).
 - **DEFAULT VALUES**: CUBRID supports `INSERT INTO t DEFAULT VALUES`. The dialect sets `supports_default_values = True`.
-- **ON DUPLICATE KEY UPDATE**: CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references (identical to MySQL pre-8.0 syntax). Use `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs) for usage examples.
+- **ON DUPLICATE KEY UPDATE**: CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. The dialect handles `stmt.inserted` references by re-emitting INSERT bind parameters (CUBRID does not support the `VALUES()` function). Use `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs) for usage examples.
 - **MERGE**: CUBRID supports the full SQL MERGE statement. Use `sqlalchemy_cubrid.dml.merge(target)` with `.using()`, `.on()`, `.when_matched_then_update()`, and `.when_not_matched_then_insert()`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs).
 - **FOR UPDATE**: CUBRID supports `SELECT … FOR UPDATE [OF col1, col2]`. NOWAIT and SKIP LOCKED are not supported.
 - **UPDATE with LIMIT**: CUBRID and MySQL both support `UPDATE … LIMIT n`. PostgreSQL and SQLite do not.
@@ -304,7 +304,7 @@ The dialect provides custom SQLAlchemy constructs for CUBRID-specific DML featur
 
 ### ON DUPLICATE KEY UPDATE
 
-CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references (identical to MySQL pre-8.0 syntax).
+CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. The dialect handles `stmt.inserted` references by re-emitting INSERT bind parameters (CUBRID does not support the `VALUES()` function).
 
 ```python
 from sqlalchemy_cubrid import insert
@@ -317,7 +317,7 @@ stmt = stmt.on_duplicate_key_update(name="updated_alice")
 # Reference the inserted value:
 stmt = insert(users).values(id=1, name="alice", email="alice@example.com")
 stmt = stmt.on_duplicate_key_update(name=stmt.inserted.name)
-# ON DUPLICATE KEY UPDATE name = VALUES(name)
+# ON DUPLICATE KEY UPDATE name = ?
 ```
 
 **Accepted argument forms:**

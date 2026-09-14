@@ -31,7 +31,7 @@ This dialect provides custom SQLAlchemy constructs for CUBRID-specific DML (Data
 
 ## ON DUPLICATE KEY UPDATE
 
-CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references, identical to MySQL's pre-8.0 syntax.
+CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. Unlike MySQL, CUBRID does not support the `VALUES()` function; the dialect re-emits INSERT bind parameters instead.
 
 ### Basic Usage
 
@@ -52,15 +52,15 @@ ON DUPLICATE KEY UPDATE name = 'updated_alice'
 
 ### Referencing Inserted Values
 
-Use `stmt.inserted` to reference the values being inserted — rendered as `VALUES(column_name)` in SQL:
+Use `stmt.inserted` to reference the values being inserted — the dialect re-emits the INSERT bind parameter:
 
 ```python
 from sqlalchemy_cubrid import insert
 
 stmt = insert(users).values(id=1, name="alice", email="alice@example.com")
 stmt = stmt.on_duplicate_key_update(
-    name=stmt.inserted.name,      # → VALUES(name)
-    email=stmt.inserted.email,    # → VALUES(email)
+    name=stmt.inserted.name,
+    email=stmt.inserted.email,
 )
 ```
 
@@ -69,7 +69,7 @@ stmt = stmt.on_duplicate_key_update(
 ```sql
 INSERT INTO users (id, name, email)
 VALUES (1, 'alice', 'alice@example.com')
-ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email)
+ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
 ### Argument Forms
@@ -114,7 +114,7 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = (SELECT max(users.name) FROM users)
 ```
 
-> **Note**: `stmt.inserted.<column>` compiles to `VALUES(<column>)`, which is the dialect's supported way to reference the incoming row in ON DUPLICATE KEY UPDATE clauses.
+> **Note**: `stmt.inserted.<column>` causes the dialect to re-emit the INSERT bind parameter for that column, so the value appears twice in the positional parameter list.
 
 ---
 

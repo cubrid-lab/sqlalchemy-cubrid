@@ -55,8 +55,8 @@ class Insert(StandardInsert):
     def inserted(self) -> ReadOnlyColumnCollection[str, KeyedColumnElement[Any]]:
         """Provide the "inserted" namespace for an ON DUPLICATE KEY UPDATE statement.
 
-        CUBRID uses VALUES() to reference the row being inserted,
-        identical to MySQL's pre-8.0 syntax.
+        CUBRID does not support VALUES(); the dialect re-uses INSERT bind parameters
+        to send the value twice (once for INSERT, once for UPDATE).
         """
         return self.inserted_alias.columns
 
