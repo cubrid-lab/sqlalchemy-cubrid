@@ -153,13 +153,15 @@ class TestIssue355FKIndexCollision:
         # CUBRID allows non-unique index alongside FK auto-index
         metadata.create_all(engine)
 
-    @pytest.mark.xfail(reason="Requires #355 fix (PR #366)", strict=True)
-    def test_fk_with_unique_explicit_index(self, engine, metadata):
-        """UNIQUE index on FK columns: should raise CompileError after fix.
+    def test_fk_with_unique_explicit_index_raises(self, engine, metadata):
+        """UNIQUE index on FK columns raises CompileError (#366).
 
-        Without fix: CUBRID errno=-272.
-        With fix (#366): CompileError with guidance to use column-level unique=True.
+        CUBRID cannot add a UNIQUE index after FK auto-index creation.
+        The dialect raises CompileError with guidance to use column-level
+        unique=True instead.
         """
+        from sqlalchemy.exc import CompileError
+
         Table(
             "test_355_parent_u",
             metadata,
@@ -177,6 +179,5 @@ class TestIssue355FKIndexCollision:
             ),
             Index("idx_355_pid_u", "pid", unique=True),
         )
-        # After #366 fix: should raise CompileError
-        # Before fix: raises DatabaseError from CUBRID
-        metadata.create_all(engine)
+        with pytest.raises(CompileError, match="CUBRID cannot create a UNIQUE index"):
+            metadata.create_all(engine)
