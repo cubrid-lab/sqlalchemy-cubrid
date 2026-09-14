@@ -77,7 +77,6 @@ class TestIssue356ODKUValues:
     The dialect must emit a bind parameter instead.
     """
 
-    @pytest.mark.xfail(reason="Requires #356 fix (PR #362)", strict=True)
     def test_upsert_with_inserted_ref(self, engine, metadata):
         from sqlalchemy_cubrid.dml import insert
 

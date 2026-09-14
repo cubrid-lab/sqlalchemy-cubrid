@@ -238,7 +238,9 @@ jobs:
           # SQLAlchemy's official dialect test suite — the strongest
           # independent oracle for dialect correctness.  Failures here
           # indicate deviations from SQLAlchemy's expected behavior.
-          python -m pytest test/test_suite.py -v --tb=short || true
+          python -m pytest test/test_suite.py \
+            --dburi="$CUBRID_TEST_URL" \
+            -v --tb=short || true
 
   matrix-result:
     if: always()
