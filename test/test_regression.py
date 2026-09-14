@@ -77,6 +77,7 @@ class TestIssue356ODKUValues:
     The dialect must emit a bind parameter instead.
     """
 
+    @pytest.mark.xfail(reason="Requires #356 fix (PR #362)", strict=True)
     def test_upsert_with_inserted_ref(self, engine, metadata):
         from sqlalchemy_cubrid.dml import insert
 
@@ -135,6 +136,7 @@ class TestIssue355FKIndexCollision:
     on the same column set fails with errno=-272.
     """
 
+    @pytest.mark.xfail(reason="Requires #355 fix (PR #363)", strict=True)
     def test_fk_with_explicit_index(self, engine, metadata):
         Table("test_355_parent", metadata, Column("id", Integer, primary_key=True))
         Table(
@@ -152,6 +154,7 @@ class TestIssue355FKIndexCollision:
         # Should not raise errno=-272
         metadata.create_all(engine)
 
+    @pytest.mark.xfail(reason="Requires #355 fix (PR #363)", strict=True)
     def test_fk_with_unique_explicit_index(self, engine, metadata):
         Table(
             "test_355_parent_u",
