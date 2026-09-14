@@ -413,11 +413,20 @@ class CubridImpl(DefaultImpl):
             for fk in fks:
                 fk_cols = tuple(fk.get("constrained_columns", []))
                 if idx_cols == fk_cols:
+                    cols = ", ".join(idx_cols)
+                    if len(idx_cols) == 1:
+                        hint = (
+                            "Declare the column with unique=True "
+                            "instead of using a separate Index(..., unique=True)."
+                        )
+                    else:
+                        hint = (
+                            "Use a table-level UniqueConstraint(%s) "
+                            "instead of Index(..., unique=True)." % cols
+                        )
                     raise CompileError(
                         "CUBRID cannot create a UNIQUE index on columns "
-                        "that already have an FK auto-index (%s). "
-                        "Declare the column with unique=True in the model "
-                        "instead of using a separate Index(..., unique=True)." % ", ".join(idx_cols)
+                        "that already have an FK auto-index (%s). %s" % (cols, hint)
                     )
 
         super().create_index(index, **kw)

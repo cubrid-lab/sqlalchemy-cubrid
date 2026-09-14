@@ -648,12 +648,20 @@ class CubridDDLCompiler(compiler.DDLCompiler):
             for fk in table.foreign_key_constraints:
                 fk_col_names = tuple(c.parent.name for c in fk.elements)
                 if idx_col_names == fk_col_names:
+                    cols = ", ".join(idx_col_names)
+                    if len(idx_col_names) == 1:
+                        hint = (
+                            "Declare the column with unique=True "
+                            "instead of using a separate Index(..., unique=True)."
+                        )
+                    else:
+                        hint = (
+                            "Use a table-level UniqueConstraint(%s) "
+                            "instead of Index(..., unique=True)." % cols
+                        )
                     raise CompileError(
                         "CUBRID cannot create a UNIQUE index on columns "
-                        "that already have an FK auto-index (%s). "
-                        "Declare the column with unique=True in the model "
-                        "instead of using a separate Index(..., unique=True)."
-                        % ", ".join(idx_col_names)
+                        "that already have an FK auto-index (%s). %s" % (cols, hint)
                     )
 
         return super().visit_create_index(
