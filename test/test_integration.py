@@ -147,6 +147,32 @@ class TestServerConnection:
         assert result == 42
 
 
+class TestIsDistinctFromIntegration:
+    @pytest.mark.parametrize(
+        ("left", "right", "expected_distinct"),
+        [
+            (1, 1, False),
+            (1, 2, True),
+            (None, None, False),
+            (None, 1, True),
+        ],
+    )
+    def test_distinct_from_truth_table(self, engine, left, right, expected_distinct):
+        """Verify both null-safe distinctness operators against live CUBRID."""
+        left_value = sa.literal(left)
+        right_value = sa.literal(right)
+        statement = sa.select(
+            left_value.is_distinct_from(right_value).label("distinct_value"),
+            left_value.is_not_distinct_from(right_value).label("not_distinct_value"),
+        )
+
+        with engine.connect() as connection:
+            row = connection.execute(statement).one()
+
+        assert bool(row.distinct_value) is expected_distinct
+        assert bool(row.not_distinct_value) is (not expected_distinct)
+
+
 class TestDDLAndDML:
     def test_insert_and_select(self, engine, metadata):
         """INSERT rows and SELECT them back."""

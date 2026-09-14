@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **`IS DISTINCT FROM` live execution fixed (#377)** — live CUBRID rejects MySQL-style `NOT (a <=> b)` when the expression appears in a SELECT projection. The emulation now negates the NULL-safe `<=>` result as `(a <=> b) = 0`, which preserves the four-row SQL truth table and is valid CUBRID syntax. Added live truth-table coverage for both `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`.
 - **create-release.yml: dropped `--target` from `gh release create`** — with an already-pushed tag (the normal tag-push trigger) `--verify-tag` already guarantees the tag exists, and passing `target_commitish` for an existing tag makes the Releases API return `422 Validation Failed`, so the first tag-triggered run of this workflow always failed. Verified live by the v0.4.0 tag attempt in cubrid-mcp-server.
 
 ### Docs

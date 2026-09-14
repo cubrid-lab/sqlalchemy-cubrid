@@ -2063,12 +2063,12 @@ class TestEnumReflectionParse:
 
 
 class TestIsDistinctFromCompilation:
-    """a IS DISTINCT FROM b renders as NOT (a <=> b) — CUBRID has no native
-    IS [NOT] DISTINCT FROM but supports the null-safe equal operator <=>."""
+    """CUBRID emulates IS [NOT] DISTINCT FROM with null-safe ``<=>``."""
 
     def test_is_distinct_from(self):
         sql = _compile(select(users.c.name).where(users.c.name.is_distinct_from("Alice")))
-        assert "NOT (users.name" in sql
+        assert "(users.name" in sql
+        assert ") = 0" in sql
         assert "<=>" in sql
         assert "'Alice'" in sql
 
@@ -2076,9 +2076,14 @@ class TestIsDistinctFromCompilation:
         sql = _compile(select(users.c.name).where(users.c.name.is_not_distinct_from("Alice")))
         assert "users.name <=> 'Alice'" in sql
 
+    def test_is_distinct_from_in_projection(self):
+        expr = users.c.name.is_distinct_from(users.c.email).label("is_distinct")
+        sql = _compile(select(expr))
+        assert "(users.name <=> users.email) = 0 AS is_distinct" in sql
+
     def test_null_safe_on_both_sides(self):
         sql = _compile(select(users.c.id).where(users.c.name.is_distinct_from(users.c.email)))
-        assert "NOT (users.name <=> users.email)" in sql
+        assert "(users.name <=> users.email) = 0" in sql
 
 
 class TestFKIndexCollisionDDL:

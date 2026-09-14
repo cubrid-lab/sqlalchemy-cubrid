@@ -80,7 +80,7 @@ High-level overview by feature category.
 - **UPDATE with LIMIT**: CUBRID and MySQL both support `UPDATE … LIMIT n`. PostgreSQL and SQLite do not.
 - **Multi-table UPDATE**: SQLAlchemy's multi-table UPDATE pattern compiles to `UPDATE t1, t2 SET ... WHERE ...`, which matches the MySQL-style syntax accepted by CUBRID. The dialect intentionally keeps `update_from_clause()` disabled because no extra `FROM` clause is required.
 - **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. The dialect includes `TRUNCATE` in autocommit detection.
-- **IS DISTINCT FROM**: CUBRID lacks the SQL-standard syntax but supports the null-safe equal `<=>`. The dialect emulates `a IS DISTINCT FROM b` as `NOT (a <=> b)` and `a IS NOT DISTINCT FROM b` as `a <=> b` — same approach the MySQL dialect uses (#344).
+- **IS DISTINCT FROM**: CUBRID lacks the SQL-standard syntax but supports the null-safe equal `<=>`. The dialect emulates `a IS DISTINCT FROM b` as `(a <=> b) = 0` and `a IS NOT DISTINCT FROM b` as `a <=> b`, preserving NULL-safe semantics in predicates and SELECT projections (#344, #377).
 
 ---
 

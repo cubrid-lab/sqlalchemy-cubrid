@@ -56,9 +56,10 @@ class CubridCompiler(compiler.SQLCompiler):
 
     def visit_is_distinct_from_binary(self, binary: Any, operator: Any, **kw: Any) -> str:
         # CUBRID has no SQL-standard IS [NOT] DISTINCT FROM syntax, but
-        # supports the null-safe equal operator <=> — same emulation the
-        # MySQL dialect uses.
-        return "NOT (%s <=> %s)" % (
+        # supports the null-safe equal operator <=>.  Unlike MySQL, CUBRID
+        # rejects ``NOT (a <=> b)`` in a SELECT projection, so negate the
+        # guaranteed 0/1 result with an equality comparison instead.
+        return "(%s <=> %s) = 0" % (
             self.process(binary.left, **kw),
             self.process(binary.right, **kw),
         )
