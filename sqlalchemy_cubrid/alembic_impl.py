@@ -389,3 +389,41 @@ class CubridImpl(DefaultImpl):
         if unbounded_name == "STRING" or unbounded_name.endswith("STRING"):
             return getattr(unbounded_side, "length", None) is None
         return False
+
+    def create_index(self, index: Any) -> None:
+        """Skip non-unique FK auto-index duplicates; error on UNIQUE.
+
+        CUBRID auto-creates a B-tree index for FK columns.  Alembic's
+        ``op.create_index()`` may attempt to create an overlapping index.
+
+        - Non-unique on FK columns → skip (the FK index covers it).
+        - UNIQUE on FK columns → raise (CUBRID errno=-272; user should
+          use column-level ``unique=True`` instead).
+
+        For the Alembic path the table metadata may not carry FK info,
+        so we reflect the live schema to check.
+        """
+        from sqlalchemy import inspect as sa_inspect
+
+        table = index.table
+        if table is not None and table.name:
+            try:
+                insp = sa_inspect(self.connection)
+                fks = insp.get_foreign_keys(table.name)
+            except Exception:
+                fks = []
+
+            idx_cols = tuple(c.name for c in index.columns)
+            for fk in fks:
+                fk_cols = tuple(fk.get("constrained_columns", []))
+                if idx_cols == fk_cols:
+                    if index.unique:
+                        raise ValueError(
+                            "CUBRID cannot create a UNIQUE index on columns "
+                            "that already have an FK auto-index (%s). "
+                            "Use column-level unique=True in the model." % ", ".join(idx_cols)
+                        )
+                    # Non-unique: skip silently.
+                    return
+
+        super().create_index(index)

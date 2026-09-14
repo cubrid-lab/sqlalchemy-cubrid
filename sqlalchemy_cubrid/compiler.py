@@ -614,6 +614,58 @@ class CubridDDLCompiler(compiler.DDLCompiler):
             ),
         )
 
+    def visit_create_index(  # type: ignore[override]
+        self,
+        create: Any,
+        include_schema: bool = False,
+        include_table_schema: bool = True,
+        **kw: Any,
+    ) -> str:
+        """Handle CUBRID FK auto-index collisions.
+
+        CUBRID creates a non-unique B-tree index for every FK.  A subsequent
+        ``CREATE INDEX`` on the exact same ordered columns is silently accepted
+        (redundant but harmless), whereas ``CREATE UNIQUE INDEX`` fails::
+
+            Index "fk_..." already defined for class "dba.table". (errno=-272)
+
+        Strategy:
+
+        - **Non-unique** index matching FK columns → skip (emit no-op).
+          The FK index already covers the query plan; a second identical
+          index wastes storage.
+        - **UNIQUE** index matching FK columns → raise ``CompileError``.
+          Silently dropping uniqueness would be worse than the error.
+          Users should declare ``Column(..., unique=True)`` in the model
+          so the constraint is embedded in CREATE TABLE.
+
+        Closes #355.
+        """
+        index = create.element
+        table = index.table
+
+        idx_col_names = tuple(c.name for c in index.columns)
+        for fk in table.foreign_key_constraints:
+            fk_col_names = tuple(c.parent.name for c in fk.elements)
+            if idx_col_names == fk_col_names:
+                if index.unique:
+                    raise CompileError(
+                        "CUBRID cannot create a UNIQUE index on columns "
+                        "that already have an FK auto-index (%s). "
+                        "Declare the column with unique=True in the model "
+                        "instead of using a separate Index(..., unique=True)."
+                        % ", ".join(idx_col_names)
+                    )
+                # Non-unique: skip silently.
+                return "SELECT 1 FROM db_root"
+
+        return super().visit_create_index(
+            create,
+            include_schema=include_schema,
+            include_table_schema=include_table_schema,
+            **kw,
+        )
+
 
 class CubridTypeCompiler(compiler.GenericTypeCompiler):
     """TypeCompiler for CUBRID data types."""

@@ -2079,3 +2079,77 @@ class TestIsDistinctFromCompilation:
     def test_null_safe_on_both_sides(self):
         sql = _compile(select(users.c.id).where(users.c.name.is_distinct_from(users.c.email)))
         assert "NOT (users.name <=> users.email)" in sql
+
+
+class TestFKIndexCollisionDDL:
+    """#355: CREATE INDEX on FK columns — DDL compiler behavior."""
+
+    def test_non_unique_index_on_fk_column_skipped(self):
+        """Non-unique index matching FK columns emits no-op."""
+        from sqlalchemy import ForeignKey, Index, schema
+
+        m = MetaData()
+        Table("parent", m, Column("id", Integer, primary_key=True))
+        child = Table(
+            "child",
+            m,
+            Column("id", Integer, primary_key=True),
+            Column("pid", Integer, ForeignKey("parent.id")),
+            Index("idx_pid", "pid"),
+        )
+        idx = list(child.indexes)[0]
+        ddl = schema.CreateIndex(idx).compile(dialect=CubridDialect())
+        assert ddl.string.strip() == "SELECT 1 FROM db_root"
+
+    def test_unique_index_on_fk_column_raises(self):
+        """UNIQUE index matching FK columns raises CompileError."""
+        import pytest
+        from sqlalchemy import ForeignKey, Index, schema
+
+        m = MetaData()
+        Table("parent", m, Column("id", Integer, primary_key=True))
+        child = Table(
+            "child_u",
+            m,
+            Column("id", Integer, primary_key=True),
+            Column("pid", Integer, ForeignKey("parent.id")),
+            Index("idx_pid_u", "pid", unique=True),
+        )
+        idx = [i for i in child.indexes if i.name == "idx_pid_u"][0]
+        with pytest.raises(CompileError, match="CUBRID cannot create a UNIQUE index"):
+            schema.CreateIndex(idx).compile(dialect=CubridDialect())
+
+    def test_non_fk_index_not_affected(self):
+        """Index on non-FK columns proceeds normally."""
+        from sqlalchemy import Index, schema
+
+        m = MetaData()
+        t = Table(
+            "standalone",
+            m,
+            Column("id", Integer, primary_key=True),
+            Column("val", String(50)),
+            Index("idx_val", "val"),
+        )
+        idx = list(t.indexes)[0]
+        ddl = schema.CreateIndex(idx).compile(dialect=CubridDialect())
+        assert "CREATE INDEX" in ddl.string
+
+    def test_different_column_order_not_skipped(self):
+        """Index with reversed column order vs FK is not skipped."""
+        from sqlalchemy import ForeignKeyConstraint, Index, schema
+
+        m = MetaData()
+        Table("parent2", m, Column("a", Integer), Column("b", Integer))
+        child = Table(
+            "child2",
+            m,
+            Column("id", Integer, primary_key=True),
+            Column("a", Integer),
+            Column("b", Integer),
+            ForeignKeyConstraint(["a", "b"], ["parent2.a", "parent2.b"]),
+            Index("idx_ba", "b", "a"),  # reversed order
+        )
+        idx = [i for i in child.indexes if i.name == "idx_ba"][0]
+        ddl = schema.CreateIndex(idx).compile(dialect=CubridDialect())
+        assert "CREATE INDEX" in ddl.string
