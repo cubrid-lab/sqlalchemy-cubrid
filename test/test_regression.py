@@ -135,8 +135,8 @@ class TestIssue355FKIndexCollision:
     on the same column set fails with errno=-272.
     """
 
-    @pytest.mark.xfail(reason="Requires #355 fix (PR #363)", strict=True)
-    def test_fk_with_explicit_index(self, engine, metadata):
+    def test_fk_with_non_unique_index(self, engine, metadata):
+        """Non-unique index on FK columns: CUBRID accepts this natively."""
         Table("test_355_parent", metadata, Column("id", Integer, primary_key=True))
         Table(
             "test_355_child",
@@ -150,11 +150,16 @@ class TestIssue355FKIndexCollision:
             ),
             Index("idx_355_pid", "pid"),
         )
-        # Should not raise errno=-272
+        # CUBRID allows non-unique index alongside FK auto-index
         metadata.create_all(engine)
 
-    @pytest.mark.xfail(reason="Requires #355 fix (PR #363)", strict=True)
+    @pytest.mark.xfail(reason="Requires #355 fix (PR #366)", strict=True)
     def test_fk_with_unique_explicit_index(self, engine, metadata):
+        """UNIQUE index on FK columns: should raise CompileError after fix.
+
+        Without fix: CUBRID errno=-272.
+        With fix (#366): CompileError with guidance to use column-level unique=True.
+        """
         Table(
             "test_355_parent_u",
             metadata,
@@ -172,5 +177,6 @@ class TestIssue355FKIndexCollision:
             ),
             Index("idx_355_pid_u", "pid", unique=True),
         )
-        # Should not raise errno=-272
+        # After #366 fix: should raise CompileError
+        # Before fix: raises DatabaseError from CUBRID
         metadata.create_all(engine)
