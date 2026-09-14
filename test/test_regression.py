@@ -128,6 +128,72 @@ class TestIssue356ODKUValues:
             assert row.val == "updated"
 
 
+class TestIssue356ODKUMultiRow:
+    """#356 follow-up: ODKU with multi-row VALUES and executemany."""
+
+    @pytest.mark.xfail(reason="#371: multi-row ODKU bind param mismatch", strict=True)
+    def test_multi_row_upsert_with_inserted_ref(self, engine, metadata):
+        """Multi-row INSERT + on_duplicate_key_update(col=stmt.inserted.col)."""
+        from sqlalchemy_cubrid.dml import insert
+
+        t = Table(
+            "test_356_multi",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("val", String(50)),
+        )
+        metadata.create_all(engine)
+
+        with Session(engine) as s:
+            s.execute(t.insert(), [{"id": 1, "val": "a"}, {"id": 2, "val": "b"}])
+            s.commit()
+
+        with Session(engine) as s:
+            stmt = insert(t).values(
+                [
+                    {"id": 1, "val": "A"},
+                    {"id": 3, "val": "C"},
+                ]
+            )
+            stmt = stmt.on_duplicate_key_update(val=stmt.inserted.val)
+            s.execute(stmt)
+            s.commit()
+
+        with Session(engine) as s:
+            rows = {r.id: r.val for r in s.execute(select(t).order_by(t.c.id)).all()}
+            assert rows[1] == "A", f"id=1 should be updated to 'A', got '{rows[1]}'"
+            assert rows[2] == "b", f"id=2 should be unchanged, got '{rows[2]}'"
+            assert rows[3] == "C", f"id=3 should be inserted as 'C', got '{rows.get(3)}'"
+
+    @pytest.mark.xfail(reason="#371: multi-row ODKU bind param mismatch", strict=True)
+    def test_executemany_upsert(self, engine, metadata):
+        """executemany path: execute(stmt, [row1, row2])."""
+        from sqlalchemy_cubrid.dml import insert
+
+        t = Table(
+            "test_356_execmany",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("val", String(50)),
+        )
+        metadata.create_all(engine)
+
+        with Session(engine) as s:
+            s.execute(t.insert().values(id=1, val="original"))
+            s.commit()
+
+        with Session(engine) as s:
+            stmt = insert(t)
+            stmt = stmt.on_duplicate_key_update(val=stmt.inserted.val)
+            s.execute(stmt, [{"id": 1, "val": "updated"}, {"id": 2, "val": "new"}])
+            s.commit()
+
+        with Session(engine) as s:
+            rows = {r.id: r.val for r in s.execute(select(t).order_by(t.c.id)).all()}
+            assert rows[1] == "updated"
+            assert rows[2] == "new"
+
+
 class TestIssue355FKIndexCollision:
     """#355: CREATE INDEX on FK columns must not collide with auto-index.
 
