@@ -237,6 +237,9 @@ class CubridDialect(default.DefaultDialect):
     # RETURNING으로 읽으려 해서 ResourceClosedError가 발생한다.
     implicit_returning = False
 
+    # CUBRID는 INSERT ... RETURNING을 지원하지 않는다.
+    implicit_returning = False
+
     # SA 2.0 statement caching
     supports_statement_cache = True
 
