@@ -261,13 +261,30 @@ jobs:
         run: |
           python -m pytest test/test_regression.py -v --tb=short
 
-      - name: Run SQLAlchemy dialect compliance suite
+      - name: Run SQLAlchemy dialect compliance suite (gating)
+        if: matrix.python-version == '3.14' && matrix.cubrid-version == '11.4'
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          CUBRID_STRICT_KNOWN_FAILURES: "1"
+        run: |
+          # The known_failures.txt baseline is a SQLAlchemy-version-specific
+          # snapshot (suite parametrization changes between releases). Pin the
+          # gating run to the captured version; a SQLAlchemy bump requires
+          # recapturing the baseline. See test/known_failures.txt.
+          pip install "sqlalchemy==2.0.53"
+          python -m pytest test/test_suite.py \
+            --dburi="$CUBRID_TEST_URL" \
+            -v --tb=short
+
+      - name: Run SQLAlchemy dialect compliance suite (non-gating, other cells)
+        if: matrix.python-version != '3.14' || matrix.cubrid-version != '11.4'
+        continue-on-error: true
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
           python -m pytest test/test_suite.py \
             --dburi="$CUBRID_TEST_URL" \
-            -v --tb=short || true
+            -v --tb=short
 
   matrix-result:
     if: always()
