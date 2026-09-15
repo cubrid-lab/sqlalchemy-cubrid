@@ -94,6 +94,7 @@ class NUMERIC(_NumericType, sqltypes.NUMERIC[Any]):  # pyright: ignore[reportUns
     """CUBRID NUMERIC type."""
 
     __visit_name__ = "NUMERIC"
+    render_bind_cast = True
 
     def __init__(self, precision: int | None = None, scale: int | None = None, **kw: Any) -> None:
         """Construct a NUMERIC.
@@ -109,6 +110,7 @@ class DECIMAL(_NumericType, sqltypes.DECIMAL[Any]):  # pyright: ignore[reportUns
     """CUBRID DECIMAL type."""
 
     __visit_name__ = "DECIMAL"
+    render_bind_cast = True
 
     def __init__(self, precision: int | None = None, scale: int | None = None, **kw: Any) -> None:
         """Construct a DECIMAL.
