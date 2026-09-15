@@ -793,3 +793,27 @@ class TestBackslashLiteralRoundtrip:
                 )
             ).scalar()
         assert matched == value, f"literal_binds roundtrip corrupted: {matched!r}"
+
+
+class TestJSONRoundTrip:
+    """#394: sa.JSON columns must return Python dict/list, not str, on read."""
+
+    def test_json_dict_roundtrips_as_dict(self, engine):
+        meta = MetaData()
+        table = Table(
+            "integration_json394",
+            meta,
+            Column("id", String(32), primary_key=True),
+            Column("data_json", sa.JSON),
+        )
+        meta.create_all(engine)
+        try:
+            payload = {"key": "value", "nested": {"n": 1}, "list": [1, 2, 3]}
+            with engine.begin() as conn:
+                conn.execute(table.insert().values(id="abc", data_json=payload))
+            with engine.connect() as conn:
+                result = conn.execute(sa.select(table.c.data_json)).scalar()
+            assert isinstance(result, dict)
+            assert result == payload
+        finally:
+            meta.drop_all(engine)
