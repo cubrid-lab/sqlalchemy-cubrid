@@ -21,6 +21,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   verify:
@@ -99,6 +100,25 @@ jobs:
             exit 1
           fi
           echo "Tag $TAG commit $TAG_COMMIT verified on main"
+
+      - name: Require the full compatibility matrix to have passed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # PyPI publish must not ship a version the full 5x4 Python x CUBRID
+          # matrix did not validate. The reduced PR matrix only covers the
+          # newest+oldest cells, so require a successful tag-triggered
+          # integration-full run on this exact release commit.
+          TAG_COMMIT=$(git rev-list -n 1 "$TAG")
+          success=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/integration-full.yml/runs?event=push&per_page=100" \
+            --jq ".workflow_runs[] | select(.head_sha == \"$TAG_COMMIT\") | select(.conclusion == \"success\") | .id" \
+            | head -1)
+          if [ -z "$success" ]; then
+            echo "::error::No successful Integration Full Matrix run found for $TAG ($TAG_COMMIT). The full compatibility matrix must pass before publishing."
+            exit 1
+          fi
+          echo "Full compatibility matrix passed for $TAG_COMMIT (run $success)."
 
       - name: Build sdist and wheel
         run: |
