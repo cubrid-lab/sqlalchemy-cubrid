@@ -69,7 +69,7 @@
 | FOR UPDATE (행 잠금) | ✅ | ✅ | ✅ | ❌ |
 | LIMIT를 가진 UPDATE | ✅ | ✅ | ❌ | ❌ |
 | TRUNCATE TABLE | ✅ | ✅ | ✅ | ❌ |
-| IS DISTINCT FROM | ❌ | ❌ | ✅ | ❌ |
+| IS DISTINCT FROM | ✅ | ❌ | ✅ | ❌ |
 | Postfetch LASTROWID | ✅ | ✅ | ❌ | ✅ |
 
 ### 참고
@@ -82,7 +82,7 @@
 - **LIMIT를 가진 UPDATE**: CUBRID와 MySQL 모두 `UPDATE … LIMIT n`을 지원합니다. PostgreSQL과 SQLite는 미지원.
 - **다중 테이블 UPDATE**: SQLAlchemy의 다중 테이블 UPDATE 패턴은 `UPDATE t1, t2 SET ... WHERE ...`로 컴파일되며, CUBRID가 받는 MySQL 스타일 구문과 일치합니다. 방언은 추가 `FROM` 절이 필요 없기 때문에 의도적으로 `update_from_clause()`를 비활성화합니다.
 - **TRUNCATE**: CUBRID는 `TRUNCATE TABLE`을 지원합니다. 방언은 오토커밋 감지에 `TRUNCATE`를 포함합니다.
-- **IS DISTINCT FROM**: CUBRID SQL 연산자가 아닙니다. SQLAlchemy는 네이티브 지원이 없는 방언에서 `CASE` 표현식으로 에뮬레이트할 수 있습니다.
+- **IS DISTINCT FROM**: CUBRID에는 SQL 표준 구문이 없지만 NULL-안전 등가 연산자 `<=>`를 지원합니다. 방언은 `a IS DISTINCT FROM b`를 `(a <=> b) = 0`으로, `a IS NOT DISTINCT FROM b`를 `a <=> b`로 에뮬레이트하여 술어와 SELECT 프로젝션 모두에서 NULL-안전 의미를 보존합니다 (#344, #377).
 
 ---
 
@@ -170,7 +170,7 @@
 
 | 타입 | CUBRID | MySQL | PostgreSQL | SQLite |
 |------|--------|-------|------------|--------|
-| ENUM | ❌ | ✅ | ✅ | ❌ |
+| ENUM | ✅ | ✅ | ✅ | ❌ |
 | JSON | ✅ | ✅ | ✅ | ⚠️ |
 | ARRAY | ❌ | ❌ | ✅ | ❌ |
 | UUID | ❌ | ❌ | ✅ | ❌ |
@@ -253,7 +253,7 @@ CUBRID의 MVCC 엔진(10.0+)은 세 가지 격리 수준을 지원합니다:
 | 기능 | CUBRID | MySQL | PostgreSQL | SQLite |
 |---------|--------|-------|------------|--------|
 | 문장 캐싱 | ✅ | ✅ | ✅ | ✅ |
-| 네이티브 enum | ❌ | ✅ | ✅ | ❌ |
+| 네이티브 enum | ✅ | ✅ | ✅ | ❌ |
 | 네이티브 불리언 | ❌ | ❌ | ✅ | ❌ |
 | 네이티브 decimal | ✅ | ✅ | ✅ | ❌ |
 | 시퀀스 | ❌ | ❌ | ✅ | ❌ |
@@ -469,7 +469,7 @@ stmt = (
 | JSON 타입 | ✅ | `JSON_EXTRACT`를 통한 경로 표현식을 갖춘 네이티브 JSON 지원 (CUBRID 10.2+) |
 | 임시 테이블 | ❌ | CUBRID는 `CREATE TEMPORARY TABLE` 미지원 |
 | 다중 스키마 | ❌ | CUBRID는 단일 스키마 모델로 동작 |
-| IS DISTINCT FROM | ❌ | CUBRID SQL 연산자가 아님 |
+| IS DISTINCT FROM | ✅ | NULL-안전 `<=>`로 에뮬레이트 (#344, #377) |
 | CHECK 제약 리플렉션 | ❌ | CUBRID는 CHECK 제약을 파싱하지만 무시 |
 | 시퀀스 | ❌ | CUBRID는 대신 `AUTO_INCREMENT` 사용 |
 | Lateral 조인 | ❌ | `LATERAL` 키워드가 CUBRID에서 구문 오류 발생 |

@@ -19,6 +19,7 @@ from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
     DBAPIConnection,
+    BindTyping,
     ConnectArgsType,
     ReflectedCheckConstraint,
     ReflectedColumn,
@@ -232,6 +233,11 @@ class CubridDialect(default.DefaultDialect):
     name = "cubrid"
     driver = "cubrid"
 
+    # CUBRID는 INSERT ... RETURNING을 지원하지 않는다.
+    # False로 설정하지 않으면 ORM이 INSERT 후 server_default 값을
+    # RETURNING으로 읽으려 해서 ResourceClosedError가 발생한다.
+    implicit_returning = False
+
     # SA 2.0 statement caching
     supports_statement_cache = True
 
@@ -259,10 +265,14 @@ class CubridDialect(default.DefaultDialect):
     requires_name_normalize = True
 
     # Data type support
-    supports_native_enum = False
+    supports_native_enum = True
     supports_native_boolean = False  # CUBRID uses SMALLINT for booleans
     supports_native_decimal = True
     supports_native_lateral = False
+
+    # Render CAST(... AS NUMERIC(p,s)) on scaled numeric binds so CUBRID does
+    # not coerce them to integers in arithmetic; see CubridSQLCompiler.
+    bind_typing = BindTyping.RENDER_CASTS
 
     # Column options
     supports_sequences = False
@@ -280,7 +290,7 @@ class CubridDialect(default.DefaultDialect):
     use_insertmanyvalues = True
     use_insertmanyvalues_wo_returning = True
     insertmanyvalues_implicit_sentinel = InsertmanyvaluesSentinelOpts.ANY_AUTOINCREMENT
-    supports_is_distinct_from = False
+    supports_is_distinct_from = True
 
     # RETURNING
     insert_returning = False

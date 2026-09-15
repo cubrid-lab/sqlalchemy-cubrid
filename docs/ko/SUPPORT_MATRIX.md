@@ -112,7 +112,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 기능 | 상태 | 비고 |
 |---|---|---|
 | JSON 타입 | ✅ | v1.2.0부터, CUBRID ≥ 10.2 필요 |
-| 네이티브 Enum | ❌ | CUBRID에 ENUM 없음 — VARCHAR + CHECK 제약 사용 |
+| 네이티브 Enum | ✅ | 네이티브 `ENUM('a','b')` DDL (10.2+ 검증) |
 | Interval 타입 | ❌ | CUBRID 미지원 |
 | RETURNING 절 | ❌ | `INSERT/UPDATE/DELETE ... RETURNING` 미지원 |
 | BOOLEAN | ⚠️ | SMALLINT(0/1)로 매핑 — 네이티브 불리언 없음 |

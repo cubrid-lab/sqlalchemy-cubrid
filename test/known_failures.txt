@@ -60,9 +60,6 @@ test/test_suite.py::DateTimeMicrosecondsTest::test_round_trip_decorated
 # DistinctOnTest (1): DISTINCT ON compilation — #388
 test/test_suite.py::DistinctOnTest::test_distinct_on
 
-# ExistsTest (2): EXISTS predicate compilation — #388
-test/test_suite.py::ExistsTest::test_select_exists
-test/test_suite.py::ExistsTest::test_select_exists_false
 
 # HasTableTest (8): SA suite's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed)
 test/test_suite.py::HasTableTest::test_has_table
@@ -77,23 +74,11 @@ test/test_suite.py::HasTableTest::test_has_table_view_schema
 # IdentityAutoincrementTest (1): identity/autoincrement column — #388
 test/test_suite.py::IdentityAutoincrementTest::test_autoincrement_with_identity
 
-# IntegerTest (11): C-driver numeric coercion / bounds — #386
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-1376537018368127]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483646]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483647]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483648]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483649]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[0]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[1376537018368127]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483646]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483647]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483648]
-test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483649]
 
 # NormalizedNameTest (1): identifier normalization — #387
 test/test_suite.py::NormalizedNameTest::test_get_table_names
 
-# NumericTest (12): C-driver returns float where SA expects Decimal — #386
+# NumericTest (7): C-driver returns float where SA expects Decimal — #386
 test/test_suite.py::NumericTest::test_decimal_coerce_round_trip
 test/test_suite.py::NumericTest::test_enotation_decimal
 test/test_suite.py::NumericTest::test_enotation_decimal_large
@@ -101,11 +86,6 @@ test/test_suite.py::NumericTest::test_float_as_decimal
 test/test_suite.py::NumericTest::test_float_as_float
 test/test_suite.py::NumericTest::test_float_coerce_round_trip
 test/test_suite.py::NumericTest::test_float_custom_scale
-test/test_suite.py::NumericTest::test_numeric_as_decimal
-test/test_suite.py::NumericTest::test_numeric_as_float
-test/test_suite.py::NumericTest::test_numeric_null_as_decimal
-test/test_suite.py::NumericTest::test_numeric_null_as_float
-test/test_suite.py::NumericTest::test_precision_decimal
 
 # ReturningGuardsTest (6): RETURNING guard-error path mismatch (CUBRID has no RETURNING) — #388
 test/test_suite.py::ReturningGuardsTest::test_delete_many

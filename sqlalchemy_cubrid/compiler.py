@@ -77,6 +77,28 @@ class CubridCompiler(compiler.SQLCompiler):
             return self.process(cast.clause.self_group())
         return f"CAST({self.process(cast.clause)} AS {type_})"
 
+    def default_from(self) -> str:
+        # CUBRID rejects a FROM-less SELECT that carries a WHERE clause
+        # (e.g. ``SELECT 1 WHERE ? = ?``). ``db_root`` is a single-row system
+        # table present across all supported CUBRID versions, so it serves the
+        # same role as Oracle's ``DUAL``.
+        return " FROM db_root"
+
+    def render_bind_cast(self, type_: Any, dbapi_type: Any, sqltext: str) -> str:
+        # CUBRID coerces a bound parameter in ``NUMERIC(p,s) + ?`` arithmetic to
+        # an integer, silently dropping the fractional scale (a SQL literal or an
+        # explicit CAST keeps it). Only NUMERIC/DECIMAL binds with a known scale
+        # are cast; everything else is passed through unchanged so the global
+        # RENDER_CASTS bind typing does not alter other parameter behaviour.
+        if (
+            isinstance(dbapi_type, sqltypes.Numeric)
+            and dbapi_type.precision is not None
+            and dbapi_type.scale is not None
+        ):
+            rendered_type = self.dialect.type_compiler_instance.process(dbapi_type)
+            return f"CAST({sqltext} AS {rendered_type})"
+        return sqltext
+
     def render_literal_value(self, value: Any, type_: Any) -> str:
         # SQLAlchemy's base render_literal_value escapes single quotes, which is
         # correct for CUBRID. Backslash handling depends on the server's
