@@ -250,7 +250,7 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 | Feature | CUBRID | MySQL | PostgreSQL | SQLite |
 |---------|--------|-------|------------|--------|
 | Statement caching | ✅ | ✅ | ✅ | ✅ |
-| Native enum | ❌ | ✅ | ✅ | ❌ |
+| Native enum | ✅ | ✅ | ✅ | ❌ |
 | Native boolean | ❌ | ❌ | ✅ | ❌ |
 | Native decimal | ✅ | ✅ | ✅ | ❌ |
 | Sequences | ❌ | ❌ | ✅ | ❌ |
