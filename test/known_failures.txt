@@ -7,42 +7,21 @@
 # an XPASS -> a hard failure, forcing the manifest to be trimmed. Any NEW
 # failure not in this list fails CI.
 #
-# Node ids are version-agnostic: the live suite parametrizes class names with a
-# server-version suffix (e.g. ...Test_cubrid+cubrid_11_4_6_1963); conftest.py
-# strips that suffix before matching, so entries here use the bare class name.
+# Node ids are version-agnostic w.r.t. the CUBRID server: the live suite
+# parametrizes class names with a server-version suffix (e.g.
+# ...Test_cubrid+cubrid_11_4_6_1963); conftest.py strips that suffix before
+# matching, so entries here use the bare class name.
 #
-# Baseline captured on CUBRID 11.4 (C-extension `cubrid://` driver), SA 2.0.36,
-# against a clean database (`docker compose down -v && up`). See #380.
+# BASELINE IS SQLALCHEMY-VERSION-SPECIFIC. SQLAlchemy changes suite
+# parametrization between releases (e.g. the ObjectKind flag string ordering in
+# ComponentReflectionTest.test_get_multi_columns changed between 2.0.36 and
+# 2.0.53), so the node ids here are a snapshot. This baseline was captured on
+# **SQLAlchemy 2.0.53** against a clean CUBRID 11.4 database, and the gating CI
+# cell pins `sqlalchemy==2.0.53` for that reason. A SQLAlchemy bump requires
+# recapturing this baseline (run the suite, diff the failures). See #380.
 #
 # Each group links to the follow-up issue that tracks the real fix. Removing an
 # entry (fixing the bug) is the goal; adding one requires a linked reason.
-
-# BinaryTest (3): binary/pickle round-trip — #388
-test/test_suite.py::BinaryTest::test_binary_roundtrip[7\xe7\x9f]
-test/test_suite.py::BinaryTest::test_binary_roundtrip[this is binary]
-test/test_suite.py::BinaryTest::test_pickle_roundtrip
-
-# BizarroCharacterFKResolutionTest (20): weird-identifier FK reflection — #387
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[(2)-not_use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[(2)-not_use_composite-[brack]]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[(2)-use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[(2)-use_composite-[brack]]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-not_use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-not_use_composite-[brack]]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-not_use_composite-col%p]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-not_use_composite-id]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-use_composite-[brack]]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-use_composite-col%p]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[[brackets]-use_composite-id]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[per % cent-not_use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[per % cent-not_use_composite-[brack]]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[per % cent-use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[per % cent-use_composite-[brack]]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[plain-not_use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[plain-not_use_composite-[brack]]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[plain-use_composite-(3)]
-test/test_suite.py::BizarroCharacterFKResolutionTest::test_fk_ref[plain-use_composite-[brack]]
 
 # CastTypeDecoratorTest (1): CAST with TypeDecorator — #388
 test/test_suite.py::CastTypeDecoratorTest::test_special_type
@@ -84,10 +63,6 @@ test/test_suite.py::DistinctOnTest::test_distinct_on
 # ExistsTest (2): EXISTS predicate compilation — #388
 test/test_suite.py::ExistsTest::test_select_exists
 test/test_suite.py::ExistsTest::test_select_exists_false
-
-# HasIndexTest (2): index reflection — #387
-test/test_suite.py::HasIndexTest::test_has_index[dialect]
-test/test_suite.py::HasIndexTest::test_has_index[inspector]
 
 # HasTableTest (8): view DDL generation syntax error (CREATE VIEW ... AS SELECT) — #385
 test/test_suite.py::HasTableTest::test_has_table

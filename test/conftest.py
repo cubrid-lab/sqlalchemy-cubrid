@@ -11,6 +11,7 @@ xfailed, a listed test that starts passing becomes an XPASS (hard failure),
 and any new failure not in the manifest fails CI.
 """
 
+import os
 import re
 import sys
 from pathlib import Path
@@ -62,6 +63,23 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
             reason="known failure baselined in test/known_failures.txt (#380)",
             strict=True,
         )
+        collected = {_normalize_nodeid(item.nodeid) for item in items}
         for item in items:
             if _normalize_nodeid(item.nodeid) in _KNOWN_FAILURES:
                 item.add_marker(strict_xfail)
+
+        # In the pinned gating cell (CUBRID_STRICT_KNOWN_FAILURES=1), a manifest
+        # entry that no longer matches any collected node is a stale baseline:
+        # fail loudly so the manifest is trimmed instead of silently losing its
+        # strict-XPASS guarantee. Off by default so partial local runs
+        # (e.g. `-k something`) do not trip it.
+        if os.environ.get("CUBRID_STRICT_KNOWN_FAILURES") == "1":
+            unmatched = sorted(_KNOWN_FAILURES - collected)
+            if unmatched:
+                listing = "\n  ".join(unmatched)
+                pytest.exit(
+                    f"{len(unmatched)} known_failures.txt entries matched no "
+                    f"collected test (stale baseline — recapture after a "
+                    f"SQLAlchemy bump?):\n  {listing}",
+                    returncode=1,
+                )
