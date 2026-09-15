@@ -16,6 +16,48 @@ import re
 import sys
 from pathlib import Path
 
+
+def _ci_integration_guard(items) -> None:  # noqa: ANN001
+    """Fail-hard when CI runs integration tests but every one is skipped.
+
+    The live-DB files mark themselves ``integration`` + ``skipif`` when no
+    CUBRID is reachable. That skip is correct locally and in the offline job
+    (``-m "not integration"`` deselects them entirely), but a CI job that runs
+    integration tests against a broken/absent CUBRID must fail loudly rather
+    than silently skip. ``items`` here is post-deselection (see the
+    ``trylast`` hookwrapper below), so it only contains tests that will run.
+    """
+    if os.environ.get("CI", "").lower() not in ("true", "1"):
+        return
+    integration_items = [
+        item for item in items if item.get_closest_marker("integration") is not None
+    ]
+    if not integration_items:
+        return
+    every_one_skipped = all(
+        item.get_closest_marker("skipif") is not None or item.get_closest_marker("skip") is not None
+        for item in integration_items
+    )
+    if every_one_skipped:
+        import pytest
+
+        pytest.exit(
+            f"CI=true is running {len(integration_items)} integration test(s) "
+            "but every one is skipped — CUBRID is not reachable. Integration "
+            "tests must not be silently skipped in CI; check the CUBRID service "
+            "container / CUBRID_TEST_URL.",
+            returncode=1,
+        )
+
+
+if not ("--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv)):
+    import pytest
+
+    @pytest.hookimpl(trylast=True)
+    def pytest_collection_modifyitems(items):  # noqa: ANN001
+        _ci_integration_guard(items)
+
+
 # Only load the heavy SA testing plugin when a DB URI is provided.
 # This allows offline tests to run without CUBRIDdb installed.
 if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
