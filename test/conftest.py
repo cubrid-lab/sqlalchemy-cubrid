@@ -40,6 +40,11 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
     # so the manifest matches the bare class name across CUBRID builds.
     _VERSION_SUFFIX = re.compile(r"_cubrid\+cubrid_[0-9_]+")
 
+    # Python enum.Flag repr renders combined members in a non-deterministic
+    # order across environments (e.g. `TABLE|VIEW` vs `VIEW|TABLE`), so sort the
+    # `A|B` parameter fragments before matching to keep the manifest stable.
+    _FLAG_FRAGMENT = re.compile(r"([A-Za-z_]+(?:\|[A-Za-z_]+)+)")
+
     def _load_known_failures() -> set[str]:
         if not _KNOWN_FAILURES_FILE.exists():
             return set()
@@ -47,13 +52,14 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
         for raw in _KNOWN_FAILURES_FILE.read_text(encoding="utf-8").splitlines():
             line = raw.strip()
             if line and not line.startswith("#"):
-                entries.add(line)
+                entries.add(_normalize_nodeid(line))
         return entries
 
-    _KNOWN_FAILURES = _load_known_failures()
-
     def _normalize_nodeid(nodeid: str) -> str:
-        return _VERSION_SUFFIX.sub("", nodeid)
+        stripped = _VERSION_SUFFIX.sub("", nodeid)
+        return _FLAG_FRAGMENT.sub(lambda m: "|".join(sorted(m.group(1).split("|"))), stripped)
+
+    _KNOWN_FAILURES = _load_known_failures()
 
     def pytest_collection_modifyitems(session, config, items):  # noqa: ANN001
         _sa_collection_modifyitems(session, config, items)
