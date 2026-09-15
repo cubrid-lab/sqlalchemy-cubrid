@@ -10,6 +10,28 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Determine whether DB-relevant code changed. Docs-only / metadata-only PRs
+  # skip the live integration matrix; anything touching the dialect, tests,
+  # driver setup, deps, or CI runs at least the reduced PR matrix.
+  detect-changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'sqlalchemy_cubrid/**'
+              - 'test/**'
+              - 'pyproject.toml'
+              - 'setup.cfg'
+              - 'docker-compose.yml'
+              - '.github/workflows/**'
+
   doc-lint:
     name: Documentation lint
     uses: cubrid-lab/.github/.github/workflows/doc-lint.yml@main
@@ -129,7 +151,8 @@ jobs:
 
   live-smoke:
     name: Live CUBRID smoke
-    needs: [lint, offline-tests]
+    needs: [detect-changes, lint, offline-tests]
+    if: needs.detect-changes.outputs.code == 'true'
     uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@main
     with:
       cubrid-version: "11.4"
@@ -144,12 +167,19 @@ jobs:
 
   integration-tests:
     runs-on: ubuntu-latest
-    needs: [lint, offline-tests, packaging-smoke-test]
+    needs: [detect-changes, lint, offline-tests, packaging-smoke-test]
+    if: needs.detect-changes.outputs.code == 'true'
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.14"]
-        cubrid-version: ["11.4", "11.2", "11.0", "10.2"]
+        # Reduced PR matrix: newest (3.14 x 11.4) + oldest (3.10 x 10.2)
+        # supported combinations. The full 5x4 matrix runs nightly / on tags
+        # via integration-full.yml.
+        include:
+          - python-version: "3.14"
+            cubrid-version: "11.4"
+          - python-version: "3.10"
+            cubrid-version: "10.2"
     services:
       cubrid:
         image: cubrid/cubrid:${{ matrix.cubrid-version }}
@@ -289,7 +319,7 @@ jobs:
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
-    needs: [lint, offline-tests, packaging-smoke-test, integration-tests, live-smoke]
+    needs: [detect-changes, lint, offline-tests, packaging-smoke-test, integration-tests, live-smoke]
     steps:
       - name: Check results
         run: |
@@ -305,13 +335,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Compatibility Matrix" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 11.4** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 11.2** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 11.0** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 10.2** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
+          echo "PR runs a reduced live matrix (newest 3.14×11.4 + oldest 3.10×10.2)." >> $GITHUB_STEP_SUMMARY
+          echo "The full 5×4 Python×CUBRID matrix runs nightly / on tags via integration-full.yml." >> $GITHUB_STEP_SUMMARY
       - name: Fail if required jobs failed
         if: >-
           needs.lint.result == 'failure' ||
