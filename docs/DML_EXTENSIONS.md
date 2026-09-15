@@ -72,6 +72,15 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
+> **Multi-row limitation:** `stmt.inserted.<column>` cannot be used with a
+> **multi-row** INSERT (`.values([{...}, {...}])`). CUBRID has no `VALUES(column)`
+> equivalent, so there is no way to reference the per-row inserted value in a
+> single multi-row upsert statement — the dialect raises a `CompileError` in
+> that case. Use single-row INSERTs, DBAPI `executemany` (pass a list of
+> parameter dicts to `connection.execute(stmt, [...])`), or a static/literal
+> UPDATE value (e.g. `on_duplicate_key_update(name="fixed")`), which **is**
+> supported for multi-row INSERTs.
+
 ### Argument Forms
 
 The `on_duplicate_key_update()` method accepts three argument forms:

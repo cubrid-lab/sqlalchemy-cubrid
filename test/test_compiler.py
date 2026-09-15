@@ -1030,6 +1030,37 @@ class TestOnDuplicateKeyUpdateCompilation:
             f"'name' should appear twice in positiontup, got {compiled.positiontup}"
         )
 
+    def test_on_duplicate_key_update_multirow_literal(self):
+        """#371: multi-row INSERT + ODKU with a static/literal value compiles."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@x.com"},
+                {"id": 2, "name": "b", "email": "b@x.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name="fixed")
+        sql = _compile(stmt)
+        assert "ON DUPLICATE KEY UPDATE" in sql
+        assert "VALUES(" not in sql
+
+    def test_on_duplicate_key_update_multirow_inserted_ref_raises(self):
+        """#371: multi-row INSERT + ODKU referencing stmt.inserted.col is not
+        representable on CUBRID (no VALUES(col) equivalent) and must raise a
+        clear, actionable error rather than an internal bind-resolution error."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@x.com"},
+                {"id": 2, "name": "b", "email": "b@x.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name=stmt.inserted.name)
+        with pytest.raises(CompileError, match="multi-row INSERT"):
+            _compile(stmt)
+
     def test_on_duplicate_key_update_dict_arg(self):
         """ON DUPLICATE KEY UPDATE with dict argument."""
         from sqlalchemy_cubrid.dml import insert

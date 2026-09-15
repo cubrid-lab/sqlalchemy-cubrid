@@ -255,6 +255,8 @@ class CubridCompiler(compiler.SQLCompiler):
         if table is None:
             return "ON DUPLICATE KEY UPDATE"
 
+        is_multirow_insert = bool(getattr(statement, "_multi_values", ()))
+
         if on_duplicate._parameter_ordering:
             parameter_ordering = [
                 coercions.expect(roles.DMLColumnRole, key)
@@ -302,6 +304,15 @@ class CubridCompiler(compiler.SQLCompiler):
                         isinstance(element, elements.ColumnClause)
                         and element.table is on_duplicate.inserted_alias
                     ):
+                        if is_multirow_insert:
+                            raise CompileError(
+                                "CUBRID ON DUPLICATE KEY UPDATE cannot use "
+                                "stmt.inserted.%s with a multi-row INSERT: CUBRID "
+                                "has no VALUES(column) equivalent for per-row "
+                                "inserted values. Use single-row INSERTs, DBAPI "
+                                "executemany, or a static/literal UPDATE value "
+                                "instead." % element.name
+                            )
                         # Re-use the INSERT bind parameter so the value
                         # appears twice in the positional parameter list.
                         if element.name in insert_binds:
