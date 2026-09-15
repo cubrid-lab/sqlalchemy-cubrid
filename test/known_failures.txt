@@ -64,7 +64,7 @@ test/test_suite.py::DistinctOnTest::test_distinct_on
 test/test_suite.py::ExistsTest::test_select_exists
 test/test_suite.py::ExistsTest::test_select_exists_false
 
-# HasTableTest (8): view DDL generation syntax error (CREATE VIEW ... AS SELECT) — #385
+# HasTableTest (8): SA suite's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed)
 test/test_suite.py::HasTableTest::test_has_table
 test/test_suite.py::HasTableTest::test_has_table_cache
 test/test_suite.py::HasTableTest::test_has_table_nonexistent_schema
