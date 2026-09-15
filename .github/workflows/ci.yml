@@ -137,7 +137,7 @@ jobs:
       cubrid-test-url: "cubrid+pycubrid://dba@localhost:33000/testdb"
       setup-command: >-
         python -m pip install --upgrade pip &&
-        pip install -e '.[pycubrid]' pytest
+        pip install -e '.[pycubrid,alembic]' pytest
       test-command: >-
         python -m pytest test/test_integration.py test/test_regression.py
         -v --tb=short
@@ -272,7 +272,7 @@ jobs:
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
-    needs: [lint, offline-tests, packaging-smoke-test, integration-tests]
+    needs: [lint, offline-tests, packaging-smoke-test, integration-tests, live-smoke]
     steps:
       - name: Check results
         run: |
@@ -284,6 +284,7 @@ jobs:
           echo "| Offline Tests | ${{ needs.offline-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Packaging Smoke Test | ${{ needs.packaging-smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Live Smoke | ${{ needs.live-smoke.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Compatibility Matrix" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -299,5 +300,6 @@ jobs:
           needs.lint.result == 'failure' ||
           needs.offline-tests.result == 'failure' ||
           needs.packaging-smoke-test.result == 'failure' ||
-          needs.integration-tests.result == 'failure'
+          needs.integration-tests.result == 'failure' ||
+          needs.live-smoke.result == 'failure'
         run: exit 1
