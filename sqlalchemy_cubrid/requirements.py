@@ -82,6 +82,18 @@ class Requirements(SuiteRequirements):
         return _CLOSED
 
     @property
+    def has_temp_table(self) -> compound:
+        """CUBRID has no CREATE TEMPORARY TABLE, so the reflection suite must
+        not try to provision a temp table via ``temp_table_keyword_args``."""
+        return _CLOSED
+
+    @property
+    def temp_table_reflection(self) -> compound:
+        """CUBRID has no temp tables to reflect; skip the temp-table branch of
+        ComponentReflectionTest's fixture setup."""
+        return _CLOSED
+
+    @property
     def temporary_tables(self) -> compound:
         return _CLOSED
 

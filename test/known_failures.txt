@@ -1,0 +1,129 @@
+# Known failures for the SQLAlchemy dialect compliance suite (test/test_suite.py)
+#
+# Purpose: this manifest lets the official SQLAlchemy suite GATE CI (see #380)
+# while tolerating the documented set of currently-failing tests. conftest.py
+# reads this file and applies a strict xfail to each listed node id: a listed
+# test that FAILS is xfailed (tolerated), but a listed test that PASSES becomes
+# an XPASS -> a hard failure, forcing the manifest to be trimmed. Any NEW
+# failure not in this list fails CI.
+#
+# Node ids are version-agnostic w.r.t. the CUBRID server: the live suite
+# parametrizes class names with a server-version suffix (e.g.
+# ...Test_cubrid+cubrid_11_4_6_1963); conftest.py strips that suffix before
+# matching, so entries here use the bare class name.
+#
+# BASELINE IS SQLALCHEMY-VERSION-SPECIFIC. SQLAlchemy changes suite
+# parametrization between releases (e.g. the ObjectKind flag string ordering in
+# ComponentReflectionTest.test_get_multi_columns changed between 2.0.36 and
+# 2.0.53), so the node ids here are a snapshot. This baseline was captured on
+# **SQLAlchemy 2.0.53** against a clean CUBRID 11.4 database, and the gating CI
+# cell pins `sqlalchemy==2.0.53` for that reason. A SQLAlchemy bump requires
+# recapturing this baseline (run the suite, diff the failures). See #380.
+#
+# Each group links to the follow-up issue that tracks the real fix. Removing an
+# entry (fixing the bug) is the goal; adding one requires a linked reason.
+
+# CastTypeDecoratorTest (1): CAST with TypeDecorator — #388
+test/test_suite.py::CastTypeDecoratorTest::test_special_type
+
+# ComponentReflectionTest (25): reflection gaps (comments/autoincrement/noncol index) — #387
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY_VIEW-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
+test/test_suite.py::ComponentReflectionTest::test_get_noncol_index[noncol_idx_test_nopk-noncol_idx_nopk]
+test/test_suite.py::ComponentReflectionTest::test_get_noncol_index[noncol_idx_test_pk-noncol_idx_pk]
+test/test_suite.py::ComponentReflectionTest::test_get_view_names[False-_exclusions_01]
+test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_columns-_exclusions_01]
+test/test_suite.py::ComponentReflectionTest::test_unreflectable
+
+# DateTimeMicrosecondsTest (2): datetime microsecond precision — #388
+test/test_suite.py::DateTimeMicrosecondsTest::test_round_trip
+test/test_suite.py::DateTimeMicrosecondsTest::test_round_trip_decorated
+
+# DistinctOnTest (1): DISTINCT ON compilation — #388
+test/test_suite.py::DistinctOnTest::test_distinct_on
+
+# ExistsTest (2): EXISTS predicate compilation — #388
+test/test_suite.py::ExistsTest::test_select_exists
+test/test_suite.py::ExistsTest::test_select_exists_false
+
+# HasTableTest (8): SA suite's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed)
+test/test_suite.py::HasTableTest::test_has_table
+test/test_suite.py::HasTableTest::test_has_table_cache
+test/test_suite.py::HasTableTest::test_has_table_nonexistent_schema
+test/test_suite.py::HasTableTest::test_has_table_schema
+test/test_suite.py::HasTableTest::test_has_table_temp_table
+test/test_suite.py::HasTableTest::test_has_table_temp_view
+test/test_suite.py::HasTableTest::test_has_table_view
+test/test_suite.py::HasTableTest::test_has_table_view_schema
+
+# IdentityAutoincrementTest (1): identity/autoincrement column — #388
+test/test_suite.py::IdentityAutoincrementTest::test_autoincrement_with_identity
+
+# IntegerTest (11): C-driver numeric coercion / bounds — #386
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-1376537018368127]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483646]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483647]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483648]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[-2147483649]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[0]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[1376537018368127]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483646]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483647]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483648]
+test/test_suite.py::IntegerTest::test_huge_int_auto_accommodation[2147483649]
+
+# NormalizedNameTest (1): identifier normalization — #387
+test/test_suite.py::NormalizedNameTest::test_get_table_names
+
+# NumericTest (12): C-driver returns float where SA expects Decimal — #386
+test/test_suite.py::NumericTest::test_decimal_coerce_round_trip
+test/test_suite.py::NumericTest::test_enotation_decimal
+test/test_suite.py::NumericTest::test_enotation_decimal_large
+test/test_suite.py::NumericTest::test_float_as_decimal
+test/test_suite.py::NumericTest::test_float_as_float
+test/test_suite.py::NumericTest::test_float_coerce_round_trip
+test/test_suite.py::NumericTest::test_float_custom_scale
+test/test_suite.py::NumericTest::test_numeric_as_decimal
+test/test_suite.py::NumericTest::test_numeric_as_float
+test/test_suite.py::NumericTest::test_numeric_null_as_decimal
+test/test_suite.py::NumericTest::test_numeric_null_as_float
+test/test_suite.py::NumericTest::test_precision_decimal
+
+# ReturningGuardsTest (6): RETURNING guard-error path mismatch (CUBRID has no RETURNING) — #388
+test/test_suite.py::ReturningGuardsTest::test_delete_many
+test/test_suite.py::ReturningGuardsTest::test_delete_single
+test/test_suite.py::ReturningGuardsTest::test_insert_many
+test/test_suite.py::ReturningGuardsTest::test_insert_single
+test/test_suite.py::ReturningGuardsTest::test_update_many
+test/test_suite.py::ReturningGuardsTest::test_update_single
+
+# RowCountTest (2): rowcount semantics — #388
+test/test_suite.py::RowCountTest::test_multi_delete_rowcount
+test/test_suite.py::RowCountTest::test_multi_update_rowcount
+
+# TimeMicrosecondsTest (3): microsecond precision round-trip — #388
+test/test_suite.py::TimeMicrosecondsTest::test_round_trip
+test/test_suite.py::TimeMicrosecondsTest::test_round_trip_decorated
+test/test_suite.py::TimeMicrosecondsTest::test_select_direct
+
+# TrueDivTest (2): true-division numeric typing — #386
+test/test_suite.py::TrueDivTest::test_truediv_float[5.52-2.4-2.3]
+test/test_suite.py::TrueDivTest::test_truediv_integer_bound
