@@ -186,14 +186,14 @@ class CubridDialect(default.DefaultDialect):
     name = "cubrid"
     supports_statement_cache = True
     supports_native_boolean = False       # Emulated via SMALLINT
-    supports_native_enum = False
+    supports_native_enum = True            # Native ENUM('a','b') DDL
     supports_native_decimal = True
     supports_sequences = False            # Uses AUTO_INCREMENT
     supports_default_values = True        # INSERT ... DEFAULT VALUES
     supports_empty_insert = True
     supports_multivalues_insert = True
     supports_comments = True              # Table + column comments
-    supports_is_distinct_from = False
+    supports_is_distinct_from = True      # Emulated via null-safe <=>
     insert_returning = False              # No RETURNING clause
     update_returning = False
     delete_returning = False

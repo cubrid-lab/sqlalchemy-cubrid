@@ -46,6 +46,15 @@ with engine.connect() as conn:
 - [Changelog](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md)
 - [Contributing](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md)
 
+## Ecosystem
+
+Part of the cubrid-lab Python ecosystem:
+
+- pycubrid — Pure-Python DB-API 2.0 driver for CUBRID (sync + native asyncio)
+- **sqlalchemy-cubrid** — SQLAlchemy 2.0–2.2 dialect + Alembic
+- cubrid-cookbook-python — 68 runnable examples and application templates
+- cubrid-mcp-server — MCP server — natural-language access for LLM clients
+
 ---
 
 # Quick Start
@@ -982,7 +991,7 @@ stmt = stmt.on_duplicate_key_update(
 )
 ```
 
-> **Note**: `stmt.inserted.<column>` is the supported way to render `VALUES(column)` in CUBRID ODKU clauses.
+> **Note**: `stmt.inserted.<column>` re-emits the INSERT bind parameter in the ON DUPLICATE KEY UPDATE clause.
 
 ---
 
@@ -1341,7 +1350,7 @@ This dialect provides custom SQLAlchemy constructs for CUBRID-specific DML (Data
 
 ## ON DUPLICATE KEY UPDATE
 
-CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references, identical to MySQL's pre-8.0 syntax.
+CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. Unlike MySQL, CUBRID does not support the `VALUES()` function; the dialect re-emits INSERT bind parameters instead.
 
 ### Basic Usage
 
@@ -1362,15 +1371,15 @@ ON DUPLICATE KEY UPDATE name = 'updated_alice'
 
 ### Referencing Inserted Values
 
-Use `stmt.inserted` to reference the values being inserted — rendered as `VALUES(column_name)` in SQL:
+Use `stmt.inserted` to reference the values being inserted — the dialect re-emits the INSERT bind parameter:
 
 ```python
 from sqlalchemy_cubrid import insert
 
 stmt = insert(users).values(id=1, name="alice", email="alice@example.com")
 stmt = stmt.on_duplicate_key_update(
-    name=stmt.inserted.name,      # → VALUES(name)
-    email=stmt.inserted.email,    # → VALUES(email)
+    name=stmt.inserted.name,
+    email=stmt.inserted.email,
 )
 ```
 
@@ -1379,7 +1388,7 @@ stmt = stmt.on_duplicate_key_update(
 ```sql
 INSERT INTO users (id, name, email)
 VALUES (1, 'alice', 'alice@example.com')
-ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email)
+ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
 ### Argument Forms
@@ -1424,7 +1433,7 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = (SELECT max(users.name) FROM users)
 ```
 
-> **Note**: `stmt.inserted.<column>` compiles to `VALUES(<column>)`, which is the dialect's supported way to reference the incoming row in ON DUPLICATE KEY UPDATE clauses.
+> **Note**: `stmt.inserted.<column>` causes the dialect to re-emit the INSERT bind parameter for that column, so the value appears twice in the positional parameter list.
 
 ---
 
@@ -3235,7 +3244,7 @@ High-level overview by feature category.
 
 - **RETURNING**: CUBRID has no `RETURNING` clause. Auto-generated keys cannot be fetched in the same round-trip as the INSERT, so the dialect relies on `postfetch_lastrowid = True` instead (`get_last_insert_id()` / SQL fallback for the C driver; `cursor.lastrowid` for pycubrid).
 - **DEFAULT VALUES**: CUBRID supports `INSERT INTO t DEFAULT VALUES`. The dialect sets `supports_default_values = True`.
-- **ON DUPLICATE KEY UPDATE**: CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references (identical to MySQL pre-8.0 syntax). Use `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs) for usage examples.
+- **ON DUPLICATE KEY UPDATE**: CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. The dialect handles `stmt.inserted` references by re-emitting INSERT bind parameters (CUBRID does not support the `VALUES()` function). Use `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs) for usage examples.
 - **MERGE**: CUBRID supports the full SQL MERGE statement. Use `sqlalchemy_cubrid.dml.merge(target)` with `.using()`, `.on()`, `.when_matched_then_update()`, and `.when_not_matched_then_insert()`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs).
 - **FOR UPDATE**: CUBRID supports `SELECT … FOR UPDATE [OF col1, col2]`. NOWAIT and SKIP LOCKED are not supported.
 - **UPDATE with LIMIT**: CUBRID and MySQL both support `UPDATE … LIMIT n`. PostgreSQL and SQLite do not.
@@ -3328,7 +3337,7 @@ High-level overview by feature category.
 
 | Type | CUBRID | MySQL | PostgreSQL | SQLite |
 |------|--------|-------|------------|--------|
-| ENUM | ❌ | ✅ | ✅ | ❌ |
+| ENUM | ✅ | ✅ | ✅ | ❌ |
 | JSON | ✅ | ✅ | ✅ | ⚠️ |
 | ARRAY | ❌ | ❌ | ✅ | ❌ |
 | UUID | ❌ | ❌ | ✅ | ❌ |
@@ -3411,7 +3420,7 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 | Feature | CUBRID | MySQL | PostgreSQL | SQLite |
 |---------|--------|-------|------------|--------|
 | Statement caching | ✅ | ✅ | ✅ | ✅ |
-| Native enum | ❌ | ✅ | ✅ | ❌ |
+| Native enum | ✅ | ✅ | ✅ | ❌ |
 | Native boolean | ❌ | ❌ | ✅ | ❌ |
 | Native decimal | ✅ | ✅ | ✅ | ❌ |
 | Sequences | ❌ | ❌ | ✅ | ❌ |
@@ -3465,7 +3474,7 @@ The dialect provides custom SQLAlchemy constructs for CUBRID-specific DML featur
 
 ### ON DUPLICATE KEY UPDATE
 
-CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references (identical to MySQL pre-8.0 syntax).
+CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. The dialect handles `stmt.inserted` references by re-emitting INSERT bind parameters (CUBRID does not support the `VALUES()` function).
 
 ```python
 from sqlalchemy_cubrid import insert
@@ -3478,7 +3487,7 @@ stmt = stmt.on_duplicate_key_update(name="updated_alice")
 # Reference the inserted value:
 stmt = insert(users).values(id=1, name="alice", email="alice@example.com")
 stmt = stmt.on_duplicate_key_update(name=stmt.inserted.name)
-# ON DUPLICATE KEY UPDATE name = VALUES(name)
+# ON DUPLICATE KEY UPDATE name = ?
 ```
 
 **Accepted argument forms:**
@@ -3626,7 +3635,7 @@ Features not currently supported that may be added in future releases, depending
 | JSON type | ✅ | Native JSON support (CUBRID 10.2+) with path expressions via `JSON_EXTRACT` |
 | Temporary tables | ❌ | CUBRID does not support `CREATE TEMPORARY TABLE` |
 | Multiple schemas | ❌ | CUBRID operates in a single-schema model |
-| IS DISTINCT FROM | ❌ | Not a CUBRID SQL operator |
+
 | Check constraint reflection | ❌ | CUBRID parses but ignores CHECK constraints |
 | Sequences | ❌ | CUBRID uses `AUTO_INCREMENT` instead |
 | Lateral joins | ❌ | `LATERAL` keyword causes syntax error in CUBRID |
@@ -3753,7 +3762,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Feature | Status | Notes |
 |---|---|---|
 | JSON type | ✅ | Since v1.2.0, requires CUBRID ≥ 10.2 |
-| Native Enum | ❌ | CUBRID lacks ENUM — use VARCHAR + CHECK constraint |
+| Native Enum | ✅ | Native `ENUM('a', 'b', ...)` — verified on 10.2–11.4 (#343) |
 | Interval type | ❌ | Not supported by CUBRID |
 | RETURNING clause | ❌ | `INSERT/UPDATE/DELETE ... RETURNING` not supported |
 | BOOLEAN | ⚠️ | Mapped to SMALLINT (0/1) — no native boolean |
@@ -3837,6 +3846,14 @@ sqlalchemy-cubrid is designed to provide a robust, modern interface between SQLA
 *   Custom DML extensions (ON DUPLICATE KEY UPDATE, MERGE, REPLACE)
 *   Alembic migration support
 *   PEP 561 typed
+
+## Provenance
+
+sqlalchemy-cubrid is an independent implementation written for SQLAlchemy 2.0. It
+contains no code from, and is not a port of, the legacy CUBRID SQLAlchemy dialect
+that shipped inside the old `CUBRID-Python` driver distribution. The optional
+`[cubrid]`/`[cubriddb]` extras merely allow this dialect to *run on top of* that
+legacy driver; no source from it is included or derived.
 
 ## High-Level Flow
 
