@@ -51,6 +51,24 @@ class TestReservedWords:
         assert "table" in RESERVED_WORDS
         assert "merge" not in RESERVED_WORDS
 
+    @pytest.mark.parametrize("word", ["key", "value"])
+    def test_key_value_are_reserved(self, word):
+        assert word in RESERVED_WORDS
+
+    @pytest.mark.parametrize("word", ["key", "value"])
+    def test_reserved_column_is_quoted_in_select(self, word):
+        import sqlalchemy as sa
+
+        metadata = sa.MetaData()
+        table = sa.Table(
+            "weather_model_parameter",
+            metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column(word, sa.String(50)),
+        )
+        compiled = str(sa.select(table.c[word]).compile(dialect=CubridDialect()))
+        assert f'"{word}"' in compiled
+
 
 class TestIdentifierPreparer:
     def test_constructor_defaults(self):
