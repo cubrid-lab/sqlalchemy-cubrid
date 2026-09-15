@@ -120,3 +120,6 @@ fail_under = 95
 testpaths = ["test"]
 addopts = "--tb native -v -r fxX --maxfail=25 -p no:warnings"
 python_files = "test/*test_*.py"
+markers = [
+    "integration: test requires a live CUBRID instance (deselected by the offline suite via -m 'not integration')",
+]
