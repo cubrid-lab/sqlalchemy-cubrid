@@ -2158,3 +2158,29 @@ class TestFKIndexCollisionDDL:
         idx = [i for i in child.indexes if i.name == "idx_ba"][0]
         ddl = schema.CreateIndex(idx).compile(dialect=CubridDialect())
         assert "CREATE INDEX" in ddl.string
+
+
+class TestNumericBindCast386:
+    """#386: scaled numeric binds are cast so CUBRID keeps their scale; a
+    FROM-less SELECT with WHERE gets a synthetic FROM db_root."""
+
+    def test_scaled_numeric_bind_renders_cast(self):
+        from decimal import Decimal
+
+        t = Table("nb1", MetaData(), Column("x", sa.Numeric(8, 4)))
+        stmt = select(sa.type_coerce(t.c.x + Decimal("37.12"), sa.Numeric(8, 4)))
+        sql = stmt.compile(dialect=CubridDialect()).string
+        assert "CAST(? AS NUMERIC(8, 4))" in sql or "CAST(:" in sql
+
+    def test_unconstrained_numeric_bind_not_cast(self):
+        from decimal import Decimal
+
+        t = Table("nb2", MetaData(), Column("y", sa.Numeric()))
+        stmt = select(sa.type_coerce(t.c.y + Decimal("1.5"), sa.Numeric()))
+        sql = stmt.compile(dialect=CubridDialect()).string
+        assert "CAST(" not in sql
+
+    def test_fromless_select_with_where_gets_default_from(self):
+        stmt = select(sa.literal(1)).where(sa.bindparam("a", 1) == sa.bindparam("b", 1))
+        sql = stmt.compile(dialect=CubridDialect()).string
+        assert "FROM db_root" in sql

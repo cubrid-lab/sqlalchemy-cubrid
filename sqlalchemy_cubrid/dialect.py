@@ -19,6 +19,7 @@ from sqlalchemy.exc import NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
     DBAPIConnection,
+    BindTyping,
     ConnectArgsType,
     ReflectedCheckConstraint,
     ReflectedColumn,
@@ -268,6 +269,10 @@ class CubridDialect(default.DefaultDialect):
     supports_native_boolean = False  # CUBRID uses SMALLINT for booleans
     supports_native_decimal = True
     supports_native_lateral = False
+
+    # Render CAST(... AS NUMERIC(p,s)) on scaled numeric binds so CUBRID does
+    # not coerce them to integers in arithmetic; see CubridSQLCompiler.
+    bind_typing = BindTyping.RENDER_CASTS
 
     # Column options
     supports_sequences = False
