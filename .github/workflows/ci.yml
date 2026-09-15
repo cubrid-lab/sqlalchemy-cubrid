@@ -127,6 +127,21 @@ jobs:
           cd /tmp
           /tmp/test-sdist/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
 
+  live-smoke:
+    name: Live CUBRID smoke
+    needs: [lint, offline-tests]
+    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@main
+    with:
+      cubrid-version: "11.4"
+      python-version: "3.12"
+      cubrid-test-url: "cubrid+pycubrid://dba@localhost:33000/testdb"
+      setup-command: >-
+        python -m pip install --upgrade pip &&
+        pip install -e '.[pycubrid]' pytest
+      test-command: >-
+        python -m pytest test/test_integration.py test/test_regression.py
+        -v --tb=short
+
   integration-tests:
     runs-on: ubuntu-latest
     needs: [lint, offline-tests, packaging-smoke-test]
