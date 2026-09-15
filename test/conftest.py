@@ -17,6 +17,21 @@ import sys
 from pathlib import Path
 
 
+def _item_is_skipped(item) -> bool:  # noqa: ANN001
+    """True if the item carries an active skip/skipif for the current run.
+
+    ``pytest.mark.skipif(cond, ...)`` always attaches a ``skipif`` marker
+    regardless of ``cond``, so marker *presence* is not enough — the boolean
+    condition (``not _available``, evaluated at import) is the first positional
+    arg and must itself be truthy for the test to actually skip.
+    """
+    for marker in item.iter_markers(name="skip"):
+        return True
+    return any(
+        any(bool(cond) for cond in marker.args) for marker in item.iter_markers(name="skipif")
+    )
+
+
 def _ci_integration_guard(items) -> None:  # noqa: ANN001
     """Fail-hard when CI runs integration tests but every one is skipped.
 
@@ -34,11 +49,7 @@ def _ci_integration_guard(items) -> None:  # noqa: ANN001
     ]
     if not integration_items:
         return
-    every_one_skipped = all(
-        item.get_closest_marker("skipif") is not None or item.get_closest_marker("skip") is not None
-        for item in integration_items
-    )
-    if every_one_skipped:
+    if all(_item_is_skipped(item) for item in integration_items):
         import pytest
 
         pytest.exit(
