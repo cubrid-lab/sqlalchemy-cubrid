@@ -282,9 +282,9 @@ class ENUM(sqltypes.Enum):
     CUBRID supports a native ``ENUM('a', 'b', ...)`` column type across all
     versions the dialect targets (verified live on 10.2, 11.0, and 11.4).
     Plain ``sa.Enum("a", "b")`` maps to this type via the dialect colspecs,
-    so native ENUM DDL is emitted by default. ``native_enum=False`` follows
-    the MySQL-dialect convention of being ignored; use a ``TypeDecorator``
-    over ``String`` if you need an explicit VARCHAR fallback.
+    so native ENUM DDL is emitted by default. ``native_enum=False`` honours
+    the SQLAlchemy contract and emits ``VARCHAR(n)`` instead (n sized to the
+    longest element).
 
     Reflected ``ENUM(...)`` columns round-trip through ``SHOW COLUMNS``,
     which reports the full element list.
