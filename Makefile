@@ -1,4 +1,4 @@
-.PHONY: help install lint format typecheck security check check-all test test-all integration docker-up docker-down changelog clean clean-all doctor release
+.PHONY: help install lint format typecheck security check check-all test test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release
 
 PYTEST = python3 -m pytest
 RUFF = ruff
@@ -35,9 +35,7 @@ check-all: check security ## Run lint + typecheck + security
 
 test: ## Run offline tests with coverage (no DB required)
 	$(PYTEST) $(TESTS)/ -v \
-		--ignore=$(TESTS)/test_integration.py \
-		--ignore=$(TESTS)/test_suite.py \
-		--ignore=$(TESTS)/test_aio_integration.py \
+		-m "not integration" \
 		--cov=$(SRC) \
 		--cov-report=term-missing \
 		--cov-fail-under=95
@@ -45,12 +43,19 @@ test: ## Run offline tests with coverage (no DB required)
 test-all: ## Run tests across all Python versions via tox
 	tox
 
-integration: docker-up ## Run integration tests against CUBRID Docker
+integration: docker-up ## Run integration tests against a Docker CUBRID
 	@echo "Waiting for CUBRID to be ready..."
 	@sleep 10
 	CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
-		$(PYTEST) $(TESTS)/test_integration.py -v
+		$(PYTEST) $(TESTS)/ -m integration -v
 	$(MAKE) docker-down
+
+integration-local: ## Run integration tests against an already-running CUBRID (set CUBRID_TEST_URL; no Docker)
+	@if [ -z "$$CUBRID_TEST_URL" ]; then \
+		echo "ERROR: set CUBRID_TEST_URL (e.g. cubrid://dba@localhost:33000/testdb) to point at a running CUBRID"; \
+		exit 1; \
+	fi
+	$(PYTEST) $(TESTS)/ -m integration -v
 
 docker-up: ## Start CUBRID Docker container
 	docker compose up -d

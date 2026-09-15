@@ -58,6 +58,7 @@ if _in_ci and not _available:
     )
 
 pytestmark = [
+    pytest.mark.integration,
     pytest.mark.skipif(
         not _available,
         reason="CUBRID async instance not available (set CUBRID_TEST_URL)",

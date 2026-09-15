@@ -74,10 +74,13 @@ if _in_ci and not _available:
         pytrace=False,
     )
 
-pytestmark = pytest.mark.skipif(
-    not _available,
-    reason="CUBRID instance not available (set CUBRID_TEST_URL)",
-)
+pytestmark = [
+    pytest.mark.integration,
+    pytest.mark.skipif(
+        not _available,
+        reason="CUBRID instance not available (set CUBRID_TEST_URL)",
+    ),
+]
 
 
 @pytest.fixture(scope="module")

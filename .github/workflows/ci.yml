@@ -79,10 +79,7 @@ jobs:
         run: |
           python -m pytest \
             test/ \
-            --ignore=test/test_integration.py \
-            --ignore=test/test_suite.py \
-            --ignore=test/test_aio_integration.py \
-            --ignore=test/test_regression.py \
+            -m "not integration" \
             -v --tb=short \
             --cov=sqlalchemy_cubrid \
             --cov-report=term-missing \
@@ -111,10 +108,7 @@ jobs:
         run: |
           python -m pytest \
             test/ \
-            --ignore=test/test_integration.py \
-            --ignore=test/test_suite.py \
-            --ignore=test/test_aio_integration.py \
-            --ignore=test/test_regression.py \
+            -m "not integration" \
             -v --tb=short
 
   packaging-smoke-test:
