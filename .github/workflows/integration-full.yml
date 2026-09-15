@@ -112,3 +112,17 @@ jobs:
           # handled separately by upstream-canary.yml.
           pip install -e ".[pycubrid]"
           python -m pytest test/test_aio_integration.py -v --tb=short
+
+  full-matrix-result:
+    name: Full compatibility matrix result
+    runs-on: ubuntu-latest
+    needs: [integration-full]
+    if: always()
+    steps:
+      - name: Require all matrix cells to pass
+        run: |
+          if [ "${{ needs.integration-full.result }}" != "success" ]; then
+            echo "::error::Full compatibility matrix failed: ${{ needs.integration-full.result }}"
+            exit 1
+          fi
+          echo "Full compatibility matrix passed."

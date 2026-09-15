@@ -344,13 +344,18 @@ Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 4. Push the tag `v{major}.{minor}.{patch}` on the merged commit:
    `git tag vx.y.z <merged-sha> && git push origin vx.y.z` (tag pushes are allowed; only
    direct branch pushes to `main` are forbidden).
-5. The tag push triggers `.github/workflows/create-release.yml`, which extracts the
+5. The tag push triggers `.github/workflows/integration-full.yml`, which runs the **full
+   5×4 Python × CUBRID compatibility matrix** on the release commit. PR CI only runs a
+   reduced 2-cell matrix, so this tag run is the authoritative full-compatibility check.
+6. The tag push also triggers `.github/workflows/create-release.yml`, which extracts the
    `## [x.y.z] - YYYY-MM-DD` section from `CHANGELOG.md` (fail-closed — no fallback) and
    creates the GitHub Release titled `vx.y.z` with that body, after verifying the tag is
    an ancestor of `origin/main`.
-6. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
-   which rebuilds, verifies (tag == version, dated CHANGELOG, tag on main, smoke tests),
-   and publishes to PyPI via Trusted Publisher (OIDC).
+7. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
+   which rebuilds, verifies (tag == version, dated CHANGELOG, tag on main, smoke tests,
+   **and that a successful `integration-full.yml` run exists for the release commit** —
+   PyPI publish is blocked until the full matrix passes), and publishes to PyPI via
+   Trusted Publisher (OIDC).
 
 Release notes are never hand-written: `CHANGELOG.md` is the single source of truth and
 `scripts/extract_release_notes.py` renders the Release body. To re-create a release body,
