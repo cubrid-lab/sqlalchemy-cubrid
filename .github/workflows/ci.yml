@@ -127,6 +127,21 @@ jobs:
           cd /tmp
           /tmp/test-sdist/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
 
+  live-smoke:
+    name: Live CUBRID smoke
+    needs: [lint, offline-tests]
+    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@main
+    with:
+      cubrid-version: "11.4"
+      python-version: "3.12"
+      cubrid-test-url: "cubrid+pycubrid://dba@localhost:33000/testdb"
+      setup-command: >-
+        python -m pip install --upgrade pip &&
+        pip install -e '.[pycubrid,alembic]' pytest
+      test-command: >-
+        python -m pytest test/test_integration.py test/test_regression.py
+        -v --tb=short
+
   integration-tests:
     runs-on: ubuntu-latest
     needs: [lint, offline-tests, packaging-smoke-test]
@@ -274,7 +289,7 @@ jobs:
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
-    needs: [lint, offline-tests, packaging-smoke-test, integration-tests]
+    needs: [lint, offline-tests, packaging-smoke-test, integration-tests, live-smoke]
     steps:
       - name: Check results
         run: |
@@ -286,6 +301,7 @@ jobs:
           echo "| Offline Tests | ${{ needs.offline-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Packaging Smoke Test | ${{ needs.packaging-smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Live Smoke | ${{ needs.live-smoke.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Compatibility Matrix" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -301,5 +317,6 @@ jobs:
           needs.lint.result == 'failure' ||
           needs.offline-tests.result == 'failure' ||
           needs.packaging-smoke-test.result == 'failure' ||
-          needs.integration-tests.result == 'failure'
+          needs.integration-tests.result == 'failure' ||
+          needs.live-smoke.result == 'failure'
         run: exit 1
