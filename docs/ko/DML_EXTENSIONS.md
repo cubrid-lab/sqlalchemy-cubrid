@@ -74,6 +74,8 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
+> **제약 — `stmt.inserted.col`와 다중 행 `VALUES` (#371):** 삽입되는 값 참조는 **단일 행** `INSERT` 또는 **executemany**(행 목록을 `Connection.execute(stmt, [rows])`로 전달 — 각 실행이 논리적으로 단일 행)에서만 동작합니다. 인라인 다중 행 `insert(t).values([{...}, {...}])`에서는 지원되지 **않습니다**: CUBRID에는 `VALUES(col)` / 행 별칭 구문이 없어 충돌 행마다 바인딩할 단일 값이 존재하지 않으므로, dialect는 모든 충돌 행을 한 행의 값으로 조용히 갱신하는 대신 `CompileError`를 발생시킵니다. 다중 행 upsert가 필요하면 executemany를 쓰거나, 단일 행 문으로 분리하거나, (삽입 값을 참조하지 않는) 리터럴/표현식 갱신을 쓰거나, `MERGE`를 사용하세요.
+
 ### 인자 형태
 
 `on_duplicate_key_update()` 메서드는 세 가지 인자 형태를 받습니다:

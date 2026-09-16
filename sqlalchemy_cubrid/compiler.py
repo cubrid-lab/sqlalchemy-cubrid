@@ -289,6 +289,15 @@ class CubridCompiler(compiler.SQLCompiler):
         if table is None:
             return "ON DUPLICATE KEY UPDATE"
 
+        # Inline multi-row VALUES (``insert(t).values([{...}, {...}])``) carries
+        # several candidate rows in one statement. CUBRID has no ``VALUES(col)`` /
+        # row-alias syntax to reference "this row's inserted value" in ON
+        # DUPLICATE KEY UPDATE, so a per-row ``inserted.col`` reference is not
+        # expressible (one trailing bind would set every conflicting row to a
+        # single row's value — silent corruption). executemany differs: it sends
+        # a single-row statement per parameter set and stays correct (#371).
+        is_inline_multi_values = bool(getattr(statement, "_multi_values", ()))
+
         if on_duplicate._parameter_ordering:
             parameter_ordering = [
                 coercions.expect(roles.DMLColumnRole, key)
@@ -336,6 +345,18 @@ class CubridCompiler(compiler.SQLCompiler):
                         isinstance(element, elements.ColumnClause)
                         and element.table is on_duplicate.inserted_alias
                     ):
+                        if is_inline_multi_values:
+                            raise CompileError(
+                                "CUBRID cannot reference the inserted value of "
+                                "column '%s' (stmt.inserted.%s) in ON DUPLICATE "
+                                "KEY UPDATE for a multi-row VALUES INSERT: CUBRID "
+                                "has no VALUES(col) / row-alias syntax, so there "
+                                "is no single value to bind per conflicting row. "
+                                "Use executemany (pass the row list to "
+                                "Connection.execute instead of .values([...])), a "
+                                "single-row INSERT, a literal/expression update, "
+                                "or MERGE." % (element.name, element.name)
+                            )
                         # Re-use the INSERT bind parameter so the value
                         # appears twice in the positional parameter list.
                         if element.name in insert_binds:

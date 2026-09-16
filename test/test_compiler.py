@@ -1041,6 +1041,52 @@ class TestOnDuplicateKeyUpdateCompilation:
             f"'name' should appear twice in positiontup, got {compiled.positiontup}"
         )
 
+    def test_on_duplicate_key_update_multirow_inserted_ref_raises(self):
+        """#371: inline multi-row VALUES + stmt.inserted.col must fail closed.
+
+        Not expressible on CUBRID (no VALUES(col) / row-alias), so it must raise
+        rather than silently bind one row's value for every conflicting row.
+        """
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@example.com"},
+                {"id": 2, "name": "b", "email": "b@example.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name=stmt.inserted.name)
+        with pytest.raises(CompileError, match="multi-row VALUES INSERT"):
+            _compile(stmt)
+
+    def test_on_duplicate_key_update_multirow_nested_inserted_ref_raises(self):
+        """#371: the inserted-value ref is unsupported even nested in an expression."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@example.com"},
+                {"id": 2, "name": "b", "email": "b@example.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name=sa.func.coalesce(stmt.inserted.name, "x"))
+        with pytest.raises(CompileError, match="multi-row VALUES INSERT"):
+            _compile(stmt)
+
+    def test_on_duplicate_key_update_multirow_literal_update_compiles(self):
+        """#371: multi-row VALUES + a literal update needs no inserted value and compiles."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@example.com"},
+                {"id": 2, "name": "b", "email": "b@example.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name="fixed")
+        sql = _compile(stmt)
+        assert "ON DUPLICATE KEY UPDATE" in sql
+
     def test_on_duplicate_key_update_dict_arg(self):
         """ON DUPLICATE KEY UPDATE with dict argument."""
         from sqlalchemy_cubrid.dml import insert
