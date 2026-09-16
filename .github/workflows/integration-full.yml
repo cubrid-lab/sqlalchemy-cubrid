@@ -146,4 +146,5 @@ jobs:
         HYPOTHESIS_PROFILE=nightly python -m pytest
         test/test_fuzz_select.py test/test_fuzz_insert.py
         test/test_fuzz_reflection.py test/test_metamorphic.py
+        test/capability/ test/test_driver_differential.py
         -v --tb=short
