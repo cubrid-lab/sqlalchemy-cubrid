@@ -72,6 +72,8 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
+> **Limitation — `stmt.inserted.col` and multi-row `VALUES` (#371):** referencing the inserted value only works for a **single-row** `INSERT` or for **executemany** (passing the row list to `Connection.execute(stmt, [rows])`, where each execution is logically single-row). It is **not** supported for an inline multi-row `insert(t).values([{...}, {...}])`: CUBRID has no `VALUES(col)` / row-alias syntax, so there is no single value to bind per conflicting row, and the dialect raises a `CompileError` rather than silently updating every conflicting row with one row's value. For a multi-row upsert, use executemany, split into single-row statements, use a literal/expression update (which does not reference the inserted value), or use `MERGE`.
+
 ### Argument Forms
 
 The `on_duplicate_key_update()` method accepts three argument forms:
