@@ -170,6 +170,24 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
+### 속성 기반 퍼즈 테스트 (Hypothesis)
+
+`test/test_fuzz_*.py`는 [Hypothesis](https://hypothesis.readthedocs.io/)를 사용해 손으로 작성한 스위트가 열거하지 않은 SELECT/INSERT/DDL 조합을 생성하고 dialect 불변식을 검증합니다(예상치 못한 컴파일 예외 없음, placeholder == 파라미터 개수, LIMIT/OFFSET 카디널리티, DDL/reflection 왕복). 오프라인 퍼즈 테스트는 일반 오프라인 스위트에서 실행되며, 라이브 실행 퍼즈 테스트는 `integration` 마커가 붙습니다.
+
+```bash
+# 빠른 프로파일 (기본, 테스트당 ~50 예제) — 오프라인 스위트와 함께 실행
+pytest test/test_fuzz_select.py -v
+
+# 확장 프로파일 (테스트당 2000 예제) — nightly 버그 헌트 프로파일
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -v
+
+# 라이브 실행 퍼징 (CUBRID 필요)
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -m integration -v
+```
+
+프로파일(`dev`, `ci`, `nightly`)은 `test/conftest.py`에 등록되며 `HYPOTHESIS_PROFILE`로 선택합니다. PR CI는 빠른 프로파일을 사용하고, nightly `integration-full` 워크플로는 라이브 CUBRID에 대해 확장 프로파일을 실행합니다.
+
 ### 통합 테스트 (CUBRID 필요)
 
 ```bash
