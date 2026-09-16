@@ -14,6 +14,7 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, select
 from sqlalchemy.exc import CompileError
 
 from sqlalchemy_cubrid._compat import bind_with_type, is_literal_value
+from sqlalchemy_cubrid.compiler import _MAX_ROW_COUNT
 from sqlalchemy_cubrid.dialect import CubridDialect
 
 
@@ -55,11 +56,22 @@ class TestSelectCompilation:
         assert "10" in sql
 
     def test_select_offset(self):
+        # CUBRID has no bare OFFSET, so an offset-only query renders
+        # LIMIT <offset>, <sentinel>. Assert on the constant rather than a
+        # literal so the sentinel can change without editing an unrelated-
+        # looking string here.
         stmt = select(users).offset(5)
         sql = _compile(stmt)
         assert "LIMIT" in sql
         assert "5" in sql
-        assert "1073741823" in sql
+        assert str(_MAX_ROW_COUNT) in sql
+
+    def test_offset_sentinel_does_not_truncate_realistic_result_sets(self):
+        # The sentinel is a real row-count ceiling, not a "no limit" keyword.
+        # It was previously 2**30-1 (the CUBRID max VARCHAR length, reused by
+        # mistake), which silently capped offset-only queries at ~1.07e9 rows.
+        assert _MAX_ROW_COUNT > 2**31 - 1
+        assert _MAX_ROW_COUNT == 2**63 - 1
 
     def test_select_limit_offset(self):
         stmt = select(users).limit(10).offset(5)
