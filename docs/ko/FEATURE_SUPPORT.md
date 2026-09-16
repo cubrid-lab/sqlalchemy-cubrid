@@ -133,7 +133,7 @@
 - **윈도우 함수**: CUBRID는 `OVER(PARTITION BY … ORDER BY …)`와 함께 `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()` 등의 윈도우 함수를 지원합니다. SA 기본 컴파일러가 이를 네이티브로 처리합니다.
 - **NULLS FIRST / NULLS LAST**: CUBRID는 `ORDER BY col ASC NULLS FIRST`와 `ORDER BY col DESC NULLS LAST`를 지원합니다. SA 기본 컴파일러가 네이티브로 처리합니다.
 - **GROUP_CONCAT**: CUBRID는 `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`를 지원합니다. `sa.func.group_concat(column)`을 사용하세요.
-- **LIMIT / OFFSET**: CUBRID는 MySQL 스타일 `LIMIT [offset,] count` 구문을 사용합니다. 단독 `OFFSET`이 없으므로, 오프셋만 주어지면 방언이 "오프셋 이후 전부"에 해당하는 행 수를 채워 `LIMIT offset, 9223372036854775807`(부호 있는 BIGINT 최댓값, CUBRID 11.4에서 확인)을 냅니다.
+- **LIMIT / OFFSET**: 방언은 MySQL 스타일 `LIMIT [offset,] count`를 냅니다. CUBRID에는 단독 `OFFSET`이 없으므로 오프셋만 주어져도 행 수를 반드시 명시해야 합니다. 이때 고정 상수를 쓸 수 없습니다. CUBRID가 이 절을 `offset + count`로 계산하기 때문에, 그 합이 부호 있는 BIGINT 최댓값을 넘으면 프리페어드 스테이트먼트가 `-458 Overflow occurred in addition context` 오류로 실패합니다. 그래서 방언은 `LIMIT offset, (9223372036854775807 - offset)` 형태로 렌더해 합을 항상 정확히 최댓값에 묶습니다. CUBRID 11.4.6에서 확인했습니다.
 - **조인 변형**: INNER JOIN과 LEFT OUTER JOIN은 정상 컴파일됩니다. FULL OUTER JOIN과 `LATERAL`은 CUBRID가 지원하지 않아 컴파일 중 거부됩니다.
 - **Lateral 조인**: CUBRID는 `LATERAL` 서브쿼리를 지원하지 않습니다. `LATERAL` 키워드는 구문 오류를 일으킵니다.
 - **전문 검색**: CUBRID는 `MATCH … AGAINST` 구문이나 전문 인덱스를 지원하지 않습니다.

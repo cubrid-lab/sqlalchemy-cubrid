@@ -57,8 +57,8 @@ class TestSelectCompilation:
 
     def test_select_offset(self):
         # CUBRID has no bare OFFSET, so an offset-only query renders
-        # LIMIT <offset>, <sentinel>. Assert on the constant rather than a
-        # literal so the sentinel can change without editing an unrelated-
+        # LIMIT <offset>, (<max> - <offset>). Assert on the constant rather
+        # than a literal so it can change without editing an unrelated-
         # looking string here.
         stmt = select(users).offset(5)
         sql = _compile(stmt)
@@ -66,12 +66,31 @@ class TestSelectCompilation:
         assert "5" in sql
         assert str(_MAX_ROW_COUNT) in sql
 
-    def test_offset_sentinel_does_not_truncate_realistic_result_sets(self):
-        # The sentinel is a real row-count ceiling, not a "no limit" keyword.
-        # It was previously 2**30-1, which silently capped offset-only
+    def test_offset_row_count_does_not_truncate_realistic_result_sets(self):
+        # The row count is a real ceiling, not a "no limit" keyword. It was
+        # previously the constant 2**30-1, which silently capped offset-only
         # queries at ~1.07e9 rows.
         assert _MAX_ROW_COUNT > 2**31 - 1
         assert _MAX_ROW_COUNT == 2**63 - 1
+
+    def test_offset_row_count_is_relative_to_the_offset(self):
+        # CUBRID evaluates LIMIT offset, count as offset + count and rejects a
+        # prepared statement whose sum exceeds the signed BIGINT maximum with
+        # -458 "Overflow occurred in addition context". A bare constant row
+        # count therefore breaks for every non-zero bound offset, so the count
+        # is rendered as (max - offset) and the sum stays at exactly the
+        # maximum. Verified live on CUBRID 11.4.6 via PREPARE/EXECUTE.
+        sql = _compile(select(users).offset(5))
+        # The offset is named twice: once as the offset, once in the count.
+        assert f"LIMIT 5, ({_MAX_ROW_COUNT} - 5)" in sql
+
+    def test_offset_only_binds_the_offset_twice(self):
+        # Positional paramstyle needs one value per placeholder, so the offset
+        # has to be registered for both occurrences, not rendered twice from a
+        # single bind.
+        compiled = select(users).offset(5).compile(dialect=CubridDialect())
+        assert str(compiled).count("?") == 2
+        assert list(compiled.positiontup) == ["param_1", "param_1"]
 
     def test_select_limit_offset(self):
         stmt = select(users).limit(10).offset(5)
