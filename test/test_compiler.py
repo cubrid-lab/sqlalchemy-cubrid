@@ -14,6 +14,7 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, select
 from sqlalchemy.exc import CompileError
 
 from sqlalchemy_cubrid._compat import bind_with_type, is_literal_value
+from sqlalchemy_cubrid.compiler import _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT
 from sqlalchemy_cubrid.dialect import CubridDialect
 
 
@@ -59,7 +60,16 @@ class TestSelectCompilation:
         sql = _compile(stmt)
         assert "LIMIT" in sql
         assert "5" in sql
-        assert "1073741823" in sql
+        assert str(_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT) in sql
+
+    def test_select_offset_does_not_cap_at_varchar_length(self):
+        # Regression for #414: offset-without-limit must not reuse the CUBRID
+        # VARCHAR-length constant (2^30-1) as the row_count, which silently
+        # caps result sets at ~1.07B rows.
+        stmt = select(users).offset(5)
+        sql = _compile(stmt)
+        assert "1073741823" not in sql
+        assert _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT == 9223372036854775807
 
     def test_select_limit_offset(self):
         stmt = select(users).limit(10).offset(5)

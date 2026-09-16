@@ -24,6 +24,12 @@ from sqlalchemy_cubrid._compat import (
     is_literal_value,
 )
 
+# CUBRID's LIMIT is ``offset, row_count`` with no bare-OFFSET form, so an
+# offset without a limit needs a row_count meaning "all remaining rows". CUBRID
+# accepts the signed BIGINT max here (verified on 11.4); do NOT reuse the
+# VARCHAR-length 2^30-1, which is a string bound and silently caps rows (#414).
+_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT: int = 9223372036854775807
+
 
 class CubridCompiler(compiler.SQLCompiler):
     """SQLCompiler subclass for CUBRID."""
@@ -203,7 +209,10 @@ class CubridCompiler(compiler.SQLCompiler):
             return ""
         if limit_clause is None:
             assert offset_clause is not None
-            return " \n LIMIT %s, 1073741823" % (self.process(offset_clause, **kw),)
+            return " \n LIMIT %s, %s" % (
+                self.process(offset_clause, **kw),
+                _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT,
+            )
         if offset_clause is not None:
             return " \n LIMIT %s, %s" % (
                 self.process(offset_clause, **kw),
