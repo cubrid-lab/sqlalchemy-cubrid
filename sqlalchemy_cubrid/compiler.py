@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from sqlalchemy.exc import CompileError
-from sqlalchemy.sql import compiler, elements
+from sqlalchemy.sql import compiler, elements, schema
 from sqlalchemy.sql import sqltypes
 
 from sqlalchemy_cubrid._compat import (
@@ -614,10 +614,14 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         if not column.nullable:
             colspec.append("NOT NULL")
 
+        # An Identity() is stored as column.server_default but is CUBRID's
+        # AUTO_INCREMENT, not a literal DEFAULT — treat it like no server_default
+        # here so the autoincrement column still emits AUTO_INCREMENT (#388).
+        server_default_is_identity = isinstance(column.server_default, schema.Identity)
         if (
             column.table is not None
             and column is column.table._autoincrement_column
-            and (column.server_default is None)
+            and (column.server_default is None or server_default_is_identity)
         ):
             colspec.append("AUTO_INCREMENT")
         else:

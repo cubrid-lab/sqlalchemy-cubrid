@@ -764,6 +764,26 @@ class TestDDLCompilation:
         ddl = self._compile_ddl(t)
         assert "AUTO_INCREMENT" not in ddl
 
+    def test_identity_maps_to_autoincrement(self):
+        """#388: Identity() is CUBRID's AUTO_INCREMENT, not a DEFAULT.
+
+        SQLAlchemy stores an ``Identity()`` as ``column.server_default``; the
+        DDL compiler must still emit AUTO_INCREMENT for the autoincrement column
+        rather than suppressing it as if a literal DEFAULT were present.
+        """
+        from sqlalchemy import Identity
+
+        m = MetaData()
+        t = Table(
+            "test_identity_ai",
+            m,
+            Column("id", Integer, Identity(), primary_key=True, autoincrement=True),
+            Column("name", String(100)),
+        )
+        ddl = self._compile_ddl(t)
+        assert "AUTO_INCREMENT" in ddl
+        assert "DEFAULT" not in ddl
+
     def test_not_null_in_ddl(self):
         """NOT NULL columns should emit NOT NULL."""
         m = MetaData()
