@@ -533,17 +533,44 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        show_columns_rows = [
-            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
-            ("name", "VARCHAR(50)", "YES", "", None, ""),
-        ]
-        constraint_result = MagicMock()
-        constraint_result.fetchone.return_value = ("pk_users",)
-        connection.execute.side_effect = [show_columns_rows, constraint_result]
+        # _db_index_key catalog rows: (key_attr_name, index_name), ordered.
+        catalog_rows = [("id", "pk_users")]
+        connection.execute.side_effect = [catalog_rows]
 
         pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 
         assert pk == {"name": "pk_users", "constrained_columns": ["id"]}
+
+    def test_get_pk_constraint_composite_key_keeps_all_columns(self):
+        """#426: a composite PK must reflect every column in key order."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        catalog_rows = [("a", "pk_t_a_b"), ("b", "pk_t_a_b")]
+        connection.execute.side_effect = [catalog_rows]
+
+        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "t")
+
+        assert pk == {"name": "pk_t_a_b", "constrained_columns": ["a", "b"]}
+
+    def test_get_pk_constraint_falls_back_to_show_columns(self):
+        """If the catalog query fails, fall back to SHOW COLUMNS (single PK)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        show_columns_rows = [
+            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
+            ("name", "VARCHAR(50)", "YES", "", None, ""),
+        ]
+        connection.execute.side_effect = [Exception("catalog unavailable"), show_columns_rows]
+
+        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
+
+        assert pk == {"name": None, "constrained_columns": ["id"]}
 
     def test_get_foreign_keys_success_and_exception(self):
         dialect = CubridDialect()
@@ -896,26 +923,22 @@ class TestReflectionMethods:
         assert uqs == [{"name": "uq_users_email", "column_names": ["email"]}]
 
     def test_get_pk_constraint_name_from_index(self):
-        """PK constraint name is fetched from _db_index (not the phantom db_constraint)."""
+        """PK columns and name come from the _db_index_key catalog (#426)."""
         dialect = CubridDialect()
 
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        show_columns_rows = [
-            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
-        ]
-        index_result = MagicMock()
-        index_result.fetchone.return_value = ("pk_users",)
-        connection.execute.side_effect = [show_columns_rows, index_result]
+        catalog_rows = [("id", "pk_users")]
+        connection.execute.side_effect = [catalog_rows]
 
         pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 
         assert pk == {"name": "pk_users", "constrained_columns": ["id"]}
 
     def test_get_pk_constraint_name_query_failure_returns_none(self):
-        """When _db_index query fails, PK name should be None but columns still returned."""
+        """When the catalog query fails, fall back to SHOW COLUMNS with no name."""
         dialect = CubridDialect()
 
         connection = MagicMock()
@@ -925,7 +948,7 @@ class TestReflectionMethods:
         show_columns_rows = [
             ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
         ]
-        connection.execute.side_effect = [show_columns_rows, RuntimeError("index query failed")]
+        connection.execute.side_effect = [RuntimeError("index query failed"), show_columns_rows]
 
         pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 

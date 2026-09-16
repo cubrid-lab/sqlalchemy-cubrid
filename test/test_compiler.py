@@ -2078,13 +2078,13 @@ class TestDialectReflectionExceptionPaths:
         assert result[0].get("comment") is None
 
     def test_get_pk_constraint_exception(self):
-        """dialect.py lines 303-304: Exception in constraint query is caught."""
+        """When the catalog query raises, fall back to SHOW COLUMNS (#426)."""
         from unittest.mock import MagicMock
 
         dialect = CubridDialect()
         conn = MagicMock()
 
-        # First call: SHOW COLUMNS returns PRI column
+        # SHOW COLUMNS fallback returns the single PRI column.
         columns_result = MagicMock()
         columns_result.__iter__ = MagicMock(
             return_value=iter(
@@ -2099,15 +2099,16 @@ class TestDialectReflectionExceptionPaths:
         def side_effect(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                return columns_result
-            else:
-                raise Exception("constraint query failed")
+                # First call is the _db_index_key catalog query — make it fail.
+                raise Exception("catalog query failed")
+            return columns_result
 
         conn.execute = MagicMock(side_effect=side_effect)
 
         result = dialect.get_pk_constraint(conn, "test_table", None)
         assert result["constrained_columns"] == ["id"]
-        # constraint_name should be None because the second query failed
+        # constraint_name is None because the catalog query (which carries the
+        # name) failed and the SHOW COLUMNS fallback has no name.
         assert result["name"] is None
 
 
