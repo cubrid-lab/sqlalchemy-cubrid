@@ -152,6 +152,19 @@ tested and the CI matrix updated. Potential concerns:
 - New SQL features may need compiler updates
 - New data types may need type mapping additions
 
+### 5. `NUMERIC` / `DECIMAL` fractional precision is lost
+
+The `CUBRIDdb` C-extension driver truncates the fractional part of
+`NUMERIC` / `DECIMAL` values *below* the DB-API layer: a column storing
+`15.7563` comes back as `15`. Because the digits are discarded inside the
+driver before SQLAlchemy receives the value, no dialect result processor can
+recover them. This is an upstream driver limitation, not a dialect bug.
+
+Use the pure-Python `cubrid+pycubrid://` driver for correct `Decimal`
+round-trips — it returns `Decimal` values natively with full precision
+(verified on CUBRID 11.4). This is one of the reasons `pycubrid` is the
+recommended driver for new projects.
+
 ---
 
 ## Installation Notes

@@ -78,7 +78,10 @@ test/test_suite.py::IdentityAutoincrementTest::test_autoincrement_with_identity
 # NormalizedNameTest (1): identifier normalization — #387
 test/test_suite.py::NormalizedNameTest::test_get_table_names
 
-# NumericTest (7): C-driver returns float where SA expects Decimal — #386
+# NumericTest (7): CUBRIDdb C-extension truncates fractional NUMERIC/DECIMAL
+# values below the DBAPI layer (returns 15 for 15.7563), so no dialect result
+# processor can recover them — an upstream C-driver limitation, not a dialect
+# bug. Use cubrid+pycubrid://, which returns Decimal correctly. See #386.
 test/test_suite.py::NumericTest::test_decimal_coerce_round_trip
 test/test_suite.py::NumericTest::test_enotation_decimal
 test/test_suite.py::NumericTest::test_enotation_decimal_large
