@@ -113,6 +113,27 @@ jobs:
           pip install -e ".[pycubrid]"
           python -m pytest test/test_aio_integration.py -v --tb=short
 
+      # Snapshot generation is gated to a single Python (3.12) so the 5x4
+      # Python x CUBRID matrix yields exactly one artifact per CUBRID version,
+      # which the version-differential job below compares.
+      - name: Generate version-differential snapshot
+        if: matrix.python-version == '3.12'
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+        run: |
+          python -m test.version_differential.snapshot \
+            --url "$CUBRID_TEST_URL" \
+            --out "snapshot-${{ matrix.cubrid-version }}.json" \
+            --label "${{ matrix.cubrid-version }}"
+
+      - name: Upload version-differential snapshot
+        if: matrix.python-version == '3.12'
+        uses: actions/upload-artifact@v4
+        with:
+          name: vdiff-snapshot-${{ matrix.cubrid-version }}
+          path: snapshot-${{ matrix.cubrid-version }}.json
+          retention-days: 7
+
   full-matrix-result:
     name: Full compatibility matrix result
     runs-on: ubuntu-latest
@@ -126,6 +147,33 @@ jobs:
             exit 1
           fi
           echo "Full compatibility matrix passed."
+
+  version-differential:
+    name: CUBRID version-differential
+    runs-on: ubuntu-latest
+    needs: [integration-full]
+    if: always()
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Download all version snapshots
+        uses: actions/download-artifact@v4
+        with:
+          pattern: vdiff-snapshot-*
+          merge-multiple: true
+
+      - name: Compare snapshots across CUBRID versions
+        run: |
+          shopt -s nullglob
+          snapshots=(snapshot-*.json)
+          if [ "${#snapshots[@]}" -lt 2 ]; then
+            echo "::error::Expected >=2 version snapshots, found ${#snapshots[@]}. Snapshot generation in the matrix likely failed."
+            exit 1
+          fi
+          python -m test.version_differential.compare_snapshots "${snapshots[@]}"
 
   # Property-based bug hunt (stabilization Phases 1-4): run the Hypothesis fuzz
   # and metamorphic suites with the extended "nightly" profile (2000
