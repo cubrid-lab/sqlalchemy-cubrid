@@ -22,8 +22,21 @@
 #
 # Each group links to the follow-up issue that tracks the real fix. Removing an
 # entry (fixing the bug) is the goal; adding one requires a linked reason.
+#
+# CLASSIFICATION (every group is exactly one of these — see the [CATEGORY] tag):
+#   [DIALECT BUG]          sqlalchemy-cubrid must fix this. Actively tracked.
+#   [DRIVER LIMITATION]    CUBRIDdb or pycubrid behaves differently below the
+#                          dialect; cannot be fixed in the dialect (the other
+#                          driver often passes). Documented, driver-qualified.
+#   [BACKEND / SUITE LIMIT] CUBRID does not support the feature, or the
+#                          SQLAlchemy compliance suite asserts backend-specific
+#                          behavior a third-party dialect cannot satisfy. Stable
+#                          by design; will not be "fixed" in the dialect.
+# Verified group-by-group against a live CUBRID 11.4 (pycubrid + the C-driver
+# gating cell). As of this baseline: 52 entries, 0 XPASS, 0 unclassified.
 
-# ComponentReflectionTest (25): reflection gaps (comments/autoincrement/noncol index) — #387
+# [DIALECT BUG] ComponentReflectionTest (25): reflection gaps (comments /
+# autoincrement / non-column index) — sqlalchemy-cubrid must fix. Tracked in #387.
 test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]
 test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]
 test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY_VIEW-ObjectScope.ANY-None-_exclusions_00]
@@ -50,14 +63,14 @@ test/test_suite.py::ComponentReflectionTest::test_get_view_names[False-_exclusio
 test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_columns-_exclusions_01]
 test/test_suite.py::ComponentReflectionTest::test_unreflectable
 
-# DistinctOnTest (1): CUBRID has no DISTINCT ON (PostgreSQL-only). The dialect
+# [BACKEND / SUITE LIMIT] DistinctOnTest (1): CUBRID has no DISTINCT ON (PostgreSQL-only). The dialect
 # correctly renders `.distinct(col)` as plain `SELECT DISTINCT`, and
 # supports_distinct_on is already closed(), but SA's test additionally asserts a
 # PostgreSQL-only deprecation warning that third-party dialects do not emit, so
 # it fails rather than xfails. Stable non-capability, not a dialect bug — #388
 test/test_suite.py::DistinctOnTest::test_distinct_on
 
-# HasTableTest (8): SA suite's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed)
+# [BACKEND / SUITE LIMIT] HasTableTest (8): SA suite's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed)
 test/test_suite.py::HasTableTest::test_has_table
 test/test_suite.py::HasTableTest::test_has_table_cache
 test/test_suite.py::HasTableTest::test_has_table_nonexistent_schema
@@ -67,10 +80,10 @@ test/test_suite.py::HasTableTest::test_has_table_temp_view
 test/test_suite.py::HasTableTest::test_has_table_view
 test/test_suite.py::HasTableTest::test_has_table_view_schema
 
-# NormalizedNameTest (1): identifier normalization — #387
+# [DIALECT BUG] NormalizedNameTest (1): identifier normalization — sqlalchemy-cubrid must fix. Tracked in #387.
 test/test_suite.py::NormalizedNameTest::test_get_table_names
 
-# NumericTest (7): CUBRIDdb C-extension truncates fractional NUMERIC/DECIMAL
+# [DRIVER LIMITATION] NumericTest (7): CUBRIDdb C-extension truncates fractional NUMERIC/DECIMAL
 # values below the DBAPI layer (returns 15 for 15.7563), so no dialect result
 # processor can recover them — an upstream C-driver limitation, not a dialect
 # bug. Use cubrid+pycubrid://, which returns Decimal correctly. See #386.
@@ -82,7 +95,7 @@ test/test_suite.py::NumericTest::test_float_as_float
 test/test_suite.py::NumericTest::test_float_coerce_round_trip
 test/test_suite.py::NumericTest::test_float_custom_scale
 
-# ReturningGuardsTest (6): CUBRID has no RETURNING and the dialect rejects it at
+# [BACKEND / SUITE LIMIT] ReturningGuardsTest (6): CUBRID has no RETURNING and the dialect rejects it at
 # COMPILE time (CompileError) — earlier and cleaner than SA's guard test expects
 # (it expects a runtime DBAPIError/StatementError after the statement reaches the
 # DB). insert/update/delete_returning are already closed(); this is a stable
@@ -94,13 +107,18 @@ test/test_suite.py::ReturningGuardsTest::test_insert_single
 test/test_suite.py::ReturningGuardsTest::test_update_many
 test/test_suite.py::ReturningGuardsTest::test_update_single
 
-# RowCountTest (2): DRIVER-SPECIFIC — the CUBRIDdb C-extension driver does not
+# [DRIVER LIMITATION] RowCountTest (2): DRIVER-SPECIFIC — the CUBRIDdb C-extension driver does not
 # report multi-row UPDATE/DELETE rowcount correctly. These PASS on the
 # recommended cubrid+pycubrid:// driver; the gating cell runs the C driver, so
 # they are listed here for that driver only — #388
 test/test_suite.py::RowCountTest::test_multi_delete_rowcount
 test/test_suite.py::RowCountTest::test_multi_update_rowcount
 
-# TrueDivTest (2): true-division numeric typing — #386
+# [BACKEND / SUITE LIMIT] TrueDivTest::test_truediv_float (1): CUBRID FLOAT is
+# single precision, so `Float(5.52) / Float(2.4)` returns 2.299999952316284,
+# not 2.3 — a backend precision limit, not a dialect bug — #388
 test/test_suite.py::TrueDivTest::test_truediv_float[5.52-2.4-2.3]
+# [DRIVER LIMITATION] TrueDivTest::test_truediv_integer_bound (1): DRIVER-SPECIFIC
+# — `literal(15) / literal(10)` must yield 1.5. PASSES on cubrid+pycubrid://
+# (returns Decimal('1.5')); the C-extension gating cell reports it differently — #388
 test/test_suite.py::TrueDivTest::test_truediv_integer_bound
