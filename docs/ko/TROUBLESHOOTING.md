@@ -365,15 +365,29 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **증상:** 페이지네이션에서 예기치 않은 쿼리 동작.
 
-**CUBRID는 표준 `LIMIT n OFFSET m` 구문을 지원합니다.** 방언이 자동 생성합니다:
+**방언은 항상 MySQL 스타일 `LIMIT offset, row_count`를 냅니다.** CUBRID는 표준
+`LIMIT row_count OFFSET offset` 형태도 받아들이지만 방언이 이를 생성하지는 않으므로, 쿼리 로그에서
+보게 되는 것은 쉼표 형태입니다:
 
 ```python
-# SQLAlchemy가 올바른 CUBRID LIMIT/OFFSET 생성
 stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 10 OFFSET 20
+# → SELECT ... FROM users LIMIT 20, 10
 ```
 
-**참고:** CUBRID는 MySQL의 `LIMIT offset, count` 쉼표 구문을 지원하지 않습니다. 방언은 항상 `LIMIT n OFFSET m`을 사용합니다.
+피연산자 순서에 주의하세요. 오프셋이 앞에 옵니다. `LIMIT 20, 10`은 20행을 건너뛰고 10행을 반환하며,
+10행부터 20행으로 제한한다는 뜻이 아닙니다.
+
+**LIMIT 없는 OFFSET.** CUBRID에는 단독 `OFFSET`이 없어서(`SELECT ... OFFSET 5`는 문법 오류입니다)
+`.limit()` 없이 `.offset(n)`만 준 경우에도 행 수를 반드시 명시해야 합니다. 방언은 사실상 무제한에
+해당하는 값을 채워 넣습니다:
+
+```python
+stmt = select(users).offset(5)
+# → SELECT ... FROM users LIMIT 5, 4611686018427387904
+```
+
+쿼리 로그의 두 번째 피연산자가 아주 큰 수인 것은 이 센티넬이며 버그가 아닙니다. 정확한 값과 부호 있는
+BIGINT 최댓값을 의도적으로 피한 이유는 [기능 지원](FEATURE_SUPPORT.md)을 참고하세요.
 
 ---
 
