@@ -144,6 +144,43 @@ class TestInsertCompilation:
         assert "INSERT INTO" in sql
         assert "users" in sql
 
+    def test_insertmanyvalues_dropped_for_bind_expression_column(self):
+        """#421: a column type with a bind_expression() disables insertmanyvalues.
+
+        SQLAlchemy's insertmanyvalues row-expansion miscounts parameters when a
+        bind is wrapped in a bind_expression (e.g. CAST(? AS ...)), so the CUBRID
+        dialect drops the plan (in visit_insert) and falls back to ordinary
+        executemany. The detection helper distinguishes the two cases.
+        """
+        from sqlalchemy import Integer, String, TypeDecorator, cast, insert, type_coerce
+        from sqlalchemy.schema import MetaData, Table
+
+        from sqlalchemy_cubrid.compiler import CubridCompiler
+
+        class StringAsInt(TypeDecorator):
+            impl = String(50)
+            cache_ok = True
+
+            def bind_expression(self, col):
+                return cast(type_coerce(col, Integer), String(50))
+
+        m = MetaData()
+        with_expr = Table(
+            "t_bindexpr",
+            m,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("x", StringAsInt()),
+        )
+        plain = Table(
+            "t_plain",
+            m,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("x", String(50)),
+        )
+
+        assert CubridCompiler._insert_has_bind_expression(insert(with_expr)) is True
+        assert CubridCompiler._insert_has_bind_expression(insert(plain)) is False
+
 
 class TestWindowFunctionCompilation:
     """Test window function compilation."""
