@@ -213,8 +213,11 @@ class CubridCompiler(compiler.SQLCompiler):
         if limit_clause is None:
             assert offset_clause is not None
             # offset is processed twice on purpose: the clause has to name it
-            # both as the offset and inside the row-count expression.
-            return " \n LIMIT %s, (%d - %s)" % (
+            # both as the offset and inside the row-count expression. It is
+            # parenthesised there because the offset may itself be an
+            # expression -- without the parentheses "MAX - 1 + 2" groups as
+            # "(MAX - 1) + 2" and overflows.
+            return " \n LIMIT %s, (%d - (%s))" % (
                 self.process(offset_clause, **kw),
                 _MAX_ROW_COUNT,
                 self.process(offset_clause, **kw),

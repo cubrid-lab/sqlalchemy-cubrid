@@ -10,7 +10,15 @@ from __future__ import annotations
 import pytest
 import sqlalchemy as sa
 from typing import Any, cast
-from sqlalchemy import Column, Integer, MetaData, String, Table, select
+from sqlalchemy import (
+    Column,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    literal_column,
+    select,
+)
 from sqlalchemy.exc import CompileError
 
 from sqlalchemy_cubrid._compat import bind_with_type, is_literal_value
@@ -82,7 +90,16 @@ class TestSelectCompilation:
         # maximum. Verified live on CUBRID 11.4.6 via PREPARE/EXECUTE.
         sql = _compile(select(users).offset(5))
         # The offset is named twice: once as the offset, once in the count.
-        assert f"LIMIT 5, ({_MAX_ROW_COUNT} - 5)" in sql
+        assert f"LIMIT 5, ({_MAX_ROW_COUNT} - (5))" in sql
+
+    def test_offset_expression_is_parenthesised_in_the_row_count(self):
+        # The offset can be an expression, and the subtraction has to bind
+        # tighter than it does. Unparenthesised, "MAX - 1 + 2" groups as
+        # "(MAX - 1) + 2", which overflows -- CUBRID 11.4.6 answers -494
+        # "Data overflow on data type bigint".
+        stmt = select(users).offset(literal_column("1") + literal_column("2"))
+        sql = _compile(stmt)
+        assert f"({_MAX_ROW_COUNT} - (1 + 2))" in sql
 
     def test_offset_only_binds_the_offset_twice(self):
         # Positional paramstyle needs one value per placeholder, so the offset
