@@ -82,6 +82,24 @@ from sqlalchemy.types import (
 
 log = logging.getLogger(__name__)
 
+# CUBRID "table not found" signature (errno -493, SQLSTATE 42S02). Used to
+# translate a raw driver error from SHOW COLUMNS / SHOW INDEXES on a missing
+# table into SQLAlchemy's NoSuchTableError, which the reflection contract
+# requires (e.g. Inspector.get_columns("missing") must raise NoSuchTableError).
+_NO_SUCH_TABLE_ERRNO = -493
+_NO_SUCH_TABLE_SQLSTATE = "42S02"
+
+
+def _is_no_such_table_error(error: BaseException) -> bool:
+    orig = getattr(error, "orig", error)
+    if getattr(orig, "errno", None) == _NO_SUCH_TABLE_ERRNO:
+        return True
+    if getattr(orig, "sqlstate", None) == _NO_SUCH_TABLE_SQLSTATE:
+        return True
+    message = str(orig)
+    return "Unknown class" in message or "Table not found" in message
+
+
 # Pre-compiled patterns for column type parsing in get_columns().
 # Avoids re-compilation on every reflection call.
 _RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
@@ -262,7 +280,7 @@ class CubridDialect(default.DefaultDialect):
     max_index_name_length = 254
     max_constraint_name_length = 254
 
-    requires_name_normalize = True
+    requires_name_normalize = False
 
     # Data type support
     supports_native_enum = True
@@ -387,7 +405,12 @@ class CubridDialect(default.DefaultDialect):
 
         columns: list[ReflectedColumn] = []
         quoted = self.identifier_preparer.quote_identifier(table_name)
-        result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+        try:
+            result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+        except Exception as error:
+            if _is_no_such_table_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
         for row in result:
             colname = row[0]
             coltype_raw = row[1]
@@ -476,7 +499,7 @@ class CubridDialect(default.DefaultDialect):
             comment_result = connection.execute(
                 text(
                     "SELECT attr_name, comment FROM _db_attribute "
-                    "WHERE class_name = :name ORDER BY def_order"
+                    "WHERE class_of.class_name = :name ORDER BY def_order"
                 ),
                 {"name": table_name},
             )
@@ -644,7 +667,10 @@ class CubridDialect(default.DefaultDialect):
         if not self._schema_is_default(schema):
             return []
         result = connection.execute(
-            text("SELECT class_name FROM db_class WHERE class_type = 'VCLASS'")
+            text(
+                "SELECT class_name FROM db_class "
+                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO'"
+            )
         )
         return [row[0] for row in result]
 
@@ -711,7 +737,12 @@ class CubridDialect(default.DefaultDialect):
             )
 
         quoted = self.identifier_preparer.quote_identifier(table_name)
-        result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        try:
+            result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        except Exception as error:
+            if _is_no_such_table_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
         for row in result:
             index_name = row[2]
 
@@ -888,12 +919,12 @@ class CubridDialect(default.DefaultDialect):
 
         ``schema is None`` means "the default schema" in SQLAlchemy, so it is
         always accepted; a non-``None`` schema is accepted only when it matches
-        :attr:`default_schema_name`.  The comparison normalizes case via
-        :meth:`normalize_name` (CUBRID reports catalog names uppercased while
-        SQLAlchemy works in lower case), so ``schema="dba"`` matches a default
-        of ``"DBA"``.  Explicitly-quoted names (``quoted_name`` with
-        ``quote=True``) are compared case-sensitively, honouring the user's
-        intent to preserve case.  List/existence reflection methods
+        :attr:`default_schema_name`.  CUBRID folds unquoted identifiers to lower
+        case, so the comparison is case-insensitive for unquoted names and
+        ``schema="DBA"`` matches a default of ``"dba"``.  Explicitly-quoted names
+        (``quoted_name`` with ``quote=True``) are compared case-sensitively,
+        honouring the user's intent to preserve case.  List/existence reflection
+        methods
         (:meth:`get_table_names`, :meth:`get_view_names`, :meth:`has_table`,
         :meth:`has_index`) use this directly to return empty/false for a
         non-default schema, while object-detail methods go through
