@@ -24,11 +24,14 @@ from sqlalchemy_cubrid._compat import (
     is_literal_value,
 )
 
-# CUBRID's LIMIT is ``offset, row_count`` with no bare-OFFSET form, so an
-# offset without a limit needs a row_count meaning "all remaining rows". CUBRID
-# accepts the signed BIGINT max here (verified on 11.4); do NOT reuse the
-# VARCHAR-length 2^30-1, which is a string bound and silently caps rows (#414).
-_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT: int = 9223372036854775807
+# CUBRID's LIMIT is ``offset, row_count`` with no bare-OFFSET form, so an offset
+# without a limit needs a row_count meaning "all remaining rows". CUBRID computes
+# ``offset + row_count`` internally and overflow-checks it against the signed
+# BIGINT max, so the sentinel cannot be 2^63-1 (any positive offset overflows:
+# errno -458). 2^62 is effectively unbounded (~4.6e18 rows) yet leaves ~4.6e18
+# rows of offset headroom before the sum overflows. Do NOT reuse the VARCHAR-
+# length 2^30-1: it is a string bound and silently caps rows (#414).
+_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT: int = 4611686018427387904
 
 
 class CubridCompiler(compiler.SQLCompiler):

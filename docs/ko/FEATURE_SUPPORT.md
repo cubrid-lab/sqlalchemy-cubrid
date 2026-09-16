@@ -133,7 +133,7 @@
 - **윈도우 함수**: CUBRID는 `OVER(PARTITION BY … ORDER BY …)`와 함께 `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()` 등의 윈도우 함수를 지원합니다. SA 기본 컴파일러가 이를 네이티브로 처리합니다.
 - **NULLS FIRST / NULLS LAST**: CUBRID는 `ORDER BY col ASC NULLS FIRST`와 `ORDER BY col DESC NULLS LAST`를 지원합니다. SA 기본 컴파일러가 네이티브로 처리합니다.
 - **GROUP_CONCAT**: CUBRID는 `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`를 지원합니다. `sa.func.group_concat(column)`을 사용하세요.
-- **LIMIT / OFFSET**: CUBRID는 MySQL 스타일 `LIMIT [offset,] count` 구문을 사용합니다. 오프셋만 주어지면 방언은 "남은 모든 행" 센티넬로 `LIMIT offset, 9223372036854775807`(부호 있는 BIGINT 최댓값)을 내며, 이는 SQLAlchemy의 MySQL 방언이 오프셋 단독을 처리하는 방식과 동일합니다.
+- **LIMIT / OFFSET**: CUBRID는 MySQL 스타일 `LIMIT [offset,] count` 구문을 사용합니다. 오프셋만 주어지면 방언은 "남은 모든 행" 센티넬로 `LIMIT offset, 4611686018427387904`(2^62)를 냅니다 — 사실상 무제한이면서, CUBRID가 내부적으로 계산하는 `offset + count` 덧셈이 부호 있는 BIGINT 범위를 넘어 오버플로하지 않을 만큼 작습니다.
 - **조인 변형**: INNER JOIN과 LEFT OUTER JOIN은 정상 컴파일됩니다. FULL OUTER JOIN과 `LATERAL`은 CUBRID가 지원하지 않아 컴파일 중 거부됩니다.
 - **Lateral 조인**: CUBRID는 `LATERAL` 서브쿼리를 지원하지 않습니다. `LATERAL` 키워드는 구문 오류를 일으킵니다.
 - **전문 검색**: CUBRID는 `MATCH … AGAINST` 구문이나 전문 인덱스를 지원하지 않습니다.

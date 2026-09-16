@@ -65,11 +65,12 @@ class TestSelectCompilation:
     def test_select_offset_does_not_cap_at_varchar_length(self):
         # Regression for #414: offset-without-limit must not reuse the CUBRID
         # VARCHAR-length constant (2^30-1) as the row_count, which silently
-        # caps result sets at ~1.07B rows.
+        # caps result sets at ~1.07B rows. It must also stay below 2^63-1 so
+        # CUBRID's internal offset+row_count addition does not overflow.
         stmt = select(users).offset(5)
         sql = _compile(stmt)
         assert "1073741823" not in sql
-        assert _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT == 9223372036854775807
+        assert _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT == 4611686018427387904
 
     def test_select_limit_offset(self):
         stmt = select(users).limit(10).offset(5)
