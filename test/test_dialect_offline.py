@@ -572,6 +572,59 @@ class TestReflectionMethods:
 
         assert pk == {"name": None, "constrained_columns": ["id"]}
 
+    def test_is_no_such_table_error_detection(self):
+        """#387: the not-found predicate matches CUBRID's errno/sqlstate/message."""
+        from sqlalchemy_cubrid.dialect import _is_no_such_table_error
+
+        class _ByErrno(Exception):
+            errno = -493
+
+        class _BySqlstate(Exception):
+            sqlstate = "42S02"
+
+        assert _is_no_such_table_error(_ByErrno()) is True
+        assert _is_no_such_table_error(_BySqlstate()) is True
+        assert _is_no_such_table_error(Exception('Unknown class "dba.x"')) is True
+        assert _is_no_such_table_error(Exception("Table not found")) is True
+        assert _is_no_such_table_error(Exception("some other error")) is False
+
+    def test_get_columns_missing_table_raises_no_such_table(self):
+        """#387: get_columns on a missing table raises NoSuchTableError."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = Exception('Unknown class "dba.missing"')
+
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_columns", connection, "missing")
+
+    def test_get_columns_other_error_propagates(self):
+        """#387: a non-not-found error from SHOW COLUMNS is not swallowed."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = RuntimeError("connection reset")
+
+        with pytest.raises(RuntimeError):
+            _invoke_reflection(dialect, "get_columns", connection, "t")
+
+    def test_get_indexes_missing_table_raises_no_such_table(self):
+        """#387: get_indexes on a missing table raises NoSuchTableError."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        # First call is the batch index-flag catalog query; then SHOW INDEXES.
+        connection.execute.side_effect = [
+            [],
+            Exception("Table not found"),
+        ]
+
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_indexes", connection, "missing")
+
     def test_get_foreign_keys_success_and_exception(self):
         dialect = CubridDialect()
         # ``main`` is this connection's effective schema; passing it must not

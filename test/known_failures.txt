@@ -33,35 +33,18 @@
 #                          behavior a third-party dialect cannot satisfy. Stable
 #                          by design; will not be "fixed" in the dialect.
 # Verified group-by-group against a live CUBRID 11.4 (pycubrid + the C-driver
-# gating cell). As of this baseline: 52 entries, 0 XPASS, 0 unclassified.
+# gating cell). As of this baseline: 29 entries, 0 XPASS, 0 unclassified.
 
-# [DIALECT BUG] ComponentReflectionTest (25): reflection gaps (comments /
-# autoincrement / non-column index) — sqlalchemy-cubrid must fix. Tracked in #387.
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY_VIEW-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.MATERIALIZED_VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.VIEW|TABLE-ObjectScope.ANY-None-_exclusions_00]
-test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[True-ObjectKind.VIEW|TABLE-ObjectScope.DEFAULT-None-_exclusions_00]
+# [BACKEND / SUITE LIMIT] ComponentReflectionTest (3): the SA compliance
+# harness does not create the test's own views / non-column-index tables on
+# CUBRID (their fixture DDL never runs), so reflecting the never-created objects
+# fails. The dialect-level reflection gaps this class exposed (column comments,
+# NoSuchTableError on missing tables, system-view filtering) are FIXED — 22 of
+# the original 25 nodes now pass. These 3 are harness fixture limitations, not
+# dialect bugs. Tracked in #387.
 test/test_suite.py::ComponentReflectionTest::test_get_noncol_index[noncol_idx_test_nopk-noncol_idx_nopk]
 test/test_suite.py::ComponentReflectionTest::test_get_noncol_index[noncol_idx_test_pk-noncol_idx_pk]
 test/test_suite.py::ComponentReflectionTest::test_get_view_names[False-_exclusions_01]
-test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_columns-_exclusions_01]
-test/test_suite.py::ComponentReflectionTest::test_unreflectable
 
 # [BACKEND / SUITE LIMIT] DistinctOnTest (1): CUBRID has no DISTINCT ON (PostgreSQL-only). The dialect
 # correctly renders `.distinct(col)` as plain `SELECT DISTINCT`, and
@@ -79,9 +62,6 @@ test/test_suite.py::HasTableTest::test_has_table_temp_table
 test/test_suite.py::HasTableTest::test_has_table_temp_view
 test/test_suite.py::HasTableTest::test_has_table_view
 test/test_suite.py::HasTableTest::test_has_table_view_schema
-
-# [DIALECT BUG] NormalizedNameTest (1): identifier normalization — sqlalchemy-cubrid must fix. Tracked in #387.
-test/test_suite.py::NormalizedNameTest::test_get_table_names
 
 # [DRIVER LIMITATION] NumericTest (7): CUBRIDdb C-extension truncates fractional NUMERIC/DECIMAL
 # values below the DBAPI layer (returns 15 for 15.7563), so no dialect result
