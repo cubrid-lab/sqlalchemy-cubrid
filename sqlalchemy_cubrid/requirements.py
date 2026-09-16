@@ -185,6 +185,16 @@ class Requirements(SuiteRequirements):
         return _OPEN
 
     @property
+    def datetime_microseconds(self) -> compound:
+        """CUBRID DATETIME stores millisecond precision only (39642µs → 39000µs)."""
+        return _CLOSED
+
+    @property
+    def time_microseconds(self) -> compound:
+        """CUBRID TIME stores no fractional seconds."""
+        return _CLOSED
+
+    @property
     def text_type(self) -> compound:
         return _OPEN
 
