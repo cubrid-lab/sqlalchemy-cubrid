@@ -169,6 +169,31 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
+### Property-Based Fuzz Tests (Hypothesis)
+
+`test/test_fuzz_*.py` use [Hypothesis](https://hypothesis.readthedocs.io/) to
+generate SELECT/INSERT/DDL combinations the hand-written suite never enumerated
+and assert dialect invariants (no unexpected compile exception, placeholder ==
+parameter count, LIMIT/OFFSET cardinality, DDL/reflection round-trip). The
+offline fuzz tests run in the normal offline suite; live-execution fuzz tests
+are `integration`-marked.
+
+```bash
+# Fast profile (default, ~50 examples/test) — runs with the offline suite
+pytest test/test_fuzz_select.py -v
+
+# Extended profile (2000 examples/test) — the nightly bug-hunt profile
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -v
+
+# Live-execution fuzzing (requires CUBRID)
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -m integration -v
+```
+
+Profiles (`dev`, `ci`, `nightly`) are registered in `test/conftest.py` and
+selected via `HYPOTHESIS_PROFILE`. PR CI uses the fast profile; the nightly
+`integration-full` workflow runs the extended profile against live CUBRID.
+
 ### Integration Tests (Requires CUBRID)
 
 ```bash

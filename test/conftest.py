@@ -16,6 +16,26 @@ import re
 import sys
 from pathlib import Path
 
+try:
+    from hypothesis import HealthCheck, settings
+
+    settings.register_profile("dev", max_examples=50)
+    settings.register_profile(
+        "ci",
+        max_examples=100,
+        deadline=None,
+        suppress_health_check=[HealthCheck.too_slow],
+    )
+    settings.register_profile(
+        "nightly",
+        max_examples=2000,
+        deadline=None,
+        suppress_health_check=[HealthCheck.too_slow],
+    )
+    settings.load_profile(os.environ.get("HYPOTHESIS_PROFILE", "dev"))
+except ModuleNotFoundError:  # hypothesis is a dev-only dependency
+    pass
+
 
 def _item_is_skipped(item) -> bool:  # noqa: ANN001
     """True if the item carries an active skip/skipif for the current run.
