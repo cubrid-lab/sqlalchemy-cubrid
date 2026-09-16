@@ -68,8 +68,8 @@ class TestSelectCompilation:
 
     def test_offset_sentinel_does_not_truncate_realistic_result_sets(self):
         # The sentinel is a real row-count ceiling, not a "no limit" keyword.
-        # It was previously 2**30-1 (the CUBRID max VARCHAR length, reused by
-        # mistake), which silently capped offset-only queries at ~1.07e9 rows.
+        # It was previously 2**30-1, which silently capped offset-only
+        # queries at ~1.07e9 rows.
         assert _MAX_ROW_COUNT > 2**31 - 1
         assert _MAX_ROW_COUNT == 2**63 - 1
 
