@@ -167,7 +167,26 @@ class CubridCompiler(compiler.SQLCompiler):
 
     def visit_insert(self, insert_stmt: Any, **kw: Any) -> Any:
         self._check_returning(insert_stmt, "INSERT")
-        return super().visit_insert(insert_stmt, **kw)
+        result = super().visit_insert(insert_stmt, **kw)
+        # SQLAlchemy's insertmanyvalues row-expansion miscounts parameters when a
+        # target column's type wraps its bind in a bind_expression (e.g. a
+        # TypeDecorator rendering CAST(? AS ...)), emitting more placeholders than
+        # params ("wrong number of parameters"). Drop the insertmanyvalues plan for
+        # such statements so execution falls back to ordinary DBAPI executemany;
+        # the normal fast path is untouched (#421).
+        if self._insertmanyvalues is not None and self._insert_has_bind_expression(insert_stmt):
+            self._insertmanyvalues = None
+        return result
+
+    @staticmethod
+    def _insert_has_bind_expression(insert_stmt: Any) -> bool:
+        table = getattr(insert_stmt, "table", None)
+        if table is None:
+            return False
+        return any(
+            type(column.type).bind_expression is not sqltypes.TypeEngine.bind_expression
+            for column in table.c
+        )
 
     def visit_update(self, update_stmt: Any, **kw: Any) -> Any:
         self._check_returning(update_stmt, "UPDATE")

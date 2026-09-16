@@ -23,11 +23,6 @@
 # Each group links to the follow-up issue that tracks the real fix. Removing an
 # entry (fixing the bug) is the goal; adding one requires a linked reason.
 
-# CastTypeDecoratorTest (1): GENUINE BUG — executemany INSERT into a column
-# whose type has a bind_expression() CAST sends the wrong parameter count via
-# insertmanyvalues (4 placeholders, 3 params). Tracked separately in #421 — #388
-test/test_suite.py::CastTypeDecoratorTest::test_special_type
-
 # ComponentReflectionTest (25): reflection gaps (comments/autoincrement/noncol index) — #387
 test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]
 test/test_suite.py::ComponentReflectionTest::test_get_multi_columns[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]
