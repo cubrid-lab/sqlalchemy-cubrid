@@ -504,28 +504,36 @@ class CubridDialect(default.DefaultDialect):
         constraint_name = None
         constrained_columns: list[str] = []
 
-        quoted = self.identifier_preparer.quote_identifier(table_name)
-        result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
-        for row in result:
-            if row[3] == "PRI":
+        # Read the PK columns from the ``_db_index`` / ``_db_index_key`` system
+        # catalog. ``SHOW COLUMNS`` marks only the *first* column of a composite
+        # PK as ``PRI`` and gives no column order, so it drops the trailing
+        # columns of a multi-column key (#426). The catalog gives every column in
+        # ``key_order``.
+        try:
+            pk_result = connection.execute(
+                text(
+                    "SELECT k.key_attr_name, i.index_name "
+                    "FROM _db_index i, _db_index_key k "
+                    "WHERE i.class_of.class_name = :table "
+                    "AND i.is_primary_key = 1 AND k.index_of = i "
+                    "ORDER BY k.key_order"
+                ),
+                {"table": table_name},
+            )
+            for row in pk_result:
                 constrained_columns.append(row[0])
+                constraint_name = row[1]
+        except Exception:  # nosec B110 — fall back to SHOW COLUMNS below
+            log.debug("PK catalog query failed for %s", table_name, exc_info=True)
+            constrained_columns = []
+            constraint_name = None
 
-        # Find the PK constraint name from _db_index (the authoritative
-        # system catalog view for index metadata).
-        if constrained_columns:
-            try:
-                constraint_result = connection.execute(
-                    text(
-                        "SELECT index_name FROM _db_index "
-                        "WHERE class_of.class_name = :table AND is_primary_key = 1"
-                    ),
-                    {"table": table_name},
-                )
-                row = constraint_result.fetchone()
-                if row:
-                    constraint_name = row[0]
-            except Exception:  # nosec B110 — constraint name is optional metadata
-                log.debug("PK constraint name query failed for %s", table_name, exc_info=True)
+        if not constrained_columns:
+            quoted = self.identifier_preparer.quote_identifier(table_name)
+            result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+            for row in result:
+                if row[3] == "PRI":
+                    constrained_columns.append(row[0])
 
         return {
             "name": constraint_name,

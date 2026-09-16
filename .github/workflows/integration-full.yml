@@ -127,11 +127,11 @@ jobs:
           fi
           echo "Full compatibility matrix passed."
 
-  # Property-based bug hunt (stabilization Phase 1): run the Hypothesis fuzz
-  # suite with the extended "nightly" profile (2000 examples/test) against a
-  # live CUBRID. PR CI already runs these files with the fast "dev" profile, so
-  # this job is the deep, expensive pass that only runs on the nightly schedule
-  # and on demand.
+  # Property-based bug hunt (stabilization Phases 1-4): run the Hypothesis fuzz
+  # and metamorphic suites with the extended "nightly" profile (2000
+  # examples/test) against a live CUBRID. PR CI already runs these files with
+  # the fast "dev" profile, so this job is the deep, expensive pass that only
+  # runs on the nightly schedule and on demand.
   fuzz-bug-hunt:
     name: Hypothesis fuzz bug hunt (nightly)
     uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@main
@@ -144,4 +144,6 @@ jobs:
         pip install -e ".[dev,pycubrid]"
       test-command: >-
         HYPOTHESIS_PROFILE=nightly python -m pytest
-        test/test_fuzz_select.py -v --tb=short
+        test/test_fuzz_select.py test/test_fuzz_insert.py
+        test/test_fuzz_reflection.py test/test_metamorphic.py
+        -v --tb=short

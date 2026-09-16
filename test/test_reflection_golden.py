@@ -86,10 +86,10 @@ CREATE TABLE [users] (
         # used by get_indexes() so the mock returns pre-filtered results.
         if "is_unique = 1" in sql:
             return _Result(self._db_unique_names)
-        # The PK-name catalog query filters is_primary_key = 1.
-        # Dispatch it separately so the mock returns only the PK row.
+        # The PK catalog query joins _db_index_key and filters is_primary_key
+        # = 1, returning (key_attr_name, index_name) rows in key order (#426).
         if "is_primary_key = 1" in sql:
-            return _Result([("pk_users",)])
+            return _Result([("id", "pk_users")])
         if "FROM _db_index" in sql:
             return _Result(self._db_index)
         if "FROM _db_attribute" in sql:
@@ -220,7 +220,7 @@ CREATE TABLE [items] (
                 ]
             )
         if "is_primary_key = 1" in sql:
-            return _Result([("pk_items",)])
+            return _Result([("tenant_id", "pk_items"), ("item_id", "pk_items")])
         if "is_unique = 1" in sql:
             return _Result([("uq_items_tenant_sku",)])
         if "FROM _db_index" in sql:
@@ -412,7 +412,7 @@ class _MockNullFlags:
         if sql.startswith("SHOW CREATE TABLE"):
             return _Result([])
         if "is_primary_key = 1" in sql:
-            return _Result([("pk_test",)])
+            return _Result([("id", "pk_test")])
         if "is_unique = 1" in sql:
             return _Result([])
         if "FROM _db_index" in sql:
