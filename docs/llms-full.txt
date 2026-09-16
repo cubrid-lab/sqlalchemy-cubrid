@@ -4662,15 +4662,30 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **Symptom:** Unexpected query behavior with pagination.
 
-**CUBRID uses the `LIMIT offset, count` comma syntax.** The dialect generates this automatically:
+**The dialect always emits MySQL-style `LIMIT offset, row_count`.** CUBRID accepts the standard
+`LIMIT row_count OFFSET offset` form too, but the dialect never generates it, so the comma form is
+what to expect in a query log:
 
 ```python
-# SQLAlchemy generates CUBRID's comma-form LIMIT (offset first, then count)
 stmt = select(users).limit(10).offset(20)
 # → SELECT ... FROM users LIMIT 20, 10
 ```
 
-**Note:** the dialect always emits the comma form `LIMIT offset, count`; it never emits `LIMIT n OFFSET m`. Offset without a limit still uses the comma form with a large sentinel count (`LIMIT offset, 4611686018427387904`).
+Mind the operand order — the offset comes first. `LIMIT 20, 10` skips 20 rows and returns 10; it
+does not limit to 20 starting at 10.
+
+**Offset without limit.** CUBRID has no bare `OFFSET` (`SELECT ... OFFSET 5` is a syntax error), so
+`.offset(n)` with no `.limit()` still has to name a row count. The dialect supplies an effectively
+unbounded one:
+
+```python
+stmt = select(users).offset(5)
+# → SELECT ... FROM users LIMIT 5, 4611686018427387904
+```
+
+A very large second operand in a query log is that sentinel, not a bug. See
+[Feature Support](FEATURE_SUPPORT.md) for the exact value and why it is deliberately not the signed
+BIGINT maximum.
 
 ---
 
@@ -5796,31 +5811,6 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
-### Property-Based Fuzz Tests (Hypothesis)
-
-`test/test_fuzz_*.py` use [Hypothesis](https://hypothesis.readthedocs.io/) to
-generate SELECT/INSERT/DDL combinations the hand-written suite never enumerated
-and assert dialect invariants (no unexpected compile exception, placeholder ==
-parameter count, LIMIT/OFFSET cardinality, DDL/reflection round-trip). The
-offline fuzz tests run in the normal offline suite; live-execution fuzz tests
-are `integration`-marked.
-
-```bash
-# Fast profile (default, ~50 examples/test) — runs with the offline suite
-pytest test/test_fuzz_select.py -v
-
-# Extended profile (2000 examples/test) — the nightly bug-hunt profile
-HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -v
-
-# Live-execution fuzzing (requires CUBRID)
-export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
-HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -m integration -v
-```
-
-Profiles (`dev`, `ci`, `nightly`) are registered in `test/conftest.py` and
-selected via `HYPOTHESIS_PROFILE`. PR CI uses the fast profile; the nightly
-`integration-full` workflow runs the extended profile against live CUBRID.
-
 ### Integration Tests (Requires CUBRID)
 
 ```bash
@@ -6219,19 +6209,6 @@ tested and the CI matrix updated. Potential concerns:
 - CCI API changes may require driver recompilation
 - New SQL features may need compiler updates
 - New data types may need type mapping additions
-
-### 5. `NUMERIC` / `DECIMAL` fractional precision is lost
-
-The `CUBRIDdb` C-extension driver truncates the fractional part of
-`NUMERIC` / `DECIMAL` values *below* the DB-API layer: a column storing
-`15.7563` comes back as `15`. Because the digits are discarded inside the
-driver before SQLAlchemy receives the value, no dialect result processor can
-recover them. This is an upstream driver limitation, not a dialect bug.
-
-Use the pure-Python `cubrid+pycubrid://` driver for correct `Decimal`
-round-trips — it returns `Decimal` values natively with full precision
-(verified on CUBRID 11.4). This is one of the reasons `pycubrid` is the
-recommended driver for new projects.
 
 ---
 

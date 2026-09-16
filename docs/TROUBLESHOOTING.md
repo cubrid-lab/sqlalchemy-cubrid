@@ -363,15 +363,30 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **Symptom:** Unexpected query behavior with pagination.
 
-**CUBRID uses the `LIMIT offset, count` comma syntax.** The dialect generates this automatically:
+**The dialect always emits MySQL-style `LIMIT offset, row_count`.** CUBRID accepts the standard
+`LIMIT row_count OFFSET offset` form too, but the dialect never generates it, so the comma form is
+what to expect in a query log:
 
 ```python
-# SQLAlchemy generates CUBRID's comma-form LIMIT (offset first, then count)
 stmt = select(users).limit(10).offset(20)
 # → SELECT ... FROM users LIMIT 20, 10
 ```
 
-**Note:** the dialect always emits the comma form `LIMIT offset, count`; it never emits `LIMIT n OFFSET m`. Offset without a limit still uses the comma form with a large sentinel count (`LIMIT offset, 4611686018427387904`).
+Mind the operand order — the offset comes first. `LIMIT 20, 10` skips 20 rows and returns 10; it
+does not limit to 20 starting at 10.
+
+**Offset without limit.** CUBRID has no bare `OFFSET` (`SELECT ... OFFSET 5` is a syntax error), so
+`.offset(n)` with no `.limit()` still has to name a row count. The dialect supplies an effectively
+unbounded one:
+
+```python
+stmt = select(users).offset(5)
+# → SELECT ... FROM users LIMIT 5, 4611686018427387904
+```
+
+A very large second operand in a query log is that sentinel, not a bug. See
+[Feature Support](FEATURE_SUPPORT.md) for the exact value and why it is deliberately not the signed
+BIGINT maximum.
 
 ---
 
