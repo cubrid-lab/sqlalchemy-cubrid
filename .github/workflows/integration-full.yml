@@ -195,7 +195,7 @@ jobs:
         test/test_fuzz_select.py test/test_fuzz_insert.py
         test/test_fuzz_reflection.py test/test_metamorphic.py
         test/capability/ test/test_driver_differential.py
-        test/test_dogfood_orm.py
+        test/test_dogfood_orm.py test/test_uuid_contract.py
         -v --tb=short
 
   # Mutation testing (stabilization Phase 8): measure whether the offline suite
