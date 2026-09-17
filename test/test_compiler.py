@@ -25,6 +25,10 @@ def _compile(stmt, dialect=None):
     return stmt.compile(dialect=dialect, compile_kwargs={"literal_binds": True}).string
 
 
+def _norm(sql: str) -> str:
+    return " ".join(sql.split())
+
+
 metadata = MetaData()
 users = Table(
     "users",
@@ -55,6 +59,10 @@ class TestSelectCompilation:
         assert "LIMIT" in sql
         assert "10" in sql
 
+    def test_select_limit_exact_clause(self):
+        stmt = select(users.c.id).limit(10)
+        assert _norm(_compile(stmt)) == "SELECT users.id FROM users LIMIT 10"
+
     def test_select_offset(self):
         stmt = select(users).offset(5)
         sql = _compile(stmt)
@@ -79,6 +87,20 @@ class TestSelectCompilation:
         # CUBRID uses LIMIT offset, count
         assert "5" in sql
         assert "10" in sql
+
+    def test_select_limit_offset_exact_clause(self):
+        # CUBRID renders `LIMIT <offset>, <count>` (offset first). Exact match
+        # guards the operand order and the comma-separated two-argument form.
+        stmt = select(users.c.id).limit(10).offset(5)
+        assert _norm(_compile(stmt)) == "SELECT users.id FROM users LIMIT 5, 10"
+
+    def test_select_offset_only_exact_clause(self):
+        # Offset without limit still emits the two-argument form, with the
+        # sentinel row_count as the second operand.
+        stmt = select(users.c.id).offset(7)
+        assert _norm(_compile(stmt)) == (
+            f"SELECT users.id FROM users LIMIT 7, {_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT}"
+        )
 
     def test_select_no_limit(self):
         stmt = select(users)
@@ -1011,6 +1033,13 @@ class TestUpdateCompilation:
         assert "LIMIT" in sql
         assert "10" in sql
 
+    def test_update_with_limit_exact_clause(self):
+        from sqlalchemy import update
+
+        stmt = update(users).values(name="x")
+        stmt.kwargs["cubrid_limit"] = 3
+        assert _norm(_compile(stmt)) == "UPDATE users SET name='x' LIMIT 3"
+
     def test_update_without_limit(self):
         """Test UPDATE without limit - no LIMIT clause."""
         from sqlalchemy import update
@@ -1257,6 +1286,12 @@ class TestGroupConcatCompilation:
         sql = _compile(stmt)
         assert "GROUP_CONCAT" in sql
         assert "users.name" in sql
+
+    def test_group_concat_basic_exact(self):
+        stmt = select(sa.func.group_concat(users.c.name))
+        assert _norm(_compile(stmt)) == (
+            "SELECT GROUP_CONCAT((users.name)) AS group_concat_1 FROM users"
+        )
 
     def test_group_concat_with_separator(self):
         """GROUP_CONCAT with separator literal."""

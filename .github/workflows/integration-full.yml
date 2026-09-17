@@ -197,3 +197,28 @@ jobs:
         test/capability/ test/test_driver_differential.py
         test/test_dogfood_orm.py
         -v --tb=short
+
+  # Mutation testing (stabilization Phase 8): measure whether the offline suite
+  # actually verifies compiler.py logic, not just executes it. Non-gating
+  # (continue-on-error) because a mutation-score dip is a signal to strengthen a
+  # test, not a reason to block the release; the run needs no database.
+  mutation-testing:
+    name: Mutation testing (nightly, non-gating)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: pip install -e ".[dev]"
+      - name: Run mutmut on compiler.py
+        run: |
+          env -u CUBRID_TEST_URL mutmut run --paths-to-mutate sqlalchemy_cubrid/compiler.py || true
+          echo "::group::Mutation results"
+          env -u CUBRID_TEST_URL mutmut results || true
+          echo "::endgroup::"
+          killed=$(env -u CUBRID_TEST_URL mutmut result-ids killed 2>/dev/null | wc -w)
+          total=$(for b in killed survived timeout suspicious skipped; do env -u CUBRID_TEST_URL mutmut result-ids "$b" 2>/dev/null | wc -w; done | paste -sd+ | bc)
+          echo "Mutation score: ${killed}/${total}"
