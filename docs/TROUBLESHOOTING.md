@@ -363,15 +363,15 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **Symptom:** Unexpected query behavior with pagination.
 
-**CUBRID supports standard `LIMIT n OFFSET m` syntax.** The dialect generates this automatically:
+**CUBRID uses the `LIMIT offset, count` comma syntax.** The dialect generates this automatically:
 
 ```python
-# SQLAlchemy generates correct CUBRID LIMIT/OFFSET
+# SQLAlchemy generates CUBRID's comma-form LIMIT (offset first, then count)
 stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 10 OFFSET 20
+# → SELECT ... FROM users LIMIT 20, 10
 ```
 
-**Note:** CUBRID does not support MySQL's `LIMIT offset, count` comma syntax. The dialect always uses `LIMIT n OFFSET m`.
+**Note:** the dialect always emits the comma form `LIMIT offset, count`; it never emits `LIMIT n OFFSET m`. Offset without a limit still uses the comma form with a large sentinel count (`LIMIT offset, 4611686018427387904`).
 
 ---
 

@@ -55,6 +55,14 @@ jobs:
         run: ruff check sqlalchemy_cubrid/ test/
       - name: Ruff format check
         run: ruff format --check sqlalchemy_cubrid/ test/
+      - name: llms-full.txt is in sync with source docs
+        run: |
+          python scripts/generate_llms_full.py
+          if ! git diff --quiet -- docs/llms-full.txt; then
+            echo "::error::docs/llms-full.txt is stale. Run 'python scripts/generate_llms_full.py' and commit the result."
+            git diff -- docs/llms-full.txt
+            exit 1
+          fi
 
   # ──────────────────────────────────────────
   # Job 2: Offline tests (no DB needed)

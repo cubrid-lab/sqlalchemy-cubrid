@@ -1391,6 +1391,8 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
+> **Limitation — `stmt.inserted.col` and multi-row `VALUES` (#371):** referencing the inserted value only works for a **single-row** `INSERT` or for **executemany** (passing the row list to `Connection.execute(stmt, [rows])`, where each execution is logically single-row). It is **not** supported for an inline multi-row `insert(t).values([{...}, {...}])`: CUBRID has no `VALUES(col)` / row-alias syntax, so there is no single value to bind per conflicting row, and the dialect raises a `CompileError` rather than silently updating every conflicting row with one row's value. For a multi-row upsert, use executemany, split into single-row statements, use a literal/expression update (which does not reference the inserted value), or use `MERGE`.
+
 ### Argument Forms
 
 The `on_duplicate_key_update()` method accepts three argument forms:
@@ -4660,15 +4662,15 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **Symptom:** Unexpected query behavior with pagination.
 
-**CUBRID supports standard `LIMIT n OFFSET m` syntax.** The dialect generates this automatically:
+**CUBRID uses the `LIMIT offset, count` comma syntax.** The dialect generates this automatically:
 
 ```python
-# SQLAlchemy generates correct CUBRID LIMIT/OFFSET
+# SQLAlchemy generates CUBRID's comma-form LIMIT (offset first, then count)
 stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 10 OFFSET 20
+# → SELECT ... FROM users LIMIT 20, 10
 ```
 
-**Note:** CUBRID does not support MySQL's `LIMIT offset, count` comma syntax. The dialect always uses `LIMIT n OFFSET m`.
+**Note:** the dialect always emits the comma form `LIMIT offset, count`; it never emits `LIMIT n OFFSET m`. Offset without a limit still uses the comma form with a large sentinel count (`LIMIT offset, 4611686018427387904`).
 
 ---
 
@@ -5794,6 +5796,31 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
+### Property-Based Fuzz Tests (Hypothesis)
+
+`test/test_fuzz_*.py` use [Hypothesis](https://hypothesis.readthedocs.io/) to
+generate SELECT/INSERT/DDL combinations the hand-written suite never enumerated
+and assert dialect invariants (no unexpected compile exception, placeholder ==
+parameter count, LIMIT/OFFSET cardinality, DDL/reflection round-trip). The
+offline fuzz tests run in the normal offline suite; live-execution fuzz tests
+are `integration`-marked.
+
+```bash
+# Fast profile (default, ~50 examples/test) — runs with the offline suite
+pytest test/test_fuzz_select.py -v
+
+# Extended profile (2000 examples/test) — the nightly bug-hunt profile
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -v
+
+# Live-execution fuzzing (requires CUBRID)
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -m integration -v
+```
+
+Profiles (`dev`, `ci`, `nightly`) are registered in `test/conftest.py` and
+selected via `HYPOTHESIS_PROFILE`. PR CI uses the fast profile; the nightly
+`integration-full` workflow runs the extended profile against live CUBRID.
+
 ### Integration Tests (Requires CUBRID)
 
 ```bash
@@ -6192,6 +6219,19 @@ tested and the CI matrix updated. Potential concerns:
 - CCI API changes may require driver recompilation
 - New SQL features may need compiler updates
 - New data types may need type mapping additions
+
+### 5. `NUMERIC` / `DECIMAL` fractional precision is lost
+
+The `CUBRIDdb` C-extension driver truncates the fractional part of
+`NUMERIC` / `DECIMAL` values *below* the DB-API layer: a column storing
+`15.7563` comes back as `15`. Because the digits are discarded inside the
+driver before SQLAlchemy receives the value, no dialect result processor can
+recover them. This is an upstream driver limitation, not a dialect bug.
+
+Use the pure-Python `cubrid+pycubrid://` driver for correct `Decimal`
+round-trips — it returns `Decimal` values natively with full precision
+(verified on CUBRID 11.4). This is one of the reasons `pycubrid` is the
+recommended driver for new projects.
 
 ---
 
