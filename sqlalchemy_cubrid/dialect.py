@@ -5,7 +5,18 @@
 # This module is part of sqlalchemy-cubrid and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-"""CUBRID dialect for SQLAlchemy 2.0."""
+"""CUBRID dialect for SQLAlchemy 2.0.
+
+Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
+
+    from sqlalchemy import create_engine, inspect
+
+    engine = create_engine("cubrid+pycubrid://dba:pw@localhost:33000/demodb")
+    insp = inspect(engine)
+    insp.get_table_names()
+    insp.get_columns("users")
+    insp.get_pk_constraint("users")["constrained_columns"]
+"""
 
 from __future__ import annotations
 

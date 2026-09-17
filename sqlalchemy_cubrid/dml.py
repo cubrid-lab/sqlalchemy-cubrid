@@ -38,6 +38,14 @@ def insert(table: _DMLTableArgument) -> Insert:
     """Construct a CUBRID-specific variant :class:`Insert` construct.
 
     Includes :meth:`Insert.on_duplicate_key_update`.
+
+    Usage::
+
+        from sqlalchemy_cubrid import insert
+
+        stmt = insert(users).values(id=1, name="alice", hits=1)
+        stmt = stmt.on_duplicate_key_update(hits=stmt.inserted.hits + 1)
+        # INSERT ... ON DUPLICATE KEY UPDATE hits = <re-emitted bind> + 1
     """
     return Insert(table)
 
