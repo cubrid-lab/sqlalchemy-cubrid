@@ -365,15 +365,15 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **증상:** 페이지네이션에서 예기치 않은 쿼리 동작.
 
-**CUBRID는 표준 `LIMIT n OFFSET m` 구문을 지원합니다.** 방언이 자동 생성합니다:
+**CUBRID는 `LIMIT offset, count` 쉼표 구문을 사용합니다.** 방언이 자동 생성합니다:
 
 ```python
-# SQLAlchemy가 올바른 CUBRID LIMIT/OFFSET 생성
+# SQLAlchemy가 CUBRID의 쉼표형 LIMIT 생성 (offset이 먼저, 그다음 count)
 stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 10 OFFSET 20
+# → SELECT ... FROM users LIMIT 20, 10
 ```
 
-**참고:** CUBRID는 MySQL의 `LIMIT offset, count` 쉼표 구문을 지원하지 않습니다. 방언은 항상 `LIMIT n OFFSET m`을 사용합니다.
+**참고:** 방언은 항상 쉼표형 `LIMIT offset, count`를 생성하며, `LIMIT n OFFSET m`은 생성하지 않습니다. limit 없이 offset만 지정하면 큰 sentinel count를 사용한 쉼표형(`LIMIT offset, 4611686018427387904`)이 됩니다.
 
 ---
 
