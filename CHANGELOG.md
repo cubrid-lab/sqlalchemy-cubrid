@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-09-18
+
 ### Added
 - **Runnable usage examples in public docstrings (#337)** — added short, live-verified examples to the five main entry points: the connection URL forms (`cubrid+pycubrid://`, `cubrid+cubriddb://`, async `cubrid+aiopycubrid://`) in the package docstring, the `ON DUPLICATE KEY UPDATE` construct on `insert()`, and reflection via `inspect()` in the dialect module docstring (`REPLACE` and `MERGE` already had examples). Docstrings only — no behavior change; each example was executed against a live CUBRID 11.4.
 - **UUID type contract test matrix (#376)** — added `test/test_uuid_contract.py`, which pins the full round-trip contract for `sa.Uuid()` (Python `uuid.UUID` values) and `sa.Uuid(as_uuid=False)` (string values) across INSERT, SELECT, WHERE, UPDATE, and reflection, against a live CUBRID. CUBRID has no native UUID type; the dialect stores it as `CHAR(32)`, and these 8 `integration`-marked tests catch any regression in that CHAR-backed storage or the value coercion (verified: `sa.Uuid()` round-trips as `uuid.UUID`, `as_uuid=False` as `str`, WHERE/UPDATE by UUID work, and reflection reports `CHAR`). Wired into the nightly `integration-full` bug-hunt job.
