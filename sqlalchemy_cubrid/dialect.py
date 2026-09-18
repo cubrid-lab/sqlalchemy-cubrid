@@ -262,11 +262,6 @@ class CubridDialect(default.DefaultDialect):
     name = "cubrid"
     driver = "cubrid"
 
-    # CUBRID는 INSERT ... RETURNING을 지원하지 않는다.
-    # False로 설정하지 않으면 ORM이 INSERT 후 server_default 값을
-    # RETURNING으로 읽으려 해서 ResourceClosedError가 발생한다.
-    implicit_returning = False
-
     # SA 2.0 statement caching
     supports_statement_cache = True
 
