@@ -62,6 +62,19 @@ class TestDialectBasics:
         dialect = CubridDialect()
         assert dialect.supports_twophase_commit is False
 
+    def test_insert_returning_is_the_returning_switch(self):
+        # Regression for #396: `insert_returning = False` is the SQLAlchemy 2.x
+        # switch that disables implicit INSERT...RETURNING. The legacy 1.x
+        # `implicit_returning` attribute is dead — 2.x's DefaultDialect does not
+        # define it and the CRUD compiler no longer consults it.
+        from sqlalchemy.engine.default import DefaultDialect
+
+        assert CubridDialect.insert_returning is False
+        assert CubridDialect.update_returning is False
+        assert CubridDialect.delete_returning is False
+        assert not hasattr(DefaultDialect, "implicit_returning")
+        assert "implicit_returning" not in CubridDialect.__dict__
+
     def test_import_dbapi_success(self):
         fake_module = types.ModuleType("CUBRIDdb")
         with patch.dict(sys.modules, {"CUBRIDdb": fake_module}):
