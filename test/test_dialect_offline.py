@@ -13,6 +13,7 @@ from sqlalchemy.sql.elements import quoted_name
 
 from sqlalchemy_cubrid.dialect import CubridDialect
 from sqlalchemy_cubrid.dialect import _split_collection_members
+from sqlalchemy_cubrid.types import TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ
 
 
 class TestSplitCollectionMembers:
@@ -1525,3 +1526,9 @@ class TestSchemaNameNormalization:
         dialect = self._dialect("dba")
         quoted = quoted_name("dba", quote=True)
         assert dialect._schema_is_default(quoted) is True
+
+    def test_timezone_aware_types_instance_attribute(self):
+        assert TIMESTAMPTZ().timezone is True
+        assert TIMESTAMPLTZ().timezone is True
+        assert DATETIMETZ().timezone is True
+        assert DATETIMELTZ().timezone is True
