@@ -365,15 +365,24 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **증상:** 페이지네이션에서 예기치 않은 쿼리 동작.
 
-**CUBRID는 `LIMIT offset, count` 쉼표 구문을 사용합니다.** 방언이 자동 생성합니다:
+**방언은 MySQL 스타일 `LIMIT [offset,] row_count`를 냅니다.** CUBRID는 표준
+`LIMIT row_count OFFSET offset` 형태도 받아들이지만 방언이 이를 생성하지는 않습니다. `OFFSET`
+키워드는 방언의 출력에 아예 나타나지 않습니다:
 
 ```python
-# SQLAlchemy가 CUBRID의 쉼표형 LIMIT 생성 (offset이 먼저, 그다음 count)
-stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 20, 10
+select(users).limit(3)              # → SELECT ... FROM users LIMIT 3
+select(users).limit(10).offset(20)  # → SELECT ... FROM users LIMIT 20, 10
+select(users).offset(5)             # → SELECT ... FROM users LIMIT 5, 4611686018427387904
 ```
 
-**참고:** 방언은 항상 쉼표형 `LIMIT offset, count`를 생성하며, `LIMIT n OFFSET m`은 생성하지 않습니다. limit 없이 offset만 지정하면 큰 sentinel count를 사용한 쉼표형(`LIMIT offset, 4611686018427387904`)이 됩니다.
+쉼표 형태는 오프셋이 있을 때만 나오며, 이때 오프셋이 앞에 옵니다. `LIMIT 20, 10`은 20행을 건너뛰고
+10행을 반환하며, 10행부터 20행으로 제한한다는 뜻이 아닙니다.
+
+**LIMIT 없는 OFFSET.** CUBRID에는 단독 `OFFSET`이 없어서(`SELECT ... OFFSET 5`는 문법 오류입니다)
+`.limit()` 없이 `.offset(n)`만 준 경우에도 행 수를 반드시 명시해야 하며, 방언은 사실상 무제한에
+해당하는 값을 채워 넣습니다 — 위 세 번째 줄입니다. 쿼리 로그의 두 번째 피연산자가 아주 큰 수인 것은
+이 센티넬이며 버그가 아닙니다. 정확한 값과 부호 있는 BIGINT 최댓값을 의도적으로 피한 이유는
+[기능 지원](FEATURE_SUPPORT.md)을 참고하세요.
 
 ---
 
