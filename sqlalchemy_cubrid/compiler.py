@@ -378,13 +378,18 @@ class CubridCompiler(compiler.SQLCompiler):
                             )
                         # Re-use the INSERT bind parameter so the value
                         # appears twice in the positional parameter list.
+                        # This only works for single-row INSERT — multi-row
+                        # INSERT uses suffixed keys (val_m0, val_m1) that
+                        # cannot be mapped to a single UPDATE bind.
                         if element.name in insert_binds:
                             return insert_binds[element.name]
                         raise CompileError(
                             "CUBRID ON DUPLICATE KEY UPDATE: cannot resolve "
                             "INSERT bind parameter for column '%s'. "
-                            "Ensure the column is included in the INSERT "
-                            "values." % element.name
+                            "stmt.inserted references are only supported for "
+                            "single-row INSERT. For multi-row INSERT, use "
+                            "literal values instead: "
+                            "on_duplicate_key_update(col='value')" % element.name
                         )
                     else:
                         return None

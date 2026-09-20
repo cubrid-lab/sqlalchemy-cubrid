@@ -293,11 +293,13 @@ class TestReflection:
         """get_foreign_keys() reflects FK from orders → users."""
         insp = inspect(engine)
         fks = insp.get_foreign_keys("integration_orders")
-        # CUBRID may not always reflect FKs through db_constraint depending on version
-        if len(fks) >= 1:
-            fk = fks[0]
-            assert "user_id" in fk["constrained_columns"]
-            assert fk["referred_table"] == "integration_users"
+        assert len(fks) >= 1, (
+            "get_foreign_keys() returned empty — FK reflection is broken. "
+            "This previously masked a real Alembic regression."
+        )
+        fk = fks[0]
+        assert "user_id" in fk["constrained_columns"]
+        assert fk["referred_table"] == "integration_users"
 
 
 class TestTransactions:
