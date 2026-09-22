@@ -128,7 +128,7 @@ jobs:
 
       - name: Upload version-differential snapshot
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vdiff-snapshot-${{ matrix.cubrid-version }}
           path: snapshot-${{ matrix.cubrid-version }}.json
