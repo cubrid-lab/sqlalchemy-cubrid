@@ -2,6 +2,12 @@
 
 Get a working SQLAlchemy + CUBRID application running in minutes.
 
+<video src="assets/videos/orm-demo.mp4" controls width="100%" style="max-width:800px">
+  Your browser does not support the video tag.
+</video>
+
+> To regenerate the demo video: `vhs demos/orm-demo-mp4.tape`
+
 ---
 
 ## Prerequisites
