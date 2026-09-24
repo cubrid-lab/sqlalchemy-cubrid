@@ -93,22 +93,39 @@ from sqlalchemy.types import (
 
 log = logging.getLogger(__name__)
 
-# CUBRID "table not found" signature (errno -493, SQLSTATE 42S02). Used to
-# translate a raw driver error from SHOW COLUMNS / SHOW INDEXES on a missing
-# table into SQLAlchemy's NoSuchTableError, which the reflection contract
-# requires (e.g. Inspector.get_columns("missing") must raise NoSuchTableError).
-_NO_SUCH_TABLE_ERRNO = -493
+# CUBRID "table not found" signature. In CUBRID, native errno -493 is ER_PT_SYNTAX
+# (general parser syntax error), not a dedicated table-not-found code (#454). A missing
+# table produces -493 accompanied by SQLSTATE 42S02 (base table or view not found)
+# or an explicit missing-object message ('Unknown class' or 'Table not found').
+# Native -493 alone must not be translated into NoSuchTableError without one of
+# these verified missing-object signals, because generic syntax errors (SQLSTATE 42000)
+# also report errno -493.
 _NO_SUCH_TABLE_SQLSTATE = "42S02"
 
 
 def _is_no_such_table_error(error: BaseException) -> bool:
     orig = getattr(error, "orig", error)
-    if getattr(orig, "errno", None) == _NO_SUCH_TABLE_ERRNO:
+
+    # SQLSTATE 42S02 is the ANSI standard for "base table or view not found"
+    sqlstate = getattr(orig, "sqlstate", None)
+    if sqlstate == _NO_SUCH_TABLE_SQLSTATE:
         return True
-    if getattr(orig, "sqlstate", None) == _NO_SUCH_TABLE_SQLSTATE:
-        return True
-    message = str(orig)
+
+    # Check for verified missing-object message signals across supported drivers.
+    # CUBRIDdb emits tuple-shaped error args (-493, 'Unknown class "..."');
+    # pycubrid provides errno/sqlstate and string message.
+    msg_chunks = [str(error), str(orig)]
+    args = getattr(orig, "args", None)
+    if args:
+        for arg in args:
+            if isinstance(arg, str):
+                msg_chunks.append(arg)
+            elif isinstance(arg, (tuple, list)):
+                msg_chunks.extend(str(x) for x in arg)
+    message = " ".join(msg_chunks)
+
     return "Unknown class" in message or "Table not found" in message
+
 
 
 # Pre-compiled patterns for column type parsing in get_columns().
