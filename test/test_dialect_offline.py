@@ -587,7 +587,8 @@ class TestReflectionMethods:
         assert pk == {"name": None, "constrained_columns": ["id"]}
 
     def test_is_no_such_table_error_detection(self):
-        """#387: the not-found predicate matches CUBRID's errno/sqlstate/message."""
+        """#387, #454: the not-found predicate requires SQLSTATE 42S02 or an explicit missing-table message."""
+        from sqlalchemy import exc
         from sqlalchemy_cubrid.dialect import _is_no_such_table_error
 
         class _ByErrno(Exception):
@@ -596,8 +597,29 @@ class TestReflectionMethods:
         class _BySqlstate(Exception):
             sqlstate = "42S02"
 
-        assert _is_no_such_table_error(_ByErrno()) is True
+        class _PycubridSyntaxError(Exception):
+            errno = -493
+            sqlstate = "42000"
+
+        class _PycubridMissingTable(Exception):
+            errno = -493
+            sqlstate = "42S02"
+
+        class _LegacyPycubridMissingTable(Exception):
+            errno = -493
+            sqlstate = "42000"
+
+        # #454: Native -493 is ER_PT_SYNTAX; bare -493 without missing-object indicator must NOT match
+        assert _is_no_such_table_error(_ByErrno()) is False
+        assert _is_no_such_table_error(_PycubridSyntaxError("Syntax error: unexpected 'SELEC'")) is False
+        assert _is_no_such_table_error(Exception(-493, "Syntax error: unexpected 'SELEC'")) is False
+        assert _is_no_such_table_error(exc.ProgrammingError("metadata query", {}, _PycubridSyntaxError("Syntax error"))) is False
+
+        # Positive cases: SQLSTATE 42S02 or verified missing-object message
         assert _is_no_such_table_error(_BySqlstate()) is True
+        assert _is_no_such_table_error(_PycubridMissingTable('Unknown class "dba.x"')) is True
+        assert _is_no_such_table_error(_LegacyPycubridMissingTable('Unknown class "dba.x"')) is True
+        assert _is_no_such_table_error(Exception(-493, 'Unknown class "dba.x"')) is True
         assert _is_no_such_table_error(Exception('Unknown class "dba.x"')) is True
         assert _is_no_such_table_error(Exception("Table not found")) is True
         assert _is_no_such_table_error(Exception("some other error")) is False
@@ -624,6 +646,26 @@ class TestReflectionMethods:
         with pytest.raises(RuntimeError):
             _invoke_reflection(dialect, "get_columns", connection, "t")
 
+    def test_get_columns_syntax_error_propagates_programming_error(self):
+        """#454: a syntax error (native -493, SQLSTATE 42000) in get_columns is not converted to NoSuchTableError."""
+        from sqlalchemy import exc
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        class _PycubridSyntaxError(Exception):
+            errno = -493
+            sqlstate = "42000"
+
+        orig = _PycubridSyntaxError("Syntax error: unexpected 'SELEC'")
+        failure = exc.ProgrammingError("SHOW COLUMNS IN t", {}, orig)
+        connection.execute.side_effect = failure
+
+        with pytest.raises(exc.ProgrammingError) as exc_info:
+            _invoke_reflection(dialect, "get_columns", connection, "t")
+        assert exc_info.value is failure
+
     def test_get_indexes_missing_table_raises_no_such_table(self):
         """#387: get_indexes on a missing table raises NoSuchTableError."""
         dialect = CubridDialect()
@@ -638,6 +680,27 @@ class TestReflectionMethods:
 
         with pytest.raises(NoSuchTableError):
             _invoke_reflection(dialect, "get_indexes", connection, "missing")
+
+    def test_get_indexes_syntax_error_propagates_programming_error(self):
+        """#454: a syntax error (native -493, SQLSTATE 42000) in get_indexes is not converted to NoSuchTableError."""
+        from sqlalchemy import exc
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        class _PycubridSyntaxError(Exception):
+            errno = -493
+            sqlstate = "42000"
+
+        orig = _PycubridSyntaxError("Syntax error: unexpected 'SELEC'")
+        failure = exc.ProgrammingError("SHOW INDEXES IN t", {}, orig)
+        connection.execute.side_effect = [[], failure]
+
+        with pytest.raises(exc.ProgrammingError) as exc_info:
+            _invoke_reflection(dialect, "get_indexes", connection, "t")
+        assert exc_info.value is failure
+
 
     def test_get_foreign_keys_success_and_exception(self):
         dialect = CubridDialect()
