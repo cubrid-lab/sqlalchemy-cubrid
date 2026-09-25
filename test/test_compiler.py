@@ -13,6 +13,7 @@ from typing import Any, cast
 from sqlalchemy import Column, Integer, MetaData, String, Table, select
 from sqlalchemy.exc import CompileError
 
+from sqlalchemy_cubrid import types as cubrid_types
 from sqlalchemy_cubrid._compat import bind_with_type, is_literal_value
 from sqlalchemy_cubrid.compiler import _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT
 from sqlalchemy_cubrid.dialect import CubridDialect
@@ -484,6 +485,24 @@ class TestTypeCompilation:
         result = self._compile_type(VARCHAR())
         assert result == "VARCHAR(4096)"
 
+    def test_string_no_length_uses_default(self):
+        result = self._compile_type(sa.String())
+        assert result == "VARCHAR(4096)"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.String(0), id="String"),
+            pytest.param(sa.Unicode(0), id="Unicode"),
+            pytest.param(sa.VARCHAR(0), id="sa.VARCHAR"),
+            pytest.param(cubrid_types.VARCHAR(length=0), id="cubrid.VARCHAR"),
+        ],
+    )
+    def test_varchar_zero_length_raises(self, type_):
+        """Regression (#440): explicit length=0 must not become VARCHAR(4096)."""
+        with pytest.raises(CompileError, match=r"VARCHAR\(0\)"):
+            self._compile_type(type_)
+
     def test_char_with_length(self):
         from sqlalchemy_cubrid.types import CHAR
 
@@ -704,6 +723,21 @@ class TestTypeCompilation:
 
         result = self._compile_type(NVARCHAR())
         assert result == "NCHAR VARYING(4096)"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.NVARCHAR(0), id="sa.NVARCHAR"),
+            pytest.param(cubrid_types.NVARCHAR(length=0), id="cubrid.NVARCHAR"),
+            pytest.param(
+                cubrid_types.VARCHAR(length=0, national=True), id="cubrid.VARCHAR-national"
+            ),
+        ],
+    )
+    def test_nvarchar_zero_length_raises(self, type_):
+        """Regression (#440): explicit length=0 must not become NCHAR VARYING(4096)."""
+        with pytest.raises(CompileError, match=r"NCHAR VARYING\(0\)"):
+            self._compile_type(type_)
 
     def test_nchar_no_length(self):
         """Test NCHAR() without length."""

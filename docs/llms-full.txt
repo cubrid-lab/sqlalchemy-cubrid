@@ -2031,7 +2031,7 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
 | `DateTime`           | `DATETIME`        | Date and time combined                     |
 | `TIMESTAMP`          | `TIMESTAMP`       | Timestamp with auto-update behavior        |
 
-> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`.
+> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`. An explicit zero length (`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) is not a valid CUBRID length and raises `CompileError` instead of being widened to the default.
 
 ---
 

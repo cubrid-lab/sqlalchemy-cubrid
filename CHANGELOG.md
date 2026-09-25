@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`String(0)` / `VARCHAR(0)` / `NVARCHAR(0)` no longer silently compile to the 4096 default (#440)** — the type compiler checked the length by truthiness, so an explicit `length=0` was treated as "no length" and rendered `VARCHAR(4096)` (or `NCHAR VARYING(4096)`). `length=None` still gets the documented default; an explicit zero now raises `CompileError`, since `VARCHAR(0)` is not a valid CUBRID length.
+
 ## [1.7.1] - 2026-09-18
 
 ### Added

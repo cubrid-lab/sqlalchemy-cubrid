@@ -861,10 +861,21 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_DATETIMELTZ(self, type_: Any, **kw: Any) -> str:
         return "DATETIMELTZ"
 
+    @staticmethod
+    def _reject_zero_length(type_: Any, ddl_name: str) -> None:
+        # ``length=None`` means "not specified" and gets the documented default;
+        # an explicit 0 is not a valid CUBRID length, so do not silently widen it.
+        if type_.length == 0:
+            raise CompileError(
+                f"CUBRID does not support {ddl_name}(0); use a length of at least 1, "
+                f"or omit the length to get the default {ddl_name}(4096)"
+            )
+
     def visit_VARCHAR(self, type_: Any, **kw: Any) -> str:
         if hasattr(type_, "national") and type_.national:
             return self.visit_NVARCHAR(type_)
-        elif type_.length:
+        self._reject_zero_length(type_, "VARCHAR")
+        if type_.length is not None:
             return "VARCHAR(%d)" % type_.length
         else:
             return "VARCHAR(4096)"
@@ -878,7 +889,8 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
             return "CHAR"
 
     def visit_NVARCHAR(self, type_: Any, **kw: Any) -> str:
-        if type_.length:
+        self._reject_zero_length(type_, "NCHAR VARYING")
+        if type_.length is not None:
             return f"NCHAR VARYING({type_.length})"
         else:
             return "NCHAR VARYING(4096)"
