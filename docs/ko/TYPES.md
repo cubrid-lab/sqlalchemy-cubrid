@@ -45,7 +45,7 @@
 | `DateTime`           | `DATETIME`        | 날짜와 시간 결합                            |
 | `TIMESTAMP`          | `TIMESTAMP`       | 자동 갱신 동작을 갖는 타임스탬프            |
 
-> **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다.
+> **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다. 길이를 명시적으로 0으로 지정하면(`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) CUBRID에서 유효한 길이가 아니므로 기본값으로 바뀌지 않고 `CompileError`가 발생합니다.
 
 ---
 
