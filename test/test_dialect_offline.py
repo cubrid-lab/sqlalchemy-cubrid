@@ -703,6 +703,8 @@ class TestReflectionMethods:
             "users",
             "orders",
         ]
+        statement = connection.execute.call_args[0][0]
+        assert "is_system_class = 'NO' ORDER BY class_name" in str(statement)
 
     def test_get_view_names(self):
         dialect = CubridDialect()
@@ -713,6 +715,8 @@ class TestReflectionMethods:
 
         views = _invoke_reflection(dialect, "get_view_names", connection)
         assert views == ["active_users", "recent_orders"]
+        statement = connection.execute.call_args[0][0]
+        assert "is_system_class = 'NO' ORDER BY class_name" in str(statement)
 
     def test_get_view_names_rejects_non_default_schema(self):
         dialect = CubridDialect()

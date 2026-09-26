@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Reflection now returns table and view names in deterministic order (#443)** — added `ORDER BY class_name` to `get_table_names()` and `get_view_names()` catalog queries so reflection results no longer depend on database row order.
+
 ## [1.7.1] - 2026-09-18
 
 ### Added

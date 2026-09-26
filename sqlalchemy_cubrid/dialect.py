@@ -657,7 +657,8 @@ class CubridDialect(default.DefaultDialect):
         result = connection.execute(
             text(
                 "SELECT class_name FROM db_class "
-                "WHERE class_type = 'CLASS' AND is_system_class = 'NO'"
+                "WHERE class_type = 'CLASS' AND is_system_class = 'NO' "
+                "ORDER BY class_name"
             )
         )
         return [row[0] for row in result]
@@ -675,7 +676,8 @@ class CubridDialect(default.DefaultDialect):
         result = connection.execute(
             text(
                 "SELECT class_name FROM db_class "
-                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO'"
+                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO' "
+                "ORDER BY class_name"
             )
         )
         return [row[0] for row in result]
