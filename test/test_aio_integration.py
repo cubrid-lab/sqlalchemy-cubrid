@@ -708,11 +708,12 @@ class _AsyncIntegrityChild(_AsyncIntegrityBase):
     parent_id: Mapped[int] = mapped_column(sa.ForeignKey("aio_test_ie480_parent.id"))
 
 
-# kind -> (mapped class, values violating the constraint); parent 1 always exists.
-_ASYNC_INTEGRITY_VIOLATIONS: dict[str, tuple[type[_AsyncIntegrityBase], dict[str, object]]] = {
-    "not_null": (_AsyncIntegrityParent, {"id": 2, "name": None}),
-    "foreign_key": (_AsyncIntegrityChild, {"id": 1, "parent_id": 999}),
-    "unique_pk": (_AsyncIntegrityParent, {"id": 1, "name": "duplicate"}),  # control
+# kind -> (mapped class, values violating the constraint, native CUBRID error
+# code); parent 1 always exists.
+_ASYNC_INTEGRITY_VIOLATIONS: dict[str, tuple[type[_AsyncIntegrityBase], dict[str, object], int]] = {
+    "not_null": (_AsyncIntegrityParent, {"id": 2, "name": None}, -631),
+    "foreign_key": (_AsyncIntegrityChild, {"id": 1, "parent_id": 999}, -922),
+    "unique_pk": (_AsyncIntegrityParent, {"id": 1, "name": "duplicate"}, -670),  # control
 }
 
 
@@ -723,11 +724,12 @@ def _xfail_async_integrity(request: pytest.FixtureRequest, driver: str, kind: st
         xfail_unreleased_pycubrid_fix(request, driver, 390, raises=AssertionError)
 
 
-def _assert_integrity_error(exc: sa.exc.DBAPIError) -> None:
+def _assert_integrity_error(engine: AsyncEngine, exc: sa.exc.DBAPIError) -> None:
     assert isinstance(exc, sa.exc.IntegrityError), (
         f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
         f"wrapping {type(exc.orig).__module__}.{type(exc.orig).__name__}"
     )
+    assert isinstance(exc.orig, engine.dialect.loaded_dbapi.IntegrityError)
 
 
 def _integrity_counts(conn: sa.Connection) -> tuple[int, int]:
@@ -736,6 +738,10 @@ def _integrity_counts(conn: sa.Connection) -> tuple[int, int]:
         for model in (_AsyncIntegrityParent, _AsyncIntegrityChild)
     )
     return parents, children
+
+
+async def _dbapi_connection(conn: Any) -> Any:
+    return (await conn.get_raw_connection()).dbapi_connection
 
 
 class TestAsyncIntegrityErrorContract:
@@ -753,39 +759,51 @@ class TestAsyncIntegrityErrorContract:
     async def test_core_violation_raises_integrity_error(
         self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
     ):
-        model, values = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
         async with engine.connect() as conn:
+            raw = await _dbapi_connection(conn)
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
                 _ = await conn.execute(sa.insert(model), values)
+            assert not excinfo.value.connection_invalidated
             await conn.rollback()
-            # The same connection runs new statements after the rollback.
+            # The same AsyncConnection, on the same DBAPI connection, runs new
+            # statements after the rollback.
+            assert not conn.invalidated
+            assert await _dbapi_connection(conn) is raw
             assert await conn.run_sync(_integrity_counts) == (1, 0)
             _ = await conn.execute(sa.insert(_AsyncIntegrityChild), {"id": 10, "parent_id": 1})
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await conn.rollback()
-        # Only the class check is gated; the recovery checks above never are.
+        assert excinfo.value.orig.code == code  # pycubrid Error.code
+        # Only the class check is gated; the checks above never are.
         _xfail_async_integrity(request, engine.dialect.driver, kind)
-        _assert_integrity_error(excinfo.value)
+        _assert_integrity_error(engine, excinfo.value)
 
     @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
     async def test_orm_flush_violation_raises_integrity_error(
         self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
     ):
-        model, values = _ASYNC_INTEGRITY_VIOLATIONS[kind]
-        async with AsyncSession(engine) as session:
+        model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        # The AsyncSession is bound to one AsyncConnection, so after its rollback
+        # it keeps using that connection and its DBAPI connection.
+        async with engine.connect() as conn, AsyncSession(bind=conn) as session:
+            raw = await _dbapi_connection(conn)
             session.add(model(**values))
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
                 await session.flush()
+            assert not excinfo.value.connection_invalidated
             await session.rollback()
-            # The same session (and its connection) keeps working.
+            assert not conn.invalidated
+            assert await session.connection() is conn
+            assert await _dbapi_connection(conn) is raw
             session.add(_AsyncIntegrityChild(id=10, parent_id=1))
             await session.flush()
-            conn = await session.connection()
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await session.rollback()
-        # Only the class check is gated; the recovery checks above never are.
+        assert excinfo.value.orig.code == code  # pycubrid Error.code
+        # Only the class check is gated; the checks above never are.
         _xfail_async_integrity(request, engine.dialect.driver, kind)
-        _assert_integrity_error(excinfo.value)
+        _assert_integrity_error(engine, excinfo.value)
 
 
 # ---------------------------------------------------------------------------

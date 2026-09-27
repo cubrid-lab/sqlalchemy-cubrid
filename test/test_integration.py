@@ -43,6 +43,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_cubrid import BLOB, CLOB, DOUBLE, MULTISET, SEQUENCE, SET
+from sqlalchemy_cubrid.dialect import CubridDialect
 
 from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
@@ -1259,12 +1260,20 @@ class _IntegrityChild(_IntegrityBase):
     parent_id: Mapped[int] = mapped_column(ForeignKey("integration_ie480_parent.id"))
 
 
-# kind -> (mapped class, values violating the constraint); parent 1 always exists.
+# kind -> (mapped class, values violating the constraint, native CUBRID error
+# code); parent 1 always exists.
 _INTEGRITY_VIOLATIONS = {
-    "not_null": (_IntegrityParent, {"id": 2, "name": None}),
-    "foreign_key": (_IntegrityChild, {"id": 1, "parent_id": 999}),
-    "unique_pk": (_IntegrityParent, {"id": 1, "name": "duplicate"}),  # control
+    "not_null": (_IntegrityParent, {"id": 2, "name": None}, -631),
+    "foreign_key": (_IntegrityChild, {"id": 1, "parent_id": 999}, -922),
+    "unique_pk": (_IntegrityParent, {"id": 1, "name": "duplicate"}, -670),  # control
 }
+
+
+def _native_error_code(engine, orig):
+    """The server error code: pycubrid ``Error.code``, CUBRIDdb ``args[0]``."""
+    if engine.dialect.driver == "pycubrid":
+        return orig.code
+    return CubridDialect._extract_error_code(orig)
 
 
 def _xfail_integrity(request, driver, kind):
@@ -1274,11 +1283,12 @@ def _xfail_integrity(request, driver, kind):
         xfail_unreleased_pycubrid_fix(request, driver, 390, raises=AssertionError)
 
 
-def _assert_integrity_error(exc):
+def _assert_integrity_error(engine, exc):
     assert isinstance(exc, sa.exc.IntegrityError), (
         f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
         f"wrapping {type(exc.orig).__module__}.{type(exc.orig).__name__}"
     )
+    assert isinstance(exc.orig, engine.dialect.loaded_dbapi.IntegrityError)
 
 
 def _integrity_counts(conn):
@@ -1300,36 +1310,49 @@ class TestIntegrityErrorContract:
 
     @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
     def test_core_violation_raises_integrity_error(self, request, engine, kind):
-        model, values = _INTEGRITY_VIOLATIONS[kind]
+        model, values, code = _INTEGRITY_VIOLATIONS[kind]
         with engine.connect() as conn:
+            raw = conn.connection.dbapi_connection
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
                 conn.execute(sa.insert(model), values)
+            assert not excinfo.value.connection_invalidated
             conn.rollback()
-            # The same connection runs new statements after the rollback.
+            # The same Connection, on the same DBAPI connection, runs new
+            # statements after the rollback.
+            assert not conn.invalidated
+            assert conn.connection.dbapi_connection is raw
             assert _integrity_counts(conn) == (1, 0)
             conn.execute(sa.insert(_IntegrityChild), {"id": 10, "parent_id": 1})
             assert _integrity_counts(conn) == (1, 1)
             conn.rollback()
-        # Only the class check is gated; the recovery checks above never are.
+        assert _native_error_code(engine, excinfo.value.orig) == code
+        # Only the class check is gated; the checks above never are.
         _xfail_integrity(request, engine.dialect.driver, kind)
-        _assert_integrity_error(excinfo.value)
+        _assert_integrity_error(engine, excinfo.value)
 
     @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
     def test_orm_flush_violation_raises_integrity_error(self, request, engine, kind):
-        model, values = _INTEGRITY_VIOLATIONS[kind]
-        with Session(engine) as session:
+        model, values, code = _INTEGRITY_VIOLATIONS[kind]
+        # The Session is bound to one Connection, so after its rollback it keeps
+        # using that Connection and its DBAPI connection.
+        with engine.connect() as conn, Session(bind=conn) as session:
+            raw = conn.connection.dbapi_connection
             session.add(model(**values))
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
                 session.flush()
+            assert not excinfo.value.connection_invalidated
             session.rollback()
-            # The same session (and its connection) keeps working.
+            assert not conn.invalidated
+            assert session.connection() is conn
+            assert conn.connection.dbapi_connection is raw
             session.add(_IntegrityChild(id=10, parent_id=1))
             session.flush()
             assert _integrity_counts(session.connection()) == (1, 1)
             session.rollback()
-        # Only the class check is gated; the recovery checks above never are.
+        assert _native_error_code(engine, excinfo.value.orig) == code
+        # Only the class check is gated; the checks above never are.
         _xfail_integrity(request, engine.dialect.driver, kind)
-        _assert_integrity_error(excinfo.value)
+        _assert_integrity_error(engine, excinfo.value)
 
 
 # ---------------------------------------------------------------------------

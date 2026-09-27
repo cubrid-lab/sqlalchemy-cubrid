@@ -1244,11 +1244,10 @@ class CubridDialect(default.DefaultDialect):
     def is_disconnect(self, e: Exception, connection: Any, cursor: Any) -> bool:
         """Return True if *e* indicates a dropped connection.
 
-        This dialect supports multiple drivers with different exception
-        hierarchies: the legacy CUBRIDdb C-extension exposes only
-        ``Error``, ``InterfaceError``, ``DatabaseError``, and
-        ``NotSupportedError`` (no ``OperationalError``), whereas pycubrid
-        provides the full PEP 249 set (including ``OperationalError``).
+        This dialect supports multiple drivers. Both CUBRIDdb 11.3 and
+        pycubrid define the PEP 249 exception classes (CUBRIDdb has no
+        ``Warning``), but the dialect does not classify disconnects by
+        exception class.
 
         To stay robust across drivers *and* resilient to error-message
         wording drift, detection is layered: we anchor first on stable
