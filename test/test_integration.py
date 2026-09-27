@@ -1228,10 +1228,12 @@ class TestResultCompletenessAcrossTransactionBoundary:
             else:
                 assert error is None
         if rest is not None:
-            # Whatever was returned is an in-order prefix with intact payloads.
-            ids = [first.id] + [row.id for row in rest]
+            # Everything returned, including the row fetchone() consumed, is an
+            # in-order prefix with intact payloads.
+            returned = [first, *rest]
+            ids = [row.id for row in returned]
             assert ids == list(range(len(ids)))
-            assert all(row.payload == _WIDE_PAYLOAD for row in rest)
+            assert all(row.payload == _WIDE_PAYLOAD for row in returned)
         if boundary != "none":
             # Only the completeness check below is gated. On an explicit
             # error the test passes, which is a strict XPASS on a build that

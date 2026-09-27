@@ -378,10 +378,12 @@ def test_result_after_rollback_is_never_partial(
                     return "raises"
         finally:
             tbl.drop(engine, checkfirst=True)
-        # Whatever was returned is an in-order prefix with intact payloads.
-        ids = [first.id] + [row.id for row in rest]
+        # Everything returned, including the row fetchone() consumed, is an
+        # in-order prefix with intact payloads.
+        returned = [first, *rest]
+        ids = [row.id for row in returned]
         assert ids == list(range(len(ids)))
-        assert all(row.payload == "x" * 1000 for row in rest)
+        assert all(row.payload == "x" * 1000 for row in returned)
         return "complete" if len(ids) == rows else f"partial ({len(ids)} of {rows})"
 
     # CUBRIDdb, the precondition and the prefix checks stay outside the
@@ -441,11 +443,13 @@ def test_constraint_violation_class_agrees(
     c_class, c_orig = run(cext)
     assert CubridDialect._extract_error_code(c_orig) == code
     assert c_class == "IntegrityError"
+    assert isinstance(c_orig, cext.dialect.loaded_dbapi.IntegrityError)
     py_class, py_orig = run(pyc)
     assert py_orig.code == code
     if kind != "unique_pk":
         xfail_unreleased_pycubrid_fix(request, "pycubrid", 390, raises=AssertionError)
     assert py_class == "IntegrityError"
+    assert isinstance(py_orig, pyc.dialect.loaded_dbapi.IntegrityError)
 
 
 # ---------------------------------------------------------------------------
