@@ -24,7 +24,13 @@ from unicodedata import category
 
 _PREFIX = "Docs: not needed -"
 _MARKDOWN_ESCAPE = re.compile(r"\\([" + re.escape(punctuation) + r"])")
-_LITERAL_RUN = re.compile(r"`+|\\+|\[[^\[\]\n\\`<>]*\]\(<[^<>\n]*>\)")
+_AUTOLINK = (
+    r"<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\x00-\x20\x7f<>]*"
+    r"|[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9]"
+    r"(?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?"
+    r"(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*)>"
+)
+_LITERAL_RUN = re.compile(r"`+|\\+|\[[^\[\]\n\\`<>]*\]\(<[^<>\n]*>\)|" + _AUTOLINK)
 _BLOCK_PREFIX = r" {0,3}(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)?"
 _LIST_PREFIX = r" {0,3}([-+*]|[0-9]{1,9}[.)])[ \t]+"
 _LINK_DESTINATION = r"(?:[^\s()<>]+|<[^<>\r\n]*>)"
@@ -143,6 +149,7 @@ class _HTMLContext(HTMLParser):
         super().__init__(convert_charrefs=False)
         self.blocked: list[str] = []
         self.lines: dict[int, str] = {}
+        self.syntax_lines: dict[int, list[str]] = {}
         self.marker_lines: set[int] = set()
         self.literal_positions: set[tuple[int, int]] = set()
         self.source = source
@@ -283,6 +290,17 @@ class _HTMLContext(HTMLParser):
             self.blocked.pop()
 
     def handle_data(self, data: str) -> None:
+        self.collect_data(data)
+
+    def project_data(self, data: str, line: int, column: int) -> None:
+        for offset, text in enumerate(data.split("\n")):
+            row = self.syntax_lines.setdefault(line + offset, [])
+            origin = column if offset == 0 else 0
+            if len(row) < origin + len(text):
+                row.extend(" " * (origin + len(text) - len(row)))
+            row[origin : origin + len(text)] = text
+
+    def collect_data(self, data: str, project: bool = True) -> None:
         if not self.blocked:
             if data.startswith("<"):
                 self.confirm_comment()
@@ -305,6 +323,8 @@ class _HTMLContext(HTMLParser):
                     data = data[ignored:]
                 self.comment_start = None
                 self.comment_end = None
+            if project:
+                self.project_data(data, line, column)
             for offset, text in enumerate(data.split("\n")):
                 number = line + offset
                 self.lines[number] = self.lines.get(number, "") + text
@@ -319,12 +339,24 @@ class _HTMLContext(HTMLParser):
     def handle_entityref(self, name: str) -> None:
         if self.inside_comment():
             return
-        self.handle_data(unescape(f"&{name};").replace("\r", " ").replace("\n", " "))
+        self.project_reference(name, 1)
+        self.collect_data(unescape(f"&{name};").replace("\r", " ").replace("\n", " "), False)
 
     def handle_charref(self, name: str) -> None:
         if self.inside_comment():
             return
-        self.handle_data(unescape(f"&#{name};").replace("\r", " ").replace("\n", " "))
+        self.project_reference(name, 2)
+        self.collect_data(unescape(f"&#{name};").replace("\r", " ").replace("\n", " "), False)
+
+    def project_reference(self, name: str, width: int) -> None:
+        if self.blocked:
+            return
+        line, column = self.getpos()
+        start = self.position()
+        end = start + width + len(name)
+        if self.fed_text[end : end + 1] == ";":
+            end += 1
+        self.project_data(self.fed_text[start:end], line, column)
 
     def outside_prefix(self, number: int, prefix: str) -> bool:
         self.feed(prefix)
@@ -343,6 +375,17 @@ class _HTMLContext(HTMLParser):
             if run is None:
                 self.feed(text[cursor:])
                 break
+            if run[0][0] == "<":
+                self.feed(text[cursor : run.start()])
+                self.checkpoint()
+                outside = (
+                    not self.blocked
+                    and not self.inside_comment()
+                    and self.getpos() == (number, column + run.start())
+                )
+                self.feed(run[0].replace("<", " ").replace("&", " ") if outside else run[0])
+                cursor = run.end()
+                continue
             if run[0][0] == "[":
                 self.feed(text[cursor : run.start() + 1])
                 self.checkpoint()
@@ -586,13 +629,15 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             position = origin + len(line) - len(line.lstrip(" "))
             raw_reason = line.lstrip(" ")[len(prefix) :]
             if not _placeholder(raw_reason) and not _empty_caption(raw_reason):
-                candidates.append((number, position, raw_reason))
+                candidates.append((number, position))
     html.checkpoint()
-    for number, position, raw_reason in candidates:
+    for number, position in candidates:
         line = html.lines.get(number, "").lstrip(" ")
+        projected = "".join(html.syntax_lines.get(number, [])).lstrip(" ")
         inside = any(start <= position < end for start, end in html.inline_spans)
         if not inside and number in html.marker_lines and line.startswith(prefix):
             reason = _reason_text(line[len(prefix) :])
-            if reason and not _placeholder(reason) and not _empty_caption(raw_reason, reason):
+            syntax_reason = projected[len(prefix) :]
+            if reason and not _placeholder(reason) and not _empty_caption(syntax_reason, reason):
                 return True
     return False

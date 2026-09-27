@@ -130,6 +130,30 @@ class DocsReasonWorkflowTests(unittest.TestCase):
             self.assertFalse(
                 has_docs_not_needed_reason("Docs: not needed - " + selector + "<reason>")
             )
+        for reason in (
+            '[<span title="["></span>](/issue)',
+            "[<!--[-->](/issue)",
+            "![<!-- empty -->](image.png)<span></span>",
+        ):
+            self.assertFalse(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        for reason in (
+            "[ ]<span>(/url)</span>",
+            "<https://github.com/org/repo/issues/1>",
+            "<person@example.com>",
+            "`<https://example.com>`",
+            "only [<!--[-->](/issue) fixture changed",
+        ):
+            self.assertTrue(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        for body in (
+            '<div title="<https://example.com>\nDocs: not needed - hidden">',
+            "<script>\n<https://example.com>\nDocs: not needed - hidden\n</script>",
+            "<!--\n<https://example.com>\nDocs: not needed - hidden\n-->",
+        ):
+            self.assertFalse(has_docs_not_needed_reason(body))
+        from scripts.check_docs_reason import _LITERAL_RUN
+
+        for value in ("<a:x>", "<" + "a" * 33 + ":x>", "<ab: has-space>", "<ab:\x01>", "<span>"):
+            self.assertIsNone(_LITERAL_RUN.fullmatch(value))
 
     def test_checkpoint_does_not_resplit_the_fed_tape(self) -> None:
         from scripts.check_docs_reason import _HTMLContext
