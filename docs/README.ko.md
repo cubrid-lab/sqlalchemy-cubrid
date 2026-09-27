@@ -149,7 +149,7 @@ async with AsyncSession(engine) as session:
 - DML 확장 -- `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`, `FOR UPDATE`, `TRUNCATE`
 - DDL 지원 -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - 스키마 리플렉션 -- 테이블, 뷰, 컬럼, PK, FK, 인덱스, 유니크 제약 조건, 코멘트
-- `CubridImpl`을 통한 Alembic 마이그레이션 (자동 탐색 엔트리 포인트)
+- `CubridImpl`을 통한 Alembic 마이그레이션 (방언 로드 시 자동 등록)
 - CUBRID의 세 가지 MVCC 격리 수준 — `READ COMMITTED`(기본값), `REPEATABLE READ`, `SERIALIZABLE`
 - Async 지원 — pycubrid.aio 기반 `create_async_engine("cubrid+aiopycubrid://...")`
 
@@ -206,7 +206,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### sqlalchemy-cubrid는 Alembic 마이그레이션을 지원하나요?
 
-예. `pip install "sqlalchemy-cubrid[alembic]"`로 설치하세요. 방언은 entry point를 통해 자동 등록됩니다. 단, CUBRID는 DDL을 자동 커밋하므로 마이그레이션은 트랜잭션 처리되지 않습니다.
+예. `pip install "sqlalchemy-cubrid[alembic]"`로 설치하세요. CUBRID 마이그레이션 구현은 방언이 로드될 때 스스로 등록되므로 기본 `env.py`를 수정 없이 사용할 수 있습니다. 단, CUBRID는 DDL을 자동 커밋하므로 마이그레이션은 트랜잭션 처리되지 않습니다.
 
 ### 어떤 Python 버전을 지원하나요?
 

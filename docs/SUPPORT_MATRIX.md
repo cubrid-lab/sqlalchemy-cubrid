@@ -87,7 +87,7 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Auto-discovery | ✅ | `alembic.ddl` entry point |
+| Auto-registration | ✅ | Registered when the dialect loads (no `env.py` import) |
 | Schema migrations | ✅ | CREATE, ALTER, DROP |
 | Autogenerate | ✅ | Including collection types (SET, MULTISET, SEQUENCE) |
 | Transactional DDL | ❌ | CUBRID auto-commits DDL |

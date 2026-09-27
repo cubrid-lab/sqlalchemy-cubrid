@@ -200,7 +200,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 - DML extensions -- `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`, `FOR UPDATE`, `TRUNCATE`
 - DDL support -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema reflection -- tables, views, columns, PKs, FKs, indexes, unique constraints, comments
-- Alembic migrations via `CubridImpl` (auto-discovered entry point)
+- Alembic migrations via `CubridImpl` (registered automatically when the dialect loads)
 - Three CUBRID MVCC isolation levels — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - Async support — `create_async_engine("cubrid+aiopycubrid://...")` via pycubrid.aio
 
@@ -260,7 +260,7 @@ Yes. sqlalchemy-cubrid is built for SQLAlchemy 2.0–2.1 and supports the 2.0-st
 
 ### Does sqlalchemy-cubrid support Alembic migrations?
 
-Yes. Install with `pip install "sqlalchemy-cubrid[alembic]"`. The dialect auto-registers via entry point. Note that CUBRID auto-commits DDL, so migrations are not transactional.
+Yes. Install with `pip install "sqlalchemy-cubrid[alembic]"`. The CUBRID migration implementation registers itself when the dialect loads, so the default `env.py` works unchanged. Note that CUBRID auto-commits DDL, so migrations are not transactional.
 
 ### What Python versions are supported?
 

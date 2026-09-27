@@ -88,7 +88,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
 | 기능 | 상태 | 비고 |
 |---|---|---|
-| 자동 발견 | ✅ | `alembic.ddl` 엔트리 포인트 |
+| 자동 등록 | ✅ | 방언 로드 시 등록 (`env.py` 임포트 불필요) |
 | 스키마 마이그레이션 | ✅ | CREATE, ALTER, DROP |
 | Autogenerate | ✅ | 컬렉션 타입(SET, MULTISET, SEQUENCE) 포함 |
 | 트랜잭션 DDL | ❌ | CUBRID는 DDL을 자동 커밋 |

@@ -1304,3 +1304,17 @@ class CubridDialect(default.DefaultDialect):
 
 
 dialect = CubridDialect
+
+
+# Register ``CubridImpl`` with Alembic whenever Alembic is installed.
+# Alembic resolves its migration implementation from ``_impls[dialect.name]``,
+# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``; it
+# never reads a package entry point for this.  Every CUBRID dialect variant
+# (``cubrid``, ``cubrid+cubriddb``, ``cubrid+pycubrid``,
+# ``cubrid+aiopycubrid``) imports this module and has ``name = "cubrid"``, so
+# importing ``alembic_impl`` here makes a default ``env.py`` work with no
+# extra import.  Alembic stays optional: without it the import is skipped.
+try:
+    from sqlalchemy_cubrid import alembic_impl as _alembic_impl  # noqa: F401
+except ImportError:
+    pass

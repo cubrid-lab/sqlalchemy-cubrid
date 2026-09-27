@@ -882,7 +882,7 @@ stmt = replace(users).values(id=1, name="Alice", email="alice@new.com")
 **Symptom:**
 
 ```
-CommandError: No implementation found for dialect 'cubrid'
+KeyError: 'cubrid'   (raised from alembic/ddl/impl.py, DefaultImpl.get_by_dialect)
 ```
 
 **Fix:** Install with the `alembic` extra:
@@ -891,7 +891,7 @@ CommandError: No implementation found for dialect 'cubrid'
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-The `CubridImpl` class is auto-discovered via the `alembic.ddl` entry point. No manual configuration needed.
+`CubridImpl` registers itself when the CUBRID dialect loads, provided Alembic is installed in the same environment. No manual configuration or `env.py` import is needed.
 
 ---
 

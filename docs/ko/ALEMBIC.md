@@ -26,9 +26,9 @@ CUBRID 방언과 함께 [Alembic](https://alembic.sqlalchemy.org/) 데이터베�
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-이것은 의존성으로 Alembic ≥ 1.7을 끌어옵니다. CUBRID Alembic 구현(`CubridImpl`)은 `alembic.ddl` 엔트리 포인트를 통해 자동 등록됩니다 — 수동 구성이 필요 없습니다.
+이것은 의존성으로 Alembic ≥ 1.7을 끌어옵니다. CUBRID Alembic 구현(`CubridImpl`)은 CUBRID 방언이 로드될 때 자동 등록됩니다 — 수동 구성이 필요 없습니다.
 
-> **참고**: Alembic을 따로 설치해도(`pip install alembic`), 같은 환경에 `sqlalchemy-cubrid`가 설치되어 있으면 CUBRID 구현을 자동 발견합니다.
+> **참고**: Alembic을 따로 설치해도(`pip install alembic`), 같은 환경에 `sqlalchemy-cubrid`가 설치되어 있으면 CUBRID 구현이 그대로 등록됩니다.
 
 ---
 
@@ -70,7 +70,7 @@ def run_migrations_online():
 
 ### env.py 설정
 
-표준 Alembic `env.py`는 수정 없이 동작합니다. 연결 URL이 `cubrid://` 스킴을 사용하면 `CubridImpl` 클래스가 자동 발견됩니다.
+표준 Alembic `env.py`는 수정 없이 동작합니다. `cubrid://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://` URL이 방언을 로드하는 순간 `CubridImpl` 클래스가 등록됩니다.
 
 온라인 마이그레이션을 위한 최소 `env.py`:
 
@@ -152,16 +152,13 @@ CUBRID는 모든 DDL 문을 암시적으로 커밋합니다. `CubridImpl`은 `tr
 
 **시사점**: 여러 DDL 연산을 가진 마이그레이션이 중간에 실패하면 단순 롤백이 불가능합니다 — 이전 연산은 이미 커밋되었습니다. 작고 원자적인 단계로 마이그레이션을 작성하세요.
 
-### 자동 발견
+### 자동 등록
 
-방언은 `pyproject.toml`의 `alembic.ddl` 엔트리 포인트로 `CubridImpl`을 등록합니다:
+Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이션 구현을 고르며, `DefaultImpl` 하위 클래스는 모듈이 임포트될 때 이 레지스트리에 스스로 추가됩니다(`CubridImpl.__dialect__ = "cubrid"`). Alembic은 패키지 엔트리 포인트에서 방언 구현을 로드하지 않습니다.
 
-```toml
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
-```
+그래서 `sqlalchemy_cubrid/dialect.py`는 Alembic이 설치되어 있으면 `sqlalchemy_cubrid.alembic_impl`을 임포트하고, 없으면 조용히 건너뜁니다. 모든 CUBRID URL(`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`)이 이 모듈을 로드하고 `dialect.name == "cubrid"`이므로, 엔진을 만들 때(오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) Alembic이 조회하기 전에 `CubridImpl`이 등록됩니다. `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다.
 
-Alembic이 `cubrid://` 연결 URL을 감지하면 자동으로 `CubridImpl`을 로드합니다. 마이그레이션 파일에 임포트나 구성이 필요 없습니다.
+이 수정 이전 버전은 Alembic이 읽지 않는 `alembic.ddl` 엔트리 포인트를 선언했기 때문에, 기본 `env.py`는 `sqlalchemy_cubrid.alembic_impl`을 명시적으로 임포트하지 않으면 `KeyError: 'cubrid'`로 실패했습니다. 그 임포트는 남겨 두어도 무해합니다.
 
 ### 구현 상세
 

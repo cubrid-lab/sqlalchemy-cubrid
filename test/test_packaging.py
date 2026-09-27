@@ -98,11 +98,10 @@ class TestEntryPoints:
         assert '[project.entry-points."sqlalchemy.dialects"]' in pyproject_text
         assert entry_line in pyproject_text
 
-    def test_alembic_entry_point_declared(self):
-        pyproject_text = _read_pyproject()
-
-        assert '[project.entry-points."alembic.ddl"]' in pyproject_text
-        assert 'cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"' in pyproject_text
+    def test_no_alembic_ddl_entry_point_declared(self):
+        # Alembic never reads an ``alembic.ddl`` group; the dialect module
+        # registers CubridImpl on import instead (#504).
+        assert '[project.entry-points."alembic.ddl"]' not in _read_pyproject()
 
     @pytest.mark.parametrize(
         ("entry_name", "expected_module", "expected_class_name"),
@@ -133,19 +132,21 @@ class TestEntryPoints:
         assert loaded.__module__ == expected_module
         assert loaded.__name__ == expected_class_name
 
-    def test_alembic_entry_point_loadable(self):
-        entry_points = {
-            entry_point.name: entry_point
-            for entry_point in importlib.metadata.entry_points(group="alembic.ddl")
-            if entry_point.name == "cubrid"
-        }
+    @pytest.mark.parametrize(
+        "entry_name",
+        ["cubrid", "cubrid.cubrid", "cubrid.cubriddb", "cubrid.pycubrid", "cubrid.aiopycubrid"],
+    )
+    def test_every_dialect_entry_point_resolves_alembic_impl(self, entry_name: str):
+        # Alembic looks up its impl by ``dialect.name``; loading any CUBRID
+        # dialect must leave CubridImpl registered under that name (#504).
+        from alembic.ddl.impl import _impls
 
-        assert "cubrid" in entry_points
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
-        loaded = cast(type[object], entry_points["cubrid"].load())
+        loaded = cast(type[object], _entry_points_by_name("sqlalchemy.dialects")[entry_name].load())
 
-        assert loaded.__module__ == "sqlalchemy_cubrid.alembic_impl"
-        assert loaded.__name__ == "CubridImpl"
+        assert getattr(loaded, "name") == "cubrid"
+        assert _impls[getattr(loaded, "name")] is CubridImpl
 
 
 class TestDialectResolution:

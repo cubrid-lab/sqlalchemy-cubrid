@@ -60,7 +60,7 @@ graph TD
 | `base.py` | Execution context (`get_lastrowid`), identifier preparer (lowercase folding, 254-char max, reserved words). |
 | `trace.py` | `trace_query()` helper that enables CUBRID tracing around a statement and returns trace output. |
 | `requirements.py` | Test requirement flags — marks what CUBRID does/doesn't support for SA's test suite. |
-| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = False`. Auto-discovered via `alembic.ddl` entry point. |
+| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = False`. Registered with Alembic when `dialect.py` imports it (only if Alembic is installed); Alembic has no entry-point lookup for dialect impls. |
 | `_compat.py` | Internal compatibility helpers that wrap SQLAlchemy private APIs used by the dialect/compiler. |
 
 ### Entry Points (pyproject.toml)
@@ -71,8 +71,6 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.cubrid" = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 ```
 
 ## Development

@@ -26,7 +26,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 - **Schema reflection** — tables, views, columns, PKs, FKs, indexes, unique constraints, comments
 - **DML extensions** — ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT, TRUNCATE
 - **DDL support** — COMMENT, IF NOT EXISTS / IF EXISTS, AUTO_INCREMENT
-- **Alembic migration support** via auto-discovered entry point
+- **Alembic migration support** via `CubridImpl`, registered when the dialect loads
 - **~98.26% offline coverage** (619 offline tests, 35 sync integration tests, 16 async integration tests)
 - **CI/CD** — Python 3.10–3.14 × CUBRID 10.2–11.4 matrix
 - **17 English documentation files** in `docs/` covering the dialect
@@ -41,7 +41,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 | All dialect methods implemented | ✅ | ✅ Reflection, compilation, types |
 | CI/CD with version matrix | ✅ | ✅ Py 3.10–3.14 × CUBRID 10.2–11.4 |
 | Publishable to PyPI | ✅ | ✅ Release workflow on tag |
-| Alembic support | ✅ | ✅ CubridImpl auto-discovered + autogenerate |
+| Alembic support | ✅ | ✅ CubridImpl auto-registered + autogenerate |
 | ≥ 95% code coverage | ✅ | ✅ ~98.26% (CI-enforced) |
 | Comprehensive documentation | ✅ | ✅ 17 English docs files + README |
 
@@ -103,8 +103,6 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
 
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 ```
 
 ---
@@ -261,7 +259,7 @@ stmt = (
 ### 3.5 Alembic Support (`alembic_impl.py` — 141 lines)
 
 - `CubridImpl(DefaultImpl)` with `transactional_ddl = False`
-- Auto-discovered via `alembic.ddl` entry point
+- Registered with Alembic when the dialect module loads
 - Autogenerate: `render_type()` for SET/MULTISET/SEQUENCE rendering in migration scripts
 - Autogenerate: `compare_type()` for semantic comparison of collection types
 - Native `alter_column`: type change (`MODIFY`), rename (`RENAME COLUMN`), combined (`CHANGE`); `batch_alter_table` only for lossy conversions (`alter_table_change_type_strict`)
