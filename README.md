@@ -303,6 +303,18 @@ For the ecosystem-wide view, see the [CUBRID Labs Ecosystem Roadmap](https://git
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for development setup.
 
+### First contribution
+
+New to CUBRID? Pick the repository that matches what you want to work on:
+
+- Documentation and runnable examples: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
+- Pure-Python driver fixes: [pycubrid](https://github.com/cubrid-lab/pycubrid)
+- SQLAlchemy dialect fixes: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+
+Most first issues can be developed and tested with the offline checks in CONTRIBUTING.md — no Docker or CUBRID server needed. Live CUBRID verification can be completed by CI and maintainers.
+
+Browse open [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) tasks.
+
 ## Security
 
 Report vulnerabilities via email -- see [SECURITY.md](SECURITY.md). Do not open public issues for security concerns.

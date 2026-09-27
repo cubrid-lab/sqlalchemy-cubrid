@@ -327,6 +327,14 @@ Rules:
    past `size: S`, re-scope it or drop the `good first issue` label.
 4. **`size: XL` is a signal to split**, not a green light to start a sprawling change.
 
+### Good first issue lifecycle
+
+- Unclaimed: `good first issue`.
+- A PR is opened for it: remove `good first issue`, add `status: in progress` (the label now exists in all three repos).
+- PR merged: the issue closes.
+- PR closed without merging: remove `status: in progress` and restore `good first issue`.
+- Keep 3–5 genuinely unclaimed good first issues per repository; a good first issue should have a small blast radius and an existing pattern or reference PR to follow, not just a small diff.
+
 ## Documentation definition of done
 
 Any change that affects public behavior, compatibility, installation, configuration, APIs, supported versions, error handling, or SQL/dialect behavior MUST update the matching documentation in the **same PR**. At minimum keep in sync: `CHANGELOG.md`, the relevant files under `docs/` (e.g. `FEATURE_SUPPORT.md`, `ISOLATION_LEVELS.md`, `TYPES.md`), the `SUPPORT_MATRIX.md`, and version/compatibility claims in `README*`.

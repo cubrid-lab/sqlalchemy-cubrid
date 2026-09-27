@@ -247,6 +247,18 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 가이드라인은 [CONTRIBUTING.md](../CONTRIBUTING.md), 개발 환경 설정은 [docs/DEVELOPMENT.md](DEVELOPMENT.md)를 참고하세요.
 
+### 첫 기여
+
+CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선택하세요:
+
+- 문서와 실행 가능한 예제: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
+- 순수 Python 드라이버 수정: [pycubrid](https://github.com/cubrid-lab/pycubrid)
+- SQLAlchemy 방언 수정: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+
+대부분의 첫 이슈는 CONTRIBUTING.md의 오프라인 검사만으로 개발하고 테스트할 수 있습니다 — Docker나 CUBRID 서버가 필요 없습니다. 실제 CUBRID 검증은 CI와 메인테이너가 완료할 수 있습니다.
+
+열려 있는 [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) 작업을 둘러보세요.
+
 ## 보안
 
 취약점은 이메일로 제보해 주세요 -- 자세한 내용은 [SECURITY.md](../SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
