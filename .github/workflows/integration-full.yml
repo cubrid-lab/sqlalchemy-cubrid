@@ -128,7 +128,7 @@ jobs:
 
       - name: Upload version-differential snapshot
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: vdiff-snapshot-${{ matrix.cubrid-version }}
           path: snapshot-${{ matrix.cubrid-version }}.json
@@ -160,7 +160,7 @@ jobs:
           python-version: "3.12"
 
       - name: Download all version snapshots
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: vdiff-snapshot-*
           merge-multiple: true
@@ -182,7 +182,7 @@ jobs:
   # runs on the nightly schedule and on demand.
   fuzz-bug-hunt:
     name: Hypothesis fuzz bug hunt (nightly)
-    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@main
+    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
     with:
       cubrid-version: "11.4"
       python-version: "3.12"
