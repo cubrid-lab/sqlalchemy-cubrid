@@ -416,7 +416,7 @@ flowchart LR
     `NCHAR`/`NVARCHAR` use national character semantics. Keep application encoding and database collation aligned to avoid unexpected comparisons/sorting.
 
 !!! warning "Reading BLOB/CLOB returns a driver LOB locator"
-    Verified live on CUBRID 10.2 and 11.4 with pycubrid 1.3.2 and 1.7.1 and CUBRIDdb 11.3 (#485): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on pycubrid, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. On `cubrid+aiopycubrid://`, binding any `LargeBinary`/`BLOB` parameter, including `None`, raises `AttributeError` for the missing DB-API `Binary`.
+    Verified live on CUBRID 10.2 and 11.4 with pycubrid 1.3.2 and 1.7.1 and CUBRIDdb 11.3 (#485): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on pycubrid, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. The same applies to `cubrid+aiopycubrid://`, where binding `LargeBinary`/`BLOB` values (including `None`) works since #500.
     To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441.
 
 !!! warning "LOB and collection payload shape can differ by driver"

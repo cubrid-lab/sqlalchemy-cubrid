@@ -6,9 +6,12 @@ import types
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+import sqlalchemy as sa
 from sqlalchemy.engine import url
 
 from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+    PEP249_MODULE_NAMES,
     AsyncAdapt_pycubrid_connection,
     AsyncAdapt_pycubrid_cursor,
     AsyncAdapt_pycubrid_dbapi,
@@ -45,24 +48,7 @@ class TestPyCubridAsyncDialectImportDbapi:
     def test_import_dbapi_returns_async_adapt_module(self):
         fake_aio = types.ModuleType("pycubrid.aio")
         fake_sync = types.ModuleType("pycubrid")
-        cast(Any, fake_sync).paramstyle = "qmark"
-        for attr in [
-            "Error",
-            "OperationalError",
-            "InterfaceError",
-            "IntegrityError",
-            "ProgrammingError",
-            "DatabaseError",
-            "InternalError",
-            "DataError",
-            "NotSupportedError",
-            "Warning",
-            "STRING",
-            "BINARY",
-            "NUMBER",
-            "DATETIME",
-            "ROWID",
-        ]:
+        for attr in PEP249_MODULE_NAMES:
             setattr(fake_sync, attr, type(attr, (Exception,), {}))
 
         with patch.dict(sys.modules, {"pycubrid.aio": fake_aio, "pycubrid": fake_sync}):
@@ -140,6 +126,79 @@ class TestAsyncAdaptPycubridDbapi:
             dbapi = AsyncAdapt_pycubrid_dbapi(fake_aio)
 
         assert dbapi.Error is FakeError
+
+
+# Module-level names PEP 249 defines (globals, exceptions, type constructors
+# and type objects). Deliberately spelled out here rather than reusing
+# PEP249_MODULE_NAMES so a name dropped from the declared tuple fails a test.
+PEP249_NAMES = (
+    "apilevel",
+    "threadsafety",
+    "paramstyle",
+    "Warning",
+    "Error",
+    "InterfaceError",
+    "DatabaseError",
+    "DataError",
+    "OperationalError",
+    "IntegrityError",
+    "InternalError",
+    "ProgrammingError",
+    "NotSupportedError",
+    "Date",
+    "Time",
+    "Timestamp",
+    "DateFromTicks",
+    "TimeFromTicks",
+    "TimestampFromTicks",
+    "Binary",
+    "STRING",
+    "BINARY",
+    "NUMBER",
+    "DATETIME",
+    "ROWID",
+)
+
+
+def _fake_sync_pycubrid() -> types.ModuleType:
+    """A stand-in ``pycubrid`` with a distinct sentinel for every PEP 249 name."""
+    fake_sync = types.ModuleType("pycubrid")
+    for name in PEP249_NAMES:
+        setattr(fake_sync, name, object())
+    cast(Any, fake_sync).paramstyle = "qmark"
+    cast(Any, fake_sync).Binary = lambda value: ("fake-binary", value)
+    return fake_sync
+
+
+class TestAsyncAdaptPycubridDbapiPep249Surface:
+    """#500: the async adapter mirrors pycubrid's PEP 249 module surface.
+
+    These run offline against a fake ``pycubrid``; the same parity check
+    against the real released driver runs in ``test_aio_integration.py``.
+    """
+
+    def test_declared_tuple_covers_every_pep249_name(self):
+        assert set(PEP249_NAMES) <= set(PEP249_MODULE_NAMES)
+
+    @pytest.mark.parametrize("name", PEP249_NAMES)
+    def test_every_pep249_name_is_copied_from_sync_module(self, name: str):
+        fake_sync = _fake_sync_pycubrid()
+        with patch.dict(sys.modules, {"pycubrid": fake_sync}):
+            dbapi = AsyncAdapt_pycubrid_dbapi(MagicMock())
+        assert getattr(dbapi, name) is getattr(fake_sync, name)
+
+    @pytest.mark.parametrize("value", [None, b"\x00\xffdata"])
+    def test_large_binary_bind_processor_uses_adapter_binary(self, value: bytes | None):
+        with patch.dict(sys.modules, {"pycubrid": _fake_sync_pycubrid()}):
+            dbapi = AsyncAdapt_pycubrid_dbapi(MagicMock())
+        dialect = PyCubridAsyncDialect(dbapi=cast(Any, dbapi))
+        processor = sa.LargeBinary().bind_processor(dialect)
+        assert processor is not None
+        result = processor(value)
+        if value is None:
+            assert result is None
+        else:
+            assert result == ("fake-binary", value)
 
 
 class TestAsyncAdaptPycubridConnection:
