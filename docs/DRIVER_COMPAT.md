@@ -68,7 +68,8 @@ Python driver and requires compilation against the CCI headers.
 
 ## Exception Hierarchy
 
-CUBRIDdb exposes a **limited** exception hierarchy compared to PEP 249:
+CUBRIDdb 11.3.0.51 (module `_cubrid`) provides every PEP 249 exception class
+except `Warning`:
 
 ```mermaid
 graph TD
@@ -76,19 +77,30 @@ graph TD
     exc --> err["CUBRIDdb.Error (Base DBAPI error)"]
     err --> iface["CUBRIDdb.InterfaceError (Driver-level errors)"]
     err --> db["CUBRIDdb.DatabaseError (Server-level errors)"]
-    err --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
+    db --> data["CUBRIDdb.DataError"]
+    db --> op["CUBRIDdb.OperationalError"]
+    db --> integ["CUBRIDdb.IntegrityError"]
+    db --> internal["CUBRIDdb.InternalError"]
+    db --> prog["CUBRIDdb.ProgrammingError"]
+    db --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
 ```
 
-**Missing PEP 249 exceptions** (not provided by the driver):
-- `OperationalError` — subsumed by `DatabaseError`
-- `ProgrammingError` — subsumed by `DatabaseError`
-- `InternalError` — subsumed by `DatabaseError`
-- `DataError` — subsumed by `DatabaseError`
-- `IntegrityError` — subsumed by `DatabaseError`
+The class a server error gets comes from the driver's error-code mapping.
+Observed on CUBRID 11.4:
 
-This means all database-level errors (constraint violations, syntax errors, connection
-issues) are raised as `DatabaseError`. The `sqlalchemy-cubrid` dialect uses
-**string-based message matching** to distinguish disconnect errors from other failures.
+| Error (native code) | CUBRIDdb class |
+|---|---|
+| Syntax error or unknown table (-493) | `ProgrammingError` |
+| NOT NULL (-631), foreign key (-922), unique (-670) | `IntegrityError` |
+| Division by zero (-494) | `IntegrityError` |
+| Failed `CAST` (-181) | `DatabaseError` |
+| Reading a result after `rollback()` (CCI -20040) | `InterfaceError` |
+
+SQLAlchemy wraps the class it receives, so `cubrid://` raises
+`sqlalchemy.exc.IntegrityError` for constraint violations; see
+[Known Issue 9](#9-not-null--foreign-key-violations-on-released-pycubrid) for
+pycubrid. The `sqlalchemy-cubrid` dialect uses **string-based message matching**
+to distinguish disconnect errors from other failures.
 
 ---
 
@@ -122,10 +134,11 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 
 ## Known Issues
 
-### 1. No `OperationalError` for Disconnect Detection
+### 1. Disconnect detection does not use `OperationalError`
 
-Since the driver doesn't provide `OperationalError`, the dialect cannot use
-`isinstance(e, dbapi.OperationalError)` like MySQL dialects do. Instead, it uses:
+CUBRIDdb 11.3.0.51 defines `OperationalError` (see
+[Exception Hierarchy](#exception-hierarchy)), but the dialect's
+`is_disconnect()` does not classify disconnects by exception class. Instead, it uses:
 - String pattern matching against 15 known disconnect messages
 - Numeric error code matching for CCI communication errors
 
@@ -182,13 +195,84 @@ returns the driver's LOB locator instead of `bytes` / `str`:
 |---|---|
 | `cubrid://` (`CUBRIDdb` 11.3) | server file-locator `str` (`'file:...'`) |
 | `cubrid+pycubrid://` (pycubrid 1.3.2 to 1.7.1) | LOB-handle `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
-| `cubrid+aiopycubrid://` | LOB-handle `dict`; binding any `LargeBinary` / `BLOB` parameter, including `None`, also raises `AttributeError` because the async DB-API adapter has no `Binary` |
+| `cubrid+aiopycubrid://` (pycubrid 1.7.1) | LOB-handle `dict` (binding `LargeBinary` / `BLOB` values, including `None`, works since #500) |
 
 For `LargeBinary` / `BLOB`, SQLAlchemy's result processor then raises `TypeError`.
 To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`),
 or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
 `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441. See also
 [Types](TYPES.md).
+
+### 7. `executemany` reuses the previous row's value for `None` (dialect guard)
+
+`CUBRIDdb` 11.3.0.51 (the `cubrid://` driver) has two `executemany()` bugs:
+
+- **Wrong data.** Its `_bind_params` skips `None`, and `executemany` prepares
+  the statement once. A `None` parameter therefore keeps the previous row's
+  bound value, so `[(1, 'a'), (2, None)]` stores `(2, 'a')`.
+- **Wrong rowcount.** `cursor.rowcount` reports only the last row's count.
+
+Through SQLAlchemy, these bugs made `text()` and Core `UPDATE`/`DELETE`
+executemany store wrong data. Batched ORM UPDATEs raised `StaleDataError`
+(`expected to update 3 row(s); 1 were matched`). The driver cannot be worked
+around from the outside because `bind_param(i, None)` raises `SystemError`.
+
+**Dialect guard (#502).** `CubridDialect.do_executemany` runs each parameter set
+with `cursor.execute()` and sets `cursor.rowcount` to the total. Each
+`execute()` prepares the statement again, so an unbound `None` becomes NULL. The
+guard always applies, not only when a row contains `None`, because the
+last-row rowcount is wrong for every statement. With the guard,
+`supports_sane_multi_rowcount` is accurate on both drivers. The cost is one
+statement prepare per row on plain executemany. A multi-row Core `insert()`
+that uses insertmanyvalues goes through `do_execute` and does not use the
+guard. An INSERT into a table with a column whose type defines
+`bind_expression()` falls back to executemany (#421), so on `cubrid://` it
+does use the per-row guard. Code that calls `CUBRIDdb`'s `cursor.executemany()` directly, without
+SQLAlchemy, is still affected.
+
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` bind `None` correctly and sum
+the rowcount, so they keep the driver's prepare-once `executemany`.
+
+The guard will be removed once a fixed `CUBRIDdb` release is the minimum
+supported version. An upstream report to CUBRID/cubrid-python is pending, and
+#502 tracks it.
+
+### 8. Unfinished results after `commit()` / `rollback()`
+
+Verified live on CUBRID 10.2 and 11.4 (#481) with a 500-row result that needs
+several FETCH round trips (pycubrid fetches 100 rows per batch; the broker's
+first response held 16 of these 1000-byte rows). Reading the rest of a sync
+`Result` after `Connection.commit()` / `rollback()` behaves differently per
+driver:
+
+| Driver | After `commit()` | After `rollback()` |
+|---|---|---|
+| `cubrid://` (`CUBRIDdb` 11.3) | all rows | `InterfaceError` (CCI -20040) |
+| `cubrid+pycubrid://` (pycubrid 1.7.1) | **silently returns only the rows already buffered** on a connection that completed an earlier query (the normal state of a pooled connection); `OperationalError` otherwise | same as commit |
+| `cubrid+aiopycubrid://` | all rows: `AsyncConnection.execute()` buffers the whole result before it returns | all rows |
+
+cubrid-lab/pycubrid#395 makes pycubrid raise `InterfaceError` instead of
+returning a partial result; until that release is adopted, fully consume a
+result before ending its transaction. `AsyncConnection.stream()` is not
+available because the dialect does not support server-side cursors.
+
+### 9. NOT NULL / foreign-key violations on released pycubrid
+
+Verified live on CUBRID 10.2 and 11.4 (#480). SQLAlchemy wraps the DB-API
+exception class it receives, so the SQLAlchemy exception class depends on the
+driver:
+
+| Violation (native code) | `cubrid://` (`CUBRIDdb` 11.3) | `cubrid+pycubrid://` / `cubrid+aiopycubrid://` (pycubrid 1.7.1) |
+|---|---|---|
+| NOT NULL (-631) | `IntegrityError` | `DatabaseError` |
+| Foreign key (-922) | `IntegrityError` | `DatabaseError` |
+| Unique / primary key (-670) | `IntegrityError` | `IntegrityError` |
+
+Until the pycubrid release fixing cubrid-lab/pycubrid#390 is adopted, catch
+`sqlalchemy.exc.DatabaseError` (the base of `IntegrityError`) for NOT NULL and
+foreign-key failures through pycubrid. The dialect deliberately does not
+reclassify exceptions by message. On every driver the connection or `Session`
+remains usable after `rollback()`.
 
 ---
 

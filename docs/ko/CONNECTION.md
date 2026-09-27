@@ -430,7 +430,7 @@ engine = create_engine(
 
 1. **숫자 오류 코드 매칭 (주)** — `ER_COMMUNICATION`(-4, pycubrid), `CAS_ER_COMMUNICATION`(-21003/-21005), `ER_NET_CANT_CONNECT`(-10005), `ER_NET_SERVER_COMM_ERROR`(-10007) 등 안정적인 CUBRID/CCI 코드를 검사.
 2. **명시적 `OSError` 원인 체인 (문구 무관)** — 예외의 명시적 `__cause__` 체인(`raise ... from`)에 `OSError`(예: 소켓 오류)이 있으면 메시지 문구와 무관하게 연결이 끊긴 것으로 간주. 무관한 진행 중 `OSError`가 살아있는 연결을 오탐 무효화하지 않도록 암시적 `__context__`는 의도적으로 무시.
-3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. `OperationalError`가 없는 레거시 CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive")를 커버.
+3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. 레거시 CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive")를 커버.
 
 감지는 의도적으로 보수적입니다: 해제 코드도, `OSError` 원인도, 해제 메시지도 아닌 데이터베이스 오류(예: 잘못된 격리 수준 오류, 닫힌 커서 오용)는 연결 해제로 취급하지 **않아** 오탐 풀 무효화를 피합니다.
 
@@ -438,16 +438,21 @@ engine = create_engine(
 
 ### 오류 코드 매핑
 
-CUBRID 드라이버 예외는 적절한 SQLAlchemy 예외 타입으로 매핑됩니다. 드라이버는 제한된 예외 계층을 노출합니다:
+CUBRID 드라이버 예외는 적절한 SQLAlchemy 예외 타입으로 매핑됩니다. 두 드라이버 모두 PEP 249 예외 계층 전체를 노출합니다:
 
 | CUBRID 드라이버 예외 | SA 예외 매핑 |
 |---|---|
 | `Error` (기본) | `DBAPIError` |
 | `InterfaceError` | `InterfaceError` |
 | `DatabaseError` | `DatabaseError` |
+| `DataError` | `DataError` |
+| `OperationalError` | `OperationalError` |
+| `IntegrityError` | `IntegrityError` |
+| `InternalError` | `InternalError` |
+| `ProgrammingError` | `ProgrammingError` |
 | `NotSupportedError` | `NotSupportedError` |
 
-> **참고**: CUBRIDdb는 `OperationalError`, `ProgrammingError`, `InternalError`, `DataError`를 제공하지 않습니다. 모든 데이터베이스 수준 오류는 `DatabaseError`로 발생합니다.
+> **참고**: CUBRIDdb 11.3.0.51과 pycubrid는 위의 모든 PEP 249 예외 클래스를 제공하며, SQLAlchemy는 드라이버가 발생시킨 클래스를 감쌉니다. 특정 서버 오류가 어떤 클래스가 되는지는 드라이버에 따라 다릅니다. 예를 들어 릴리스된 pycubrid의 NOT NULL 및 외래 키 위반이 그렇습니다. [드라이버 호환성](DRIVER_COMPAT.md#예외-계층)을 참고하세요.
 
 ### 풀 구성 권장사항
 

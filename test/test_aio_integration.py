@@ -421,25 +421,16 @@ _LOB_CASES = [
 
 
 def _xfail_async_lob(request: pytest.FixtureRequest, kind: str, value: object) -> None:
-    if kind in ("large_binary", "blob"):
+    # Binding works since #500; only the non-NULL LOB *read* still returns the
+    # driver's LOB-handle dict instead of bytes/str (pycubrid#441, #485).
+    if kind in ("large_binary", "blob", "clob") and value is not None:
         request.applymarker(
             pytest.mark.xfail(
                 strict=True,
-                raises=sa.exc.StatementError,
+                raises=(AssertionError, TypeError),
                 reason=(
-                    "AsyncAdapt_pycubrid_dbapi does not expose DB-API Binary, so "
-                    "LargeBinary/BLOB binding raises AttributeError (#485)"
-                ),
-            )
-        )
-    elif kind == "clob" and value is not None:
-        request.applymarker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason=(
-                    "released pycubrid fetches CLOB columns as a raw LOB-handle dict "
-                    "instead of str; official LOB fetch is cubrid-lab/pycubrid#441"
+                    "released pycubrid fetches BLOB/CLOB columns as a raw LOB-handle dict "
+                    "instead of bytes/str; official LOB fetch is cubrid-lab/pycubrid#441"
                 ),
             )
         )
@@ -482,6 +473,47 @@ def _async_lob_model(kind: str) -> type[_AsyncLobBase]:
     return _AsyncCharLobDocument
 
 
+# PEP 249 module-level names; kept in sync with the offline copy in
+# test_aio_pycubrid_dialect.py. This live lane installs the released pycubrid,
+# so the parity check runs against the real driver here (#500).
+_PEP249_NAMES = (
+    "apilevel",
+    "threadsafety",
+    "paramstyle",
+    "Warning",
+    "Error",
+    "InterfaceError",
+    "DatabaseError",
+    "DataError",
+    "OperationalError",
+    "IntegrityError",
+    "InternalError",
+    "ProgrammingError",
+    "NotSupportedError",
+    "Date",
+    "Time",
+    "Timestamp",
+    "DateFromTicks",
+    "TimeFromTicks",
+    "TimestampFromTicks",
+    "Binary",
+    "STRING",
+    "BINARY",
+    "NUMBER",
+    "DATETIME",
+    "ROWID",
+)
+
+
+@pytest.mark.parametrize("name", _PEP249_NAMES)
+def test_adapter_exposes_every_pycubrid_pep249_name(engine: AsyncEngine, name: str):
+    pycubrid = pytest.importorskip("pycubrid")
+    if not hasattr(pycubrid, name):
+        pytest.skip(f"pycubrid {pycubrid.__version__} does not define {name}")
+    dbapi = cast(object, engine.dialect.dbapi)
+    assert getattr(dbapi, name) is getattr(pycubrid, name)
+
+
 class TestAsyncLobValueContract:
     @pytest_asyncio.fixture(autouse=True)
     async def _lob_table(self, engine: AsyncEngine) -> AsyncIterator[None]:
@@ -515,21 +547,50 @@ class TestAsyncLobValueContract:
 
     @pytest.mark.parametrize(
         ("kind", "value"),
-        [p for p in _LOB_CASES if p.values[0] == "clob" and p.values[1]],
+        [p for p in _LOB_CASES if p.values[0] in ("large_binary", "blob", "clob") and p.values[1]],
     )
-    async def test_clob_write_stores_full_value(
+    async def test_write_stores_full_value(
         self, engine: AsyncEngine, kind: str, value: bytes | str | None
     ):
-        """Bound str reaches the CLOB intact; read back via server-side conversion."""
+        """Bound bytes/str reach the LOB intact; read back via server-side conversion."""
         table = cast(Table, _async_lob_model(kind).__table__)
+        convert = sa.func.CLOB_TO_CHAR if kind == "clob" else sa.func.BLOB_TO_BIT
         async with engine.begin() as conn:
             _ = await conn.execute(table.insert(), {"id": 1, kind: value})
         async with engine.connect() as conn:
-            result = await conn.execute(
-                select(sa.func.CLOB_TO_CHAR(table.c[kind])).where(table.c.id == 1)
-            )
+            result = await conn.execute(select(convert(table.c[kind])).where(table.c.id == 1))
             got = result.scalar_one()
         _assert_lob_value(got, kind, value)
+
+    # #500: the async DB-API adapter lacked ``Binary``, so any LargeBinary/BLOB
+    # bind (even ``None``, even an unset ORM column) raised AttributeError.
+    @pytest.mark.parametrize("kind", ["large_binary", "blob"])
+    @pytest.mark.parametrize("value", [None, _LOB_SMALL_BYTES], ids=["none", "bytes"])
+    async def test_core_insert_binds_binary(
+        self, engine: AsyncEngine, kind: str, value: bytes | None
+    ):
+        table = cast(Table, _AsyncBinaryLobDocument.__table__)
+        async with engine.begin() as conn:
+            _ = await conn.execute(sa.insert(table).values(id=1, **{kind: value}))
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                select(table.c[kind].is_(None), sa.func.BLOB_TO_BIT(table.c[kind])).where(
+                    table.c.id == 1
+                )
+            )
+            is_null, stored = result.one()
+        assert bool(is_null) is (value is None)
+        _assert_lob_value(stored, kind, value)
+
+    async def test_orm_insert_with_unset_large_binary(self, engine: AsyncEngine):
+        async with AsyncSession(engine) as session:
+            session.add(_AsyncBinaryLobDocument(id=3))
+            await session.commit()
+        async with AsyncSession(engine) as session:
+            doc = await session.get(_AsyncBinaryLobDocument, 3)
+            assert doc is not None
+            assert doc.large_binary is None
+            assert doc.blob is None
 
     @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
     async def test_orm_roundtrip(
@@ -548,6 +609,183 @@ class TestAsyncLobValueContract:
             assert doc is not None
             got = getattr(doc, kind)
         _assert_lob_value(got, kind, value)
+
+
+# ---------------------------------------------------------------------------
+# #481: results are never silently truncated across commit or rollback
+# ---------------------------------------------------------------------------
+
+# More rows than pycubrid's default FETCH batch (``fetch_size=100``), each wide
+# enough that the broker's first response holds only ~16 of them.
+_WIDE_ROWS = 500
+_WIDE_PAYLOAD = "x" * 1000
+_FETCHMANY_SIZE = 17
+
+
+class TestAsyncResultCompletenessAcrossTransactionBoundary:
+    """``AsyncConnection.execute()`` results across commit/rollback.
+
+    SQLAlchemy's async DB-API adapter reads every row of a non-streaming result
+    before ``execute()`` returns, so no FETCH happens after the boundary and the
+    result stays complete. ``AsyncConnection.stream()`` is not available: the
+    dialect does not support server-side cursors.
+    """
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def wide_table(self, engine: AsyncEngine) -> AsyncIterator[Table]:
+        table = Table(
+            "aio_test_rc481",
+            MetaData(),
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", String(1000)),
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(table.drop, checkfirst=True)
+            await conn.run_sync(table.create)
+            _ = await conn.execute(
+                table.insert(), [{"id": i, "payload": _WIDE_PAYLOAD} for i in range(_WIDE_ROWS)]
+            )
+        yield table
+        async with engine.begin() as conn:
+            await conn.run_sync(table.drop, checkfirst=True)
+
+    @pytest.mark.parametrize("method", ["fetchone", "fetchmany", "fetchall"])
+    @pytest.mark.parametrize("boundary", ["commit", "rollback", "none"])
+    async def test_unfinished_result_is_complete_or_raises(
+        self, engine: AsyncEngine, wide_table: Table, boundary: str, method: str
+    ):
+        async with engine.connect() as conn:
+            _ = (await conn.execute(text("SELECT 1"))).all()
+            result = await conn.execute(
+                select(wide_table.c.id, wide_table.c.payload).order_by(wide_table.c.id)
+            )
+            first = result.fetchone()
+            assert first is not None
+            if boundary == "commit":
+                await conn.commit()
+            elif boundary == "rollback":
+                await conn.rollback()
+            rest: list[sa.Row[tuple[int, str]]] = []
+            try:
+                if method == "fetchall":
+                    rest = list(result.fetchall())
+                elif method == "fetchmany":
+                    while part := result.fetchmany(_FETCHMANY_SIZE):
+                        rest.extend(part)
+                else:
+                    while (row := result.fetchone()) is not None:
+                        rest.append(row)
+            except sa.exc.DBAPIError:
+                if boundary == "none":
+                    raise
+                return  # an explicit failure satisfies the contract
+        ids = [first.id] + [row.id for row in rest]
+        assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
+        assert ids == list(range(_WIDE_ROWS))
+        assert all(row.payload == _WIDE_PAYLOAD for row in rest)
+
+
+# ---------------------------------------------------------------------------
+# #480: constraint violations surface as sqlalchemy.exc.IntegrityError
+# ---------------------------------------------------------------------------
+
+
+class _AsyncIntegrityBase(DeclarativeBase):
+    pass
+
+
+class _AsyncIntegrityParent(_AsyncIntegrityBase):
+    __tablename__ = "aio_test_ie480_parent"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    name: Mapped[str | None] = mapped_column(String(20), nullable=False)
+
+
+class _AsyncIntegrityChild(_AsyncIntegrityBase):
+    __tablename__ = "aio_test_ie480_child"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    parent_id: Mapped[int] = mapped_column(sa.ForeignKey("aio_test_ie480_parent.id"))
+
+
+# kind -> (mapped class, values violating the constraint); parent 1 always exists.
+_ASYNC_INTEGRITY_VIOLATIONS: dict[str, tuple[type[_AsyncIntegrityBase], dict[str, object]]] = {
+    "not_null": (_AsyncIntegrityParent, {"id": 2, "name": None}),
+    "foreign_key": (_AsyncIntegrityChild, {"id": 1, "parent_id": 999}),
+    "unique_pk": (_AsyncIntegrityParent, {"id": 1, "name": "duplicate"}),  # control
+}
+
+
+def _xfail_async_integrity(request: pytest.FixtureRequest, driver: str, kind: str) -> None:
+    # Released pycubrid raises NOT NULL (-631) and FK (-922) violations as a
+    # generic DatabaseError; unique/PK (-670) is already an IntegrityError.
+    if kind != "unique_pk":
+        xfail_unreleased_pycubrid_fix(request, driver, 390, raises=AssertionError)
+
+
+def _assert_integrity_error(exc: sa.exc.DBAPIError) -> None:
+    assert isinstance(exc, sa.exc.IntegrityError), (
+        f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
+        f"wrapping {type(exc.orig).__module__}.{type(exc.orig).__name__}"
+    )
+
+
+def _integrity_counts(conn: sa.Connection) -> tuple[int, int]:
+    parents, children = (
+        conn.execute(select(sa.func.count()).select_from(model)).scalar_one()
+        for model in (_AsyncIntegrityParent, _AsyncIntegrityChild)
+    )
+    return parents, children
+
+
+class TestAsyncIntegrityErrorContract:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _integrity_tables(self, engine: AsyncEngine) -> AsyncIterator[None]:
+        async with engine.begin() as conn:
+            await conn.run_sync(_AsyncIntegrityBase.metadata.drop_all)
+            await conn.run_sync(_AsyncIntegrityBase.metadata.create_all)
+            _ = await conn.execute(sa.insert(_AsyncIntegrityParent), {"id": 1, "name": "parent"})
+        yield
+        async with engine.begin() as conn:
+            await conn.run_sync(_AsyncIntegrityBase.metadata.drop_all)
+
+    @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
+    async def test_core_violation_raises_integrity_error(
+        self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
+    ):
+        model, values = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        async with engine.connect() as conn:
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                _ = await conn.execute(sa.insert(model), values)
+            await conn.rollback()
+            # The same connection runs new statements after the rollback.
+            assert await conn.run_sync(_integrity_counts) == (1, 0)
+            _ = await conn.execute(sa.insert(_AsyncIntegrityChild), {"id": 10, "parent_id": 1})
+            assert await conn.run_sync(_integrity_counts) == (1, 1)
+            await conn.rollback()
+        # Only the class check is gated; the recovery checks above never are.
+        _xfail_async_integrity(request, engine.dialect.driver, kind)
+        _assert_integrity_error(excinfo.value)
+
+    @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
+    async def test_orm_flush_violation_raises_integrity_error(
+        self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
+    ):
+        model, values = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        async with AsyncSession(engine) as session:
+            session.add(model(**values))
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                await session.flush()
+            await session.rollback()
+            # The same session (and its connection) keeps working.
+            session.add(_AsyncIntegrityChild(id=10, parent_id=1))
+            await session.flush()
+            conn = await session.connection()
+            assert await conn.run_sync(_integrity_counts) == (1, 1)
+            await session.rollback()
+        # Only the class check is gated; the recovery checks above never are.
+        _xfail_async_integrity(request, engine.dialect.driver, kind)
+        _assert_integrity_error(excinfo.value)
 
 
 # ---------------------------------------------------------------------------

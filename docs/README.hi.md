@@ -147,7 +147,7 @@ async with AsyncSession(engine) as session:
 - DML extensions -- `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`, `FOR UPDATE`, `TRUNCATE`
 - DDL support -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema reflection -- tables, views, columns, PKs, FKs, indexes, unique constraints, comments
-- `CubridImpl` के जरिए Alembic migrations (auto-discovered entry point)
+- `CubridImpl` के जरिए Alembic migrations (dialect load होते ही अपने-आप register)
 - तीन CUBRID MVCC isolation levels — `READ COMMITTED` (डिफ़ॉल्ट), `REPEATABLE READ`, `SERIALIZABLE`
 - Async support — pycubrid.aio के जरिए `create_async_engine("cubrid+aiopycubrid://...")`
 
@@ -183,7 +183,7 @@ async with AsyncSession(engine) as session:
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
-| Alembic | >=1.7 |
+| Alembic | >=1.7.2 |
 | pycubrid (sync) | >=1.2.0,<2.0 |
 | pycubrid (async) | >=1.2.0,<2.0 |
 
@@ -204,7 +204,7 @@ Pure Python driver के लिए (CUBRID native libraries की आवश्
 
 ### क्या sqlalchemy-cubrid Alembic migrations को सपोर्ट करता है?
 
-हाँ। `pip install "sqlalchemy-cubrid[alembic]"` के साथ इंस्टॉल करें। Dialect entry point के जरिए auto-register होता है। ध्यान दें कि CUBRID DDL को auto-commit करता है, इसलिए migrations transactional नहीं हैं।
+हाँ। `pip install "sqlalchemy-cubrid[alembic]"` के साथ इंस्टॉल करें। CUBRID migration implementation dialect load होते ही खुद register हो जाता है, इसलिए synchronous URLs के साथ default `env.py` बिना बदलाव के काम करता है; `cubrid+aiopycubrid://` के लिए Alembic का async template (`alembic init -t async`) इस्तेमाल करें। ध्यान दें कि CUBRID DDL को auto-commit करता है, इसलिए migrations transactional नहीं हैं।
 
 ### कौन-से Python versions समर्थित हैं?
 

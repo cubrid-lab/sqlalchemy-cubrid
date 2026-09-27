@@ -472,7 +472,7 @@ Features not currently supported that may be added in future releases, depending
 | Lateral joins | ❌ | `LATERAL` keyword causes syntax error in CUBRID |
 | Full-text search | ❌ | No `MATCH … AGAINST` syntax or full-text indexes |
 | Standard EXPLAIN | ❌ | CUBRID uses `SET TRACE ON` / `SHOW TRACE` instead (supported via `trace_query()`) |
-| Alembic migrations | ✅ | Supported via `CubridImpl` entry-point (`pip install sqlalchemy-cubrid[alembic]`) |
+| Alembic migrations | ✅ | Supported via `CubridImpl`, registered when the dialect loads (`pip install sqlalchemy-cubrid[alembic]`) |
 
 ---
 

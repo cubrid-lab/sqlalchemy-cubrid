@@ -28,6 +28,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -185,9 +186,10 @@ def test_null_handling_agrees(both_engines: Any) -> None:
 
 # ---------------------------------------------------------------------------
 # DB-API contract areas that already behave correctly on the released drivers
-# (#486, tracker #479). Areas still blocked upstream — IntegrityError
-# classification, results across commit/rollback, cursor.description metadata,
-# collections, prepared binding — belong to #480-#484; LOBs to #485.
+# (#486, tracker #479). Areas still blocked upstream — cursor.description
+# metadata, collections, prepared binding — belong to #482-#484; LOBs to #485.
+# Results across commit/rollback (#481) and IntegrityError classification
+# (#480) are at the end of this module.
 # ---------------------------------------------------------------------------
 
 _CJK = "中文한글日本語"
@@ -232,17 +234,19 @@ def test_executemany_int_utf8_null_agrees(both_engines: Any) -> None:
 
 
 def test_textual_executemany_agrees(both_engines: Any) -> None:
-    """``text()`` executemany of int and CJK parameters agrees.
+    """``text()`` executemany of int, CJK and interleaved NULL parameters agrees.
 
-    NULL is deliberately absent: CUBRIDdb 11.3.0.51 reuses the previous row's
-    value for a ``None`` parameter in a textual executemany, while pycubrid
-    stores NULL. The Core path above covers NULL on both drivers.
+    CUBRIDdb 11.3.0.51 itself reuses the previous row's value for a ``None``
+    parameter in ``executemany``; the ``cubrid://`` dialect runs executemany
+    row by row to avoid that (#502), so NULL is compared here too.
     """
     pyc, cext = both_engines
     rows = [
         {"id": 1, "big": 2**40, "s": _CJK},
-        {"id": 2, "big": -(2**31), "s": _UTF8},
-        {"id": 3, "big": 0, "s": ""},
+        {"id": 2, "big": None, "s": None},
+        {"id": 3, "big": -(2**31), "s": _UTF8},
+        {"id": 4, "big": None, "s": None},
+        {"id": 5, "big": 0, "s": ""},
     ]
 
     def run(engine: Any) -> list[tuple[Any, ...]]:
@@ -328,6 +332,100 @@ def test_commit_rollback_visibility_agrees(both_engines: Any) -> None:
         return ids
 
     assert run(pyc) == run(cext) == [1]
+
+
+# ---------------------------------------------------------------------------
+# #481: results are never silently truncated across commit or rollback
+# ---------------------------------------------------------------------------
+
+
+def test_result_after_rollback_is_never_partial(
+    request: pytest.FixtureRequest, both_engines: Any
+) -> None:
+    """A result spanning several FETCHes is complete or raises after rollback.
+
+    500 rows of 1000 bytes exceed pycubrid's 100-row FETCH batch and the
+    broker's first response (~16 such rows). CUBRIDdb raises here; the fixed
+    pycubrid raises ``InterfaceError``. Neither may return a partial result.
+    """
+    pyc, cext = both_engines
+    rows = 500
+
+    def run(engine: Any) -> str:
+        tbl = Table(
+            "drvdiff_rc",
+            MetaData(),
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", String(1000)),
+        )
+        tbl.drop(engine, checkfirst=True)
+        tbl.create(engine)
+        with engine.begin() as conn:
+            conn.execute(tbl.insert(), [{"id": i, "payload": "x" * 1000} for i in range(rows)])
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1")).all()
+                result = conn.execute(select(tbl.c.id, tbl.c.payload).order_by(tbl.c.id))
+                result.fetchone()
+                conn.rollback()
+                try:
+                    count = 1 + len(result.fetchall())
+                except sa.exc.DBAPIError:
+                    return "raises"
+        finally:
+            tbl.drop(engine, checkfirst=True)
+        return "complete" if count == rows else f"partial ({count} of {rows})"
+
+    # CUBRIDdb is asserted outside the pycubrid xfail so its failures stay visible.
+    assert run(cext) in ("complete", "raises")
+    py_outcome = run(pyc)
+    xfail_unreleased_pycubrid_fix(request, "pycubrid", 395, raises=AssertionError)
+    assert py_outcome in ("complete", "raises"), py_outcome
+
+
+# ---------------------------------------------------------------------------
+# #480: constraint violations surface as sqlalchemy.exc.IntegrityError
+# ---------------------------------------------------------------------------
+
+_CONSTRAINT_VIOLATIONS = {
+    "not_null": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, NULL, NULL)",
+    "foreign_key": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, 999, 1)",
+    "unique_pk": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)",
+}
+
+
+@pytest.mark.parametrize("kind", list(_CONSTRAINT_VIOLATIONS))
+def test_constraint_violation_class_agrees(
+    request: pytest.FixtureRequest, both_engines: Any, kind: str
+) -> None:
+    """NOT NULL, FK and unique/PK violations raise IntegrityError on both drivers."""
+    pyc, cext = both_engines
+
+    def run(engine: Any) -> str:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS drvdiff_ie"))
+            conn.execute(
+                text(
+                    "CREATE TABLE drvdiff_ie (id INTEGER PRIMARY KEY, parent_id INTEGER, "
+                    "n INTEGER NOT NULL, FOREIGN KEY (parent_id) REFERENCES drvdiff_ie(id))"
+                )
+            )
+            conn.execute(text("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)"))
+        with engine.connect() as conn:
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                conn.execute(text(_CONSTRAINT_VIOLATIONS[kind]))
+            conn.rollback()
+            assert conn.execute(text("SELECT COUNT(*) FROM drvdiff_ie")).scalar() == 1
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE drvdiff_ie"))
+        return type(excinfo.value).__name__
+
+    # CUBRIDdb and the recovery checks in run() stay outside the pycubrid xfail.
+    assert run(cext) == "IntegrityError"
+    py_class = run(pyc)
+    if kind != "unique_pk":
+        xfail_unreleased_pycubrid_fix(request, "pycubrid", 390, raises=AssertionError)
+    assert py_class == "IntegrityError"
 
 
 # ---------------------------------------------------------------------------
