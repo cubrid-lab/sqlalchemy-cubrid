@@ -101,7 +101,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | `MERGE` 문 | ✅ | `sqlalchemy_cubrid.merge()`를 통해 |
 | `REPLACE INTO` | ✅ | `sqlalchemy_cubrid.replace()`를 통해 |
 | `GROUP_CONCAT` | ✅ | |
-| `TRUNCATE TABLE` | ✅ | 오토커밋 감지 |
+| `TRUNCATE TABLE` | ✅ | 둘러싼 트랜잭션과 함께 커밋 |
 | `FOR UPDATE` | ✅ | `OF` 절 포함 |
 | 재귀 CTE | ✅ | `WITH RECURSIVE` (CUBRID 11.x+) |
 | 윈도우 함수 | ✅ | ROW_NUMBER, RANK, LAG, LEAD 등 |

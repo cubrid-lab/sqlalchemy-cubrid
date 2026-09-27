@@ -228,7 +228,7 @@ class CubridDialect(default.DefaultDialect):
 
 - **URL translation**: `cubrid://user:pass@host:port/db` → `CUBRID:host:port:db:::`
 - **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
-- **Autocommit detection**: `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, `TRUNCATE`
+- **No statement-text autocommit**: DML and DDL are committed only through the SQLAlchemy 2.x Connection API (`commit()`, `begin()`, `Session`)
 - **Savepoints**: Supported; `RELEASE SAVEPOINT` is a no-op
 
 ### 3.4 DML Extensions (`dml.py` — 267 lines)

@@ -79,7 +79,7 @@ High-level overview by feature category.
 - **FOR UPDATE**: CUBRID supports `SELECT … FOR UPDATE [OF col1, col2]`. NOWAIT and SKIP LOCKED are not supported.
 - **UPDATE with LIMIT**: CUBRID and MySQL both support `UPDATE … LIMIT n`. PostgreSQL and SQLite do not.
 - **Multi-table UPDATE**: SQLAlchemy's multi-table UPDATE pattern compiles to `UPDATE t1, t2 SET ... WHERE ...`, which matches the MySQL-style syntax accepted by CUBRID. The dialect intentionally keeps `update_from_clause()` disabled because no extra `FROM` clause is required.
-- **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. The dialect includes `TRUNCATE` in autocommit detection.
+- **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. Like other statements, it runs inside the connection's transaction and takes effect only when committed (see [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit)).
 - **IS DISTINCT FROM**: CUBRID lacks the SQL-standard syntax but supports the null-safe equal `<=>`. The dialect emulates `a IS DISTINCT FROM b` as `(a <=> b) = 0` and `a IS NOT DISTINCT FROM b` as `a <=> b`, preserving NULL-safe semantics in predicates and SELECT projections (#344, #377).
 
 ---
@@ -223,7 +223,7 @@ High-level overview by feature category.
 | Savepoints | ✅ | ✅ | ✅ | ✅ |
 | Two-phase commit | ❌ | ✅ | ✅ | ❌ |
 | Server-side cursors | ❌ | ✅ | ✅ | ❌ |
-| Autocommit detection | ✅ | ✅ | ✅ | ✅ |
+| Autocommit detection from SQL text | ❌ | ❌ | ❌ | ❌ |
 | Connection-level encoding | ❌ | ✅ | ✅ | ❌ |
 
 ### CUBRID Isolation Levels
@@ -240,7 +240,7 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 
 - **Two-phase commit**: CUBRID does not support distributed transactions via `XA`.
 - **Server-side cursors**: The CUBRID Python driver does not expose server-side cursor functionality.
-- **Autocommit detection**: The CUBRID execution context uses a regex pattern matching `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, and `TRUNCATE` statements to determine when to enable autocommit.
+- **Autocommit detection from SQL text**: SQLAlchemy 2.x does not inspect statement text to decide when to commit, for any dialect. DML and DDL are committed only through `conn.commit()`, an `engine.begin()` block, or a `Session` commit. See [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit).
 - **Savepoints**: CUBRID supports `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`. `RELEASE SAVEPOINT` is not supported — the dialect implements `do_release_savepoint()` as a no-op.
 
 ---

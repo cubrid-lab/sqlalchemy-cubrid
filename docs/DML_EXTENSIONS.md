@@ -346,7 +346,7 @@ with engine.begin() as conn:
     conn.execute(text("TRUNCATE TABLE temp_data"))
 ```
 
-The dialect includes `TRUNCATE` in its autocommit detection pattern, so it will be executed with autocommit enabled (matching CUBRID's implicit DDL commit behavior).
+`TRUNCATE` runs inside the connection's transaction like any other statement; the `engine.begin()` block above commits it on successful exit. The dialect does not autocommit based on SQL text (see [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit)).
 
 ---
 
