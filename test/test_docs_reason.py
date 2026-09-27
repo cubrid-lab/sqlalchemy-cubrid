@@ -686,6 +686,7 @@ class DocsReasonWorkflowTests(unittest.TestCase):
 
     def test_body_is_json_data_and_translation_requires_existing_label(self) -> None:
         text = WORKFLOW.read_text()
+        self.assertIn("\npermissions:\n  contents: read\n\njobs:\n", text)
         self.assertIn("json.load(_f)", text)
         self.assertNotIn("${{ github.event.pull_request.body }}", text)
         translation = text.split("  translation-sync:", 1)[1]
