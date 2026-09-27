@@ -196,7 +196,7 @@ class CubridDialect(default.DefaultDialect):
     update_returning = False
     delete_returning = False
     postfetch_lastrowid = True
-    requires_name_normalize = True        # Lowercase folding
+    requires_name_normalize = False       # CUBRID already folds to lowercase
     max_identifier_length = 254
     default_paramstyle = "qmark"
 ```

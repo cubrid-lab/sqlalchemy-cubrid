@@ -674,7 +674,7 @@ conn.execute(text('CREATE TABLE "MyTable" (id INT)'))  # 'MyTable'로 저장
 conn.execute(text('SELECT * FROM "MyTable"'))          # 반드시 인용 필요
 ```
 
-방언의 `CubridIdentifierPreparer`가 `requires_name_normalize = True`와 `initial_quote = '"'` 설정으로 이것을 자동 처리합니다.
+방언의 `CubridIdentifierPreparer`는 `initial_quote = '"'`로 대소문자를 구분하는 이름을 인용합니다. CUBRID는 인용되지 않은 이름을 이미 소문자로 폴딩하며 이는 SQLAlchemy의 규칙과 일치하므로, 방언은 `requires_name_normalize = False`로 설정합니다.
 
 ---
 

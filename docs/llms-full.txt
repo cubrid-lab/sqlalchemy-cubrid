@@ -5020,7 +5020,7 @@ conn.execute(text('CREATE TABLE "MyTable" (id INT)'))  # Stored as 'MyTable'
 conn.execute(text('SELECT * FROM "MyTable"'))          # Must use quotes
 ```
 
-The dialect's `CubridIdentifierPreparer` handles this automatically by setting `requires_name_normalize = True` and `initial_quote = '"'`.
+The dialect's `CubridIdentifierPreparer` quotes case-sensitive names with `initial_quote = '"'`. Because CUBRID already folds unquoted names to lowercase, which matches SQLAlchemy's convention, the dialect sets `requires_name_normalize = False`.
 
 ---
 
