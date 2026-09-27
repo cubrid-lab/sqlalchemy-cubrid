@@ -342,7 +342,6 @@ def test_scalar_description_agrees(request: pytest.FixtureRequest, both_engines:
     16/17/18, CUBRIDdb CCI composite codes) and are covered per driver in
     test_integration.py.
     """
-    xfail_unreleased_pycubrid_fix(request, "pycubrid", 431, raises=AssertionError)
     pyc, cext = both_engines
     sql = text("SELECT id, nn, nl, bi, n, dt FROM drvdiff_desc")
 
@@ -371,8 +370,12 @@ def test_scalar_description_agrees(request: pytest.FixtureRequest, both_engines:
         ("n", 7, True),
         ("dt", 13, True),
     ]
+    # CUBRIDdb is asserted before the pycubrid-only xfail exists, so a C-driver
+    # regression fails the test instead of passing as the expected failure.
     assert run(cext) == expected
-    assert run(pyc) == expected
+    py_desc = run(pyc)
+    xfail_unreleased_pycubrid_fix(request, "pycubrid", 431, raises=AssertionError)
+    assert py_desc == expected
 
 
 if __name__ == "__main__":
