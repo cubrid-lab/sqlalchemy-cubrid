@@ -1210,6 +1210,8 @@ class TestResultCompletenessAcrossTransactionBoundary:
                 # The first response must not hold the whole result.
                 assert 0 < result.cursor._fetched_count < _WIDE_ROWS
             first = result.fetchone()
+            # Checked before the boundary, so it holds even when the rest raises.
+            assert first is not None and first.id == 0 and first.payload == _WIDE_PAYLOAD
             if boundary == "commit":
                 conn.commit()
             elif boundary == "rollback":

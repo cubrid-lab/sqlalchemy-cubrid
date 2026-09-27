@@ -371,6 +371,8 @@ def test_result_after_rollback_is_never_partial(
                     # The first response must not hold the whole result.
                     assert 0 < result.cursor._fetched_count < rows
                 first = result.fetchone()
+                # Checked before the rollback, so it holds even when the rest raises.
+                assert first is not None and first.id == 0 and first.payload == "x" * 1000
                 conn.rollback()
                 try:
                     rest = result.fetchall()

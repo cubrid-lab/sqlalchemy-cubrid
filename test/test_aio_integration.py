@@ -713,7 +713,8 @@ class TestAsyncResultCompletenessAcrossTransactionBoundary:
                 # The first response must not hold the whole result.
                 assert 0 < cursor._fetched_count < _WIDE_ROWS
                 first = await cursor.fetchone()
-                assert first is not None and first[0] == 0
+                # Checked before the boundary, so it holds even when the rest raises.
+                assert first is not None and first[0] == 0 and first[1] == _WIDE_PAYLOAD
                 if boundary == "commit":
                     await driver_conn.commit()
                 else:
