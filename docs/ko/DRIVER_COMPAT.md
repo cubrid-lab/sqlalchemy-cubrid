@@ -68,7 +68,7 @@
 
 ## 예외 계층
 
-CUBRIDdb는 PEP 249 대비 **제한된** 예외 계층을 노출합니다:
+CUBRIDdb 11.3.0.51(모듈 `_cubrid`)은 `Warning`을 제외한 모든 PEP 249 예외 클래스를 제공합니다:
 
 ```mermaid
 graph TD
@@ -76,16 +76,25 @@ graph TD
     exc --> err["CUBRIDdb.Error (Base DBAPI error)"]
     err --> iface["CUBRIDdb.InterfaceError (Driver-level errors)"]
     err --> db["CUBRIDdb.DatabaseError (Server-level errors)"]
-    err --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
+    db --> data["CUBRIDdb.DataError"]
+    db --> op["CUBRIDdb.OperationalError"]
+    db --> integ["CUBRIDdb.IntegrityError"]
+    db --> internal["CUBRIDdb.InternalError"]
+    db --> prog["CUBRIDdb.ProgrammingError"]
+    db --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
 ```
 
-**누락된 PEP 249 예외** (드라이버가 제공하지 않음):
-- `OperationalError` — `DatabaseError`에 흡수됨
-- `ProgrammingError` — `DatabaseError`에 흡수됨
-- `InternalError` — `DatabaseError`에 흡수됨
-- `DataError` — `DatabaseError`에 흡수됨
+서버 오류가 어떤 클래스가 되는지는 드라이버의 오류 코드 매핑이 결정합니다. CUBRID 11.4에서 관찰한 결과:
 
-즉, 구문 오류와 연결 문제 같은 데이터베이스 수준 오류는 `DatabaseError`로 발생합니다. 단, 제약 위반은 예외로, CUBRIDdb 11.3.0.51은 NOT NULL, 외래 키, 고유 제약 위반에 `IntegrityError`를 발생시킵니다([알려진 문제 9](#9-릴리스된-pycubrid의-not-null--외래-키-위반) 참고). `sqlalchemy-cubrid` 방언은 연결 해제 오류를 다른 실패와 구별하기 위해 **문자열 기반 메시지 매칭**을 사용합니다.
+| 오류 (네이티브 코드) | CUBRIDdb 클래스 |
+|---|---|
+| 구문 오류 또는 알 수 없는 테이블 (-493) | `ProgrammingError` |
+| NOT NULL (-631), 외래 키 (-922), 고유 (-670) | `IntegrityError` |
+| 0으로 나누기 (-494) | `IntegrityError` |
+| 실패한 `CAST` (-181) | `DatabaseError` |
+| `rollback()` 이후 결과 읽기 (CCI -20040) | `InterfaceError` |
+
+SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위반에 `sqlalchemy.exc.IntegrityError`를 발생시킵니다. pycubrid는 [알려진 문제 9](#9-릴리스된-pycubrid의-not-null--외래-키-위반)를 참고하세요. `sqlalchemy-cubrid` 방언은 연결 해제 오류를 다른 실패와 구별하기 위해 **문자열 기반 메시지 매칭**을 사용합니다.
 
 ---
 
@@ -118,9 +127,9 @@ except CUBRIDdb.DatabaseError as e:
 
 ## 알려진 문제
 
-### 1. 연결 해제 감지를 위한 `OperationalError` 없음
+### 1. 연결 해제 감지에 `OperationalError`를 사용하지 않음
 
-드라이버가 `OperationalError`를 제공하지 않으므로, 방언은 MySQL 방언처럼 `isinstance(e, dbapi.OperationalError)`를 쓸 수 없습니다. 대신:
+CUBRIDdb 11.3.0.51은 `OperationalError`를 정의하지만([예외 계층](#예외-계층) 참고), 방언의 `is_disconnect()`는 예외 클래스로 연결 해제를 분류하지 않습니다. 대신:
 - 알려진 연결 해제 메시지 15종에 대한 문자열 패턴 매칭
 - CCI 통신 오류에 대한 숫자 오류 코드 매칭
 

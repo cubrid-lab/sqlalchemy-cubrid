@@ -445,7 +445,7 @@ The dialect implements `is_disconnect()` which detects connection failures using
 
 1. **Numeric error code matching (primary)** — checks stable CUBRID/CCI codes such as `ER_COMMUNICATION` (-4, pycubrid), `CAS_ER_COMMUNICATION` (-21003/-21005), `ER_NET_CANT_CONNECT` (-10005), and `ER_NET_SERVER_COMM_ERROR` (-10007).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
-3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver (which lacks `OperationalError`) and pycubrid's client-side string-only errors (e.g. "connection lost during receive") that carry neither a code nor an `OSError` cause.
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive") that carry neither a code nor an `OSError` cause.
 
 Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 
@@ -453,16 +453,21 @@ When a disconnect is detected, SQLAlchemy automatically invalidates the connecti
 
 ### Error Code Mapping
 
-CUBRID driver exceptions are mapped to appropriate SQLAlchemy exception types. The driver exposes a limited exception hierarchy:
+CUBRID driver exceptions are mapped to appropriate SQLAlchemy exception types. Both drivers expose the full PEP 249 exception hierarchy:
 
 | CUBRID Driver Exception | SA Exception Mapping |
 |---|---|
 | `Error` (base) | `DBAPIError` |
 | `InterfaceError` | `InterfaceError` |
 | `DatabaseError` | `DatabaseError` |
+| `DataError` | `DataError` |
+| `OperationalError` | `OperationalError` |
+| `IntegrityError` | `IntegrityError` |
+| `InternalError` | `InternalError` |
+| `ProgrammingError` | `ProgrammingError` |
 | `NotSupportedError` | `NotSupportedError` |
 
-> **Note**: CUBRIDdb does not provide `OperationalError`, `ProgrammingError`, `InternalError`, or `DataError`. All database-level errors are raised as `DatabaseError`.
+> **Note**: CUBRIDdb 11.3.0.51 and pycubrid both provide every PEP 249 exception class above; SQLAlchemy wraps the class the driver raises. Which class a given server error gets depends on the driver, for example NOT NULL and foreign-key violations on released pycubrid. See [Driver Compatibility](DRIVER_COMPAT.md#exception-hierarchy).
 
 ### Pool Configuration Recommendations
 

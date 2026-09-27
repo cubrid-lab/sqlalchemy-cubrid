@@ -68,7 +68,8 @@ Python driver and requires compilation against the CCI headers.
 
 ## Exception Hierarchy
 
-CUBRIDdb exposes a **limited** exception hierarchy compared to PEP 249:
+CUBRIDdb 11.3.0.51 (module `_cubrid`) provides every PEP 249 exception class
+except `Warning`:
 
 ```mermaid
 graph TD
@@ -76,20 +77,30 @@ graph TD
     exc --> err["CUBRIDdb.Error (Base DBAPI error)"]
     err --> iface["CUBRIDdb.InterfaceError (Driver-level errors)"]
     err --> db["CUBRIDdb.DatabaseError (Server-level errors)"]
-    err --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
+    db --> data["CUBRIDdb.DataError"]
+    db --> op["CUBRIDdb.OperationalError"]
+    db --> integ["CUBRIDdb.IntegrityError"]
+    db --> internal["CUBRIDdb.InternalError"]
+    db --> prog["CUBRIDdb.ProgrammingError"]
+    db --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
 ```
 
-**Missing PEP 249 exceptions** (not provided by the driver):
-- `OperationalError` — subsumed by `DatabaseError`
-- `ProgrammingError` — subsumed by `DatabaseError`
-- `InternalError` — subsumed by `DatabaseError`
-- `DataError` — subsumed by `DatabaseError`
+The class a server error gets comes from the driver's error-code mapping.
+Observed on CUBRID 11.4:
 
-This means database-level errors such as syntax errors and connection issues are
-raised as `DatabaseError`. Constraint violations are the exception: CUBRIDdb
-11.3.0.51 raises `IntegrityError` for NOT NULL, foreign-key and unique violations
-(see [Known Issue 9](#9-not-null--foreign-key-violations-on-released-pycubrid)). The `sqlalchemy-cubrid` dialect uses
-**string-based message matching** to distinguish disconnect errors from other failures.
+| Error (native code) | CUBRIDdb class |
+|---|---|
+| Syntax error or unknown table (-493) | `ProgrammingError` |
+| NOT NULL (-631), foreign key (-922), unique (-670) | `IntegrityError` |
+| Division by zero (-494) | `IntegrityError` |
+| Failed `CAST` (-181) | `DatabaseError` |
+| Reading a result after `rollback()` (CCI -20040) | `InterfaceError` |
+
+SQLAlchemy wraps the class it receives, so `cubrid://` raises
+`sqlalchemy.exc.IntegrityError` for constraint violations; see
+[Known Issue 9](#9-not-null--foreign-key-violations-on-released-pycubrid) for
+pycubrid. The `sqlalchemy-cubrid` dialect uses **string-based message matching**
+to distinguish disconnect errors from other failures.
 
 ---
 
@@ -123,10 +134,11 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 
 ## Known Issues
 
-### 1. No `OperationalError` for Disconnect Detection
+### 1. Disconnect detection does not use `OperationalError`
 
-Since the driver doesn't provide `OperationalError`, the dialect cannot use
-`isinstance(e, dbapi.OperationalError)` like MySQL dialects do. Instead, it uses:
+CUBRIDdb 11.3.0.51 defines `OperationalError` (see
+[Exception Hierarchy](#exception-hierarchy)), but the dialect's
+`is_disconnect()` does not classify disconnects by exception class. Instead, it uses:
 - String pattern matching against 15 known disconnect messages
 - Numeric error code matching for CCI communication errors
 
