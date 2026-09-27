@@ -86,5 +86,9 @@
   {"id": "strike_wrapped_placeholder_not_reason", "event": {"pull_request": {"body": "Docs: not needed - ~~&lt;reason&gt;~~", "labels": []}}, "expected_docs_exemption": false},
   {"id": "thematic_break_ends_lazy_quote", "event": {"pull_request": {"body": "> quote\n***\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "buffered_comment_cannot_hide_fence_opener", "event": {"pull_request": {"body": "<!--\nDocs: not needed - hidden\n-->\n```text\nDocs: not needed - hidden\n```", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "escaped_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - \\<reason\\>", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "escaped_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - \\<reason\\>", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "bracketed_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - [<reason>]", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "quoted_heading_cannot_lazy_continue", "event": {"pull_request": {"body": "> # Heading\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "list_fence_outdent_restores_reason", "event": {"pull_request": {"body": "- ```text\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "quoted_heading_after_paragraph_ends_lazy_state", "event": {"pull_request": {"body": "> paragraph\n> # Heading\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true}
 ]

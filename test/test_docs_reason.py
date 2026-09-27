@@ -166,6 +166,36 @@ class DocsReasonWorkflowTests(unittest.TestCase):
     def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
         from scripts.check_docs_reason import _HTMLContext, _placeholder, has_docs_not_needed_reason
 
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - [<reason>]"))
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - (<reason>)"))
+        for unmatched in ("[<reason>)", "(<reason>]", "[<reason>"):
+            self.assertFalse(_placeholder(unmatched))
+        self.assertTrue(
+            has_docs_not_needed_reason("Docs: not needed - only [<reason>] fixture changed")
+        )
+        for heading in ("####### invalid", "#no-space", "\\# escaped", "     # indented"):
+            self.assertFalse(has_docs_not_needed_reason(f"> {heading}\nDocs: not needed - hidden"))
+        self.assertTrue(has_docs_not_needed_reason("> # Heading\nDocs: not needed - tests only"))
+        self.assertTrue(
+            has_docs_not_needed_reason("> paragraph\n> # Heading\nDocs: not needed - tests only")
+        )
+        for heading in ("> ####### invalid", "> #no-space", "\\> # escaped"):
+            self.assertFalse(
+                has_docs_not_needed_reason(f"> paragraph\n{heading}\nDocs: not needed - hidden")
+            )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "<!--\n> paragraph\n> # Heading\nDocs: not needed - hidden\n-->"
+            )
+        )
+        self.assertTrue(has_docs_not_needed_reason(">    # Heading\nDocs: not needed - tests only"))
+        self.assertTrue(has_docs_not_needed_reason("- ```text\nDocs: not needed - tests only"))
+        for source in (
+            "```text\nDocs: not needed - hidden",
+            "- ```text\n\n  Docs: not needed - hidden",
+            "- ```text\n```\nDocs: not needed - hidden",
+        ):
+            self.assertFalse(has_docs_not_needed_reason(source))
         self.assertFalse(has_docs_not_needed_reason(r"Docs: not needed - \<reason\>"))
         self.assertFalse(_placeholder(r"\\<reason\\>"))
         self.assertFalse(_placeholder(r"\x<reason\>"))

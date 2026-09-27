@@ -45,6 +45,9 @@ def _placeholder(text: str) -> bool:
     reason = _reason_text(unescape(_MARKDOWN_ESCAPE.sub(r"\1", text)))
     if reason.startswith("<reason>"):
         return True
+    grouped = re.match(r"(\[|\()[ \t]*<reason>[ \t]*(\]|\))", reason)
+    if grouped and (grouped[1], grouped[2]) in {("[", "]"), ("(", ")")}:
+        return True
     wrapper = re.match(r"`+|\*{1,3}|_{1,3}|~{1,2}", reason)
     if wrapper is None:
         return False
@@ -208,6 +211,10 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
         if origin < html.inline_end:
             html.feed_literals(line + "\n", number, 0, origin)
             continue
+        if fence and fence[2] > 0 and raw.strip(" \t"):
+            leading = raw[: len(raw) - len(raw.lstrip(" \t"))]
+            if len(leading.expandtabs(4)) < fence[2]:
+                fence = None
         if fence:
             marker = re.match(r"[ \t]*(`{3,}|~{3,})", line)
             fence_indent = len(line[: marker.start(1)].expandtabs(4)) if marker else -1
@@ -234,11 +241,11 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             or (opener and (opener[1][0] == "~" or "`" not in line[opener.end() :]))
         ):
             quoted = False
-        if quoted:
+        quote = re.match(_BLOCK_PREFIX + ">", line)
+        if quoted and not quote:
             html.feed("\n")
             continue
         indentation = re.match(r"(?: {4,}| {0,3}\t)", line)
-        quote = re.match(_BLOCK_PREFIX + ">", line)
         if indentation:
             if html.outside_prefix(number, line[: indentation.end()]):
                 html.feed("\n")
@@ -251,7 +258,10 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             )
         elif quote:
             if html.outside_prefix(number, line[: quote.end()]):
-                quoted = True
+                content = line[quote.end() :]
+                if content.startswith(" "):
+                    content = content[1:]
+                quoted = re.match(_ATX_HEADING, content) is None
                 html.feed("\n")
                 continue
             html.feed_literals(
