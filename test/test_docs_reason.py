@@ -46,6 +46,38 @@ class DocsReasonWorkflowTests(unittest.TestCase):
         ):
             self.assertTrue(has_docs_not_needed_reason("Docs: not needed - " + reason))
         self.assertFalse(has_docs_not_needed_reason("Docs: not needed - [](<https://example.com>)"))
+        for reason in ("[]()", "![]()", '[](/issue "context")', '[]( "context" )', "[](   )"):
+            self.assertFalse(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        for reason in (r"\![](https://example.com)", "`![]()`", "![real alt](image.png)"):
+            self.assertTrue(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        self.assertFalse(
+            has_docs_not_needed_reason("Docs: not needed - ![&lt;reason&gt;](image.png)")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "<!--><script>\nDocs: not needed - hidden\n-->\nDocs: not needed - tests only"
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "<!-->\nDocs: not needed - hidden\n-->\n~~~\nDocs: not needed - hidden\n~~~"
+            )
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason("<!-- fake -- >\nhidden\n-->\nDocs: not needed - tests only")
+        )
+        self.assertFalse(has_docs_not_needed_reason("<!-- fake -- >\nDocs: not needed - hidden"))
+        for source in (
+            "`<!-->`\n\nDocs: not needed - tests only",
+            "```\n<!-->\n```\nDocs: not needed - tests only",
+            '<div title="<!-->">\nDocs: not needed - tests only',
+            "<script>const value='<!-->';</script>\nDocs: not needed - tests only",
+            "<pre>\n<!-->\n</pre>\nDocs: not needed - tests only",
+        ):
+            self.assertTrue(has_docs_not_needed_reason(source))
+        self.assertFalse(
+            has_docs_not_needed_reason("<pre>\n<!-- </pre> -->\nDocs: not needed - hidden")
+        )
 
     def test_checkpoint_does_not_resplit_the_fed_tape(self) -> None:
         from scripts.check_docs_reason import _HTMLContext

@@ -27,7 +27,19 @@ _MARKDOWN_ESCAPE = re.compile(r"\\([" + re.escape(punctuation) + r"])")
 _LITERAL_RUN = re.compile(r"`+|\\+|\[[^\[\]\n\\`<>]*\]\(<[^<>\n]*>\)")
 _BLOCK_PREFIX = r" {0,3}(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)?"
 _LIST_PREFIX = r" {0,3}([-+*]|[0-9]{1,9}[.)])[ \t]+"
-_EMPTY_LINK = re.compile(r"\[\]\((?:[^\s()<>]+|<[^<>\r\n]*>)\)")
+_LINK_DESTINATION = r"(?:[^\s()<>]+|<[^<>\r\n]*>)"
+_LINK_TITLE = r"""(?:"[^"\r\n]*"|'[^'\r\n]*'|\([^()\r\n]*\))"""
+_LINK_TARGET = (
+    r"\([ \t]*(?:"
+    + _LINK_DESTINATION
+    + r"(?:[ \t]+"
+    + _LINK_TITLE
+    + r")?|"
+    + _LINK_TITLE
+    + r")?[ \t]*\)"
+)
+_EMPTY_LINK = re.compile(r"!?\[\]" + _LINK_TARGET)
+_IMAGE_PREFIX = re.compile(r"!\[([^\r\n]*)\]" + _LINK_TARGET)
 _ATX_HEADING = r" {0,3}#{1,6}(?=[ \t\n]|$)"
 _THEMATIC_BREAK = r" {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})"
 _HTML_BLOCK_START = re.compile(
@@ -78,6 +90,9 @@ def _reason_text(text: str) -> str:
 
 
 def _placeholder(text: str) -> bool:
+    image = _IMAGE_PREFIX.match(_reason_text(text))
+    if image:
+        text = image[1]
     reason = _reason_text(unescape(_MARKDOWN_ESCAPE.sub(r"\1", text)))
     index = 0
     closers: list[str] = []
@@ -125,20 +140,74 @@ class _HTMLContext(HTMLParser):
         self.source = source
         self.paragraph_base = 0
         self.fed_text = ""
+        self.parser_text = ""
         self.row_starts: list[int] = [0]
+        self.comment_start: int | None = None
+        self.comment_end: int | None = None
+        self.comment_scan = 0
         self.inline_end = -1
         self.inline_spans: list[tuple[int, int]] = []
 
     def feed(self, data: str) -> None:
-        base = len(self.fed_text)
-        self.row_starts.extend(base + match.end() for match in re.finditer("\n", data))
-        self.fed_text += data
-        super().feed(data)
+        cursor = 0
+        while cursor < len(data):
+            end = data.find(">", cursor)
+            end = len(data) if end == -1 else end + 1
+            fragment = data[cursor:end]
+            close = self.strict_close()
+            original = fragment
+            if self.blocked and self.blocked[-1] == "pre":
+                fragment = fragment.replace("<!-->", " !-->")
+            if self.comment_start is not None and (close is None or len(self.fed_text) < close):
+                fragment = fragment.replace("<", " ").replace("&", " ")
+            base = len(self.fed_text)
+            self.row_starts.extend(base + match.end() for match in re.finditer("\n", original))
+            self.fed_text += original
+            self.parser_text += fragment
+            super().feed(fragment)
+            cursor = end
+
+    def position(self) -> int:
+        line, column = self.getpos()
+        return self.row_starts[line - 1] + column
+
+    def strict_close(self) -> int | None:
+        if self.comment_start is not None and self.comment_end is None:
+            close = self.fed_text.find("-->", self.comment_scan)
+            if close == -1:
+                self.comment_scan = max(self.comment_start + 4, len(self.fed_text) - 2)
+            else:
+                self.comment_end = close + 3
+        return self.comment_end
+
+    def inside_comment(self) -> bool:
+        if self.comment_start is None:
+            return False
+        close = self.strict_close()
+        if close is None or self.position() < close:
+            return True
+        self.comment_start = None
+        self.comment_end = None
+        return False
+
+    def confirm_comment(self) -> None:
+        if self.blocked or self.inside_comment():
+            return
+        line, column = self.getpos()
+        start = self.position()
+        prefix = self.fed_text[self.row_starts[line - 1] : start]
+        if column <= 3 and not prefix.strip(" ") and self.fed_text.startswith("<!--", start):
+            self.comment_start = start
+            self.comment_end = None
+            self.comment_scan = start + 4
+
+    def handle_comment(self, data: str) -> None:
+        self.confirm_comment()
 
     def checkpoint(self) -> None:
         line, column = self.getpos()
         start = self.row_starts[line - 1] + column
-        pending = self.fed_text[start:]
+        pending = self.parser_text[start:]
         safe = "<" not in pending and "&" not in pending
         if pending.startswith("<!--"):
             closer = pending.rfind("-->")
@@ -153,6 +222,8 @@ class _HTMLContext(HTMLParser):
             self.close()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self.inside_comment():
+            return
         if tag in {"blockquote", "pre", "code", "script", "style", "textarea", "iframe"}:
             self.blocked.append(tag)
 
@@ -161,12 +232,34 @@ class _HTMLContext(HTMLParser):
         self.handle_starttag(tag, attrs)
 
     def handle_endtag(self, tag: str) -> None:
+        if self.inside_comment():
+            return
         if self.blocked and self.blocked[-1] == tag:
             self.blocked.pop()
 
     def handle_data(self, data: str) -> None:
         if not self.blocked:
+            if data.startswith("<"):
+                self.confirm_comment()
             line, column = self.getpos()
+            if self.comment_start is not None:
+                close = self.strict_close()
+                if close is None:
+                    return
+                ignored = close - self.position()
+                if ignored >= len(data):
+                    return
+                if ignored > 0:
+                    removed = data[:ignored]
+                    line += removed.count("\n")
+                    column = (
+                        len(removed) - removed.rfind("\n") - 1
+                        if "\n" in removed
+                        else column + ignored
+                    )
+                    data = data[ignored:]
+                self.comment_start = None
+                self.comment_end = None
             for offset, text in enumerate(data.split("\n")):
                 number = line + offset
                 self.lines[number] = self.lines.get(number, "") + text
@@ -179,9 +272,13 @@ class _HTMLContext(HTMLParser):
                         self.literal_positions.add((number, origin + index))
 
     def handle_entityref(self, name: str) -> None:
+        if self.inside_comment():
+            return
         self.handle_data(unescape(f"&{name};").replace("\r", " ").replace("\n", " "))
 
     def handle_charref(self, name: str) -> None:
+        if self.inside_comment():
+            return
         self.handle_data(unescape(f"&#{name};").replace("\r", " ").replace("\n", " "))
 
     def outside_prefix(self, number: int, prefix: str) -> bool:
@@ -382,8 +479,11 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             html.paragraph_base = 0
             if html.outside_prefix(number, line[: quote.end()]):
                 content = line[quote.end() :]
+                raw_content = raw[quote.end() :]
                 if content.startswith(" "):
                     content = content[1:]
+                if raw_content.startswith(" "):
+                    raw_content = raw_content[1:]
                 marker = re.match(r" {0,3}(`{3,}|~{3,})", content)
                 if quote_fence:
                     if (
@@ -398,7 +498,10 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
                     quote_fence = (marker[1][0], len(marker[1]))
                     quoted = False
                 else:
-                    quoted = re.match(_ATX_HEADING, content) is None
+                    quoted = (
+                        re.match(_ATX_HEADING, content) is None
+                        and re.fullmatch(_THEMATIC_BREAK, raw_content) is None
+                    )
                 html.feed("\n")
                 continue
             html.feed_literals(
