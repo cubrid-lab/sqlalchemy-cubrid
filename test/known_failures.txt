@@ -87,13 +87,6 @@ test/test_suite.py::ReturningGuardsTest::test_insert_single
 test/test_suite.py::ReturningGuardsTest::test_update_many
 test/test_suite.py::ReturningGuardsTest::test_update_single
 
-# [DRIVER LIMITATION] RowCountTest (2): DRIVER-SPECIFIC — the CUBRIDdb C-extension driver does not
-# report multi-row UPDATE/DELETE rowcount correctly. These PASS on the
-# recommended cubrid+pycubrid:// driver; the gating cell runs the C driver, so
-# they are listed here for that driver only — #388
-test/test_suite.py::RowCountTest::test_multi_delete_rowcount
-test/test_suite.py::RowCountTest::test_multi_update_rowcount
-
 # [BACKEND / SUITE LIMIT] TrueDivTest::test_truediv_float (1): CUBRID FLOAT is
 # single precision, so `Float(5.52) / Float(2.4)` returns 2.299999952316284,
 # not 2.3 — a backend precision limit, not a dialect bug — #388

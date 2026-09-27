@@ -57,8 +57,8 @@ class PyCubridDialect(CubridDialect):
 
     This dialect subclasses :class:`CubridDialect` and overrides only
     the driver-specific methods: ``import_dbapi``, ``create_connect_args``,
-    ``on_connect``, and ``do_ping``.  All SQL compilation, type mapping,
-    and schema reflection is inherited unchanged.
+    ``on_connect``, ``do_executemany``, and ``do_ping``.  All SQL
+    compilation, type mapping, and schema reflection is inherited unchanged.
     """
 
     driver = "pycubrid"
@@ -117,6 +117,21 @@ class PyCubridDialect(CubridDialect):
             log.debug("on_connect: autocommit=False isolation_level=%s", isolation_level)
 
         return connect
+
+    def do_executemany(
+        self,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any = None,
+    ) -> None:
+        """Use pycubrid's prepare-once ``executemany`` directly.
+
+        Opts out of :meth:`CubridDialect.do_executemany`'s per-row CUBRIDdb
+        guard: pycubrid binds ``None`` as NULL and reports the summed rowcount
+        (#502). Also inherited by the async ``aiopycubrid`` dialect.
+        """
+        cursor.executemany(statement, parameters)
 
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:
         """Ping using native pycubrid CHECK_CAS (FC=32). Requires pycubrid>=1.3.2."""

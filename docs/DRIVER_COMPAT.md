@@ -190,6 +190,38 @@ or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
 `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441. See also
 [Types](TYPES.md).
 
+### 7. `executemany` reuses the previous row's value for `None` (dialect guard)
+
+`CUBRIDdb` 11.3.0.51 (the `cubrid://` driver) has two `executemany()` bugs:
+
+- **Wrong data.** Its `_bind_params` skips `None`, and `executemany` prepares
+  the statement once. A `None` parameter therefore keeps the previous row's
+  bound value, so `[(1, 'a'), (2, None)]` stores `(2, 'a')`.
+- **Wrong rowcount.** `cursor.rowcount` reports only the last row's count.
+
+Through SQLAlchemy, these bugs made `text()` and Core `UPDATE`/`DELETE`
+executemany store wrong data. Batched ORM UPDATEs raised `StaleDataError`
+(`expected to update 3 row(s); 1 were matched`). The driver cannot be worked
+around from the outside because `bind_param(i, None)` raises `SystemError`.
+
+**Dialect guard (#502).** `CubridDialect.do_executemany` runs each parameter set
+with `cursor.execute()` and sets `cursor.rowcount` to the total. Each
+`execute()` prepares the statement again, so an unbound `None` becomes NULL. The
+guard always applies, not only when a row contains `None`, because the
+last-row rowcount is wrong for every statement. With the guard,
+`supports_sane_multi_rowcount` is accurate on both drivers. The cost is one
+statement prepare per row on plain executemany. Core `insert()` with many rows
+uses insertmanyvalues, which goes through `do_execute` and does not use the
+guard. Code that calls `CUBRIDdb`'s `cursor.executemany()` directly, without
+SQLAlchemy, is still affected.
+
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` bind `None` correctly and sum
+the rowcount, so they keep the driver's prepare-once `executemany`.
+
+The guard will be removed once a fixed `CUBRIDdb` release is the minimum
+supported version. An upstream report to CUBRID/cubrid-python is pending, and
+#502 tracks it.
+
 ---
 
 ## Installation Notes

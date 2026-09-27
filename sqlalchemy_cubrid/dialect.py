@@ -316,6 +316,10 @@ class CubridDialect(default.DefaultDialect):
     insertmanyvalues_implicit_sentinel = InsertmanyvaluesSentinelOpts.ANY_AUTOINCREMENT
     supports_is_distinct_from = True
 
+    # Accurate on both drivers: pycubrid sums executemany rowcount itself, and
+    # CUBRIDdb's last-row-only rowcount is corrected by do_executemany (#502).
+    supports_sane_multi_rowcount = True
+
     # RETURNING
     insert_returning = False
     update_returning = False
@@ -359,6 +363,34 @@ class CubridDialect(default.DefaultDialect):
                 '(pip install "sqlalchemy-cubrid[pycubrid]").'
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
+
+    def do_executemany(
+        self,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any = None,
+    ) -> None:
+        """Run ``executemany`` as one ``execute`` per row, summing rowcount.
+
+        CUBRIDdb (up to at least 11.3.0.51) prepares an ``executemany``
+        statement once and never binds ``None``, so a ``None`` parameter
+        silently reuses the previous row's value; its ``rowcount`` also
+        reflects only the last row. Both are fixed by executing each row
+        separately (each ``execute`` re-prepares, so unbound parameters are
+        NULL) and reporting the total, which keeps
+        ``supports_sane_multi_rowcount`` accurate for ORM batched UPDATE and
+        DELETE. The guard applies to every statement, not only when a row
+        contains ``None``, because the last-row rowcount is wrong either way. insertmanyvalues batches go through ``do_execute`` and are not
+        affected. :class:`PyCubridDialect` restores the driver's own
+        ``executemany``. Remove once a fixed CUBRIDdb is the minimum (#502).
+        """
+        rowcount = 0
+        for params in parameters:
+            cursor.execute(statement, params)
+            if rowcount >= 0:
+                rowcount = -1 if cursor.rowcount < 0 else rowcount + cursor.rowcount
+        cursor.rowcount = rowcount
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         """Build DB-API connection arguments for CUBRID.

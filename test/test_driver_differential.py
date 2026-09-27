@@ -230,17 +230,19 @@ def test_executemany_int_utf8_null_agrees(both_engines: Any) -> None:
 
 
 def test_textual_executemany_agrees(both_engines: Any) -> None:
-    """``text()`` executemany of int and CJK parameters agrees.
+    """``text()`` executemany of int, CJK and interleaved NULL parameters agrees.
 
-    NULL is deliberately absent: CUBRIDdb 11.3.0.51 reuses the previous row's
-    value for a ``None`` parameter in a textual executemany, while pycubrid
-    stores NULL. The Core path above covers NULL on both drivers.
+    CUBRIDdb 11.3.0.51 itself reuses the previous row's value for a ``None``
+    parameter in ``executemany``; the ``cubrid://`` dialect runs executemany
+    row by row to avoid that (#502), so NULL is compared here too.
     """
     pyc, cext = both_engines
     rows = [
         {"id": 1, "big": 2**40, "s": _CJK},
-        {"id": 2, "big": -(2**31), "s": _UTF8},
-        {"id": 3, "big": 0, "s": ""},
+        {"id": 2, "big": None, "s": None},
+        {"id": 3, "big": -(2**31), "s": _UTF8},
+        {"id": 4, "big": None, "s": None},
+        {"id": 5, "big": 0, "s": ""},
     ]
 
     def run(engine: Any) -> list[tuple[Any, ...]]:

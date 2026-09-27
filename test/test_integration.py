@@ -756,6 +756,114 @@ class TestAlembicAlterColumnIntegration:
                 conn.commit()
 
 
+class TestExecutemanyNoneAndRowcount:
+    """#502: executemany stores ``None`` as NULL and reports the total rowcount.
+
+    CUBRIDdb reuses the previous row's value for a ``None`` parameter and
+    reports only the last row's rowcount; the ``cubrid://`` dialect runs such
+    statements row by row. pycubrid is correct natively and must keep its own
+    ``executemany``. Both lanes (``CUBRID_TEST_URL``) run these tests.
+    """
+
+    _ROWS = [
+        {"id": 1, "v": "a", "n": 10},
+        {"id": 2, "v": None, "n": None},
+        {"id": 3, "v": "c", "n": 30},
+        {"id": 4, "v": None, "n": None},
+    ]
+    _EXPECTED = [(1, "a", 10), (2, None, None), (3, "c", 30), (4, None, None)]
+
+    @pytest.fixture
+    def em_table(self, engine):
+        meta = MetaData()
+        tbl = Table(
+            "em502",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("v", String(20)),
+            Column("n", Integer),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        yield tbl
+        meta.drop_all(engine)
+
+    @staticmethod
+    def _rows(engine):
+        with engine.connect() as conn:
+            return [tuple(r) for r in conn.execute(text("SELECT id, v, n FROM em502 ORDER BY id"))]
+
+    def test_text_executemany_interleaved_none(self, engine, em_table):
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("INSERT INTO em502 (id, v, n) VALUES (:id, :v, :n)"), self._ROWS
+            )
+            assert result.rowcount == 4
+        assert self._rows(engine) == self._EXPECTED
+
+    def test_core_update_executemany_with_none(self, engine, em_table):
+        with engine.begin() as conn:
+            conn.execute(em_table.insert(), [{"id": i, "v": "orig", "n": i} for i in (1, 2, 3, 4)])
+        stmt = (
+            em_table.update()
+            .where(em_table.c.id == sa.bindparam("b_id"))
+            .values(v=sa.bindparam("b_v"), n=sa.bindparam("b_n"))
+        )
+        params = [{"b_id": r["id"], "b_v": r["v"], "b_n": r["n"]} for r in self._ROWS]
+        with engine.begin() as conn:
+            assert conn.execute(stmt, params).rowcount == 4
+        assert self._rows(engine) == self._EXPECTED
+
+    def test_executemany_rowcount_is_total(self, engine, em_table):
+        with engine.begin() as conn:
+            conn.execute(em_table.insert(), [{"id": i, "v": "x", "n": i % 2} for i in range(1, 7)])
+        with engine.begin() as conn:
+            # Rows matched per parameter set: 3 (n=1), 0 (n=5), 3 (n=0).
+            upd = conn.execute(
+                em_table.update().where(em_table.c.n == sa.bindparam("b_n")).values(v="y"),
+                [{"b_n": 1}, {"b_n": 5}, {"b_n": 0}],
+            )
+            assert upd.rowcount == 6
+            dele = conn.execute(
+                em_table.delete().where(em_table.c.id == sa.bindparam("b_id")),
+                [{"b_id": 1}, {"b_id": 2}, {"b_id": 99}],
+            )
+            assert dele.rowcount == 2
+
+    def test_orm_batched_update_of_several_objects(self, engine, em_table):
+        class _Base(DeclarativeBase):
+            pass
+
+        class Em(_Base):
+            __table__ = em_table
+
+        with Session(engine) as session:
+            session.add_all([Em(id=i, v="orig", n=i) for i in (1, 2, 3, 4)])
+            session.commit()
+            objs = {o.id: o for o in session.scalars(select(Em))}
+            for row in self._ROWS:
+                objs[row["id"]].v = row["v"]
+                objs[row["id"]].n = row["n"]
+            # One executemany UPDATE for all four rows; a last-row rowcount
+            # used to raise StaleDataError here on cubrid://.
+            session.commit()
+        assert self._rows(engine) == self._EXPECTED
+
+    def test_core_insert_many_stays_on_insertmanyvalues(self, engine, em_table, monkeypatch):
+        calls = []
+        original = engine.dialect.do_executemany
+
+        def spy(*args, **kwargs):
+            calls.append(args[1])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(engine.dialect, "do_executemany", spy)
+        with engine.begin() as conn:
+            conn.execute(em_table.insert(), self._ROWS)
+        assert calls == []
+        assert self._rows(engine) == self._EXPECTED
+
+
 class TestBackslashLiteralRoundtrip:
     """Regression #313: backslashes must survive both param binding and
     literal_binds rendering on a default CUBRID (no_backslash_escapes=yes)."""

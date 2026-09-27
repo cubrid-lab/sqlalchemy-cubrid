@@ -163,6 +163,21 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#485). 모든 릴리스�
 
 `LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다. [타입](TYPES.md)도 참고하세요.
 
+### 7. `executemany`가 `None`에 이전 행의 값을 재사용 (방언 가드)
+
+`CUBRIDdb` 11.3.0.51(`cubrid://` 드라이버)의 `executemany()`에는 두 가지 버그가 있습니다:
+
+- **잘못된 데이터.** `_bind_params`가 `None`을 건너뛰고 `executemany`는 문장을 한 번만 준비(prepare)합니다. 따라서 `None` 파라미터에는 이전 행에서 바인딩된 값이 그대로 남아, `[(1, 'a'), (2, None)]`이 `(2, 'a')`로 저장됩니다.
+- **잘못된 rowcount.** `cursor.rowcount`가 마지막 행의 개수만 보고합니다.
+
+SQLAlchemy를 통하면 `text()` 및 Core `UPDATE`/`DELETE` executemany가 잘못된 데이터를 저장했고, ORM의 일괄 UPDATE는 `StaleDataError`(`expected to update 3 row(s); 1 were matched`)를 발생시켰습니다. `bind_param(i, None)`이 `SystemError`를 발생시키므로 드라이버 외부에서 우회할 수도 없습니다.
+
+**방언 가드(#502).** `CubridDialect.do_executemany`는 각 파라미터 세트를 `cursor.execute()`로 실행하고 `cursor.rowcount`를 합계로 설정합니다. 각 `execute()`가 문장을 다시 준비하므로 바인딩되지 않은 `None`은 NULL이 됩니다. 마지막 행 rowcount는 모든 문장에서 틀리므로, 가드는 `None`이 있는 행에만이 아니라 항상 적용됩니다. 가드 덕분에 `supports_sane_multi_rowcount`는 두 드라이버 모두에서 정확합니다. 대가는 일반 executemany에서 행마다 한 번의 문장 준비입니다. 여러 행의 Core `insert()`는 `do_execute`를 거치는 insertmanyvalues를 사용하므로 가드를 사용하지 않습니다. SQLAlchemy 없이 `CUBRIDdb`의 `cursor.executemany()`를 직접 호출하는 코드는 여전히 영향을 받습니다.
+
+`cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 `None`을 올바르게 바인딩하고 rowcount를 합산하므로 드라이버의 한 번만 준비하는 `executemany`를 그대로 사용합니다.
+
+수정된 `CUBRIDdb` 릴리스가 최소 지원 버전이 되면 가드를 제거합니다. CUBRID/cubrid-python에 대한 상류 보고는 아직 제출 전이며 #502에서 추적합니다.
+
 ---
 
 ## 설치 참고
