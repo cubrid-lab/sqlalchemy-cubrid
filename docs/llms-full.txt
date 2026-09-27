@@ -523,16 +523,14 @@ correctly by the driver regardless of this setting.
 
 Both CUBRID Python drivers default to `autocommit=True`. The dialect overrides this on every new connection so that SQLAlchemy can manage transactions properly. CUBRIDdb uses `conn.set_autocommit(False)`; pycubrid uses the property setter `conn.autocommit = False`.
 
-### DDL Autocommit Detection
+### No Statement-Text Autocommit
 
-CUBRID implicitly commits DDL statements. The dialect detects DDL patterns and enables autocommit for:
-
-- `CREATE`, `ALTER`, `DROP`
-- `GRANT`, `REVOKE`
-- `TRUNCATE`
-- `MERGE`
-
-This is handled by the `CubridExecutionContext.should_autocommit_text()` method using a regex pattern.
+The dialect does not inspect SQL text to decide when to commit. SQLAlchemy 2.x
+never consults the 1.x-era `should_autocommit_text()` hook, so DML and DDL
+(including `INSERT`, `REPLACE`, `MERGE`, `CREATE`, and `DROP`) run inside the
+connection's transaction and are committed only through the SQLAlchemy 2.x
+Connection API: `conn.commit()`, an `engine.begin()` block, or a `Session`
+commit. A connection closed without committing is rolled back.
 
 ---
 

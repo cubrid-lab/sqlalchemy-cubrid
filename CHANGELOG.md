@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **Removed the dead SQLAlchemy 1.x `should_autocommit_text()` hook, its `AUTOCOMMIT_REGEXP`, and the legacy `dbapi()` classmethods (#462)** — SQLAlchemy 2.0 and 2.1 `DefaultExecutionContext` no longer define or call `should_autocommit_text()`, so the regex it consulted never affected a supported runtime (this also retires #439's request to add `REPLACE` to it, surfaced by @biggdawg320 in #468: there is no longer a regex to be inconsistent with the dialect's `REPLACE INTO` construct). `create_engine()` only falls back to a `dbapi()` classmethod when the dialect class does not define `import_dbapi()` itself, and `CubridDialect`, `PyCubridDialect` and `PyCubridAsyncDialect` all do, so the `dbapi()` wrappers were unreachable. Transactions are unchanged: DML and DDL text commits only via `conn.commit()`, `engine.begin()` or a `Session`. Added offline regression tests asserting the hooks stay gone, that engine creation resolves the DBAPI via `import_dbapi()` without a deprecation warning, and that `DELETE`/`REPLACE`/`CREATE` text is rolled back unless explicitly committed; `docs/CONNECTION.md` (+ Korean) no longer describe the non-existent DDL autocommit detection.
+
 ### Fixed
 - **`String(0)` / `VARCHAR(0)` / `NVARCHAR(0)` no longer silently compile to the 4096 default (#440)** — the type compiler checked the length by truthiness, so an explicit `length=0` was treated as "no length" and rendered `VARCHAR(4096)` (or `NCHAR VARYING(4096)`). `length=None` still gets the documented default; an explicit zero now raises `CompileError`, since `VARCHAR(0)` is not a valid CUBRID length.
 - **Reflection now returns table and view names in deterministic order (#443)** — added `ORDER BY class_name` to `get_table_names()` and `get_view_names()` catalog queries so reflection results no longer depend on database row order.

@@ -63,12 +63,6 @@ class TestPyCubridDialectBasics:
             with pytest.raises(ImportError, match="pycubrid not installed"):
                 PyCubridDialect.import_dbapi()
 
-    def test_legacy_dbapi_method_calls_import_dbapi(self):
-        fake_module = object()
-        with patch.object(PyCubridDialect, "import_dbapi", return_value=fake_module) as mocked:
-            assert PyCubridDialect.dbapi() is fake_module
-        mocked.assert_called_once_with()
-
 
 class TestPyCubridConnectArgs:
     def test_create_connect_args_full_url(self):
