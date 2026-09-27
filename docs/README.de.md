@@ -205,7 +205,7 @@ Ja. sqlalchemy-cubrid wurde für SQLAlchemy 2.0–2.1 entwickelt und unterstütz
 
 ### Unterstützt sqlalchemy-cubrid Alembic-Migrationen?
 
-Ja. Installieren Sie mit `pip install "sqlalchemy-cubrid[alembic]"`. Die CUBRID-Migrationsimplementierung registriert sich beim Laden des Dialekts selbst, daher funktioniert die Standard-`env.py` unverändert. Beachten Sie, dass CUBRID DDL automatisch committet, daher sind Migrationen nicht transaktional.
+Ja. Installieren Sie mit `pip install "sqlalchemy-cubrid[alembic]"`. Die CUBRID-Migrationsimplementierung registriert sich beim Laden des Dialekts selbst, daher funktioniert die Standard-`env.py` mit synchronen URLs unverändert; für `cubrid+aiopycubrid://` verwenden Sie Alembics async-Vorlage (`alembic init -t async`). Beachten Sie, dass CUBRID DDL automatisch committet, daher sind Migrationen nicht transaktional.
 
 ### Welche Python-Versionen werden unterstützt?
 

@@ -203,7 +203,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### sqlalchemy-cubrid 支持 Alembic 迁移吗？
 
-支持。请通过 `pip install "sqlalchemy-cubrid[alembic]"` 安装。CUBRID 迁移实现会在方言加载时自动注册，因此默认的 `env.py` 无需修改即可使用。请注意，CUBRID 会自动提交 DDL，因此迁移不是事务性的。
+支持。请通过 `pip install "sqlalchemy-cubrid[alembic]"` 安装。CUBRID 迁移实现会在方言加载时自动注册，因此默认的 `env.py` 在同步 URL 下无需修改即可使用；`cubrid+aiopycubrid://` 请使用 Alembic 的异步模板（`alembic init -t async`）。请注意，CUBRID 会自动提交 DDL，因此迁移不是事务性的。
 
 ### 支持哪些 Python 版本？
 

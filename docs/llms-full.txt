@@ -2704,9 +2704,21 @@ def run_migrations_online():
 
 ### env.py Setup
 
-The standard Alembic `env.py` works without modification. The `CubridImpl`
-class is registered as soon as a `cubrid://`, `cubrid+pycubrid://` or
-`cubrid+aiopycubrid://` URL loads the dialect.
+The `CubridImpl` class is registered as soon as any CUBRID URL loads the
+dialect, so `env.py` never needs a CUBRID import. Which template to start from
+depends on the driver:
+
+- **Synchronous URLs** (`cubrid://`, `cubrid+cubriddb://`,
+  `cubrid+pycubrid://`): the standard `env.py` from `alembic init` works
+  without modification.
+- **Async URL** (`cubrid+aiopycubrid://`): use Alembic's async template,
+  `alembic init -t async <dir>`. Its generated `env.py` also works without
+  modification. The standard template's online path calls the synchronous
+  `engine_from_config()`, which cannot drive the async driver and fails with
+  `sqlalchemy.exc.MissingGreenlet`; offline `--sql` mode works with either
+  template. Verified on CUBRID 11.4 with Alembic 1.7.2 and 1.20.0:
+  `upgrade head` / `downgrade base` through an unmodified async-template
+  `env.py` (covered by `test/test_alembic_registration.py`).
 
 A minimal `env.py` for online migrations:
 
@@ -2809,7 +2821,10 @@ are required in `env.py` or your migration files.
 If Alembic is installed but fails to import (for example Alembic 1.7.0/1.7.1,
 which raise `NameError` on SQLAlchemy 2.x), the dialect still loads and emits a
 single `RuntimeWarning` saying the Alembic integration is disabled, with the
-original exception. Upgrading to `alembic>=1.7.2,<2.0` fixes it.
+original exception. If a warning filter turns that warning into an error
+(`-W error`), the message is logged through the `sqlalchemy_cubrid.dialect`
+logger instead, so the dialect still loads. Upgrading to
+`alembic>=1.7.2,<2.0` fixes it.
 
 Versions before this fix declared an `alembic.ddl` entry point that Alembic
 never read, so a default `env.py` failed with `KeyError: 'cubrid'` unless it

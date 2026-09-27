@@ -204,7 +204,7 @@ Pure Python driver के लिए (CUBRID native libraries की आवश्
 
 ### क्या sqlalchemy-cubrid Alembic migrations को सपोर्ट करता है?
 
-हाँ। `pip install "sqlalchemy-cubrid[alembic]"` के साथ इंस्टॉल करें। CUBRID migration implementation dialect load होते ही खुद register हो जाता है, इसलिए default `env.py` बिना बदलाव के काम करता है। ध्यान दें कि CUBRID DDL को auto-commit करता है, इसलिए migrations transactional नहीं हैं।
+हाँ। `pip install "sqlalchemy-cubrid[alembic]"` के साथ इंस्टॉल करें। CUBRID migration implementation dialect load होते ही खुद register हो जाता है, इसलिए synchronous URLs के साथ default `env.py` बिना बदलाव के काम करता है; `cubrid+aiopycubrid://` के लिए Alembic का async template (`alembic init -t async`) इस्तेमाल करें। ध्यान दें कि CUBRID DDL को auto-commit करता है, इसलिए migrations transactional नहीं हैं।
 
 ### कौन-से Python versions समर्थित हैं?
 

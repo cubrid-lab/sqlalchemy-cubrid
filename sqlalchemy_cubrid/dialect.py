@@ -1327,10 +1327,14 @@ except Exception as _exc:
     except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
         _alembic_absent = False
     if not (isinstance(_exc, ImportError) and _alembic_absent):
-        warnings.warn(
+        _alembic_msg = (
             "sqlalchemy-cubrid: Alembic integration is disabled because the "
             f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
-            'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.',
-            RuntimeWarning,
-            stacklevel=2,
+            'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
         )
+        # A warning filter set to "error" (``-W error``) turns warn() into a
+        # raise; fall back to the logger so the dialect still loads.
+        try:
+            warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
+        except Exception:
+            log.warning(_alembic_msg)

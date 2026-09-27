@@ -16,7 +16,9 @@ process, which would hide a missing registration, so these tests run the
 
 Offline (``--sql``) mode needs no database: ``context.configure(url=...)``
 builds the dialect from the URL and looks up the impl exactly as online mode
-does.  The online test needs a live CUBRID and ``CUBRID_TEST_URL``.
+does.  The online tests need a live CUBRID and ``CUBRID_TEST_URL``: they run
+the default template with a synchronous URL, and Alembic's async template
+(``alembic init -t async``) with ``cubrid+aiopycubrid://``.
 """
 
 from __future__ import annotations
@@ -57,10 +59,10 @@ def _alembic(project: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def _make_project(tmp_path: Path, url: str, table: str) -> Path:
+def _make_project(tmp_path: Path, url: str, table: str, template: str = "generic") -> Path:
     project = tmp_path / "project"
     project.mkdir()
-    init = _alembic(project, "init", "migrations")
+    init = _alembic(project, "init", "-t", template, "migrations")
     assert init.returncode == 0, init.stderr
 
     ini = project / "alembic.ini"
@@ -195,6 +197,38 @@ def test_broken_alembic_warns_and_dialect_still_loads() -> None:
     ]
 
 
+@pytest.mark.parametrize("setup", [_BROKEN_ALEMBIC, _NO_ALEMBIC], ids=["broken", "missing"])
+def test_error_warning_filter_cannot_abort_dialect_loading(setup: str) -> None:
+    # ``-W error::RuntimeWarning`` turns warnings.warn() into a raise; the
+    # diagnostic must then fall back to logging instead of propagating.
+    script = (
+        "import sys\n"
+        + setup
+        + "\nfrom sqlalchemy.dialects import registry\n"
+        + 'print([registry.load(n).name for n in ("cubrid", "cubrid.pycubrid", '
+        + '"cubrid.aiopycubrid")])\n'
+    )
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+    result = subprocess.run(
+        [sys.executable, "-W", "error::RuntimeWarning", "-c", script],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "['cubrid', 'cubrid', 'cubrid']"
+    disabled = "Alembic integration is disabled because the installed Alembic failed"
+    if setup is _BROKEN_ALEMBIC:
+        # No logging configured: the logging module's last-resort handler
+        # writes the fallback record to stderr.
+        assert disabled in result.stderr
+        assert "NameError: name 'TextClause' is not defined" in result.stderr
+    else:
+        assert disabled not in result.stderr
+
+
 def test_missing_alembic_is_silent() -> None:
     loaded = _load_dialects(_NO_ALEMBIC)
 
@@ -218,7 +252,19 @@ _LIVE_URL = os.environ.get("CUBRID_TEST_URL")
 
 @pytest.mark.integration
 @pytest.mark.skipif(not _LIVE_URL, reason="CUBRID instance not available (set CUBRID_TEST_URL)")
-def test_online_upgrade_with_default_env_py(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("template", "drivername"),
+    [
+        # Alembic's default template drives a synchronous engine.
+        ("generic", None),
+        # cubrid+aiopycubrid:// needs Alembic's async template
+        # (``alembic init -t async``); the default one cannot drive it.
+        ("async", "cubrid+aiopycubrid"),
+    ],
+)
+def test_online_upgrade_with_unmodified_template(
+    tmp_path: Path, template: str, drivername: str | None
+) -> None:
     import sqlalchemy as sa
 
     assert _LIVE_URL is not None
@@ -237,7 +283,10 @@ def test_online_upgrade_with_default_env_py(tmp_path: Path) -> None:
         pytest.skip("target database already has an alembic_version table")
 
     table = f"sa504_{uuid.uuid4().hex[:8]}"
-    project = _make_project(tmp_path, _LIVE_URL, table)
+    url = sa.make_url(_LIVE_URL)
+    if drivername is not None:
+        url = url.set(drivername=drivername)
+    project = _make_project(tmp_path, url.render_as_string(hide_password=False), table, template)
     try:
         upgrade = _alembic(project, "upgrade", "head")
         assert "KeyError" not in upgrade.stderr, upgrade.stderr
