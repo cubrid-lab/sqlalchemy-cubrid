@@ -5,14 +5,18 @@
 # This module is part of sqlalchemy-cubrid and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-"""Example: create tables with CUBRID-specific data types."""
+"""Example: create tables with CUBRID-specific data types.
+
+Install the recommended pure-Python driver with:
+    pip install "sqlalchemy-cubrid[pycubrid]"
+"""
 
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 
 from sqlalchemy_cubrid import BIGINT, SET, STRING, VARCHAR
 
 # Replace with your CUBRID connection details
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 metadata = MetaData()
 
