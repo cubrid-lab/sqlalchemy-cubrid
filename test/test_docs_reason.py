@@ -23,6 +23,30 @@ def workflow_python() -> str:
 
 
 class DocsReasonWorkflowTests(unittest.TestCase):
+    def test_workflow_token_is_read_only(self) -> None:
+        text = WORKFLOW.read_text()
+        permissions = text.split("\npermissions:\n", 1)[1].split("\njobs:", 1)[0]
+        self.assertEqual(permissions.strip(), "contents: read")
+        self.assertNotIn("permissions:", text.split("\njobs:", 1)[1])
+
+    def test_reported_item_quote_html_and_link_boundaries(self) -> None:
+        from scripts.check_docs_reason import has_docs_not_needed_reason
+
+        for case in FIXTURES:
+            if case["id"].startswith("reported_"):
+                with self.subTest(case=case["id"]):
+                    self.assertEqual(
+                        has_docs_not_needed_reason(case["event"]["pull_request"]["body"]),
+                        case["expected_docs_exemption"],
+                    )
+        for reason in (
+            "`[](https://example.com)`",
+            "[tests only](https://example.com)",
+            "only [](https://example.com) fixture changed",
+        ):
+            self.assertTrue(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - [](<https://example.com>)"))
+
     def test_checkpoint_does_not_resplit_the_fed_tape(self) -> None:
         from scripts.check_docs_reason import _HTMLContext
 
@@ -435,7 +459,7 @@ class DocsReasonWorkflowTests(unittest.TestCase):
             "\u005c\u005c\u005c<blockquote>",
             "`<pre>`",
             "`<code>`",
-            "`Example\n<blockquote>\n`",
+            "`Example\n\u005c<blockquote>\n`",
         ):
             with self.subTest(literal=literal):
                 self.assertTrue(
@@ -448,6 +472,15 @@ class DocsReasonWorkflowTests(unittest.TestCase):
                         opener + "\nDocs: not needed - hidden\n</blockquote>"
                     )
                 )
+        # Type 6 HTML interrupts the paragraph before inline code is parsed.
+        self.assertFalse(
+            has_docs_not_needed_reason("`Example\n<blockquote>\n`\n\nDocs: not needed - hidden")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "`Example\n<blockquote>\n`\n</blockquote>\nDocs: not needed - tests only"
+            )
+        )
         self.assertFalse(has_docs_not_needed_reason("`Example\nDocs: not needed - hidden\n`"))
         self.assertTrue(
             has_docs_not_needed_reason(
@@ -686,7 +719,6 @@ class DocsReasonWorkflowTests(unittest.TestCase):
 
     def test_body_is_json_data_and_translation_requires_existing_label(self) -> None:
         text = WORKFLOW.read_text()
-        self.assertIn("\npermissions:\n  contents: read\n\njobs:\n", text)
         self.assertIn("json.load(_f)", text)
         self.assertNotIn("${{ github.event.pull_request.body }}", text)
         translation = text.split("  translation-sync:", 1)[1]

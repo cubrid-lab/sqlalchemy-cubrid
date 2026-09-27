@@ -48,7 +48,7 @@
   {"id": "even_backslash_keeps_real_html", "event": {"pull_request": {"body": "\\\\<blockquote>\nDocs: not needed - hidden\n</blockquote>", "labels": []}}, "expected_docs_exemption": false},
   {"id": "unmatched_tick_keeps_real_html", "event": {"pull_request": {"body": "`<blockquote>\n\nDocs: not needed - hidden\n</blockquote>", "labels": []}}, "expected_docs_exemption": false},
   {"id": "multiline_inline_code_marker_hidden", "event": {"pull_request": {"body": "`Example\nDocs: not needed - hidden\n`", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "multiline_inline_code_html_then_real_reason", "event": {"pull_request": {"body": "`Example\n<blockquote>\n`\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "multiline_inline_code_html_then_real_reason", "event": {"pull_request": {"body": "`Example\n<blockquote>\n`\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": false},
   {"id": "inline_run_cannot_cross_fenced_block", "event": {"pull_request": {"body": "Example `unmatched\n~~~html\n<blockquote>\n~~~\nDocs: not needed - tests only\n`", "labels": []}}, "expected_docs_exemption": true},
   {"id": "inline_run_cannot_cross_quote_block", "event": {"pull_request": {"body": "`literal\n> quoted`\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false},
   {"id": "embedded_placeholder", "event": {"pull_request": {"body": "Docs: not needed - <reason> because docs are unchanged", "labels": []}}, "expected_docs_exemption": false},
@@ -100,5 +100,18 @@
   {"id": "type6_div_ends_lazy_quote", "event": {"pull_request": {"body": "> prior quote\n<div>\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "lazy_bullet_underline_not_setext", "event": {"pull_request": {"body": "- item\n  `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false},
   {"id": "lazy_ordered_underline_not_setext", "event": {"pull_request": {"body": "1. item\n   `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "wide_ordered_list_inline_context_preserved", "event": {"pull_request": {"body": "10. item\n    `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "wide_ordered_list_inline_context_preserved", "event": {"pull_request": {"body": "10. item\n    `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_cross_item_reason_plain", "event": {"pull_request": {"body": "10. item\n    `open\n10. other\nDocs: not needed - tests only\nend `", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_cross_item_reason_inline", "event": {"pull_request": {"body": "10. item\n    `open\n10. other`\nDocs: not needed - hidden\nend `", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_quoted_fence_closed", "event": {"pull_request": {"body": "> ```text\n> example\n> ```\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_type6_inline_boundary", "event": {"pull_request": {"body": "`unmatched\n<div>\nDocs: not needed - tests only\n</div>\nlast `", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_type1_inline_boundary", "event": {"pull_request": {"body": "`unmatched\n<script>content</script>\nDocs: not needed - tests only\nlast `", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_bullet_ends_quote", "event": {"pull_request": {"body": "> quote\n- item\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_one_ends_quote", "event": {"pull_request": {"body": "> quote\n1. item\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_two_fence_stays_quote", "event": {"pull_request": {"body": "> quote\n2. ```\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_bullet_inline_boundary", "event": {"pull_request": {"body": "`unmatched\n- item\nDocs: not needed - tests only\nlast `", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_one_inline_boundary", "event": {"pull_request": {"body": "`unmatched\n1. item\nDocs: not needed - tests only\nlast `", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_two_not_inline_boundary", "event": {"pull_request": {"body": "`unmatched\n2. item\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_empty_link_reason", "event": {"pull_request": {"body": "Docs: not needed - [](https://example.com)", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "type6_closed_quote_restores_reason_after_ticks", "event": {"pull_request": {"body": "`Example\n<blockquote>\n`\n</blockquote>\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true}
 ]
