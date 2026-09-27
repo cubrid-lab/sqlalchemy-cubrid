@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Live BLOB/CLOB value-contract tests on released drivers (#485)** — `test_integration.py` (CUBRIDdb and `cubrid+pycubrid://` lanes) and `test_aio_integration.py` (`cubrid+aiopycubrid://`) now round-trip `LargeBinary`, `BLOB`, `CLOB` and `Text` through Core and ORM with small, Unicode/CJK, `NULL` and 256 KiB payloads (larger than pycubrid's ~80 KB `LOB_READ` chunk), and assert the returned value is `bytes`/`str`, never a driver LOB handle. Verified on CUBRID 10.2 and 11.4: writes store the full value and `NULL`/`Text` round-trip, but non-NULL `BLOB`/`CLOB` reads return a driver LOB locator (pycubrid `dict` handle, CUBRIDdb `'file:...'` string), and async `LargeBinary`/`BLOB` binding fails because the async DB-API adapter lacks `Binary`. Those cases are strict per-driver xfails, and `docs/TYPES.md` documents the current behavior; no dialect behavior changes.
+
 ### Fixed
 - **`String(0)` / `VARCHAR(0)` / `NVARCHAR(0)` no longer silently compile to the 4096 default (#440)** — the type compiler checked the length by truthiness, so an explicit `length=0` was treated as "no length" and rendered `VARCHAR(4096)` (or `NCHAR VARYING(4096)`). `length=None` still gets the documented default; an explicit zero now raises `CompileError`, since `VARCHAR(0)` is not a valid CUBRID length.
 - **Reflection now returns table and view names in deterministic order (#443)** — added `ORDER BY class_name` to `get_table_names()` and `get_view_names()` catalog queries so reflection results no longer depend on database row order.

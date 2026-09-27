@@ -2386,8 +2386,8 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | National character set type. |
 | `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | Reflected to NVARCHAR by this dialect. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | Equivalent to very large `VARCHAR`. |
-| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` | Character LOB; large text payloads. |
-| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` | Binary LOB storage. |
+| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
+| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (documented) | Binary LOB. Current drivers return a LOB locator on read; see the warning below. |
 | `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent collection payload | CUBRID-specific collection; unique unordered members. |
 | `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent collection payload | CUBRID-specific collection; duplicates allowed. |
 | `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent collection payload | CUBRID-specific collection; ordered with duplicates. |
@@ -2409,6 +2409,10 @@ flowchart LR
 
 !!! warning "Character set and national string columns"
     `NCHAR`/`NVARCHAR` use national character semantics. Keep application encoding and database collation aligned to avoid unexpected comparisons/sorting.
+
+!!! warning "Reading BLOB/CLOB returns a driver LOB locator"
+    Verified live on CUBRID 10.2 and 11.4 with pycubrid 1.3.2 and 1.7.1 and CUBRIDdb 11.3 (#485): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on pycubrid, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. On `cubrid+aiopycubrid://`, binding any `LargeBinary`/`BLOB` parameter, including `None`, raises `AttributeError` for the missing DB-API `Binary`.
+    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441.
 
 !!! warning "LOB and collection payload shape can differ by driver"
     `CUBRIDdb` and `pycubrid` can expose `BLOB`/`CLOB` and collection values differently.

@@ -387,8 +387,8 @@ for col in users.columns:
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | 국가 문자 집합 타입. |
 | `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | 이 방언에서 NVARCHAR로 리플렉트. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | 매우 큰 `VARCHAR`와 동등. |
-| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` | 문자 LOB. 대용량 텍스트 페이로드. |
-| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` | 바이너리 LOB 저장. |
+| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` (문서상) | 문자 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
+| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (문서상) | 바이너리 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
 | `SET(...)` | `sqlalchemy_cubrid.SET` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 유일한 순서 없는 원소. |
 | `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 중복 허용. |
 | `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 중복을 허용하는 순서 있음. |
@@ -410,6 +410,10 @@ flowchart LR
 
 !!! warning "문자 집합과 국가 문자열 컬럼"
     `NCHAR`/`NVARCHAR`는 국가 문자 의미론을 사용합니다. 예상치 못한 비교/정렬을 피하려면 애플리케이션 인코딩과 데이터베이스 콜레이션을 정렬하세요.
+
+!!! warning "BLOB/CLOB 조회는 드라이버 LOB 로케이터를 반환함"
+    CUBRID 10.2 및 11.4, pycubrid 1.3.2 및 1.7.1, CUBRIDdb 11.3에서 실제로 검증했습니다(#485). `bytes`/`str` 바인딩은 전체 값을 저장하고 `NULL`은 `None`으로 왕복되지만, NULL이 아닌 `BLOB`/`CLOB` 컬럼을 조회하면 `bytes`/`str` 대신 드라이버의 LOB 로케이터(pycubrid는 `dict` 핸들, CUBRIDdb는 `'file:...'` 문자열)가 반환됩니다. `LargeBinary`/`BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. `cubrid+aiopycubrid://`에서는 `None`을 포함한 모든 `LargeBinary`/`BLOB` 파라미터 바인딩이 DB-API `Binary` 누락으로 `AttributeError`를 발생시킵니다.
+    내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다.
 
 !!! warning "LOB와 컬렉션 페이로드 형태는 드라이버마다 다를 수 있음"
     `CUBRIDdb`와 `pycubrid`는 `BLOB`/`CLOB`과 컬렉션 값을 다르게 노출할 수 있습니다.

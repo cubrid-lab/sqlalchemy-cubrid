@@ -39,6 +39,8 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
+from sqlalchemy_cubrid import BLOB, CLOB
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -815,3 +817,157 @@ class TestJSONRoundTrip:
             assert result == payload
         finally:
             meta.drop_all(engine)
+
+
+# ---------------------------------------------------------------------------
+# #485: SQLAlchemy-facing BLOB/CLOB value contract
+# ---------------------------------------------------------------------------
+
+# pycubrid documents (``pycubrid.lob.Lob.read``) that the CUBRID broker caps
+# a single LOB_READ response at ~80 KB.  The large payloads below exceed that
+# chunk so a value assembled from one partial read cannot pass.
+_LOB_READ_CHUNK_BYTES = 80 * 1024
+_LOB_SMALL_BYTES = b"\x00\x01\x7f\x80\xfe\xff binary"
+_LOB_LARGE_BYTES = bytes(range(256)) * 1024  # 256 KiB, every byte value
+_LOB_SMALL_TEXT = "plain clob text"
+_LOB_CJK_TEXT = "한국어 CLOB 日本語 中文 ✓ — ümlaut"
+_LOB_LARGE_TEXT = (_LOB_CJK_TEXT + " / ") * 8000  # > 80 KB when UTF-8 encoded
+
+# column kind -> (SQLAlchemy type, documented Python value type)
+_LOB_KINDS = {
+    "large_binary": (sa.LargeBinary, bytes),
+    "blob": (BLOB, bytes),
+    "clob": (CLOB, str),
+    "text": (sa.Text, str),
+}
+
+_LOB_CASES = [
+    pytest.param("large_binary", _LOB_SMALL_BYTES, id="large_binary-small"),
+    pytest.param("large_binary", _LOB_LARGE_BYTES, id="large_binary-large"),
+    pytest.param("large_binary", None, id="large_binary-null"),
+    pytest.param("blob", _LOB_SMALL_BYTES, id="blob-small"),
+    pytest.param("blob", _LOB_LARGE_BYTES, id="blob-large"),
+    pytest.param("blob", None, id="blob-null"),
+    pytest.param("clob", _LOB_SMALL_TEXT, id="clob-small"),
+    pytest.param("clob", _LOB_CJK_TEXT, id="clob-cjk"),
+    pytest.param("clob", _LOB_LARGE_TEXT, id="clob-large"),
+    pytest.param("clob", None, id="clob-null"),
+    pytest.param("text", _LOB_SMALL_TEXT, id="text-small"),
+    pytest.param("text", _LOB_CJK_TEXT, id="text-cjk"),
+    pytest.param("text", _LOB_LARGE_TEXT, id="text-large"),
+    pytest.param("text", None, id="text-null"),
+]
+
+# Released drivers hand back a LOB locator instead of the value for BLOB/CLOB
+# columns.  NULL and ``Text`` (CUBRID ``STRING``) values are unaffected.
+_LOB_LOCATOR_XFAIL = {
+    "pycubrid": (
+        "released pycubrid fetches BLOB/CLOB columns as a raw LOB-handle dict "
+        "(lob_type/lob_length/file_locator) instead of bytes/str; official LOB "
+        "fetch is cubrid-lab/pycubrid#441"
+    ),
+    "cubrid": (
+        "CUBRIDdb fetches BLOB/CLOB columns as the server file-locator string "
+        "('file:...') instead of bytes/str (#485)"
+    ),
+}
+
+
+def _xfail_lob_locator(request, engine, kind, value):
+    reason = _LOB_LOCATOR_XFAIL.get(engine.dialect.driver)
+    if reason is not None and kind != "text" and value is not None:
+        request.applymarker(
+            pytest.mark.xfail(strict=True, raises=(AssertionError, TypeError), reason=reason)
+        )
+
+
+def _assert_lob_value(got, kind, expected):
+    if expected is None:
+        assert got is None
+        return
+    value_type = _LOB_KINDS[kind][1]
+    assert type(got) is value_type, f"expected {value_type.__name__}, got {type(got)!r}"
+    assert len(got) == len(expected)
+    assert got == expected
+
+
+class TestLobPayloadSizes:
+    def test_large_payloads_exceed_driver_lob_read_chunk(self):
+        assert len(_LOB_LARGE_BYTES) > _LOB_READ_CHUNK_BYTES
+        assert len(_LOB_LARGE_TEXT.encode("utf-8")) > _LOB_READ_CHUNK_BYTES
+
+
+class TestLobValueContractCore:
+    @pytest.fixture(scope="class")
+    def lob_table(self, engine):
+        meta = MetaData()
+        table = Table(
+            "integration_lob485",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            *(Column(kind, type_) for kind, (type_, _) in _LOB_KINDS.items()),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        yield table
+        meta.drop_all(engine)
+
+    @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
+    def test_roundtrip(self, request, engine, lob_table, kind, value):
+        _xfail_lob_locator(request, engine, kind, value)
+        with engine.begin() as conn:
+            conn.execute(lob_table.delete())
+            conn.execute(lob_table.insert(), {"id": 1, kind: value})
+        with engine.connect() as conn:
+            got = conn.execute(sa.select(lob_table.c[kind]).where(lob_table.c.id == 1)).scalar_one()
+        _assert_lob_value(got, kind, value)
+
+    @pytest.mark.parametrize(
+        ("kind", "value"),
+        [p for p in _LOB_CASES if p.values[0] in ("large_binary", "blob", "clob") and p.values[1]],
+    )
+    def test_write_stores_full_value(self, engine, lob_table, kind, value):
+        """Bound bytes/str reach the LOB intact; read back via server-side conversion."""
+        column = lob_table.c[kind]
+        convert = sa.func.CLOB_TO_CHAR if kind == "clob" else sa.func.BLOB_TO_BIT
+        with engine.begin() as conn:
+            conn.execute(lob_table.delete())
+            conn.execute(lob_table.insert(), {"id": 1, kind: value})
+        with engine.connect() as conn:
+            got = conn.execute(sa.select(convert(column)).where(lob_table.c.id == 1)).scalar_one()
+        _assert_lob_value(got, kind, value)
+
+
+class _LobBase(DeclarativeBase):
+    pass
+
+
+class _LobDocument(_LobBase):
+    __tablename__ = "integration_lob485_orm"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    large_binary: Mapped[bytes | None] = mapped_column(sa.LargeBinary)
+    blob: Mapped[bytes | None] = mapped_column(BLOB)
+    clob: Mapped[str | None] = mapped_column(CLOB)
+    text: Mapped[str | None] = mapped_column(sa.Text)
+
+
+class TestLobValueContractORM:
+    @pytest.fixture(scope="class")
+    def lob_orm_table(self, engine):
+        _LobBase.metadata.drop_all(engine)
+        _LobBase.metadata.create_all(engine)
+        yield
+        _LobBase.metadata.drop_all(engine)
+
+    @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
+    def test_roundtrip(self, request, engine, lob_orm_table, kind, value):
+        _xfail_lob_locator(request, engine, kind, value)
+        with Session(engine) as session, session.begin():
+            session.query(_LobDocument).delete()
+            session.add(_LobDocument(id=1, **{kind: value}))
+        with Session(engine) as session:
+            doc = session.get(_LobDocument, 1)
+            assert doc is not None
+            got = getattr(doc, kind)
+        _assert_lob_value(got, kind, value)
