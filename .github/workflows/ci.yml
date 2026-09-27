@@ -316,6 +316,18 @@ jobs:
           "
           python -m pytest test/test_integration.py -v --tb=short
 
+      - name: Run driver-differential comparison (required)
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          # Fails the step when no comparison ran and passed (all skipped or
+          # none collected); see test/conftest.py and #486.
+          CUBRID_REQUIRE_DRIVER_DIFFERENTIAL: "1"
+          VERSION_REPORT_TITLE: "Driver-differential versions (Python ${{ matrix.python-version }}, CUBRID ${{ matrix.cubrid-version }})"
+        run: |
+          CUBRIDDB_SOURCE_REF="$(git -C /tmp/cubrid-python describe --tags --always)" \
+            python -m scripts.report_driver_versions
+          python -m pytest test/test_driver_differential.py -v --tb=short -rs
+
       - name: Run regression tests
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
