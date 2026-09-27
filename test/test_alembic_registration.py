@@ -211,34 +211,33 @@ def test_working_alembic_registers_without_warning() -> None:
     assert loaded["warnings"] == []
 
 
-def _live_url() -> str | None:
-    url = os.environ.get("CUBRID_TEST_URL")
-    if not url:
-        return None
-    try:
-        import sqlalchemy as sa
-
-        engine = sa.create_engine(url)
-        with engine.connect() as conn:
-            conn.execute(sa.text("SELECT 1"))
-        engine.dispose()
-    except Exception:
-        return None
-    return url
-
-
-_LIVE_URL = _live_url()
+# Collection only looks at the environment variable, so the offline suite never
+# opens a database connection; reachability is checked inside the test.
+_LIVE_URL = os.environ.get("CUBRID_TEST_URL")
 
 
 @pytest.mark.integration
-@pytest.mark.skipif(_LIVE_URL is None, reason="CUBRID instance not available (set CUBRID_TEST_URL)")
+@pytest.mark.skipif(not _LIVE_URL, reason="CUBRID instance not available (set CUBRID_TEST_URL)")
 def test_online_upgrade_with_default_env_py(tmp_path: Path) -> None:
     import sqlalchemy as sa
 
     assert _LIVE_URL is not None
+    engine = sa.create_engine(_LIVE_URL)
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa.text("SELECT 1"))
+    except Exception as exc:
+        engine.dispose()
+        pytest.skip(f"CUBRID instance not reachable: {type(exc).__name__}")
+
+    # The default env.py uses the ``alembic_version`` table.  Never touch one
+    # that already exists: it may hold a real database's migration history.
+    if sa.inspect(engine).has_table("alembic_version"):
+        engine.dispose()
+        pytest.skip("target database already has an alembic_version table")
+
     table = f"sa504_{uuid.uuid4().hex[:8]}"
     project = _make_project(tmp_path, _LIVE_URL, table)
-    engine = sa.create_engine(_LIVE_URL)
     try:
         upgrade = _alembic(project, "upgrade", "head")
         assert "KeyError" not in upgrade.stderr, upgrade.stderr
@@ -251,7 +250,10 @@ def test_online_upgrade_with_default_env_py(tmp_path: Path) -> None:
         assert downgrade.returncode == 0, downgrade.stderr
         assert not sa.inspect(engine).has_table(table)
     finally:
+        # Both tables were created by this test (checked above), so dropping
+        # them only removes this test's own objects.
+        cleanup = sa.MetaData()
         with engine.begin() as conn:
-            conn.execute(sa.text(f"DROP TABLE IF EXISTS {table}"))
-            conn.execute(sa.text("DROP TABLE IF EXISTS alembic_version"))
+            for name in (table, "alembic_version"):
+                sa.Table(name, cleanup).drop(conn, checkfirst=True)
         engine.dispose()
