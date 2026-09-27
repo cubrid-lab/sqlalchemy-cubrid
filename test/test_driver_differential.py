@@ -367,18 +367,26 @@ def test_result_after_rollback_is_never_partial(
             with engine.connect() as conn:
                 conn.execute(text("SELECT 1")).all()
                 result = conn.execute(select(tbl.c.id, tbl.c.payload).order_by(tbl.c.id))
-                result.fetchone()
+                if engine.dialect.driver == "pycubrid":
+                    # The first response must not hold the whole result.
+                    assert 0 < result.cursor._fetched_count < rows
+                first = result.fetchone()
                 conn.rollback()
                 try:
-                    count = 1 + len(result.fetchall())
+                    rest = result.fetchall()
                 except sa.exc.DBAPIError:
                     return "raises"
         finally:
             tbl.drop(engine, checkfirst=True)
-        return "complete" if count == rows else f"partial ({count} of {rows})"
+        # Whatever was returned is an in-order prefix with intact payloads.
+        ids = [first.id] + [row.id for row in rest]
+        assert ids == list(range(len(ids)))
+        assert all(row.payload == "x" * 1000 for row in rest)
+        return "complete" if len(ids) == rows else f"partial ({len(ids)} of {rows})"
 
-    # CUBRIDdb is asserted outside the pycubrid xfail so its failures stay visible.
-    assert run(cext) in ("complete", "raises")
+    # CUBRIDdb, the precondition and the prefix checks stay outside the
+    # pycubrid-only xfail; only pycubrid's completeness is gated.
+    assert run(cext) == "raises"
     py_outcome = run(pyc)
     xfail_unreleased_pycubrid_fix(request, "pycubrid", 395, raises=AssertionError)
     assert py_outcome in ("complete", "raises"), py_outcome

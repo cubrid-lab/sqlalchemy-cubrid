@@ -628,7 +628,8 @@ class TestAsyncResultCompletenessAcrossTransactionBoundary:
     SQLAlchemy's async DB-API adapter reads every row of a non-streaming result
     before ``execute()`` returns, so no FETCH happens after the boundary and the
     result stays complete. ``AsyncConnection.stream()`` is not available: the
-    dialect does not support server-side cursors.
+    dialect does not support server-side cursors. The raw driver-cursor case
+    below exercises the lazily fetching ``pycubrid.aio`` cursor directly.
     """
 
     @pytest_asyncio.fixture(autouse=True)
@@ -683,6 +684,61 @@ class TestAsyncResultCompletenessAcrossTransactionBoundary:
         assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
         assert ids == list(range(_WIDE_ROWS))
         assert all(row.payload == _WIDE_PAYLOAD for row in rest)
+
+    @pytest.mark.parametrize("boundary", ["commit", "rollback"])
+    async def test_raw_driver_cursor_is_complete_or_raises(
+        self,
+        request: pytest.FixtureRequest,
+        engine: AsyncEngine,
+        wide_table: Table,
+        boundary: str,
+    ):
+        """The aiopycubrid driver cursor itself, which fetches lazily.
+
+        SQLAlchemy's buffering hides pycubrid#395 above, so this case drives the
+        underlying ``pycubrid.aio`` connection directly: execute, fetch one row,
+        end the transaction, then fetch the rest.
+        """
+        async with engine.connect() as conn:
+            # ``_ConnectionFairy.driver_connection`` returns the SQLAlchemy adapter
+            # here (the dialect does not override ``get_driver_connection()``),
+            # so reach the ``pycubrid.aio`` connection through the adapter.
+            adapter = (await conn.get_raw_connection()).dbapi_connection
+            driver_conn = adapter.driver_connection
+            cursor = driver_conn.cursor()
+            try:
+                await cursor.execute("SELECT 1")
+                assert await cursor.fetchall() == [(1,)]
+                await cursor.execute("SELECT id, payload FROM aio_test_rc481 ORDER BY id")
+                # The first response must not hold the whole result.
+                assert 0 < cursor._fetched_count < _WIDE_ROWS
+                first = await cursor.fetchone()
+                assert first is not None and first[0] == 0
+                if boundary == "commit":
+                    await driver_conn.commit()
+                else:
+                    await driver_conn.rollback()
+                pycubrid = pytest.importorskip("pycubrid")
+                try:
+                    rest: list[tuple[Any, ...]] | None = list(await cursor.fetchall())
+                except pycubrid.Error:
+                    rest = None  # an explicit failure satisfies the contract
+                if rest is not None:
+                    # Whatever was returned is an in-order prefix with intact payloads.
+                    ids = [first[0]] + [row[0] for row in rest]
+                    assert ids == list(range(len(ids)))
+                    assert all(row[1] == _WIDE_PAYLOAD for row in rest)
+                # Only the completeness check is gated; an explicit error passes,
+                # which is a strict XPASS on a build that already raises.
+                xfail_unreleased_pycubrid_fix(
+                    request, engine.dialect.driver, 395, raises=AssertionError
+                )
+                if rest is not None:
+                    assert len(ids) == _WIDE_ROWS, (
+                        f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
+                    )
+            finally:
+                await cursor.close()
 
 
 # ---------------------------------------------------------------------------

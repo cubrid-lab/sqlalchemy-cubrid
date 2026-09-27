@@ -1134,12 +1134,12 @@ class TestLobValueContractORM:
 # #481: results are never silently truncated across commit or rollback
 # ---------------------------------------------------------------------------
 
-# pycubrid requests further rows in FETCH batches of ``fetch_size`` (default 100,
-# ``pycubrid.connection.Connection``), and the broker's first response to the
-# SELECT is further capped by size: it holds only ~16 of the 1000-byte rows
-# below. The result therefore needs several FETCH round trips after the first
-# response, which is exactly what a commit/rollback can invalidate.
-_PYCUBRID_FETCH_SIZE = 100
+# pycubrid requests further rows in FETCH batches of ``fetch_size`` (the
+# ``pycubrid.connection.Connection`` default, 100 in 1.7.1), and the broker's
+# first response to the SELECT is further capped by size: it holds only ~16 of
+# the 1000-byte rows below. The result therefore needs several FETCH round trips
+# after the first response, which is exactly what a commit/rollback can
+# invalidate.
 _WIDE_ROWS = 500
 _WIDE_PAYLOAD = "x" * 1000
 _FETCHMANY_SIZE = 17
@@ -1184,9 +1184,9 @@ class TestResultCompletenessAcrossTransactionBoundary:
 
     def test_row_count_exceeds_pycubrid_fetch_batch(self):
         pycubrid_connection = pytest.importorskip("pycubrid.connection")
-        default = signature(pycubrid_connection.Connection).parameters["fetch_size"]
-        assert default.default == _PYCUBRID_FETCH_SIZE
-        assert _WIDE_ROWS > _PYCUBRID_FETCH_SIZE
+        fetch_size = signature(pycubrid_connection.Connection).parameters["fetch_size"].default
+        assert isinstance(fetch_size, int)
+        assert _WIDE_ROWS > fetch_size
 
     @pytest.mark.parametrize("method", ["fetchone", "fetchmany", "fetchall"])
     @pytest.mark.parametrize("boundary", ["commit", "rollback", "none"])
@@ -1214,27 +1214,33 @@ class TestResultCompletenessAcrossTransactionBoundary:
                 conn.commit()
             elif boundary == "rollback":
                 conn.rollback()
-            if boundary != "none":
-                # Applied only now, so the preconditions above stay unmasked.
-                xfail_unreleased_pycubrid_fix(
-                    request, engine.dialect.driver, 395, raises=AssertionError
-                )
+            error = None
             try:
                 rest = _drain(result, method)
-            except sa.exc.DBAPIError:
+            except sa.exc.DBAPIError as exc:
                 if boundary == "none":
                     raise
-                rest = None  # an explicit failure satisfies the contract
+                error, rest = exc, None  # an explicit failure satisfies the contract
         if engine.dialect.driver == "cubrid":
             # Recorded CUBRIDdb 11.3 behavior (CUBRID 10.2 and 11.4), for comparison.
-            expected = {"commit": "complete", "rollback": "raises", "none": "complete"}
-            assert ("raises" if rest is None else "complete") == expected[boundary]
-        if rest is None:
-            return
-        ids = [first.id] + [row.id for row in rest]
-        assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
-        assert ids == list(range(_WIDE_ROWS))
-        assert all(row.payload == _WIDE_PAYLOAD for row in rest)
+            if boundary == "rollback":
+                assert isinstance(error, sa.exc.InterfaceError), error
+            else:
+                assert error is None
+        if rest is not None:
+            # Whatever was returned is an in-order prefix with intact payloads.
+            ids = [first.id] + [row.id for row in rest]
+            assert ids == list(range(len(ids)))
+            assert all(row.payload == _WIDE_PAYLOAD for row in rest)
+        if boundary != "none":
+            # Only the completeness check below is gated. On an explicit
+            # error the test passes, which is a strict XPASS on a build that
+            # already raises instead of truncating.
+            xfail_unreleased_pycubrid_fix(
+                request, engine.dialect.driver, 395, raises=AssertionError
+            )
+        if rest is not None:
+            assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
 
 
 # ---------------------------------------------------------------------------
