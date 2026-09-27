@@ -43,6 +43,7 @@ from sqlalchemy import (
     text,
 )
 
+from sqlalchemy_cubrid.dialect import CubridDialect
 from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
 pytestmark = pytest.mark.integration
@@ -396,9 +397,9 @@ def test_result_after_rollback_is_never_partial(
 # ---------------------------------------------------------------------------
 
 _CONSTRAINT_VIOLATIONS = {
-    "not_null": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, NULL, NULL)",
-    "foreign_key": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, 999, 1)",
-    "unique_pk": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)",
+    "not_null": ("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, NULL, NULL)", -631),
+    "foreign_key": ("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, 999, 1)", -922),
+    "unique_pk": ("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)", -670),
 }
 
 
@@ -408,8 +409,9 @@ def test_constraint_violation_class_agrees(
 ) -> None:
     """NOT NULL, FK and unique/PK violations raise IntegrityError on both drivers."""
     pyc, cext = both_engines
+    sql, code = _CONSTRAINT_VIOLATIONS[kind]
 
-    def run(engine: Any) -> str:
+    def run(engine: Any) -> tuple[str, Any]:
         with engine.begin() as conn:
             conn.execute(text("DROP TABLE IF EXISTS drvdiff_ie"))
             conn.execute(
@@ -419,18 +421,28 @@ def test_constraint_violation_class_agrees(
                 )
             )
             conn.execute(text("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)"))
-        with engine.connect() as conn:
-            with pytest.raises(sa.exc.DBAPIError) as excinfo:
-                conn.execute(text(_CONSTRAINT_VIOLATIONS[kind]))
-            conn.rollback()
-            assert conn.execute(text("SELECT COUNT(*) FROM drvdiff_ie")).scalar() == 1
-        with engine.begin() as conn:
-            conn.execute(text("DROP TABLE drvdiff_ie"))
-        return type(excinfo.value).__name__
+        try:
+            with engine.connect() as conn:
+                raw = conn.connection.dbapi_connection
+                with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                    conn.execute(text(sql))
+                assert not excinfo.value.connection_invalidated
+                conn.rollback()
+                assert not conn.invalidated
+                assert conn.connection.dbapi_connection is raw
+                assert conn.execute(text("SELECT COUNT(*) FROM drvdiff_ie")).scalar() == 1
+        finally:
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS drvdiff_ie"))
+        return type(excinfo.value).__name__, excinfo.value.orig
 
-    # CUBRIDdb and the recovery checks in run() stay outside the pycubrid xfail.
-    assert run(cext) == "IntegrityError"
-    py_class = run(pyc)
+    # CUBRIDdb, the server error codes and the recovery checks in run() stay
+    # outside the pycubrid xfail.
+    c_class, c_orig = run(cext)
+    assert CubridDialect._extract_error_code(c_orig) == code
+    assert c_class == "IntegrityError"
+    py_class, py_orig = run(pyc)
+    assert py_orig.code == code
     if kind != "unique_pk":
         xfail_unreleased_pycubrid_fix(request, "pycubrid", 390, raises=AssertionError)
     assert py_class == "IntegrityError"
