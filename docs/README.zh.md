@@ -146,7 +146,7 @@ async with AsyncSession(engine) as session:
 - DML 扩展 -- `ON DUPLICATE KEY UPDATE`、`MERGE`、`REPLACE INTO`、`FOR UPDATE`、`TRUNCATE`
 - DDL 支持 -- `COMMENT`、`IF NOT EXISTS` / `IF EXISTS`、`AUTO_INCREMENT`
 - 模式反射 -- 表、视图、列、主键、外键、索引、唯一约束、注释
-- 通过 `CubridImpl` 提供 Alembic 迁移（自动发现入口点）
+- 通过 `CubridImpl` 提供 Alembic 迁移（加载方言时自动注册）
 - 支持 CUBRID 的三种 MVCC 隔离级别 — `READ COMMITTED`（默认）、`REPEATABLE READ`、`SERIALIZABLE`
 - Async 支持 —— 通过 pycubrid.aio 使用 `create_async_engine("cubrid+aiopycubrid://...")`
 
@@ -182,7 +182,7 @@ async with AsyncSession(engine) as session:
 | Python | 3.10、3.11、3.12、3.13、3.14 |
 | CUBRID | 10.2、11.0、11.2、11.4 |
 | SQLAlchemy | 2.0–2.1 |
-| Alembic | >=1.7 |
+| Alembic | >=1.7.2 |
 | pycubrid（sync） | >=1.2.0,<2.0 |
 | pycubrid（async） | >=1.2.0,<2.0 |
 
@@ -203,7 +203,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### sqlalchemy-cubrid 支持 Alembic 迁移吗？
 
-支持。请通过 `pip install "sqlalchemy-cubrid[alembic]"` 安装。该方言会通过入口点自动注册。请注意，CUBRID 会自动提交 DDL，因此迁移不是事务性的。
+支持。请通过 `pip install "sqlalchemy-cubrid[alembic]"` 安装。CUBRID 迁移实现会在方言加载时自动注册，因此默认的 `env.py` 在同步 URL 下无需修改即可使用；`cubrid+aiopycubrid://` 请使用 Alembic 的异步模板（`alembic init -t async`）。请注意，CUBRID 会自动提交 DDL，因此迁移不是事务性的。
 
 ### 支持哪些 Python 版本？
 

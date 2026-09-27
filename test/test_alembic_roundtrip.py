@@ -149,8 +149,6 @@ def _make_connection():
 
 
 def test_create_reflect_compare_roundtrip_no_diffs() -> None:
-    import sqlalchemy_cubrid.alembic_impl  # noqa: F401
-
     metadata = sa.MetaData()
 
     sa.Table(
@@ -218,8 +216,6 @@ def test_create_reflect_compare_roundtrip_no_diffs() -> None:
 
 def test_roundtrip_composite_pk_multi_fk_defaults_no_diffs() -> None:
     """Complex schema: composite PK, multiple FKs, multi-col unique, defaults."""
-    import sqlalchemy_cubrid.alembic_impl  # noqa: F401
-
     metadata = sa.MetaData()
 
     sa.Table(

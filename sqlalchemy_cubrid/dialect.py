@@ -20,8 +20,10 @@ Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import re
+import warnings
 
 from typing import Any, Callable, Optional, Sequence, cast
 
@@ -316,6 +318,10 @@ class CubridDialect(default.DefaultDialect):
     insertmanyvalues_implicit_sentinel = InsertmanyvaluesSentinelOpts.ANY_AUTOINCREMENT
     supports_is_distinct_from = True
 
+    # Accurate on both drivers: pycubrid sums executemany rowcount itself, and
+    # CUBRIDdb's last-row-only rowcount is corrected by do_executemany (#502).
+    supports_sane_multi_rowcount = True
+
     # RETURNING
     insert_returning = False
     update_returning = False
@@ -359,6 +365,37 @@ class CubridDialect(default.DefaultDialect):
                 '(pip install "sqlalchemy-cubrid[pycubrid]").'
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
+
+    def do_executemany(
+        self,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any = None,
+    ) -> None:
+        """Run ``executemany`` as one ``execute`` per row, summing rowcount.
+
+        CUBRIDdb (up to at least 11.3.0.51) prepares an ``executemany``
+        statement once and never binds ``None``, so a ``None`` parameter
+        silently reuses the previous row's value; its ``rowcount`` also
+        reflects only the last row. Both are fixed by executing each row
+        separately (each ``execute`` re-prepares, so unbound parameters are
+        NULL) and reporting the total, which keeps
+        ``supports_sane_multi_rowcount`` accurate for ORM batched UPDATE and
+        DELETE. The guard applies to every statement, not only when a row
+        contains ``None``, because the last-row rowcount is wrong either way.
+        insertmanyvalues batches go through ``do_execute`` and are not
+        affected, but an INSERT into a table with a ``bind_expression()`` type
+        falls back to executemany (#421) and does use this guard.
+        :class:`PyCubridDialect` restores the driver's own ``executemany``.
+        Remove once a fixed CUBRIDdb is the minimum (#502).
+        """
+        rowcount = 0
+        for params in parameters:
+            cursor.execute(statement, params)
+            if rowcount >= 0:
+                rowcount = -1 if cursor.rowcount < 0 else rowcount + cursor.rowcount
+        cursor.rowcount = rowcount
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         """Build DB-API connection arguments for CUBRID.
@@ -1304,3 +1341,35 @@ class CubridDialect(default.DefaultDialect):
 
 
 dialect = CubridDialect
+
+
+# Register ``CubridImpl`` with Alembic whenever Alembic is installed.
+# Alembic resolves its migration implementation from ``_impls[dialect.name]``,
+# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``; it
+# never reads a package entry point for this.  Every CUBRID dialect variant
+# (``cubrid``, ``cubrid+cubriddb``, ``cubrid+pycubrid``,
+# ``cubrid+aiopycubrid``) imports this module and has ``name = "cubrid"``, so
+# importing ``alembic_impl`` here makes a default ``env.py`` work with no
+# extra import.  Alembic stays optional: without it the import is skipped
+# silently.  A broken Alembic install (for example 1.7.0/1.7.1, which raise
+# ``NameError`` on SQLAlchemy 2.x) must never stop the dialect from loading,
+# so any other failure only disables the integration with a warning.
+try:
+    from sqlalchemy_cubrid import alembic_impl as _alembic_impl  # noqa: F401
+except Exception as _exc:
+    try:
+        _alembic_absent = importlib.util.find_spec("alembic") is None
+    except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
+        _alembic_absent = False
+    if not (isinstance(_exc, ImportError) and _alembic_absent):
+        _alembic_msg = (
+            "sqlalchemy-cubrid: Alembic integration is disabled because the "
+            f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
+            'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
+        )
+        # A warning filter set to "error" (``-W error``) turns warn() into a
+        # raise; fall back to the logger so the dialect still loads.
+        try:
+            warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
+        except Exception:
+            log.warning(_alembic_msg)
