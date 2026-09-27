@@ -250,6 +250,7 @@ driver:
 | `cubrid://` (`CUBRIDdb` 11.3) | all rows | `InterfaceError` (CCI -20040) |
 | `cubrid+pycubrid://` (pycubrid 1.7.1) | **silently returns only the rows already buffered** on a connection that completed an earlier query (the normal state of a pooled connection); `OperationalError` otherwise | same as commit |
 | `cubrid+aiopycubrid://` | all rows: `AsyncConnection.execute()` buffers the whole result before it returns | all rows |
+| raw `pycubrid.aio` cursor (pycubrid 1.7.1) | **silently returns only the buffered rows** | same as commit |
 
 cubrid-lab/pycubrid#395 makes pycubrid raise `InterfaceError` instead of
 returning a partial result; until that release is adopted, fully consume a

@@ -195,6 +195,7 @@ SQLAlchemy를 통하면 `text()` 및 Core `UPDATE`/`DELETE` executemany가 잘�
 | `cubrid://` (`CUBRIDdb` 11.3) | 모든 행 | `InterfaceError` (CCI -20040) |
 | `cubrid+pycubrid://` (pycubrid 1.7.1) | 이전 쿼리를 완료한 연결(풀링된 연결의 일반적인 상태)에서는 **이미 버퍼에 있는 행만 오류 없이 반환**, 그 외에는 `OperationalError` | commit과 동일 |
 | `cubrid+aiopycubrid://` | 모든 행: `AsyncConnection.execute()`가 반환 전에 전체 결과를 버퍼링 | 모든 행 |
+| 원시 `pycubrid.aio` 커서 (pycubrid 1.7.1) | **버퍼에 있는 행만 오류 없이 반환** | commit과 동일 |
 
 cubrid-lab/pycubrid#395는 pycubrid가 부분 결과를 반환하는 대신 `InterfaceError`를 발생시키도록 합니다. 해당 릴리스를 채택하기 전까지는 트랜잭션을 끝내기 전에 결과를 모두 소비하세요. 방언이 서버 측 커서를 지원하지 않으므로 `AsyncConnection.stream()`은 사용할 수 없습니다.
 
