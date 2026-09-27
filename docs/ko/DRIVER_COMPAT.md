@@ -159,7 +159,7 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#485). 모든 릴리스�
 |---|---|
 | `cubrid://` (`CUBRIDdb` 11.3) | 서버 파일 로케이터 `str` (`'file:...'`) |
 | `cubrid+pycubrid://` (pycubrid 1.3.2 ~ 1.7.1) | LOB 핸들 `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
-| `cubrid+aiopycubrid://` | LOB 핸들 `dict`. 또한 비동기 DB-API 어댑터에 `Binary`가 없어 `None`을 포함한 모든 `LargeBinary` / `BLOB` 파라미터 바인딩이 `AttributeError`를 발생시킵니다 |
+| `cubrid+aiopycubrid://` (pycubrid 1.7.1) | LOB 핸들 `dict` (`None`을 포함한 `LargeBinary` / `BLOB` 값 바인딩은 #500부터 정상 동작) |
 
 `LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다. [타입](TYPES.md)도 참고하세요.
 

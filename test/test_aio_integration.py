@@ -418,25 +418,16 @@ _LOB_CASES = [
 
 
 def _xfail_async_lob(request: pytest.FixtureRequest, kind: str, value: object) -> None:
-    if kind in ("large_binary", "blob"):
+    # Binding works since #500; only the non-NULL LOB *read* still returns the
+    # driver's LOB-handle dict instead of bytes/str (pycubrid#441, #485).
+    if kind in ("large_binary", "blob", "clob") and value is not None:
         request.applymarker(
             pytest.mark.xfail(
                 strict=True,
-                raises=sa.exc.StatementError,
+                raises=(AssertionError, TypeError),
                 reason=(
-                    "AsyncAdapt_pycubrid_dbapi does not expose DB-API Binary, so "
-                    "LargeBinary/BLOB binding raises AttributeError (#485)"
-                ),
-            )
-        )
-    elif kind == "clob" and value is not None:
-        request.applymarker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=AssertionError,
-                reason=(
-                    "released pycubrid fetches CLOB columns as a raw LOB-handle dict "
-                    "instead of str; official LOB fetch is cubrid-lab/pycubrid#441"
+                    "released pycubrid fetches BLOB/CLOB columns as a raw LOB-handle dict "
+                    "instead of bytes/str; official LOB fetch is cubrid-lab/pycubrid#441"
                 ),
             )
         )
@@ -512,21 +503,50 @@ class TestAsyncLobValueContract:
 
     @pytest.mark.parametrize(
         ("kind", "value"),
-        [p for p in _LOB_CASES if p.values[0] == "clob" and p.values[1]],
+        [p for p in _LOB_CASES if p.values[0] in ("large_binary", "blob", "clob") and p.values[1]],
     )
-    async def test_clob_write_stores_full_value(
+    async def test_write_stores_full_value(
         self, engine: AsyncEngine, kind: str, value: bytes | str | None
     ):
-        """Bound str reaches the CLOB intact; read back via server-side conversion."""
+        """Bound bytes/str reach the LOB intact; read back via server-side conversion."""
         table = cast(Table, _async_lob_model(kind).__table__)
+        convert = sa.func.CLOB_TO_CHAR if kind == "clob" else sa.func.BLOB_TO_BIT
         async with engine.begin() as conn:
             _ = await conn.execute(table.insert(), {"id": 1, kind: value})
         async with engine.connect() as conn:
-            result = await conn.execute(
-                select(sa.func.CLOB_TO_CHAR(table.c[kind])).where(table.c.id == 1)
-            )
+            result = await conn.execute(select(convert(table.c[kind])).where(table.c.id == 1))
             got = result.scalar_one()
         _assert_lob_value(got, kind, value)
+
+    # #500: the async DB-API adapter lacked ``Binary``, so any LargeBinary/BLOB
+    # bind (even ``None``, even an unset ORM column) raised AttributeError.
+    @pytest.mark.parametrize("kind", ["large_binary", "blob"])
+    @pytest.mark.parametrize("value", [None, _LOB_SMALL_BYTES], ids=["none", "bytes"])
+    async def test_core_insert_binds_binary(
+        self, engine: AsyncEngine, kind: str, value: bytes | None
+    ):
+        table = cast(Table, _AsyncBinaryLobDocument.__table__)
+        async with engine.begin() as conn:
+            _ = await conn.execute(sa.insert(table).values(id=1, **{kind: value}))
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                select(table.c[kind].is_(None), sa.func.BLOB_TO_BIT(table.c[kind])).where(
+                    table.c.id == 1
+                )
+            )
+            is_null, stored = result.one()
+        assert bool(is_null) is (value is None)
+        _assert_lob_value(stored, kind, value)
+
+    async def test_orm_insert_with_unset_large_binary(self, engine: AsyncEngine):
+        async with AsyncSession(engine) as session:
+            session.add(_AsyncBinaryLobDocument(id=3))
+            await session.commit()
+        async with AsyncSession(engine) as session:
+            doc = await session.get(_AsyncBinaryLobDocument, 3)
+            assert doc is not None
+            assert doc.large_binary is None
+            assert doc.blob is None
 
     @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
     async def test_orm_roundtrip(

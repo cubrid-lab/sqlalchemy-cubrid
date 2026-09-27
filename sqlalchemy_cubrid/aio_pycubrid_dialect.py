@@ -58,29 +58,46 @@ class AsyncAdapt_pycubrid_connection(AsyncAdapt_dbapi_connection):
         return bool(self.await_(self._connection.ping(reconnect)))
 
 
+# PEP 249 module-level names copied from the sync ``pycubrid`` module onto the
+# async adapter. SQLAlchemy reads several of these from ``dialect.dbapi`` (e.g.
+# ``LargeBinary``'s bind processor reads ``Binary``), so the adapter must expose
+# the same surface as ``pycubrid`` itself.
+PEP249_MODULE_NAMES: tuple[str, ...] = (
+    "apilevel",
+    "threadsafety",
+    "paramstyle",
+    "Warning",
+    "Error",
+    "InterfaceError",
+    "DatabaseError",
+    "DataError",
+    "OperationalError",
+    "IntegrityError",
+    "InternalError",
+    "ProgrammingError",
+    "NotSupportedError",
+    "Date",
+    "Time",
+    "Timestamp",
+    "DateFromTicks",
+    "TimeFromTicks",
+    "TimestampFromTicks",
+    "Binary",
+    "STRING",
+    "BINARY",
+    "NUMBER",
+    "DATETIME",
+    "ROWID",
+)
+
+
 class AsyncAdapt_pycubrid_dbapi(AsyncAdapt_dbapi_module):
     def __init__(self, aio_module: Any) -> None:
         self._aio_module = aio_module
 
         sync_module = import_module("pycubrid")
-
-        self.paramstyle = sync_module.paramstyle
-        self.Error = sync_module.Error
-        self.OperationalError = sync_module.OperationalError
-        self.InterfaceError = sync_module.InterfaceError
-        self.IntegrityError = sync_module.IntegrityError
-        self.ProgrammingError = sync_module.ProgrammingError
-        self.DatabaseError = sync_module.DatabaseError
-        self.InternalError = sync_module.InternalError
-        self.DataError = sync_module.DataError
-        self.NotSupportedError = sync_module.NotSupportedError
-        self.Warning = sync_module.Warning
-
-        self.STRING = sync_module.STRING
-        self.BINARY = sync_module.BINARY
-        self.NUMBER = sync_module.NUMBER
-        self.DATETIME = sync_module.DATETIME
-        self.ROWID = sync_module.ROWID
+        for name in PEP249_MODULE_NAMES:
+            setattr(self, name, getattr(sync_module, name))
 
     def connect(self, *arg: Any, **kw: Any) -> AsyncAdapt_pycubrid_connection:
         creator_fn = kw.pop("async_creator_fn", self._aio_module.connect)
