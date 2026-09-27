@@ -523,16 +523,14 @@ correctly by the driver regardless of this setting.
 
 Both CUBRID Python drivers default to `autocommit=True`. The dialect overrides this on every new connection so that SQLAlchemy can manage transactions properly. CUBRIDdb uses `conn.set_autocommit(False)`; pycubrid uses the property setter `conn.autocommit = False`.
 
-### DDL Autocommit Detection
+### No Statement-Text Autocommit
 
-CUBRID implicitly commits DDL statements. The dialect detects DDL patterns and enables autocommit for:
-
-- `CREATE`, `ALTER`, `DROP`
-- `GRANT`, `REVOKE`
-- `TRUNCATE`
-- `MERGE`
-
-This is handled by the `CubridExecutionContext.should_autocommit_text()` method using a regex pattern.
+The dialect does not inspect SQL text to decide when to commit. SQLAlchemy 2.x
+never consults the 1.x-era `should_autocommit_text()` hook, so DML and DDL
+(including `INSERT`, `REPLACE`, `MERGE`, `CREATE`, and `DROP`) run inside the
+connection's transaction and are committed only through the SQLAlchemy 2.x
+Connection API: `conn.commit()`, an `engine.begin()` block, or a `Session`
+commit. A connection closed without committing is rolled back.
 
 ---
 
@@ -1672,7 +1670,7 @@ with engine.begin() as conn:
     conn.execute(text("TRUNCATE TABLE temp_data"))
 ```
 
-The dialect includes `TRUNCATE` in its autocommit detection pattern, so it will be executed with autocommit enabled (matching CUBRID's implicit DDL commit behavior).
+`TRUNCATE` runs inside the connection's transaction like any other statement; the `engine.begin()` block above commits it on successful exit. The dialect does not autocommit based on SQL text (see [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit)).
 
 ---
 
@@ -3267,7 +3265,7 @@ High-level overview by feature category.
 - **FOR UPDATE**: CUBRID supports `SELECT … FOR UPDATE [OF col1, col2]`. NOWAIT and SKIP LOCKED are not supported.
 - **UPDATE with LIMIT**: CUBRID and MySQL both support `UPDATE … LIMIT n`. PostgreSQL and SQLite do not.
 - **Multi-table UPDATE**: SQLAlchemy's multi-table UPDATE pattern compiles to `UPDATE t1, t2 SET ... WHERE ...`, which matches the MySQL-style syntax accepted by CUBRID. The dialect intentionally keeps `update_from_clause()` disabled because no extra `FROM` clause is required.
-- **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. The dialect includes `TRUNCATE` in autocommit detection.
+- **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. Like other statements, it runs inside the connection's transaction and takes effect only when committed (see [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit)).
 - **IS DISTINCT FROM**: CUBRID lacks the SQL-standard syntax but supports the null-safe equal `<=>`. The dialect emulates `a IS DISTINCT FROM b` as `(a <=> b) = 0` and `a IS NOT DISTINCT FROM b` as `a <=> b`, preserving NULL-safe semantics in predicates and SELECT projections (#344, #377).
 
 ---
@@ -3411,7 +3409,7 @@ High-level overview by feature category.
 | Savepoints | ✅ | ✅ | ✅ | ✅ |
 | Two-phase commit | ❌ | ✅ | ✅ | ❌ |
 | Server-side cursors | ❌ | ✅ | ✅ | ❌ |
-| Autocommit detection | ✅ | ✅ | ✅ | ✅ |
+| Autocommit detection from SQL text | ❌ | ❌ | ❌ | ❌ |
 | Connection-level encoding | ❌ | ✅ | ✅ | ❌ |
 
 ### CUBRID Isolation Levels
@@ -3428,7 +3426,7 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 
 - **Two-phase commit**: CUBRID does not support distributed transactions via `XA`.
 - **Server-side cursors**: The CUBRID Python driver does not expose server-side cursor functionality.
-- **Autocommit detection**: The CUBRID execution context uses a regex pattern matching `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, and `TRUNCATE` statements to determine when to enable autocommit.
+- **Autocommit detection from SQL text**: SQLAlchemy 2.x does not inspect statement text to decide when to commit, for any dialect. DML and DDL are committed only through `conn.commit()`, an `engine.begin()` block, or a `Session` commit. See [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit).
 - **Savepoints**: CUBRID supports `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`. `RELEASE SAVEPOINT` is not supported — the dialect implements `do_release_savepoint()` as a no-op.
 
 ---
@@ -3769,7 +3767,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | `MERGE` statement | ✅ | Via `sqlalchemy_cubrid.merge()` |
 | `REPLACE INTO` | ✅ | Via `sqlalchemy_cubrid.replace()` |
 | `GROUP_CONCAT` | ✅ | |
-| `TRUNCATE TABLE` | ✅ | Autocommit detected |
+| `TRUNCATE TABLE` | ✅ | Committed with the enclosing transaction |
 | `FOR UPDATE` | ✅ | Including `OF` clause |
 | Recursive CTE | ✅ | `WITH RECURSIVE` (CUBRID 11.x+) |
 | Window functions | ✅ | ROW_NUMBER, RANK, LAG, LEAD, etc. |

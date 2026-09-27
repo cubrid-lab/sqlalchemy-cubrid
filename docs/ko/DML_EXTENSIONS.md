@@ -348,7 +348,7 @@ with engine.begin() as conn:
     conn.execute(text("TRUNCATE TABLE temp_data"))
 ```
 
-방언은 `TRUNCATE`를 오토커밋 감지 패턴에 포함하므로, 오토커밋 활성화 상태로 실행됩니다 (CUBRID의 암시적 DDL 커밋 동작과 일치).
+`TRUNCATE`는 다른 문과 마찬가지로 연결의 트랜잭션 안에서 실행되며, 위의 `engine.begin()` 블록이 정상 종료 시 커밋합니다. 방언은 SQL 텍스트를 기준으로 오토커밋하지 않습니다 ([SQL 텍스트 기반 오토커밋 없음](CONNECTION.md#sql-텍스트-기반-오토커밋-없음) 참고).
 
 ---
 

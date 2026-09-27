@@ -81,7 +81,7 @@
 - **FOR UPDATE**: CUBRID는 `SELECT … FOR UPDATE [OF col1, col2]`를 지원합니다. NOWAIT와 SKIP LOCKED는 미지원.
 - **LIMIT를 가진 UPDATE**: CUBRID와 MySQL 모두 `UPDATE … LIMIT n`을 지원합니다. PostgreSQL과 SQLite는 미지원.
 - **다중 테이블 UPDATE**: SQLAlchemy의 다중 테이블 UPDATE 패턴은 `UPDATE t1, t2 SET ... WHERE ...`로 컴파일되며, CUBRID가 받는 MySQL 스타일 구문과 일치합니다. 방언은 추가 `FROM` 절이 필요 없기 때문에 의도적으로 `update_from_clause()`를 비활성화합니다.
-- **TRUNCATE**: CUBRID는 `TRUNCATE TABLE`을 지원합니다. 방언은 오토커밋 감지에 `TRUNCATE`를 포함합니다.
+- **TRUNCATE**: CUBRID는 `TRUNCATE TABLE`을 지원합니다. 다른 문과 마찬가지로 연결의 트랜잭션 안에서 실행되며 커밋될 때만 반영됩니다 ([SQL 텍스트 기반 오토커밋 없음](CONNECTION.md#sql-텍스트-기반-오토커밋-없음) 참고).
 - **IS DISTINCT FROM**: CUBRID에는 SQL 표준 구문이 없지만 NULL-안전 등가 연산자 `<=>`를 지원합니다. 방언은 `a IS DISTINCT FROM b`를 `(a <=> b) = 0`으로, `a IS NOT DISTINCT FROM b`를 `a <=> b`로 에뮬레이트하여 술어와 SELECT 프로젝션 모두에서 NULL-안전 의미를 보존합니다 (#344, #377).
 
 ---
@@ -226,7 +226,7 @@
 | 세이브포인트 | ✅ | ✅ | ✅ | ✅ |
 | 2단계 커밋 | ❌ | ✅ | ✅ | ❌ |
 | 서버 측 커서 | ❌ | ✅ | ✅ | ❌ |
-| 오토커밋 감지 | ✅ | ✅ | ✅ | ✅ |
+| SQL 텍스트 기반 오토커밋 감지 | ❌ | ❌ | ❌ | ❌ |
 | 연결 수준 인코딩 | ❌ | ✅ | ✅ | ❌ |
 
 ### CUBRID 격리 수준
@@ -243,7 +243,7 @@ CUBRID의 MVCC 엔진(10.0+)은 세 가지 격리 수준을 지원합니다:
 
 - **2단계 커밋**: CUBRID는 `XA`를 통한 분산 트랜잭션을 지원하지 않습니다.
 - **서버 측 커서**: CUBRID Python 드라이버는 서버 측 커서 기능을 노출하지 않습니다.
-- **오토커밋 감지**: CUBRID 실행 컨텍스트는 `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, `TRUNCATE` 문에 매칭하는 정규식 패턴을 사용해 오토커밋 활성화 시점을 결정합니다.
+- **SQL 텍스트 기반 오토커밋 감지**: SQLAlchemy 2.x는 어떤 방언에서도 문장 텍스트를 검사해 커밋 여부를 결정하지 않습니다. DML과 DDL은 `conn.commit()`, `engine.begin()` 블록, `Session` 커밋을 통해서만 커밋됩니다. [SQL 텍스트 기반 오토커밋 없음](CONNECTION.md#sql-텍스트-기반-오토커밋-없음)을 참고하세요.
 - **세이브포인트**: CUBRID는 `SAVEPOINT`와 `ROLLBACK TO SAVEPOINT`를 지원합니다. `RELEASE SAVEPOINT`는 미지원 — 방언은 `do_release_savepoint()`를 no-op로 구현합니다.
 
 ---

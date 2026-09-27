@@ -10,16 +10,12 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from sqlalchemy.engine import default
 from sqlalchemy.sql import compiler
 
 log = logging.getLogger(__name__)
-AUTOCOMMIT_REGEXP = re.compile(
-    r"\s*(?:UPDATE|INSERT|CREATE|DELETE|DROP|ALTER|MERGE|TRUNCATE)", re.I | re.UNICODE
-)
 
 # CUBRID Reserved words
 # https://www.cubrid.org/manual/en/11.0/sql/keyword.html
@@ -394,9 +390,6 @@ class CubridIdentifierPreparer(compiler.IdentifierPreparer):
 
 class CubridExecutionContext(default.DefaultExecutionContext):
     """Execution context for CUBRID connections."""
-
-    def should_autocommit_text(self, statement: str) -> Any:
-        return AUTOCOMMIT_REGEXP.match(statement)
 
     def get_lastrowid(self) -> int | None:  # type: ignore[override]
         """Return the last inserted row ID.

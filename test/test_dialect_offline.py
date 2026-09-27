@@ -96,12 +96,6 @@ class TestDialectBasics:
             with pytest.raises(ImportError, match="Could not import CUBRIDdb"):
                 CubridDialect.import_dbapi()
 
-    def test_legacy_dbapi_method_calls_import_dbapi(self):
-        fake_module = object()
-        with patch.object(CubridDialect, "import_dbapi", return_value=fake_module) as mocked:
-            assert CubridDialect.dbapi() is fake_module
-        mocked.assert_called_once_with()
-
     def test_create_connect_args_full_url(self):
         dialect = CubridDialect()
         parsed = url.make_url("cubrid://dba:pw@dbhost:33001/demodb")

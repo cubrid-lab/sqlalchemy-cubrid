@@ -75,11 +75,6 @@ class PyCubridDialect(CubridDialect):
         log.debug("Loaded pycubrid DBAPI (version %s)", getattr(dbapi_module, "__version__", "?"))
         return cast(DBAPIModule, dbapi_module)  # pyright: ignore[reportInvalidCast]
 
-    # Keep legacy dbapi() for SA 1.x compat
-    @classmethod
-    def dbapi(cls) -> DBAPIModule:  # type: ignore[override]
-        return cls.import_dbapi()
-
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         """Build DB-API connection arguments for pycubrid.
 
