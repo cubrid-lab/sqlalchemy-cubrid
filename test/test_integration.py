@@ -21,6 +21,7 @@ Alternatively, the tests look for a CUBRID instance at the default
 
 from __future__ import annotations
 
+from inspect import signature
 import os
 
 import pytest
@@ -758,6 +759,156 @@ class TestAlembicAlterColumnIntegration:
                 conn.commit()
 
 
+class TestExecutemanyNoneAndRowcount:
+    """#502: executemany stores ``None`` as NULL and reports the total rowcount.
+
+    CUBRIDdb reuses the previous row's value for a ``None`` parameter and
+    reports only the last row's rowcount; the ``cubrid://`` dialect runs such
+    statements row by row. pycubrid is correct natively and must keep its own
+    ``executemany``. Both lanes (``CUBRID_TEST_URL``) run these tests.
+    """
+
+    _ROWS = [
+        {"id": 1, "v": "a", "n": 10},
+        {"id": 2, "v": None, "n": None},
+        {"id": 3, "v": "c", "n": 30},
+        {"id": 4, "v": None, "n": None},
+    ]
+    _EXPECTED = [(1, "a", 10), (2, None, None), (3, "c", 30), (4, None, None)]
+
+    @pytest.fixture
+    def em_table(self, engine):
+        meta = MetaData()
+        tbl = Table(
+            "em502",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("v", String(20)),
+            Column("n", Integer),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        yield tbl
+        meta.drop_all(engine)
+
+    @staticmethod
+    def _rows(engine):
+        with engine.connect() as conn:
+            return [tuple(r) for r in conn.execute(text("SELECT id, v, n FROM em502 ORDER BY id"))]
+
+    def test_text_executemany_interleaved_none(self, engine, em_table):
+        with engine.begin() as conn:
+            result = conn.execute(
+                text("INSERT INTO em502 (id, v, n) VALUES (:id, :v, :n)"), self._ROWS
+            )
+            assert result.rowcount == 4
+        assert self._rows(engine) == self._EXPECTED
+
+    def test_core_update_executemany_with_none(self, engine, em_table):
+        with engine.begin() as conn:
+            conn.execute(em_table.insert(), [{"id": i, "v": "orig", "n": i} for i in (1, 2, 3, 4)])
+        stmt = (
+            em_table.update()
+            .where(em_table.c.id == sa.bindparam("b_id"))
+            .values(v=sa.bindparam("b_v"), n=sa.bindparam("b_n"))
+        )
+        params = [{"b_id": r["id"], "b_v": r["v"], "b_n": r["n"]} for r in self._ROWS]
+        with engine.begin() as conn:
+            assert conn.execute(stmt, params).rowcount == 4
+        assert self._rows(engine) == self._EXPECTED
+
+    def test_executemany_rowcount_is_total(self, engine, em_table):
+        with engine.begin() as conn:
+            conn.execute(em_table.insert(), [{"id": i, "v": "x", "n": i % 2} for i in range(1, 7)])
+        with engine.begin() as conn:
+            # Rows matched per parameter set: 3 (n=1), 0 (n=5), 3 (n=0).
+            upd = conn.execute(
+                em_table.update().where(em_table.c.n == sa.bindparam("b_n")).values(v="y"),
+                [{"b_n": 1}, {"b_n": 5}, {"b_n": 0}],
+            )
+            assert upd.rowcount == 6
+            dele = conn.execute(
+                em_table.delete().where(em_table.c.id == sa.bindparam("b_id")),
+                [{"b_id": 1}, {"b_id": 2}, {"b_id": 99}],
+            )
+            assert dele.rowcount == 2
+
+    def test_orm_batched_update_of_several_objects(self, engine, em_table):
+        class _Base(DeclarativeBase):
+            pass
+
+        class Em(_Base):
+            __table__ = em_table
+
+        with Session(engine) as session:
+            session.add_all([Em(id=i, v="orig", n=i) for i in (1, 2, 3, 4)])
+            session.commit()
+            objs = {o.id: o for o in session.scalars(select(Em))}
+            for row in self._ROWS:
+                objs[row["id"]].v = row["v"]
+                objs[row["id"]].n = row["n"]
+            # One executemany UPDATE for all four rows; a last-row rowcount
+            # used to raise StaleDataError here on cubrid://.
+            session.commit()
+        assert self._rows(engine) == self._EXPECTED
+
+    def test_core_insert_many_stays_on_insertmanyvalues(self, engine, em_table, monkeypatch):
+        calls = []
+        original = engine.dialect.do_executemany
+
+        def spy(*args, **kwargs):
+            calls.append(args[1])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(engine.dialect, "do_executemany", spy)
+        with engine.begin() as conn:
+            conn.execute(em_table.insert(), self._ROWS)
+        assert calls == []
+        assert self._rows(engine) == self._EXPECTED
+
+    def test_core_insert_many_with_bind_expression_uses_executemany(self, engine, monkeypatch):
+        """A bind_expression() column drops insertmanyvalues (#421).
+
+        The INSERT then goes through ``do_executemany`` (the per-row guard on
+        ``cubrid://``), and interleaved ``None`` must still store NULL.
+        """
+
+        class CastString(sa.types.TypeDecorator):
+            impl = String(20)
+            cache_ok = True
+
+            def bind_expression(self, bindvalue):
+                return sa.cast(sa.type_coerce(bindvalue, String(20)), String(20))
+
+        meta = MetaData()
+        tbl = Table(
+            "em502_bindexpr",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("v", CastString()),
+            Column("n", Integer),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        calls = []
+        original = engine.dialect.do_executemany
+
+        def spy(*args, **kwargs):
+            calls.append(args[1])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(engine.dialect, "do_executemany", spy)
+        try:
+            with engine.begin() as conn:
+                assert conn.execute(tbl.insert(), self._ROWS).rowcount == 4
+            with engine.connect() as conn:
+                rows = [tuple(r) for r in conn.execute(select(tbl).order_by(tbl.c.id))]
+            assert len(calls) == 1
+            assert rows == self._EXPECTED
+        finally:
+            meta.drop_all(engine)
+
+
 class TestBackslashLiteralRoundtrip:
     """Regression #313: backslashes must survive both param binding and
     literal_binds rendering on a default CUBRID (no_backslash_escapes=yes)."""
@@ -973,6 +1124,113 @@ class TestLobValueContractORM:
             assert doc is not None
             got = getattr(doc, kind)
         _assert_lob_value(got, kind, value)
+
+
+# ---------------------------------------------------------------------------
+# #481: results are never silently truncated across commit or rollback
+# ---------------------------------------------------------------------------
+
+# pycubrid requests further rows in FETCH batches of ``fetch_size`` (default 100,
+# ``pycubrid.connection.Connection``), and the broker's first response to the
+# SELECT is further capped by size: it holds only ~16 of the 1000-byte rows
+# below. The result therefore needs several FETCH round trips after the first
+# response, which is exactly what a commit/rollback can invalidate.
+_PYCUBRID_FETCH_SIZE = 100
+_WIDE_ROWS = 500
+_WIDE_PAYLOAD = "x" * 1000
+_FETCHMANY_SIZE = 17
+
+
+def _drain(result, method):
+    """Consume the rest of *result* with the given fetch method."""
+    if method == "fetchall":
+        return list(result.fetchall())
+    rows = []
+    while True:
+        if method == "fetchmany":
+            part = result.fetchmany(_FETCHMANY_SIZE)
+            if not part:
+                return rows
+            rows.extend(part)
+        else:
+            row = result.fetchone()
+            if row is None:
+                return rows
+            rows.append(row)
+
+
+class TestResultCompletenessAcrossTransactionBoundary:
+    @pytest.fixture(scope="class")
+    def wide_table(self, engine):
+        meta = MetaData()
+        table = Table(
+            "integration_rc481",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", String(1000)),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(
+                table.insert(), [{"id": i, "payload": _WIDE_PAYLOAD} for i in range(_WIDE_ROWS)]
+            )
+        yield table
+        meta.drop_all(engine)
+
+    def test_row_count_exceeds_pycubrid_fetch_batch(self):
+        pycubrid_connection = pytest.importorskip("pycubrid.connection")
+        default = signature(pycubrid_connection.Connection).parameters["fetch_size"]
+        assert default.default == _PYCUBRID_FETCH_SIZE
+        assert _WIDE_ROWS > _PYCUBRID_FETCH_SIZE
+
+    @pytest.mark.parametrize("method", ["fetchone", "fetchmany", "fetchall"])
+    @pytest.mark.parametrize("boundary", ["commit", "rollback", "none"])
+    def test_unfinished_result_is_complete_or_raises(
+        self, request, engine, wide_table, boundary, method
+    ):
+        """After a transaction boundary, the rest of a result is complete or an error.
+
+        ``none`` is the control: the full result needs FETCHes past the first
+        response. With a boundary, returning every row and raising a DB-API
+        error are both acceptable; a successful partial result is not.
+        """
+        with engine.connect() as conn:
+            # A completed query on the same connection is the normal state of a
+            # pooled connection; released pycubrid truncates silently from it.
+            conn.execute(text("SELECT 1")).all()
+            result = conn.execute(
+                select(wide_table.c.id, wide_table.c.payload).order_by(wide_table.c.id)
+            )
+            if engine.dialect.driver == "pycubrid":
+                # The first response must not hold the whole result.
+                assert 0 < result.cursor._fetched_count < _WIDE_ROWS
+            first = result.fetchone()
+            if boundary == "commit":
+                conn.commit()
+            elif boundary == "rollback":
+                conn.rollback()
+            if boundary != "none":
+                # Applied only now, so the preconditions above stay unmasked.
+                xfail_unreleased_pycubrid_fix(
+                    request, engine.dialect.driver, 395, raises=AssertionError
+                )
+            try:
+                rest = _drain(result, method)
+            except sa.exc.DBAPIError:
+                if boundary == "none":
+                    raise
+                rest = None  # an explicit failure satisfies the contract
+        if engine.dialect.driver == "cubrid":
+            # Recorded CUBRIDdb 11.3 behavior (CUBRID 10.2 and 11.4), for comparison.
+            expected = {"commit": "complete", "rollback": "raises", "none": "complete"}
+            assert ("raises" if rest is None else "complete") == expected[boundary]
+        if rest is None:
+            return
+        ids = [first.id] + [row.id for row in rest]
+        assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
+        assert ids == list(range(_WIDE_ROWS))
+        assert all(row.payload == _WIDE_PAYLOAD for row in rest)
 
 
 # ---------------------------------------------------------------------------

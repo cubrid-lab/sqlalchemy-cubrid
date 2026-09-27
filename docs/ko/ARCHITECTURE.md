@@ -230,8 +230,7 @@ flowchart TD
     pycubrid_dialect --> import_py["import pycubrid"]
     aio_pycubrid_dialect --> import_aio["import pycubrid.aio"]
 
-    alembic_entry["Entry Point: alembic.ddl → cubrid"]
-    alembic_entry --> alembic_impl["CubridImpl<br/>transactional_ddl = False"]
+    cubrid_dialect -->|"Alembic 설치 시 임포트"| alembic_impl["CubridImpl<br/>transactional_ddl = False"]
 ```
 
 ## 드라이버 아키텍처

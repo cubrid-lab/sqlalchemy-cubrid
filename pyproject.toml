@@ -54,10 +54,10 @@ dev = [
     "bandit[toml]==1.9.4",
     "pre-commit",
     "tox",
-    "alembic>=1.7,<2.0",
+    "alembic>=1.7.2,<2.0",
 ]
 alembic = [
-    "alembic>=1.7,<2.0",
+    "alembic>=1.7.2,<2.0",
 ]
 pycubrid = [
     "pycubrid>=1.3.2,<2.0",
@@ -78,8 +78,6 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
 
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 
 [tool.setuptools]
 packages = ["sqlalchemy_cubrid"]

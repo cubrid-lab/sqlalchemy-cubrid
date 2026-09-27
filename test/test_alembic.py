@@ -8,7 +8,7 @@
 """Tests for Alembic migration support (sqlalchemy_cubrid.alembic_impl).
 
 These tests verify that the CubridImpl class is correctly configured and
-can be discovered by Alembic via the entry-point mechanism.
+is registered with Alembic when the CUBRID dialect module is imported.
 """
 
 from __future__ import annotations
@@ -227,15 +227,26 @@ class TestCubridImpl:
         assert "cubrid" in _impls
         assert _impls["cubrid"] is CubridImpl
 
-    def test_entry_point_registered(self):
-        """Verify the entry point is declared in pyproject.toml."""
+    def test_no_alembic_ddl_entry_point(self):
+        """Alembic never reads an ``alembic.ddl`` entry-point group (#504).
+
+        Registration happens when the dialect module imports ``alembic_impl``,
+        so a dead entry point must not come back and suggest otherwise.
+        """
         config = _load_pyproject()
 
-        entry_points = config["project"]["entry-points"]
-        assert "alembic.ddl" in entry_points
-        assert entry_points["alembic.ddl"]["cubrid"] == (
-            "sqlalchemy_cubrid.alembic_impl:CubridImpl"
-        )
+        assert "alembic.ddl" not in config["project"]["entry-points"]
+
+    def test_dialect_module_registers_impl(self):
+        """Importing the dialect alone registers CubridImpl for 'cubrid' (#504)."""
+        from alembic.ddl.impl import DefaultImpl
+
+        import sqlalchemy_cubrid.dialect as dialect_module
+
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        assert dialect_module._alembic_impl.CubridImpl is CubridImpl
+        assert DefaultImpl.get_by_dialect(CubridDialect()) is CubridImpl
 
     def test_optional_dependency_declared(self):
         """Verify the [alembic] optional dependency is declared in pyproject.toml."""

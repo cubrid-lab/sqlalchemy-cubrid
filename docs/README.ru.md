@@ -184,7 +184,7 @@ async with AsyncSession(engine) as session:
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
-| Alembic | >=1.7 |
+| Alembic | >=1.7.2 |
 | pycubrid (sync) | >=1.2.0,<2.0 |
 | pycubrid (async) | >=1.2.0,<2.0 |
 
@@ -205,7 +205,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### Поддерживает ли sqlalchemy-cubrid миграции Alembic?
 
-Да. Установите пакет через `pip install "sqlalchemy-cubrid[alembic]"`. Диалект автоматически регистрируется через entry point. Учтите, что CUBRID автоматически коммитит DDL, поэтому миграции не являются транзакционными.
+Да. Установите пакет через `pip install "sqlalchemy-cubrid[alembic]"`. Реализация миграций CUBRID регистрируется сама при загрузке диалекта, поэтому стандартный `env.py` работает без изменений с синхронными URL; для `cubrid+aiopycubrid://` используйте асинхронный шаблон Alembic (`alembic init -t async`). Учтите, что CUBRID автоматически коммитит DDL, поэтому миграции не являются транзакционными.
 
 ### Какие версии Python поддерживаются?
 

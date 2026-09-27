@@ -1047,6 +1047,63 @@ class TestDoReleaseSavepoint:
         connection.execute.assert_not_called()
 
 
+class _RowcountCursor:
+    """Fake DB-API cursor whose ``execute`` reports a scripted rowcount."""
+
+    def __init__(self, rowcounts: list[int]) -> None:
+        self._rowcounts = iter(rowcounts)
+        self.executed: list[tuple[str, Any]] = []
+        self.executemany_calls: list[tuple[str, Any]] = []
+        self.rowcount = -1
+
+    def execute(self, statement: str, params: Any) -> None:
+        self.executed.append((statement, params))
+        self.rowcount = next(self._rowcounts)
+
+    def executemany(self, statement: str, params: Any) -> None:
+        self.executemany_calls.append((statement, params))
+
+
+class TestDoExecutemany:
+    """CUBRIDdb executemany guard (#502) and its pycubrid opt-out."""
+
+    _ROWS = [(1, "a"), (2, None), (3, "c")]
+
+    def test_cubriddb_executes_each_row_and_sums_rowcount(self) -> None:
+        cursor = _RowcountCursor([1, 0, 2])
+        CubridDialect().do_executemany(cursor, "UPDATE t SET v = ? WHERE id = ?", self._ROWS)
+        assert cursor.executed == [("UPDATE t SET v = ? WHERE id = ?", row) for row in self._ROWS]
+        assert cursor.executemany_calls == []
+        assert cursor.rowcount == 3
+
+    def test_cubriddb_unknown_row_rowcount_makes_total_unknown(self) -> None:
+        cursor = _RowcountCursor([1, -1, 2])
+        CubridDialect().do_executemany(cursor, "UPDATE t SET v = ?", self._ROWS)
+        assert len(cursor.executed) == 3
+        assert cursor.rowcount == -1
+
+    @pytest.mark.parametrize(
+        "dialect_path",
+        [
+            "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect",
+            "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect",
+        ],
+    )
+    def test_pycubrid_dialects_keep_driver_executemany(self, dialect_path: str) -> None:
+        import importlib
+
+        module_name, class_name = dialect_path.split(":")
+        dialect_cls = getattr(importlib.import_module(module_name), class_name)
+        cursor = _RowcountCursor([])
+        dialect_cls().do_executemany(cursor, "INSERT INTO t VALUES (?, ?)", self._ROWS)
+        assert cursor.executemany_calls == [("INSERT INTO t VALUES (?, ?)", self._ROWS)]
+        assert cursor.executed == []
+        assert dialect_cls.supports_sane_multi_rowcount is True
+
+    def test_cubriddb_supports_sane_multi_rowcount(self) -> None:
+        assert CubridDialect.supports_sane_multi_rowcount is True
+
+
 class TestIsDisconnect:
     """Tests for CubridDialect.is_disconnect() error detection."""
 
