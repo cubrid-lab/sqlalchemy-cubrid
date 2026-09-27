@@ -41,6 +41,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_cubrid import BLOB, CLOB
 
+from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -971,3 +973,117 @@ class TestLobValueContractORM:
             assert doc is not None
             got = getattr(doc, kind)
         _assert_lob_value(got, kind, value)
+
+
+# ---------------------------------------------------------------------------
+# #482: the cursor.description subset observable through SQLAlchemy
+# ---------------------------------------------------------------------------
+
+_DESC_TABLE = "integration_cd482"
+# column -> (DDL, CUBRID type code, null_ok). Both drivers report the CUBRID
+# CAS/CCI scalar type codes; pycubrid's full per-type matrix lives upstream.
+_DESC_COLUMNS = {
+    "id": ("INTEGER PRIMARY KEY", 8, False),
+    "nn": ("VARCHAR(20) NOT NULL", 2, False),
+    "nl": ("VARCHAR(20)", 2, True),
+    "bi": ("BIGINT", 21, True),
+    "n": ("NUMERIC(10,2)", 7, True),
+    "d": ("DOUBLE", 12, True),
+    "dt": ("DATE", 13, True),
+    "ts": ("TIMESTAMP", 15, True),
+}
+_DESC_COLLECTION_TABLE = "integration_cd482_coll"
+# column -> (DDL, pycubrid type code, CUBRIDdb type code). pycubrid reports the
+# collection kind (SET 16, MULTISET 17, SEQUENCE 18); CUBRIDdb reports CCI's
+# composite code: the kind in bits 0x60 (0x20/0x40/0x60) plus the element type
+# (INTEGER 8). The dialect does not normalize either form.
+_DESC_COLLECTIONS = {
+    "s": ("SET(INTEGER)", 16, 0x20 | 8),
+    "ms": ("MULTISET(INTEGER)", 17, 0x40 | 8),
+    "sq": ("SEQUENCE(INTEGER)", 18, 0x60 | 8),
+}
+
+
+class TestCursorDescriptionContract:
+    @pytest.fixture(scope="class", autouse=True)
+    def description_tables(self, engine):
+        ddl = ", ".join(f"{name} {spec[0]}" for name, spec in _DESC_COLUMNS.items())
+        coll_ddl = ", ".join(f"{name} {spec[0]}" for name, spec in _DESC_COLLECTIONS.items())
+        with engine.begin() as conn:
+            for name in (_DESC_TABLE, _DESC_COLLECTION_TABLE):
+                conn.execute(text(f"DROP TABLE IF EXISTS {name}"))
+            conn.execute(text(f"CREATE TABLE {_DESC_TABLE} ({ddl})"))
+            conn.execute(text(f"CREATE TABLE {_DESC_COLLECTION_TABLE} (id INTEGER, {coll_ddl})"))
+            conn.execute(
+                text(
+                    f"INSERT INTO {_DESC_TABLE} VALUES (1, 'a', NULL, 2, 3.50, 1.5, "
+                    "DATE'2020-01-02', TIMESTAMP'2020-01-02 03:04:05')"
+                )
+            )
+            conn.execute(
+                text(f"INSERT INTO {_DESC_COLLECTION_TABLE} VALUES (1, {{1,2}}, {{1,1}}, {{2,1}})")
+            )
+        yield
+        with engine.begin() as conn:
+            for name in (_DESC_TABLE, _DESC_COLLECTION_TABLE):
+                conn.execute(text(f"DROP TABLE IF EXISTS {name}"))
+
+    def test_textual_sql_column_names(self, engine):
+        sql = text(f"SELECT id, nn AS alias, bi + 1 AS expr, 1 + 1 FROM {_DESC_TABLE}")
+        with engine.connect() as conn:
+            result = conn.execute(sql)
+            names = [d[0] for d in result.cursor.description]
+            keys = list(result.keys())
+            row = result.one()
+        assert names == keys == ["id", "alias", "expr", "1+1"]
+        assert row._mapping["alias"] == "a" and row.expr == 3
+
+    def test_core_select_keys_match_description(self, engine):
+        table = Table(_DESC_TABLE, MetaData(), autoload_with=engine)
+        with engine.connect() as conn:
+            result = conn.execute(select(table))
+            names = [d[0] for d in result.cursor.description]
+            assert list(result.keys()) == names == list(_DESC_COLUMNS)
+            result.all()
+
+    def test_scalar_type_codes(self, engine):
+        with engine.connect() as conn:
+            result = conn.execute(text(f"SELECT {', '.join(_DESC_COLUMNS)} FROM {_DESC_TABLE}"))
+            codes = {d[0]: d[1] for d in result.cursor.description}
+            result.all()
+        assert codes == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
+
+    def test_null_ok(self, request, engine):
+        # Released pycubrid reports null_ok inverted (NOT NULL -> True).
+        xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, 431, raises=AssertionError)
+        with engine.connect() as conn:
+            result = conn.execute(text(f"SELECT {', '.join(_DESC_COLUMNS)} FROM {_DESC_TABLE}"))
+            null_ok = {d[0]: bool(d[6]) for d in result.cursor.description}
+            result.all()
+        assert null_ok == {name: spec[2] for name, spec in _DESC_COLUMNS.items()}
+
+    def test_reflected_nullability_uses_catalog(self, engine):
+        """Reflection reads nullability from the catalog, not cursor.description."""
+        columns = {c["name"]: c["nullable"] for c in inspect(engine).get_columns(_DESC_TABLE)}
+        assert columns == {name: spec[2] for name, spec in _DESC_COLUMNS.items()}
+
+    def test_collection_type_codes(self, request):
+        # Released pycubrid keeps only the element type code (INTEGER 8) and
+        # decodes the payload as that scalar; depending on the payload the
+        # SELECT can fail with "malformed response from broker" and close the
+        # connection, so this case uses its own engine.
+        engine = create_engine(_cubrid_url())
+        try:
+            xfail_unreleased_pycubrid_fix(
+                request, engine.dialect.driver, 430, raises=(AssertionError, sa.exc.DBAPIError)
+            )
+            column = 1 if engine.dialect.driver == "pycubrid" else 2
+            with engine.connect() as conn:
+                result = conn.execute(
+                    text(f"SELECT {', '.join(_DESC_COLLECTIONS)} FROM {_DESC_COLLECTION_TABLE}")
+                )
+                codes = {d[0]: d[1] for d in result.cursor.description}
+                assert len(result.all()) == 1
+            assert codes == {name: spec[column] for name, spec in _DESC_COLLECTIONS.items()}
+        finally:
+            engine.dispose()

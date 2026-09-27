@@ -508,6 +508,36 @@ PR을 막아서는 안 됩니다. 의존성 범위 `pycubrid>=1.3.2,<2.0`은 정
 넓힙니다. 채택 PR에는 `scripts/report_driver_versions.py`가 보고한 버전을 기록하고,
 같은 변경에서 `CHANGELOG.md`와 지원 문서에 새로 지원하는 범위를 반영합니다.
 
+### 릴리스되지 않은 pycubrid 수정 (`CUBRID_PYCUBRID_UPSTREAM`)
+
+트래커 #479의 계약 테스트는 해당 동작을 고치는 pycubrid 릴리스보다 먼저 들어올 수
+있습니다. 릴리스된 드라이버에서 이런 케이스는 `test/pycubrid_upstream.py`의
+`xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, issue)`로 표시하며,
+이 헬퍼는 `pycubrid`와 `aiopycubrid` 드라이버에만
+`xfail(strict=True, reason="cubrid-lab/pycubrid#NNN, fixed on main, unreleased")`를
+적용합니다. CUBRIDdb(`cubrid://`) 케이스에는 영향을 주지 않으며, CUBRIDdb 자체 결함은
+별도의 드라이버별 strict xfail로 표시합니다.
+
+pycubrid `main`은 마지막 릴리스의 `__version__`을 그대로 보고하므로 헬퍼는 버전을
+검사하지 않습니다. 대신 `CUBRID_PYCUBRID_UPSTREAM=1`은 설치된 pycubrid가
+게이트된 모든 업스트림 수정을 포함한다고 선언하며, 이때 마커는 아무 동작도
+하지 않으므로 같은 테스트가 통과해야 합니다. `upstream-canary.yml`의 `pycubrid@main`
+통합 잡이 이 변수를 설정합니다. 로컬에서는 그런 빌드를 설치했을 때만 설정하세요.
+
+```bash
+pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
+CUBRID_PYCUBRID_UPSTREAM=1 pytest test/test_integration.py test/test_aio_integration.py -v
+```
+
+게이트된 이슈 목록은 `grep -rn "xfail_unreleased_pycubrid_fix(" test/`로 확인합니다.
+
+**릴리스 후 마커 제거.** 일반 레인은 지원 범위 안의 최신 pycubrid 릴리스를 설치하므로,
+수정이 포함된 릴리스가 게시되면 해당 케이스가 strict XPASS로 실패합니다. 그 릴리스를
+채택하세요. `pycubrid` 하한을 그 릴리스로 올리고 해당 이슈를 지정한
+`xfail_unreleased_pycubrid_fix` 호출을 삭제합니다. 남은 호출이 없으면
+`test/pycubrid_upstream.py`와 `upstream-canary.yml`의 `CUBRID_PYCUBRID_UPSTREAM`
+항목을 삭제합니다.
+
 ### 문서 검사
 
 문서 예외는 코드·인용·템플릿 주석 밖의 내용이 채워진 단독 물리 소스 줄

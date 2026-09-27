@@ -4,7 +4,7 @@ import asyncio
 import json
 import os
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from unittest.mock import patch
 
 import pytest
@@ -18,6 +18,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy_cubrid import BLOB, CLOB
 
 from scripts.integration_urls import async_url
+from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
 _DEFAULT_SYNC_URL = "cubrid://dba@localhost:33000/testdb"
 
@@ -545,3 +546,119 @@ class TestAsyncLobValueContract:
             assert doc is not None
             got = getattr(doc, kind)
         _assert_lob_value(got, kind, value)
+
+
+# ---------------------------------------------------------------------------
+# #482: the cursor.description subset observable through SQLAlchemy
+# ---------------------------------------------------------------------------
+
+_DESC_TABLE = "aio_test_cd482"
+# column -> (DDL, CUBRID type code, null_ok); same expectations as the sync
+# pycubrid lane in test_integration.py.
+_DESC_COLUMNS = {
+    "id": ("INTEGER PRIMARY KEY", 8, False),
+    "nn": ("VARCHAR(20) NOT NULL", 2, False),
+    "nl": ("VARCHAR(20)", 2, True),
+    "bi": ("BIGINT", 21, True),
+    "n": ("NUMERIC(10,2)", 7, True),
+    "d": ("DOUBLE", 12, True),
+    "dt": ("DATE", 13, True),
+    "ts": ("TIMESTAMP", 15, True),
+}
+_DESC_COLLECTION_TABLE = "aio_test_cd482_coll"
+# column -> (DDL, pycubrid type code: SET 16, MULTISET 17, SEQUENCE 18).
+_DESC_COLLECTIONS = {
+    "s": ("SET(INTEGER)", 16),
+    "ms": ("MULTISET(INTEGER)", 17),
+    "sq": ("SEQUENCE(INTEGER)", 18),
+}
+_DESC_SELECT = f"SELECT {', '.join(_DESC_COLUMNS)} FROM {_DESC_TABLE}"
+
+
+def _description(result: sa.CursorResult[Any]) -> list[tuple[Any, ...]]:
+    assert result.cursor is not None and result.cursor.description is not None
+    return [tuple(d) for d in result.cursor.description]
+
+
+class TestAsyncCursorDescriptionContract:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _description_tables(self, engine: AsyncEngine) -> AsyncIterator[None]:
+        ddl = ", ".join(f"{name} {spec[0]}" for name, spec in _DESC_COLUMNS.items())
+        coll_ddl = ", ".join(f"{name} {spec[0]}" for name, spec in _DESC_COLLECTIONS.items())
+        async with engine.begin() as conn:
+            for name in (_DESC_TABLE, _DESC_COLLECTION_TABLE):
+                _ = await conn.execute(text(f"DROP TABLE IF EXISTS {name}"))
+            _ = await conn.execute(text(f"CREATE TABLE {_DESC_TABLE} ({ddl})"))
+            _ = await conn.execute(
+                text(f"CREATE TABLE {_DESC_COLLECTION_TABLE} (id INTEGER, {coll_ddl})")
+            )
+            _ = await conn.execute(
+                text(
+                    f"INSERT INTO {_DESC_TABLE} VALUES (1, 'a', NULL, 2, 3.50, 1.5, "
+                    "DATE'2020-01-02', TIMESTAMP'2020-01-02 03:04:05')"
+                )
+            )
+            _ = await conn.execute(
+                text(f"INSERT INTO {_DESC_COLLECTION_TABLE} VALUES (1, {{1,2}}, {{1,1}}, {{2,1}})")
+            )
+        yield
+        async with engine.begin() as conn:
+            for name in (_DESC_TABLE, _DESC_COLLECTION_TABLE):
+                _ = await conn.execute(text(f"DROP TABLE IF EXISTS {name}"))
+
+    async def test_textual_sql_column_names(self, engine: AsyncEngine):
+        sql = text(f"SELECT id, nn AS alias, bi + 1 AS expr, 1 + 1 FROM {_DESC_TABLE}")
+        async with engine.connect() as conn:
+            result = await conn.execute(sql)
+            names = [d[0] for d in _description(result)]
+            keys = list(result.keys())
+            row = result.one()
+        assert names == keys == ["id", "alias", "expr", "1+1"]
+        assert row._mapping["alias"] == "a"
+
+    async def test_scalar_type_codes(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            result = await conn.execute(text(_DESC_SELECT))
+            codes = {d[0]: d[1] for d in _description(result)}
+        assert codes == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
+
+    async def test_null_ok(self, request: pytest.FixtureRequest, engine: AsyncEngine):
+        # Released pycubrid reports null_ok inverted (NOT NULL -> True).
+        xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, 431, raises=AssertionError)
+        async with engine.connect() as conn:
+            result = await conn.execute(text(_DESC_SELECT))
+            null_ok = {d[0]: bool(d[6]) for d in _description(result)}
+        assert null_ok == {name: spec[2] for name, spec in _DESC_COLUMNS.items()}
+
+    async def test_collection_type_codes(self, request: pytest.FixtureRequest):
+        # Released pycubrid keeps only the element type code; the SELECT can
+        # also fail and close the connection, so use a dedicated engine.
+        engine = create_async_engine(_async_url())
+        try:
+            xfail_unreleased_pycubrid_fix(
+                request, engine.dialect.driver, 430, raises=(AssertionError, sa.exc.DBAPIError)
+            )
+            async with engine.connect() as conn:
+                result = await conn.execute(
+                    text(f"SELECT {', '.join(_DESC_COLLECTIONS)} FROM {_DESC_COLLECTION_TABLE}")
+                )
+                codes = {d[0]: d[1] for d in _description(result)}
+                assert len(result.all()) == 1
+            assert codes == {name: spec[1] for name, spec in _DESC_COLLECTIONS.items()}
+        finally:
+            await engine.dispose()
+
+    async def test_sync_and_async_descriptions_agree(self, engine: AsyncEngine):
+        """Names, type codes and null_ok match the sync pycubrid dialect."""
+        async with engine.connect() as conn:
+            result = await conn.execute(text(_DESC_SELECT))
+            async_desc = [(d[0], d[1], bool(d[6])) for d in _description(result)]
+        sync_engine = sa.create_engine(_async_url().set(drivername="cubrid+pycubrid"))
+        try:
+            with sync_engine.connect() as sync_conn:
+                sync_result = sync_conn.execute(text(_DESC_SELECT))
+                sync_desc = [(d[0], d[1], bool(d[6])) for d in _description(sync_result)]
+                sync_result.all()
+        finally:
+            sync_engine.dispose()
+        assert async_desc == sync_desc

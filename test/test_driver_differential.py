@@ -42,6 +42,8 @@ from sqlalchemy import (
     text,
 )
 
+from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
+
 pytestmark = pytest.mark.integration
 
 
@@ -326,6 +328,51 @@ def test_commit_rollback_visibility_agrees(both_engines: Any) -> None:
         return ids
 
     assert run(pyc) == run(cext) == [1]
+
+
+# ---------------------------------------------------------------------------
+# #482: the cursor.description subset observable through SQLAlchemy
+# ---------------------------------------------------------------------------
+
+
+def test_scalar_description_agrees(request: pytest.FixtureRequest, both_engines: Any) -> None:
+    """Textual-SQL names, scalar type codes and null_ok agree across drivers.
+
+    Collection type codes intentionally differ (pycubrid SET/MULTISET/SEQUENCE
+    16/17/18, CUBRIDdb CCI composite codes) and are covered per driver in
+    test_integration.py.
+    """
+    xfail_unreleased_pycubrid_fix(request, "pycubrid", 431, raises=AssertionError)
+    pyc, cext = both_engines
+    sql = text("SELECT id, nn, nl, bi, n, dt FROM drvdiff_desc")
+
+    def run(engine: Any) -> list[tuple[Any, ...]]:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS drvdiff_desc"))
+            conn.execute(
+                text(
+                    "CREATE TABLE drvdiff_desc (id INTEGER PRIMARY KEY, nn VARCHAR(20) NOT NULL, "
+                    "nl VARCHAR(20), bi BIGINT, n NUMERIC(10,2), dt DATE)"
+                )
+            )
+        with engine.connect() as conn:
+            result = conn.execute(sql)
+            desc = [(d[0], int(d[1]), bool(d[6])) for d in result.cursor.description]
+            result.all()
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE drvdiff_desc"))
+        return desc
+
+    expected = [
+        ("id", 8, False),
+        ("nn", 2, False),
+        ("nl", 2, True),
+        ("bi", 21, True),
+        ("n", 7, True),
+        ("dt", 13, True),
+    ]
+    assert run(cext) == expected
+    assert run(pyc) == expected
 
 
 if __name__ == "__main__":
