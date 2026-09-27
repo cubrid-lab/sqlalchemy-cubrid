@@ -165,6 +165,7 @@ Maintainers arrange project-specific Oracle/Codex reviews, integration and relea
 classification. Contributors do not need a particular agent/tool installation,
 repository secrets, release access or label-write permissions. An AI review is
 review evidence; report commands actually executed separately.
+Use English for GitHub issues, pull requests and comments; localized documentation contributions remain welcome.
 
 5. **All changes to `main` MUST go through a Pull Request** with at least one review. No direct pushes.
 

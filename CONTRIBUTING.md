@@ -205,6 +205,7 @@ Maintainers coordinate project-specific Oracle/Codex reviews, final integration,
 release classification, repository secrets and GitHub labels. No particular agent
 installation, repository-secret access or named coauthor is required to contribute.
 Preserve actual authorship; separate AI review notes from executed test evidence.
+Use English for GitHub issues, pull requests and comments; localized documentation contributions remain welcome.
 
 Update matching behavior documentation. If none is needed, use a populated
 standalone physical source line `Docs: not needed - <reason>` rather than leaving the placeholder;
