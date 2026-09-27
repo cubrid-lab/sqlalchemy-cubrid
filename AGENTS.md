@@ -330,9 +330,9 @@ Rules:
 ### Good first issue lifecycle
 
 - Unclaimed: `good first issue`.
-- A PR is opened for it: remove `good first issue`, add `status: in progress` (the label now exists in all three repos).
+- A PR is opened for it: remove `good first issue`, add `status: in progress`.
 - PR merged: the issue closes.
-- PR closed without merging: remove `status: in progress` and restore `good first issue`.
+- PR closed without merging: first check that no other open PR still addresses the issue. Only if none remains, remove `status: in progress` and restore `good first issue`; otherwise keep it in progress.
 - Keep 3–5 genuinely unclaimed good first issues per repository; a good first issue should have a small blast radius and an existing pattern or reference PR to follow, not just a small diff.
 
 ## Documentation definition of done
