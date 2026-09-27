@@ -81,12 +81,52 @@ def _ci_integration_guard(items) -> None:  # noqa: ANN001
         )
 
 
+#: Set only in the required driver-differential CI lane (#486). The comparison
+#: tests skip at fixture time when either driver cannot connect, which the
+#: collection-time guard above cannot see, so the lane must count real passes.
+_REQUIRE_DIFFERENTIAL_ENV = "CUBRID_REQUIRE_DRIVER_DIFFERENTIAL"
+_DIFFERENTIAL_MODULE = "test_driver_differential.py"
+_differential_passed: set[str] = set()
+
+
 if not ("--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv)):
     import pytest
 
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(items):  # noqa: ANN001
         _ci_integration_guard(items)
+
+    def pytest_runtest_logreport(report):  # noqa: ANN001
+        if (
+            report.when == "call"
+            and report.passed
+            and report.nodeid.split("::", 1)[0].endswith(_DIFFERENTIAL_MODULE)
+        ):
+            _differential_passed.add(report.nodeid)
+
+    def pytest_sessionfinish(session, exitstatus):  # noqa: ANN001
+        """Fail the required differential lane when no comparison actually ran.
+
+        Zero collected, all skipped (e.g. CUBRIDdb not built or the server
+        unreachable) and all deselected are indistinguishable from success in
+        pytest's exit code, so require at least one passing comparison.
+        """
+        if os.environ.get(_REQUIRE_DIFFERENTIAL_ENV) != "1":
+            return
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        count = len(_differential_passed)
+        if count:
+            message = f"{_REQUIRE_DIFFERENTIAL_ENV}=1: {count} driver-differential case(s) passed"
+        else:
+            message = (
+                f"{_REQUIRE_DIFFERENTIAL_ENV}=1 but no {_DIFFERENTIAL_MODULE} case ran and "
+                "passed (zero collected or all skipped); both pycubrid and CUBRIDdb must "
+                "connect in the required driver-differential lane"
+            )
+            if exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED):
+                session.exitstatus = pytest.ExitCode.TESTS_FAILED
+        if reporter is not None:
+            reporter.write_line(message, red=not count, green=bool(count), bold=True)
 
 
 # Only load the heavy SA testing plugin when a DB URI is provided.
