@@ -166,6 +166,39 @@ class DocsReasonWorkflowTests(unittest.TestCase):
     def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
         from scripts.check_docs_reason import _HTMLContext, _placeholder, has_docs_not_needed_reason
 
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - \u034f"))
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - \ufe0f"))
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - (**<reason>**)"))
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - [~~&lt;reason&gt;~~]"))
+        for prefix in ("\u034f", "\ufe0f", "\U000e0100"):
+            self.assertFalse(
+                has_docs_not_needed_reason("Docs: not needed - " + prefix + "<reason>")
+            )
+        for reason in (
+            "cafe\u0301 fixture only",
+            "\u2764\ufe0f fixture changed",
+            "only (**<reason>**) fixture changed",
+        ):
+            self.assertTrue(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        for unsupported in ("(**<reason>**]", "[~~~<reason>~~~]", "[``<reason>`]"):
+            self.assertFalse(_placeholder(unsupported))
+        self.assertTrue(_placeholder("(" * 2000 + "<reason>" + ")" * 2000))
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "`unmatched\nHeading\n===\nDocs: not needed - tests only\nlast `"
+            )
+        )
+        for underline in ("====text", "    ===", "=-="):
+            self.assertFalse(
+                has_docs_not_needed_reason(
+                    f"`unmatched\nHeading\n{underline}\nDocs: not needed - hidden\nlast `"
+                )
+            )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "`unmatched\n    Heading\n===\nDocs: not needed - hidden\nlast `"
+            )
+        )
         for prefix in ("&#", "&#x"):
             self.assertTrue(has_docs_not_needed_reason(prefix + "\nDocs: not needed - tests only"))
             self.assertFalse(
@@ -189,6 +222,56 @@ class DocsReasonWorkflowTests(unittest.TestCase):
         self.assertTrue(
             has_docs_not_needed_reason("> paragraph\n> # Heading\nDocs: not needed - tests only")
         )
+        self.assertTrue(
+            has_docs_not_needed_reason("> prior quote\n<div>\nDocs: not needed - tests only")
+        )
+        for tag in ("table", "details", "h1", "ul", 'DIV class="example"', "/div"):
+            self.assertTrue(
+                has_docs_not_needed_reason(f"> prior quote\n<{tag}>\nDocs: not needed - tests only")
+            )
+        for tag in ("span", "code", "divine", "https://example.com"):
+            self.assertFalse(
+                has_docs_not_needed_reason(f"> prior quote\n<{tag}>\nDocs: not needed - hidden")
+            )
+        for item, indent in (("- item", "  "), ("1. item", "   ")):
+            self.assertFalse(
+                has_docs_not_needed_reason(
+                    f"{item}\n{indent}`unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `"
+                )
+            )
+            self.assertFalse(
+                has_docs_not_needed_reason(
+                    f"{item}\n{indent}continued\n{indent}`unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `"
+                )
+            )
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"{item}\n{indent}`unmatched\n{indent}Heading\n{indent}===\nDocs: not needed - tests only\nlast `"
+                )
+            )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "10. item\n    `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `"
+            )
+        )
+        for number in (100, 999999999):
+            indent = " " * (len(str(number)) + 2)
+            self.assertFalse(
+                has_docs_not_needed_reason(
+                    f"{number}. item\n{indent}continued\n{indent}`unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `"
+                )
+            )
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"{number}. item\n{indent}`unmatched\n{indent}Heading\n{indent}===\nDocs: not needed - tests only\nlast `"
+                )
+            )
+        for source in (
+            "    <blockquote>\nDocs: not needed - tests only",
+            "10. item\n        <blockquote>\nDocs: not needed - tests only",
+            "<!--\n10. fake item\n-->\n    <blockquote>\nDocs: not needed - tests only",
+        ):
+            self.assertTrue(has_docs_not_needed_reason(source))
         for heading in ("> ####### invalid", "> #no-space", "\\> # escaped"):
             self.assertFalse(
                 has_docs_not_needed_reason(f"> paragraph\n{heading}\nDocs: not needed - hidden")

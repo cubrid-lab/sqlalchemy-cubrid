@@ -26,36 +26,79 @@ _PREFIX = "Docs: not needed -"
 _MARKDOWN_ESCAPE = re.compile(r"\\([" + re.escape(punctuation) + r"])")
 _LITERAL_RUN = re.compile(r"`+|\\+|\[[^\[\]\n\\`<>]*\]\(<[^<>\n]*>\)")
 _BLOCK_PREFIX = r" {0,3}(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)?"
+_LIST_PREFIX = r" {0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \t]+"
 _ATX_HEADING = r" {0,3}#{1,6}(?=[ \t\n]|$)"
 _THEMATIC_BREAK = r" {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})"
 _HTML_BLOCK_START = re.compile(
     r" {0,3}(?:<!--|<(?:pre|script|style|textarea)(?=[ \t>]|$)"
-    r"|<(?:blockquote|iframe)(?=[ \t>]|/>|$))",
-    re.IGNORECASE,
+    r"|</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup"
+    r"|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset"
+    r"|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav"
+    r"|noframes|ol|optgroup|option|p|param|search|section|summary|table|tbody|td|tfoot|th"
+    r"|thead|title|tr|track|ul)(?=[ \t>]|/>|$))",
+    re.IGNORECASE | re.ASCII,
 )
+
+
+def _paragraph_line(line: str) -> bool:
+    marker = re.match(_BLOCK_PREFIX + r"(`{3,}|~{3,})", line)
+    block = (
+        re.match(_ATX_HEADING, line)
+        or re.match(_BLOCK_PREFIX + ">", line)
+        or re.match(_LIST_PREFIX, line)
+        or re.fullmatch(_THEMATIC_BREAK, line)
+        or _HTML_BLOCK_START.match(line)
+        or (marker and (marker[1][0] == "~" or "`" not in line[marker.end() :]))
+    )
+    return bool(line.strip(" \t") and not re.match(r"(?: {4,}| {0,3}\t)", line) and not block)
 
 
 def _reason_text(text: str) -> str:
     return "".join(
-        character for character in text if category(character) not in {"Cc", "Cf"}
+        character
+        for character in text
+        if category(character) not in {"Cc", "Cf"}
+        and character != "\u034f"
+        and not ("\ufe00" <= character <= "\ufe0f" or "\U000e0100" <= character <= "\U000e01ef")
     ).strip()
 
 
 def _placeholder(text: str) -> bool:
     reason = _reason_text(unescape(_MARKDOWN_ESCAPE.sub(r"\1", text)))
-    if reason.startswith("<reason>"):
-        return True
-    grouped = re.match(r"(\[|\()[ \t]*<reason>[ \t]*(\]|\))", reason)
-    if grouped and (grouped[1], grouped[2]) in {("[", "]"), ("(", ")")}:
-        return True
-    wrapper = re.match(r"`+|\*{1,3}|_{1,3}|~{1,2}", reason)
-    if wrapper is None:
-        return False
-    contents = reason[wrapper.end() :].lstrip()
-    if not contents.startswith("<reason>"):
-        return False
-    closing = re.match(re.escape(wrapper[0][0]) + "+", contents[len("<reason>") :].lstrip())
-    return closing is not None and closing[0] == wrapper[0]
+    index = 0
+    closers: list[str] = []
+    while True:
+        while index < len(reason) and reason[index] in " \t":
+            index += 1
+        if reason.startswith("<reason>", index):
+            index += len("<reason>")
+            break
+        if index == len(reason):
+            return False
+        character = reason[index]
+        if character in "[(":
+            closers.append("]" if character == "[" else ")")
+            index += 1
+        elif character in "`*_~":
+            end = index + 1
+            while end < len(reason) and reason[end] == character:
+                end += 1
+            width = end - index
+            if (character in "*_" and width > 3) or (character == "~" and width > 2):
+                return False
+            closers.append(reason[index:end])
+            index = end
+        else:
+            return False
+    for closer in reversed(closers):
+        while index < len(reason) and reason[index] in " \t":
+            index += 1
+        if not reason.startswith(closer, index):
+            return False
+        index += len(closer)
+        if closer[0] in "`*_~" and index < len(reason) and reason[index] == closer[0]:
+            return False
+    return True
 
 
 class _HTMLContext(HTMLParser):
@@ -66,6 +109,7 @@ class _HTMLContext(HTMLParser):
         self.marker_lines: set[int] = set()
         self.literal_positions: set[tuple[int, int]] = set()
         self.source = source
+        self.paragraph_base = 0
         self.fed_text = ""
         self.row_starts: list[int] = [0]
         self.inline_end = -1
@@ -180,6 +224,21 @@ class _HTMLContext(HTMLParser):
             thematic = re.search(r"\n" + _THEMATIC_BREAK + r"(?=\n|$)", self.source[start:limit])
             if thematic:
                 limit = start + thematic.start() + 1
+            base = self.paragraph_base
+            for setext in re.finditer(
+                r"\n([ \t]*)(?:=+|-+)[ \t]*(?=\n|$)", self.source[start:limit]
+            ):
+                if not base <= len(setext[1].expandtabs(4)) <= base + 3:
+                    continue
+                underline_offset = start + setext.start()
+                previous = self.source[
+                    self.source.rfind("\n", 0, underline_offset) + 1 : underline_offset
+                ].expandtabs(4)
+                if base and len(previous) - len(previous.lstrip(" ")) >= base:
+                    previous = previous[base:]
+                if _paragraph_line(previous):
+                    limit = underline_offset + 1
+                    break
             for boundary in re.finditer(
                 r"\n" + _BLOCK_PREFIX + r"(`{3,}|~{3,})([^\n]*)", self.source[start:limit]
             ):
@@ -216,11 +275,22 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
         if origin < html.inline_end:
             html.feed_literals(line + "\n", number, 0, origin)
             continue
+        if html.paragraph_base:
+            expanded = line.expandtabs(4)
+            leading_width = len(expanded) - len(expanded.lstrip(" "))
+            content = (
+                expanded[html.paragraph_base :]
+                if leading_width >= html.paragraph_base
+                else expanded
+            )
+            if not _paragraph_line(content):
+                html.paragraph_base = 0
         if fence and fence[2] > 0 and raw.strip(" \t"):
             leading = raw[: len(raw) - len(raw.lstrip(" \t"))]
             if len(leading.expandtabs(4)) < fence[2]:
                 fence = None
         if fence:
+            html.paragraph_base = 0
             marker = re.match(r"[ \t]*(`{3,}|~{3,})", line)
             fence_indent = len(line[: marker.start(1)].expandtabs(4)) if marker else -1
             if (
@@ -248,20 +318,27 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             quoted = False
         quote = re.match(_BLOCK_PREFIX + ">", line)
         if quoted and not quote:
+            html.paragraph_base = 0
             html.feed("\n")
             continue
         indentation = re.match(r"(?: {4,}| {0,3}\t)", line)
         if indentation:
-            if html.outside_prefix(number, line[: indentation.end()]):
+            leading = line[: len(line) - len(line.lstrip(" \t"))]
+            relative = len(leading.expandtabs(4)) - html.paragraph_base
+            if html.paragraph_base and 0 <= relative <= 3:
+                html.feed_literals(line + "\n", number, 0, origin)
+            elif html.outside_prefix(number, line[: indentation.end()]):
                 html.feed("\n")
                 continue
-            html.feed_literals(
-                line[indentation.end() :] + "\n",
-                number,
-                indentation.end(),
-                origin + indentation.end(),
-            )
+            else:
+                html.feed_literals(
+                    line[indentation.end() :] + "\n",
+                    number,
+                    indentation.end(),
+                    origin + indentation.end(),
+                )
         elif quote:
+            html.paragraph_base = 0
             if html.outside_prefix(number, line[: quote.end()]):
                 content = line[quote.end() :]
                 if content.startswith(" "):
@@ -273,8 +350,9 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
                 line[quote.end() :] + "\n", number, quote.end(), origin + quote.end()
             )
         elif opener and (opener[1][0] == "~" or "`" not in line[opener.end() :]):
+            html.paragraph_base = 0
             if html.outside_prefix(number, line[: opener.end()]):
-                list_item = re.match(r" {0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \t]+", line)
+                list_item = re.match(_LIST_PREFIX, line)
                 base = len(line[: opener.start(1)].expandtabs(4)) if list_item else 0
                 fence = (opener[1][0], len(opener[1]), base)
                 html.feed("\n")
@@ -283,7 +361,22 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
                 line[opener.end() :] + "\n", number, opener.end(), origin + opener.end()
             )
         else:
-            html.feed_literals(line + "\n", number, 0, origin)
+            list_item = re.match(_LIST_PREFIX, line)
+            if list_item:
+                visible = html.outside_prefix(number, line[: list_item.end()])
+                html.paragraph_base = (
+                    len(line[: list_item.end()].expandtabs(4))
+                    if visible and _paragraph_line(line[list_item.end() :])
+                    else 0
+                )
+                html.feed_literals(
+                    line[list_item.end() :] + "\n",
+                    number,
+                    list_item.end(),
+                    origin + list_item.end(),
+                )
+            else:
+                html.feed_literals(line + "\n", number, 0, origin)
         if re.match(r" {0,3}" + re.escape(prefix), line):
             html.checkpoint()
             position = origin + len(line) - len(line.lstrip(" "))
