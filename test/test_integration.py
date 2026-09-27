@@ -1297,7 +1297,6 @@ class TestIntegrityErrorContract:
 
     @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
     def test_core_violation_raises_integrity_error(self, request, engine, kind):
-        _xfail_integrity(request, engine.dialect.driver, kind)
         model, values = _INTEGRITY_VIOLATIONS[kind]
         with engine.connect() as conn:
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
@@ -1308,11 +1307,12 @@ class TestIntegrityErrorContract:
             conn.execute(sa.insert(_IntegrityChild), {"id": 10, "parent_id": 1})
             assert _integrity_counts(conn) == (1, 1)
             conn.rollback()
+        # Only the class check is gated; the recovery checks above never are.
+        _xfail_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(excinfo.value)
 
     @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
     def test_orm_flush_violation_raises_integrity_error(self, request, engine, kind):
-        _xfail_integrity(request, engine.dialect.driver, kind)
         model, values = _INTEGRITY_VIOLATIONS[kind]
         with Session(engine) as session:
             session.add(model(**values))
@@ -1324,4 +1324,6 @@ class TestIntegrityErrorContract:
             session.flush()
             assert _integrity_counts(session.connection()) == (1, 1)
             session.rollback()
+        # Only the class check is gated; the recovery checks above never are.
+        _xfail_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(excinfo.value)

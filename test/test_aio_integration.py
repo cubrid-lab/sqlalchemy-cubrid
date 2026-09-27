@@ -751,7 +751,6 @@ class TestAsyncIntegrityErrorContract:
     async def test_core_violation_raises_integrity_error(
         self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
     ):
-        _xfail_async_integrity(request, engine.dialect.driver, kind)
         model, values = _ASYNC_INTEGRITY_VIOLATIONS[kind]
         async with engine.connect() as conn:
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
@@ -762,13 +761,14 @@ class TestAsyncIntegrityErrorContract:
             _ = await conn.execute(sa.insert(_AsyncIntegrityChild), {"id": 10, "parent_id": 1})
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await conn.rollback()
+        # Only the class check is gated; the recovery checks above never are.
+        _xfail_async_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(excinfo.value)
 
     @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
     async def test_orm_flush_violation_raises_integrity_error(
         self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
     ):
-        _xfail_async_integrity(request, engine.dialect.driver, kind)
         model, values = _ASYNC_INTEGRITY_VIOLATIONS[kind]
         async with AsyncSession(engine) as session:
             session.add(model(**values))
@@ -781,4 +781,6 @@ class TestAsyncIntegrityErrorContract:
             conn = await session.connection()
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await session.rollback()
+        # Only the class check is gated; the recovery checks above never are.
+        _xfail_async_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(excinfo.value)

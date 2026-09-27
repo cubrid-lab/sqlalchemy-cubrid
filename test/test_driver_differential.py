@@ -186,10 +186,10 @@ def test_null_handling_agrees(both_engines: Any) -> None:
 
 # ---------------------------------------------------------------------------
 # DB-API contract areas that already behave correctly on the released drivers
-# (#486, tracker #479). Areas still blocked upstream — results across
-# commit/rollback, cursor.description metadata, collections, prepared binding —
-# belong to #481-#484; LOBs to #485. IntegrityError classification (#480) is
-# at the end of this module.
+# (#486, tracker #479). Areas still blocked upstream — cursor.description
+# metadata, collections, prepared binding — belong to #482-#484; LOBs to #485.
+# Results across commit/rollback (#481) and IntegrityError classification
+# (#480) are at the end of this module.
 # ---------------------------------------------------------------------------
 
 _CJK = "中文한글日本語"
@@ -399,8 +399,6 @@ def test_constraint_violation_class_agrees(
     request: pytest.FixtureRequest, both_engines: Any, kind: str
 ) -> None:
     """NOT NULL, FK and unique/PK violations raise IntegrityError on both drivers."""
-    if kind != "unique_pk":
-        xfail_unreleased_pycubrid_fix(request, "pycubrid", 390, raises=AssertionError)
     pyc, cext = both_engines
 
     def run(engine: Any) -> str:
@@ -422,7 +420,12 @@ def test_constraint_violation_class_agrees(
             conn.execute(text("DROP TABLE drvdiff_ie"))
         return type(excinfo.value).__name__
 
-    assert (run(pyc), run(cext)) == ("IntegrityError", "IntegrityError")
+    # CUBRIDdb and the recovery checks in run() stay outside the pycubrid xfail.
+    assert run(cext) == "IntegrityError"
+    py_class = run(pyc)
+    if kind != "unique_pk":
+        xfail_unreleased_pycubrid_fix(request, "pycubrid", 390, raises=AssertionError)
+    assert py_class == "IntegrityError"
 
 
 if __name__ == "__main__":
