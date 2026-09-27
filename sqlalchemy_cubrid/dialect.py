@@ -383,9 +383,12 @@ class CubridDialect(default.DefaultDialect):
         NULL) and reporting the total, which keeps
         ``supports_sane_multi_rowcount`` accurate for ORM batched UPDATE and
         DELETE. The guard applies to every statement, not only when a row
-        contains ``None``, because the last-row rowcount is wrong either way. insertmanyvalues batches go through ``do_execute`` and are not
-        affected. :class:`PyCubridDialect` restores the driver's own
-        ``executemany``. Remove once a fixed CUBRIDdb is the minimum (#502).
+        contains ``None``, because the last-row rowcount is wrong either way.
+        insertmanyvalues batches go through ``do_execute`` and are not
+        affected, but an INSERT into a table with a ``bind_expression()`` type
+        falls back to executemany (#421) and does use this guard.
+        :class:`PyCubridDialect` restores the driver's own ``executemany``.
+        Remove once a fixed CUBRIDdb is the minimum (#502).
         """
         rowcount = 0
         for params in parameters:

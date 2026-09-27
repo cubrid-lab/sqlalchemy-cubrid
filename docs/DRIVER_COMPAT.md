@@ -210,9 +210,11 @@ with `cursor.execute()` and sets `cursor.rowcount` to the total. Each
 guard always applies, not only when a row contains `None`, because the
 last-row rowcount is wrong for every statement. With the guard,
 `supports_sane_multi_rowcount` is accurate on both drivers. The cost is one
-statement prepare per row on plain executemany. Core `insert()` with many rows
-uses insertmanyvalues, which goes through `do_execute` and does not use the
-guard. Code that calls `CUBRIDdb`'s `cursor.executemany()` directly, without
+statement prepare per row on plain executemany. A multi-row Core `insert()`
+that uses insertmanyvalues goes through `do_execute` and does not use the
+guard. An INSERT into a table with a column whose type defines
+`bind_expression()` falls back to executemany (#421), so on `cubrid://` it
+does use the per-row guard. Code that calls `CUBRIDdb`'s `cursor.executemany()` directly, without
 SQLAlchemy, is still affected.
 
 `cubrid+pycubrid://` and `cubrid+aiopycubrid://` bind `None` correctly and sum

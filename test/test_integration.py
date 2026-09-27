@@ -863,6 +863,48 @@ class TestExecutemanyNoneAndRowcount:
         assert calls == []
         assert self._rows(engine) == self._EXPECTED
 
+    def test_core_insert_many_with_bind_expression_uses_executemany(self, engine, monkeypatch):
+        """A bind_expression() column drops insertmanyvalues (#421).
+
+        The INSERT then goes through ``do_executemany`` (the per-row guard on
+        ``cubrid://``), and interleaved ``None`` must still store NULL.
+        """
+
+        class CastString(sa.types.TypeDecorator):
+            impl = String(20)
+            cache_ok = True
+
+            def bind_expression(self, bindvalue):
+                return sa.cast(sa.type_coerce(bindvalue, String(20)), String(20))
+
+        meta = MetaData()
+        tbl = Table(
+            "em502_bindexpr",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("v", CastString()),
+            Column("n", Integer),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        calls = []
+        original = engine.dialect.do_executemany
+
+        def spy(*args, **kwargs):
+            calls.append(args[1])
+            return original(*args, **kwargs)
+
+        monkeypatch.setattr(engine.dialect, "do_executemany", spy)
+        try:
+            with engine.begin() as conn:
+                assert conn.execute(tbl.insert(), self._ROWS).rowcount == 4
+            with engine.connect() as conn:
+                rows = [tuple(r) for r in conn.execute(select(tbl).order_by(tbl.c.id))]
+            assert len(calls) == 1
+            assert rows == self._EXPECTED
+        finally:
+            meta.drop_all(engine)
+
 
 class TestBackslashLiteralRoundtrip:
     """Regression #313: backslashes must survive both param binding and
