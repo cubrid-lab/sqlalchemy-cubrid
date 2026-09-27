@@ -90,7 +90,7 @@ graph TD
 | SQLAlchemy | ≥ 2.0, < 2.3 | Core ORM/engine framework |
 | Python | ≥ 3.10 | Runtime |
 | CUBRID-Python | any | DBAPI driver (optional extra) |
-| Alembic | ≥ 1.7 | Migration support (optional extra) |
+| Alembic | ≥ 1.7.2 | Migration support (optional extra) |
 | pytest | ≥ 7.0 | Testing (dev) |
 | ruff | ≥ 0.4 | Lint + format (dev) |
 

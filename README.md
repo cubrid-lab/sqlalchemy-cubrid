@@ -239,7 +239,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
-| Alembic | >=1.7 |
+| Alembic | >=1.7.2 |
 | pycubrid (sync) | >=1.3.2,<2.0 |
 | pycubrid (async) | >=1.3.2,<2.0 |
 

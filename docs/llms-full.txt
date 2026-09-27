@@ -2656,7 +2656,7 @@ Install sqlalchemy-cubrid with the `alembic` extra:
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-This pulls in Alembic ≥ 1.7 as a dependency. The CUBRID Alembic implementation
+This pulls in Alembic ≥ 1.7.2 as a dependency. The CUBRID Alembic implementation
 (`CubridImpl`) is registered automatically when the CUBRID dialect loads —
 no manual configuration is needed.
 
@@ -2805,6 +2805,11 @@ URL — `cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://` and
 so building the engine (or, in offline `--sql` mode, the dialect from the URL)
 registers `CubridImpl` before Alembic looks it up. No imports or configuration
 are required in `env.py` or your migration files.
+
+If Alembic is installed but fails to import (for example Alembic 1.7.0/1.7.1,
+which raise `NameError` on SQLAlchemy 2.x), the dialect still loads and emits a
+single `RuntimeWarning` saying the Alembic integration is disabled, with the
+original exception. Upgrading to `alembic>=1.7.2,<2.0` fixes it.
 
 Versions before this fix declared an `alembic.ddl` entry point that Alembic
 never read, so a default `env.py` failed with `KeyError: 'cubrid'` unless it
@@ -3030,7 +3035,7 @@ installed.
 **Fix**:
 
 ```bash
-pip install "alembic>=1.7,<2.0"
+pip install "alembic>=1.7.2,<2.0"
 ```
 
 ### Migration partially applied

@@ -22,6 +22,7 @@ does.  The online test needs a live CUBRID and ``CUBRID_TEST_URL``.
 from __future__ import annotations
 
 import importlib.metadata
+import json
 import os
 import subprocess
 import sys
@@ -117,6 +118,97 @@ def test_offline_upgrade_with_default_env_py(tmp_path: Path, scheme: str) -> Non
     # CubridImpl-specific rendering proves the CUBRID impl, not a generic
     # fallback, handled the migration.
     assert "RENAME COLUMN name TO label" in result.stdout
+
+
+# Loads every CUBRID dialect in a fresh interpreter after ``setup`` has shaped
+# how ``alembic`` imports, and reports the warnings raised while loading.
+_LOAD_DIALECTS = """
+import json, sys, warnings
+{setup}
+with warnings.catch_warnings(record=True) as caught:
+    warnings.simplefilter("always")
+    from sqlalchemy.dialects import registry
+    names = [registry.load(n).name for n in ("cubrid", "cubrid.pycubrid", "cubrid.aiopycubrid")]
+print(json.dumps({{
+    "names": names,
+    "impl_loaded": "sqlalchemy_cubrid.alembic_impl" in sys.modules,
+    "warnings": [
+        [w.category.__name__, str(w.message)]
+        for w in caught
+        if "sqlalchemy-cubrid" in str(w.message) or "Alembic" in str(w.message)
+    ],
+}}))
+"""
+
+# Alembic 1.7.0/1.7.1 fail on SQLAlchemy 2.x with NameError while executing
+# ``alembic/__init__.py``; this finder reproduces that without installing them.
+_BROKEN_ALEMBIC = """
+import importlib.abc, importlib.machinery
+
+class _BrokenLoader(importlib.abc.Loader):
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        raise NameError("name 'TextClause' is not defined")
+
+class _BrokenFinder(importlib.abc.MetaPathFinder):
+    def find_spec(self, name, path=None, target=None):
+        if name == "alembic":
+            return importlib.machinery.ModuleSpec(name, _BrokenLoader())
+        return None
+
+sys.meta_path.insert(0, _BrokenFinder())
+"""
+
+# ``None`` in sys.modules makes ``import alembic`` raise ModuleNotFoundError,
+# exactly as when Alembic is not installed.
+_NO_ALEMBIC = 'sys.modules["alembic"] = None'
+
+
+def _load_dialects(setup: str) -> dict[str, object]:
+    env = {k: v for k, v in os.environ.items() if not k.startswith("PYTHON")}
+    result = subprocess.run(
+        [sys.executable, "-c", _LOAD_DIALECTS.format(setup=setup)],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+    loaded: dict[str, object] = json.loads(result.stdout.strip().splitlines()[-1])
+    return loaded
+
+
+def test_broken_alembic_warns_and_dialect_still_loads() -> None:
+    loaded = _load_dialects(_BROKEN_ALEMBIC)
+
+    assert loaded["names"] == ["cubrid", "cubrid", "cubrid"]
+    assert loaded["impl_loaded"] is False
+    assert loaded["warnings"] == [
+        [
+            "RuntimeWarning",
+            "sqlalchemy-cubrid: Alembic integration is disabled because the installed "
+            "Alembic failed to import (NameError: name 'TextClause' is not defined). "
+            'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.',
+        ]
+    ]
+
+
+def test_missing_alembic_is_silent() -> None:
+    loaded = _load_dialects(_NO_ALEMBIC)
+
+    assert loaded["names"] == ["cubrid", "cubrid", "cubrid"]
+    assert loaded["impl_loaded"] is False
+    assert loaded["warnings"] == []
+
+
+def test_working_alembic_registers_without_warning() -> None:
+    loaded = _load_dialects("")
+
+    assert loaded["names"] == ["cubrid", "cubrid", "cubrid"]
+    assert loaded["impl_loaded"] is True
+    assert loaded["warnings"] == []
 
 
 def _live_url() -> str | None:

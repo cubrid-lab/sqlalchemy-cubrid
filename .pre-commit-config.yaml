@@ -27,7 +27,7 @@ repos:
         additional_dependencies:
           - "SQLAlchemy[asyncio]==2.0.53; python_version < '3.11'"
           - "SQLAlchemy[asyncio]==2.1.1; python_version >= '3.11'"
-          - alembic>=1.7,<2.0
+          - alembic>=1.7.2,<2.0
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.9.4

@@ -26,7 +26,7 @@ CUBRID 방언과 함께 [Alembic](https://alembic.sqlalchemy.org/) 데이터베�
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-이것은 의존성으로 Alembic ≥ 1.7을 끌어옵니다. CUBRID Alembic 구현(`CubridImpl`)은 CUBRID 방언이 로드될 때 자동 등록됩니다 — 수동 구성이 필요 없습니다.
+이것은 의존성으로 Alembic ≥ 1.7.2를 끌어옵니다. CUBRID Alembic 구현(`CubridImpl`)은 CUBRID 방언이 로드될 때 자동 등록됩니다 — 수동 구성이 필요 없습니다.
 
 > **참고**: Alembic을 따로 설치해도(`pip install alembic`), 같은 환경에 `sqlalchemy-cubrid`가 설치되어 있으면 CUBRID 구현이 그대로 등록됩니다.
 
@@ -157,6 +157,8 @@ CUBRID는 모든 DDL 문을 암시적으로 커밋합니다. `CubridImpl`은 `tr
 Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이션 구현을 고르며, `DefaultImpl` 하위 클래스는 모듈이 임포트될 때 이 레지스트리에 스스로 추가됩니다(`CubridImpl.__dialect__ = "cubrid"`). Alembic은 패키지 엔트리 포인트에서 방언 구현을 로드하지 않습니다.
 
 그래서 `sqlalchemy_cubrid/dialect.py`는 Alembic이 설치되어 있으면 `sqlalchemy_cubrid.alembic_impl`을 임포트하고, 없으면 조용히 건너뜁니다. 모든 CUBRID URL(`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`)이 이 모듈을 로드하고 `dialect.name == "cubrid"`이므로, 엔진을 만들 때(오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) Alembic이 조회하기 전에 `CubridImpl`이 등록됩니다. `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다.
+
+Alembic이 설치되어 있지만 임포트에 실패하면(예: SQLAlchemy 2.x에서 `NameError`를 내는 Alembic 1.7.0/1.7.1) 방언은 그대로 로드되고, Alembic 통합이 비활성화되었다는 `RuntimeWarning`을 원래 예외와 함께 한 번 냅니다. `alembic>=1.7.2,<2.0`으로 업그레이드하면 해결됩니다.
 
 이 수정 이전 버전은 Alembic이 읽지 않는 `alembic.ddl` 엔트리 포인트를 선언했기 때문에, 기본 `env.py`는 `sqlalchemy_cubrid.alembic_impl`을 명시적으로 임포트하지 않으면 `KeyError: 'cubrid'`로 실패했습니다. 그 임포트는 남겨 두어도 무해합니다.
 
@@ -354,7 +356,7 @@ pip install sqlalchemy-cubrid[alembic]
 **해결**:
 
 ```bash
-pip install "alembic>=1.7,<2.0"
+pip install "alembic>=1.7.2,<2.0"
 ```
 
 ### 마이그레이션이 부분 적용됨
