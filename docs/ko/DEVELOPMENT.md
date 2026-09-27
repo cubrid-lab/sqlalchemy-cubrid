@@ -481,11 +481,12 @@ pre-commit run --all-files
 CUBRIDdb C 확장에서 실행하고 결과가 일치하는지 확인합니다. 기본 CRUD와 함께
 릴리스된 드라이버에서 이미 동작하는 DB-API 계약 영역을 다룹니다. 정수·UTF-8/CJK·NULL
 값을 사용하는 Core `executemany`, 정수·UTF-8/CJK 값을 사용하는 텍스트 `executemany`, 스칼라 바인드, 텍스트 SQL 결과 컬럼 이름,
-커밋/롤백 가시성이 해당합니다. 또한 제약 조건 위반 예외 클래스(#480)와 롤백 이후 읽은
-결과(#481)도 비교합니다. 이 둘은 pycubrid `main`에서는 수정되었지만 릴리스되지 않았으므로,
-릴리스된 pycubrid에서는 pycubrid 쪽이 strict xfail입니다([릴리스되지 않은 pycubrid
+커밋/롤백 가시성이 해당합니다. 또한 제약 조건 위반 예외 클래스(#480), 롤백 이후 읽은
+결과(#481), 스칼라 `cursor.description`의 이름·타입 코드·`null_ok`(#482)도 비교합니다.
+NOT NULL/외래 키 예외 클래스, 롤백 이후 결과, `null_ok`는 pycubrid `main`에서는 수정되었지만
+릴리스되지 않았으므로, 릴리스된 pycubrid에서는 해당 케이스의 pycubrid 쪽이 strict xfail입니다([릴리스되지 않은 pycubrid
 수정](#릴리스되지-않은-pycubrid-수정-cubrid_pycubrid_upstream) 참고). 업스트림에 막힌
-영역은 별도로 추적하며(#482–#484), LOB 값은 #485에서 다룹니다.
+영역은 별도로 추적하며(#483–#484), LOB 값은 #485에서 다룹니다.
 
 `ci.yml`과 `integration-full.yml`의 통합 잡은 두 드라이버를 모두 설치하고
 `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`로 이 모듈을 실행합니다. 이 변수가 설정되면

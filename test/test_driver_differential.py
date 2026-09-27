@@ -186,10 +186,10 @@ def test_null_handling_agrees(both_engines: Any) -> None:
 
 # ---------------------------------------------------------------------------
 # DB-API contract areas that already behave correctly on the released drivers
-# (#486, tracker #479). Areas still blocked upstream — cursor.description
-# metadata, collections, prepared binding — belong to #482-#484; LOBs to #485.
-# Results across commit/rollback (#481) and IntegrityError classification
-# (#480) are at the end of this module.
+# (#486, tracker #479). Areas still blocked upstream — collections, prepared
+# binding — belong to #483-#484; LOBs to #485. IntegrityError classification
+# (#480), results across commit/rollback (#481) and cursor.description (#482)
+# are at the end of this module.
 # ---------------------------------------------------------------------------
 
 _CJK = "中文한글日本語"
