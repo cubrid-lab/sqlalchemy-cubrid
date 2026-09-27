@@ -28,6 +28,11 @@ jobs:
     name: Integration tests against pycubrid@main
     runs-on: ubuntu-latest
     continue-on-error: true
+    env:
+      # pycubrid@main contains fixes that are not released yet, so the strict
+      # xfails for them (test/pycubrid_upstream.py) must be no-ops here: the
+      # fixed behavior is expected to pass. See docs/DEVELOPMENT.md.
+      CUBRID_PYCUBRID_UPSTREAM: "1"
     services:
       cubrid:
         image: cubrid/cubrid:11.4

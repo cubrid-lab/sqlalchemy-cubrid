@@ -21,6 +21,7 @@ Alternatively, the tests look for a CUBRID instance at the default
 
 from __future__ import annotations
 
+from inspect import signature
 import os
 
 import pytest
@@ -40,6 +41,8 @@ from sqlalchemy import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_cubrid import BLOB, CLOB
+
+from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -971,3 +974,109 @@ class TestLobValueContractORM:
             assert doc is not None
             got = getattr(doc, kind)
         _assert_lob_value(got, kind, value)
+
+
+# ---------------------------------------------------------------------------
+# #481: results are never silently truncated across commit or rollback
+# ---------------------------------------------------------------------------
+
+# pycubrid requests further rows in FETCH batches of ``fetch_size`` (default 100,
+# ``pycubrid.connection.Connection``), and the broker's first response to the
+# SELECT is further capped by size: it holds only ~16 of the 1000-byte rows
+# below. The result therefore needs several FETCH round trips after the first
+# response, which is exactly what a commit/rollback can invalidate.
+_PYCUBRID_FETCH_SIZE = 100
+_WIDE_ROWS = 500
+_WIDE_PAYLOAD = "x" * 1000
+_FETCHMANY_SIZE = 17
+
+
+def _drain(result, method):
+    """Consume the rest of *result* with the given fetch method."""
+    if method == "fetchall":
+        return list(result.fetchall())
+    rows = []
+    while True:
+        if method == "fetchmany":
+            part = result.fetchmany(_FETCHMANY_SIZE)
+            if not part:
+                return rows
+            rows.extend(part)
+        else:
+            row = result.fetchone()
+            if row is None:
+                return rows
+            rows.append(row)
+
+
+class TestResultCompletenessAcrossTransactionBoundary:
+    @pytest.fixture(scope="class")
+    def wide_table(self, engine):
+        meta = MetaData()
+        table = Table(
+            "integration_rc481",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", String(1000)),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(
+                table.insert(), [{"id": i, "payload": _WIDE_PAYLOAD} for i in range(_WIDE_ROWS)]
+            )
+        yield table
+        meta.drop_all(engine)
+
+    def test_row_count_exceeds_pycubrid_fetch_batch(self):
+        pycubrid_connection = pytest.importorskip("pycubrid.connection")
+        default = signature(pycubrid_connection.Connection).parameters["fetch_size"]
+        assert default.default == _PYCUBRID_FETCH_SIZE
+        assert _WIDE_ROWS > _PYCUBRID_FETCH_SIZE
+
+    @pytest.mark.parametrize("method", ["fetchone", "fetchmany", "fetchall"])
+    @pytest.mark.parametrize("boundary", ["commit", "rollback", "none"])
+    def test_unfinished_result_is_complete_or_raises(
+        self, request, engine, wide_table, boundary, method
+    ):
+        """After a transaction boundary, the rest of a result is complete or an error.
+
+        ``none`` is the control: the full result needs FETCHes past the first
+        response. With a boundary, returning every row and raising a DB-API
+        error are both acceptable; a successful partial result is not.
+        """
+        if boundary != "none":
+            xfail_unreleased_pycubrid_fix(
+                request, engine.dialect.driver, 395, raises=AssertionError
+            )
+        with engine.connect() as conn:
+            # A completed query on the same connection is the normal state of a
+            # pooled connection; released pycubrid truncates silently from it.
+            conn.execute(text("SELECT 1")).all()
+            result = conn.execute(
+                select(wide_table.c.id, wide_table.c.payload).order_by(wide_table.c.id)
+            )
+            if engine.dialect.driver == "pycubrid":
+                # The first response must not hold the whole result.
+                assert 0 < result.cursor._fetched_count < _WIDE_ROWS
+            first = result.fetchone()
+            if boundary == "commit":
+                conn.commit()
+            elif boundary == "rollback":
+                conn.rollback()
+            try:
+                rest = _drain(result, method)
+            except sa.exc.DBAPIError:
+                if boundary == "none":
+                    raise
+                rest = None  # an explicit failure satisfies the contract
+        if engine.dialect.driver == "cubrid":
+            # Recorded CUBRIDdb 11.3 behavior (CUBRID 10.2 and 11.4), for comparison.
+            expected = {"commit": "complete", "rollback": "raises", "none": "complete"}
+            assert ("raises" if rest is None else "complete") == expected[boundary]
+        if rest is None:
+            return
+        ids = [first.id] + [row.id for row in rest]
+        assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
+        assert ids == list(range(_WIDE_ROWS))
+        assert all(row.payload == _WIDE_PAYLOAD for row in rest)

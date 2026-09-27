@@ -190,6 +190,25 @@ or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
 `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441. See also
 [Types](TYPES.md).
 
+### 7. Unfinished results after `commit()` / `rollback()`
+
+Verified live on CUBRID 10.2 and 11.4 (#481) with a 500-row result that needs
+several FETCH round trips (pycubrid fetches 100 rows per batch; the broker's
+first response held 16 of these 1000-byte rows). Reading the rest of a sync
+`Result` after `Connection.commit()` / `rollback()` behaves differently per
+driver:
+
+| Driver | After `commit()` | After `rollback()` |
+|---|---|---|
+| `cubrid://` (`CUBRIDdb` 11.3) | all rows | `InterfaceError` (CCI -20040) |
+| `cubrid+pycubrid://` (pycubrid 1.7.1) | **silently returns only the rows already buffered** on a connection that completed an earlier query (the normal state of a pooled connection); `OperationalError` otherwise | same as commit |
+| `cubrid+aiopycubrid://` | all rows: `AsyncConnection.execute()` buffers the whole result before it returns | all rows |
+
+cubrid-lab/pycubrid#395 makes pycubrid raise `InterfaceError` instead of
+returning a partial result; until that release is adopted, fully consume a
+result before ending its transaction. `AsyncConnection.stream()` is not
+available because the dialect does not support server-side cursors.
+
 ---
 
 ## Installation Notes

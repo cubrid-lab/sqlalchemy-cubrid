@@ -28,6 +28,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -41,6 +42,8 @@ from sqlalchemy import (
     select,
     text,
 )
+
+from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
 pytestmark = pytest.mark.integration
 
@@ -326,6 +329,53 @@ def test_commit_rollback_visibility_agrees(both_engines: Any) -> None:
         return ids
 
     assert run(pyc) == run(cext) == [1]
+
+
+# ---------------------------------------------------------------------------
+# #481: results are never silently truncated across commit or rollback
+# ---------------------------------------------------------------------------
+
+
+def test_result_after_rollback_is_never_partial(
+    request: pytest.FixtureRequest, both_engines: Any
+) -> None:
+    """A result spanning several FETCHes is complete or raises after rollback.
+
+    500 rows of 1000 bytes exceed pycubrid's 100-row FETCH batch and the
+    broker's first response (~16 such rows). CUBRIDdb raises here; the fixed
+    pycubrid raises ``InterfaceError``. Neither may return a partial result.
+    """
+    xfail_unreleased_pycubrid_fix(request, "pycubrid", 395, raises=AssertionError)
+    pyc, cext = both_engines
+    rows = 500
+
+    def run(engine: Any) -> str:
+        tbl = Table(
+            "drvdiff_rc",
+            MetaData(),
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", String(1000)),
+        )
+        tbl.drop(engine, checkfirst=True)
+        tbl.create(engine)
+        with engine.begin() as conn:
+            conn.execute(tbl.insert(), [{"id": i, "payload": "x" * 1000} for i in range(rows)])
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1")).all()
+                result = conn.execute(select(tbl.c.id, tbl.c.payload).order_by(tbl.c.id))
+                result.fetchone()
+                conn.rollback()
+                try:
+                    count = 1 + len(result.fetchall())
+                except sa.exc.DBAPIError:
+                    return "raises"
+        finally:
+            tbl.drop(engine, checkfirst=True)
+        return "complete" if count == rows else f"partial ({count} of {rows})"
+
+    outcomes = (run(pyc), run(cext))
+    assert all(o in ("complete", "raises") for o in outcomes), outcomes
 
 
 if __name__ == "__main__":

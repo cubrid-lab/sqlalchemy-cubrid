@@ -545,3 +545,77 @@ class TestAsyncLobValueContract:
             assert doc is not None
             got = getattr(doc, kind)
         _assert_lob_value(got, kind, value)
+
+
+# ---------------------------------------------------------------------------
+# #481: results are never silently truncated across commit or rollback
+# ---------------------------------------------------------------------------
+
+# More rows than pycubrid's default FETCH batch (``fetch_size=100``), each wide
+# enough that the broker's first response holds only ~16 of them.
+_WIDE_ROWS = 500
+_WIDE_PAYLOAD = "x" * 1000
+_FETCHMANY_SIZE = 17
+
+
+class TestAsyncResultCompletenessAcrossTransactionBoundary:
+    """``AsyncConnection.execute()`` results across commit/rollback.
+
+    SQLAlchemy's async DB-API adapter reads every row of a non-streaming result
+    before ``execute()`` returns, so no FETCH happens after the boundary and the
+    result stays complete. ``AsyncConnection.stream()`` is not available: the
+    dialect does not support server-side cursors.
+    """
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def wide_table(self, engine: AsyncEngine) -> AsyncIterator[Table]:
+        table = Table(
+            "aio_test_rc481",
+            MetaData(),
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", String(1000)),
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(table.drop, checkfirst=True)
+            await conn.run_sync(table.create)
+            _ = await conn.execute(
+                table.insert(), [{"id": i, "payload": _WIDE_PAYLOAD} for i in range(_WIDE_ROWS)]
+            )
+        yield table
+        async with engine.begin() as conn:
+            await conn.run_sync(table.drop, checkfirst=True)
+
+    @pytest.mark.parametrize("method", ["fetchone", "fetchmany", "fetchall"])
+    @pytest.mark.parametrize("boundary", ["commit", "rollback", "none"])
+    async def test_unfinished_result_is_complete_or_raises(
+        self, engine: AsyncEngine, wide_table: Table, boundary: str, method: str
+    ):
+        async with engine.connect() as conn:
+            _ = (await conn.execute(text("SELECT 1"))).all()
+            result = await conn.execute(
+                select(wide_table.c.id, wide_table.c.payload).order_by(wide_table.c.id)
+            )
+            first = result.fetchone()
+            assert first is not None
+            if boundary == "commit":
+                await conn.commit()
+            elif boundary == "rollback":
+                await conn.rollback()
+            rest: list[sa.Row[tuple[int, str]]] = []
+            try:
+                if method == "fetchall":
+                    rest = list(result.fetchall())
+                elif method == "fetchmany":
+                    while part := result.fetchmany(_FETCHMANY_SIZE):
+                        rest.extend(part)
+                else:
+                    while (row := result.fetchone()) is not None:
+                        rest.append(row)
+            except sa.exc.DBAPIError:
+                if boundary == "none":
+                    raise
+                return  # an explicit failure satisfies the contract
+        ids = [first.id] + [row.id for row in rest]
+        assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
+        assert ids == list(range(_WIDE_ROWS))
+        assert all(row.payload == _WIDE_PAYLOAD for row in rest)
