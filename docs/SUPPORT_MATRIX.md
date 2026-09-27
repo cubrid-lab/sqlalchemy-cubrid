@@ -100,7 +100,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | `MERGE` statement | ✅ | Via `sqlalchemy_cubrid.merge()` |
 | `REPLACE INTO` | ✅ | Via `sqlalchemy_cubrid.replace()` |
 | `GROUP_CONCAT` | ✅ | |
-| `TRUNCATE TABLE` | ✅ | Autocommit detected |
+| `TRUNCATE TABLE` | ✅ | Committed with the enclosing transaction |
 | `FOR UPDATE` | ✅ | Including `OF` clause |
 | Recursive CTE | ✅ | `WITH RECURSIVE` (CUBRID 11.x+) |
 | Window functions | ✅ | ROW_NUMBER, RANK, LAG, LEAD, etc. |

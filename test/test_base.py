@@ -1,47 +1,109 @@
 from __future__ import annotations
 
+import asyncio
 import types
-from unittest.mock import MagicMock
+import warnings
+from unittest.mock import MagicMock, patch
 
 import pytest
+import sqlalchemy as sa
+from sqlalchemy.engine.default import DefaultExecutionContext
+from sqlalchemy.ext.asyncio import create_async_engine
 
+import sqlalchemy_cubrid.base as cubrid_base
+from sqlalchemy_cubrid.aio_pycubrid_dialect import PyCubridAsyncDialect
 from sqlalchemy_cubrid.base import (
-    AUTOCOMMIT_REGEXP,
     RESERVED_WORDS,
     CubridExecutionContext,
     CubridIdentifierPreparer,
 )
 from sqlalchemy_cubrid.dialect import CubridDialect
-from sqlalchemy_cubrid.pycubrid_dialect import PyCubridExecutionContext
+from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect, PyCubridExecutionContext
+
+_DIALECT_CLASSES = (CubridDialect, PyCubridDialect, PyCubridAsyncDialect)
 
 
-class TestAutocommitRegexp:
+def _fake_dbapi() -> types.SimpleNamespace:
+    raw_conn = MagicMock(name="dbapi_connection")
+    return types.SimpleNamespace(
+        paramstyle="qmark",
+        Error=type("Error", (Exception,), {}),
+        connect=MagicMock(return_value=raw_conn),
+    )
+
+
+class TestLegacySA1HooksRemoved:
+    # Regression for #462: SQLAlchemy 2.x never calls the 1.x-era
+    # ``should_autocommit_text()`` execution-context hook (so the
+    # ``AUTOCOMMIT_REGEXP`` it consulted was dead too), and
+    # ``create_engine()`` resolves the DBAPI through ``import_dbapi()`` when a
+    # dialect class defines it, so the legacy ``dbapi()`` classmethod was
+    # unreachable. Transactions are driven by the SA 2.x Connection API.
+
+    def test_autocommit_text_hook_and_regexp_are_gone(self):
+        assert not hasattr(DefaultExecutionContext, "should_autocommit_text")
+        assert not hasattr(CubridExecutionContext, "should_autocommit_text")
+        assert not hasattr(PyCubridExecutionContext, "should_autocommit_text")
+        assert not hasattr(cubrid_base, "AUTOCOMMIT_REGEXP")
+
+    @pytest.mark.parametrize("dialect_cls", _DIALECT_CLASSES)
+    def test_legacy_dbapi_classmethod_is_gone(self, dialect_cls):
+        assert "import_dbapi" in dialect_cls.__dict__
+        assert not any("dbapi" in klass.__dict__ for klass in dialect_cls.__mro__)
+
     @pytest.mark.parametrize(
-        "statement",
+        ("dialect_cls", "url"),
         [
-            "UPDATE users SET name='x'",
-            "insert into users values (1)",
-            "  CrEaTe TABLE t (id int)",
-            "DELETE FROM users",
-            "drop table users",
-            "ALTER TABLE users ADD COLUMN email VARCHAR(100)",
-            "MERGE INTO users u USING src s ON (u.id = s.id)",
-            "TRUNCATE TABLE users",
+            (CubridDialect, "cubrid://dba@localhost:33000/testdb"),
+            (PyCubridDialect, "cubrid+pycubrid://dba@localhost:33000/testdb"),
         ],
     )
-    def test_matches_writes(self, statement):
-        assert AUTOCOMMIT_REGEXP.match(statement)
+    def test_create_engine_uses_import_dbapi_without_deprecation(self, dialect_cls, url):
+        fake = _fake_dbapi()
+        with patch.object(dialect_cls, "import_dbapi", classmethod(lambda cls: fake)):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                engine = sa.create_engine(url)
+        assert engine.dialect.dbapi is fake
+
+    def test_create_async_engine_uses_import_dbapi_without_deprecation(self):
+        fake = _fake_dbapi()
+        with patch.object(PyCubridAsyncDialect, "import_dbapi", classmethod(lambda cls: fake)):
+            with warnings.catch_warnings():
+                warnings.simplefilter("error")
+                engine = create_async_engine("cubrid+aiopycubrid://dba@localhost:33000/testdb")
+        assert engine.sync_engine.dialect.dbapi is fake
+        asyncio.run(engine.dispose())
+
+    def _engine(self):
+        fake = _fake_dbapi()
+        engine = sa.create_engine(
+            "cubrid+pycubrid://dba@localhost:33000/testdb", module=fake, poolclass=sa.pool.NullPool
+        )
+        engine.dialect.initialize = lambda connection: None  # type: ignore[method-assign]
+        return engine, fake.connect.return_value
 
     @pytest.mark.parametrize(
         "statement",
-        [
-            "SELECT * FROM users",
-            " show tables",
-            "WITH cte AS (SELECT 1) SELECT * FROM cte",
-        ],
+        ["DELETE FROM t", "REPLACE INTO t VALUES (1)", "CREATE TABLE t (id INT)"],
     )
-    def test_does_not_match_reads(self, statement):
-        assert AUTOCOMMIT_REGEXP.match(statement) is None
+    def test_dml_ddl_text_is_not_autocommitted(self, statement):
+        engine, raw_conn = self._engine()
+        with engine.connect() as conn:
+            conn.execute(sa.text(statement))
+        raw_conn.commit.assert_not_called()
+        raw_conn.rollback.assert_called()
+
+    def test_explicit_commit_and_begin_commit(self):
+        engine, raw_conn = self._engine()
+        with engine.connect() as conn:
+            conn.execute(sa.text("REPLACE INTO t VALUES (1)"))
+            conn.commit()
+        assert raw_conn.commit.call_count == 1
+
+        with engine.begin() as conn:
+            conn.execute(sa.text("DELETE FROM t"))
+        assert raw_conn.commit.call_count == 2
 
 
 class TestReservedWords:
@@ -82,12 +144,6 @@ class TestIdentifierPreparer:
 
 
 class TestExecutionContext:
-    def test_should_autocommit_text(self):
-        context = object.__new__(CubridExecutionContext)
-
-        assert context.should_autocommit_text("DELETE FROM users")
-        assert context.should_autocommit_text("SELECT 1") is None
-
     def test_get_lastrowid_uses_raw_connection_method(self):
         context = object.__new__(CubridExecutionContext)
 

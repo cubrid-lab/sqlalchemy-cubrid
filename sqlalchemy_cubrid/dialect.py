@@ -360,11 +360,6 @@ class CubridDialect(default.DefaultDialect):
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
 
-    # Keep legacy dbapi() for SA 1.x compat if needed
-    @classmethod
-    def dbapi(cls) -> DBAPIModule:  # type: ignore[override]
-        return cls.import_dbapi()
-
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         """Build DB-API connection arguments for CUBRID.
 

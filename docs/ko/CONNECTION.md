@@ -275,16 +275,13 @@ engine = create_engine(
 
 두 CUBRID Python 드라이버 모두 기본적으로 `autocommit=True`입니다. 방언은 SQLAlchemy가 트랜잭션을 올바르게 관리할 수 있도록 모든 새 연결에서 이를 오버라이드합니다. CUBRIDdb는 `conn.set_autocommit(False)`를, pycubrid는 속성 세터 `conn.autocommit = False`를 사용합니다.
 
-### DDL 오토커밋 감지
+### SQL 텍스트 기반 오토커밋 없음
 
-CUBRID는 DDL 문을 암시적으로 커밋합니다. 방언은 DDL 패턴을 감지해 다음에 대해 오토커밋을 활성화합니다:
-
-- `CREATE`, `ALTER`, `DROP`
-- `GRANT`, `REVOKE`
-- `TRUNCATE`
-- `MERGE`
-
-이것은 정규식 패턴을 사용하는 `CubridExecutionContext.should_autocommit_text()` 메서드가 처리합니다.
+방언은 SQL 텍스트를 검사해 커밋 여부를 결정하지 않습니다. SQLAlchemy 2.x는
+1.x 시절의 `should_autocommit_text()` 훅을 호출하지 않으므로, DML과 DDL
+(`INSERT`, `REPLACE`, `MERGE`, `CREATE`, `DROP` 포함)은 연결의 트랜잭션 안에서
+실행되며 SQLAlchemy 2.x Connection API(`conn.commit()`, `engine.begin()` 블록,
+`Session` 커밋)를 통해서만 커밋됩니다. 커밋하지 않고 닫은 연결은 롤백됩니다.
 
 ---
 

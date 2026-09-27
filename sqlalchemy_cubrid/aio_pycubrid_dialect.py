@@ -104,10 +104,6 @@ class PyCubridAsyncDialect(PyCubridDialect):
 
         return cast(DBAPIModule, AsyncAdapt_pycubrid_dbapi(aio_module))
 
-    @classmethod
-    def dbapi(cls) -> DBAPIModule:  # type: ignore[override]
-        return cls.import_dbapi()
-
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         if url is None:
             raise ValueError("Unexpected database URL format")
