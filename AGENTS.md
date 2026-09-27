@@ -150,7 +150,7 @@ docker compose down -v                        # Cleanup
 
 ## Development Workflow (cubrid-lab org standard)
 
-All non-trivial work across cubrid-lab repositories MUST follow this 4-phase cycle:
+Maintainers coordinate this 4-phase cycle for non-trivial project work:
 
 1. **Oracle Design Review** — Consult Oracle before implementation to validate architecture, API surface, and approach. Raise concerns early.
 2. **Implementation** — Build the feature/fix with tests. Follow existing codebase patterns.
@@ -158,6 +158,13 @@ All non-trivial work across cubrid-lab repositories MUST follow this 4-phase cyc
 4. **Oracle Post-Implementation Review** — Consult Oracle to review the completed work for correctness, edge cases, and consistency before merging.
 
 Skipping any phase requires explicit justification. Trivial changes (typos, single-line fixes) may skip phases 1 and 4.
+
+Outside contributors follow `CONTRIBUTING.md`: explain the change, implement tests
+and matching documentation, and open a PR with executed checks and gaps.
+Maintainers arrange project-specific Oracle/Codex reviews, integration and release
+classification. Contributors do not need a particular agent/tool installation,
+repository secrets, release access or label-write permissions. An AI review is
+review evidence; report commands actually executed separately.
 
 5. **All changes to `main` MUST go through a Pull Request** with at least one review. No direct pushes.
 
@@ -256,11 +263,15 @@ The dialect translates automatically in `create_connect_args()`.
 
 ## Issue Labeling (cubrid-lab org standard)
 
-When creating an issue in **any cubrid-lab repository**, assign exactly one
+For maintainer/agent-managed issue creation in **any cubrid-lab repository**, assign exactly one
 `priority: <value>` label and exactly one `size: <value>` label at creation time,
 alongside a type label (`bug`/`enhancement`/`documentation`/`chore`/`ci`/…) and an
 `area:` label when applicable. These must be GitHub labels, not just text in the
 issue title or body.
+
+Maintainers or triagers assign/create the canonical GitHub labels. Outside
+reporters can describe urgency and effort without label permissions; those
+descriptions help triage but do not themselves assign a label.
 
 Use the following exact names, with **one space after the colon**:
 
@@ -301,6 +312,12 @@ Any change that affects public behavior, compatibility, installation, configurat
 
 If no documentation change is needed, state the reason explicitly in the PR body as `Docs: not needed - <reason>` or apply the `docs-not-needed` label. This is enforced by the `docs-sync` CI check.
 
+The body reason must be a populated standalone physical source line, not a placeholder or an
+example in quoted/code/comment text. Maintainers control GitHub label exceptions.
+Requesting translation help in a PR body grants no exemption: the existing
+`translations-deferred` label requires explicit maintainer approval and a recorded
+follow-up. Korean-required checks and other-language advisory checks remain intact.
+
 Do not mark work complete until code, tests, and documentation are consistent.
 
 ## Commit Convention
@@ -318,6 +335,10 @@ Closes #<issue>
 Ultraworked with [Sisyphus](https://github.com/code-yeongyu/oh-my-opencode)
 Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 ```
+
+The tool-attribution example applies only to work produced with that tool.
+Preserve actual contributor authorship and real coauthors; outside contributions
+do not require a named agent, tool credit or a blanket coauthor trailer.
 
 ### Types
 
@@ -352,6 +373,9 @@ Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 8. **Version in commit message must match actual project version.** Never reference "1.0" when project is v1.4.x.
 
 ## Release Process
+
+Maintainers own release/tag/publication actions and repository credentials.
+Contributors provide the change and validation evidence through the normal PR path.
 
 1. Bump the version in `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`.
    `pyproject.toml` derives it dynamically (`dynamic = ["version"]` +

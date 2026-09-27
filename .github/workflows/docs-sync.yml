@@ -16,6 +16,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Check docs reason helper and workflow regressions
+        run: |
+          python -m doctest scripts/check_docs_reason.py -v
+          python -m unittest discover -s test -p 'test_docs_reason.py' -v
+
       - name: Check behavior changes have docs updates
         # Dependency-only Dependabot PRs never carry doc changes; exempt them so
         # they can auto-merge. Guard on PR author (not actor) so reruns/follow-up
@@ -51,6 +56,7 @@ jobs:
           git fetch origin "$BASE_REF"
           python - <<'PY'
           import fnmatch, json, os, subprocess, sys
+          from scripts.check_docs_reason import has_docs_not_needed_reason
 
           base = f"origin/{os.environ['BASE_REF']}"
           changed = subprocess.check_output(
@@ -73,7 +79,7 @@ jobs:
           labels = {label["name"] for label in pr.get("labels", [])}
           body = pr.get("body") or ""
 
-          skipped = "docs-not-needed" in labels or "Docs: not needed -" in body
+          skipped = "docs-not-needed" in labels or has_docs_not_needed_reason(body)
           doc_changed = any(matches(p, doc_globs) for p in changed)
           relevant = [
               p for p in changed
@@ -87,8 +93,10 @@ jobs:
           if relevant and not doc_changed and not skipped:
               print("\nDocs-sync guard failed.")
               print("Behavior-relevant files changed without a matching docs/changelog update.")
-              print("Either update docs, or add the `docs-not-needed` label / PR body marker:")
-              print("  Docs: not needed - <reason>")
+              print("Update docs, or provide a populated standalone reason when no docs change is needed:")
+              print("Maintainers manage the existing `docs-not-needed` label exception.")
+              print("  Docs: not needed - only regression-test data changed")
+              print("Replace the example explanation with your actual reason")
               print("\nRelevant files:")
               for p in relevant:
                   print(f"  {p}")

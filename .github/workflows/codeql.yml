@@ -15,6 +15,6 @@ permissions:
 jobs:
   analyze:
     name: Analyze
-    uses: cubrid-lab/.github/.github/workflows/codeql.yml@main
+    uses: cubrid-lab/.github/.github/workflows/codeql.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
     with:
       language: python

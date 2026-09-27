@@ -1,4 +1,4 @@
-.PHONY: help install lint format check-tool-versions typecheck security check check-all test test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release
+.PHONY: help install lint format check-tool-versions check-docs-reason typecheck security check check-all test test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release
 
 PYTEST = python3 -m pytest
 PYTHON = python3
@@ -37,7 +37,11 @@ security: ## Run security scans (bandit)
 
 check: lint typecheck ## Run lint + typecheck
 
-check-all: check security ## Run lint + typecheck + security
+check-docs-reason: ## Check docs reasons and real event/workflow regressions
+	$(PYTHON) -m doctest scripts/check_docs_reason.py -v
+	$(PYTHON) -m unittest discover -s test -p 'test_docs_reason.py' -v
+
+check-all: check security check-docs-reason ## Run lint + typecheck + security + docs gate tests
 
 test: ## Run offline tests with coverage (no DB required)
 	$(PYTEST) $(TESTS)/ -v \

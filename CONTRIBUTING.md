@@ -54,11 +54,10 @@ Most tests run without a CUBRID instance:
 
 ```bash
 # Run all offline tests
-pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py
+make test
 
-# Run with coverage
-pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py \
-  --cov=sqlalchemy_cubrid --cov-report=term-missing
+# Run shared lint, strict typing and security checks
+make check-all
 
 # Run a specific test file
 pytest test/test_compiler.py -v
@@ -198,6 +197,28 @@ pre-commit run --all-files
 - CI must pass (lint, offline tests, integration tests).
 - Maintain backward compatibility unless explicitly approved.
 
+Contributors install the dev extra, run the shared checks, update affected docs
+and open a PR with motivation, commands/results and reasons for checks not run.
+For documentation changes, run `python scripts/generate_llms_full.py` and, in a
+docs environment with `mkdocs-material` and `pymdown-extensions`, `mkdocs build --strict`.
+Maintainers coordinate project-specific Oracle/Codex reviews, final integration,
+release classification, repository secrets and GitHub labels. No particular agent
+installation, repository-secret access or named coauthor is required to contribute.
+Preserve actual authorship; separate AI review notes from executed test evidence.
+
+Update matching behavior documentation. If none is needed, use a populated
+standalone physical source line `Docs: not needed - <reason>` rather than leaving the placeholder;
+the `docs-not-needed` label remains maintainer-controlled. For translation help,
+state missing languages and a reason in the PR body. That is a request, not
+permission: only explicit maintainer approval via the existing
+`translations-deferred` label defers the translation gate, with follow-up recorded.
+Korean-required and other-language advisory checks remain unchanged.
+
+Reusable workflow updates use reviewed upstream commit SHAs. Verify the target
+file and `workflow_call` inputs at that commit, update the related callers together,
+and validate through a PR. The pinned doc-lint job still downloads its configured
+main-based assets; pinning the caller does not freeze those assets.
+
 ---
 
 ## Reporting Issues
@@ -212,6 +233,10 @@ When reporting a bug, please include:
 - Full traceback
 
 For feature requests, describe the use case and expected behavior.
+
+Report urgency and approximate scope even if you cannot edit labels. Maintainers
+or triagers assign the required canonical priority/size labels; contributors do
+not need label-write access.
 
 ---
 

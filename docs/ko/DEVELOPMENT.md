@@ -475,6 +475,15 @@ pre-commit run --all-files
 3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지 포함
 4. **커버리지** — ≥ 95% 임계값 강제
 
+### 문서 검사
+
+문서 예외는 코드·인용·템플릿 주석 밖의 내용이 채워진 단독 물리 소스 줄
+`Docs: not needed - <reason>` 또는 기존 유지보수자 관리 라벨을 사용합니다.
+`make check-docs-reason`은 doctest와 실제 이벤트 JSON/워크플로 회귀 검사를 실행하며
+`make check-all`과 docs-sync 잡도 같은 검사를 실행합니다. 번역 도움 요청은 우회
+권한을 부여하지 않습니다. 유지보수자가 기존 `translations-deferred` 라벨을 명시적으로
+승인하고 후속 작업을 기록합니다. 한국어 필수·다른 언어 권고 검사는 유지합니다.
+
 ### Publish 파이프라인
 
 GitHub Release 생성 시 트리거. 패키지를 빌드해 PyPI에 게시합니다.

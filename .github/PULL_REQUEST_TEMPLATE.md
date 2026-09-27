@@ -22,11 +22,22 @@
 ## Checklist
 
 - [ ] My code follows the project's code style
-- [ ] I have run `make check` (lint + typecheck)
-- [ ] I have run `make test` and all tests pass
+- [ ] I have recorded executed `make check-all` / `make test` results and reasons for any unexecuted checks
 - [ ] I have added tests for new functionality (if applicable)
-- [ ] I have updated documentation for any behavior/API/version/config change (or set `Docs: not needed - <reason>` / applied the `docs-not-needed` label)
-- [ ] My changes do not introduce new warnings
+- [ ] I have updated matching behavior/API/version/config documentation, or provided a populated standalone physical source line `Docs: not needed - <reason>` when none is required
+- [ ] I have recorded known warnings, limitations and follow-up work
+
+## Validation
+
+<!-- Commands actually executed, results, and checks not run with reasons. -->
+
+<!-- Optional AI review: scope/tool/result. AI review is separate from executed checks. -->
+
+<!-- If documentation is not required, explain why or request the maintainer-managed `docs-not-needed` label.
+     The literal placeholder above and examples inside comments/code/quotes are not valid reasons. -->
+
+<!-- Translation help: name languages and reason. This is a request, not a bypass;
+     maintainers explicitly approve the existing translations-deferred label and own follow-up. -->
 
 ## Related Issues
 

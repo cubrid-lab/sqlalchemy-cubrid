@@ -489,6 +489,16 @@ pre-commit run --all-files
 3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage
 4. **Coverage** — Enforces ≥ 95% threshold
 
+### Documentation gates
+
+Documentation exceptions use a populated standalone physical source line
+`Docs: not needed - <reason>` outside code, quotes or template comments, or the existing maintainer-managed
+label. `make check-docs-reason` runs executable doctests and real event-JSON/workflow
+regressions; `make check-all` and the docs-sync job run those same checks.
+Translation help requests do not authorize a bypass: maintainers explicitly
+approve the existing `translations-deferred` label and record follow-up. The
+Korean-required and other-language advisory translation checks are unchanged.
+
 ### Publish Pipeline
 
 Triggered on GitHub Release creation. Builds and publishes the package to PyPI.

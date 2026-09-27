@@ -182,7 +182,7 @@ jobs:
   # runs on the nightly schedule and on demand.
   fuzz-bug-hunt:
     name: Hypothesis fuzz bug hunt (nightly)
-    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@main
+    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
     with:
       cubrid-version: "11.4"
       python-version: "3.12"
