@@ -1195,10 +1195,6 @@ class TestResultCompletenessAcrossTransactionBoundary:
         response. With a boundary, returning every row and raising a DB-API
         error are both acceptable; a successful partial result is not.
         """
-        if boundary != "none":
-            xfail_unreleased_pycubrid_fix(
-                request, engine.dialect.driver, 395, raises=AssertionError
-            )
         with engine.connect() as conn:
             # A completed query on the same connection is the normal state of a
             # pooled connection; released pycubrid truncates silently from it.
@@ -1214,6 +1210,11 @@ class TestResultCompletenessAcrossTransactionBoundary:
                 conn.commit()
             elif boundary == "rollback":
                 conn.rollback()
+            if boundary != "none":
+                # Applied only now, so the preconditions above stay unmasked.
+                xfail_unreleased_pycubrid_fix(
+                    request, engine.dialect.driver, 395, raises=AssertionError
+                )
             try:
                 rest = _drain(result, method)
             except sa.exc.DBAPIError:

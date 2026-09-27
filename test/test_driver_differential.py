@@ -347,7 +347,6 @@ def test_result_after_rollback_is_never_partial(
     broker's first response (~16 such rows). CUBRIDdb raises here; the fixed
     pycubrid raises ``InterfaceError``. Neither may return a partial result.
     """
-    xfail_unreleased_pycubrid_fix(request, "pycubrid", 395, raises=AssertionError)
     pyc, cext = both_engines
     rows = 500
 
@@ -376,8 +375,11 @@ def test_result_after_rollback_is_never_partial(
             tbl.drop(engine, checkfirst=True)
         return "complete" if count == rows else f"partial ({count} of {rows})"
 
-    outcomes = (run(pyc), run(cext))
-    assert all(o in ("complete", "raises") for o in outcomes), outcomes
+    # CUBRIDdb is asserted outside the pycubrid xfail so its failures stay visible.
+    assert run(cext) in ("complete", "raises")
+    py_outcome = run(pyc)
+    xfail_unreleased_pycubrid_fix(request, "pycubrid", 395, raises=AssertionError)
+    assert py_outcome in ("complete", "raises"), py_outcome
 
 
 if __name__ == "__main__":
