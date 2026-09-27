@@ -51,10 +51,8 @@ jobs:
           python-version: "3.12"
       - name: Install pinned ruff from pyproject.toml
         run: pip install -e ".[dev]"
-      - name: Ruff check
-        run: ruff check sqlalchemy_cubrid/ test/
-      - name: Ruff format check
-        run: ruff format --check sqlalchemy_cubrid/ test/
+      - name: Lint maintained Python sources
+        run: make lint
       - name: llms-full.txt is in sync with source docs
         run: |
           python scripts/generate_llms_full.py
@@ -63,6 +61,26 @@ jobs:
             git diff -- docs/llms-full.txt
             exit 1
           fi
+
+  typecheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.10"
+            sqlalchemy-version: "2.0.53"
+          - python-version: "3.13"
+            sqlalchemy-version: "2.1.1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install type-check dependencies
+        run: pip install -e ".[alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}" "mypy==2.3.1"
+      - name: Check strict typing and report dependency versions
+        run: make typecheck
 
   # ──────────────────────────────────────────
   # Job 2: Offline tests (no DB needed)
@@ -122,6 +140,10 @@ jobs:
   packaging-smoke-test:
     runs-on: ubuntu-latest
     needs: [offline-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        sqlalchemy-version: ["2.0.53", "2.1.1"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -136,14 +158,21 @@ jobs:
       - name: Smoke test wheel install
         run: |
           python -m venv /tmp/test-wheel
-          /tmp/test-wheel/bin/pip install dist/*.whl
+          /tmp/test-wheel/bin/pip install dist/*.whl "SQLAlchemy==${{ matrix.sqlalchemy-version }}"
           cd /tmp
           /tmp/test-wheel/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
           /tmp/test-wheel/bin/python -c "from sqlalchemy_cubrid import insert, merge, JSON, SET"
-          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='sqlalchemy.dialects') if ep.name.startswith('cubrid')}; assert 'cubrid' in eps, f'Missing cubrid entry point, found: {list(eps.keys())}'; assert 'cubrid.cubrid' in eps; assert 'cubrid.pycubrid' in eps; assert 'cubrid.aiopycubrid' in eps; print(f'Found {len(eps)} dialect entry points'); [print(f'  {name} -> {ep.load().__module__}.{ep.load().__name__}') for name, ep in sorted(eps.items())]"
+          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='sqlalchemy.dialects') if ep.name.startswith('cubrid')}; assert 'cubrid' in eps, f'Missing cubrid entry point, found: {list(eps.keys())}'; assert 'cubrid.cubrid' in eps; assert 'cubrid.pycubrid' in eps; assert 'cubrid.aiopycubrid' in eps; print(f'Found {len(eps)} dialect entry points'); [print(f'  {name} -> {ep.load().__module__}.{ep.load().__name__}') for name, ep in sorted(eps.items()) if name != 'cubrid.aiopycubrid']"
           /tmp/test-wheel/bin/pip install alembic
           /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='alembic.ddl') if ep.name == 'cubrid'}; assert 'cubrid' in eps; cls = eps['cubrid'].load(); print(f'alembic.ddl cubrid -> {cls.__module__}.{cls.__name__}')"
           /tmp/test-wheel/bin/python -c "import pathlib, sqlalchemy_cubrid; pkg_dir = pathlib.Path(sqlalchemy_cubrid.__file__).parent; assert (pkg_dir / 'py.typed').exists(), 'py.typed marker missing'; print('py.typed marker: OK')"
+      - name: Smoke test pycubrid wheel extra without ambient packages
+        run: |
+          python -m venv /tmp/test-wheel-pycubrid
+          wheels=(dist/*.whl)
+          /tmp/test-wheel-pycubrid/bin/pip install "${wheels[0]}[pycubrid]" "SQLAlchemy==${{ matrix.sqlalchemy-version }}"
+          cd /tmp
+          /tmp/test-wheel-pycubrid/bin/python -c "import asyncio, greenlet; from sqlalchemy.ext.asyncio import create_async_engine; engine = create_async_engine('cubrid+aiopycubrid://dba@localhost:33000/testdb'); assert engine.dialect.is_async; asyncio.run(engine.dispose()); print('Async engine creation: OK')"
       - name: Smoke test sdist install
         run: |
           python -m venv /tmp/test-sdist
@@ -321,7 +350,7 @@ jobs:
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
-    needs: [detect-changes, lint, offline-tests, packaging-smoke-test, integration-tests, live-smoke]
+    needs: [detect-changes, lint, typecheck, offline-tests, packaging-smoke-test, integration-tests, live-smoke]
     steps:
       - name: Check results
         run: |
@@ -330,6 +359,7 @@ jobs:
           echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Strict Type Check | ${{ needs.typecheck.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Offline Tests | ${{ needs.offline-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Packaging Smoke Test | ${{ needs.packaging-smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
@@ -342,6 +372,7 @@ jobs:
       - name: Fail if required jobs failed
         if: >-
           needs.lint.result == 'failure' ||
+          needs.typecheck.result != 'success' ||
           needs.offline-tests.result == 'failure' ||
           needs.packaging-smoke-test.result == 'failure' ||
           needs.integration-tests.result == 'failure' ||

@@ -136,6 +136,8 @@ graph TD
 make help          # 사용 가능한 모든 타깃 표시
 make install       # 모든 의존성과 함께 개발 모드 설치
 make lint          # ruff 린터 + 포맷 검사 실행
+make check-tool-versions # 로컬/CI 도구 핀과 타입 검사 셀 일치 확인
+make typecheck     # 의존성 버전 출력 및 strict mypy 검사
 make format        # 린트 문제 자동 수정 및 코드 포맷
 make test          # 커버리지와 함께 오프라인 테스트 실행 (95% 임계값)
 make test-all      # 모든 Python 버전에서 tox 실행
@@ -149,7 +151,25 @@ make clean         # 빌드 산출물과 캐시 제거
 
 ## 테스트 실행
 
+### 엄격한 타입 검사
+
+개발 환경에서 `make typecheck`를 실행하세요. Python, SQLAlchemy, Alembic,
+mypy 버전을 출력한 다음
+`python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`를 실행합니다.
+개발 의존성은 mypy `2.3.1`을 고정합니다.
+
+CI는 Python 3.10 / SQLAlchemy 2.0.53과 Python 3.13 / SQLAlchemy 2.1.1의 두 셀에서
+같은 Makefile 타깃을 실행합니다. 두 셀 모두 필수입니다. 타입 검사 잡이 실패하거나
+취소되거나 건너뛰어지면 필수 `matrix-result` 검사가 실패합니다. Ruff와 95% 최소
+커버리지의 기존 오프라인 테스트도 계속 필수입니다. 로컬 가상 환경 인터프리터를
+지정하려면 `make typecheck PYTHON=/path/to/venv/bin/python`을 사용하세요.
+
 ### 오프라인 테스트 (데이터베이스 불필요)
+
+동기 단위 테스트의 비동기 어댑터 픽스처는 실제 진입 코루틴을 await 브리지로
+소비하고 대기 여부를 검증합니다. 필요한 경우 연결 브리지(SQLAlchemy 2.0)와
+모듈 브리지(2.1)를 모두 패치하세요. 단순히 커서를 반환하는 mock은 잘못된
+어댑터 상태를 숨기고 대기하지 않은 코루틴을 pytest의 가비지 수집 검사에 남깁니다.
 
 대부분의 테스트 스위트는 라이브 CUBRID 인스턴스 없이 실행됩니다:
 
@@ -198,9 +218,12 @@ docker compose up -d
 docker compose logs -f cubrid
 
 # 연결 URL 설정
-export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
 
-# 통합 테스트 실행
+# 기존 순수 Python 드라이버 extra를 설치하는 일반 tox 프로파일
+tox -e integration
+
+# pycubrid가 설치된 환경에서 특정 동기 파일 실행
 pytest test/test_integration.py -v
 
 # 비동기 통합 테스트 실행
@@ -209,6 +232,15 @@ pytest test/test_aio_integration.py -v
 # 컨테이너 중지
 docker compose down -v
 ```
+
+일반 tox 프로파일은 명시적인 `cubrid+pycubrid` URL을 요구합니다. URL 누락이나
+레거시 C 확장 스킴을 거부하고 pytest 전에 제한된 시간의 `SELECT 1`로 동기·파생
+비동기 연결을 모두 확인합니다. 비동기 스위트는 SQLAlchemy URL API로 인증 정보,
+포트, 쿼리 옵션을 보존한 `cubrid+aiopycubrid` URL을 파생하며 `CUBRID_TEST_AURL`은
+명시적 비동기 재정의로 유지합니다. 실패 메시지는 URL 인증 정보를 출력하지 않습니다.
+선택적 네이티브 C 확장이 없으면 기존 드라이버 차분 비교 4건은 의도적으로
+건너뛰며 CUBRIDdb를 검증했다고 주장하지 않습니다. 공식 CI의 네이티브 드라이버
+`--dburi` 경로는 별도로 유지됩니다.
 
 ### 전체 SA 테스트 스위트
 
@@ -275,11 +307,18 @@ make integration
 
 ### tox 구성
 
-`tox.ini`는 Python 3.10–3.13의 로컬 환경을 정의합니다. GitHub Actions도 Python 3.14에서 오프라인 스위트를 실행합니다.
+`tox.ini`는 Python 3.10–3.14의 로컬 오프라인 환경, 고정된 Ruff 린트 환경,
+CI와 같은 Makefile 타깃 및 SQLAlchemy/Python 조합을 쓰는 `typecheck-sa20` /
+`typecheck-sa21` 환경을 정의합니다. 기존 pycubrid/Alembic extra와 개발 테스트
+의존성을 사용합니다. 오프라인 선택은 `-m "not integration"`이며 통합 환경은
+`-m integration`과 `--ignore=test/test_suite.py`를 사용합니다. 공식 SQLAlchemy
+컴플라이언스 스위트는 `--dburi`로 활성화되는 테스트 플러그인이 필요하며 기존 CI가
+해당 인자와 알려진 실패 기준을 사용해 별도로 실행합니다. 일반 tox 통합 실행에는
+공식 스위트가 포함되지 않습니다. 오프라인 커버리지 임계값은 95%를 유지합니다.
 
 ```ini
 [tox]
-envlist = lint, py310, py311, py312, py313
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
 skip_missing_interpreters = true
 ```
 
@@ -297,6 +336,9 @@ tox -e py312
 
 # 린트 검사만 실행
 tox -e lint
+
+# 지정된 두 SQLAlchemy 타입 검사 환경 실행
+tox -e typecheck-sa20,typecheck-sa21
 ```
 
 ### CI 매트릭스
@@ -367,20 +409,11 @@ make test
 ### 검사 실행
 
 ```bash
-# 린트 검사
-ruff check sqlalchemy_cubrid/ test/
-
-# 린트 문제 자동 수정
-ruff check --fix sqlalchemy_cubrid/ test/
-
-# 포맷 검사
-ruff format --check sqlalchemy_cubrid/ test/
-
-# 포맷 적용
-ruff format sqlalchemy_cubrid/ test/
-
-# make로 전체 검사
+# 도구 일관성과 유지보수 대상 Python 소스 전체의 린트/포맷 검사
 make lint
+
+# 같은 공통 소스 경로에 수정과 포맷 적용
+make format
 ```
 
 ---
@@ -388,6 +421,27 @@ make lint
 ## Pre-Commit 훅
 
 Pre-commit 훅은 `git commit` 시 린트와 포맷 검사를 자동 실행합니다.
+
+Ruff/mypy 버전의 기준은 `pyproject.toml`의 개발 의존성 핀입니다. 격리된 mypy 훅은
+조건부 핀으로 Python 3.10에서 SQLAlchemy 2.0.53을, Python 3.11+에서 SQLAlchemy
+2.1.1(최소 Python 3.11)을 설치합니다. 비동기 extra와 기존 Alembic 지원 범위도
+포함한 뒤 프로젝트의 엄격한 설정으로 `sqlalchemy_cubrid/`를 검사합니다. 스텁을 자동
+설치하거나 누락된
+임포트를 무시하지 않습니다. Ruff의 명시적 `include = ["*.py", "*.pyi"]`와 동일한
+훅 타입 설정으로 CLI, CI, 훅 모두 Python 소스를 다루며 문서의 코드 스니펫을 다시
+작성하지 않습니다.
+
+Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모, 샘플,
+`docs/source`의 Python 설정을 포함합니다. CI와 tox는 `make lint`를 실행하고,
+훅은 계속 모든 추적된 Python/pyi 파일을 검사합니다. 일관성 검사는 유지보수 대상
+디렉터리 누락이나 공통 타깃을 우회하는 실행 설정을 거부합니다.
+
+도구 핀을 바꿀 때는 같은 변경에서 pre-commit 리비전과 tox 핀도 갱신하세요. 필요한
+경우 CI의 mypy 핀도 갱신합니다. `scripts/check_tool_versions.py`는 SQLAlchemy 타입
+검사 조합을 CI에서 읽습니다. 갱신 후 `make check-tool-versions`,
+`pre-commit run --all-files`, `tox -e lint,typecheck-sa20,typecheck-sa21`을 실행하세요.
+일관성 검사는 CI 린트, tox 린트, 로컬 pre-commit 훅에서 실행되므로 의존성만 갱신한
+변경이 오래된 핀을 조용히 남길 수 없습니다.
 
 ### 설정
 

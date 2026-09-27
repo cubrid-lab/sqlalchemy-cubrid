@@ -183,6 +183,10 @@ class CubridImpl(DefaultImpl):
 
 ## 한계와 회피
 
+Alembic으로 UNIQUE 인덱스를 만들 때는 CUBRID의 FK 자동 인덱스 충돌을 확인하기 위해
+라이브 연결이 필요합니다. 연결이 없으면 검증을 건너뛰지 않고 라이브 연결 요구사항을
+설명하는 `CompileError`를 발생시킵니다. 비고유 인덱스 생성에는 영향이 없습니다.
+
 ### ✅ ALTER COLUMN TYPE (네이티브)
 
 CUBRID는 `MODIFY`를 통해 컬럼의 데이터 타입을 제자리에서 변경하는 것을 지원합니다:

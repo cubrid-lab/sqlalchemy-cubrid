@@ -11,6 +11,9 @@ import pytest
 import pytest_asyncio
 from sqlalchemy import Column, Integer, MetaData, String, Table, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.engine import URL
+
+from scripts.integration_urls import async_url
 
 _DEFAULT_SYNC_URL = "cubrid://dba@localhost:33000/testdb"
 
@@ -23,9 +26,9 @@ class SupportsPing(Protocol):
     def ping(self, reconnect: bool = True) -> bool: ...
 
 
-def _async_url() -> str:
+def _async_url() -> URL:
     sync = os.environ.get("CUBRID_TEST_URL", _DEFAULT_SYNC_URL)
-    return sync.replace("cubrid://", "cubrid+aiopycubrid://", 1)
+    return async_url(sync, os.environ.get("CUBRID_TEST_AURL"))
 
 
 def _can_connect_async() -> bool:

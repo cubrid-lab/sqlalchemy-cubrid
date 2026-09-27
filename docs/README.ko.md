@@ -69,11 +69,15 @@ flowchart TD
 pip install sqlalchemy-cubrid
 ```
 
-순수 Python 드라이버 사용 시(C 빌드 불필요):
+순수 Python 드라이버 사용 시(동기 및 비동기):
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+`[pycubrid]` extra는 `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`를 모두 지원하며,
+SQLAlchemy의 `asyncio` extra(`greenlet`)를 포함합니다. 호환 wheel이 없으면
+`greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 
 Alembic 지원 포함:
 
@@ -194,7 +198,7 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 ```
 
-순수 Python 드라이버(C 빌드 불필요)를 쓰려면: `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
+순수 Python 드라이버(CUBRID 네이티브 라이브러리 불필요)를 쓰려면: `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`. `[pycubrid]` extra의 `greenlet`은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다.
 
 ### sqlalchemy-cubrid는 SQLAlchemy 2.0–2.1을 지원하나요?
 
@@ -221,7 +225,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### `cubrid://`와 `cubrid+pycubrid://`의 차이는 무엇인가요?
 
-`cubrid://`는 컴파일이 필요한 C 확장 드라이버(CUBRIDdb)를 사용합니다. `cubrid+pycubrid://`는 pip만으로 설치되는 순수 Python 드라이버를 사용하므로 빌드 도구가 필요 없습니다. `cubrid+aiopycubrid://`는 `create_async_engine` 및 `AsyncSession`과 함께 사용하는 순수 Python 드라이버의 비동기 변형입니다.
+`cubrid://`는 컴파일이 필요한 C 확장 드라이버(CUBRIDdb)를 사용합니다. `cubrid+pycubrid://`는 CUBRID 네이티브 라이브러리가 필요 없는 순수 Python 드라이버를 사용합니다. `[pycubrid]` extra는 `greenlet`을 포함하므로 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid+aiopycubrid://`는 `create_async_engine` 및 `AsyncSession`과 함께 사용하는 순수 Python 드라이버의 비동기 변형입니다.
 
 ### sqlalchemy-cubrid는 async를 지원하나요?
 

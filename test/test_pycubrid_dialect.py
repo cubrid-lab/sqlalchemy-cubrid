@@ -175,16 +175,20 @@ class TestPyCubridExecutionContext:
         mock_cursor = MagicMock()
         mock_cursor.lastrowid = 42
         ctx.cursor = mock_cursor
+        ctx._dbapi_connection = MagicMock()
 
         assert ctx.get_lastrowid() == 42
+        ctx._dbapi_connection.cursor.assert_not_called()
 
     def test_get_lastrowid_none(self):
         ctx = PyCubridExecutionContext.__new__(PyCubridExecutionContext)
         mock_cursor = MagicMock()
         mock_cursor.lastrowid = None
         ctx.cursor = mock_cursor
+        ctx._dbapi_connection = MagicMock()
 
         assert ctx.get_lastrowid() is None
+        ctx._dbapi_connection.cursor.assert_not_called()
 
     def test_get_lastrowid_fallback_on_attribute_error(self):
         ctx = PyCubridExecutionContext.__new__(PyCubridExecutionContext)
@@ -192,8 +196,9 @@ class TestPyCubridExecutionContext:
         ctx.cursor = cast(Any, object())
 
         mock_server_cursor = MagicMock()
-        mock_server_cursor.fetchone.return_value = (99,)
-        ctx.create_server_side_cursor = MagicMock(return_value=mock_server_cursor)
+        mock_server_cursor.fetchone.return_value = ("99",)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = mock_server_cursor
 
         result = ctx.get_lastrowid()
 
@@ -207,7 +212,8 @@ class TestPyCubridExecutionContext:
 
         mock_server_cursor = MagicMock()
         mock_server_cursor.fetchone.return_value = None
-        ctx.create_server_side_cursor = MagicMock(return_value=mock_server_cursor)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = mock_server_cursor
 
         result = ctx.get_lastrowid()
 

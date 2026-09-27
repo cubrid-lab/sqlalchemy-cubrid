@@ -267,12 +267,15 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 ### Recommended: Pure Python Driver (pycubrid)
 
 For new projects, use the pure-Python [pycubrid](https://github.com/cubrid-lab/pycubrid)
-driver — it installs with pip alone, needs no C build toolchain, and works anywhere
-Python runs:
+driver. It requires no CUBRID native libraries. Install the recommended extra:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+This extra supports both sync and async pycubrid URLs and includes
+SQLAlchemy's `asyncio` dependencies (`greenlet`). The driver itself is pure Python;
+`greenlet` may require build tools when no compatible wheel is available.
 
 Or install separately:
 
@@ -286,8 +289,9 @@ Then use the `cubrid+pycubrid://` URL scheme:
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
-> **Tip**: `pycubrid` is a pure Python implementation — it works anywhere Python runs,
-> with no native library dependencies. See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
+> **Tip**: The `pycubrid` driver itself is pure Python and requires no native libraries.
+> The `[pycubrid]` extra also installs `greenlet`, which may need build tools.
+> See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 
 ### Legacy: C-extension Driver (CUBRID-Python)
 
@@ -358,15 +362,18 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid://`          | CUBRIDdb    | Default legacy C-extension driver    |
 | `cubrid+cubrid://`   | CUBRIDdb    | Explicit legacy C-extension driver   |
 | `cubrid+cubriddb://` | CUBRIDdb    | Explicit legacy C-extension driver   |
-| `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no C build)      |
+| `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python, easiest installation, no native build step). The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver; to select it explicitly use `cubrid+cubriddb://` with the `[cubriddb]` install extra.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver; to select it explicitly use `cubrid+cubriddb://` with the `[cubriddb]` install extra.
 ---
 
 ## Async Connection
 
 For async applications, use the `cubrid+aiopycubrid://` URL scheme with `create_async_engine`. Requires `pycubrid>=1.3.2,<2.0`.
+
+Install `sqlalchemy-cubrid[pycubrid]` to include the driver and SQLAlchemy's async
+bridge. If installing the packages separately, also install `SQLAlchemy[asyncio]`.
 
 ```python
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -2814,6 +2821,11 @@ The implementation inherits all standard Alembic operations from `DefaultImpl`:
 
 ## Limitations & Workarounds
 
+Creating a UNIQUE index through Alembic requires a live connection so the dialect
+can inspect CUBRID's FK auto-indexes and detect collisions. Without a connection,
+the guard raises `CompileError` with a live-connection requirement; it does not
+silently skip validation. Non-unique index generation is unaffected.
+
 ### ✅ ALTER COLUMN TYPE (native)
 
 CUBRID supports changing a column's data type in place via `MODIFY`:
@@ -4400,7 +4412,7 @@ Then change your connection URL:
 # Before (C-extension)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
-# After (pure Python — no C build needed)
+# After (pure Python driver — no CUBRID native libraries)
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
@@ -4433,7 +4445,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 - Missing CUBRID CCI headers
 - Incompatible platform
 
-**Fix:** Use pycubrid instead — it's pure Python and requires no build tools:
+**Fix:** Use the pure-Python pycubrid driver instead; it requires no CUBRID native libraries. The `[pycubrid]` extra also installs `greenlet`, which may need build tools if no compatible wheel is available:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
@@ -5771,6 +5783,8 @@ All common development tasks are available via `make`:
 make help          # Show all available targets
 make install       # Install in dev mode with all dependencies
 make lint          # Run ruff linter + format checks
+make check-tool-versions # Verify local/CI tool pins and type-check cells agree
+make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
 make test          # Run offline tests with coverage (95% threshold)
 make test-all      # Run tox across all Python versions
@@ -5784,7 +5798,27 @@ make clean         # Remove build artifacts and caches
 
 ## Running Tests
 
+### Strict Type Checking
+
+Run `make typecheck` in the development environment. It reports Python,
+SQLAlchemy, Alembic and mypy versions, then runs
+`python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`.
+The mypy version is pinned to `2.3.1` in the dev dependencies.
+
+CI runs the same Makefile target in two cells: Python 3.10 / SQLAlchemy 2.0.53
+and Python 3.13 / SQLAlchemy 2.1.1. Both cells are blocking: the required
+`matrix-result` check fails if the type-check job fails, is cancelled or is
+skipped. Ruff and the existing offline tests with 95% minimum coverage also
+remain required. To choose a virtualenv interpreter locally, use
+`make typecheck PYTHON=/path/to/venv/bin/python`.
+
 ### Offline Tests (No Database Required)
+
+Async adapter fixtures in synchronous unit tests consume their actual coroutine
+entry through the await bridge and assert that it was awaited. Patch both the
+connection bridge (SQLAlchemy 2.0) and module bridge (2.1) when applicable; a
+mock that simply returns a cursor can hide an invalid adapter and leak an
+unawaited coroutine into pytest's garbage-collection checks.
 
 The majority of the test suite runs without a live CUBRID instance:
 
@@ -5840,9 +5874,12 @@ docker compose up -d
 docker compose logs -f cubrid
 
 # Set the connection URL
-export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
 
-# Run integration tests
+# Run the regular tox profile (installs the existing pure-driver extra)
+tox -e integration
+
+# Run a focused sync file in an environment with pycubrid installed
 pytest test/test_integration.py -v
 
 # Run async integration tests
@@ -5851,6 +5888,16 @@ pytest test/test_aio_integration.py -v
 # Stop the container
 docker compose down -v
 ```
+
+The regular tox profile requires an explicit `cubrid+pycubrid` URL. It rejects
+missing URLs and legacy C-extension schemes, then probes both sync and derived
+async connections with bounded `SELECT 1` requests before pytest. Async suites
+derive `cubrid+aiopycubrid` with SQLAlchemy's URL API, retaining credentials,
+ports and query options; `CUBRID_TEST_AURL` remains an explicit async override.
+Failures do not print URL credentials. Without the optional native C-extension,
+the four existing driver-differential comparisons are intentionally skipped;
+that profile does not claim to test CUBRIDdb. Formal CI's native-driver
+`--dburi` route remains separate and unchanged.
 
 ### Full SA Test Suite
 
@@ -5917,11 +5964,19 @@ make integration
 
 ### tox Configuration
 
-The `tox.ini` defines local environments for Python 3.10–3.13. GitHub Actions also runs the offline suite on Python 3.14.
+The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinned
+Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
+run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
+the existing pycubrid/Alembic extras and development test dependencies. Offline
+selection is `-m "not integration"`; the integration environment selects
+`-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
+compliance suite requires the testing plugin enabled by `--dburi`; existing CI
+runs it separately with that argument and its known-failure baseline. Regular
+tox integration does not run the formal suite. The offline threshold remains 95%.
 
 ```ini
 [tox]
-envlist = lint, py310, py311, py312, py313
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
 skip_missing_interpreters = true
 ```
 
@@ -5939,6 +5994,9 @@ tox -e py312
 
 # Run lint checks only
 tox -e lint
+
+# Check both designated SQLAlchemy typing environments
+tox -e typecheck-sa20,typecheck-sa21
 ```
 
 ### CI Matrix
@@ -6011,20 +6069,11 @@ formatting.
 ### Running Checks
 
 ```bash
-# Lint check
-ruff check sqlalchemy_cubrid/ test/
-
-# Auto-fix lint issues
-ruff check --fix sqlalchemy_cubrid/ test/
-
-# Format check
-ruff format --check sqlalchemy_cubrid/ test/
-
-# Apply formatting
-ruff format sqlalchemy_cubrid/ test/
-
-# All checks via make
+# Check tooling consistency and lint/format all maintained Python sources
 make lint
+
+# Apply fixes and formatting over the same shared source paths
+make format
 ```
 
 ---
@@ -6032,6 +6081,29 @@ make lint
 ## Pre-Commit Hooks
 
 Pre-commit hooks run lint and format checks automatically on `git commit`.
+
+Ruff/mypy versions are single-sourced from the dev pins in `pyproject.toml`.
+The isolated mypy hook follows interpreter compatibility: Python 3.10 installs
+SQLAlchemy 2.0.53, and Python 3.11+ installs SQLAlchemy 2.1.1 (which requires
+Python 3.11+), using exact conditional dependencies for the async extra. It also
+installs the existing Alembic supported range, then checks `sqlalchemy_cubrid/`
+with the project's strict configuration. It does not install stubs automatically or
+suppress missing imports. Ruff's explicit `include = ["*.py", "*.pyi"]` and
+the matching hook types keep CLI, CI and hooks on Python sources rather than
+rewriting documentation snippets.
+
+The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
+demos, samples and `docs/source` Python configuration. CI and tox invoke
+`make lint`; the hooks keep checking all tracked Python/pyi files. The drift
+checker rejects omitted maintained directories or a runner that bypasses this
+shared target.
+
+When updating a tool pin, update its pre-commit revision and tox pin in the same
+change; update the CI mypy pin when applicable. SQLAlchemy type-check pairs are
+read from CI by `scripts/check_tool_versions.py`. Run `make check-tool-versions`,
+`pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21` after
+the update. The consistency check runs through CI lint, tox lint and a local
+pre-commit hook, so a dependency-only update cannot silently leave old pins.
 
 ### Setup
 
@@ -6221,6 +6293,12 @@ The standard DB-API `cursor.lastrowid` attribute is not implemented. The dialect
 uses `connection.get_last_insert_id()` instead, with a `SELECT LAST_INSERT_ID()`
 SQL fallback.
 
+The fallback opens a regular cursor on the active DBAPI connection and closes it
+after fetching the ID, including when execution, fetching, or integer conversion
+raises. It does not require server-side cursor support. The pycubrid execution
+context uses the same fallback when `cursor.lastrowid` is unavailable. A native
+driver result of `None` is returned directly without running the fallback query.
+
 ### 4. CUBRID 12.x Compatibility
 
 CUBRID 12 has not yet been released. When available, the driver and dialect will be
@@ -6247,6 +6325,12 @@ recommended driver for new projects.
 ## Installation Notes
 
 For the pure Python pycubrid dialect variants, install `sqlalchemy-cubrid[pycubrid]` with `pycubrid>=1.3.2,<2.0`. That minimum version is required for native sync and async `ping(False)` support used by `pool_pre_ping`.
+
+The `[pycubrid]` extra supports both sync and async connections. It includes
+`SQLAlchemy[asyncio]`, which supplies `greenlet` on SQLAlchemy 2.0 and 2.1. The
+`[dev]` extra also includes this bridge for async test imports. Bare installation
+keeps its existing SQLAlchemy dependency. The pycubrid driver remains pure Python,
+but `greenlet` may require build tools when no compatible wheel is available.
 
 ### From Source (Required for CI)
 

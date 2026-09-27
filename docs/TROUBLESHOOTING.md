@@ -101,7 +101,7 @@ Then change your connection URL:
 # Before (C-extension)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
-# After (pure Python — no C build needed)
+# After (pure Python driver — no CUBRID native libraries)
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
@@ -134,7 +134,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 - Missing CUBRID CCI headers
 - Incompatible platform
 
-**Fix:** Use pycubrid instead — it's pure Python and requires no build tools:
+**Fix:** Use the pure-Python pycubrid driver instead; it requires no CUBRID native libraries. The `[pycubrid]` extra also installs `greenlet`, which may need build tools if no compatible wheel is available:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
