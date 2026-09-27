@@ -214,11 +214,31 @@ jobs:
       - name: Install project
         run: pip install -e ".[dev]"
       - name: Run mutmut on compiler.py
+        # Configuration lives in setup.cfg [mutmut] (mutmut 3). A crashed run,
+        # a failing clean test run, or zero generated mutants fails this step;
+        # surviving mutants only lower the reported score (the job stays
+        # continue-on-error, so it never blocks the workflow).
         run: |
-          env -u CUBRID_TEST_URL mutmut run --paths-to-mutate sqlalchemy_cubrid/compiler.py || true
-          echo "::group::Mutation results"
-          env -u CUBRID_TEST_URL mutmut results || true
+          set -euo pipefail
+          env -u CUBRID_TEST_URL mutmut run
+          echo "::group::Mutation results (non-killed mutants)"
+          env -u CUBRID_TEST_URL mutmut results
           echo "::endgroup::"
-          killed=$(env -u CUBRID_TEST_URL mutmut result-ids killed 2>/dev/null | wc -w)
-          total=$(for b in killed survived timeout suspicious skipped; do env -u CUBRID_TEST_URL mutmut result-ids "$b" 2>/dev/null | wc -w; done | paste -sd+ | bc)
-          echo "Mutation score: ${killed}/${total}"
+          env -u CUBRID_TEST_URL mutmut export-cicd-stats
+          python - <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          path = Path("mutants/mutmut-cicd-stats.json")
+          if not path.is_file():
+              sys.exit("::error::mutmut produced no mutation data (mutants/mutmut-cicd-stats.json missing)")
+          stats = json.loads(path.read_text())
+          print(json.dumps(stats, indent=2))
+          total, killed = stats["total"], stats["killed"]
+          if total == 0:
+              sys.exit("::error::mutmut generated zero mutants for compiler.py")
+          if killed == 0:
+              sys.exit("::error::mutmut killed zero mutants; the test harness is likely broken")
+          print(f"Mutation score: {killed}/{total} ({100 * killed / total:.1f}%)")
+          PY
