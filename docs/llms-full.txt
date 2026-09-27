@@ -5893,7 +5893,7 @@ async connections with bounded `SELECT 1` requests before pytest. Async suites
 derive `cubrid+aiopycubrid` with SQLAlchemy's URL API, retaining credentials,
 ports and query options; `CUBRID_TEST_AURL` remains an explicit async override.
 Failures do not print URL credentials. Without the optional native C-extension,
-the four existing driver-differential comparisons are intentionally skipped;
+the driver-differential comparisons are intentionally skipped;
 that profile does not claim to test CUBRIDdb. Formal CI's native-driver
 `--dburi` route remains separate and unchanged.
 
@@ -6134,6 +6134,44 @@ pre-commit run --all-files
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
 3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage
 4. **Coverage** — Enforces ≥ 95% threshold
+
+### Driver-differential lane
+
+`test/test_driver_differential.py` runs the same SQLAlchemy operations on
+pycubrid and the CUBRIDdb C-extension and asserts they agree. It covers basic
+CRUD plus the DB-API contract areas that already work on the released drivers:
+Core `executemany` with integer, UTF-8/CJK and NULL values, textual
+`executemany` with integer and UTF-8/CJK values, scalar binds, textual-SQL
+result column names, and commit/rollback visibility. Areas still blocked
+upstream are tracked separately (#480–#484); LOB values are covered by #485.
+
+The integration jobs in `ci.yml` and `integration-full.yml` run this module
+with both drivers installed and `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`. With
+that variable set, `test/conftest.py` fails the session when no differential
+case ran and passed, so a lane where both drivers fail to connect cannot
+report success. Before the tests, `python -m scripts.report_driver_versions`
+writes the exact Python, SQLAlchemy, pycubrid, CUBRIDdb (package version and
+source tag) and CUBRID server versions to the job log and the GitHub step
+summary. Local runs without the variable keep skipping cleanly when a driver
+or the database is unavailable:
+
+```bash
+export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
+CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
+```
+
+### pycubrid release-candidate adoption
+
+The weekly `upstream-canary.yml` run against `pycubrid@main` stays
+non-blocking: it warns about upcoming regressions, but an unreleased upstream
+HEAD must not block unrelated pull requests. The dependency bound
+`pycubrid>=1.3.2,<2.0` is widened only after a **specific** pycubrid release
+candidate (or new major release), installed by exact version, passes the
+downstream contract suite: the regular and async integration tests, the
+required driver-differential lane above, and the SQLAlchemy compliance suite.
+Record the versions reported by `scripts/report_driver_versions.py` in the
+adoption pull request, and update `CHANGELOG.md` and the support documentation
+with the newly supported range in the same change.
 
 ### Documentation gates
 
