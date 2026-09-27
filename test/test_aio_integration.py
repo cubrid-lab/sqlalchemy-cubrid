@@ -470,6 +470,47 @@ def _async_lob_model(kind: str) -> type[_AsyncLobBase]:
     return _AsyncCharLobDocument
 
 
+# PEP 249 module-level names; kept in sync with the offline copy in
+# test_aio_pycubrid_dialect.py. This live lane installs the released pycubrid,
+# so the parity check runs against the real driver here (#500).
+_PEP249_NAMES = (
+    "apilevel",
+    "threadsafety",
+    "paramstyle",
+    "Warning",
+    "Error",
+    "InterfaceError",
+    "DatabaseError",
+    "DataError",
+    "OperationalError",
+    "IntegrityError",
+    "InternalError",
+    "ProgrammingError",
+    "NotSupportedError",
+    "Date",
+    "Time",
+    "Timestamp",
+    "DateFromTicks",
+    "TimeFromTicks",
+    "TimestampFromTicks",
+    "Binary",
+    "STRING",
+    "BINARY",
+    "NUMBER",
+    "DATETIME",
+    "ROWID",
+)
+
+
+@pytest.mark.parametrize("name", _PEP249_NAMES)
+def test_adapter_exposes_every_pycubrid_pep249_name(engine: AsyncEngine, name: str):
+    pycubrid = pytest.importorskip("pycubrid")
+    if not hasattr(pycubrid, name):
+        pytest.skip(f"pycubrid {pycubrid.__version__} does not define {name}")
+    dbapi = cast(object, engine.dialect.dbapi)
+    assert getattr(dbapi, name) is getattr(pycubrid, name)
+
+
 class TestAsyncLobValueContract:
     @pytest_asyncio.fixture(autouse=True)
     async def _lob_table(self, engine: AsyncEngine) -> AsyncIterator[None]:
