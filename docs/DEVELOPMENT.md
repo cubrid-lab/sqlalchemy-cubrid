@@ -135,6 +135,8 @@ All common development tasks are available via `make`:
 make help          # Show all available targets
 make install       # Install in dev mode with all dependencies
 make lint          # Run ruff linter + format checks
+make check-tool-versions # Verify local/CI tool pins and type-check cells agree
+make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
 make test          # Run offline tests with coverage (95% threshold)
 make test-all      # Run tox across all Python versions
@@ -148,7 +150,27 @@ make clean         # Remove build artifacts and caches
 
 ## Running Tests
 
+### Strict Type Checking
+
+Run `make typecheck` in the development environment. It reports Python,
+SQLAlchemy, Alembic and mypy versions, then runs
+`python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`.
+The mypy version is pinned to `2.3.1` in the dev dependencies.
+
+CI runs the same Makefile target in two cells: Python 3.10 / SQLAlchemy 2.0.53
+and Python 3.13 / SQLAlchemy 2.1.1. Both cells are blocking: the required
+`matrix-result` check fails if the type-check job fails, is cancelled or is
+skipped. Ruff and the existing offline tests with 95% minimum coverage also
+remain required. To choose a virtualenv interpreter locally, use
+`make typecheck PYTHON=/path/to/venv/bin/python`.
+
 ### Offline Tests (No Database Required)
+
+Async adapter fixtures in synchronous unit tests consume their actual coroutine
+entry through the await bridge and assert that it was awaited. Patch both the
+connection bridge (SQLAlchemy 2.0) and module bridge (2.1) when applicable; a
+mock that simply returns a cursor can hide an invalid adapter and leak an
+unawaited coroutine into pytest's garbage-collection checks.
 
 The majority of the test suite runs without a live CUBRID instance:
 
@@ -204,9 +226,12 @@ docker compose up -d
 docker compose logs -f cubrid
 
 # Set the connection URL
-export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
 
-# Run integration tests
+# Run the regular tox profile (installs the existing pure-driver extra)
+tox -e integration
+
+# Run a focused sync file in an environment with pycubrid installed
 pytest test/test_integration.py -v
 
 # Run async integration tests
@@ -215,6 +240,16 @@ pytest test/test_aio_integration.py -v
 # Stop the container
 docker compose down -v
 ```
+
+The regular tox profile requires an explicit `cubrid+pycubrid` URL. It rejects
+missing URLs and legacy C-extension schemes, then probes both sync and derived
+async connections with bounded `SELECT 1` requests before pytest. Async suites
+derive `cubrid+aiopycubrid` with SQLAlchemy's URL API, retaining credentials,
+ports and query options; `CUBRID_TEST_AURL` remains an explicit async override.
+Failures do not print URL credentials. Without the optional native C-extension,
+the four existing driver-differential comparisons are intentionally skipped;
+that profile does not claim to test CUBRIDdb. Formal CI's native-driver
+`--dburi` route remains separate and unchanged.
 
 ### Full SA Test Suite
 
@@ -281,11 +316,19 @@ make integration
 
 ### tox Configuration
 
-The `tox.ini` defines local environments for Python 3.10–3.13. GitHub Actions also runs the offline suite on Python 3.14.
+The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinned
+Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
+run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
+the existing pycubrid/Alembic extras and development test dependencies. Offline
+selection is `-m "not integration"`; the integration environment selects
+`-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
+compliance suite requires the testing plugin enabled by `--dburi`; existing CI
+runs it separately with that argument and its known-failure baseline. Regular
+tox integration does not run the formal suite. The offline threshold remains 95%.
 
 ```ini
 [tox]
-envlist = lint, py310, py311, py312, py313
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
 skip_missing_interpreters = true
 ```
 
@@ -303,6 +346,9 @@ tox -e py312
 
 # Run lint checks only
 tox -e lint
+
+# Check both designated SQLAlchemy typing environments
+tox -e typecheck-sa20,typecheck-sa21
 ```
 
 ### CI Matrix
@@ -375,20 +421,11 @@ formatting.
 ### Running Checks
 
 ```bash
-# Lint check
-ruff check sqlalchemy_cubrid/ test/
-
-# Auto-fix lint issues
-ruff check --fix sqlalchemy_cubrid/ test/
-
-# Format check
-ruff format --check sqlalchemy_cubrid/ test/
-
-# Apply formatting
-ruff format sqlalchemy_cubrid/ test/
-
-# All checks via make
+# Check tooling consistency and lint/format all maintained Python sources
 make lint
+
+# Apply fixes and formatting over the same shared source paths
+make format
 ```
 
 ---
@@ -396,6 +433,29 @@ make lint
 ## Pre-Commit Hooks
 
 Pre-commit hooks run lint and format checks automatically on `git commit`.
+
+Ruff/mypy versions are single-sourced from the dev pins in `pyproject.toml`.
+The isolated mypy hook follows interpreter compatibility: Python 3.10 installs
+SQLAlchemy 2.0.53, and Python 3.11+ installs SQLAlchemy 2.1.1 (which requires
+Python 3.11+), using exact conditional dependencies for the async extra. It also
+installs the existing Alembic supported range, then checks `sqlalchemy_cubrid/`
+with the project's strict configuration. It does not install stubs automatically or
+suppress missing imports. Ruff's explicit `include = ["*.py", "*.pyi"]` and
+the matching hook types keep CLI, CI and hooks on Python sources rather than
+rewriting documentation snippets.
+
+The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
+demos, samples and `docs/source` Python configuration. CI and tox invoke
+`make lint`; the hooks keep checking all tracked Python/pyi files. The drift
+checker rejects omitted maintained directories or a runner that bypasses this
+shared target.
+
+When updating a tool pin, update its pre-commit revision and tox pin in the same
+change; update the CI mypy pin when applicable. SQLAlchemy type-check pairs are
+read from CI by `scripts/check_tool_versions.py`. Run `make check-tool-versions`,
+`pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21` after
+the update. The consistency check runs through CI lint, tox lint and a local
+pre-commit hook, so a dependency-only update cannot silently leave old pins.
 
 ### Setup
 
@@ -428,6 +488,16 @@ pre-commit run --all-files
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
 3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage
 4. **Coverage** — Enforces ≥ 95% threshold
+
+### Documentation gates
+
+Documentation exceptions use a populated standalone physical source line
+`Docs: not needed - <reason>` outside code, quotes or template comments, or the existing maintainer-managed
+label. `make check-docs-reason` runs executable doctests and real event-JSON/workflow
+regressions; `make check-all` and the docs-sync job run those same checks.
+Translation help requests do not authorize a bypass: maintainers explicitly
+approve the existing `translations-deferred` label and record follow-up. The
+Korean-required and other-language advisory translation checks are unchanged.
 
 ### Publish Pipeline
 

@@ -144,6 +144,12 @@ The standard DB-API `cursor.lastrowid` attribute is not implemented. The dialect
 uses `connection.get_last_insert_id()` instead, with a `SELECT LAST_INSERT_ID()`
 SQL fallback.
 
+The fallback opens a regular cursor on the active DBAPI connection and closes it
+after fetching the ID, including when execution, fetching, or integer conversion
+raises. It does not require server-side cursor support. The pycubrid execution
+context uses the same fallback when `cursor.lastrowid` is unavailable. A native
+driver result of `None` is returned directly without running the fallback query.
+
 ### 4. CUBRID 12.x Compatibility
 
 CUBRID 12 has not yet been released. When available, the driver and dialect will be
@@ -170,6 +176,12 @@ recommended driver for new projects.
 ## Installation Notes
 
 For the pure Python pycubrid dialect variants, install `sqlalchemy-cubrid[pycubrid]` with `pycubrid>=1.3.2,<2.0`. That minimum version is required for native sync and async `ping(False)` support used by `pool_pre_ping`.
+
+The `[pycubrid]` extra supports both sync and async connections. It includes
+`SQLAlchemy[asyncio]`, which supplies `greenlet` on SQLAlchemy 2.0 and 2.1. The
+`[dev]` extra also includes this bridge for async test imports. Bare installation
+keeps its existing SQLAlchemy dependency. The pycubrid driver remains pure Python,
+but `greenlet` may require build tools when no compatible wheel is available.
 
 ### From Source (Required for CI)
 

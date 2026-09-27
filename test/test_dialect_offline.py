@@ -703,6 +703,8 @@ class TestReflectionMethods:
             "users",
             "orders",
         ]
+        statement = connection.execute.call_args[0][0]
+        assert "is_system_class = 'NO' ORDER BY class_name" in str(statement)
 
     def test_get_view_names(self):
         dialect = CubridDialect()
@@ -713,6 +715,8 @@ class TestReflectionMethods:
 
         views = _invoke_reflection(dialect, "get_view_names", connection)
         assert views == ["active_users", "recent_orders"]
+        statement = connection.execute.call_args[0][0]
+        assert "is_system_class = 'NO' ORDER BY class_name" in str(statement)
 
     def test_get_view_names_rejects_non_default_schema(self):
         dialect = CubridDialect()
@@ -1348,7 +1352,8 @@ class TestPostfetchLastRowId:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = (99,)
-        ctx.create_server_side_cursor = MagicMock(return_value=cursor)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = cursor
 
         assert ctx.get_lastrowid() == 99
         cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
@@ -1367,7 +1372,8 @@ class TestPostfetchLastRowId:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = None
-        ctx.create_server_side_cursor = MagicMock(return_value=cursor)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = cursor
 
         assert ctx.get_lastrowid() is None
 
@@ -1385,7 +1391,8 @@ class TestPostfetchLastRowId:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = (77,)
-        ctx.create_server_side_cursor = MagicMock(return_value=cursor)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = cursor
 
         assert ctx.get_lastrowid() == 77
 

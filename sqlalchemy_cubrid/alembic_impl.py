@@ -407,6 +407,10 @@ class CubridImpl(DefaultImpl):
 
         table = index.table
         if index.unique and table is not None and table.name:
+            if self.connection is None:
+                raise CompileError(
+                    "CUBRID UNIQUE index FK collision checks require a live connection"
+                )
             insp = sa_inspect(self.connection)
             fks = insp.get_foreign_keys(table.name, schema=getattr(table, "schema", None))
             idx_cols = tuple(c.name for c in index.columns)

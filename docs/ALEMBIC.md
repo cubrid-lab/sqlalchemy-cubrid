@@ -191,6 +191,11 @@ The implementation inherits all standard Alembic operations from `DefaultImpl`:
 
 ## Limitations & Workarounds
 
+Creating a UNIQUE index through Alembic requires a live connection so the dialect
+can inspect CUBRID's FK auto-indexes and detect collisions. Without a connection,
+the guard raises `CompileError` with a live-connection requirement; it does not
+silently skip validation. Non-unique index generation is unaffected.
+
 ### ✅ ALTER COLUMN TYPE (native)
 
 CUBRID supports changing a column's data type in place via `MODIFY`:

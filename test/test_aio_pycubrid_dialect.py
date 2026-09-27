@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import sys
 import types
 from typing import Any, cast
@@ -162,16 +163,18 @@ class TestAsyncAdaptPycubridConnection:
         # SA 2.0 routes through ``self.await_``; SA 2.1 calls the module-level
         # helper inside _aenter_cursor. Patch both so the test is version-agnostic.
         with (
-            patch.object(conn, "await_", side_effect=lambda x: mock_cursor),
+            patch.object(conn, "await_", side_effect=asyncio.run),
             patch(
                 "sqlalchemy.connectors.asyncio.await_",
-                side_effect=lambda x: mock_cursor,
+                side_effect=asyncio.run,
                 create=True,
             ),
         ):
             cur = conn.cursor()
 
         assert isinstance(cur, AsyncAdapt_pycubrid_cursor)
+        mock_cursor.__aenter__.assert_awaited_once()
+        assert cur._cursor is mock_cursor
 
     def test_ping_awaits_underlying_async_ping(self):
         mock_dbapi = MagicMock()
@@ -196,11 +199,14 @@ class TestAsyncAdaptPycubridCursor:
         mock_async_cursor.__aenter__ = AsyncMock(return_value=mock_async_cursor)
         mock_async_cursor.description = None
         mock_conn._connection.cursor.return_value = mock_async_cursor
-        mock_conn.await_ = lambda x: mock_async_cursor
+        mock_conn.await_ = asyncio.run
         mock_conn._execute_mutex = MagicMock()
 
-        cur = AsyncAdapt_pycubrid_cursor(mock_conn)
+        with patch("sqlalchemy.connectors.asyncio.await_", side_effect=asyncio.run, create=True):
+            cur = AsyncAdapt_pycubrid_cursor(mock_conn)
         cur.setinputsizes(10, 20)
+        mock_async_cursor.__aenter__.assert_awaited_once()
+        assert cur._cursor is mock_async_cursor
 
     def test_nextset_is_noop(self):
         mock_conn = MagicMock(spec=AsyncAdapt_pycubrid_connection)
@@ -208,11 +214,14 @@ class TestAsyncAdaptPycubridCursor:
         mock_async_cursor = MagicMock()
         mock_async_cursor.__aenter__ = AsyncMock(return_value=mock_async_cursor)
         mock_conn._connection.cursor.return_value = mock_async_cursor
-        mock_conn.await_ = lambda x: mock_async_cursor
+        mock_conn.await_ = asyncio.run
         mock_conn._execute_mutex = MagicMock()
 
-        cur = AsyncAdapt_pycubrid_cursor(mock_conn)
+        with patch("sqlalchemy.connectors.asyncio.await_", side_effect=asyncio.run, create=True):
+            cur = AsyncAdapt_pycubrid_cursor(mock_conn)
         cur.nextset()
+        mock_async_cursor.__aenter__.assert_awaited_once()
+        assert cur._cursor is mock_async_cursor
 
 
 class TestPyCubridAsyncDialectDoPing:

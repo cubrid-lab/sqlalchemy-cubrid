@@ -103,7 +103,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 # 이전 (C 확장)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
-# 이후 (순수 Python — C 빌드 불필요)
+# 이후 (순수 Python 드라이버 — CUBRID 네이티브 라이브러리 불필요)
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
@@ -136,7 +136,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 - CUBRID CCI 헤더 누락
 - 호환되지 않는 플랫폼
 
-**해결:** 대신 pycubrid를 사용하세요 — 순수 Python이라 빌드 도구가 필요 없습니다:
+**해결:** 대신 순수 Python pycubrid 드라이버를 사용하세요. CUBRID 네이티브 라이브러리가 필요 없습니다. `[pycubrid]` extra는 `greenlet`도 설치하므로 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"

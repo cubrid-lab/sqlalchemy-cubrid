@@ -70,11 +70,15 @@ flowchart TD
 pip install sqlalchemy-cubrid
 ```
 
-С драйвером на чистом Python (без C-сборки):
+С драйвером на чистом Python (синхронным и асинхронным):
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+Дополнение `[pycubrid]` поддерживает `cubrid+pycubrid://` и `cubrid+aiopycubrid://`
+и включает дополнение SQLAlchemy `asyncio` (`greenlet`). Если совместимый wheel
+недоступен, для установки `greenlet` могут потребоваться инструменты сборки.
 
 С поддержкой Alembic:
 
@@ -193,7 +197,7 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 ```
 
-Для драйвера на чистом Python (без C-сборки): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
+Для драйвера на чистом Python (без нативных библиотек CUBRID): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`. Зависимость `greenlet` в extra `[pycubrid]` может потребовать инструменты сборки, если совместимый wheel недоступен.
 
 ### Поддерживает ли sqlalchemy-cubrid SQLAlchemy 2.0–2.1?
 
@@ -220,7 +224,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### В чём разница между `cubrid://` и `cubrid+pycubrid://`?
 
-`cubrid://` использует драйвер C-расширения (CUBRIDdb), который требует компиляции. `cubrid+pycubrid://` использует драйвер на чистом Python, который устанавливается одним pip — без build tools. `cubrid+aiopycubrid://` использует асинхронный вариант драйвера на чистом Python для работы с `create_async_engine` и `AsyncSession`.
+`cubrid://` использует драйвер C-расширения (CUBRIDdb), который требует компиляции. `cubrid+pycubrid://` использует драйвер на чистом Python без нативных библиотек CUBRID. Extra `[pycubrid]` включает `greenlet`, для которого могут потребоваться инструменты сборки, если совместимый wheel недоступен. `cubrid+aiopycubrid://` использует асинхронный вариант драйвера на чистом Python для работы с `create_async_engine` и `AsyncSession`.
 
 ### Поддерживает ли sqlalchemy-cubrid async?
 

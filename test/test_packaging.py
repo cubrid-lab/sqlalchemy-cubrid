@@ -149,6 +149,17 @@ class TestEntryPoints:
 
 
 class TestDialectResolution:
+    def test_async_engine_creation_without_database(self):
+        import asyncio
+
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        pytest.importorskip("pycubrid")
+        engine = create_async_engine("cubrid+aiopycubrid://dba@localhost:33000/testdb")
+
+        assert engine.dialect.is_async
+        asyncio.run(engine.dispose())
+
     @pytest.mark.parametrize(
         ("url", "expected_module", "expected_class_name"),
         [

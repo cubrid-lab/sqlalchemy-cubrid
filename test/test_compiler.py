@@ -30,6 +30,22 @@ def _norm(sql: str) -> str:
     return " ".join(sql.split())
 
 
+@pytest.mark.parametrize("operation", ["insert", "update", "delete"])
+def test_dml_visitors_accept_framework_positional_arguments(operation):
+    dialect = CubridDialect()
+    compiler = dialect.statement_compiler(dialect, sa.select(sa.literal(1)))
+    if operation == "insert":
+        statement = sa.insert(users).values(id=1)
+        actual = compiler.visit_insert(statement, None, None, literal_binds=True)
+    elif operation == "update":
+        statement = sa.update(users).values(name="updated")
+        actual = compiler.visit_update(statement, None, literal_binds=True)
+    else:
+        statement = sa.delete(users)
+        actual = compiler.visit_delete(statement, None, literal_binds=True)
+    assert _norm(actual) == _norm(_compile(statement, dialect))
+
+
 metadata = MetaData()
 users = Table(
     "users",
@@ -690,6 +706,13 @@ class TestTypeCompilation:
 
         for cls in (TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ):
             assert cls.timezone is True, f"{cls.__name__}.timezone should be True"
+
+    @pytest.mark.parametrize("timezone", [False, True])
+    def test_tz_constructor_keyword_preserves_timezone(self, timezone):
+        from sqlalchemy_cubrid.types import TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ
+
+        for cls in (TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ):
+            assert cls(timezone=timezone).timezone is True
 
     def test_tz_types_reflection_mapping(self):
         """ischema_names maps TZ type strings to distinct classes."""

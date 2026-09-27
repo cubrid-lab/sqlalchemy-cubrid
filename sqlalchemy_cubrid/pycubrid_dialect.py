@@ -39,7 +39,7 @@ class PyCubridExecutionContext(CubridExecutionContext):
             pass
 
         # Fallback: use SQL function
-        cursor = self.create_server_side_cursor()
+        cursor = self._dbapi_connection.cursor()
         try:
             cursor.execute("SELECT LAST_INSERT_ID()")
             row = cursor.fetchone()

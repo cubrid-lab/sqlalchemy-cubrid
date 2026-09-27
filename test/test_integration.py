@@ -781,14 +781,15 @@ class TestBackslashLiteralRoundtrip:
 
         # Match the same value via literal_binds rendering (inline SQL literal).
         with engine.connect() as conn:
-            matched = conn.execute(
+            compiled = (
                 sa.select(users.c.name)
                 .where(users.c.name == value)
                 .compile(
                     dialect=engine.dialect,
                     compile_kwargs={"literal_binds": True},
                 )
-            ).scalar()
+            )
+            matched = conn.exec_driver_sql(str(compiled)).scalar()
         assert matched == value, f"literal_binds roundtrip corrupted: {matched!r}"
 
 

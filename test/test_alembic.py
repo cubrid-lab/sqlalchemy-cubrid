@@ -60,6 +60,18 @@ class _AutogenContext:
         self.imports: set[str] = set()
 
 
+def test_unique_index_requires_live_connection_for_fk_guard():
+    from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+    table = sa.Table("child", sa.MetaData(), sa.Column("parent_id", sa.Integer))
+    index = sa.Index("ux_child_parent", table.c.parent_id, unique=True)
+    impl = object.__new__(CubridImpl)
+    impl.connection = None
+
+    with pytest.raises(sa.exc.CompileError, match="live connection"):
+        impl.create_index(index)
+
+
 class _MockInspector:
     def __init__(self, bind, tables):
         self.bind = bind

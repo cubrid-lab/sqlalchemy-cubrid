@@ -361,7 +361,7 @@ class TIMESTAMPTZ(sqltypes.TIMESTAMP):
     __visit_name__ = "TIMESTAMPTZ"
     timezone = True
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: bool) -> None:
         kwargs.pop("timezone", None)  # Discard it if passed in kwargs
         super().__init__(timezone=True, **kwargs)
 
@@ -372,7 +372,7 @@ class TIMESTAMPLTZ(sqltypes.TIMESTAMP):
     __visit_name__ = "TIMESTAMPLTZ"
     timezone = True
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: bool) -> None:
         kwargs.pop("timezone", None)  # Discard it if passed in kwargs
         super().__init__(timezone=True, **kwargs)
 
@@ -383,7 +383,7 @@ class DATETIMETZ(sqltypes.DATETIME):
     __visit_name__ = "DATETIMETZ"
     timezone = True
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: bool) -> None:
         kwargs.pop("timezone", None)  # Discard it if passed in kwargs
         super().__init__(timezone=True, **kwargs)
 
@@ -394,7 +394,7 @@ class DATETIMELTZ(sqltypes.DATETIME):
     __visit_name__ = "DATETIMELTZ"
     timezone = True
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs: bool) -> None:
         kwargs.pop("timezone", None)  # Discard it if passed in kwargs
         super().__init__(timezone=True, **kwargs)
 

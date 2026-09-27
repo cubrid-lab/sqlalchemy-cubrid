@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol, cast
 
 from sqlalchemy.exc import CompileError
-from sqlalchemy.sql import compiler, elements, schema
+from sqlalchemy.schema import CreateIndex
+from sqlalchemy.sql import compiler, dml, elements, schema, selectable
 from sqlalchemy.sql import sqltypes
 
 from sqlalchemy_cubrid._compat import (
@@ -32,6 +33,38 @@ from sqlalchemy_cubrid._compat import (
 # rows of offset headroom before the sum overflows. Do NOT reuse the VARCHAR-
 # length 2^30-1: it is a string bound and silently caps rows (#414).
 _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT: int = 4611686018427387904
+
+
+class _BaseDMLCompiler(Protocol):
+    """Typed boundaries for base hooks unannotated in SQLAlchemy 2.0/2.1.
+
+    Named arguments match the installed framework signatures. ``kw`` remains
+    SQLAlchemy's open-ended compilation-option mapping.
+    """
+
+    def visit_insert(
+        self,
+        insert_stmt: dml.Insert,
+        visited_bindparam: list[str] | None = None,
+        visiting_cte: selectable.CTE | None = None,
+        **kw: Any,
+    ) -> str: ...
+
+    def visit_delete(
+        self, delete_stmt: dml.Delete, visiting_cte: selectable.CTE | None = None, **kw: Any
+    ) -> str: ...
+
+    def update_post_criteria_clause(self, update_stmt: dml.Update, **kw: Any) -> str | None: ...
+
+
+class _BaseDDLCompiler(Protocol):
+    def visit_create_index(
+        self,
+        create: CreateIndex,
+        include_schema: bool = False,
+        include_table_schema: bool = True,
+        **kw: Any,
+    ) -> str: ...
 
 
 class CubridCompiler(compiler.SQLCompiler):
@@ -151,7 +184,7 @@ class CubridCompiler(compiler.SQLCompiler):
         raise CompileError("CUBRID does not support LATERAL")
 
     @staticmethod
-    def _check_returning(stmt: Any, operation: str) -> None:
+    def _check_returning(stmt: dml.UpdateBase, operation: str) -> None:
         """Raise CompileError if RETURNING is requested (not supported by CUBRID).
 
         CUBRID does not support INSERT/UPDATE/DELETE ... RETURNING.
@@ -165,9 +198,17 @@ class CubridCompiler(compiler.SQLCompiler):
                 "result.inserted_primary_key (uses LAST_INSERT_ID() automatically)."
             )
 
-    def visit_insert(self, insert_stmt: Any, **kw: Any) -> Any:
+    def visit_insert(
+        self,
+        insert_stmt: dml.Insert,
+        visited_bindparam: list[str] | None = None,
+        visiting_cte: selectable.CTE | None = None,
+        **kw: Any,
+    ) -> str:
         self._check_returning(insert_stmt, "INSERT")
-        result = super().visit_insert(insert_stmt, **kw)
+        result = cast(_BaseDMLCompiler, super()).visit_insert(
+            insert_stmt, visited_bindparam, visiting_cte, **kw
+        )
         # SQLAlchemy's insertmanyvalues row-expansion miscounts parameters when a
         # target column's type wraps its bind in a bind_expression (e.g. a
         # TypeDecorator rendering CAST(? AS ...)), emitting more placeholders than
@@ -188,13 +229,17 @@ class CubridCompiler(compiler.SQLCompiler):
             for column in table.c
         )
 
-    def visit_update(self, update_stmt: Any, **kw: Any) -> Any:
+    def visit_update(
+        self, update_stmt: dml.Update, visiting_cte: selectable.CTE | None = None, **kw: Any
+    ) -> str:
         self._check_returning(update_stmt, "UPDATE")
-        return super().visit_update(update_stmt, **kw)
+        return super().visit_update(update_stmt, visiting_cte, **kw)
 
-    def visit_delete(self, delete_stmt: Any, **kw: Any) -> Any:
+    def visit_delete(
+        self, delete_stmt: dml.Delete, visiting_cte: selectable.CTE | None = None, **kw: Any
+    ) -> str:
         self._check_returning(delete_stmt, "DELETE")
-        return super().visit_delete(delete_stmt, **kw)
+        return cast(_BaseDMLCompiler, super()).visit_delete(delete_stmt, visiting_cte, **kw)
 
     def for_update_clause(self, select: Any, **kw: Any) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Render FOR UPDATE clause.
@@ -251,13 +296,13 @@ class CubridCompiler(compiler.SQLCompiler):
             return f"LIMIT {limit}"
         return None
 
-    def update_post_criteria_clause(self, update_stmt: Any, **kw: Any) -> str | None:
+    def update_post_criteria_clause(self, update_stmt: dml.Update, **kw: Any) -> str | None:
         # SA 2.1 replaced the dialect-level ``update_limit_clause`` hook with
         # ``update_post_criteria_clause``. SA 2.0 never calls this method, so
         # the override is harmless there.
         parts: list[str] = []
         try:
-            base = super().update_post_criteria_clause(update_stmt, **kw)
+            base = cast(_BaseDMLCompiler, super()).update_post_criteria_clause(update_stmt, **kw)
         except AttributeError:  # pragma: no cover — SA 2.0 base class lacks this hook
             base = None
         if base:
@@ -698,9 +743,9 @@ class CubridDDLCompiler(compiler.DDLCompiler):
             ),
         )
 
-    def visit_create_index(  # type: ignore[override]
+    def visit_create_index(
         self,
-        create: Any,
+        create: CreateIndex,
         include_schema: bool = False,
         include_table_schema: bool = True,
         **kw: Any,
@@ -727,7 +772,7 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         index = create.element
         table = index.table
 
-        if index.unique:
+        if index.unique and table is not None:
             idx_col_names = tuple(c.name for c in index.columns)
             for fk in table.foreign_key_constraints:
                 fk_col_names = tuple(c.parent.name for c in fk.elements)
@@ -748,7 +793,7 @@ class CubridDDLCompiler(compiler.DDLCompiler):
                         "that already have an FK auto-index (%s). %s" % (cols, hint)
                     )
 
-        return super().visit_create_index(
+        return cast(_BaseDDLCompiler, super()).visit_create_index(
             create,
             include_schema=include_schema,
             include_table_schema=include_table_schema,

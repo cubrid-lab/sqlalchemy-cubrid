@@ -157,6 +157,12 @@ CUBRID 12는 아직 출시되지 않았습니다. 출시되면 드라이버와 �
 
 순수 Python pycubrid 방언 변형은 `pycubrid>=1.3.2,<2.0`과 함께 `sqlalchemy-cubrid[pycubrid]`를 설치하세요. 그 최소 버전은 `pool_pre_ping`이 사용하는 네이티브 동기·비동기 `ping(False)` 지원에 필요합니다.
 
+`[pycubrid]` extra는 동기·비동기 연결을 모두 지원하며, SQLAlchemy 2.0과 2.1에서
+`greenlet`을 제공하는 `SQLAlchemy[asyncio]`를 포함합니다. `[dev]` extra도 비동기
+테스트 import를 위해 이 브리지를 포함합니다. 기본 설치의 SQLAlchemy 의존성은
+유지됩니다. pycubrid 드라이버 자체는 순수 Python이지만, 호환 wheel이 없으면
+`greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
+
 ### 소스에서 설치 (CI에 필요)
 
 ```bash

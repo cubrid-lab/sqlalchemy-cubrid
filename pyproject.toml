@@ -43,6 +43,7 @@ cubriddb = [
     "CUBRID-Python",
 ]
 dev = [
+    "sqlalchemy[asyncio]>=2.0,<2.3",
     "pytest>=7.0",
     "pytest-cov",
     "pytest-asyncio",
@@ -60,6 +61,7 @@ alembic = [
 ]
 pycubrid = [
     "pycubrid>=1.3.2,<2.0",
+    "sqlalchemy[asyncio]>=2.0,<2.3",
 ]
 
 [project.urls]
@@ -89,6 +91,7 @@ version = {attr = "sqlalchemy_cubrid.__version__"}
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+include = ["*.py", "*.pyi"]
 
 [tool.ruff.lint]
 # Pin the rule set explicitly instead of inheriting ruff's implicit defaults.

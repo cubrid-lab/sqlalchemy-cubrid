@@ -1,11 +1,13 @@
-.PHONY: help install lint format typecheck security check check-all test test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release
+.PHONY: help install lint format check-tool-versions check-docs-reason typecheck security check check-all test test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release
 
 PYTEST = python3 -m pytest
+PYTHON = python3
 RUFF = ruff
-MYPY = mypy
+MYPY = $(PYTHON) -m mypy
 BANDIT = bandit
 SRC = sqlalchemy_cubrid
 TESTS = test
+LINT_PATHS = $(SRC) $(TESTS) scripts demos samples docs/source
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -15,15 +17,19 @@ install: ## Install in development mode with all dependencies
 	pip install -e ".[dev]"
 	pre-commit install
 
-lint: ## Run linter and format checks
-	$(RUFF) check $(SRC)/ $(TESTS)/
-	$(RUFF) format --check $(SRC)/ $(TESTS)/
+check-tool-versions: ## Detect local and CI tool-version drift
+	$(PYTHON) scripts/check_tool_versions.py
+
+lint: check-tool-versions ## Run linter and format checks
+	$(RUFF) check $(LINT_PATHS)
+	$(RUFF) format --check $(LINT_PATHS)
 
 format: ## Auto-fix lint issues and format code
-	$(RUFF) check --fix $(SRC)/ $(TESTS)/
-	$(RUFF) format $(SRC)/ $(TESTS)/
+	$(RUFF) check --fix $(LINT_PATHS)
+	$(RUFF) format $(LINT_PATHS)
 
 typecheck: ## Run mypy type checking
+	$(PYTHON) -c 'import platform; from importlib.metadata import version; print("Python:", platform.python_version()); [print(name + ":", version(name)) for name in ("SQLAlchemy", "alembic", "mypy")]'
 	$(MYPY) $(SRC)/ --config-file=pyproject.toml
 
 security: ## Run security scans (bandit)
@@ -31,7 +37,11 @@ security: ## Run security scans (bandit)
 
 check: lint typecheck ## Run lint + typecheck
 
-check-all: check security ## Run lint + typecheck + security
+check-docs-reason: ## Check docs reasons and real event/workflow regressions
+	$(PYTHON) -m doctest scripts/check_docs_reason.py -v
+	$(PYTHON) -m unittest discover -s test -p 'test_docs_reason.py' -v
+
+check-all: check security check-docs-reason ## Run lint + typecheck + security + docs gate tests
 
 test: ## Run offline tests with coverage (no DB required)
 	$(PYTEST) $(TESTS)/ -v \

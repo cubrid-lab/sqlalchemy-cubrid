@@ -42,7 +42,7 @@ def bind_with_type(element: elements.BindParameter[Any], type_: Any) -> elements
     except AttributeError:
         # Fallback: construct a new BindParameter with same key/value/type.
         # This path only fires if SA removes _clone(); covered by canary CI.
-        return elements.BindParameter(element.key, element.value, type_=type_, unique=True)  # type: ignore[call-arg]
+        return elements.BindParameter(element.key, element.value, type_=type_, unique=True)
     cloned.type = type_
     return cloned
 

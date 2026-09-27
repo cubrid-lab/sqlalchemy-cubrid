@@ -657,7 +657,8 @@ class CubridDialect(default.DefaultDialect):
         result = connection.execute(
             text(
                 "SELECT class_name FROM db_class "
-                "WHERE class_type = 'CLASS' AND is_system_class = 'NO'"
+                "WHERE class_type = 'CLASS' AND is_system_class = 'NO' "
+                "ORDER BY class_name"
             )
         )
         return [row[0] for row in result]
@@ -675,7 +676,8 @@ class CubridDialect(default.DefaultDialect):
         result = connection.execute(
             text(
                 "SELECT class_name FROM db_class "
-                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO'"
+                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO' "
+                "ORDER BY class_name"
             )
         )
         return [row[0] for row in result]
@@ -946,7 +948,10 @@ class CubridDialect(default.DefaultDialect):
         # A name the user explicitly quoted is case-sensitive; do not normalize.
         if _is_explicitly_quoted_name(schema) or _is_explicitly_quoted_name(default):
             return False
-        return self.normalize_name(str(schema)) == self.normalize_name(str(default))
+        # Both inputs are concrete strings; the base hook returns a string
+        # (including quoted_name) but remains unannotated in SQLAlchemy 2.x.
+        normalize = cast(Callable[[str], str], self.normalize_name)
+        return normalize(str(schema)) == normalize(str(default))
 
     def _raise_if_non_default_schema(self, schema: str | None, object_name: str) -> None:
         """Raise :class:`NoSuchTableError` if *schema* is not the default schema.

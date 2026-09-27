@@ -416,7 +416,7 @@ class CubridExecutionContext(default.DefaultExecutionContext):
             log.debug("get_last_insert_id via driver failed, falling back to SQL", exc_info=True)
 
         # Fallback: use SQL function
-        cursor = self.create_server_side_cursor()
+        cursor = self._dbapi_connection.cursor()
         try:
             cursor.execute("SELECT LAST_INSERT_ID()")
             row = cursor.fetchone()

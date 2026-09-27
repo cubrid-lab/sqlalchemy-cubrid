@@ -12,6 +12,7 @@ from sqlalchemy_cubrid.base import (
     CubridIdentifierPreparer,
 )
 from sqlalchemy_cubrid.dialect import CubridDialect
+from sqlalchemy_cubrid.pycubrid_dialect import PyCubridExecutionContext
 
 
 class TestAutocommitRegexp:
@@ -97,10 +98,10 @@ class TestExecutionContext:
             types.SimpleNamespace(connection=types.SimpleNamespace(dbapi_connection=raw_conn)),
         )
 
-        context.create_server_side_cursor = MagicMock()
+        context._dbapi_connection = MagicMock()
 
         assert context.get_lastrowid() == 987
-        context.create_server_side_cursor.assert_not_called()
+        context._dbapi_connection.cursor.assert_not_called()
 
     def test_get_lastrowid_falls_back_when_method_missing(self):
         context = object.__new__(CubridExecutionContext)
@@ -114,7 +115,7 @@ class TestExecutionContext:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = (42,)
-        context.create_server_side_cursor = MagicMock(return_value=cursor)
+        context._dbapi_connection = types.SimpleNamespace(cursor=lambda: cursor)
 
         assert context.get_lastrowid() == 42
         cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
@@ -132,7 +133,7 @@ class TestExecutionContext:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = (101,)
-        context.create_server_side_cursor = MagicMock(return_value=cursor)
+        context._dbapi_connection = types.SimpleNamespace(cursor=lambda: cursor)
 
         assert context.get_lastrowid() == 101
         cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
@@ -149,8 +150,61 @@ class TestExecutionContext:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = None
-        context.create_server_side_cursor = MagicMock(return_value=cursor)
+        context._dbapi_connection = types.SimpleNamespace(cursor=lambda: cursor)
 
         assert context.get_lastrowid() is None
+        cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
+        cursor.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("context_cls", [CubridExecutionContext, PyCubridExecutionContext])
+    @pytest.mark.parametrize("failure", ["execute", "fetchone", "conversion"])
+    def test_get_lastrowid_fallback_closes_cursor_on_error(self, context_cls, failure):
+        context = context_cls()
+        context.root_connection = types.SimpleNamespace(
+            connection=types.SimpleNamespace(dbapi_connection=object())
+        )
+        context.cursor = object()
+        cursor = MagicMock()
+        context._dbapi_connection = types.SimpleNamespace(cursor=lambda: cursor)
+        if failure == "conversion":
+            cursor.fetchone.return_value = ("invalid-id",)
+            error = ValueError
+        else:
+            getattr(cursor, failure).side_effect = RuntimeError("fallback failed")
+            error = RuntimeError
+
+        with pytest.raises(
+            error, match="invalid-id" if failure == "conversion" else "fallback failed"
+        ):
+            context.get_lastrowid()
+
+        cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
+        cursor.close.assert_called_once_with()
+
+    @pytest.mark.parametrize("value", [None, "987"])
+    def test_get_lastrowid_preserves_native_result(self, value):
+        context = CubridExecutionContext()
+        context.root_connection = types.SimpleNamespace(
+            connection=types.SimpleNamespace(
+                dbapi_connection=types.SimpleNamespace(get_last_insert_id=lambda: value)
+            )
+        )
+        context._dbapi_connection = MagicMock()
+
+        assert context.get_lastrowid() == (None if value is None else 987)
+        context._dbapi_connection.cursor.assert_not_called()
+
+    def test_get_lastrowid_falls_back_when_driver_method_raises(self):
+        context = CubridExecutionContext()
+        raw_conn = MagicMock()
+        raw_conn.get_last_insert_id.side_effect = RuntimeError("driver failed")
+        context.root_connection = types.SimpleNamespace(
+            connection=types.SimpleNamespace(dbapi_connection=raw_conn)
+        )
+        cursor = MagicMock()
+        cursor.fetchone.return_value = ("42",)
+        context._dbapi_connection = types.SimpleNamespace(cursor=lambda: cursor)
+
+        assert context.get_lastrowid() == 42
         cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
         cursor.close.assert_called_once_with()

@@ -35,11 +35,15 @@
 
 ### 권장: 순수 Python 드라이버 (pycubrid)
 
-새 프로젝트에는 순수 Python [pycubrid](https://github.com/cubrid-lab/pycubrid) 드라이버를 사용하세요 — pip만으로 설치되고, C 빌드 도구 체인이 필요 없고, Python이 돌아가는 어디서든 동작합니다:
+새 프로젝트에는 순수 Python [pycubrid](https://github.com/cubrid-lab/pycubrid) 드라이버를 사용하세요. 드라이버는 CUBRID 네이티브 라이브러리가 필요 없습니다. 권장 extra를 설치하세요:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+이 extra는 pycubrid의 동기·비동기 URL을 모두 지원하고 SQLAlchemy의
+`asyncio` 의존성(`greenlet`)을 포함합니다. 드라이버 자체는 순수 Python이며,
+호환 wheel이 없으면 `greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 
 또는 따로 설치:
 
@@ -53,7 +57,7 @@ pip install sqlalchemy-cubrid pycubrid
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
-> **팁**: `pycubrid`는 순수 Python 구현입니다 — 네이티브 라이브러리 의존성 없이 Python이 돌아가는 어디서든 동작합니다. [GitHub의 pycubrid](https://github.com/cubrid-lab/pycubrid)를 참고하세요.
+> **팁**: `pycubrid` 드라이버 자체는 순수 Python이며 네이티브 라이브러리가 필요 없습니다. `[pycubrid]` extra에 포함된 `greenlet`은 설치 시 빌드 도구가 필요할 수 있습니다. [GitHub의 pycubrid](https://github.com/cubrid-lab/pycubrid)를 참고하세요.
 
 ### 레거시: C 확장 드라이버 (CUBRID-Python)
 
@@ -120,16 +124,19 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `cubrid://`          | CUBRIDdb    | 기본 레거시 C 확장 드라이버           |
 | `cubrid+cubrid://`   | CUBRIDdb    | 명시적 레거시 C 확장 드라이버         |
 | `cubrid+cubriddb://` | CUBRIDdb    | 명시적 레거시 C 확장 드라이버         |
-| `cubrid+pycubrid://` | pycubrid    | 순수 Python 드라이버 (C 빌드 불필요)  |
+| `cubrid+pycubrid://` | pycubrid    | 순수 Python 드라이버 (CUBRID 네이티브 라이브러리 불필요) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | 비동기 순수 Python 드라이버        |
 
-새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python, 설치 가장 쉬움, 네이티브 빌드 단계 없음). `cubrid://` URL은 레거시 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `[cubriddb]` 설치 extra와 함께 `cubrid+cubriddb://`를 사용하세요.
+새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 레거시 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `[cubriddb]` 설치 extra와 함께 `cubrid+cubriddb://`를 사용하세요.
 
 ---
 
 ## 비동기 연결
 
 비동기 애플리케이션에서는 `create_async_engine`과 함께 `cubrid+aiopycubrid://` URL 스킴을 사용하세요. `pycubrid>=1.3.2,<2.0`이 필요합니다.
+
+`sqlalchemy-cubrid[pycubrid]`를 설치하면 드라이버와 SQLAlchemy의 비동기 브리지가
+포함됩니다. 패키지를 따로 설치한다면 `SQLAlchemy[asyncio]`도 설치하세요.
 
 ```python
 from sqlalchemy.ext.asyncio import create_async_engine
