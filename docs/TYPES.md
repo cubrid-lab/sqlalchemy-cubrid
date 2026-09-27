@@ -391,7 +391,7 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | National character set type. |
 | `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | Reflected to NVARCHAR by this dialect. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | Equivalent to very large `VARCHAR`. |
-| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
+| `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
 | `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (documented) | Binary LOB. Current drivers return a LOB locator on read; see the warning below. |
 | `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent collection payload | CUBRID-specific collection; unique unordered members. |
 | `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent collection payload | CUBRID-specific collection; duplicates allowed. |

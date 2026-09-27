@@ -171,6 +171,25 @@ round-trips — it returns `Decimal` values natively with full precision
 (verified on CUBRID 11.4). This is one of the reasons `pycubrid` is the
 recommended driver for new projects.
 
+### 6. `BLOB` / `CLOB` reads return a LOB locator
+
+Verified live on CUBRID 10.2 and 11.4 (#485). With every released driver, binding
+`bytes` / `str` into a `BLOB` / `CLOB` column stores the full value and `NULL`
+round-trips as `None`. Selecting a non-NULL `BLOB` / `CLOB` column, however,
+returns the driver's LOB locator instead of `bytes` / `str`:
+
+| Driver URL | Non-NULL `BLOB` / `CLOB` read returns |
+|---|---|
+| `cubrid://` (`CUBRIDdb` 11.3) | server file-locator `str` (`'file:...'`) |
+| `cubrid+pycubrid://` (pycubrid 1.3.2 to 1.7.1) | LOB-handle `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
+| `cubrid+aiopycubrid://` | LOB-handle `dict`; binding any `LargeBinary` / `BLOB` parameter, including `None`, also raises `AttributeError` because the async DB-API adapter has no `Binary` |
+
+For `LargeBinary` / `BLOB`, SQLAlchemy's result processor then raises `TypeError`.
+To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`),
+or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
+`str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441. See also
+[Types](TYPES.md).
+
 ---
 
 ## Installation Notes

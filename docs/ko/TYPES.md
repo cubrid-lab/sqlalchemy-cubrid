@@ -387,7 +387,7 @@ for col in users.columns:
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | 국가 문자 집합 타입. |
 | `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | 이 방언에서 NVARCHAR로 리플렉트. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | 매우 큰 `VARCHAR`와 동등. |
-| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` (문서상) | 문자 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
+| `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (문서상) | 문자 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
 | `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (문서상) | 바이너리 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
 | `SET(...)` | `sqlalchemy_cubrid.SET` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 유일한 순서 없는 원소. |
 | `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 중복 허용. |

@@ -510,6 +510,24 @@ class TestAsyncLobValueContract:
             got = result.scalar_one()
         _assert_lob_value(got, kind, value)
 
+    @pytest.mark.parametrize(
+        ("kind", "value"),
+        [p for p in _LOB_CASES if p.values[0] == "clob" and p.values[1]],
+    )
+    async def test_clob_write_stores_full_value(
+        self, engine: AsyncEngine, kind: str, value: bytes | str | None
+    ):
+        """Bound str reaches the CLOB intact; read back via server-side conversion."""
+        table = cast(Table, _async_lob_model(kind).__table__)
+        async with engine.begin() as conn:
+            _ = await conn.execute(table.insert(), {"id": 1, kind: value})
+        async with engine.connect() as conn:
+            result = await conn.execute(
+                select(sa.func.CLOB_TO_CHAR(table.c[kind])).where(table.c.id == 1)
+            )
+            got = result.scalar_one()
+        _assert_lob_value(got, kind, value)
+
     @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
     async def test_orm_roundtrip(
         self,

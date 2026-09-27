@@ -151,6 +151,18 @@ CUBRID 12는 아직 출시되지 않았습니다. 출시되면 드라이버와 �
 
 정확한 `Decimal` 라운드트립이 필요하면 순수 파이썬 `cubrid+pycubrid://` 드라이버를 사용하세요 — 전체 정밀도로 `Decimal` 값을 네이티브 반환합니다(CUBRID 11.4에서 확인). 이것이 신규 프로젝트에 `pycubrid`를 권장하는 이유 중 하나입니다.
 
+### 6. `BLOB` / `CLOB` 조회는 LOB 로케이터를 반환
+
+CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#485). 모든 릴리스된 드라이버에서 `BLOB` / `CLOB` 컬럼에 `bytes` / `str`을 바인딩하면 전체 값이 저장되고 `NULL`은 `None`으로 왕복됩니다. 그러나 NULL이 아닌 `BLOB` / `CLOB` 컬럼을 조회하면 `bytes` / `str` 대신 드라이버의 LOB 로케이터가 반환됩니다:
+
+| 드라이버 URL | NULL이 아닌 `BLOB` / `CLOB` 조회 결과 |
+|---|---|
+| `cubrid://` (`CUBRIDdb` 11.3) | 서버 파일 로케이터 `str` (`'file:...'`) |
+| `cubrid+pycubrid://` (pycubrid 1.3.2 ~ 1.7.1) | LOB 핸들 `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
+| `cubrid+aiopycubrid://` | LOB 핸들 `dict`. 또한 비동기 DB-API 어댑터에 `Binary`가 없어 `None`을 포함한 모든 `LargeBinary` / `BLOB` 파라미터 바인딩이 `AttributeError`를 발생시킵니다 |
+
+`LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다. [타입](TYPES.md)도 참고하세요.
+
 ---
 
 ## 설치 참고
