@@ -238,7 +238,7 @@ docker compose down -v
 비동기 연결을 모두 확인합니다. 비동기 스위트는 SQLAlchemy URL API로 인증 정보,
 포트, 쿼리 옵션을 보존한 `cubrid+aiopycubrid` URL을 파생하며 `CUBRID_TEST_AURL`은
 명시적 비동기 재정의로 유지합니다. 실패 메시지는 URL 인증 정보를 출력하지 않습니다.
-선택적 네이티브 C 확장이 없으면 기존 드라이버 차분 비교 4건은 의도적으로
+선택적 네이티브 C 확장이 없으면 드라이버 차분 비교는 의도적으로
 건너뛰며 CUBRIDdb를 검증했다고 주장하지 않습니다. 공식 CI의 네이티브 드라이버
 `--dburi` 경로는 별도로 유지됩니다.
 
@@ -474,6 +474,39 @@ pre-commit run --all-files
 2. **오프라인 테스트** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × 오프라인 테스트 스위트
 3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지 포함
 4. **커버리지** — ≥ 95% 임계값 강제
+
+### 드라이버 차분 레인
+
+`test/test_driver_differential.py`는 같은 SQLAlchemy 작업을 pycubrid와
+CUBRIDdb C 확장에서 실행하고 결과가 일치하는지 확인합니다. 기본 CRUD와 함께
+릴리스된 드라이버에서 이미 동작하는 DB-API 계약 영역을 다룹니다. 정수·UTF-8/CJK·NULL
+값을 사용하는 Core `executemany`, 정수·UTF-8/CJK 값을 사용하는 텍스트 `executemany`, 스칼라 바인드, 텍스트 SQL 결과 컬럼 이름,
+커밋/롤백 가시성이 해당합니다. 업스트림에 막힌 영역은 별도로 추적하며(#480–#484),
+LOB 값은 #485에서 다룹니다.
+
+`ci.yml`과 `integration-full.yml`의 통합 잡은 두 드라이버를 모두 설치하고
+`CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`로 이 모듈을 실행합니다. 이 변수가 설정되면
+`test/conftest.py`는 실행되어 통과한 차분 케이스가 하나도 없을 때 세션을 실패시키므로,
+두 드라이버가 모두 연결되지 않은 레인이 성공으로 보고될 수 없습니다. 테스트 전에
+`python -m scripts.report_driver_versions`가 정확한 Python, SQLAlchemy, pycubrid,
+CUBRIDdb(패키지 버전과 소스 태그), CUBRID 서버 버전을 잡 로그와 GitHub 단계 요약에
+기록합니다. 변수를 설정하지 않은 로컬 실행은 드라이버나 데이터베이스가 없으면 계속
+깔끔하게 건너뜁니다.
+
+```bash
+export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
+CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
+```
+
+### pycubrid 릴리스 후보 채택
+
+`pycubrid@main`을 대상으로 하는 주간 `upstream-canary.yml` 실행은 비차단으로
+유지합니다. 다가오는 회귀를 경고하지만, 릴리스되지 않은 업스트림 HEAD가 관련 없는
+PR을 막아서는 안 됩니다. 의존성 범위 `pycubrid>=1.3.2,<2.0`은 정확한 버전으로 설치한
+**특정** pycubrid 릴리스 후보(또는 새 메이저 릴리스)가 다운스트림 계약 스위트, 즉 일반·비동기
+통합 테스트, 위의 필수 드라이버 차분 레인, SQLAlchemy 호환성 스위트를 통과한 뒤에만
+넓힙니다. 채택 PR에는 `scripts/report_driver_versions.py`가 보고한 버전을 기록하고,
+같은 변경에서 `CHANGELOG.md`와 지원 문서에 새로 지원하는 범위를 반영합니다.
 
 ### 문서 검사
 
