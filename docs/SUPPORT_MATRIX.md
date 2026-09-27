@@ -151,8 +151,8 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
 | BIT | `BIT` | `bytes` | ✅ |
-| BLOB | `sa.LargeBinary` | `bytes` | ✅ |
-| CLOB | `CLOB` | `str` | ✅ |
+| BLOB | `sa.LargeBinary` | `bytes` (documented); non-NULL reads currently return a driver LOB locator, see [Driver Compatibility, Known Issue 6](DRIVER_COMPAT.md#known-issues) | ✅ |
+| CLOB | `CLOB` | `str` (documented); non-NULL reads currently return a driver LOB locator, see [Driver Compatibility, Known Issue 6](DRIVER_COMPAT.md#known-issues) | ✅ |
 | SET | `SET` | Collection | ✅ |
 | MULTISET | `MULTISET` | Collection | ✅ |
 | SEQUENCE | `SEQUENCE` | Collection | ✅ |

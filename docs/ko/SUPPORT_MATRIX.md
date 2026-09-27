@@ -150,8 +150,8 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
 | BIT | `BIT` | `bytes` | ✅ |
-| BLOB | `sa.LargeBinary` | `bytes` | ✅ |
-| CLOB | `CLOB` | `str` | ✅ |
+| BLOB | `sa.LargeBinary` | `bytes` (문서상). NULL이 아닌 값 조회는 현재 드라이버 LOB 로케이터를 반환합니다. [드라이버 호환성, 알려진 문제 6](DRIVER_COMPAT.md#알려진-문제) 참고 | ✅ |
+| CLOB | `CLOB` | `str` (문서상). NULL이 아닌 값 조회는 현재 드라이버 LOB 로케이터를 반환합니다. [드라이버 호환성, 알려진 문제 6](DRIVER_COMPAT.md#알려진-문제) 참고 | ✅ |
 | SET | `SET` | 컬렉션 | ✅ |
 | MULTISET | `MULTISET` | 컬렉션 | ✅ |
 | SEQUENCE | `SEQUENCE` | 컬렉션 | ✅ |
