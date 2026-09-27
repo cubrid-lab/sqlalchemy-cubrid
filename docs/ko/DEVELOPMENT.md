@@ -520,7 +520,7 @@ PR을 막아서는 안 됩니다. 의존성 범위 `pycubrid>=1.3.2,<2.0`은 정
 
 pycubrid `main`은 마지막 릴리스의 `__version__`을 그대로 보고하므로 헬퍼는 버전을
 검사하지 않습니다. 대신 `CUBRID_PYCUBRID_UPSTREAM=1`은 설치된 pycubrid가
-`UNRELEASED_FIXES`에 나열된 모든 수정을 포함한다고 선언하며, 이때 마커는 아무 동작도
+게이트된 모든 업스트림 수정을 포함한다고 선언하며, 이때 마커는 아무 동작도
 하지 않으므로 같은 테스트가 통과해야 합니다. `upstream-canary.yml`의 `pycubrid@main`
 통합 잡이 이 변수를 설정합니다. 로컬에서는 그런 빌드를 설치했을 때만 설정하세요.
 
@@ -529,15 +529,14 @@ pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@ma
 CUBRID_PYCUBRID_UPSTREAM=1 pytest test/test_integration.py test/test_aio_integration.py -v
 ```
 
-현재 대상: cubrid-lab/pycubrid#390 (NOT NULL 및 외래 키 위반을 `IntegrityError`로
-발생, #480).
+게이트된 이슈 목록은 `grep -rn "xfail_unreleased_pycubrid_fix(" test/`로 확인합니다.
 
 **릴리스 후 마커 제거.** 일반 레인은 지원 범위 안의 최신 pycubrid 릴리스를 설치하므로,
 수정이 포함된 릴리스가 게시되면 해당 케이스가 strict XPASS로 실패합니다. 그 릴리스를
-채택하세요. `pycubrid` 하한을 그 릴리스로 올리고, 해당 이슈의
-`xfail_unreleased_pycubrid_fix` 호출을 삭제한 뒤 `UNRELEASED_FIXES`에서 이슈를
-제거합니다. 집합이 비면 `test/pycubrid_upstream.py`와 `upstream-canary.yml`의
-`CUBRID_PYCUBRID_UPSTREAM` 항목을 삭제합니다.
+채택하세요. `pycubrid` 하한을 그 릴리스로 올리고 해당 이슈를 지정한
+`xfail_unreleased_pycubrid_fix` 호출을 삭제합니다. 남은 호출이 없으면
+`test/pycubrid_upstream.py`와 `upstream-canary.yml`의 `CUBRID_PYCUBRID_UPSTREAM`
+항목을 삭제합니다.
 
 ### 문서 검사
 

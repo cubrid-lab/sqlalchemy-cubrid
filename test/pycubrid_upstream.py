@@ -21,9 +21,8 @@ sets it. With the variable set the markers are no-ops, so the same tests must
 pass there, and any regression on ``main`` fails the canary.
 
 Once a pycubrid release containing a fix is adopted (the dependency lower bound
-includes it), delete the matching helper call and its issue from
-``UNRELEASED_FIXES``; a strict XPASS on the released lanes signals when that is
-due. See ``docs/DEVELOPMENT.md``.
+includes it), delete the helper calls naming that issue; a strict XPASS on the
+released lanes signals when that is due. See ``docs/DEVELOPMENT.md``.
 """
 
 from __future__ import annotations
@@ -36,9 +35,6 @@ UPSTREAM_ENV = "CUBRID_PYCUBRID_UPSTREAM"
 
 #: SQLAlchemy driver names (``engine.dialect.driver``) backed by pycubrid.
 PYCUBRID_DRIVERS = frozenset({"pycubrid", "aiopycubrid"})
-
-#: cubrid-lab/pycubrid issues fixed on ``main`` but not in a released version.
-UNRELEASED_FIXES = frozenset({390})
 
 
 def expects_upstream_pycubrid() -> bool:
@@ -57,8 +53,6 @@ def xfail_unreleased_pycubrid_fix(
 
     No-op for non-pycubrid drivers and when ``CUBRID_PYCUBRID_UPSTREAM=1``.
     """
-    if issue not in UNRELEASED_FIXES:
-        raise ValueError(f"cubrid-lab/pycubrid#{issue} is not listed as an unreleased fix")
     if driver not in PYCUBRID_DRIVERS or expects_upstream_pycubrid():
         return
     request.applymarker(

@@ -6190,8 +6190,8 @@ are never affected by it; a CUBRIDdb defect gets its own per-driver strict xfail
 
 pycubrid `main` keeps reporting the last released `__version__`, so the helper
 does not inspect versions. Instead, `CUBRID_PYCUBRID_UPSTREAM=1` declares that
-the installed pycubrid contains every fix listed in `UNRELEASED_FIXES` and turns
-the markers into no-ops, so the same tests must pass. The `pycubrid@main`
+the installed pycubrid contains every gated upstream fix and turns the markers
+into no-ops, so the same tests must pass. The `pycubrid@main`
 integration job in `upstream-canary.yml` sets it. Set it locally only with such
 a build:
 
@@ -6200,16 +6200,14 @@ pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@ma
 CUBRID_PYCUBRID_UPSTREAM=1 pytest test/test_integration.py test/test_aio_integration.py -v
 ```
 
-Currently gated: cubrid-lab/pycubrid#390 (NOT NULL and foreign-key violations
-raised as `IntegrityError`, #480).
+List the gated issues with `grep -rn "xfail_unreleased_pycubrid_fix(" test/`.
 
 **Removing a marker after the release.** The regular lanes install the newest
 pycubrid release in the supported range, so once a release containing a fix is
 published, its cases report a strict XPASS and fail. Adopt that release: raise
-the `pycubrid` lower bound to it, delete the `xfail_unreleased_pycubrid_fix`
-calls for the issue, and remove the issue from `UNRELEASED_FIXES`. When the set
-is empty, delete `test/pycubrid_upstream.py` and the `CUBRID_PYCUBRID_UPSTREAM`
-entry in `upstream-canary.yml`.
+the `pycubrid` lower bound to it and delete the `xfail_unreleased_pycubrid_fix`
+calls naming the issue. When no call is left, delete `test/pycubrid_upstream.py`
+and the `CUBRID_PYCUBRID_UPSTREAM` entry in `upstream-canary.yml`.
 
 ### Documentation gates
 
