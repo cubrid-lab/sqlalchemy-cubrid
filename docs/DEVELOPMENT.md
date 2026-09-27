@@ -496,9 +496,12 @@ pycubrid and the CUBRIDdb C-extension and asserts they agree. It covers basic
 CRUD plus the DB-API contract areas that already work on the released drivers:
 Core `executemany` with integer, UTF-8/CJK and NULL values, textual
 `executemany` with integer and UTF-8/CJK values, scalar binds, textual-SQL
-result column names, commit/rollback visibility, constraint-violation
-exception classes (#480), and results read across a rollback (#481). Areas
-still blocked upstream are tracked separately (#482–#484); LOB values are
+result column names, and commit/rollback visibility. It also compares
+constraint-violation exception classes (#480) and results read across a
+rollback (#481); these are fixed on pycubrid `main` but not released, so the
+pycubrid side is a strict xfail on released pycubrid (see
+[Unreleased pycubrid fixes](#unreleased-pycubrid-fixes-cubrid_pycubrid_upstream)).
+Areas still blocked upstream are tracked separately (#482–#484); LOB values are
 covered by #485.
 
 The integration jobs in `ci.yml` and `integration-full.yml` run this module
