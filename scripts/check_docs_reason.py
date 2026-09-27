@@ -103,6 +103,46 @@ def _empty_caption(raw: str, visible: str | None = None) -> bool:
     return caption is not None and not _reason_text(unescape(caption[1]))
 
 
+def _empty_composition(text: str, raw: str, origin: int, spans: list[tuple[int, int]]) -> bool:
+    while True:
+        reduced = list(text)
+        changed = False
+        for token in _CAPTION_ONLY.finditer(text):
+            start, end = origin + token.start(), origin + token.end()
+            escaped = re.search(r"\\+$", text[: token.start()])
+            if (
+                _reason_text(unescape(token[1]))
+                or (escaped and len(escaped[0]) % 2)
+                or any(left < end and start < right for left, right in spans)
+            ):
+                continue
+            reduced[token.start() : token.end()] = " " * len(token[0])
+            changed = True
+        if not changed:
+            if not _reason_text(unescape(text)):
+                return True
+            wrapper = re.fullmatch(r"(\*{1,3}|_{1,3})(.+)\1", raw.strip())
+            if wrapper:
+                inner = wrapper[2]
+                leading = len(raw) - len(raw.lstrip())
+                closing_escape = re.search(r"\\+$", inner)
+                if (
+                    not inner[0].isspace()
+                    and not inner[-1].isspace()
+                    and inner[0] != wrapper[1][0]
+                    and inner[-1] != wrapper[1][0]
+                    and not (closing_escape and len(closing_escape[0]) % 2)
+                    and not any(
+                        left < origin + len(raw) and origin < right for left, right in spans
+                    )
+                ):
+                    return not _reason_text(
+                        unescape(text[leading + wrapper.start(2) : leading + wrapper.end(2)])
+                    )
+            return False
+        text = "".join(reduced)
+
+
 def _placeholder(text: str) -> bool:
     raw = _reason_text(text)
     if raw.startswith("!["):
@@ -638,6 +678,13 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
         if not inside and number in html.marker_lines and line.startswith(prefix):
             reason = _reason_text(line[len(prefix) :])
             syntax_reason = projected[len(prefix) :]
-            if reason and not _placeholder(reason) and not _empty_caption(syntax_reason, reason):
+            raw_reason = raw_lines[number - 1].lstrip(" ")[len(prefix) :]
+            if (
+                reason
+                and not _placeholder(reason)
+                and not _empty_composition(
+                    syntax_reason, raw_reason, position + len(prefix), html.inline_spans
+                )
+            ):
                 return True
     return False

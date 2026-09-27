@@ -142,6 +142,17 @@ class DocsReasonWorkflowTests(unittest.TestCase):
             "<person@example.com>",
             "`<https://example.com>`",
             "only [<!--[-->](/issue) fixture changed",
+            "[]() tests only []()",
+            "[![real alt](/img)](/issue)",
+            "`[]() []()`",
+            r"\[]() \[]()",
+            "&#91;&#93;() &#91;&#93;()",
+            "****",
+            "** **",
+            "`**<!-- empty -->**`",
+            r"\**<!-- empty -->**",
+            "**&lt;span&gt;&lt;/span&gt;**",
+            "**text<!-- empty -->**",
         ):
             self.assertTrue(has_docs_not_needed_reason("Docs: not needed - " + reason))
         for body in (

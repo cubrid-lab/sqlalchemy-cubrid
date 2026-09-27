@@ -131,5 +131,8 @@
   {"id": "reported_bracket_in_html_caption", "event": {"pull_request": {"body": "Docs: not needed - [<!--[-->](/issue)", "labels": []}}, "expected_docs_exemption": false},
   {"id": "reported_bracket_in_html_caption_attribute", "event": {"pull_request": {"body": "Docs: not needed - [<span title=\"[\"></span>](/issue)", "labels": []}}, "expected_docs_exemption": false},
   {"id": "reported_empty_caption_html_suffix", "event": {"pull_request": {"body": "Docs: not needed - ![<!-- empty -->](image.png)<span></span>", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "reported_angle_uri_reason_visible", "event": {"pull_request": {"body": "Docs: not needed - <https://github.com/org/repo/issues/1>", "labels": []}}, "expected_docs_exemption": true}
+  {"id": "reported_angle_uri_reason_visible", "event": {"pull_request": {"body": "Docs: not needed - <https://github.com/org/repo/issues/1>", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_adjacent_empty_captions", "event": {"pull_request": {"body": "Docs: not needed - []() []()", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_nested_empty_image_caption", "event": {"pull_request": {"body": "Docs: not needed - [![](/img)](/issue)", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_comment_only_emphasis", "event": {"pull_request": {"body": "Docs: not needed - **<!-- empty -->**", "labels": []}}, "expected_docs_exemption": false}
 ]
