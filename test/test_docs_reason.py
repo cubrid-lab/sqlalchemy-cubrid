@@ -78,6 +78,38 @@ class DocsReasonWorkflowTests(unittest.TestCase):
         self.assertFalse(
             has_docs_not_needed_reason("<pre>\n<!-- </pre> -->\nDocs: not needed - hidden")
         )
+        for reason in (
+            "![<reason>][img]",
+            "![&lt;reason&gt;]",
+            "![<reason>]",
+            "![ ](image.png)",
+            "[][url]",
+        ):
+            self.assertFalse(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        for reason in (
+            "![real caption][img]",
+            r"\![<reason>][img]",
+            "only [ ](/issue) fixture changed",
+        ):
+            self.assertTrue(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        for opener, closer in (("<?x", "?>"), ("<!DOCTYPE html", ">"), ("<![CDATA[", "]]>")):
+            self.assertFalse(has_docs_not_needed_reason(opener + "\nDocs: not needed - hidden"))
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    opener
+                    + "\nDocs: not needed - hidden\n"
+                    + closer
+                    + "\nDocs: not needed - tests only"
+                )
+            )
+        self.assertFalse(has_docs_not_needed_reason("<?x>\nDocs: not needed - hidden\n?>"))
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "<![CDATA[\nDocs: not needed - hidden\n]>\nDocs: not needed - hidden\n]]>"
+            )
+        )
+        self.assertFalse(has_docs_not_needed_reason("> ===\nDocs: not needed - hidden"))
+        self.assertFalse(has_docs_not_needed_reason("> Heading\n> =-=\nDocs: not needed - hidden"))
 
     def test_checkpoint_does_not_resplit_the_fed_tape(self) -> None:
         from scripts.check_docs_reason import _HTMLContext

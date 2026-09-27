@@ -38,12 +38,11 @@ _LINK_TARGET = (
     + _LINK_TITLE
     + r")?[ \t]*\)"
 )
-_EMPTY_LINK = re.compile(r"!?\[\]" + _LINK_TARGET)
-_IMAGE_PREFIX = re.compile(r"!\[([^\r\n]*)\]" + _LINK_TARGET)
+_CAPTION_ONLY = re.compile(r"!?\[([^\[\]\r\n]*)\](?:" + _LINK_TARGET + r"|\[[^\[\]\r\n]*\])?")
 _ATX_HEADING = r" {0,3}#{1,6}(?=[ \t\n]|$)"
 _THEMATIC_BREAK = r" {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})"
 _HTML_BLOCK_START = re.compile(
-    r" {0,3}(?:<!--|<(?:pre|script|style|textarea)(?=[ \t>]|$)"
+    r" {0,3}(?:<!--|<\?|(?-i:<![A-Z]|<!\[CDATA\[)|<(?:pre|script|style|textarea)(?=[ \t>]|$)"
     r"|</?(?:address|article|aside|base|basefont|blockquote|body|caption|center|col|colgroup"
     r"|dd|details|dialog|dir|div|dl|dt|fieldset|figcaption|figure|footer|form|frame|frameset"
     r"|h1|h2|h3|h4|h5|h6|head|header|hr|html|iframe|legend|li|link|main|menu|menuitem|nav"
@@ -90,9 +89,9 @@ def _reason_text(text: str) -> str:
 
 
 def _placeholder(text: str) -> bool:
-    image = _IMAGE_PREFIX.match(_reason_text(text))
-    if image:
-        text = image[1]
+    raw = _reason_text(text)
+    if raw.startswith("!["):
+        text = raw[1:]
     reason = _reason_text(unescape(_MARKDOWN_ESCAPE.sub(r"\1", text)))
     index = 0
     closers: list[str] = []
@@ -145,6 +144,8 @@ class _HTMLContext(HTMLParser):
         self.comment_start: int | None = None
         self.comment_end: int | None = None
         self.comment_scan = 0
+        self.comment_marker = "-->"
+        self.comment_width = 4
         self.inline_end = -1
         self.inline_spans: list[tuple[int, int]] = []
 
@@ -173,11 +174,14 @@ class _HTMLContext(HTMLParser):
 
     def strict_close(self) -> int | None:
         if self.comment_start is not None and self.comment_end is None:
-            close = self.fed_text.find("-->", self.comment_scan)
+            close = self.fed_text.find(self.comment_marker, self.comment_scan)
             if close == -1:
-                self.comment_scan = max(self.comment_start + 4, len(self.fed_text) - 2)
+                self.comment_scan = max(
+                    self.comment_start + self.comment_width,
+                    len(self.fed_text) - len(self.comment_marker) + 1,
+                )
             else:
-                self.comment_end = close + 3
+                self.comment_end = close + len(self.comment_marker)
         return self.comment_end
 
     def inside_comment(self) -> bool:
@@ -196,12 +200,30 @@ class _HTMLContext(HTMLParser):
         line, column = self.getpos()
         start = self.position()
         prefix = self.fed_text[self.row_starts[line - 1] : start]
-        if column <= 3 and not prefix.strip(" ") and self.fed_text.startswith("<!--", start):
+        opener = None
+        for token, end_marker in (("<!--", "-->"), ("<?", "?>"), ("<![CDATA[", "]]>")):
+            if self.fed_text.startswith(token, start):
+                opener = token, end_marker
+                break
+        if opener is None and re.match(r"<![A-Z]", self.fed_text[start:]):
+            opener = "<!", ">"
+        if column <= 3 and not prefix.strip(" ") and opener:
             self.comment_start = start
             self.comment_end = None
-            self.comment_scan = start + 4
+            self.comment_width = len(opener[0])
+            self.comment_marker = opener[1]
+            self.comment_scan = start + self.comment_width
 
     def handle_comment(self, data: str) -> None:
+        self.confirm_comment()
+
+    def handle_pi(self, data: str) -> None:
+        self.confirm_comment()
+
+    def handle_decl(self, data: str) -> None:
+        self.confirm_comment()
+
+    def unknown_decl(self, data: str) -> None:
         self.confirm_comment()
 
     def checkpoint(self) -> None:
@@ -213,6 +235,20 @@ class _HTMLContext(HTMLParser):
             closer = pending.rfind("-->")
             tail = pending[closer + 3 :]
             safe = closer > pending.rfind("<!--") and "<" not in tail and "&" not in tail
+        elif (
+            pending.startswith("<?")
+            or pending.startswith("<![CDATA[")
+            or re.match(r"<![A-Z]", pending)
+        ):
+            if pending.startswith("<?"):
+                marker, width = "?>", 2
+            elif pending.startswith("<![CDATA["):
+                marker, width = "]]>", 9
+            else:
+                marker, width = ">", 2
+            closer = pending.find(marker, width)
+            tail = pending[closer + len(marker) :]
+            safe = closer != -1 and "<" not in tail and "&" not in tail
         elif pending.startswith("&#"):
             numeric = re.match(r"&#(?:[xX][0-9a-fA-F]*|[0-9]*)\n", pending)
             if numeric:
@@ -501,6 +537,7 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
                     quoted = (
                         re.match(_ATX_HEADING, content) is None
                         and re.fullmatch(_THEMATIC_BREAK, raw_content) is None
+                        and not (quoted and re.fullmatch(r" {0,3}(?:=+|-+)[ \t]*", raw_content))
                     )
                 html.feed("\n")
                 continue
@@ -539,7 +576,9 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             html.checkpoint()
             position = origin + len(line) - len(line.lstrip(" "))
             raw_reason = line.lstrip(" ")[len(prefix) :]
-            if not _placeholder(raw_reason) and not _EMPTY_LINK.fullmatch(_reason_text(raw_reason)):
+            caption = _CAPTION_ONLY.fullmatch(_reason_text(raw_reason))
+            empty_caption = caption is not None and not _reason_text(unescape(caption[1]))
+            if not _placeholder(raw_reason) and not empty_caption:
                 candidates.append((number, position))
     html.checkpoint()
     for number, position in candidates:

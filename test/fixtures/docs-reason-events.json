@@ -118,5 +118,10 @@
   {"id": "reported_image_alt_placeholder_not_reason", "event": {"pull_request": {"body": "Docs: not needed - ![<reason>](image.png)", "labels": []}}, "expected_docs_exemption": false},
   {"id": "reported_titled_empty_link_not_reason", "event": {"pull_request": {"body": "Docs: not needed - [](/issue \"context\")", "labels": []}}, "expected_docs_exemption": false},
   {"id": "reported_quoted_thematic_has_no_lazy_tail", "event": {"pull_request": {"body": "> ---\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
-  {"id": "reported_empty_alt_image_not_reason", "event": {"pull_request": {"body": "Docs: not needed - ![](https://example.com)", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "reported_empty_alt_image_not_reason", "event": {"pull_request": {"body": "Docs: not needed - ![](https://example.com)", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_reference_image_placeholder", "event": {"pull_request": {"body": "Docs: not needed - ![<reason>][img]\n\n[img]: image.png", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_processing_instruction_boundary", "event": {"pull_request": {"body": "`unmatched\n<?x?>\nDocs: not needed - tests only\nlast `", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_quoted_setext_nonlazy", "event": {"pull_request": {"body": "> Heading\n> ===\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "reported_whitespace_link_caption", "event": {"pull_request": {"body": "Docs: not needed - [ ](/issue)", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_empty_reference_image_caption", "event": {"pull_request": {"body": "Docs: not needed - ![][img]\n\n[img]: image.png", "labels": []}}, "expected_docs_exemption": false}
 ]
