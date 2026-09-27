@@ -41,6 +41,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_cubrid import BLOB, CLOB
 
+from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -971,3 +973,97 @@ class TestLobValueContractORM:
             assert doc is not None
             got = getattr(doc, kind)
         _assert_lob_value(got, kind, value)
+
+
+# ---------------------------------------------------------------------------
+# #480: constraint violations surface as sqlalchemy.exc.IntegrityError
+# ---------------------------------------------------------------------------
+
+
+class _IntegrityBase(DeclarativeBase):
+    pass
+
+
+class _IntegrityParent(_IntegrityBase):
+    __tablename__ = "integration_ie480_parent"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    name: Mapped[str | None] = mapped_column(String(20), nullable=False)
+
+
+class _IntegrityChild(_IntegrityBase):
+    __tablename__ = "integration_ie480_child"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    parent_id: Mapped[int] = mapped_column(ForeignKey("integration_ie480_parent.id"))
+
+
+# kind -> (mapped class, values violating the constraint); parent 1 always exists.
+_INTEGRITY_VIOLATIONS = {
+    "not_null": (_IntegrityParent, {"id": 2, "name": None}),
+    "foreign_key": (_IntegrityChild, {"id": 1, "parent_id": 999}),
+    "unique_pk": (_IntegrityParent, {"id": 1, "name": "duplicate"}),  # control
+}
+
+
+def _xfail_integrity(request, driver, kind):
+    # Released pycubrid raises NOT NULL (-631) and FK (-922) violations as a
+    # generic DatabaseError; unique/PK (-670) is already an IntegrityError.
+    if kind != "unique_pk":
+        xfail_unreleased_pycubrid_fix(request, driver, 390, raises=AssertionError)
+
+
+def _assert_integrity_error(exc):
+    assert isinstance(exc, sa.exc.IntegrityError), (
+        f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
+        f"wrapping {type(exc.orig).__module__}.{type(exc.orig).__name__}"
+    )
+
+
+def _integrity_counts(conn):
+    return tuple(
+        conn.execute(select(sa.func.count()).select_from(model)).scalar_one()
+        for model in (_IntegrityParent, _IntegrityChild)
+    )
+
+
+class TestIntegrityErrorContract:
+    @pytest.fixture(scope="class", autouse=True)
+    def integrity_tables(self, engine):
+        _IntegrityBase.metadata.drop_all(engine)
+        _IntegrityBase.metadata.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(sa.insert(_IntegrityParent), {"id": 1, "name": "parent"})
+        yield
+        _IntegrityBase.metadata.drop_all(engine)
+
+    @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
+    def test_core_violation_raises_integrity_error(self, request, engine, kind):
+        _xfail_integrity(request, engine.dialect.driver, kind)
+        model, values = _INTEGRITY_VIOLATIONS[kind]
+        with engine.connect() as conn:
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                conn.execute(sa.insert(model), values)
+            conn.rollback()
+            # The same connection runs new statements after the rollback.
+            assert _integrity_counts(conn) == (1, 0)
+            conn.execute(sa.insert(_IntegrityChild), {"id": 10, "parent_id": 1})
+            assert _integrity_counts(conn) == (1, 1)
+            conn.rollback()
+        _assert_integrity_error(excinfo.value)
+
+    @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
+    def test_orm_flush_violation_raises_integrity_error(self, request, engine, kind):
+        _xfail_integrity(request, engine.dialect.driver, kind)
+        model, values = _INTEGRITY_VIOLATIONS[kind]
+        with Session(engine) as session:
+            session.add(model(**values))
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                session.flush()
+            session.rollback()
+            # The same session (and its connection) keeps working.
+            session.add(_IntegrityChild(id=10, parent_id=1))
+            session.flush()
+            assert _integrity_counts(session.connection()) == (1, 1)
+            session.rollback()
+        _assert_integrity_error(excinfo.value)

@@ -28,6 +28,7 @@ from decimal import Decimal
 from typing import Any
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -41,6 +42,8 @@ from sqlalchemy import (
     select,
     text,
 )
+
+from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
 pytestmark = pytest.mark.integration
 
@@ -183,9 +186,10 @@ def test_null_handling_agrees(both_engines: Any) -> None:
 
 # ---------------------------------------------------------------------------
 # DB-API contract areas that already behave correctly on the released drivers
-# (#486, tracker #479). Areas still blocked upstream — IntegrityError
-# classification, results across commit/rollback, cursor.description metadata,
-# collections, prepared binding — belong to #480-#484; LOBs to #485.
+# (#486, tracker #479). Areas still blocked upstream — results across
+# commit/rollback, cursor.description metadata, collections, prepared binding —
+# belong to #481-#484; LOBs to #485. IntegrityError classification (#480) is
+# at the end of this module.
 # ---------------------------------------------------------------------------
 
 _CJK = "中文한글日本語"
@@ -326,6 +330,48 @@ def test_commit_rollback_visibility_agrees(both_engines: Any) -> None:
         return ids
 
     assert run(pyc) == run(cext) == [1]
+
+
+# ---------------------------------------------------------------------------
+# #480: constraint violations surface as sqlalchemy.exc.IntegrityError
+# ---------------------------------------------------------------------------
+
+_CONSTRAINT_VIOLATIONS = {
+    "not_null": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, NULL, NULL)",
+    "foreign_key": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, 999, 1)",
+    "unique_pk": "INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)",
+}
+
+
+@pytest.mark.parametrize("kind", list(_CONSTRAINT_VIOLATIONS))
+def test_constraint_violation_class_agrees(
+    request: pytest.FixtureRequest, both_engines: Any, kind: str
+) -> None:
+    """NOT NULL, FK and unique/PK violations raise IntegrityError on both drivers."""
+    if kind != "unique_pk":
+        xfail_unreleased_pycubrid_fix(request, "pycubrid", 390, raises=AssertionError)
+    pyc, cext = both_engines
+
+    def run(engine: Any) -> str:
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS drvdiff_ie"))
+            conn.execute(
+                text(
+                    "CREATE TABLE drvdiff_ie (id INTEGER PRIMARY KEY, parent_id INTEGER, "
+                    "n INTEGER NOT NULL, FOREIGN KEY (parent_id) REFERENCES drvdiff_ie(id))"
+                )
+            )
+            conn.execute(text("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)"))
+        with engine.connect() as conn:
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                conn.execute(text(_CONSTRAINT_VIOLATIONS[kind]))
+            conn.rollback()
+            assert conn.execute(text("SELECT COUNT(*) FROM drvdiff_ie")).scalar() == 1
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE drvdiff_ie"))
+        return type(excinfo.value).__name__
+
+    assert (run(pyc), run(cext)) == ("IntegrityError", "IntegrityError")
 
 
 if __name__ == "__main__":

@@ -84,10 +84,11 @@ graph TD
 - `ProgrammingError` — subsumed by `DatabaseError`
 - `InternalError` — subsumed by `DatabaseError`
 - `DataError` — subsumed by `DatabaseError`
-- `IntegrityError` — subsumed by `DatabaseError`
 
-This means all database-level errors (constraint violations, syntax errors, connection
-issues) are raised as `DatabaseError`. The `sqlalchemy-cubrid` dialect uses
+This means database-level errors such as syntax errors and connection issues are
+raised as `DatabaseError`. Constraint violations are the exception: CUBRIDdb
+11.3.0.51 raises `IntegrityError` for NOT NULL, foreign-key and unique violations
+(see [Known Issue 7](#7-not-null--foreign-key-violations-on-released-pycubrid)). The `sqlalchemy-cubrid` dialect uses
 **string-based message matching** to distinguish disconnect errors from other failures.
 
 ---
@@ -189,6 +190,24 @@ To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)
 or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
 `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441. See also
 [Types](TYPES.md).
+
+### 7. NOT NULL / foreign-key violations on released pycubrid
+
+Verified live on CUBRID 10.2 and 11.4 (#480). SQLAlchemy wraps the DB-API
+exception class it receives, so the SQLAlchemy exception class depends on the
+driver:
+
+| Violation (native code) | `cubrid://` (`CUBRIDdb` 11.3) | `cubrid+pycubrid://` / `cubrid+aiopycubrid://` (pycubrid 1.7.1) |
+|---|---|---|
+| NOT NULL (-631) | `IntegrityError` | `DatabaseError` |
+| Foreign key (-922) | `IntegrityError` | `DatabaseError` |
+| Unique / primary key (-670) | `IntegrityError` | `IntegrityError` |
+
+Until the pycubrid release fixing cubrid-lab/pycubrid#390 is adopted, catch
+`sqlalchemy.exc.DatabaseError` (the base of `IntegrityError`) for NOT NULL and
+foreign-key failures through pycubrid. The dialect deliberately does not
+reclassify exceptions by message. On every driver the connection or `Session`
+remains usable after `rollback()`.
 
 ---
 

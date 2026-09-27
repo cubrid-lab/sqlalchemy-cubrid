@@ -84,9 +84,8 @@ graph TD
 - `ProgrammingError` — `DatabaseError`에 흡수됨
 - `InternalError` — `DatabaseError`에 흡수됨
 - `DataError` — `DatabaseError`에 흡수됨
-- `IntegrityError` — `DatabaseError`에 흡수됨
 
-즉, 모든 데이터베이스 수준 오류(제약 위반, 구문 오류, 연결 문제)가 `DatabaseError`로 발생합니다. `sqlalchemy-cubrid` 방언은 연결 해제 오류를 다른 실패와 구별하기 위해 **문자열 기반 메시지 매칭**을 사용합니다.
+즉, 구문 오류와 연결 문제 같은 데이터베이스 수준 오류는 `DatabaseError`로 발생합니다. 단, 제약 위반은 예외로, CUBRIDdb 11.3.0.51은 NOT NULL, 외래 키, 고유 제약 위반에 `IntegrityError`를 발생시킵니다([알려진 문제 7](#7-릴리스된-pycubrid의-not-null--외래-키-위반) 참고). `sqlalchemy-cubrid` 방언은 연결 해제 오류를 다른 실패와 구별하기 위해 **문자열 기반 메시지 매칭**을 사용합니다.
 
 ---
 
@@ -162,6 +161,18 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#485). 모든 릴리스�
 | `cubrid+aiopycubrid://` | LOB 핸들 `dict`. 또한 비동기 DB-API 어댑터에 `Binary`가 없어 `None`을 포함한 모든 `LargeBinary` / `BLOB` 파라미터 바인딩이 `AttributeError`를 발생시킵니다 |
 
 `LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다. [타입](TYPES.md)도 참고하세요.
+
+### 7. 릴리스된 pycubrid의 NOT NULL / 외래 키 위반
+
+CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전달받은 DB-API 예외 클래스를 그대로 감싸므로, SQLAlchemy 예외 클래스는 드라이버에 따라 달라집니다:
+
+| 위반 (네이티브 코드) | `cubrid://` (`CUBRIDdb` 11.3) | `cubrid+pycubrid://` / `cubrid+aiopycubrid://` (pycubrid 1.7.1) |
+|---|---|---|
+| NOT NULL (-631) | `IntegrityError` | `DatabaseError` |
+| 외래 키 (-922) | `IntegrityError` | `DatabaseError` |
+| 고유 / 기본 키 (-670) | `IntegrityError` | `IntegrityError` |
+
+cubrid-lab/pycubrid#390을 수정한 pycubrid 릴리스를 채택하기 전까지, pycubrid를 통한 NOT NULL 및 외래 키 실패는 `sqlalchemy.exc.DatabaseError`(`IntegrityError`의 기반 클래스)로 잡으세요. 방언은 의도적으로 메시지 기반으로 예외를 재분류하지 않습니다. 모든 드라이버에서 `rollback()` 후 연결이나 `Session`을 계속 사용할 수 있습니다.
 
 ---
 
