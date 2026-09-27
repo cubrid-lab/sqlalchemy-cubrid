@@ -25,6 +25,12 @@ _PREFIX = "Docs: not needed -"
 _LITERAL_RUN = re.compile(r"`+|\\+|\[[^\[\]\n\\`<>]*\]\(<[^<>\n]*>\)")
 _BLOCK_PREFIX = r" {0,3}(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)?"
 _ATX_HEADING = r" {0,3}#{1,6}(?=[ \t\n]|$)"
+_THEMATIC_BREAK = r" {0,3}(?:(?:\*[ \t]*){3,}|(?:_[ \t]*){3,}|(?:-[ \t]*){3,})"
+_HTML_BLOCK_START = re.compile(
+    r" {0,3}(?:<!--|<(?:pre|script|style|textarea)(?=[ \t>]|$)"
+    r"|<(?:blockquote|iframe)(?=[ \t>]|/>|$))",
+    re.IGNORECASE,
+)
 
 
 def _reason_text(text: str) -> str:
@@ -37,7 +43,7 @@ def _placeholder(text: str) -> bool:
     reason = _reason_text(unescape(text))
     if reason.startswith("<reason>"):
         return True
-    wrapper = re.match(r"`+|\*{1,3}|_{1,3}", reason)
+    wrapper = re.match(r"`+|\*{1,3}|_{1,3}|~{1,2}", reason)
     if wrapper is None:
         return False
     contents = reason[wrapper.end() :].lstrip()
@@ -55,8 +61,25 @@ class _HTMLContext(HTMLParser):
         self.marker_lines: set[int] = set()
         self.literal_positions: set[tuple[int, int]] = set()
         self.source = source
+        self.fed_text = ""
         self.inline_end = -1
         self.inline_spans: list[tuple[int, int]] = []
+
+    def feed(self, data: str) -> None:
+        self.fed_text += data
+        super().feed(data)
+
+    def checkpoint(self) -> None:
+        line, column = self.getpos()
+        start = sum(len(row) + 1 for row in self.fed_text.split("\n")[: line - 1]) + column
+        pending = self.fed_text[start:]
+        safe = "<" not in pending and "&" not in pending
+        if pending.startswith("<!--"):
+            closer = pending.rfind("-->")
+            tail = pending[closer + 3 :]
+            safe = closer > pending.rfind("<!--") and "<" not in tail and "&" not in tail
+        if pending and safe:
+            self.close()
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"blockquote", "pre", "code", "script", "style", "textarea", "iframe"}:
@@ -92,6 +115,7 @@ class _HTMLContext(HTMLParser):
 
     def outside_prefix(self, number: int, prefix: str) -> bool:
         self.feed(prefix)
+        self.checkpoint()
         return not self.blocked and self.lines.get(number) == prefix
 
     def feed_literals(self, text: str, number: int, column: int, offset: int) -> None:
@@ -108,6 +132,7 @@ class _HTMLContext(HTMLParser):
                 break
             if run[0][0] == "[":
                 self.feed(text[cursor : run.start() + 1])
+                self.checkpoint()
                 escaped = re.search(r"\\+$", self.source[: offset + run.start()])
                 outside = (
                     not self.blocked and (number, column + run.start()) in self.literal_positions
@@ -120,6 +145,7 @@ class _HTMLContext(HTMLParser):
                 cursor = run.end()
                 continue
             self.feed(text[cursor : run.end()])
+            self.checkpoint()
             outside = not self.blocked and (number, column + run.start()) in self.literal_positions
             cursor = run.end()
             if not outside:
@@ -138,6 +164,9 @@ class _HTMLContext(HTMLParser):
             heading = re.search(r"\n" + _ATX_HEADING, self.source[start:limit])
             if heading:
                 limit = start + heading.start() + 1
+            thematic = re.search(r"\n" + _THEMATIC_BREAK + r"(?=\n|$)", self.source[start:limit])
+            if thematic:
+                limit = start + thematic.start() + 1
             for boundary in re.finditer(
                 r"\n" + _BLOCK_PREFIX + r"(`{3,}|~{3,})([^\n]*)", self.source[start:limit]
             ):
@@ -176,10 +205,10 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             continue
         if fence:
             marker = re.match(r"[ \t]*(`{3,}|~{3,})", line)
-            indentation = len(line[: marker.start(1)].expandtabs(4)) if marker else -1
+            fence_indent = len(line[: marker.start(1)].expandtabs(4)) if marker else -1
             if (
                 marker
-                and fence[2] <= indentation <= fence[2] + 3
+                and fence[2] <= fence_indent <= fence[2] + 3
                 and marker[1][0] == fence[0]
                 and len(marker[1]) >= fence[1]
             ):
@@ -195,6 +224,8 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             continue
         if quoted and (
             re.match(_ATX_HEADING, line)
+            or re.fullmatch(_THEMATIC_BREAK, raw)
+            or _HTML_BLOCK_START.match(line)
             or (opener and (opener[1][0] == "~" or "`" not in line[opener.end() :]))
         ):
             quoted = False
@@ -237,6 +268,7 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             position = origin + len(line) - len(line.lstrip(" "))
             if not _placeholder(line.lstrip(" ")[len(prefix) :]):
                 candidates.append((number, position))
+    html.close()
     for number, position in candidates:
         line = html.lines.get(number, "").lstrip(" ")
         inside = any(start <= position < end for start, end in html.inline_spans)

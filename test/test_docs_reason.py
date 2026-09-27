@@ -153,8 +153,77 @@ class DocsReasonWorkflowTests(unittest.TestCase):
             )
 
     def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
-        from scripts.check_docs_reason import _placeholder, has_docs_not_needed_reason
+        from scripts.check_docs_reason import _HTMLContext, _placeholder, has_docs_not_needed_reason
 
+        pending = _HTMLContext("<!--\nDocs: not needed - hidden\n-->\n")
+        pending.feed("<!--\nDocs: not needed - hidden\n")
+        pending.checkpoint()
+        self.assertEqual(pending.getpos(), (1, 0))
+        self.assertFalse(pending.marker_lines)
+        for source in (
+            '<blockquote title="\nDocs: not needed - hidden',
+            "<script>\nDocs: not needed - hidden",
+        ):
+            self.assertFalse(has_docs_not_needed_reason(source))
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "> quote\n<!--\n# Details\nDocs: not needed - hidden\n-->\nDocs: not needed - tests only"
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason("> quote\n<!--\n# Details\nDocs: not needed - hidden")
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "<!--\nDocs: not needed - hidden\n-->\n```text\nDocs: not needed - hidden\n```"
+            )
+        )
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - ~~&lt;reason&gt;~~"))
+        self.assertFalse(_placeholder("~~~<reason>~~~"))
+        for thematic in ("***", "- - -", "___", "  *\t* *"):
+            self.assertTrue(
+                has_docs_not_needed_reason(f"> quote\n{thematic}\nDocs: not needed - tests only")
+            )
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"`unmatched\n{thematic}\nDocs: not needed - tests only\nlast `"
+                )
+            )
+        for literal in ("*_*", "***text", "    ***", "\\***", "***\u2028"):
+            self.assertFalse(
+                has_docs_not_needed_reason(f"> quote\n{literal}\nDocs: not needed - hidden")
+            )
+        self.assertTrue(has_docs_not_needed_reason("> quote\n***\nDocs: not needed - tests only"))
+        self.assertFalse(
+            has_docs_not_needed_reason("> quote\n<!--\n# Details\nDocs: not needed - hidden\n-->")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "> quote\n<!--\n# Details\nhidden\n-->\nDocs: not needed - tests only"
+            )
+        )
+        for literal in (
+            "<code>",
+            "<https://example.com>",
+            "<prelude>",
+            "\\<!--",
+            "    <!--",
+            "`<!--`",
+        ):
+            self.assertFalse(
+                has_docs_not_needed_reason(f"> quote\n{literal}\nDocs: not needed - hidden")
+            )
+        for tag in ("pre", "script", "style", "textarea", "blockquote", "iframe"):
+            self.assertFalse(
+                has_docs_not_needed_reason(
+                    f"> quote\n<{tag.upper()}>\n# Details\nDocs: not needed - hidden\n</{tag}>"
+                )
+            )
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"> quote\n<{tag}>\nhidden\n</{tag}>\nDocs: not needed - tests only"
+                )
+            )
         for unmatched in ("`<reason>``", "``<reason>`", "*<reason>**"):
             self.assertFalse(_placeholder(unmatched))
         self.assertFalse(has_docs_not_needed_reason("Docs: not needed - `<reason>`"))

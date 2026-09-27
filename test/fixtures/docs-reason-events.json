@@ -78,5 +78,12 @@
   {"id": "ordinary_prose_adjacent_reason", "event": {"pull_request": {"body": "Ordinary prose.\nDocs: not needed - tests only\nMore prose.", "labels": []}}, "expected_docs_exemption": true},
   {"id": "raw_html_link_label_not_masked", "event": {"pull_request": {"body": "[<blockquote>](<dest>)\n\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false},
   {"id": "inline_code_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - `<reason>`", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "heading_ends_lazy_quote", "event": {"pull_request": {"body": "> quote\n# Details\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true}
+  {"id": "heading_ends_lazy_quote", "event": {"pull_request": {"body": "> quote\n# Details\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "comment_interrupts_quote_and_hides_heading", "event": {"pull_request": {"body": "> quote\n<!--\n# Details\nDocs: not needed - hidden\n-->", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "comment_after_quote_closes_before_reason", "event": {"pull_request": {"body": "> quote\n<!--\n# Details\nhidden\n-->\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "pending_hidden_marker_then_closed_comment_reason", "event": {"pull_request": {"body": "> quote\n<!--\n# Details\nDocs: not needed - hidden\n-->\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "unclosed_comment_marker_stays_hidden", "event": {"pull_request": {"body": "> quote\n<!--\n# Details\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "strike_wrapped_placeholder_not_reason", "event": {"pull_request": {"body": "Docs: not needed - ~~&lt;reason&gt;~~", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "thematic_break_ends_lazy_quote", "event": {"pull_request": {"body": "> quote\n***\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "buffered_comment_cannot_hide_fence_opener", "event": {"pull_request": {"body": "<!--\nDocs: not needed - hidden\n-->\n```text\nDocs: not needed - hidden\n```", "labels": []}}, "expected_docs_exemption": false}
 ]
