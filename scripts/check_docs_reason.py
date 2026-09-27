@@ -86,6 +86,11 @@ class _HTMLContext(HTMLParser):
             closer = pending.rfind("-->")
             tail = pending[closer + 3 :]
             safe = closer > pending.rfind("<!--") and "<" not in tail and "&" not in tail
+        elif pending.startswith("&#"):
+            numeric = re.match(r"&#(?:[xX][0-9a-fA-F]*|[0-9]*)\n", pending)
+            if numeric:
+                tail = pending[numeric.end() :]
+                safe = "<" not in tail and "&" not in tail
         if pending and safe:
             self.close()
 
@@ -280,10 +285,11 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
         else:
             html.feed_literals(line + "\n", number, 0, origin)
         if re.match(r" {0,3}" + re.escape(prefix), line):
+            html.checkpoint()
             position = origin + len(line) - len(line.lstrip(" "))
             if not _placeholder(line.lstrip(" ")[len(prefix) :]):
                 candidates.append((number, position))
-    html.close()
+    html.checkpoint()
     for number, position in candidates:
         line = html.lines.get(number, "").lstrip(" ")
         inside = any(start <= position < end for start, end in html.inline_spans)

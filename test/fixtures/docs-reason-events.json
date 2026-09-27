@@ -90,5 +90,8 @@
   {"id": "bracketed_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - [<reason>]", "labels": []}}, "expected_docs_exemption": false},
   {"id": "quoted_heading_cannot_lazy_continue", "event": {"pull_request": {"body": "> # Heading\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "list_fence_outdent_restores_reason", "event": {"pull_request": {"body": "- ```text\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
-  {"id": "quoted_heading_after_paragraph_ends_lazy_state", "event": {"pull_request": {"body": "> paragraph\n> # Heading\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true}
+  {"id": "quoted_heading_after_paragraph_ends_lazy_state", "event": {"pull_request": {"body": "> paragraph\n> # Heading\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "terminated_numeric_prefix_before_real_reason", "event": {"pull_request": {"body": "&#\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "terminated_hex_prefix_before_real_reason", "event": {"pull_request": {"body": "&#x\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "terminated_numeric_prefix_cannot_hide_fence", "event": {"pull_request": {"body": "&#\n~~~\nDocs: not needed - hidden\n~~~", "labels": []}}, "expected_docs_exemption": false}
 ]

@@ -166,6 +166,16 @@ class DocsReasonWorkflowTests(unittest.TestCase):
     def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
         from scripts.check_docs_reason import _HTMLContext, _placeholder, has_docs_not_needed_reason
 
+        for prefix in ("&#", "&#x"):
+            self.assertTrue(has_docs_not_needed_reason(prefix + "\nDocs: not needed - tests only"))
+            self.assertFalse(
+                has_docs_not_needed_reason(prefix + "\n~~~\nDocs: not needed - hidden\n~~~")
+            )
+        numeric = _HTMLContext("&#\nDocs: not needed - future")
+        numeric.feed("&#")
+        numeric.checkpoint()
+        self.assertEqual(numeric.getpos(), (1, 0))
+        self.assertFalse(numeric.marker_lines)
         self.assertFalse(has_docs_not_needed_reason("Docs: not needed - [<reason>]"))
         self.assertFalse(has_docs_not_needed_reason("Docs: not needed - (<reason>)"))
         for unmatched in ("[<reason>)", "(<reason>]", "[<reason>"):
@@ -212,6 +222,21 @@ class DocsReasonWorkflowTests(unittest.TestCase):
             "<script>\nDocs: not needed - hidden",
         ):
             self.assertFalse(has_docs_not_needed_reason(source))
+        for unfinished in (
+            "<!--\nDocs: not needed - hidden",
+            '<blockquote title="\nDocs: not needed - hidden',
+        ):
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    "<!--\nDocs: not needed - hidden\n-->\nDocs: not needed - tests only\n"
+                    + unfinished
+                )
+            )
+        for source in (
+            "Docs: not needed - use < in fixture text",
+            "<blockquote>hidden</blockquote>\nDocs: not needed - tests only",
+        ):
+            self.assertTrue(has_docs_not_needed_reason(source))
         self.assertTrue(
             has_docs_not_needed_reason(
                 "> quote\n<!--\n# Details\nDocs: not needed - hidden\n-->\nDocs: not needed - tests only"
