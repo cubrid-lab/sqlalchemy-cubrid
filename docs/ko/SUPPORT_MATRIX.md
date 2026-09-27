@@ -73,6 +73,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 트랜잭션 관리 | ✅ | 커밋, 롤백, 세이브포인트 (RELEASE SAVEPOINT 없음) |
 | 커넥션 풀링 | ✅ | `pool_pre_ping`, 연결 해제 감지를 갖춘 SA 풀 |
 | 문장 캐싱 | ✅ | `supports_statement_cache = True` |
+| `executemany` (`text()`, UPDATE, DELETE) | ✅ | 모든 드라이버에서 `None`은 NULL로 바인딩되고 `rowcount`는 모든 파라미터 세트의 합계입니다(`supports_sane_multi_rowcount = True`). `cubrid://`에서는 CUBRIDdb 버그를 피하기 위해 방언이 각 파라미터 세트를 별도의 `execute()`로 실행합니다. 이 때문에 행마다 문장 준비가 한 번 더 필요하며, 1000행 UPDATE 기준 드라이버 자체 `executemany`보다 약 2.9배 느립니다. pycubrid는 한 번만 준비하는 `executemany`를 그대로 사용합니다. 여러 행의 Core `insert()`는 insertmanyvalues를 사용하므로 영향이 없습니다. [드라이버 호환성, 알려진 문제 7](DRIVER_COMPAT.md#알려진-문제) 참고 |
 
 ### SQLAlchemy ORM
 
@@ -81,6 +82,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 선언형 모델 | ✅ | |
 | 릴레이션십 | ✅ | |
 | Session / Unit of Work | ✅ | |
+| 일괄 UPDATE / DELETE 행 수 검사 | ✅ | 모든 드라이버에서 일괄 flush가 일치한 행 수를 검사합니다. `cubrid://`에서는 행 단위 `executemany` 가드에 의존합니다. [드라이버 호환성, 알려진 문제 7](DRIVER_COMPAT.md#알려진-문제) 참고 |
 | Query API | ✅ | |
 | 하이브리드 속성 | ✅ | |
 

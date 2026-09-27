@@ -72,6 +72,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Transaction management | ✅ | commit, rollback, savepoint (no RELEASE SAVEPOINT) |
 | Connection pooling | ✅ | SA pool with `pool_pre_ping`, disconnect detection |
 | Statement caching | ✅ | `supports_statement_cache = True` |
+| `executemany` (`text()`, UPDATE, DELETE) | ✅ | `None` binds as NULL and `rowcount` is the total across parameter sets on every driver (`supports_sane_multi_rowcount = True`). On `cubrid://`, the dialect runs each parameter set as its own `execute()` to work around a CUBRIDdb bug. This costs one extra statement prepare per row: about 2.9× slower than the driver's own `executemany` in a 1000-row UPDATE. pycubrid keeps its prepare-once `executemany`. Multi-row Core `insert()` uses insertmanyvalues and is unaffected. See [Driver Compatibility, Known Issue 7](DRIVER_COMPAT.md#known-issues) |
 
 ### SQLAlchemy ORM
 
@@ -80,6 +81,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Declarative models | ✅ | |
 | Relationships | ✅ | |
 | Session / Unit of Work | ✅ | |
+| Batched UPDATE / DELETE row checks | ✅ | Batched flushes check the matched-row count on every driver. On `cubrid://` this relies on the per-row `executemany` guard, see [Driver Compatibility, Known Issue 7](DRIVER_COMPAT.md#known-issues) |
 | Query API | ✅ | |
 | Hybrid properties | ✅ | |
 
