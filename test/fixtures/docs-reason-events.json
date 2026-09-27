@@ -123,5 +123,9 @@
   {"id": "reported_processing_instruction_boundary", "event": {"pull_request": {"body": "`unmatched\n<?x?>\nDocs: not needed - tests only\nlast `", "labels": []}}, "expected_docs_exemption": true},
   {"id": "reported_quoted_setext_nonlazy", "event": {"pull_request": {"body": "> Heading\n> ===\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "reported_whitespace_link_caption", "event": {"pull_request": {"body": "Docs: not needed - [ ](/issue)", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "reported_empty_reference_image_caption", "event": {"pull_request": {"body": "Docs: not needed - ![][img]\n\n[img]: image.png", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "reported_empty_reference_image_caption", "event": {"pull_request": {"body": "Docs: not needed - ![][img]\n\n[img]: image.png", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_comment_only_caption", "event": {"pull_request": {"body": "Docs: not needed - [<!-- empty -->](/issue)", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_tag_only_caption", "event": {"pull_request": {"body": "Docs: not needed - [<span></span>](/issue)", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_comment_only_image_caption", "event": {"pull_request": {"body": "Docs: not needed - ![<!-- comment -->](image.png)", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "reported_invisible_mongolian_selector", "event": {"pull_request": {"body": "Docs: not needed - \u180b", "labels": []}}, "expected_docs_exemption": false}
 ]

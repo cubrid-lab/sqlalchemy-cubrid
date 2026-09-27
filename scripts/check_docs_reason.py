@@ -84,8 +84,17 @@ def _reason_text(text: str) -> str:
         for character in text
         if category(character) not in {"Cc", "Cf"}
         and character != "\u034f"
+        and character not in "\u180b\u180c\u180d\u180f"
         and not ("\ufe00" <= character <= "\ufe0f" or "\U000e0100" <= character <= "\U000e01ef")
     ).strip()
+
+
+def _empty_caption(raw: str, visible: str | None = None) -> bool:
+    original = _CAPTION_ONLY.fullmatch(_reason_text(raw))
+    if original is None:
+        return False
+    caption = original if visible is None else _CAPTION_ONLY.fullmatch(_reason_text(visible))
+    return caption is not None and not _reason_text(unescape(caption[1]))
 
 
 def _placeholder(text: str) -> bool:
@@ -576,16 +585,14 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             html.checkpoint()
             position = origin + len(line) - len(line.lstrip(" "))
             raw_reason = line.lstrip(" ")[len(prefix) :]
-            caption = _CAPTION_ONLY.fullmatch(_reason_text(raw_reason))
-            empty_caption = caption is not None and not _reason_text(unescape(caption[1]))
-            if not _placeholder(raw_reason) and not empty_caption:
-                candidates.append((number, position))
+            if not _placeholder(raw_reason) and not _empty_caption(raw_reason):
+                candidates.append((number, position, raw_reason))
     html.checkpoint()
-    for number, position in candidates:
+    for number, position, raw_reason in candidates:
         line = html.lines.get(number, "").lstrip(" ")
         inside = any(start <= position < end for start, end in html.inline_spans)
         if not inside and number in html.marker_lines and line.startswith(prefix):
             reason = _reason_text(line[len(prefix) :])
-            if reason and not _placeholder(reason):
+            if reason and not _placeholder(reason) and not _empty_caption(raw_reason, reason):
                 return True
     return False
