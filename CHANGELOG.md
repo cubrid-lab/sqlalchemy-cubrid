@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **`AUTOCOMMIT_REGEXP` now includes `REPLACE` (#439)** — `should_autocommit_text()` is a SQLAlchemy 1.x-era hook that supported SQLAlchemy 2.x transaction management never calls, so this has no runtime effect on any supported SQLAlchemy version (`sqlalchemy>=2.0,<2.3`). The regex previously listed `UPDATE`/`INSERT`/`CREATE`/`DELETE`/`DROP`/`ALTER`/`MERGE`/`TRUNCATE` but omitted `REPLACE`, even though the dialect's own `replace()` DML construct compiles to `REPLACE INTO`; added for consistency with the rest of the DML surface.
+
 ## [1.7.1] - 2026-09-18
 
 ### Added
