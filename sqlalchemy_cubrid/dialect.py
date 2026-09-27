@@ -20,8 +20,10 @@ Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
 
 from __future__ import annotations
 
+import importlib.util
 import logging
 import re
+import warnings
 
 from typing import Any, Callable, Optional, Sequence, cast
 
@@ -1336,3 +1338,35 @@ class CubridDialect(default.DefaultDialect):
 
 
 dialect = CubridDialect
+
+
+# Register ``CubridImpl`` with Alembic whenever Alembic is installed.
+# Alembic resolves its migration implementation from ``_impls[dialect.name]``,
+# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``; it
+# never reads a package entry point for this.  Every CUBRID dialect variant
+# (``cubrid``, ``cubrid+cubriddb``, ``cubrid+pycubrid``,
+# ``cubrid+aiopycubrid``) imports this module and has ``name = "cubrid"``, so
+# importing ``alembic_impl`` here makes a default ``env.py`` work with no
+# extra import.  Alembic stays optional: without it the import is skipped
+# silently.  A broken Alembic install (for example 1.7.0/1.7.1, which raise
+# ``NameError`` on SQLAlchemy 2.x) must never stop the dialect from loading,
+# so any other failure only disables the integration with a warning.
+try:
+    from sqlalchemy_cubrid import alembic_impl as _alembic_impl  # noqa: F401
+except Exception as _exc:
+    try:
+        _alembic_absent = importlib.util.find_spec("alembic") is None
+    except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
+        _alembic_absent = False
+    if not (isinstance(_exc, ImportError) and _alembic_absent):
+        _alembic_msg = (
+            "sqlalchemy-cubrid: Alembic integration is disabled because the "
+            f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
+            'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
+        )
+        # A warning filter set to "error" (``-W error``) turns warn() into a
+        # raise; fall back to the logger so the dialect still loads.
+        try:
+            warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
+        except Exception:
+            log.warning(_alembic_msg)

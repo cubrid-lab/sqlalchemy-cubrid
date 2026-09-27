@@ -24,12 +24,12 @@ Install sqlalchemy-cubrid with the `alembic` extra:
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-This pulls in Alembic ≥ 1.7 as a dependency. The CUBRID Alembic implementation
-(`CubridImpl`) is registered automatically via the `alembic.ddl` entry point —
+This pulls in Alembic ≥ 1.7.2 as a dependency. The CUBRID Alembic implementation
+(`CubridImpl`) is registered automatically when the CUBRID dialect loads —
 no manual configuration is needed.
 
-> **Note**: If you install Alembic separately (`pip install alembic`), it will
-> still auto-discover the CUBRID implementation as long as `sqlalchemy-cubrid`
+> **Note**: If you install Alembic separately (`pip install alembic`), the
+> CUBRID implementation is still registered as long as `sqlalchemy-cubrid`
 > is installed in the same environment.
 
 ---
@@ -72,8 +72,21 @@ def run_migrations_online():
 
 ### env.py Setup
 
-The standard Alembic `env.py` works without modification. The `CubridImpl`
-class is auto-discovered when the connection URL uses the `cubrid://` scheme.
+The `CubridImpl` class is registered as soon as any CUBRID URL loads the
+dialect, so `env.py` never needs a CUBRID import. Which template to start from
+depends on the driver:
+
+- **Synchronous URLs** (`cubrid://`, `cubrid+cubriddb://`,
+  `cubrid+pycubrid://`): the standard `env.py` from `alembic init` works
+  without modification.
+- **Async URL** (`cubrid+aiopycubrid://`): use Alembic's async template,
+  `alembic init -t async <dir>`. Its generated `env.py` also works without
+  modification. The standard template's online path calls the synchronous
+  `engine_from_config()`, which cannot drive the async driver and fails with
+  `sqlalchemy.exc.MissingGreenlet`; offline `--sql` mode works with either
+  template. Verified on CUBRID 11.4 with Alembic 1.7.2 and 1.20.0:
+  `upgrade head` / `downgrade base` through an unmodified async-template
+  `env.py` (covered by `test/test_alembic_registration.py`).
 
 A minimal `env.py` for online migrations:
 
@@ -158,18 +171,33 @@ CUBRID implicitly commits every DDL statement. The `CubridImpl` sets
 through, you cannot simply roll back — the earlier operations have already
 been committed. Write migrations with small, atomic steps.
 
-### Auto-Discovery
+### Auto-Registration
 
-The dialect registers `CubridImpl` via the `alembic.ddl` entry point in
-`pyproject.toml`:
+Alembic picks its migration implementation from a registry keyed by
+`dialect.name`; a `DefaultImpl` subclass adds itself to that registry when its
+module is imported (`CubridImpl.__dialect__ = "cubrid"`). Alembic does not load
+dialect implementations from package entry points.
 
-```toml
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
-```
+`sqlalchemy_cubrid/dialect.py` therefore imports `sqlalchemy_cubrid.alembic_impl`
+when Alembic is installed (and skips it silently when it is not). Every CUBRID
+URL — `cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://` and
+`cubrid+aiopycubrid://` — loads that module and has `dialect.name == "cubrid"`,
+so building the engine (or, in offline `--sql` mode, the dialect from the URL)
+registers `CubridImpl` before Alembic looks it up. No imports or configuration
+are required in `env.py` or your migration files.
 
-When Alembic detects a `cubrid://` connection URL, it automatically loads
-`CubridImpl`. No imports or configuration are required in your migration files.
+If Alembic is installed but fails to import (for example Alembic 1.7.0/1.7.1,
+which raise `NameError` on SQLAlchemy 2.x), the dialect still loads and emits a
+single `RuntimeWarning` saying the Alembic integration is disabled, with the
+original exception. If a warning filter turns that warning into an error
+(`-W error`), the message is logged through the `sqlalchemy_cubrid.dialect`
+logger instead, so the dialect still loads. Upgrading to
+`alembic>=1.7.2,<2.0` fixes it.
+
+Versions before this fix declared an `alembic.ddl` entry point that Alembic
+never read, so a default `env.py` failed with `KeyError: 'cubrid'` unless it
+imported `sqlalchemy_cubrid.alembic_impl` explicitly. That import is harmless
+and can stay.
 
 ### Implementation Details
 
@@ -390,7 +418,7 @@ installed.
 **Fix**:
 
 ```bash
-pip install "alembic>=1.7,<2.0"
+pip install "alembic>=1.7.2,<2.0"
 ```
 
 ### Migration partially applied

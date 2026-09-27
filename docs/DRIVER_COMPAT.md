@@ -182,7 +182,7 @@ returns the driver's LOB locator instead of `bytes` / `str`:
 |---|---|
 | `cubrid://` (`CUBRIDdb` 11.3) | server file-locator `str` (`'file:...'`) |
 | `cubrid+pycubrid://` (pycubrid 1.3.2 to 1.7.1) | LOB-handle `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
-| `cubrid+aiopycubrid://` | LOB-handle `dict`; binding any `LargeBinary` / `BLOB` parameter, including `None`, also raises `AttributeError` because the async DB-API adapter has no `Binary` |
+| `cubrid+aiopycubrid://` (pycubrid 1.7.1) | LOB-handle `dict` (binding `LargeBinary` / `BLOB` values, including `None`, works since #500) |
 
 For `LargeBinary` / `BLOB`, SQLAlchemy's result processor then raises `TypeError`.
 To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`),
