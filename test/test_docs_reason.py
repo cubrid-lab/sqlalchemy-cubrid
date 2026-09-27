@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 from pathlib import Path
@@ -22,6 +23,16 @@ def workflow_python() -> str:
 
 
 class DocsReasonWorkflowTests(unittest.TestCase):
+    def test_checkpoint_does_not_resplit_the_fed_tape(self) -> None:
+        from scripts.check_docs_reason import _HTMLContext
+
+        self.assertNotIn("fed_text.split", inspect.getsource(_HTMLContext.checkpoint))
+        html = _HTMLContext("unfed future\n")
+        html.feed("ab\n\n")
+        html.feed("c\n")
+        self.assertEqual(html.row_starts, [0, 3, 4, 6])
+        self.assertEqual(html.row_starts[html.getpos()[0] - 1], len(html.fed_text))
+
     def test_reviewed_physical_and_rendered_contexts(self) -> None:
         from scripts.check_docs_reason import _HTMLContext, has_docs_not_needed_reason
 
@@ -155,6 +166,12 @@ class DocsReasonWorkflowTests(unittest.TestCase):
     def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
         from scripts.check_docs_reason import _HTMLContext, _placeholder, has_docs_not_needed_reason
 
+        self.assertFalse(has_docs_not_needed_reason(r"Docs: not needed - \<reason\>"))
+        self.assertFalse(_placeholder(r"\\<reason\\>"))
+        self.assertFalse(_placeholder(r"\x<reason\>"))
+        self.assertTrue(
+            has_docs_not_needed_reason(r"Docs: not needed - only \<reason\> fixture changed")
+        )
         pending = _HTMLContext("<!--\nDocs: not needed - hidden\n-->\n")
         pending.feed("<!--\nDocs: not needed - hidden\n")
         pending.checkpoint()

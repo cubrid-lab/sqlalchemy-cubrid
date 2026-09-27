@@ -19,9 +19,11 @@ from __future__ import annotations
 import re
 from html import unescape
 from html.parser import HTMLParser
+from string import punctuation
 from unicodedata import category
 
 _PREFIX = "Docs: not needed -"
+_MARKDOWN_ESCAPE = re.compile(r"\\([" + re.escape(punctuation) + r"])")
 _LITERAL_RUN = re.compile(r"`+|\\+|\[[^\[\]\n\\`<>]*\]\(<[^<>\n]*>\)")
 _BLOCK_PREFIX = r" {0,3}(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)?"
 _ATX_HEADING = r" {0,3}#{1,6}(?=[ \t\n]|$)"
@@ -40,7 +42,7 @@ def _reason_text(text: str) -> str:
 
 
 def _placeholder(text: str) -> bool:
-    reason = _reason_text(unescape(text))
+    reason = _reason_text(unescape(_MARKDOWN_ESCAPE.sub(r"\1", text)))
     if reason.startswith("<reason>"):
         return True
     wrapper = re.match(r"`+|\*{1,3}|_{1,3}|~{1,2}", reason)
@@ -62,16 +64,19 @@ class _HTMLContext(HTMLParser):
         self.literal_positions: set[tuple[int, int]] = set()
         self.source = source
         self.fed_text = ""
+        self.row_starts: list[int] = [0]
         self.inline_end = -1
         self.inline_spans: list[tuple[int, int]] = []
 
     def feed(self, data: str) -> None:
+        base = len(self.fed_text)
+        self.row_starts.extend(base + match.end() for match in re.finditer("\n", data))
         self.fed_text += data
         super().feed(data)
 
     def checkpoint(self) -> None:
         line, column = self.getpos()
-        start = sum(len(row) + 1 for row in self.fed_text.split("\n")[: line - 1]) + column
+        start = self.row_starts[line - 1] + column
         pending = self.fed_text[start:]
         safe = "<" not in pending and "&" not in pending
         if pending.startswith("<!--"):

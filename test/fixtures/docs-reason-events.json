@@ -85,5 +85,6 @@
   {"id": "unclosed_comment_marker_stays_hidden", "event": {"pull_request": {"body": "> quote\n<!--\n# Details\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false},
   {"id": "strike_wrapped_placeholder_not_reason", "event": {"pull_request": {"body": "Docs: not needed - ~~&lt;reason&gt;~~", "labels": []}}, "expected_docs_exemption": false},
   {"id": "thematic_break_ends_lazy_quote", "event": {"pull_request": {"body": "> quote\n***\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
-  {"id": "buffered_comment_cannot_hide_fence_opener", "event": {"pull_request": {"body": "<!--\nDocs: not needed - hidden\n-->\n```text\nDocs: not needed - hidden\n```", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "buffered_comment_cannot_hide_fence_opener", "event": {"pull_request": {"body": "<!--\nDocs: not needed - hidden\n-->\n```text\nDocs: not needed - hidden\n```", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "escaped_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - \\<reason\\>", "labels": []}}, "expected_docs_exemption": false}
 ]
