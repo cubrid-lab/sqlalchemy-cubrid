@@ -1451,20 +1451,20 @@ class TestCursorDescriptionContract:
 
     def test_collection_type_codes(self, request, desc_tables):
         _, collections = desc_tables
-        # Released pycubrid keeps only the element type code (INTEGER 8) and
-        # decodes the payload as that scalar; depending on the payload the
-        # SELECT can fail with "malformed response from broker" and close the
-        # connection, so this case uses its own engine.
+        # A dedicated engine keeps any broken connection out of the shared pool:
+        # released pycubrid misreads the collection column header.
         engine = create_engine(_cubrid_url())
         try:
             if engine.dialect.driver == "pycubrid":
-                xfail_unreleased_pycubrid_fix(
-                    request, "pycubrid", 430, raises=(AssertionError, sa.exc.DBAPIError)
-                )
                 expected = {name: spec[1] for name, spec in _DESC_COLLECTIONS.items()}
             else:
                 expected = {name: spec[2] for name, spec in _DESC_COLLECTIONS.items()}
             with engine.connect() as conn:
+                # Released pycubrid reports the element type code (INTEGER 8);
+                # only that assertion is gated, and only for pycubrid.
+                xfail_unreleased_pycubrid_fix(
+                    request, engine.dialect.driver, 430, raises=AssertionError
+                )
                 result = conn.execute(select(*(collections.c[name] for name in _DESC_COLLECTIONS)))
                 codes = {d[0]: d[1] for d in result.cursor.description}
                 assert len(result.all()) == 1

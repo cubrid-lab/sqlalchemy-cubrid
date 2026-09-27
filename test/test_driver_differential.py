@@ -452,12 +452,14 @@ def test_scalar_description_agrees(request: pytest.FixtureRequest, both_engines:
                     "nl VARCHAR(20), bi BIGINT, n NUMERIC(10,2), dt DATE)"
                 )
             )
-        with engine.connect() as conn:
-            result = conn.execute(sql)
-            desc = [(d[0], int(d[1]), bool(d[6])) for d in result.cursor.description]
-            result.all()
-        with engine.begin() as conn:
-            conn.execute(text("DROP TABLE drvdiff_desc"))
+        try:
+            with engine.connect() as conn:
+                result = conn.execute(sql)
+                desc = [(d[0], int(d[1]), bool(d[6])) for d in result.cursor.description]
+                result.all()
+        finally:
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS drvdiff_desc"))
         return desc
 
     expected = [
@@ -468,12 +470,13 @@ def test_scalar_description_agrees(request: pytest.FixtureRequest, both_engines:
         ("n", 7, True),
         ("dt", 13, True),
     ]
-    # CUBRIDdb is asserted before the pycubrid-only xfail exists, so a C-driver
-    # regression fails the test instead of passing as the expected failure.
+    # CUBRIDdb, and pycubrid's names and type codes, are asserted before the
+    # pycubrid-only xfail exists; only pycubrid's null_ok comparison is gated.
     assert run(cext) == expected
     py_desc = run(pyc)
+    assert [d[:2] for d in py_desc] == [e[:2] for e in expected]
     xfail_unreleased_pycubrid_fix(request, "pycubrid", 431, raises=AssertionError)
-    assert py_desc == expected
+    assert [d[2] for d in py_desc] == [e[2] for e in expected]
 
 
 if __name__ == "__main__":

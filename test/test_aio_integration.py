@@ -867,7 +867,7 @@ class TestAsyncCursorDescriptionContract:
             keys = list(result.keys())
             row = result.one()
         assert names == keys == ["id", "alias", "expr", "1+1"]
-        assert row._mapping["alias"] == "a"
+        assert row._mapping["alias"] == "a" and row.expr == 3
 
     async def test_core_select_keys_match_description(self, engine: AsyncEngine):
         async with engine.connect() as conn:
@@ -902,14 +902,15 @@ class TestAsyncCursorDescriptionContract:
         assert nullable == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
 
     async def test_collection_type_codes(self, request: pytest.FixtureRequest):
-        # Released pycubrid keeps only the element type code; the SELECT can
-        # also fail and close the connection, so use a dedicated engine.
+        # A dedicated engine keeps any broken connection out of the shared pool:
+        # released pycubrid misreads the collection column header.
         engine = create_async_engine(_async_url())
         try:
-            xfail_unreleased_pycubrid_fix(
-                request, engine.dialect.driver, 430, raises=(AssertionError, sa.exc.DBAPIError)
-            )
             async with engine.connect() as conn:
+                # Released pycubrid reports the element type code (INTEGER 8).
+                xfail_unreleased_pycubrid_fix(
+                    request, engine.dialect.driver, 430, raises=AssertionError
+                )
                 result = await conn.execute(
                     select(*(_desc_collections.c[name] for name in _DESC_COLLECTIONS))
                 )
