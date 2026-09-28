@@ -1084,15 +1084,24 @@ with Session(engine) as session:
 
 **Background:** Both CUBRID drivers default to `autocommit=True`, but the dialect sets `autocommit=False` on each new connection so SQLAlchemy can manage transactions.
 
-**If you need true autocommit** (each statement commits immediately):
+**If you need true autocommit** (each statement commits immediately), use
+SQLAlchemy's `AUTOCOMMIT` isolation level. It works on all three drivers
+(`cubrid://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`):
 
 ```python
 with engine.connect().execution_options(
     isolation_level="AUTOCOMMIT"
 ) as conn:
     conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
-    # Committed immediately
+    # Committed immediately; conn.rollback() does not undo it
 ```
+
+`create_engine(..., isolation_level="AUTOCOMMIT")` and
+`engine.execution_options(isolation_level="AUTOCOMMIT")` work too. A connection
+switched to `AUTOCOMMIT` with `execution_options()` is transactional again when
+it goes back to the pool. Releases before #501 raised `ArgumentError`
+(`execution_options`) or `ValueError` (`create_engine`) for `AUTOCOMMIT`. See
+[Isolation Levels](ISOLATION_LEVELS.md#autocommit).
 
 ---
 

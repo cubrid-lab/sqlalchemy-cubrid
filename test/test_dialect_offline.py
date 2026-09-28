@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy.exc import ArgumentError, NoSuchTableError
 from sqlalchemy.engine import url
 from sqlalchemy.sql.elements import quoted_name
 
@@ -57,6 +57,25 @@ class TestDialectBasics:
 
         custom_dialect = CubridDialect(isolation_level="SERIALIZABLE")
         assert custom_dialect.isolation_level == "SERIALIZABLE"
+
+    @pytest.mark.parametrize(
+        ("given", "expected"),
+        [
+            ("SERIALIZABLE", "SERIALIZABLE"),
+            ("serializable", "SERIALIZABLE"),
+            ("repeatable_read", "REPEATABLE READ"),
+            ("CURSOR STABILITY", "READ COMMITTED"),
+            ("REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES", "REPEATABLE READ"),
+            ("autocommit", "AUTOCOMMIT"),
+            ("BOGUS", "BOGUS"),
+        ],
+    )
+    def test_isolation_level_is_passed_to_default_dialect(self, given, expected):
+        """SQLAlchemy owns the engine-level level; aliases become the canonical name (#501)."""
+        dialect = CubridDialect(isolation_level=given)
+        assert dialect._on_connect_isolation_level == expected
+        assert dialect.isolation_level == expected
+        assert dialect._builtin_onconnect() is not None
 
     def test_supports_twophase_commit_is_false(self):
         """CUBRID does not support two-phase commit."""
@@ -131,7 +150,8 @@ class TestDialectBasics:
         dbapi_conn.set_autocommit.assert_called_once_with(False)
         dialect.set_isolation_level.assert_not_called()
 
-    def test_on_connect_with_isolation_level(self):
+    def test_on_connect_leaves_isolation_level_to_sqlalchemy(self):
+        """SQLAlchemy's built-in connect hook applies it, with ArgumentError validation (#501)."""
         dialect = CubridDialect(isolation_level="SERIALIZABLE")
         dialect.set_isolation_level = MagicMock()
 
@@ -140,7 +160,7 @@ class TestDialectBasics:
         hook(dbapi_conn)
 
         dbapi_conn.set_autocommit.assert_called_once_with(False)
-        dialect.set_isolation_level.assert_called_once_with(dbapi_conn, "SERIALIZABLE")
+        dialect.set_isolation_level.assert_not_called()
 
     def test_server_version_info_match_and_non_match(self):
         dialect = CubridDialect()
@@ -241,7 +261,8 @@ class TestIsolationLevelMethods:
         dialect = CubridDialect()
         levels = dialect.get_isolation_level_values()
 
-        assert len(levels) == 6
+        assert len(levels) == 7
+        assert "AUTOCOMMIT" in levels
         assert "SERIALIZABLE" in levels
         assert "READ COMMITTED" in levels
         assert "REPEATABLE READ" in levels
@@ -313,17 +334,90 @@ class TestIsolationLevelMethods:
         assert set(dialect._ISOLATION_LEVEL_MAP.values()) == {4, 5, 6}
         assert set(dialect._ISOLATION_LEVEL_REVERSE) == {4, 5, 6}
 
-    def test_reset_isolation_level(self):
-        dialect = CubridDialect()
+    def test_reset_isolation_level_is_sqlalchemys(self):
+        """No override: checkin restores the engine level, not always READ COMMITTED (#501)."""
+        assert "reset_isolation_level" not in vars(CubridDialect)
+        dialect = CubridDialect(isolation_level="SERIALIZABLE")
+        dialect.default_isolation_level = "SERIALIZABLE"
         cursor = MagicMock()
-        # Use spec=[] to prevent MagicMock from auto-creating
-        # a .connection attribute, which would cause set_isolation_level
-        # to unwrap to a different mock object.
-        dbapi_conn = MagicMock(spec=[])
-        dbapi_conn.cursor = MagicMock(return_value=cursor)
+        dbapi_conn = MagicMock(spec=["cursor", "autocommit"])
+        dbapi_conn.autocommit = False
+        dbapi_conn.cursor.return_value = cursor
 
         dialect.reset_isolation_level(dbapi_conn)
-        cursor.execute.assert_any_call("SET TRANSACTION ISOLATION LEVEL 4")
+
+        cursor.execute.assert_any_call("SET TRANSACTION ISOLATION LEVEL 6")
+
+    def test_set_autocommit_enables_driver_autocommit_without_sql(self):
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock(spec=["cursor", "autocommit"])
+        dbapi_conn.autocommit = False
+
+        dialect.set_isolation_level(dbapi_conn, "AUTOCOMMIT")
+
+        assert dbapi_conn.autocommit is True
+        dbapi_conn.cursor.assert_not_called()
+
+    def test_other_level_turns_driver_autocommit_off_first(self):
+        dialect = CubridDialect()
+        events: list[str] = []
+
+        class Conn:
+            _autocommit = True
+
+            @property
+            def autocommit(self):
+                return self._autocommit
+
+            @autocommit.setter
+            def autocommit(self, value):
+                events.append(f"autocommit={value}")
+                self._autocommit = value
+
+            def cursor(self):
+                cursor = MagicMock()
+                cursor.execute.side_effect = events.append
+                return cursor
+
+        conn = Conn()
+        dialect.set_isolation_level(conn, "SERIALIZABLE")
+
+        assert events == ["autocommit=False", "SET TRANSACTION ISOLATION LEVEL 6", "COMMIT"]
+
+    def test_driver_autocommit_is_not_toggled_when_already_set(self):
+        """Toggling costs round trips (and a reconnect on pycubrid); skip no-ops."""
+        dialect = CubridDialect()
+        writes: list[bool] = []
+
+        class Conn:
+            autocommit = property(lambda self: self._value, lambda self, v: writes.append(v))
+
+            def __init__(self, value):
+                self._value = value
+
+            def cursor(self):
+                return MagicMock()
+
+        dialect.set_isolation_level(Conn(False), "READ COMMITTED")
+        dialect.set_isolation_level(Conn(True), "AUTOCOMMIT")
+
+        assert writes == []
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_detect_autocommit_setting(self, value):
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock(spec=["autocommit"])
+        dbapi_conn.autocommit = value
+        assert dialect.detect_autocommit_setting(dbapi_conn) is value
+
+    @pytest.mark.parametrize("level", ["BOGUS", "READ UNCOMMITTED", ""])
+    def test_invalid_level_raises_argument_error_through_sqlalchemy(self, level):
+        """Engine-, connection- and execution-option levels are validated by SQLAlchemy (#501)."""
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock()
+        with pytest.raises(ArgumentError, match="Invalid value"):
+            dialect._assert_and_set_isolation_level(dbapi_conn, level)
+        dbapi_conn.cursor.assert_not_called()
 
     def test_isolation_level_set_get_roundtrip(self):
         """Every accepted input name round-trips to the same numeric code.
@@ -333,6 +427,8 @@ class TestIsolationLevelMethods:
         """
         dialect = CubridDialect()
         for name in dialect.get_isolation_level_values():
+            if name == "AUTOCOMMIT":  # driver mode, not a server level
+                continue
             code = dialect._ISOLATION_LEVEL_MAP[name.upper()]
             canonical = dialect._ISOLATION_LEVEL_REVERSE[code]
             # get_isolation_level() returns a value SA recognizes ...

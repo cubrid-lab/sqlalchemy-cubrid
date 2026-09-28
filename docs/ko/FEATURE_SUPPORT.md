@@ -239,6 +239,8 @@ CUBRID의 MVCC 엔진(10.0+)은 세 가지 격리 수준을 지원합니다:
 | `REPEATABLE READ` (5) | 트랜잭션 내 반복 가능한 읽기 |
 | `READ COMMITTED` (4, 기본) | 읽기는 커밋된 데이터만 봄. 반복 불가능 리드 가능 |
 
+SQLAlchemy의 `AUTOCOMMIT` 수준도 모든 드라이버에서 받으며, 드라이버를 오토커밋 모드로 전환합니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
+
 ### 참고
 
 - **2단계 커밋**: CUBRID는 `XA`를 통한 분산 트랜잭션을 지원하지 않습니다.

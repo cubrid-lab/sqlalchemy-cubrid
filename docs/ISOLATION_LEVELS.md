@@ -20,6 +20,7 @@ Since CUBRID 10.0 (the MVCC engine), CUBRID supports **three** transaction isola
   - [Engine-Level (Default for All Connections)](#engine-level-default-for-all-connections)
   - [Connection-Level (Per Connection)](#connection-level-per-connection)
   - [Execution Options (Per Statement Block)](#execution-options-per-statement-block)
+  - [AUTOCOMMIT](#autocommit)
 - [Accepted Level Names](#accepted-level-names)
 - [Comparison with SQL Standard](#comparison-with-sql-standard)
 - [How the Dialect Manages Isolation](#how-the-dialect-manages-isolation)
@@ -103,6 +104,33 @@ with engine.begin() as conn:
     # Commits at end of block
 ```
 
+### AUTOCOMMIT
+
+`AUTOCOMMIT` turns on the driver's autocommit mode, so each statement commits
+as soon as it runs. It works on `cubrid://` (CUBRIDdb), `cubrid+pycubrid://`
+and `cubrid+aiopycubrid://`, at every level SQLAlchemy offers:
+
+```python
+# Every connection from this engine
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb", isolation_level="AUTOCOMMIT")
+
+# An engine copy that shares the pool
+autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+
+# One connection
+with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
+    # Already visible to other sessions; conn.rollback() cannot undo it
+```
+
+`AUTOCOMMIT` is a driver mode, not a server isolation level: the server level
+stays what it was, and `conn.get_isolation_level()` still reports it. Setting
+any other level turns driver autocommit off again, and a pooled connection
+returns to transactional mode when it is checked in (see
+[Reset on Connection Return](#reset-on-connection-return)). Use
+`engine.dialect.detect_autocommit_setting(dbapi_connection)` to check the mode
+of a DBAPI connection.
+
 ---
 
 ## Accepted Level Names
@@ -118,11 +146,17 @@ of the three MVCC levels; names are **case-insensitive**.
 | `READ COMMITTED`                                       | 4             |
 | `REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES`     | 4             |
 | `CURSOR STABILITY`                                     | 4             |
+| `AUTOCOMMIT`                                           | driver autocommit, no server level |
 
 > The two long "SCHEMA, … INSTANCES" spellings and `CURSOR STABILITY` are retained
 > as backward-compatible aliases because they resolve to still-valid levels (4/5).
+> An engine-level alias is stored under its canonical name (for example
+> `isolation_level="CURSOR STABILITY"` becomes `READ COMMITTED`).
 > The legacy names that resolved to the removed levels 1–3 are **no longer
-> accepted** and raise `ValueError`.
+> accepted**. An unknown name raises `sqlalchemy.exc.ArgumentError` from
+> `create_engine(isolation_level=...)` (on first connect) and from
+> `execution_options(isolation_level=...)`; calling
+> `dialect.set_isolation_level()` directly raises `ValueError`.
 
 ---
 
@@ -186,7 +220,12 @@ the session and needs no re-apply.
 
 ### Reset on Connection Return
 
-When a connection is returned to the pool, the dialect resets isolation to level 4 (`READ COMMITTED`) to ensure a clean state for the next checkout.
+When a connection whose level was changed with `execution_options()` is
+returned to the pool, SQLAlchemy restores the engine-level `isolation_level`
+(including `AUTOCOMMIT`). Without an engine-level setting it restores the level
+the first connection reported, which is the server default (normally
+`READ COMMITTED`). Earlier releases always reset to `READ COMMITTED`, which
+dropped an engine-level setting after a per-connection override.
 
 ---
 

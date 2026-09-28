@@ -89,7 +89,7 @@ class TestPyCubridAsyncDialectOnConnect:
         callback(conn)
         assert conn.autocommit is False
 
-    def test_on_connect_with_isolation_level(self):
+    def test_on_connect_leaves_isolation_level_to_sqlalchemy(self):
         dialect = PyCubridAsyncDialect(isolation_level="SERIALIZABLE")
         callback = dialect.on_connect()
         assert callback is not None
@@ -97,7 +97,9 @@ class TestPyCubridAsyncDialectOnConnect:
         conn = MagicMock()
         with patch.object(dialect, "set_isolation_level") as mock_set:
             callback(conn)
-        mock_set.assert_called_once_with(conn, "SERIALIZABLE")
+        mock_set.assert_not_called()
+        assert conn.autocommit is False
+        assert dialect._on_connect_isolation_level == "SERIALIZABLE"
 
 
 class TestAsyncAdaptPycubridDbapi:

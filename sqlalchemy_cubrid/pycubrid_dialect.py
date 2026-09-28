@@ -124,22 +124,24 @@ class PyCubridDialect(CubridDialect):
         """Return a callable to set up a new pycubrid connection.
 
         Disables autocommit so that SQLAlchemy manages transactions.
+        SQLAlchemy applies an engine-level ``isolation_level`` after this hook.
         """
-        isolation_level = self.isolation_level
 
         def connect(conn: Any) -> None:
             # pycubrid uses a property setter for autocommit
             conn.autocommit = False
-            if isolation_level is not None:
-                self.set_isolation_level(conn, isolation_level)
-            log.debug("on_connect: autocommit=False isolation_level=%s", isolation_level)
+            log.debug("on_connect: autocommit=False")
 
         return connect
 
     def set_isolation_level(self, dbapi_connection: DBAPIConnection, level: str) -> None:
         """Set the isolation level and remember it for :meth:`do_commit` / :meth:`do_rollback`."""
         super().set_isolation_level(dbapi_connection, level)
-        self._connection_isolation_levels[_unwrap(dbapi_connection)] = level
+        if level.upper() == "AUTOCOMMIT":
+            # pycubrid restores autocommit itself after its reconnect.
+            self._connection_isolation_levels.pop(_unwrap(dbapi_connection), None)
+        else:
+            self._connection_isolation_levels[_unwrap(dbapi_connection)] = level
 
     def reset_isolation_level(self, dbapi_conn: DBAPIConnection) -> None:
         """Reset on checkin; stop re-applying when the engine has no configured level.

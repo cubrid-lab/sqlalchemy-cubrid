@@ -505,6 +505,131 @@ class TestIsolationLevelAcrossTransactionBoundaries:
             assert conn.get_isolation_level() == "REPEATABLE READ"
 
 
+class TestAutocommitIsolationLevel:
+    """``isolation_level="AUTOCOMMIT"`` and engine-level restore on every driver (#501)."""
+
+    TABLE = "iso501_autocommit"
+
+    @pytest.fixture
+    def observer(self):
+        """A second session that sees only committed rows."""
+        eng = create_engine(_cubrid_url(), poolclass=sa.pool.NullPool)
+        with eng.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+            conn.execute(text(f"CREATE TABLE {self.TABLE} (id INT)"))
+
+        def committed(row_id: int) -> int:
+            with eng.connect() as conn:
+                return conn.execute(
+                    text(f"SELECT COUNT(*) FROM {self.TABLE} WHERE id = :id"), {"id": row_id}
+                ).scalar_one()
+
+        yield committed
+        with eng.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+        eng.dispose()
+
+    @pytest.fixture
+    def make_engine(self):
+        engines = []
+
+        def make(**kw):
+            eng = create_engine(_cubrid_url(), pool_size=1, max_overflow=0, **kw)
+            engines.append(eng)
+            return eng
+
+        yield make
+        for eng in engines:
+            eng.dispose()
+
+    def _insert(self, conn, row_id):
+        conn.execute(text(f"INSERT INTO {self.TABLE} VALUES (:id)"), {"id": row_id})
+
+    @pytest.mark.parametrize("path", ["create_engine", "engine_options", "connection_options"])
+    def test_autocommit_row_is_visible_before_commit_and_survives_rollback(
+        self, observer, make_engine, path
+    ):
+        if path == "create_engine":
+            eng = make_engine(isolation_level="AUTOCOMMIT")
+        elif path == "engine_options":
+            eng = make_engine().execution_options(isolation_level="AUTOCOMMIT")
+        else:
+            eng = make_engine()
+        with eng.connect() as conn:
+            if path == "connection_options":
+                conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+            dbapi_conn = conn.connection.dbapi_connection
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            self._insert(conn, 1)
+            assert observer(1) == 1
+            conn.rollback()
+        assert observer(1) == 1
+
+    def test_pooled_connection_is_transactional_again_after_checkin(self, observer, make_engine):
+        eng = make_engine()
+        with eng.connect() as conn:
+            conn = conn.execution_options(isolation_level="AUTOCOMMIT")
+            dbapi_conn = conn.connection.dbapi_connection
+            self._insert(conn, 1)
+
+        with eng.connect() as conn:
+            assert conn.connection.dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is False
+            self._insert(conn, 2)
+            assert observer(2) == 0
+            conn.rollback()
+        assert observer(1) == 1
+        assert observer(2) == 0
+
+    @pytest.mark.parametrize("override", ["REPEATABLE READ", "AUTOCOMMIT"])
+    def test_engine_level_is_restored_after_connection_override(self, make_engine, override):
+        eng = make_engine(isolation_level="SERIALIZABLE")
+        with eng.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            conn = conn.execution_options(isolation_level=override)
+            if override == "AUTOCOMMIT":
+                assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            else:
+                assert conn.get_isolation_level() == override
+
+        with eng.connect() as conn:
+            assert conn.connection.dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is False
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+            conn.execute(text("SELECT 1"))
+            conn.commit()
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+
+    def test_engine_level_autocommit_is_restored_after_connection_override(
+        self, observer, make_engine
+    ):
+        eng = make_engine(isolation_level="AUTOCOMMIT")
+        with eng.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            conn = conn.execution_options(isolation_level="SERIALIZABLE")
+            self._insert(conn, 1)
+            assert observer(1) == 0
+            conn.rollback()
+
+        with eng.connect() as conn:
+            assert conn.connection.dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            self._insert(conn, 2)
+            assert observer(2) == 1
+        assert observer(1) == 0
+
+    def test_invalid_level_raises_argument_error_on_every_path(self, make_engine):
+        with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+            with make_engine(isolation_level="BOGUS").connect():
+                pass
+        with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+            with make_engine().execution_options(isolation_level="BOGUS").connect():
+                pass
+        with make_engine().connect() as conn:
+            with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+                conn.execution_options(isolation_level="BOGUS")
+
+
 class TestDoPing:
     def test_ping_success(self, engine):
         """do_ping() succeeds on a live connection."""

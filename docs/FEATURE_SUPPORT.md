@@ -236,6 +236,8 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 | `REPEATABLE READ` (5) | Repeatable read within a transaction |
 | `READ COMMITTED` (4, default) | Reads see only committed data; non-repeatable reads possible |
 
+SQLAlchemy's `AUTOCOMMIT` level is also accepted on every driver; it switches the driver to autocommit mode. See [Isolation Levels](ISOLATION_LEVELS.md#autocommit).
+
 ### Notes
 
 - **Two-phase commit**: CUBRID does not support distributed transactions via `XA`.

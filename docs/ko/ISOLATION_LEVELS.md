@@ -22,6 +22,7 @@ CUBRID 10.0(MVCC 엔진)부터 CUBRID는 **세 가지** 트랜잭션 격리 수�
   - [엔진 수준 (모든 연결의 기본)](#엔진-수준-모든-연결의-기본)
   - [연결 수준 (연결별)](#연결-수준-연결별)
   - [실행 옵션 (문장 블록별)](#실행-옵션-문장-블록별)
+  - [AUTOCOMMIT](#autocommit)
 - [허용되는 수준 이름](#허용되는-수준-이름)
 - [SQL 표준과 비교](#sql-표준과-비교)
 - [방언의 격리 관리 방식](#방언의-격리-관리-방식)
@@ -105,6 +106,25 @@ with engine.begin() as conn:
     # 블록 끝에서 커밋
 ```
 
+### AUTOCOMMIT
+
+`AUTOCOMMIT`은 드라이버의 오토커밋 모드를 켜서 각 문장이 실행 즉시 커밋되게 합니다. `cubrid://`(CUBRIDdb), `cubrid+pycubrid://`, `cubrid+aiopycubrid://`에서 SQLAlchemy가 제공하는 모든 수준으로 사용할 수 있습니다:
+
+```python
+# 이 엔진의 모든 연결
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb", isolation_level="AUTOCOMMIT")
+
+# 풀을 공유하는 엔진 사본
+autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+
+# 하나의 연결
+with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
+    # 다른 세션에 이미 보이며, conn.rollback()으로 되돌릴 수 없음
+```
+
+`AUTOCOMMIT`은 서버 격리 수준이 아니라 드라이버 모드입니다. 서버 수준은 그대로이며 `conn.get_isolation_level()`도 그 수준을 보고합니다. 다른 수준을 설정하면 드라이버 오토커밋이 다시 꺼지고, 풀링된 연결은 반환될 때 트랜잭션 모드로 돌아갑니다([연결 반환 시 리셋](#연결-반환-시-리셋) 참고). DBAPI 연결의 모드는 `engine.dialect.detect_autocommit_setting(dbapi_connection)`으로 확인할 수 있습니다.
+
 ---
 
 ## 허용되는 수준 이름
@@ -119,8 +139,9 @@ with engine.begin() as conn:
 | `READ COMMITTED`                                        | 4             |
 | `REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES`      | 4             |
 | `CURSOR STABILITY`                                      | 4             |
+| `AUTOCOMMIT`                                            | 드라이버 오토커밋, 서버 수준 없음 |
 
-> 긴 "SCHEMA, … INSTANCES" 표기 두 개와 `CURSOR STABILITY`는 여전히 유효한 수준(4/5)으로 해석되기 때문에 하위 호환 별칭으로 유지됩니다. 제거된 수준 1–3으로 해석되던 레거시 이름은 **더 이상 받지 않으며** `ValueError`를 발생시킵니다.
+> 긴 "SCHEMA, … INSTANCES" 표기 두 개와 `CURSOR STABILITY`는 여전히 유효한 수준(4/5)으로 해석되기 때문에 하위 호환 별칭으로 유지됩니다. 엔진 수준 별칭은 정규 이름으로 저장됩니다(예: `isolation_level="CURSOR STABILITY"`는 `READ COMMITTED`가 됨). 제거된 수준 1–3으로 해석되던 레거시 이름은 **더 이상 받지 않습니다**. 알 수 없는 이름은 `create_engine(isolation_level=...)`(첫 연결 시)과 `execution_options(isolation_level=...)`에서 `sqlalchemy.exc.ArgumentError`를 발생시키며, `dialect.set_isolation_level()`을 직접 호출하면 `ValueError`를 발생시킵니다.
 
 ---
 
@@ -169,7 +190,7 @@ pycubrid는 드라이버의 `commit()` / `rollback()` 후 새 CAS 세션을 열�
 
 ### 연결 반환 시 리셋
 
-연결이 풀로 반환되면 방언은 다음 체크아웃을 위한 깨끗한 상태를 보장하기 위해 격리를 수준 4(`READ COMMITTED`)로 리셋합니다.
+`execution_options()`로 수준을 바꾼 연결이 풀로 반환되면 SQLAlchemy가 엔진 수준 `isolation_level`(`AUTOCOMMIT` 포함)을 복원합니다. 엔진 수준 설정이 없으면 첫 연결이 보고한 수준, 즉 서버 기본값(보통 `READ COMMITTED`)을 복원합니다. 이전 릴리스는 항상 `READ COMMITTED`로 리셋했기 때문에 연결별 재정의 후 엔진 수준 설정이 사라졌습니다.
 
 ---
 

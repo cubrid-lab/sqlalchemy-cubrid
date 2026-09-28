@@ -1052,3 +1052,122 @@ class TestAsyncIsolationLevelAcrossTransactionBoundaries:
             _ = await conn.execute(text("SELECT 1"))
             await conn.rollback()
             assert await conn.get_isolation_level() == "REPEATABLE READ"
+
+
+class TestAsyncAutocommitIsolationLevel:
+    """``isolation_level="AUTOCOMMIT"`` and engine-level restore on aiopycubrid (#501)."""
+
+    TABLE = "aio_iso501_autocommit"
+
+    @pytest_asyncio.fixture
+    async def observer(self) -> AsyncIterator[Callable[[int], Awaitable[int]]]:
+        """A second session that sees only committed rows."""
+        eng = create_async_engine(_async_url(), poolclass=sa.pool.NullPool)
+        async with eng.begin() as conn:
+            _ = await conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+            _ = await conn.execute(text(f"CREATE TABLE {self.TABLE} (id INT)"))
+
+        async def committed(row_id: int) -> int:
+            async with eng.connect() as conn:
+                result = await conn.execute(
+                    text(f"SELECT COUNT(*) FROM {self.TABLE} WHERE id = :id"), {"id": row_id}
+                )
+                return int(result.scalar_one())
+
+        yield committed
+        async with eng.begin() as conn:
+            _ = await conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+        await eng.dispose()
+
+    @pytest_asyncio.fixture
+    async def make_engine(self) -> AsyncIterator[Callable[..., AsyncEngine]]:
+        engines: list[AsyncEngine] = []
+
+        def make(**kw: Any) -> AsyncEngine:
+            eng = create_async_engine(_async_url(), pool_size=1, max_overflow=0, **kw)
+            engines.append(eng)
+            return eng
+
+        yield make
+        for eng in engines:
+            await eng.dispose()
+
+    async def _insert(self, conn: Any, row_id: int) -> None:
+        _ = await conn.execute(text(f"INSERT INTO {self.TABLE} VALUES (:id)"), {"id": row_id})
+
+    @pytest.mark.parametrize("path", ["create_engine", "engine_options", "connection_options"])
+    async def test_autocommit_row_is_visible_before_commit_and_survives_rollback(
+        self,
+        observer: Callable[[int], Awaitable[int]],
+        make_engine: Callable[..., AsyncEngine],
+        path: str,
+    ):
+        if path == "create_engine":
+            eng = make_engine(isolation_level="AUTOCOMMIT")
+        elif path == "engine_options":
+            eng = make_engine().execution_options(isolation_level="AUTOCOMMIT")
+        else:
+            eng = make_engine()
+        async with eng.connect() as conn:
+            if path == "connection_options":
+                conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            await self._insert(conn, 1)
+            assert await observer(1) == 1
+            await conn.rollback()
+        assert await observer(1) == 1
+
+    async def test_pooled_connection_is_transactional_again_after_checkin(
+        self,
+        observer: Callable[[int], Awaitable[int]],
+        make_engine: Callable[..., AsyncEngine],
+    ):
+        eng = make_engine()
+        async with eng.connect() as conn:
+            conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            await self._insert(conn, 1)
+
+        async with eng.connect() as conn:
+            assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is False
+            await self._insert(conn, 2)
+            assert await observer(2) == 0
+            await conn.rollback()
+        assert await observer(1) == 1
+        assert await observer(2) == 0
+
+    @pytest.mark.parametrize("override", ["REPEATABLE READ", "AUTOCOMMIT"])
+    async def test_engine_level_is_restored_after_connection_override(
+        self, make_engine: Callable[..., AsyncEngine], override: str
+    ):
+        eng = make_engine(isolation_level="SERIALIZABLE")
+        async with eng.connect() as conn:
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            conn = await conn.execution_options(isolation_level=override)
+            if override == "AUTOCOMMIT":
+                assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            else:
+                assert await conn.get_isolation_level() == override
+
+        async with eng.connect() as conn:
+            assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is False
+            assert await conn.get_isolation_level() == "SERIALIZABLE"
+            _ = await conn.execute(text("SELECT 1"))
+            await conn.commit()
+            assert await conn.get_isolation_level() == "SERIALIZABLE"
+
+    async def test_invalid_level_raises_argument_error_on_every_path(
+        self, make_engine: Callable[..., AsyncEngine]
+    ):
+        with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+            async with make_engine(isolation_level="BOGUS").connect():
+                pass
+        with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+            async with make_engine().execution_options(isolation_level="BOGUS").connect():
+                pass
+        async with make_engine().connect() as conn:
+            with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+                _ = await conn.execution_options(isolation_level="BOGUS")

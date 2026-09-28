@@ -1077,15 +1077,17 @@ with Session(engine) as session:
 
 **배경:** 두 CUBRID 드라이버 모두 기본적으로 `autocommit=True`이지만, 방언이 SQLAlchemy가 트랜잭션을 관리할 수 있도록 모든 새 연결에서 `autocommit=False`로 설정합니다.
 
-**진짜 오토커밋이 필요하면** (각 문장이 즉시 커밋):
+**진짜 오토커밋이 필요하면** (각 문장이 즉시 커밋) SQLAlchemy의 `AUTOCOMMIT` 격리 수준을 사용하세요. 세 드라이버(`cubrid://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`) 모두에서 동작합니다:
 
 ```python
 with engine.connect().execution_options(
     isolation_level="AUTOCOMMIT"
 ) as conn:
     conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
-    # 즉시 커밋됨
+    # 즉시 커밋됨; conn.rollback()으로 되돌릴 수 없음
 ```
+
+`create_engine(..., isolation_level="AUTOCOMMIT")`과 `engine.execution_options(isolation_level="AUTOCOMMIT")`도 동작합니다. `execution_options()`로 `AUTOCOMMIT`으로 바꾼 연결은 풀로 돌아가면 다시 트랜잭션 모드가 됩니다. #501 이전 릴리스는 `AUTOCOMMIT`에 대해 `ArgumentError`(`execution_options`) 또는 `ValueError`(`create_engine`)를 발생시켰습니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
 
 ---
 

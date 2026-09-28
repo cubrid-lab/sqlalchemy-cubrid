@@ -135,12 +135,8 @@ class PyCubridAsyncDialect(PyCubridDialect):
         }
 
     def on_connect(self) -> Callable[[Any], None] | None:
-        isolation_level = self.isolation_level
-
         def connect(conn: Any) -> None:
             conn.autocommit = False
-            if isolation_level is not None:
-                self.set_isolation_level(conn, isolation_level)
 
         return connect
 
