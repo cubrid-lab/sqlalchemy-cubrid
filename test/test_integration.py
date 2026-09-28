@@ -1299,6 +1299,69 @@ class TestMixedCaseExistenceIntegration:
             meta.drop_all(engine)
 
 
+class TestHasIndexOwnerPreference:
+    """#543 review: since CUBRID 11.2 classes of different owners may share a
+    name. ``has_index`` answers for the current user's own class, like
+    ``_get_class_type``, and only falls back to another owner's class when the
+    current user has none. Checked as DBA: a non-DBA user cannot read
+    ``_db_index`` yet (#549)."""
+
+    @pytest.fixture
+    def u543_engine(self, engine):
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
+        if not _server_at_least(engine, (11, 2)):
+            pytest.skip("CUBRID < 11.2 has one global namespace for class names")
+
+        def run(eng, *statements, ignore_errors=False):
+            with eng.connect() as conn:
+                for statement in statements:
+                    try:
+                        conn.exec_driver_sql(statement)
+                    except Exception:
+                        if not ignore_errors:
+                            raise
+                        conn.rollback()
+                conn.commit()
+
+        u543 = create_engine(engine.url.set(username="u543", password=None))
+
+        def cleanup():
+            run(u543, 'DROP TABLE "Own543"', ignore_errors=True)
+            u543.dispose()
+            run(engine, 'DROP TABLE "Own543"', "DROP USER u543", ignore_errors=True)
+
+        run(engine, "CREATE USER u543", ignore_errors=True)
+        cleanup()
+        run(engine, "CREATE USER u543")
+        try:
+            run(engine, 'CREATE TABLE "Own543" (id INT PRIMARY KEY, v INT)')
+            run(
+                u543,
+                'CREATE TABLE "Own543" (id INT PRIMARY KEY, v INT)',
+                'CREATE INDEX "IX_Other543" ON "Own543" (v)',
+            )
+            yield u543
+        finally:
+            cleanup()
+
+    def test_has_index_prefers_the_current_users_class(self, engine, u543_engine):
+        with engine.connect() as conn:
+            owners = conn.execute(
+                text("SELECT owner_name FROM db_class WHERE class_name = 'own543'")
+            ).fetchall()
+            assert sorted(owners) == [("DBA",), ("U543",)]
+
+            # Only the other owner's same-named class has the index.
+            assert inspect(conn).has_table("Own543")
+            assert not inspect(conn).has_index("Own543", "IX_Other543")
+
+            # Once the current user's class is gone, the other owner's is used.
+            conn.exec_driver_sql('DROP TABLE "Own543"')
+            conn.commit()
+            assert inspect(conn).has_index("Own543", "IX_Other543")
+
+
 class TestUnicodeTextIntegration:
     """#534: ``UnicodeText`` creates a CUBRID STRING column (CUBRID has no TEXT)."""
 
