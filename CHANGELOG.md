@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Documentation
 - **Alembic import log lines (#561)** — `docs/ALEMBIC.md` (+ Korean) explains that loading the dialect imports Alembic when it is installed (about 0.1 s), so Alembic 1.18+ logs seven `INFO` `setup plugin ...` lines under `INFO` root logging, and gives the application-side fix `logging.getLogger("alembic").setLevel(logging.WARNING)`. No supported Alembic hook defers the registration; no behavior change.
 - **SQLAlchemy 2.1 is documented as released and tested, not a pre-release (#492)** — `docs/SUPPORT_MATRIX.md` (+ Korean) listed 2.1.x as the "latest tested pre-release until GA"; it now says CI tests SQLAlchemy 2.1.1. `docs/SA_COMPAT.md` describes the non-blocking canary as what it is: a `--pre` install of `SQLAlchemy>=2.1.0b1,<2.3` that tracks upcoming SQLAlchemy pre-releases with `continue-on-error`.
+- **Samples use the recommended pycubrid driver (#498)** — `samples/create_engine.py` and `samples/cubrid_datatypes.py` connected with `cubrid://`, the CUBRID-Python C-extension dialect, which a plain install does not provide. They now use `cubrid+pycubrid://` and name the install command `pip install "sqlalchemy-cubrid[pycubrid]"` in their docstrings.
 
 ## [1.8.0] - 2026-09-29
 
