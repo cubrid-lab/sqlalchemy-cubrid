@@ -130,6 +130,8 @@ jobs:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
           # Feeds Alembic's offline --sql output to csql inside the service container.
           CUBRID_CSQL: "docker exec -i ${{ job.services.cubrid.id }} csql -u dba testdb"
+          # Fail instead of skip when a driver, the server or csql is unavailable.
+          CUBRID_REQUIRE_TRANSACTIONAL_DDL: "1"
         run: |
           python -m pytest test/test_transactional_ddl.py -v --tb=short -rs
 

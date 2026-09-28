@@ -218,13 +218,14 @@ class TestCubridImpl:
 
         from alembic.operations import Operations
 
-        import sqlalchemy_cubrid.alembic_impl  # noqa: F401
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
         buf = io.StringIO()
         context = MigrationContext.configure(
             dialect_name="cubrid",
             opts={"as_sql": True, "output_buffer": buf},
         )
+        assert isinstance(context.impl, CubridImpl)
         assert context.impl.transactional_ddl is True
         with context.begin_transaction():
             Operations(context).create_table("t503", sa.Column("id", sa.Integer))

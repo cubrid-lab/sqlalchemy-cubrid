@@ -24,18 +24,22 @@ CI job points at, through both drivers:
   in csql.  Set ``CUBRID_CSQL`` to a csql command prefix to run that check,
   e.g. ``docker exec -i <container> csql -u dba testdb``.
 
-A driver that cannot connect (e.g. CUBRIDdb not built) skips its cases.
+A driver that cannot connect (e.g. CUBRIDdb not built) skips its cases
+locally.  The CI steps set ``CUBRID_REQUIRE_TRANSACTIONAL_DDL=1``, which turns
+every such skip (no URL, driver missing, server unreachable, no ``CUBRID_CSQL``)
+into a failure, so the lane cannot pass with every case skipped.
 """
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import os
 import shlex
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import pytest
 import sqlalchemy as sa
@@ -43,13 +47,21 @@ import sqlalchemy as sa
 pytestmark = pytest.mark.integration
 
 _PREFIX = "tddl503_"
+_REQUIRE_ENV = "CUBRID_REQUIRE_TRANSACTIONAL_DDL"
 _DRIVERS = ["pycubrid", "CUBRIDdb"]
+
+
+def _unavailable(reason: str) -> NoReturn:
+    """Skip locally; fail in the required CI lane (``CUBRID_REQUIRE_TRANSACTIONAL_DDL=1``)."""
+    if os.environ.get(_REQUIRE_ENV) == "1":
+        pytest.fail(f"{_REQUIRE_ENV}=1 but {reason}", pytrace=False)
+    pytest.skip(reason)
 
 
 def _url() -> sa.engine.URL:
     url = os.environ.get("CUBRID_TEST_URL")
     if not url:
-        pytest.skip("CUBRID_TEST_URL not set")
+        _unavailable("CUBRID_TEST_URL not set")
     return sa.make_url(url)
 
 
@@ -70,14 +82,15 @@ def _raw_connect(driver: str) -> Any:
                 host=host, port=port, database=url.database, user=user, password=password
             )
             conn.autocommit = False
+            return conn
         else:
             import CUBRIDdb
 
             conn = CUBRIDdb.connect(f"CUBRID:{host}:{port}:{url.database}:::", user, password)
             conn.set_autocommit(False)
+            return conn
     except Exception as exc:  # driver not installed / not built / unreachable
-        pytest.skip(f"{driver} cannot connect: {type(exc).__name__}: {exc}")
-    return conn
+        _unavailable(f"{driver} cannot connect: {type(exc).__name__}: {exc}")
 
 
 def _q(conn: Any, sql: str) -> list[Any] | None:
@@ -232,16 +245,15 @@ def test_ddl_and_dml_commit_together(raw_conn: Any) -> None:
 
 
 def _connectable_engine(driver: str) -> sa.engine.Engine:
-    try:
-        eng = sa.create_engine(_sa_url(driver))
-    except ImportError as exc:  # driver not installed / not built
-        pytest.skip(f"{driver} is not installed: {exc}")
+    if importlib.util.find_spec(driver) is None:  # not installed / not built
+        _unavailable(f"{driver} is not installed")
+    eng = sa.create_engine(_sa_url(driver))
     try:
         with eng.connect() as conn:
             conn.execute(sa.text("SELECT 1"))
     except Exception as exc:
         eng.dispose()
-        pytest.skip(f"{driver} cannot connect: {type(exc).__name__}: {exc}")
+        _unavailable(f"{driver} cannot connect: {type(exc).__name__}: {exc}")
     return eng
 
 
@@ -493,7 +505,7 @@ def test_alembic_offline_sql_runs_in_csql(
     """Feed ``upgrade head --sql`` output to csql and check the resulting schema."""
     csql = os.environ.get("CUBRID_CSQL")
     if not csql:
-        pytest.skip("CUBRID_CSQL not set (e.g. 'docker exec -i <container> csql -u dba testdb')")
+        _unavailable("CUBRID_CSQL not set (e.g. 'docker exec -i <container> csql -u dba testdb')")
 
     sql = _offline_sql(tmp_path, alembic_engine.url, per_migration)
     # --no-auto-commit makes the script's COMMIT; the only commit point.
