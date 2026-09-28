@@ -181,7 +181,7 @@
 
 - **BOOLEAN**: CUBRID는 `BOOLEAN`을 `SMALLINT`로 매핑합니다. MySQL은 `TINYINT(1)`로 매핑합니다. SQLite는 불리언을 정수로 저장합니다. PostgreSQL만 네이티브 `BOOLEAN` 타입을 가집니다.
 - **NCHAR / NVARCHAR**: CUBRID는 일급 국가 문자 타입을 가집니다. MySQL은 컬럼 문자셋으로 국가 문자를 처리합니다. PostgreSQL과 SQLite에는 별도의 국가 문자 타입이 없습니다.
-- **JSON**: CUBRID 10.2+는 25개 이상의 JSON 함수를 가진 네이티브 JSON 지원(RFC 7159)이 있습니다. 방언은 `JSON` 타입, `JSON_EXTRACT`를 통한 `col["key"]` 경로 표현식, 타입별 접근(`as_string()`, `as_integer()`, `as_float()`, 그리고 `NUMERIC(p,s)`로 캐스팅해 `Decimal`을 반환하는 `as_numeric(p, s)`)을 지원합니다. `as_numeric()`은 JSON 숫자와 일반 십진수 형식의 숫자 문자열(`"15.5"`)을 캐스팅합니다. 지수 표기 문자열(`"1e3"`)은 CUBRID 오류 -181, `NUMERIC(p,s)` 범위를 벗어난 값은 -427을 발생시키므로 이런 값에는 `as_float()`를 사용하세요. MySQL(5.7+)과 PostgreSQL도 네이티브 JSON 지원이 있습니다. SQLite는 JSON 함수는 있지만 전용 컬럼 타입은 없습니다.
+- **JSON**: CUBRID 10.2+는 25개 이상의 JSON 함수를 가진 네이티브 JSON 지원(RFC 7159)이 있습니다. 방언은 `JSON` 타입, `JSON_EXTRACT`를 통한 `col["key"]` 경로 표현식, 타입별 접근(`as_string()`, `as_integer()`, `as_float()`, 그리고 `NUMERIC(p,s)`로 캐스팅해 `Decimal`을 반환하는 `as_numeric(p, s)`)을 지원합니다. `as_numeric()`은 JSON 숫자, 일반 십진수 형식의 숫자 문자열(`"15.5"`), JSON `true`/`false`(`1.00`/`0.00`)를 캐스팅합니다. 지수 표기 문자열(`"1e3"`)은 CUBRID 오류 -181, `NUMERIC(p,s)` 범위를 벗어난 값은 -427을 발생시키므로 이런 값에는 `as_float()`를 사용하세요. 숫자가 아닌 문자열(`"abc"`)은 `as_numeric()`과 `as_float()` 모두에서 -181이 발생하므로 캐스팅 전에 검증하거나 걸러내세요. MySQL(5.7+)과 PostgreSQL도 네이티브 JSON 지원이 있습니다. SQLite는 JSON 함수는 있지만 전용 컬럼 타입은 없습니다.
 - **ARRAY**: CUBRID는 유사 목적을 수행하지만 SQL 표준 배열은 아닌 컬렉션 타입(`SET`, `MULTISET`, `SEQUENCE`)을 사용합니다. PostgreSQL은 네이티브 `ARRAY[]` 지원이 있습니다.
 - **CLOB**: CUBRID와 MySQL은 명시적 `CLOB` 타입이 있습니다. PostgreSQL은 `TEXT`(무제한 길이)를 사용합니다. SQLite는 모든 텍스트를 `TEXT`로 저장합니다.
 
