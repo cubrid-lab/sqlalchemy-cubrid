@@ -85,13 +85,14 @@
 #
 # As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
 #   cubrid@sa2.0 135 / 128, pycubrid@sa2.0 (gated on 10.2 only) 121,
-#   pycubrid@sa2.1 143 / 136;
+#   pycubrid@sa2.1 125 / 118;
 # 0 XPASS, 0 unclassified. The 7 server-specific entries are
 # BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
 # is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
 # #430, #431) beyond the -924 exception class noted under CTETest; those are
 # covered by targeted strict xfails elsewhere (#480-#482). Every [DIALECT BUG]
-# group found by this recapture links its tracking issue (#529-#535).
+# group found by this recapture links its tracking issue (#529-#535); the
+# #535 JSON as_numeric() group was removed when it was fixed.
 
 # [DIALECT BUG] ComponentReflectionTest::test_get_multi_foreign_keys (use
 # schema False, #531): foreign keys are returned in DDL order, but SQLAlchemy
@@ -260,29 +261,6 @@ test/test_suite.py::UnicodeTextTest::test_literal_non_ascii  cubrid@sa2.0 pycubr
 test/test_suite.py::UnicodeTextTest::test_null_strings_text  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::UnicodeTextTest::test_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::UnicodeTextTest::test_round_trip_executemany  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-
-# [DIALECT BUG] JSONTest::test_index_cross_casts (#535): a JSON element cast
-# with `.as_numeric(10, 2)` is rendered `AS DOUBLE` and comes back as float,
-# not Decimal. The bug exists on SQLAlchemy 2.0 as well; only the test is new
-# in 2.1, so the entries are on the sa2.1 lane.
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-boolean-False-allowed_targets1-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-boolean-True-allowed_targets0-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-float-1234567.89-allowed_targets15-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-integer-0-allowed_targets12-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-integer-1-allowed_targets11-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-integer-15-allowed_targets10-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-numeric-1234567.89-allowed_targets16-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-string-45-allowed_targets3-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[getitem-string-45.684-allowed_targets4-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-boolean-False-allowed_targets1-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-boolean-True-allowed_targets0-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-float-1234567.89-allowed_targets15-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-integer-0-allowed_targets12-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-integer-1-allowed_targets11-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-integer-15-allowed_targets10-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-numeric-1234567.89-allowed_targets16-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-string-45-allowed_targets3-numeric]  pycubrid@sa2.1
-test/test_suite.py::JSONTest::test_index_cross_casts[path-string-45.684-allowed_targets4-numeric]  pycubrid@sa2.1
 
 # [BACKEND / SUITE LIMIT] JSONTest::test_round_trip_custom_json (SQLAlchemy
 # 2.0): CUBRID stores JSON in a normalized form, so the custom deserializer

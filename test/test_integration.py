@@ -1267,6 +1267,48 @@ class TestJSONRoundTrip:
         finally:
             meta.drop_all(engine)
 
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (15, Decimal("15.00")),
+            (45.684, Decimal("45.68")),
+            ("45.684", Decimal("45.68")),
+            (1234567.89, Decimal("1234567.89")),
+            (True, Decimal("1.00")),
+            (None, None),
+        ],
+    )
+    def test_as_numeric_returns_decimal(self, engine, value, expected):
+        """#535: ``as_numeric(p, s)`` returns a Decimal at scale ``s``."""
+        meta = MetaData()
+        table = Table(
+            "integration_json535",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("data_json", sa.JSON),
+        )
+        meta.create_all(engine)
+        try:
+            with engine.begin() as conn:
+                conn.execute(table.insert().values(id=1, data_json={"a": value, "b": [value]}))
+            with engine.connect() as conn:
+                row = conn.execute(
+                    sa.select(
+                        table.c.data_json["a"].as_numeric(10, 2),
+                        table.c.data_json[("b", 0)].as_numeric(10, 2),
+                        table.c.data_json["a"].as_float(),
+                    )
+                ).one()
+            for got in row[:2]:
+                assert got == expected
+                if expected is not None:
+                    assert isinstance(got, Decimal)
+                    assert got.as_tuple().exponent == -2
+            if expected is not None:
+                assert isinstance(row[2], float)
+        finally:
+            meta.drop_all(engine)
+
 
 # ---------------------------------------------------------------------------
 # #485: SQLAlchemy-facing BLOB/CLOB value contract

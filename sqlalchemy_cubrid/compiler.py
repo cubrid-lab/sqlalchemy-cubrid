@@ -635,8 +635,24 @@ class CubridCompiler(compiler.SQLCompiler):
                 self.process(binary.left, **kw),
                 self.process(binary.right, **kw),
             )
+        elif (
+            isinstance(binary.type, sqltypes.Numeric)
+            and not isinstance(binary.type, sqltypes.Float)
+            and binary.type.precision is not None
+            and binary.type.scale is not None
+        ):
+            # as_numeric(p, s): cast to NUMERIC(p,s) so the driver returns a
+            # Decimal with the requested scale (MySQL renders DECIMAL(p, s)).
+            type_expression = "ELSE CAST(JSON_EXTRACT(%s, %s) AS NUMERIC(%d,%d))" % (
+                self.process(binary.left, **kw),
+                self.process(binary.right, **kw),
+                binary.type.precision,
+                binary.type.scale,
+            )
         elif binary.type._type_affinity is sqltypes.Numeric or (
             # SA 2.1 split Float out of the Numeric affinity; treat both as DOUBLE.
+            # A Numeric without both precision and scale also stays DOUBLE, since
+            # a bare CUBRID NUMERIC means NUMERIC(15,0) and would truncate.
             binary.type._type_affinity is sqltypes.Float
         ):
             type_expression = "ELSE CAST(JSON_EXTRACT(%s, %s) AS DOUBLE)" % (

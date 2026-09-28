@@ -3552,7 +3552,7 @@ High-level overview by feature category.
 
 - **BOOLEAN**: CUBRID maps `BOOLEAN` to `SMALLINT`. MySQL maps it to `TINYINT(1)`. SQLite stores booleans as integers. Only PostgreSQL has a native `BOOLEAN` type.
 - **NCHAR / NVARCHAR**: CUBRID has first-class national character types. MySQL handles national characters via column charset. PostgreSQL and SQLite have no separate national character types.
-- **JSON**: CUBRID 10.2+ has native JSON support (RFC 7159) with 25+ JSON functions. The dialect supports `JSON` type, `col["key"]` path expressions via `JSON_EXTRACT`, and typed access (`as_string()`, `as_integer()`, `as_float()`). MySQL (5.7+) and PostgreSQL also have native JSON support. SQLite has JSON functions but no dedicated column type.
+- **JSON**: CUBRID 10.2+ has native JSON support (RFC 7159) with 25+ JSON functions. The dialect supports `JSON` type, `col["key"]` path expressions via `JSON_EXTRACT`, and typed access (`as_string()`, `as_integer()`, `as_float()`, and `as_numeric(p, s)`, which casts to `NUMERIC(p,s)` and returns `Decimal`). MySQL (5.7+) and PostgreSQL also have native JSON support. SQLite has JSON functions but no dedicated column type.
 - **ARRAY**: CUBRID uses collection types (`SET`, `MULTISET`, `SEQUENCE`) which serve a similar purpose but are not SQL-standard arrays. PostgreSQL has native `ARRAY[]` support.
 - **CLOB**: CUBRID and MySQL have explicit `CLOB` types. PostgreSQL uses `TEXT` (unlimited length). SQLite stores all text as `TEXT`.
 
@@ -4037,7 +4037,7 @@ The official SQLAlchemy compliance suite blocks merges for both drivers. Each la
 |---|---|---|---|---|
 | `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 135 / 128 |
 | `pycubrid@sa2.0` | pycubrid 1.7.1 (recommended) | 2.0.53 | 10.2 | 121 (gated on 10.2 only) |
-| `pycubrid@sa2.1` | pycubrid 1.7.1 (recommended) | 2.1.1 | 11.4 | 143 / 136 |
+| `pycubrid@sa2.1` | pycubrid 1.7.1 (recommended) | 2.1.1 | 11.4 | 125 / 118 |
 
 Most known failures are shared by both drivers: CUBRID backend rules (identifier case folding, `[ ]` identifier delimiters, no window frame clause, per-row foreign-key checks, single-precision `FLOAT`) and open dialect reflection/DDL bugs listed in `test/known_failures.txt`. Only the CUBRIDdb lane carries its NUMERIC truncation and integer-division entries.
 

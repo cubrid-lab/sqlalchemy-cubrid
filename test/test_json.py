@@ -159,6 +159,50 @@ class TestJSONPathExpressionCompilation:
             'ELSE CAST(JSON_EXTRACT(json_test."data", \'$."score"\') AS DOUBLE) END'
         ) in sql
 
+    def test_as_numeric_full_expression(self):
+        # #535: as_numeric(p, s) must cast to NUMERIC(p,s), not DOUBLE, so the
+        # driver returns a Decimal.
+        stmt = select(json_table.c.data["price"].as_numeric(10, 2))
+        sql = _norm(_compile(stmt))
+        assert (
+            "CASE JSON_EXTRACT(json_test.\"data\", '$.\"price\"') WHEN 'null' THEN NULL "
+            'ELSE CAST(JSON_EXTRACT(json_test."data", \'$."price"\') AS NUMERIC(10,2)) END'
+        ) in sql
+        assert "DOUBLE" not in sql
+
+    def test_json_path_as_numeric(self):
+        stmt = select(json_table.c.data[("a", 1)].as_numeric(38, 10))
+        sql = _norm(_compile(stmt))
+        assert "AS NUMERIC(38,10)) END" in sql
+        assert "DOUBLE" not in sql
+
+    def test_as_numeric_zero_scale(self):
+        stmt = select(json_table.c.data["n"].as_numeric(5, 0))
+        assert "AS NUMERIC(5,0)) END" in _norm(_compile(stmt))
+
+    def test_as_numeric_asdecimal_false_keeps_numeric_cast(self):
+        stmt = select(json_table.c.data["n"].as_numeric(10, 2, asdecimal=False))
+        assert "AS NUMERIC(10,2)) END" in _norm(_compile(stmt))
+
+    @pytest.mark.parametrize(
+        "numeric_type",
+        [sa.Numeric(), sa.Numeric(10), sa.Numeric(scale=2)],
+        ids=["no-precision-no-scale", "precision-only", "scale-only"],
+    )
+    def test_numeric_without_precision_and_scale_falls_back_to_double(self, numeric_type):
+        # A bare CUBRID NUMERIC is NUMERIC(15,0) and would truncate; like
+        # MySQL, only an explicit (precision, scale) pair gets the exact cast.
+        expr = json_table.c.data["n"]._binary_w_type(numeric_type, "as_numeric")
+        sql = _norm(_compile(select(expr)))
+        assert "AS DOUBLE) END" in sql
+        assert "NUMERIC" not in sql
+
+    def test_float_with_precision_stays_double(self):
+        expr = json_table.c.data["n"]._binary_w_type(sa.Float(10), "as_float")
+        sql = _norm(_compile(select(expr)))
+        assert "AS DOUBLE) END" in sql
+        assert "NUMERIC" not in sql
+
     def test_as_boolean_full_expression(self):
         stmt = select(json_table.c.data["active"].as_boolean())
         sql = _norm(_compile(stmt))
