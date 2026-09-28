@@ -20,6 +20,9 @@ class _Result:
     def fetchone(self) -> tuple[object, ...] | None:
         return self._rows[0] if self._rows else None
 
+    def first(self) -> tuple[object, ...] | None:
+        return self.fetchone()
+
 
 class _MockConnection:
     _show_columns: list[tuple[Any, ...]]

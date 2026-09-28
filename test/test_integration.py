@@ -311,6 +311,127 @@ class TestReflection:
         assert fk["referred_table"] == "integration_users"
 
 
+# More tables than a CUBRID connection has server query entries (100, #548): a
+# reflection query whose result is left open holds one entry each, and the
+# next query then fails with -830 "Cannot allocate query entry".
+_MANY_TABLES = 150
+
+
+class TestReflectionQueryEntries:
+    """#529 review: reflecting many tables on ONE connection must not leak
+    server query entries (-830)."""
+
+    @pytest.fixture
+    def many_tables(self, engine):
+        meta = MetaData()
+        Table("qe_parent", meta, Column("id", Integer, primary_key=True))
+        for n in range(_MANY_TABLES):
+            Table(
+                f"qe_t{n:03d}",
+                meta,
+                Column("id", Integer, primary_key=True),
+                Column("u", Integer, unique=True),
+                Column("p", Integer, ForeignKey("qe_parent.id")),
+            )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        yield meta
+        meta.drop_all(engine)
+
+    def test_metadata_reflect_many_tables_on_one_connection(self, engine, many_tables):
+        with engine.connect() as conn:
+            reflected = MetaData()
+            reflected.reflect(conn, only=list(many_tables.tables))
+            # The same connection still runs statements afterwards.
+            assert conn.execute(text("SELECT 1")).scalar() == 1
+        assert set(reflected.tables) == set(many_tables.tables)
+        table = reflected.tables[f"qe_t{_MANY_TABLES - 1:03d}"]
+        assert [fk.column.table.name for fk in table.foreign_keys] == ["qe_parent"]
+        assert {tuple(i.columns.keys()) for i in table.indexes if i.unique} >= {("u",)}
+
+    def test_inspector_loop_many_tables_on_one_connection(self, engine, many_tables):
+        names = [name for name in many_tables.tables if name != "qe_parent"]
+        with engine.connect() as conn:
+            insp = inspect(conn)
+            for name in names:
+                insp.get_indexes(name)
+                insp.get_unique_constraints(name)
+                insp.get_foreign_keys(name)
+                insp.get_table_comment(name)
+            assert conn.execute(text("SELECT 1")).scalar() == 1
+
+
+def _server_at_least(engine, version):
+    with engine.connect() as conn:
+        return conn.dialect.server_version_info[: len(version)] >= version
+
+
+class TestSameNameClassOfOtherOwner:
+    """#529 review: since CUBRID 11.2 classes of different owners may share a
+    name. Reflecting ``y_dup`` as user u2 must describe u2's own table, not a
+    same-named DBA view granted to PUBLIC (which made get_indexes() return
+    [])."""
+
+    @pytest.fixture
+    def u2_engine(self, engine):
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
+        if not _server_at_least(engine, (11, 2)):
+            pytest.skip("CUBRID < 11.2 has one global namespace for class names")
+
+        def run(eng, *statements, ignore_errors=False):
+            with eng.connect() as conn:
+                for statement in statements:
+                    try:
+                        conn.exec_driver_sql(statement)
+                    except Exception:
+                        if not ignore_errors:
+                            raise
+                        conn.rollback()
+                conn.commit()
+
+        u2 = create_engine(engine.url.set(username="u2", password=None))
+
+        def cleanup():
+            run(u2, "DROP TABLE y_dup", "DROP TABLE y_dup_parent", ignore_errors=True)
+            u2.dispose()
+            run(engine, "DROP VIEW y_dup", "DROP USER u2", ignore_errors=True)
+
+        run(engine, "CREATE USER u2", ignore_errors=True)
+        cleanup()
+        run(engine, "CREATE USER u2")
+        try:
+            run(
+                engine,
+                "CREATE VIEW y_dup AS SELECT 1 AS a FROM db_root",
+                "GRANT SELECT ON y_dup TO PUBLIC",
+            )
+            run(
+                u2,
+                "CREATE TABLE y_dup_parent (id INT PRIMARY KEY)",
+                "CREATE TABLE y_dup (id INT PRIMARY KEY, u INT UNIQUE, p INT, "
+                "CONSTRAINT fk_y_dup_p FOREIGN KEY (p) REFERENCES y_dup_parent (id))",
+            )
+            yield u2
+        finally:
+            cleanup()
+
+    def test_reflection_uses_the_current_users_class(self, u2_engine):
+        with u2_engine.connect() as conn:
+            owners = conn.execute(
+                text("SELECT owner_name, class_type FROM db_class WHERE class_name = 'y_dup'")
+            ).fetchall()
+            assert sorted(owners) == [("DBA", "VCLASS"), ("U2", "CLASS")]
+
+            insp = inspect(conn)
+            assert "u_y_dup_u" in {index["name"] for index in insp.get_indexes("y_dup")}
+            assert [uc["name"] for uc in insp.get_unique_constraints("y_dup")] == ["u_y_dup_u"]
+            fks = insp.get_foreign_keys("y_dup")
+            assert [(fk["name"], fk["referred_table"]) for fk in fks] == [
+                ("fk_y_dup_p", "y_dup_parent")
+            ]
+
+
 class TestTransactions:
     def test_savepoint(self, engine, metadata):
         """Savepoint support (CUBRID supports savepoints, not RELEASE SAVEPOINT)."""
