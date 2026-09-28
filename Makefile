@@ -53,12 +53,26 @@ test: ## Run offline tests with coverage (no DB required)
 test-all: ## Run tests across all Python versions via tox
 	tox
 
-integration: docker-up ## Run integration tests against a Docker CUBRID
-	@echo "Waiting for CUBRID to be ready..."
-	@sleep 10
+integration: ## Run integration tests against a Docker CUBRID and always attempt cleanup
+	@set -e; \
+	cleanup() { \
+		original_status=$$?; \
+		trap - 0; \
+		if docker compose down -v; then \
+			cleanup_status=0; \
+		else \
+			cleanup_status=$$?; \
+			echo "Docker cleanup failed (status $$cleanup_status)" >&2; \
+		fi; \
+		if [ "$$original_status" -ne 0 ]; then exit "$$original_status"; fi; \
+		exit "$$cleanup_status"; \
+	}; \
+	trap cleanup 0; \
+	docker compose up -d; \
+	echo "Waiting for CUBRID to be ready..."; \
+	sleep 10; \
 	CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
 		$(PYTEST) $(TESTS)/ -m integration -v
-	$(MAKE) docker-down
 
 integration-local: ## Run integration tests against an already-running CUBRID (set CUBRID_TEST_URL; no Docker)
 	@if [ -z "$$CUBRID_TEST_URL" ]; then \
