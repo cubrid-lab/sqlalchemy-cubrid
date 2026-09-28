@@ -154,12 +154,28 @@ _FLAG_FRAGMENT = re.compile(r"([A-Za-z_]+(?:\|[A-Za-z_]+)+)")
 _LANE = r"(?:cubrid|pycubrid)@sa[0-9]+\.[0-9]+(?:@cubrid[0-9]+\.[0-9]+)?"
 _ENTRY = re.compile(rf"(?P<nodeid>\S.*?)(?P<tags>(?:\s+{_LANE})+)")
 
+#: The SQLAlchemy release each gated lane's baseline was captured with (the CI
+#: steps pin the same versions). A strict run on another release fails.
+_PINNED_SQLALCHEMY = {
+    "cubrid@sa2.0": "2.0.53",
+    "pycubrid@sa2.0": "2.0.53",
+    "pycubrid@sa2.1": "2.1.1",
+}
+#: Supported CUBRID servers, and the (lane, server) pairs CI actually gates. A
+#: server-narrowed tag outside these pairs could never be verified, so it is a
+#: load error instead of an unreviewed, never-exercised entry.
+_CUBRID_SERVERS = frozenset({"10.2", "11.0", "11.2", "11.4"})
+_GATED_SERVER_LANES = frozenset(
+    {"cubrid@sa2.0@cubrid11.4", "pycubrid@sa2.0@cubrid10.2", "pycubrid@sa2.1@cubrid11.4"}
+)
+
 
 def _load_known_failures(path: Path) -> dict[str, set[str]]:
     """Map each lane to the normalized node ids listed for it in *path*."""
     lanes: dict[str, set[str]] = {}
     if not path.exists():
         return lanes
+    seen: dict[str, int] = {}
     text = path.read_text(encoding="utf-8")
     for lineno, raw in enumerate(text.splitlines(), 1):
         line = raw.strip()
@@ -171,14 +187,40 @@ def _load_known_failures(path: Path) -> dict[str, set[str]]:
                 f"{path.name}:{lineno}: every entry is a node id followed by one or "
                 f"more <driver>@sa<major.minor>[@cubrid<major.minor>] lane tags"
             )
+        nodeid = _normalize_nodeid(match["nodeid"])
+        if nodeid in seen:
+            raise ValueError(
+                f"{path.name}:{lineno}: {nodeid} is already listed on line {seen[nodeid]}; "
+                f"list each node once with all of its lane tags"
+            )
+        seen[nodeid] = lineno
         for tag in match["tags"].split():
-            lanes.setdefault(tag, set()).add(_normalize_nodeid(match["nodeid"]))
+            _, _, server = tag.partition("@cubrid")
+            if server and (server not in _CUBRID_SERVERS or tag not in _GATED_SERVER_LANES):
+                raise ValueError(
+                    f"{path.name}:{lineno}: server-narrowed tag {tag!r} is not a gated "
+                    f"(lane, CUBRID server) pair: {sorted(_GATED_SERVER_LANES)}"
+                )
+            lanes.setdefault(tag, set()).add(nodeid)
     return lanes
 
 
 def _normalize_nodeid(nodeid: str) -> str:
     stripped = _VERSION_SUFFIX.sub("", nodeid)
     return _FLAG_FRAGMENT.sub(lambda m: "|".join(sorted(m.group(1).split("|"))), stripped)
+
+
+def _skipped_known_failure(report, known: set[str]) -> str | None:  # noqa: ANN001
+    """The normalized node id when *report* skips a listed known failure.
+
+    A listed test that is skipped (a requirement closed it, or a fixture
+    skipped) is neither xfailed nor XPASSed, so strict mode would silently stop
+    checking it. Strict xfails report as skipped too, but carry ``wasxfail``.
+    """
+    if not report.skipped or hasattr(report, "wasxfail"):
+        return None
+    nodeid = _normalize_nodeid(report.nodeid)
+    return nodeid if nodeid in known else None
 
 
 # Only load the heavy SA testing plugin when a DB URI is provided.
@@ -197,6 +239,12 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
     from sqlalchemy.testing.plugin.pytestplugin import (  # noqa: E402
         pytest_collection_modifyitems as _sa_collection_modifyitems,
     )
+    from sqlalchemy.testing.plugin.pytestplugin import (  # noqa: E402
+        pytest_runtest_logreport as _sa_runtest_logreport,
+    )
+    from sqlalchemy.testing.plugin.pytestplugin import (  # noqa: E402
+        pytest_sessionfinish as _sa_sessionfinish,
+    )
     from sqlalchemy.testing.plugin.pytestplugin import *  # noqa: E402, F401, F403
 
     def _current_lanes() -> tuple[str, str]:
@@ -213,14 +261,20 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
         return lane, f"{lane}@cubrid{server}"
 
     _KNOWN_FAILURES_BY_LANE = _load_known_failures(_KNOWN_FAILURES_FILE)
+    _STRICT = os.environ.get("CUBRID_STRICT_KNOWN_FAILURES") == "1"
+    _active_known: set[str] = set()
+    _skipped_known: set[str] = set()
+    _xfailed_known: set[str] = set()
 
     def pytest_collection_modifyitems(session, config, items):  # noqa: ANN001
+        import sqlalchemy
+
         _sa_collection_modifyitems(session, config, items)
         lane, server_lane = _current_lanes()
         known = _KNOWN_FAILURES_BY_LANE.get(lane, set()) | _KNOWN_FAILURES_BY_LANE.get(
             server_lane, set()
         )
-        strict_mode = os.environ.get("CUBRID_STRICT_KNOWN_FAILURES") == "1"
+        strict_mode = _STRICT
         reporter = config.pluginmanager.get_plugin("terminalreporter")
         if reporter is not None:
             reporter.write_line(
@@ -238,8 +292,19 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
                 f"(see docs/DEVELOPMENT.md).",
                 returncode=1,
             )
+        # The baseline is a snapshot of one SQLAlchemy release (suite
+        # parametrization changes between releases); gate only on that release.
+        pinned = _PINNED_SQLALCHEMY.get(lane)
+        if strict_mode and pinned is not None and sqlalchemy.__version__ != pinned:
+            pytest.exit(
+                f"CUBRID_STRICT_KNOWN_FAILURES=1: lane {lane} was captured with "
+                f"SQLAlchemy {pinned}, but {sqlalchemy.__version__} is installed; pin it "
+                f"or recapture the lane (see docs/DEVELOPMENT.md).",
+                returncode=1,
+            )
         if not known:
             return
+        _active_known.update(known)
         strict_xfail = pytest.mark.xfail(
             reason=f"known failure for lane {lane} baselined in test/known_failures.txt (#380, #463)",
             strict=True,
@@ -264,3 +329,36 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
                     f"SQLAlchemy bump?):\n  {listing}",
                     returncode=1,
                 )
+
+    def pytest_runtest_logreport(report):  # noqa: ANN001
+        _sa_runtest_logreport(report)
+        if hasattr(report, "wasxfail"):
+            # Any phase counts: e.g. CTETest::test_delete_from_round_trip skips its
+            # body but xfails in teardown, which still exercises the entry.
+            _xfailed_known.add(_normalize_nodeid(report.nodeid))
+        nodeid = _skipped_known_failure(report, _active_known)
+        if nodeid is not None:
+            _skipped_known.add(nodeid)
+
+    def pytest_sessionfinish(session):  # noqa: ANN001
+        """In strict mode, fail when a listed known failure was skipped.
+
+        A skipped entry no longer proves anything (it can neither xfail nor
+        XPASS), so the baseline must drop it or the skip must be fixed.
+        """
+        _sa_sessionfinish(session)
+        only_skipped = _skipped_known - _xfailed_known
+        if not (_STRICT and only_skipped):
+            return
+        listing = "\n  ".join(sorted(only_skipped))
+        reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+        if reporter is not None:
+            reporter.write_line(
+                f"CUBRID_STRICT_KNOWN_FAILURES=1: {len(only_skipped)} known_failures.txt "
+                f"entries were SKIPPED instead of xfailed (remove them or fix the skip):"
+                f"\n  {listing}",
+                red=True,
+                bold=True,
+            )
+        if session.exitstatus in (pytest.ExitCode.OK, pytest.ExitCode.NO_TESTS_COLLECTED):
+            session.exitstatus = pytest.ExitCode.TESTS_FAILED

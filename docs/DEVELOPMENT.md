@@ -565,8 +565,18 @@ the run also fails when:
 
 - a listed test passes (strict XPASS): remove that lane's tag;
 - a listed entry for the lane matches no collected test (stale baseline);
+- a listed entry is skipped instead of xfailed, so it no longer proves
+  anything: drop it or fix the skip;
 - the lane has no entries at all, so a new driver or SQLAlchemy minor cannot
-  gate on an empty baseline by accident.
+  gate on an empty baseline by accident;
+- the installed SQLAlchemy is not the release the lane was captured with
+  (`_PINNED_SQLALCHEMY` in `test/conftest.py`).
+
+The manifest parser also rejects a node id listed twice, and a server-narrowed
+tag that is not one of the (lane, server) pairs CI gates
+(`_GATED_SERVER_LANES`: `cubrid@sa2.0@cubrid11.4`, `pycubrid@sa2.0@cubrid10.2`,
+`pycubrid@sa2.1@cubrid11.4`), so a typo'd or never-exercised server tag cannot
+slip in.
 
 Tests that cannot apply to CUBRID at all (for example seven-digit precision
 from the single-precision `FLOAT`, or non-ASCII identifiers on a non-UTF-8

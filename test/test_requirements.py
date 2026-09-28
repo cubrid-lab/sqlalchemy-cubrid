@@ -133,17 +133,34 @@ class TestRequirements:
         assert _is_open(requirements.for_update)
 
 
-def test_stacked_requirements_do_not_leak_into_other_properties(requirements):
-    """Stacked @requires decorators extend the first compound in place, so each
-    property must return a fresh one or an open requirement turns closed (#463)."""
+_OWN_PROPERTIES = sorted(
+    name for name, value in vars(Requirements).items() if isinstance(value, property)
+)
 
+
+@pytest.mark.parametrize("property_name", _OWN_PROPERTIES)
+def test_stacked_requirements_do_not_leak_into_other_properties(requirements, property_name):
+    """Stacked @requires decorators extend the first compound in place, so each
+    property must return a fresh one or other requirements change too (#463)."""
+
+    def fn():
+        pass
+
+    before = getattr(requirements, property_name)
+    assert before is not getattr(requirements, property_name)
+    skips, fails = len(before.skips), len(before.fails)
+    requirements.sequences(getattr(requirements, property_name)(fn))
+    after = getattr(requirements, property_name)
+    assert (len(after.skips), len(after.fails)) == (skips, fails)
+
+
+def test_stacking_keeps_open_requirements_open(requirements):
     def fn():
         pass
 
     requirements.sequences(requirements.views(fn))
     assert _is_open(requirements.views)
     assert _is_open(requirements.ctes)
-    assert requirements.views is not requirements.views
 
 
 @pytest.mark.parametrize("charset, expected_open", [("utf8", True), ("iso88591", False)])
@@ -154,6 +171,17 @@ def test_unicode_ddl_requires_a_utf8_database(requirements, charset, expected_op
     conn = config.db.connect.return_value.__enter__.return_value
     conn.exec_driver_sql.return_value.scalar.return_value = charset
     assert requirements.unicode_ddl.enabled_for_config(config) is expected_open
+    # probed once per database URL
+    assert requirements.unicode_ddl.enabled_for_config(config) is expected_open
+    assert conn.exec_driver_sql.call_count == 1
+
+
+def test_unicode_ddl_skips_when_the_charset_probe_fails(requirements):
+    from unittest.mock import MagicMock
+
+    config = MagicMock()
+    config.db.connect.side_effect = RuntimeError("server unreachable")
+    assert requirements.unicode_ddl.enabled_for_config(config) is False
 
 
 @pytest.mark.parametrize("property_name", ["implicitly_named_constraints", "reflects_pk_names"])

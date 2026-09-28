@@ -38,11 +38,26 @@ def _closed() -> compound:
     return rule
 
 
+_UTF8_BY_URL: dict[str, bool] = {}
+
+
 def _database_is_utf8(config: Any) -> bool:
-    """True when the target database's charset (that of a string literal) is UTF-8."""
-    with config.db.connect() as conn:
-        charset = conn.exec_driver_sql("SELECT CHARSET('a')").scalar()
-    return str(charset).lower() == "utf8"
+    """True when the target database's charset (that of a string literal) is UTF-8.
+
+    Probed once per database URL: the suite evaluates the requirement for every
+    test that needs it. A failed probe counts as "not UTF-8", so the tests are
+    skipped with the requirement's reason instead of erroring.
+    """
+    key = str(config.db.url)
+    if key not in _UTF8_BY_URL:
+        try:
+            with config.db.connect() as conn:
+                charset = conn.exec_driver_sql("SELECT CHARSET('a')").scalar()
+        except Exception:
+            _UTF8_BY_URL[key] = False
+        else:
+            _UTF8_BY_URL[key] = str(charset).lower() == "utf8"
+    return _UTF8_BY_URL[key]
 
 
 class Requirements(SuiteRequirements):
@@ -188,7 +203,7 @@ class Requirements(SuiteRequirements):
         and the undroppable leftovers break every later test (#463)."""
         rule: compound = exclusions.skip_if(  # type: ignore[no-untyped-call]
             lambda config: not _database_is_utf8(config),
-            "database charset is not UTF-8",
+            "database charset is not UTF-8 (or could not be determined)",
         )
         return rule
 

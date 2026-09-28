@@ -197,6 +197,9 @@ jobs:
         -v --tb=short
 
   integration-tests:
+    # Explicit name: the pycubrid-compliance-sqlalchemy matrix value is only the
+    # pycubrid compliance lane's pin, not the SQLAlchemy version of the job.
+    name: integration-tests (${{ matrix.python-version }}, ${{ matrix.cubrid-version }})
     runs-on: ubuntu-latest
     needs: [detect-changes, lint, offline-tests, packaging-smoke-test]
     if: needs.detect-changes.outputs.code == 'true'
@@ -378,6 +381,9 @@ jobs:
             -v --tb=short
 
       - name: Run SQLAlchemy dialect compliance suite (gating, released pycubrid)
+        # Run even when an earlier step (e.g. the CUBRIDdb lane) failed, so one
+        # lane's failure cannot hide the other's result; the job still fails.
+        if: ${{ !cancelled() }}
         env:
           CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
           CUBRID_STRICT_KNOWN_FAILURES: "1"
