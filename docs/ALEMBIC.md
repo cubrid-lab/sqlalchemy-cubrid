@@ -183,8 +183,9 @@ default auto-commit mode), which commits after every statement, DDL or DML.
 
 **Schema locks.** Uncommitted DDL keeps its schema lock on the table until the
 transaction ends, so other sessions that touch the table wait (as `SCH_S_LOCK`
-waits) for the whole transaction. For long migrations, or migrations on large
-tables, set `transaction_per_migration=True` so each revision commits and
+waits) for the whole transaction; CUBRID's default `lock_timeout` is unlimited,
+so they wait indefinitely rather than time out. For long migrations, or
+migrations on large tables, set `transaction_per_migration=True` so each revision commits and
 releases its locks as soon as it finishes:
 
 ```python
@@ -196,13 +197,30 @@ context.configure(
 )
 ```
 
+Alembic's `autocommit_block()` is not a way to commit part of an upgrade early on
+CUBRID: it switches the connection to the `AUTOCOMMIT` isolation level, which the
+dialect does not accept before #501, and it gives up the upgrade's atomicity.
+Use `transaction_per_migration=True` to commit between revisions instead.
+
 **Offline (`--sql`) scripts.** CUBRID has no `BEGIN` statement (csql rejects it
 with `Syntax error: unexpected 'BEGIN'`); a transaction starts implicitly. The
 CUBRID implementation therefore emits no `BEGIN;` and ends each transaction with
 `COMMIT;` (one per upgrade, or one per revision with
-`transaction_per_migration=True`). Run the script with
-`csql --no-auto-commit` so that those `COMMIT;` lines are the only commit
-points; in csql's default auto-commit mode every statement commits on its own.
+`transaction_per_migration=True`). Run the script with both
+`--no-auto-commit` and `--no-single-line`:
+
+```bash
+csql -u dba demodb --no-auto-commit --no-single-line -i upgrade.sql
+```
+
+`--no-auto-commit` makes those `COMMIT;` lines the only commit points; in csql's
+default auto-commit mode every statement commits on its own. `--no-single-line`
+makes csql stop at the first failing statement and exit with status 1, so the
+open transaction is rolled back: nothing from the whole upgrade (or, with
+`transaction_per_migration=True`, from the failing revision) is kept. In csql's
+default single-line mode, csql reports the error, **continues with the next
+statements, runs the trailing `COMMIT;` and exits 0**, so a failed script can
+leave partial schema and a bumped `alembic_version`.
 
 !!! note "Changed after 1.7.1"
     Earlier releases set `transactional_ddl = False`. Alembic still wrapped each
@@ -477,10 +495,10 @@ is the whole upgrade; with `transaction_per_migration=True` it is the failing
 revision, and the revisions before it stay committed and recorded in
 `alembic_version`. Partial state can still come from:
 
-- client autocommit (for example `isolation_level="AUTOCOMMIT"` on the engine,
-  or a driver connection with autocommit on), which commits every statement;
-- an offline (`--sql`) script run in csql's default auto-commit mode instead
-  of `csql --no-auto-commit`;
+- client autocommit, which commits every statement: driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501);
+- an offline (`--sql`) script run without `csql --no-auto-commit --no-single-line`
+  (csql's default single-line mode continues past a failing statement and still
+  runs the trailing `COMMIT;`);
 - a revision that calls `COMMIT` itself (for example through `op.execute`).
 
 **Fix**:
@@ -524,7 +542,7 @@ revision, and the revisions before it stay committed and recorded in
 Before running migrations in production:
 
 - [ ] **Plan lock duration** — DDL holds schema locks until commit, and by default the whole upgrade is one transaction. Use `transaction_per_migration=True` for long or large-table migrations.
-- [ ] **No client autocommit** — run migrations without `isolation_level="AUTOCOMMIT"`, and run offline scripts with `csql --no-auto-commit`, so a failure rolls back cleanly.
+- [ ] **No client autocommit** — don't run migrations with client autocommit on (driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501)), and run offline scripts with `csql --no-auto-commit --no-single-line`, so a failure rolls back cleanly.
 - [ ] **Backup database** — `cubrid backupdb demodb` before destructive operations
 - [ ] **Test upgrade + downgrade cycle** — run `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` on staging
 - [ ] **Verify state after each step** — query `db_class` system table to confirm schema matches expectations

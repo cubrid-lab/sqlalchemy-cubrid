@@ -21,7 +21,8 @@ CI job points at, through both drivers:
   partial schema and no version row, while ``transaction_per_migration=True``
   keeps each revision atomic on its own;
 * offline ``--sql`` output (no ``BEGIN;``, ``COMMIT;`` per transaction) runs
-  in csql.  Set ``CUBRID_CSQL`` to a csql command prefix to run that check,
+  in ``csql --no-auto-commit --no-single-line``, and a failing script exits
+  non-zero and keeps nothing after the last ``COMMIT;``.  Set ``CUBRID_CSQL`` to a csql command prefix to run that check,
   e.g. ``docker exec -i <container> csql -u dba testdb``.
 
 A driver that cannot connect (e.g. CUBRIDdb not built) skips its cases
@@ -91,6 +92,7 @@ def _raw_connect(driver: str) -> Any:
             return conn
     except Exception as exc:  # driver not installed / not built / unreachable
         _unavailable(f"{driver} cannot connect: {type(exc).__name__}: {exc}")
+    raise AssertionError("unreachable")  # every branch above returns or raises
 
 
 def _q(conn: Any, sql: str) -> list[Any] | None:
@@ -414,7 +416,8 @@ def _schema_state(engine: sa.engine.Engine) -> dict[str, Any]:
 
 @pytest.fixture(params=_DRIVERS)
 def alembic_engine(request: pytest.FixtureRequest) -> Iterator[sa.engine.Engine]:
-    pytest.importorskip("alembic")
+    if importlib.util.find_spec("alembic") is None:
+        _unavailable("alembic is not installed")
     import sqlalchemy_cubrid.alembic_impl  # noqa: F401
 
     eng = _connectable_engine(request.param)
@@ -488,14 +491,33 @@ def test_alembic_upgrade_and_downgrade_commit(
     }
 
 
-def _offline_sql(tmp_path: Path, url: sa.engine.URL, per_migration: bool) -> str:
+def _offline_sql(tmp_path: Path, url: sa.engine.URL, per_migration: bool, fail: bool) -> str:
     from alembic import command
 
     buf = io.StringIO()
     cfg = _alembic_config(tmp_path, url, output_buffer=buf)
     cfg.attributes["transaction_per_migration"] = per_migration
+    cfg.attributes["fail"] = fail
     command.upgrade(cfg, "head", sql=True)
     return buf.getvalue()
+
+
+def _run_csql(sql: str) -> subprocess.CompletedProcess[str]:
+    """Run an offline script the way the docs tell users to."""
+    csql = os.environ.get("CUBRID_CSQL")
+    if not csql:
+        _unavailable("CUBRID_CSQL not set (e.g. 'docker exec -i <container> csql -u dba testdb')")
+    # --no-auto-commit makes the script's COMMIT; the only commit points.
+    # --no-single-line makes csql stop at the first failing statement and exit
+    # 1; in the default single-line mode it reports the error, runs the rest of
+    # the script (including COMMIT;) and exits 0.
+    return subprocess.run(  # noqa: S603 - command comes from the test environment
+        [*shlex.split(csql), "--no-auto-commit", "--no-single-line", "-i", "/dev/stdin"],
+        input=sql,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
 
 
 @pytest.mark.parametrize("per_migration", [False, True])
@@ -503,25 +525,36 @@ def test_alembic_offline_sql_runs_in_csql(
     tmp_path: Path, alembic_engine: sa.engine.Engine, per_migration: bool
 ) -> None:
     """Feed ``upgrade head --sql`` output to csql and check the resulting schema."""
-    csql = os.environ.get("CUBRID_CSQL")
-    if not csql:
-        _unavailable("CUBRID_CSQL not set (e.g. 'docker exec -i <container> csql -u dba testdb')")
+    sql = _offline_sql(tmp_path, alembic_engine.url, per_migration, fail=False)
+    result = _run_csql(sql)
 
-    sql = _offline_sql(tmp_path, alembic_engine.url, per_migration)
-    # --no-auto-commit makes the script's COMMIT; the only commit point.
-    result = subprocess.run(  # noqa: S603 - command comes from the test environment
-        [*shlex.split(csql), "--no-auto-commit", "-i", "/dev/stdin"],
-        input=sql,
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
-    # csql exits 0 even after a statement error, so check its output too.
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "ERROR" not in result.stdout + result.stderr, result.stdout + result.stderr
-
+    output = result.stdout + result.stderr
+    assert result.returncode == 0, output
+    assert "ERROR" not in output, output
     assert _schema_state(alembic_engine) == {
         "tables": sorted([_A1, _A2, _VERSION_TABLE]),
         "al_one_columns": ["id", "name", "x"],
         "version": ["r2"],
     }
+
+
+@pytest.mark.parametrize("per_migration", [False, True])
+def test_alembic_failing_offline_sql_rolls_back_in_csql(
+    tmp_path: Path, alembic_engine: sa.engine.Engine, per_migration: bool
+) -> None:
+    """A failing statement stops csql with a non-zero exit and nothing past the
+    last COMMIT; is kept: the whole upgrade by default, only r2 per migration."""
+    sql = _offline_sql(tmp_path, alembic_engine.url, per_migration, fail=True)
+    assert f"{_PREFIX}does_not_exist" in sql
+    result = _run_csql(sql)
+
+    assert result.returncode != 0, result.stdout + result.stderr
+    if per_migration:
+        expected: dict[str, Any] = {
+            "tables": [_A1, _VERSION_TABLE],
+            "al_one_columns": ["id", "name"],
+            "version": ["r1"],
+        }
+    else:
+        expected = {"tables": [], "al_one_columns": None, "version": None}
+    assert _schema_state(alembic_engine) == expected

@@ -189,7 +189,7 @@ When a connection is returned to the pool, the dialect resets isolation to level
 
 3. **Set isolation at the engine level** for application-wide defaults, and override per-connection only when needed.
 
-4. **DDL is transactional.** At every isolation level, CUBRID runs DDL inside the current transaction: `ROLLBACK` undoes `CREATE TABLE`, `ALTER TABLE` and the like, and DDL never commits earlier DML. Uncommitted DDL holds a schema lock on its table, so other transactions that use the table wait until it commits or rolls back. Only client autocommit (for example `isolation_level="AUTOCOMMIT"`) commits DDL immediately.
+4. **DDL is transactional.** At every isolation level, CUBRID runs DDL inside the current transaction: `ROLLBACK` undoes `CREATE TABLE`, `ALTER TABLE` and the like, and DDL never commits earlier DML. Uncommitted DDL holds a schema lock on its table, so other transactions that use the table wait until it commits or rolls back. Only client autocommit (driver-level autocommit, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it, #501) commits DDL immediately.
 
 ---
 

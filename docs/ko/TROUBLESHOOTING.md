@@ -951,13 +951,13 @@ def upgrade():
 
 **원인:** 실패 전에 무언가가 커밋했습니다:
 
-- 클라이언트 자동 커밋 — 엔진의 `isolation_level="AUTOCOMMIT"` 또는 자동 커밋이 켜진 드라이버 연결 — 은 문마다 커밋합니다
-- 오프라인(`--sql`) 스크립트를 `csql --no-auto-commit` 대신 csql의 기본 자동 커밋 모드로 실행했습니다
+- 클라이언트 자동 커밋 — 드라이버 수준 자동 커밋, csql의 기본 자동 커밋 모드, 또는 방언이 지원하는 경우(#501) `isolation_level="AUTOCOMMIT"` — 은 문마다 커밋합니다
+- 오프라인(`--sql`) 스크립트를 `csql --no-auto-commit --no-single-line` 없이 실행했습니다. csql의 기본 단일 행 모드는 실패한 문 뒤에도 계속 실행하고, 마지막 `COMMIT;`까지 실행한 뒤 0으로 종료합니다
 - 리비전이 `op.execute()` 등으로 직접 `COMMIT`을 실행했습니다
 
 **예방:**
 
-1. 클라이언트 자동 커밋 없이 마이그레이션을 실행하고, 오프라인 스크립트는 `csql --no-auto-commit`으로 실행
+1. 클라이언트 자동 커밋 없이 마이그레이션을 실행하고, 오프라인 스크립트는 `csql --no-auto-commit --no-single-line`으로 실행(첫 오류에서 멈추고 1로 종료하며, 열린 트랜잭션은 롤백됨)
 2. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True` 사용 — 커밋되지 않은 DDL은 스키마 잠금을 유지하므로 다른 세션이 트랜잭션이 끝날 때까지 기다립니다
 3. 먼저 스테이징 데이터베이스에서 마이그레이션 테스트
 4. 마이그레이션 실행 전 데이터베이스 백업
@@ -1036,9 +1036,9 @@ with engine.begin() as conn:
     raise RuntimeError("abort")  # 두 INSERT와 CREATE TABLE이 모두 롤백됨
 ```
 
-자동 커밋이 일어나는 경우는 클라이언트 자동 커밋(`CCI_DEFAULT_AUTOCOMMIT`, `isolation_level="AUTOCOMMIT"`, csql의 기본 모드)뿐이며, 이때는 DDL이든 DML이든 문마다 커밋됩니다.
+자동 커밋이 일어나는 경우는 클라이언트 자동 커밋(`CCI_DEFAULT_AUTOCOMMIT` / 드라이버 수준 자동 커밋, csql의 기본 모드, 또는 방언이 지원하는 경우(#501) `isolation_level="AUTOCOMMIT"`)뿐이며, 이때는 DDL이든 DML이든 문마다 커밋됩니다.
 
-**스키마 잠금에 주의:** 커밋되지 않은 DDL은 트랜잭션이 끝날 때까지 테이블의 스키마 잠금을 유지하므로, 그 테이블을 사용하는 다른 세션은 기다립니다(`SCH_S_LOCK` 대기 또는 잠금 타임아웃). DDL은 바로 커밋하고, 긴 DDL 트랜잭션은 바쁜 시간대를 피하세요.
+**스키마 잠금에 주의:** 커밋되지 않은 DDL은 트랜잭션이 끝날 때까지 테이블의 스키마 잠금을 유지하므로, 그 테이블을 사용하는 다른 세션은 기다립니다(`SCH_S_LOCK` 대기. CUBRID의 기본 `lock_timeout`은 무제한이므로, 잠금 타임아웃을 설정하지 않으면 트랜잭션이 끝날 때까지 기다립니다). DDL은 바로 커밋하고, 긴 DDL 트랜잭션은 바쁜 시간대를 피하세요.
 
 ---
 

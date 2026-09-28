@@ -955,13 +955,13 @@ def upgrade():
 
 **Cause:** Something committed before the failure:
 
-- client autocommit — `isolation_level="AUTOCOMMIT"` on the engine, or a driver connection with autocommit on — commits every statement;
-- an offline (`--sql`) script ran in csql's default auto-commit mode instead of `csql --no-auto-commit`;
+- client autocommit — driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501) — commits every statement;
+- an offline (`--sql`) script ran without `csql --no-auto-commit --no-single-line`: in csql's default single-line mode, csql continues past a failing statement, still runs the trailing `COMMIT;` and exits 0;
 - a revision issued `COMMIT` itself, for example through `op.execute()`.
 
 **Prevention:**
 
-1. Run migrations without client autocommit, and run offline scripts with `csql --no-auto-commit`
+1. Run migrations without client autocommit, and run offline scripts with `csql --no-auto-commit --no-single-line` (it stops at the first error and exits 1, and the open transaction is rolled back)
 2. Use `transaction_per_migration=True` for long or large-table migrations: uncommitted DDL holds schema locks, so other sessions wait until the transaction ends
 3. Test migrations against a staging database first
 4. Back up the database before running migrations
@@ -1043,9 +1043,9 @@ with engine.begin() as conn:
     raise RuntimeError("abort")  # rolls back both INSERTs and the CREATE TABLE
 ```
 
-The only auto-commit behavior is client autocommit (`CCI_DEFAULT_AUTOCOMMIT`, `isolation_level="AUTOCOMMIT"`, or csql's default mode), which commits after every statement, DDL or DML.
+The only auto-commit behavior is client autocommit (`CCI_DEFAULT_AUTOCOMMIT` / driver-level autocommit, csql's default mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501)), which commits after every statement, DDL or DML.
 
-**Watch out for schema locks:** uncommitted DDL holds a schema lock on its table until the transaction ends, so other sessions that use the table wait (`SCH_S_LOCK` waits, or a lock timeout). Commit DDL promptly, and keep long DDL transactions out of busy periods.
+**Watch out for schema locks:** uncommitted DDL holds a schema lock on its table until the transaction ends, so other sessions that use the table wait (`SCH_S_LOCK` waits; CUBRID's default `lock_timeout` is unlimited, so they wait until the transaction ends unless a lock timeout is set). Commit DDL promptly, and keep long DDL transactions out of busy periods.
 
 ---
 

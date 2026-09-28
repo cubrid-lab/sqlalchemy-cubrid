@@ -155,7 +155,7 @@ CUBRID의 DDL은 트랜잭션으로 처리됩니다. 클라이언트 자동 커�
 - `context.configure()`에 `transaction_per_migration=True`를 주면 리비전마다 별도 트랜잭션으로 실행하고 커밋합니다. 끝난 리비전은 적용된 채 남고, 실패한 리비전은 통째로 롤백됩니다.
 - `context.is_transactional_ddl()`은 `True`를 반환합니다.
 
-**스키마 잠금.** 커밋되지 않은 DDL은 트랜잭션이 끝날 때까지 테이블의 스키마 잠금을 유지하므로, 그 테이블을 사용하는 다른 세션은 트랜잭션 전체가 끝날 때까지 기다립니다(`SCH_S_LOCK` 대기). 오래 걸리는 마이그레이션이나 큰 테이블의 마이그레이션에는 `transaction_per_migration=True`를 설정해 리비전이 끝날 때마다 커밋하고 잠금을 해제하세요:
+**스키마 잠금.** 커밋되지 않은 DDL은 트랜잭션이 끝날 때까지 테이블의 스키마 잠금을 유지하므로, 그 테이블을 사용하는 다른 세션은 트랜잭션 전체가 끝날 때까지 기다립니다(`SCH_S_LOCK` 대기). CUBRID의 기본 `lock_timeout`은 무제한이므로 타임아웃 없이 계속 기다립니다. 오래 걸리는 마이그레이션이나 큰 테이블의 마이그레이션에는 `transaction_per_migration=True`를 설정해 리비전이 끝날 때마다 커밋하고 잠금을 해제하세요:
 
 ```python
 # env.py
@@ -166,7 +166,15 @@ context.configure(
 )
 ```
 
-**오프라인(`--sql`) 스크립트.** CUBRID에는 `BEGIN` 문이 없습니다(csql은 `Syntax error: unexpected 'BEGIN'`으로 거부합니다). 트랜잭션은 암묵적으로 시작됩니다. 그래서 CUBRID 구현은 `BEGIN;`을 내지 않고 각 트랜잭션을 `COMMIT;`으로 끝냅니다(업그레이드당 하나, `transaction_per_migration=True`이면 리비전당 하나). 스크립트는 `csql --no-auto-commit`으로 실행해 그 `COMMIT;` 줄만 커밋 지점이 되게 하세요. csql의 기본 자동 커밋 모드에서는 문마다 커밋됩니다.
+Alembic의 `autocommit_block()`은 CUBRID에서 업그레이드 일부를 먼저 커밋하는 수단이 아닙니다. 이 기능은 연결을 `AUTOCOMMIT` 격리 수준으로 바꾸는데, 방언은 #501 이전에는 이를 받아들이지 않으며, 업그레이드의 원자성도 잃게 됩니다. 리비전 사이에서 커밋하려면 `transaction_per_migration=True`를 사용하세요.
+
+**오프라인(`--sql`) 스크립트.** CUBRID에는 `BEGIN` 문이 없습니다(csql은 `Syntax error: unexpected 'BEGIN'`으로 거부합니다). 트랜잭션은 암묵적으로 시작됩니다. 그래서 CUBRID 구현은 `BEGIN;`을 내지 않고 각 트랜잭션을 `COMMIT;`으로 끝냅니다(업그레이드당 하나, `transaction_per_migration=True`이면 리비전당 하나). 스크립트는 `--no-auto-commit`과 `--no-single-line`을 함께 주어 실행하세요:
+
+```bash
+csql -u dba demodb --no-auto-commit --no-single-line -i upgrade.sql
+```
+
+`--no-auto-commit`은 그 `COMMIT;` 줄만 커밋 지점이 되게 합니다. csql의 기본 자동 커밋 모드에서는 문마다 커밋됩니다. `--no-single-line`은 첫 번째로 실패한 문에서 csql을 멈추고 상태 1로 종료시키므로, 열린 트랜잭션이 롤백되어 업그레이드 전체(`transaction_per_migration=True`이면 실패한 리비전)의 변경이 남지 않습니다. csql의 기본 단일 행 모드에서는 오류를 보고한 뒤 **다음 문을 계속 실행하고, 마지막 `COMMIT;`까지 실행한 다음 0으로 종료**하므로, 실패한 스크립트가 부분 스키마와 올라간 `alembic_version`을 남길 수 있습니다.
 
 !!! note "1.7.1 이후 변경"
     이전 릴리스는 `transactional_ddl = False`였습니다. 그래도 온라인 모드의 Alembic은 리비전마다 트랜잭션을 감쌌기 때문에 각 리비전은 이미 원자적이었지만, 실패한 `upgrade`는 앞선 리비전을 남겼습니다. 이제는 기본적으로 업그레이드 전체가 원자적입니다. 이전의 리비전 단위 동작을 유지하려면 `transaction_per_migration=True`를 설정하세요.
@@ -387,8 +395,8 @@ pip install "alembic>=1.7.2,<2.0"
 
 **원인**: CUBRID의 DDL은 트랜잭션으로 처리되므로, 실패한 온라인 업그레이드는 반쯤 적용된 리비전을 남기지 않습니다. 실패한 트랜잭션이 롤백되기 때문입니다. 기본값에서는 업그레이드 전체가, `transaction_per_migration=True`에서는 실패한 리비전이 롤백되고 그 앞의 리비전은 커밋되어 `alembic_version`에 기록된 채 남습니다. 그래도 다음 경우에는 부분 상태가 생길 수 있습니다:
 
-- 클라이언트 자동 커밋(예: 엔진의 `isolation_level="AUTOCOMMIT"`, 또는 자동 커밋이 켜진 드라이버 연결) — 문마다 커밋됩니다
-- 오프라인(`--sql`) 스크립트를 `csql --no-auto-commit` 대신 csql의 기본 자동 커밋 모드로 실행한 경우
+- 클라이언트 자동 커밋(드라이버 수준 자동 커밋, csql의 기본 자동 커밋 모드, 또는 방언이 지원하는 경우(#501) `isolation_level="AUTOCOMMIT"`) — 문마다 커밋됩니다
+- 오프라인(`--sql`) 스크립트를 `csql --no-auto-commit --no-single-line` 없이 실행한 경우(csql의 기본 단일 행 모드는 실패한 문 뒤에도 계속 실행하고 마지막 `COMMIT;`까지 실행합니다)
 - 리비전이 직접 `COMMIT`을 실행한 경우(예: `op.execute`)
 
 **해결**:
@@ -425,7 +433,7 @@ pip install "alembic>=1.7.2,<2.0"
 프로덕션에서 마이그레이션 실행 전:
 
 - [ ] **잠금 시간 계획** — DDL은 커밋될 때까지 스키마 잠금을 유지하고, 기본적으로 업그레이드 전체가 하나의 트랜잭션입니다. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True`를 사용하세요.
-- [ ] **클라이언트 자동 커밋 금지** — `isolation_level="AUTOCOMMIT"` 없이 마이그레이션을 실행하고, 오프라인 스크립트는 `csql --no-auto-commit`으로 실행해 실패 시 깔끔하게 롤백되게 하세요.
+- [ ] **클라이언트 자동 커밋 금지** — 클라이언트 자동 커밋(드라이버 수준 자동 커밋, csql의 기본 자동 커밋 모드, 또는 방언이 지원하는 경우(#501) `isolation_level="AUTOCOMMIT"`)을 켠 채 마이그레이션을 실행하지 말고, 오프라인 스크립트는 `csql --no-auto-commit --no-single-line`으로 실행해 실패 시 깔끔하게 롤백되게 하세요.
 - [ ] **데이터베이스 백업** — 파괴적 연산 전 `cubrid backupdb demodb`
 - [ ] **업그레이드 + 다운그레이드 주기 테스트** — 스테이징에서 `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` 실행
 - [ ] **각 단계 후 상태 검증** — `db_class` 시스템 테이블을 조회해 스키마가 기대와 일치하는지 확인
