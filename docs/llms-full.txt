@@ -6251,6 +6251,15 @@ CUBRID_VERSION=10.2 docker compose up -d
 make integration
 ```
 
+`make integration` attempts `docker compose down -v` on shell exit, including
+after failed startup, readiness waiting or tests. The original failure is preserved
+if cleanup also fails; cleanup failure after passing tests also makes the command
+fail. Cleanup errors are reported explicitly. This does not guarantee cleanup after
+an untrappable termination such as `SIGKILL` or a host shutdown.
+
+For an already-running server, set `CUBRID_TEST_URL` and use `make integration-local`.
+That target never starts or stops Docker and leaves the external server running.
+
 ---
 
 ## Multi-Version Testing

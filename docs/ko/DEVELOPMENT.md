@@ -305,6 +305,15 @@ CUBRID_VERSION=10.2 docker compose up -d
 make integration
 ```
 
+`make integration`은 셸이 종료될 때 `docker compose down -v`를 시도합니다.
+컨테이너 시작, 준비 대기 또는 테스트가 실패한 경우에도 정리를 시도합니다.
+정리까지 실패하면 최초 실패를 유지하고, 테스트가 성공했더라도 정리가 실패하면
+명령은 실패합니다. 정리 오류는 명시적으로 출력됩니다. `SIGKILL`이나 호스트 종료처럼
+처리할 수 없는 종료 상황에서는 정리를 보장하지 않습니다.
+
+이미 실행 중인 서버에는 `CUBRID_TEST_URL`을 설정하고 `make integration-local`을
+사용하세요. 이 대상은 Docker를 시작하거나 중지하지 않으며 외부 서버를 유지합니다.
+
 ---
 
 ## 다중 버전 테스트
