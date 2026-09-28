@@ -199,19 +199,26 @@ class PyCubridDialect(CubridDialect):
     def _restore_isolation_level(self, dbapi_connection: DBAPIConnection) -> None:
         """Re-apply the isolation level pycubrid drops at the end of a transaction.
 
-        After ``commit()`` / ``rollback()`` the broker reports the CAS as
-        inactive (``CAS_INFO_STATUS_INACTIVE``), and pycubrid (1.7.1 and
-        ``main``) then opens a new CAS session before the next request. That
-        session starts at the server's default isolation level; pycubrid only
-        restores ``autocommit`` (cubrid-lab/pycubrid#468). CUBRIDdb keeps the
-        same session, so only the pycubrid dialects need this. The re-apply
-        (``SET TRANSACTION ISOLATION LEVEL`` + ``COMMIT``) runs once per
-        commit/rollback, never per statement, and only on connections whose
-        level was set through the dialect (engine- or connection-level
-        ``isolation_level``); other connections pay nothing.
+        Fixed in pycubrid 1.8.0 (cubrid-lab/pycubrid#468, #472): released
+        pycubrid keeps the CAS session across ``commit()`` / ``rollback()``
+        and only reconnects when the CAS actually dropped the connection
+        (for example a CAS restart or broker reset), which still starts a
+        new session at the server's default isolation level and loses
+        session state. Before 1.8.0, the broker reported the CAS as inactive
+        (``CAS_INFO_STATUS_INACTIVE``) after every ``commit()`` / ``rollback()``,
+        and pycubrid (1.7.1 and earlier) unconditionally opened a new CAS
+        session before the next request, restoring only ``autocommit``.
+        `CUBRIDdb` keeps the same session, so only the pycubrid dialects need
+        this. The re-apply (``SET TRANSACTION ISOLATION LEVEL`` + ``COMMIT``)
+        runs once per commit/rollback, never per statement, and only on
+        connections whose level was set through the dialect (engine- or
+        connection-level ``isolation_level``); other connections pay nothing.
 
-        Remove this workaround once a pycubrid release fixing
-        cubrid-lab/pycubrid#468 is the minimum supported version.
+        The declared dependency range is still ``pycubrid>=1.3.2,<2.0``, so
+        this workaround remains active for pycubrid versions before 1.8.0
+        (and covers the residual real-CAS-restart case on 1.8.0+, where it is
+        otherwise a harmless no-op). Remove it once the minimum supported
+        pycubrid version is raised to 1.8.0 or later (tracked in #559).
         """
         # SQLAlchemy passes a pool proxy to do_commit/do_rollback but the raw
         # DBAPI connection to set_isolation_level.

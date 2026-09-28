@@ -4,7 +4,7 @@
 
 **Project**: sqlalchemy-cubrid
 **Current Version**: 1.8.0
-**Status**: Beta (actively maintained; async + JSON shipped)
+**Status**: Production/Stable (actively maintained; async + JSON shipped)
 **Repository**: [github.com/cubrid-lab/sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 **License**: MIT
 
