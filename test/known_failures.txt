@@ -20,9 +20,9 @@
 #
 #   cubrid@sa2.0     cubrid://          CUBRIDdb (cubrid-python v11.3.0.51),
 #                                       SQLAlchemy 2.0.53, gated on CUBRID 11.4
-#   pycubrid@sa2.0   cubrid+pycubrid:// pycubrid 1.7.1, SQLAlchemy 2.0.53,
+#   pycubrid@sa2.0   cubrid+pycubrid:// pycubrid 1.8.0, SQLAlchemy 2.0.53,
 #                                       gated on CUBRID 10.2
-#   pycubrid@sa2.1   cubrid+pycubrid:// pycubrid 1.7.1, SQLAlchemy 2.1.1,
+#   pycubrid@sa2.1   cubrid+pycubrid:// pycubrid 1.8.0, SQLAlchemy 2.1.1,
 #                                       gated on CUBRID 11.4
 #
 # Every lane was captured on both CUBRID 10.2 and 11.4 (fresh databases).
@@ -87,11 +87,13 @@
 #   cubrid@sa2.0 68 / 61, pycubrid@sa2.0 (gated on 10.2 only) 54,
 #   pycubrid@sa2.1 58 / 51;
 # 0 XPASS, 0 unclassified. The 7 server-specific entries are
-# BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
-# is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
-# #430, #431) beyond the -924 exception class noted under CTETest; those are
-# covered by targeted strict xfails elsewhere (#480-#482). Every [DIALECT BUG]
-# group found by this recapture links its tracking issue (#529-#535); the
+# BizarroCharacterTest::test_reflect_comments on 11.4. The pycubrid lanes were
+# re-captured with pycubrid 1.8.0 on fresh CUBRID 10.2 and 11.4 databases
+# (#559): the results are identical to 1.7.1, so the fixes for
+# cubrid-lab/pycubrid#390, #395, #430 and #431 changed no compliance result
+# (the #480-#482 integration contract tests cover those fixes). Every
+# [DIALECT BUG] group found by the #463 recapture links its tracking issue
+# (#529-#535); the
 # #535 JSON as_numeric() group was removed when it was fixed.
 
 # [BACKEND / SUITE LIMIT] ComponentReflectionTest quoted names: CUBRID folds
@@ -140,8 +142,9 @@ test/test_suite.py::BizarroCharacterTest::test_reflect_comments[plain-[brack]]  
 # tests with one `DELETE FROM some_table`, but `some_table` references itself
 # and CUBRID checks the foreign key per row, so the delete fails with -924
 # ("restricted by the foreign key") and every later setup hits the leftover
-# rows (unique violation). (pycubrid 1.7.1 raises -924 as DatabaseError rather
-# than IntegrityError, cubrid-lab/pycubrid#390; CUBRIDdb raises IntegrityError.)
+# rows (unique violation). (pycubrid 1.8.0 still raises -924 as DatabaseError
+# rather than IntegrityError: cubrid-lab/pycubrid#390 fixed only -631 and -922.
+# CUBRIDdb raises IntegrityError. The class does not change these failures.)
 test/test_suite.py::CTETest::test_delete_from_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_delete_scalar_subq_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_insert_from_select_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1

@@ -211,7 +211,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 - **Single effective schema** — CUBRID exposes one schema per connection (the current user's schema); `get_schema_names()` reports that one schema and every reflection method honours `schema=` consistently (the default schema is reflected; any other schema yields no tables/views). Owner-qualified cross-schema reflection is not supported.
 - **Uncommitted DDL holds schema locks** — CUBRID DDL is transactional (`ROLLBACK` undoes it; only client autocommit, which the dialect turns off, commits it early), so by default a whole Alembic upgrade is one transaction (`transactional_ddl = True`) and keeps the tables it touches locked until it commits; use `transaction_per_migration=True` for long or large-table migrations
 - **SQLAlchemy 2.0–2.1 only** — pinned to `<2.3`; SA 2.1 pre-releases are forward-tested via shims and a `--pre` canary CI job ([details](docs/ARCHITECTURE.md))
-- **Async requires pycubrid >= 1.3.2,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project
+- **Async requires pycubrid >= 1.8.0,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project
 - **CARDINALITY() broken** — `func.cardinality()` raises `CompileError` with workaround guidance; the CUBRID server has a [known bug](https://github.com/cubrid-lab/.github/issues/3)
 - **Reserved words auto-quoted** — Column names matching CUBRID reserved words (`day`, `count`, `value`, etc.) are automatically double-quoted in DDL; see [reserved word list](https://github.com/cubrid-lab/.github/issues/5)
 - **Timezone type fidelity** — CUBRID `TIMESTAMPTZ` is reflected as `TIMESTAMP`; timezone offset is preserved in the stored value but the dialect does not distinguish `TZ` vs `LTZ` semantics at the SQLAlchemy type level. In practice this means `datetime` objects round-trip correctly but explicit TZ/LTZ type introspection is not available
@@ -240,8 +240,8 @@ after the statement (see [Known Limitations](#known-limitations)).
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
-| pycubrid (sync) | >=1.3.2,<2.0 |
-| pycubrid (async) | >=1.3.2,<2.0 |
+| pycubrid (sync) | >=1.8.0,<2.0 |
+| pycubrid (async) | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -285,7 +285,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### Does sqlalchemy-cubrid support async?
 
-Yes. Use `create_async_engine("cubrid+aiopycubrid://...")` with the pycubrid async driver. Requires `pycubrid>=1.3.2,<2.0`. Both pycubrid dialects use native `Connection.ping(False)` / `AsyncConnection.ping(False)` for `pool_pre_ping`, and all Core and ORM features work with `AsyncSession`.
+Yes. Use `create_async_engine("cubrid+aiopycubrid://...")` with the pycubrid async driver. Requires `pycubrid>=1.8.0,<2.0`. Both pycubrid dialects use native `Connection.ping(False)` / `AsyncConnection.ping(False)` for `pool_pre_ping`, and all Core and ORM features work with `AsyncSession`.
 
 
 ## Related Projects

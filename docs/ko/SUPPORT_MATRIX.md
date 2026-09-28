@@ -124,7 +124,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | RELEASE SAVEPOINT | ❌ | no-op (CUBRID 미지원) |
 | Lateral 조인 | ❌ | CUBRID에 LATERAL 서브쿼리 지원 없음 |
 | 전문 검색 | ❌ | MATCH … AGAINST 구문 없음 |
-| 비동기 DBAPI | ✅ | pycubrid.aio 비동기 드라이버 경유(`cubrid+aiopycubrid://`), pycubrid >= 1.2.0,<2.0 필요 |
+| 비동기 DBAPI | ✅ | pycubrid.aio 비동기 드라이버 경유(`cubrid+aiopycubrid://`), pycubrid >= 1.8.0,<2.0 필요 |
 
 ---
 
@@ -182,8 +182,8 @@ CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)
 | 레인 | 드라이버 | SQLAlchemy | CUBRID (PR CI) | 알려진 실패 (11.4 / 10.2) |
 |---|---|---|---|---|
 | `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 68 / 61 |
-| `pycubrid@sa2.0` | pycubrid 1.7.1 (권장) | 2.0.53 | 10.2 | 54 (10.2에서만 게이트) |
-| `pycubrid@sa2.1` | pycubrid 1.7.1 (권장) | 2.1.1 | 11.4 | 58 / 51 |
+| `pycubrid@sa2.0` | pycubrid 1.8.0 (권장) | 2.0.53 | 10.2 | 54 (10.2에서만 게이트) |
+| `pycubrid@sa2.1` | pycubrid 1.8.0 (권장) | 2.1.1 | 11.4 | 58 / 51 |
 
 알려진 실패 대부분은 두 드라이버에 공통입니다. CUBRID 백엔드 규칙(식별자 소문자 변환, `[ ]` 식별자 구분자, 윈도 프레임 절 미지원, 행 단위 외래 키 검사, 단정밀도 `FLOAT`)과 `test/known_failures.txt`에 기록된 미해결 방언 리플렉션/DDL 버그입니다. NUMERIC 절단과 정수 나눗셈 항목은 CUBRIDdb 레인에만 있습니다.
 

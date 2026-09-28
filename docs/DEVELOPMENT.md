@@ -534,8 +534,8 @@ therefore fail `matrix-result` when they fail:
 | Lane | URL | Pinned versions | CI cell |
 |---|---|---|---|
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C-extension) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
-| `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
 
 The two pycubrid lanes split SQLAlchemy 2.0 and 2.1 across the two PR cells,
 so each cell runs the suite for pycubrid only once (SQLAlchemy 2.1 needs
@@ -592,7 +592,7 @@ fix that makes a listed test pass):
 
 ```bash
 export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
-pip install "pycubrid==1.7.1" "sqlalchemy[asyncio]==2.1.1"
+pip install "pycubrid==1.8.0" "sqlalchemy[asyncio]==2.1.1"
 # 1. Capture: without strict mode, a missing lane just applies no xfails.
 pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" --maxfail=1000 -q -r fE
 # 2. Classify every failure (dialect bug, driver limitation, backend/suite
@@ -617,7 +617,7 @@ opens an issue titled "Upstream canary failing against pycubrid@main" (label
 `ci`), or comments on it if it is already open, with the failing jobs, the run
 link and the pycubrid commit tested, and closes it once both jobs pass again.
 The dependency bound
-`pycubrid>=1.3.2,<2.0` is widened only after a **specific** pycubrid release
+`pycubrid>=1.8.0,<2.0` is widened only after a **specific** pycubrid release
 candidate (or new major release), installed by exact version, passes the
 downstream contract suite: the regular and async integration tests, the
 required driver-differential lane above, and the SQLAlchemy compliance suite.

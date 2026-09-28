@@ -133,7 +133,7 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 ## 비동기 연결
 
-비동기 애플리케이션에서는 `create_async_engine`과 함께 `cubrid+aiopycubrid://` URL 스킴을 사용하세요. `pycubrid>=1.3.2,<2.0`이 필요합니다.
+비동기 애플리케이션에서는 `create_async_engine`과 함께 `cubrid+aiopycubrid://` URL 스킴을 사용하세요. `pycubrid>=1.8.0,<2.0`이 필요합니다.
 
 `sqlalchemy-cubrid[pycubrid]`를 설치하면 드라이버와 SQLAlchemy의 비동기 브리지가
 포함됩니다. 패키지를 따로 설치한다면 `SQLAlchemy[asyncio]`도 설치하세요.

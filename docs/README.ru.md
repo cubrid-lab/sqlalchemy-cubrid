@@ -159,7 +159,7 @@ async with AsyncSession(engine) as session:
 - **Нет мультисхемности** — одна схема на базу данных
 - **Незакоммиченный DDL удерживает блокировки схемы** — DDL в CUBRID транзакционный (`ROLLBACK` отменяет его; раньше времени его коммитит только клиентский autocommit, который диалект отключает), поэтому по умолчанию всё обновление Alembic — одна транзакция (`transactional_ddl = True`), и затронутые таблицы остаются заблокированными до коммита; для долгих миграций и больших таблиц используйте `transaction_per_migration=True`
 - **Только SQLAlchemy 2.0–2.1** — зафиксировано на `<2.3` из-за зависимости от внутренних API ([подробности](ARCHITECTURE.md))
-- **Async требует pycubrid >= 1.2.0,<2.0** — драйвер `cubrid+aiopycubrid://` требует async-совместимую линейку pycubrid, которую сейчас поддерживает этот проект
+- **Async требует pycubrid >= 1.8.0,<2.0** — драйвер `cubrid+aiopycubrid://` требует async-совместимую линейку pycubrid, которую сейчас поддерживает этот проект
 
 ## Документация
 
@@ -185,8 +185,8 @@ async with AsyncSession(engine) as session:
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
-| pycubrid (sync) | >=1.2.0,<2.0 |
-| pycubrid (async) | >=1.2.0,<2.0 |
+| pycubrid (sync) | >=1.8.0,<2.0 |
+| pycubrid (async) | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -228,7 +228,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### Поддерживает ли sqlalchemy-cubrid async?
 
-Да. Используйте `create_async_engine("cubrid+aiopycubrid://...")` с async-драйвером pycubrid. Требуется `pycubrid>=1.3.2,<2.0`. Оба pycubrid-диалекта используют нативный `Connection.ping(False)` / `AsyncConnection.ping(False)` для `pool_pre_ping`, и все возможности Core и ORM работают с `AsyncSession`.
+Да. Используйте `create_async_engine("cubrid+aiopycubrid://...")` с async-драйвером pycubrid. Требуется `pycubrid>=1.8.0,<2.0`. Оба pycubrid-диалекта используют нативный `Connection.ping(False)` / `AsyncConnection.ping(False)` для `pool_pre_ping`, и все возможности Core и ORM работают с `AsyncSession`.
 
 
 ## Связанные проекты

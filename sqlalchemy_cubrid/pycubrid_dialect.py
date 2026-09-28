@@ -78,7 +78,8 @@ class PyCubridDialect(CubridDialect):
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         # Isolation level last applied to each DBAPI connection, re-applied
-        # after every driver commit/rollback (#505).
+        # after every driver commit/rollback in case pycubrid replaced the CAS
+        # session (#505, #559).
         self._connection_isolation_levels: weakref.WeakKeyDictionary[Any, str] = (
             weakref.WeakKeyDictionary()
         )
@@ -147,7 +148,7 @@ class PyCubridDialect(CubridDialect):
         """Reset on checkin; stop re-applying when the engine has no configured level.
 
         Without an engine-level ``isolation_level`` the reset level is the
-        server default, which pycubrid's new session already starts at, so the
+        server default, which a replaced pycubrid session also starts at, so the
         per-commit re-apply after a one-off per-connection override is dropped.
         """
         super().reset_isolation_level(dbapi_conn)  # type: ignore[no-untyped-call]  # unannotated in SQLAlchemy
@@ -197,29 +198,25 @@ class PyCubridDialect(CubridDialect):
             self._isolation_reapply_pending.add(_unwrap(dbapi_connection))
 
     def _restore_isolation_level(self, dbapi_connection: DBAPIConnection) -> None:
-        """Re-apply the isolation level pycubrid drops at the end of a transaction.
+        """Re-apply the isolation level in case pycubrid replaced the CAS session.
 
-        Fixed in pycubrid 1.8.0 (cubrid-lab/pycubrid#468, #472): released
-        pycubrid keeps the CAS session across ``commit()`` / ``rollback()``
-        and only reconnects when the CAS actually dropped the connection
-        (for example a CAS restart or broker reset), which still starts a
-        new session at the server's default isolation level and loses
-        session state. Before 1.8.0, the broker reported the CAS as inactive
-        (``CAS_INFO_STATUS_INACTIVE``) after every ``commit()`` / ``rollback()``,
-        and pycubrid (1.7.1 and earlier) unconditionally opened a new CAS
-        session before the next request, restoring only ``autocommit``.
-        `CUBRIDdb` keeps the same session, so only the pycubrid dialects need
-        this. The re-apply (``SET TRANSACTION ISOLATION LEVEL`` + ``COMMIT``)
-        runs once per commit/rollback, never per statement, and only on
+        pycubrid 1.8.0, the minimum supported version, keeps the CAS session
+        across ``commit()`` / ``rollback()`` (cubrid-lab/pycubrid#468, #472).
+        It still opens a new session when the CAS itself went away out of
+        transaction (for example a CAS restart after the transaction or a
+        broker reset), and that session starts at the server default level
+        with only ``autocommit`` restored. This re-apply is the first request
+        after the transaction ends, so a CAS replaced at that point gets the
+        level back before the next transaction. `CUBRIDdb` needs none of this.
+
+        The re-apply (``SET TRANSACTION ISOLATION LEVEL`` + ``COMMIT``) runs
+        once per commit/rollback, never per statement, and only on
         connections whose level was set through the dialect (engine- or
         connection-level ``isolation_level``); other connections pay nothing.
-
-        The declared dependency range is still ``pycubrid>=1.3.2,<2.0``, so
-        this workaround remains active for pycubrid versions before 1.8.0
-        (on 1.8.0+ it is a harmless no-op). It does not cover a CAS restart
-        while the connection is idle: it only runs right after a commit or
-        rollback. Remove it once the minimum supported pycubrid version is
-        raised to 1.8.0 or later (tracked in #559).
+        Its SQL ``COMMIT`` leaves the CAS marked in transaction, so pycubrid
+        does not silently reconnect such a connection at the default level if
+        its CAS dies while idle: the next statement fails as a disconnect
+        instead (see Known Issue 10 in ``docs/DRIVER_COMPAT.md``).
         """
         # SQLAlchemy passes a pool proxy to do_commit/do_rollback but the raw
         # DBAPI connection to set_isolation_level.

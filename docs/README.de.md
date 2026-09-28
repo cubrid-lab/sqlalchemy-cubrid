@@ -159,7 +159,7 @@ async with AsyncSession(engine) as session:
 - **Kein Multi-Schema** — ein einzelnes Schema pro Datenbank
 - **Nicht committetes DDL hält Schemasperren** — DDL ist in CUBRID transaktional (`ROLLBACK` macht es rückgängig; vorzeitig committet es nur das Client-Autocommit, das der Dialekt abschaltet), daher ist ein Alembic-Upgrade standardmäßig eine einzige Transaktion (`transactional_ddl = True`) und hält die betroffenen Tabellen bis zum Commit gesperrt; für lange Migrationen oder große Tabellen `transaction_per_migration=True` verwenden
 - **Nur SQLAlchemy 2.0–2.1** — wegen interner API-Abhängigkeiten auf `<2.3` festgelegt ([Details](ARCHITECTURE.md))
-- **Async erfordert pycubrid >= 1.2.0,<2.0** — der Treiber `cubrid+aiopycubrid://` benötigt die von diesem Projekt aktuell unterstützte async-fähige pycubrid-Paketlinie
+- **Async erfordert pycubrid >= 1.8.0,<2.0** — der Treiber `cubrid+aiopycubrid://` benötigt die von diesem Projekt aktuell unterstützte async-fähige pycubrid-Paketlinie
 
 ## Dokumentation
 
@@ -185,8 +185,8 @@ async with AsyncSession(engine) as session:
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
-| pycubrid (sync) | >=1.2.0,<2.0 |
-| pycubrid (async) | >=1.2.0,<2.0 |
+| pycubrid (sync) | >=1.8.0,<2.0 |
+| pycubrid (async) | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -228,7 +228,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### Unterstützt sqlalchemy-cubrid Async?
 
-Ja. Verwenden Sie `create_async_engine("cubrid+aiopycubrid://...")` mit dem pycubrid-Async-Treiber. Erfordert `pycubrid>=1.3.2,<2.0`. Beide pycubrid-Dialekte verwenden für `pool_pre_ping` das native `Connection.ping(False)` / `AsyncConnection.ping(False)`, und alle Core- und ORM-Funktionen arbeiten mit `AsyncSession`.
+Ja. Verwenden Sie `create_async_engine("cubrid+aiopycubrid://...")` mit dem pycubrid-Async-Treiber. Erfordert `pycubrid>=1.8.0,<2.0`. Beide pycubrid-Dialekte verwenden für `pool_pre_ping` das native `Connection.ping(False)` / `AsyncConnection.ping(False)`, und alle Core- und ORM-Funktionen arbeiten mit `AsyncSession`.
 
 
 ## Verwandte Projekte
