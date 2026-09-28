@@ -2974,6 +2974,29 @@ so building the engine (or, in offline `--sql` mode, the dialect from the URL)
 registers `CubridImpl` before Alembic looks it up. No imports or configuration
 are required in `env.py` or your migration files.
 
+Because of this, loading the CUBRID dialect imports Alembic whenever Alembic is
+installed, even in applications that never run a migration. That import takes
+roughly 0.1 s, and Alembic 1.18 and later log seven `INFO` lines from the
+`alembic.runtime.plugins` logger while importing (`setup plugin
+alembic.autogenerate.schemas`, ..., `setup plugin
+alembic.ext.checkconstraint_byname`). They are Alembic's own messages and appear
+on the first CUBRID engine or dialect only when the application routes `INFO`
+records to a handler, for example with `logging.basicConfig(level=logging.INFO)`.
+The dialect leaves the `alembic` logger alone, since its level is the
+application's choice. To hide the lines, raise that logger's level in the
+application's logging setup:
+
+```python
+import logging
+
+logging.getLogger("alembic").setLevel(logging.WARNING)
+```
+
+Alembic offers no supported way to defer the registration until a migration
+runs: `DefaultImpl.get_by_dialect()` is a plain lookup in the registry, and the
+`alembic.plugins` entry points (Alembic 1.18+) load on every `import alembic`
+and do not exist on the older supported versions.
+
 If Alembic is installed but fails to import (for example Alembic 1.7.0/1.7.1,
 which raise `NameError` on SQLAlchemy 2.x), the dialect still loads and emits a
 single `RuntimeWarning` saying the Alembic integration is disabled, with the
@@ -3205,6 +3228,12 @@ def downgrade():
 ```bash
 pip install sqlalchemy-cubrid[alembic]
 ```
+
+### `INFO` log lines `setup plugin alembic...` when using the dialect
+
+Alembic 1.18+ logs these while it is imported, and the CUBRID dialect imports
+Alembic when it is installed. Set `logging.getLogger("alembic").setLevel(logging.WARNING)`
+in the application; see [Auto-Registration](#auto-registration).
 
 ### "Alembic is required for migration support"
 
@@ -3896,7 +3925,7 @@ Compatibility and feature support for sqlalchemy-cubrid releases.
 | SQLAlchemy Version | Status | Notes |
 |---|---|---|
 | 2.0.x | ✅ Supported | Minimum required version |
-| 2.1.x | ✅ Supported | Latest tested pre-release until GA |
+| 2.1.x | ✅ Supported | CI-tested on SQLAlchemy 2.1.1 |
 | ≥ 2.2 | ❌ Not supported | Code uses private SA internals (see below) |
 | < 2.0 | ❌ Not supported | SA 1.x API removed |
 

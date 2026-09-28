@@ -185,6 +185,16 @@ Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이
 
 그래서 `sqlalchemy_cubrid/dialect.py`는 Alembic이 설치되어 있으면 `sqlalchemy_cubrid.alembic_impl`을 임포트하고, 없으면 조용히 건너뜁니다. 모든 CUBRID URL(`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`)이 이 모듈을 로드하고 `dialect.name == "cubrid"`이므로, 엔진을 만들 때(오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) Alembic이 조회하기 전에 `CubridImpl`이 등록됩니다. `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다.
 
+이 때문에 Alembic이 설치되어 있으면, 마이그레이션을 전혀 실행하지 않는 애플리케이션에서도 CUBRID 방언을 로드할 때 Alembic을 임포트합니다. 이 임포트에는 약 0.1초가 걸리며, Alembic 1.18 이상은 임포트 중에 `alembic.runtime.plugins` 로거로 `INFO` 줄 일곱 개(`setup plugin alembic.autogenerate.schemas`, ..., `setup plugin alembic.ext.checkconstraint_byname`)를 남깁니다. 이는 Alembic 자체의 메시지이며, 애플리케이션이 `INFO` 레코드를 핸들러로 보낼 때(예: `logging.basicConfig(level=logging.INFO)`)에만 첫 CUBRID 엔진이나 방언에서 나타납니다. 로거 레벨은 애플리케이션이 정할 일이므로 방언은 `alembic` 로거를 건드리지 않습니다. 이 줄을 숨기려면 애플리케이션의 로깅 설정에서 해당 로거의 레벨을 올리세요.
+
+```python
+import logging
+
+logging.getLogger("alembic").setLevel(logging.WARNING)
+```
+
+Alembic은 마이그레이션이 실행될 때까지 등록을 미루는 지원 방법을 제공하지 않습니다. `DefaultImpl.get_by_dialect()`는 레지스트리를 그대로 조회할 뿐이고, `alembic.plugins` 엔트리 포인트(Alembic 1.18+)는 `import alembic`마다 로드되며 지원하는 이전 버전에는 없습니다.
+
 Alembic이 설치되어 있지만 임포트에 실패하면(예: SQLAlchemy 2.x에서 `NameError`를 내는 Alembic 1.7.0/1.7.1) 방언은 그대로 로드되고, Alembic 통합이 비활성화되었다는 `RuntimeWarning`을 원래 예외와 함께 한 번 냅니다. 경고 필터가 이 경고를 오류로 바꾸면(`-W error`) 대신 `sqlalchemy_cubrid.dialect` 로거로 기록하므로 방언은 그대로 로드됩니다. `alembic>=1.7.2,<2.0`으로 업그레이드하면 해결됩니다.
 
 이 수정 이전 버전은 Alembic이 읽지 않는 `alembic.ddl` 엔트리 포인트를 선언했기 때문에, 기본 `env.py`는 `sqlalchemy_cubrid.alembic_impl`을 명시적으로 임포트하지 않으면 `KeyError: 'cubrid'`로 실패했습니다. 그 임포트는 남겨 두어도 무해합니다.
@@ -380,6 +390,10 @@ def downgrade():
 ```bash
 pip install sqlalchemy-cubrid[alembic]
 ```
+
+### 방언 사용 시 `setup plugin alembic...` `INFO` 로그 줄
+
+Alembic 1.18+는 임포트될 때 이 줄을 남기며, CUBRID 방언은 Alembic이 설치되어 있으면 이를 임포트합니다. 애플리케이션에서 `logging.getLogger("alembic").setLevel(logging.WARNING)`을 설정하세요. [자동 등록](#자동-등록)을 참고하세요.
 
 ### "Alembic is required for migration support"
 

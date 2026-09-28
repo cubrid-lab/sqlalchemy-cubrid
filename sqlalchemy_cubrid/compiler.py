@@ -984,13 +984,15 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
         return "DATETIMELTZ"
 
     @staticmethod
-    def _reject_zero_length(type_: Any, ddl_name: str) -> None:
+    def _reject_zero_length(type_: Any, ddl_name: str, default_hint: str | None = None) -> None:
         # ``length=None`` means "not specified" and gets the documented default;
         # an explicit 0 is not a valid CUBRID length, so do not silently widen it.
         if type_.length == 0:
+            if default_hint is None:
+                default_hint = f"omit the length to get the default {ddl_name}(4096)"
             raise CompileError(
                 f"CUBRID does not support {ddl_name}(0); use a length of at least 1, "
-                f"or omit the length to get the default {ddl_name}(4096)"
+                f"or {default_hint}"
             )
 
     def visit_VARCHAR(self, type_: Any, **kw: Any) -> str:
@@ -1005,7 +1007,8 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_CHAR(self, type_: Any, **kw: Any) -> str:
         if hasattr(type_, "national") and type_.national:
             return self.visit_NCHAR(type_)
-        elif type_.length:
+        self._reject_zero_length(type_, "CHAR", default_hint="omit the length to emit bare CHAR")
+        if type_.length is not None:
             return f"CHAR({type_.length})"
         else:
             return "CHAR"
@@ -1018,7 +1021,8 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
             return "NCHAR VARYING(4096)"
 
     def visit_NCHAR(self, type_: Any, **kw: Any) -> str:
-        if type_.length:
+        self._reject_zero_length(type_, "NCHAR", default_hint="omit the length to emit bare NCHAR")
+        if type_.length is not None:
             return f"NCHAR({type_.length})"
         else:
             return "NCHAR"

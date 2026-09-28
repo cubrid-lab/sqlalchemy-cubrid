@@ -533,6 +533,18 @@ class TestTypeCompilation:
         result = self._compile_type(CHAR())
         assert result == "CHAR"
 
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.CHAR(0), id="sa.CHAR"),
+            pytest.param(cubrid_types.CHAR(length=0), id="cubrid.CHAR"),
+        ],
+    )
+    def test_char_zero_length_raises(self, type_):
+        """Regression (#476): explicit length=0 must not become bare CHAR."""
+        with pytest.raises(CompileError, match=r"CHAR\(0\)"):
+            self._compile_type(type_)
+
     def test_nchar(self):
         from sqlalchemy_cubrid.types import NCHAR
 
@@ -815,6 +827,19 @@ class TestTypeCompilation:
 
         result = self._compile_type(NCHAR())
         assert result == "NCHAR"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.NCHAR(0), id="sa.NCHAR"),
+            pytest.param(cubrid_types.NCHAR(length=0), id="cubrid.NCHAR"),
+            pytest.param(cubrid_types.CHAR(length=0, national=True), id="cubrid.CHAR-national"),
+        ],
+    )
+    def test_nchar_zero_length_raises(self, type_):
+        """Regression (#476): explicit length=0 must not become bare NCHAR."""
+        with pytest.raises(CompileError, match=r"NCHAR\(0\)"):
+            self._compile_type(type_)
 
     def test_bit_varying_no_length(self):
         """Test BIT VARYING without explicit length."""
