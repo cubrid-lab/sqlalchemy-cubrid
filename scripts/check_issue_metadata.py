@@ -9,22 +9,12 @@ from collections.abc import Iterable
 from pathlib import Path
 
 _TITLE = re.compile(
-    r"^(fix|feat|docs|ci|chore|test|perf|refactor|epic)"
+    r"^(?:fix|feat|docs|ci|chore|test|perf|refactor|epic)"
     r"(?:\([a-z0-9_-]+\))?: \S"
 )
-_TYPES_BY_PREFIX = {
-    "fix": frozenset({"bug"}),
-    "feat": frozenset({"enhancement"}),
-    "docs": frozenset({"documentation"}),
-    "ci": frozenset({"ci"}),
-    "chore": frozenset({"chore"}),
-    "test": frozenset({"bug", "enhancement", "ci", "testing"}),
-    "perf": frozenset({"enhancement", "performance"}),
-    "refactor": frozenset({"chore", "enhancement", "refactor"}),
-    "epic": frozenset({"enhancement"}),
-}
-_TYPES = frozenset().union(*_TYPES_BY_PREFIX.values())
-_PRIMARY_TYPES = frozenset({"bug", "enhancement", "documentation", "chore", "ci", "performance"})
+_TYPE_LABELS = frozenset(
+    {"bug", "enhancement", "documentation", "chore", "ci", "testing", "refactor", "performance"}
+)
 _PRIORITIES = frozenset(
     {"priority: critical", "priority: high", "priority: medium", "priority: low"}
 )
@@ -34,17 +24,9 @@ _SIZES = frozenset({"size: XS", "size: S", "size: M", "size: L", "size: XL"})
 def metadata_gaps(title: str, labels: Iterable[str]) -> tuple[str, ...]:
     names = set(labels)
     gaps = []
-    title_match = _TITLE.match(title)
-    if title_match is None:
+    if _TITLE.match(title) is None:
         gaps.append("title")
-    expected_types = _TYPES_BY_PREFIX[title_match.group(1)] if title_match else _TYPES
-    primary_types = names.intersection(_PRIMARY_TYPES)
-    supplemental_type = bool(names.intersection({"testing", "refactor"}))
-    if (
-        len(primary_types) > 1
-        or not names.intersection(expected_types)
-        or (not primary_types and not supplemental_type)
-    ):
+    if not names.intersection(_TYPE_LABELS):
         gaps.append("type")
     priority = [name for name in names if name.startswith("priority:")]
     if len(priority) != 1 or priority[0] not in _PRIORITIES:
