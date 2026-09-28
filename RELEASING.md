@@ -51,7 +51,8 @@ On a branch from up-to-date `main`:
 
 ```bash
 git fetch origin
-MERGED_SHA=$(git rev-parse origin/main)   # confirm this is the release squash commit
+MERGED_SHA=$(gh pr view <release-PR-number> --json mergeCommit -q .mergeCommit.oid)
+git merge-base --is-ancestor "$MERGED_SHA" origin/main && git show --stat "$MERGED_SHA"
 git tag -a vX.Y.Z "$MERGED_SHA" -m "sqlalchemy-cubrid vX.Y.Z"
 git push origin refs/tags/vX.Y.Z
 ```
@@ -123,11 +124,13 @@ gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
   delete a published version.
 
 - **`create-release.yml` failed transiently, or the Release body must be
-  refreshed from CHANGELOG**: re-run it via dispatch; add
-  `-f update_existing=true` to overwrite a differing body:
+  refreshed from CHANGELOG**: re-run it via dispatch. Without
+  `update_existing` the run fails if the existing body differs, so pass
+  `-f update_existing=true` to refresh it:
 
   ```bash
-  gh workflow run create-release.yml -f tag=vX.Y.Z
+  gh workflow run create-release.yml -f tag=vX.Y.Z                           # create a missing Release
+  gh workflow run create-release.yml -f tag=vX.Y.Z -f update_existing=true   # refresh a differing body
   ```
 
 - **Publish job failed after the checks passed** (for example a transient PyPI

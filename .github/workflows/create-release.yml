@@ -105,4 +105,4 @@ jobs:
           TAG: ${{ steps.resolve.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release upload "$TAG" sbom.spdx.json
+          gh release upload "$TAG" sbom.spdx.json --clobber
