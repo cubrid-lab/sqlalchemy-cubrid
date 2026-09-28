@@ -45,7 +45,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy_cubrid import BLOB, CLOB, DOUBLE, MULTISET, SEQUENCE, SET
 from sqlalchemy_cubrid.dialect import CubridDialect
 
-from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
+from test.pycubrid_upstream import PYCUBRID_DRIVERS, xfail_unreleased_pycubrid_fix
 
 
 # ---------------------------------------------------------------------------
@@ -413,6 +413,16 @@ class TestIsolationLevelAcrossTransactionBoundaries:
             assert conn.connection.dbapi_connection is dbapi_conn
             assert conn.get_isolation_level() == "SERIALIZABLE"
 
+    def test_reset_on_return_rollback_reapplies_the_level(self, serializable_engine):
+        """The pool's rollback on checkin is the only end of transaction here."""
+        with serializable_engine.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            conn.execute(text("SELECT 1"))
+        with serializable_engine.connect() as conn:
+            assert conn.connection.dbapi_connection is dbapi_conn
+            # Read before any statement, so no begin/do_begin ran on this checkout.
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+
     def test_engine_level_survives_begin_block_and_session(self, serializable_engine):
         with serializable_engine.begin() as conn:
             conn.execute(text("SELECT 1"))
@@ -422,6 +432,66 @@ class TestIsolationLevelAcrossTransactionBoundaries:
             assert session.connection().get_isolation_level() == "SERIALIZABLE"
             session.rollback()
         with serializable_engine.connect() as conn:
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+
+    @pytest.fixture
+    def fail_next_reapply(self, serializable_engine, monkeypatch):
+        """Make the next dialect-level SET TRANSACTION fail once (pycubrid re-apply only)."""
+        if serializable_engine.dialect.driver not in PYCUBRID_DRIVERS:
+            pytest.skip("only the pycubrid dialects re-apply the level")
+        state = {"armed": False, "failed": 0}
+        original = CubridDialect.set_isolation_level
+
+        def flaky(dialect, dbapi_connection, level):
+            if state["armed"]:
+                state["armed"] = False
+                state["failed"] += 1
+                raise RuntimeError("simulated re-apply failure")
+            return original(dialect, dbapi_connection, level)
+
+        monkeypatch.setattr(CubridDialect, "set_isolation_level", flaky)
+        with serializable_engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS iso505_reapply"))
+            conn.execute(text("CREATE TABLE iso505_reapply (id INT PRIMARY KEY)"))
+        yield state
+        with serializable_engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS iso505_reapply"))
+
+    @staticmethod
+    def _committed_ids():
+        eng = create_engine(_cubrid_url(), poolclass=sa.pool.NullPool)
+        try:
+            with eng.connect() as conn:
+                return sorted(conn.execute(text("SELECT id FROM iso505_reapply")).scalars())
+        finally:
+            eng.dispose()
+
+    def test_failed_reapply_after_commit_keeps_the_commit(
+        self, serializable_engine, fail_next_reapply
+    ):
+        with serializable_engine.connect() as conn:
+            conn.execute(text("INSERT INTO iso505_reapply VALUES (1)"))
+            fail_next_reapply["armed"] = True
+            conn.commit()  # must not raise: the data is committed
+            assert fail_next_reapply["failed"] == 1
+            assert self._committed_ids() == [1]
+
+            conn.execute(text("SELECT 1"))  # next transaction start retries the re-apply
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+
+    def test_failed_reapply_after_rollback_keeps_the_original_error(
+        self, serializable_engine, fail_next_reapply
+    ):
+        with serializable_engine.begin() as conn:
+            conn.execute(text("INSERT INTO iso505_reapply VALUES (1)"))
+        with serializable_engine.connect() as conn:
+            with pytest.raises(sa.exc.IntegrityError):
+                with conn.begin():
+                    fail_next_reapply["armed"] = True
+                    conn.execute(text("INSERT INTO iso505_reapply VALUES (1)"))
+            assert fail_next_reapply["failed"] == 1
+
+            conn.execute(text("SELECT 1"))
             assert conn.get_isolation_level() == "SERIALIZABLE"
 
     def test_connection_level_survives_commit_and_rollback(self, default_engine):
