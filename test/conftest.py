@@ -5,10 +5,12 @@ SA test suite against a live CUBRID instance via ``--dburi``.  Offline tests
 (test_dialects, test_compiler, test_types) work without it.
 
 When the compliance suite runs, a strict xfail is applied to every node id
-listed in ``test/known_failures.txt`` so the suite can gate CI (see #380)
-while tolerating the documented baseline: a listed test that still fails is
-xfailed, a listed test that starts passing becomes an XPASS (hard failure),
-and any new failure not in the manifest fails CI.
+listed in ``test/known_failures.txt`` for the current lane (driver from the
+``--dburi`` dialect + SQLAlchemy major.minor, e.g. ``pycubrid@sa2.1``; #463) so
+the suite can gate CI (see #380) while tolerating the documented baseline: a
+listed test that still fails is xfailed, a listed test that starts passing
+becomes an XPASS (hard failure), and any new failure not listed for the lane
+fails CI.
 """
 
 import os
@@ -129,6 +131,54 @@ if not ("--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv)
             reporter.write_line(message, red=not count, green=bool(count), bold=True)
 
 
+# ----- Compliance-suite known-failure manifest (#380, #463) -----
+# Module level so the offline suite can validate the manifest format.
+
+_KNOWN_FAILURES_FILE = Path(__file__).with_name("known_failures.txt")
+
+# Strips the suite's server-version suffix, e.g. `_cubrid+cubrid_11_4_6_1963`
+# or `_cubrid+pycubrid_10_2_1_8849`, so the manifest matches the bare class
+# name across CUBRID builds.
+_VERSION_SUFFIX = re.compile(r"_cubrid\+(?:py)?cubrid_[0-9_]+")
+
+# Python enum.Flag repr renders combined members in a non-deterministic
+# order across environments (e.g. `TABLE|VIEW` vs `VIEW|TABLE`), so sort the
+# `A|B` parameter fragments before matching to keep the manifest stable.
+_FLAG_FRAGMENT = re.compile(r"([A-Za-z_]+(?:\|[A-Za-z_]+)+)")
+
+# A manifest lane is `<driver>@sa<major.minor>` (#463): each entry xfails
+# only in the lanes it names, so one driver's baseline cannot hide a
+# regression on the other.
+_LANE = re.compile(r"(?:cubrid|pycubrid)@sa[0-9]+\.[0-9]+")
+
+
+def _load_known_failures(path: Path) -> dict[str, set[str]]:
+    """Map each lane to the normalized node ids listed for it in *path*."""
+    lanes: dict[str, set[str]] = {}
+    if not path.exists():
+        return lanes
+    text = path.read_text(encoding="utf-8")
+    for lineno, raw in enumerate(text.splitlines(), 1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        nodeid, *tags = line.split()
+        bad = [tag for tag in tags if not _LANE.fullmatch(tag)]
+        if not tags or bad:
+            raise ValueError(
+                f"{path.name}:{lineno}: every entry needs one or "
+                f"more <driver>@sa<major.minor> lane tags, got {tags!r}"
+            )
+        for tag in tags:
+            lanes.setdefault(tag, set()).add(_normalize_nodeid(nodeid))
+    return lanes
+
+
+def _normalize_nodeid(nodeid: str) -> str:
+    stripped = _VERSION_SUFFIX.sub("", nodeid)
+    return _FLAG_FRAGMENT.sub(lambda m: "|".join(sorted(m.group(1).split("|"))), stripped)
+
+
 # Only load the heavy SA testing plugin when a DB URI is provided.
 # This allows offline tests to run without CUBRIDdb installed.
 if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
@@ -147,58 +197,60 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
     )
     from sqlalchemy.testing.plugin.pytestplugin import *  # noqa: E402, F401, F403
 
-    _KNOWN_FAILURES_FILE = Path(__file__).with_name("known_failures.txt")
+    def _current_lane() -> str:
+        import sqlalchemy
+        from sqlalchemy.testing import config as sa_config
 
-    # Strips the suite's server-version suffix, e.g. `_cubrid+cubrid_11_4_6_1963`,
-    # so the manifest matches the bare class name across CUBRID builds.
-    _VERSION_SUFFIX = re.compile(r"_cubrid\+cubrid_[0-9_]+")
+        major_minor = ".".join(sqlalchemy.__version__.split(".")[:2])
+        return f"{sa_config.db.dialect.driver}@sa{major_minor}"
 
-    # Python enum.Flag repr renders combined members in a non-deterministic
-    # order across environments (e.g. `TABLE|VIEW` vs `VIEW|TABLE`), so sort the
-    # `A|B` parameter fragments before matching to keep the manifest stable.
-    _FLAG_FRAGMENT = re.compile(r"([A-Za-z_]+(?:\|[A-Za-z_]+)+)")
-
-    def _load_known_failures() -> set[str]:
-        if not _KNOWN_FAILURES_FILE.exists():
-            return set()
-        entries: set[str] = set()
-        for raw in _KNOWN_FAILURES_FILE.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if line and not line.startswith("#"):
-                entries.add(_normalize_nodeid(line))
-        return entries
-
-    def _normalize_nodeid(nodeid: str) -> str:
-        stripped = _VERSION_SUFFIX.sub("", nodeid)
-        return _FLAG_FRAGMENT.sub(lambda m: "|".join(sorted(m.group(1).split("|"))), stripped)
-
-    _KNOWN_FAILURES = _load_known_failures()
+    _KNOWN_FAILURES_BY_LANE = _load_known_failures(_KNOWN_FAILURES_FILE)
 
     def pytest_collection_modifyitems(session, config, items):  # noqa: ANN001
         _sa_collection_modifyitems(session, config, items)
-        if not _KNOWN_FAILURES:
+        lane = _current_lane()
+        known = _KNOWN_FAILURES_BY_LANE.get(lane, set())
+        strict_mode = os.environ.get("CUBRID_STRICT_KNOWN_FAILURES") == "1"
+        reporter = config.pluginmanager.get_plugin("terminalreporter")
+        if reporter is not None:
+            reporter.write_line(
+                f"compliance lane {lane}: {len(known)} known failure(s) from "
+                f"{_KNOWN_FAILURES_FILE.name}" + (" (strict)" if strict_mode else ""),
+                bold=True,
+            )
+
+        # A gating cell must run against a reviewed baseline for its exact lane;
+        # an unknown driver/SQLAlchemy combination must not gate on an empty list.
+        if strict_mode and not known:
+            pytest.exit(
+                f"CUBRID_STRICT_KNOWN_FAILURES=1 but {_KNOWN_FAILURES_FILE.name} has no "
+                f"entries for lane {lane!r}; capture and review its baseline first "
+                f"(see docs/DEVELOPMENT.md).",
+                returncode=1,
+            )
+        if not known:
             return
         strict_xfail = pytest.mark.xfail(
-            reason="known failure baselined in test/known_failures.txt (#380)",
+            reason=f"known failure for lane {lane} baselined in test/known_failures.txt (#380, #463)",
             strict=True,
         )
         collected = {_normalize_nodeid(item.nodeid) for item in items}
         for item in items:
-            if _normalize_nodeid(item.nodeid) in _KNOWN_FAILURES:
+            if _normalize_nodeid(item.nodeid) in known:
                 item.add_marker(strict_xfail)
 
-        # In the pinned gating cell (CUBRID_STRICT_KNOWN_FAILURES=1), a manifest
-        # entry that no longer matches any collected node is a stale baseline:
-        # fail loudly so the manifest is trimmed instead of silently losing its
-        # strict-XPASS guarantee. Off by default so partial local runs
+        # In a gating cell (CUBRID_STRICT_KNOWN_FAILURES=1), a manifest entry for
+        # this lane that no longer matches any collected node is a stale
+        # baseline: fail loudly so the manifest is trimmed instead of silently
+        # losing its strict-XPASS guarantee. Off by default so partial local runs
         # (e.g. `-k something`) do not trip it.
-        if os.environ.get("CUBRID_STRICT_KNOWN_FAILURES") == "1":
-            unmatched = sorted(_KNOWN_FAILURES - collected)
+        if strict_mode:
+            unmatched = sorted(known - collected)
             if unmatched:
                 listing = "\n  ".join(unmatched)
                 pytest.exit(
-                    f"{len(unmatched)} known_failures.txt entries matched no "
-                    f"collected test (stale baseline — recapture after a "
+                    f"{len(unmatched)} known_failures.txt entries for lane {lane} matched "
+                    f"no collected test (stale baseline — recapture after a "
                     f"SQLAlchemy bump?):\n  {listing}",
                     returncode=1,
                 )

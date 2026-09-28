@@ -246,8 +246,12 @@ docker compose down -v
 
 ```bash
 # 실행 중인 CUBRID 인스턴스 필요
-pytest --dburi cubrid://dba@localhost:33000/testdb
+pytest test/test_suite.py --dburi cubrid://dba@localhost:33000/testdb
+pytest test/test_suite.py --dburi cubrid+pycubrid://dba@localhost:33000/testdb
 ```
+
+알려진 실패는 드라이버와 SQLAlchemy 버전별로 기준선이 관리됩니다.
+[SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인)을 참고하세요.
 
 ---
 
@@ -472,7 +476,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + 포맷 검증
 2. **오프라인 테스트** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × 오프라인 테스트 스위트
-3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지 포함
+3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
 4. **커버리지** — ≥ 95% 임계값 강제
 
 ### 드라이버 차분 레인
@@ -501,6 +505,67 @@ CUBRIDdb(패키지 버전과 소스 태그), CUBRID 서버 버전을 잡 로그�
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
 ```
+
+### SQLAlchemy 컴플라이언스 레인
+
+공식 SQLAlchemy 방언 컴플라이언스 스위트(`test/test_suite.py`, `--dburi`로 실행)는
+두 드라이버 레인에서 병합을 차단합니다. 두 레인 모두 `ci.yml`의
+`integration-tests` 잡의 단계로, 해당 셀의 CUBRID 서비스를 재사용하며, 실패하면
+`matrix-result`도 실패합니다.
+
+| 레인 | URL | 고정 버전 | CI 셀 |
+|---|---|---|---|
+| `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C 확장) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
+| `pycubrid@sa2.1` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.10 × CUBRID 10.2 |
+
+두 pycubrid 레인은 SQLAlchemy 2.0과 2.1을 두 PR 셀에 나누어 실행하므로 각 셀은
+pycubrid 스위트를 한 번만 실행합니다. 두 레인의 기준선은 CUBRID 10.2와 11.4에서
+모두 수집했으며 결과가 동일합니다. 각 pycubrid 단계는 먼저
+`python -m scripts.report_driver_versions`를 실행해 정확한 Python, SQLAlchemy,
+pycubrid, CUBRID 서버 버전을 잡 로그와 단계 요약에 기록합니다. CUBRID 10.2 셀의
+CUBRIDdb 스위트는 계속 비차단입니다.
+
+**알려진 실패는 레인별로 키가 지정됩니다.** `test/known_failures.txt`의 모든
+항목은 실패하는 레인을 `<driver>@sa<major.minor>` 형식으로 명시합니다.
+
+```text
+test/test_suite.py::DistinctOnTest::test_distinct_on  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
+```
+
+`test/conftest.py`는 `--dburi` 방언과 설치된 SQLAlchemy 버전으로 현재 레인을
+결정하고, 그 레인에 태그된 항목에만 strict xfail을 적용합니다. 따라서
+CUBRIDdb 전용 실패가 pycubrid 회귀를 가릴 수 없고, 그 반대도 마찬가지입니다.
+와일드카드 태그는 없으며, 태그가 없는 항목은 로드 오류입니다.
+`CUBRID_STRICT_KNOWN_FAILURES=1`(모든 게이트 단계에서 설정)이면 다음 경우에도
+실행이 실패합니다.
+
+- 등록된 테스트가 통과함(strict XPASS): 해당 레인 태그를 제거합니다.
+- 레인 항목이 수집된 테스트와 하나도 일치하지 않음(오래된 기준선).
+- 레인 항목이 전혀 없음: 새 드라이버나 SQLAlchemy 마이너 버전이 실수로 빈
+  기준선으로 게이트되지 않도록 합니다.
+
+CUBRID에 전혀 적용할 수 없는 테스트(예: 단정밀도 `FLOAT`의 7자리 소수 정밀도)는
+목록에 넣지 않고 `sqlalchemy_cubrid/requirements.py`에서 사유와 함께 제외합니다.
+
+**레인 기준선 갱신** (SQLAlchemy 버전 업, 새 고정 pycubrid, 등록된 테스트를
+통과시키는 수정):
+
+```bash
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
+pip install "pycubrid==1.7.1" "sqlalchemy[asyncio]==2.1.1"
+# 1. 수집: strict 모드가 아니면 없는 레인은 xfail을 적용하지 않을 뿐입니다.
+pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" --maxfail=1000 -q -r fE
+# 2. 모든 실패를 분류하고(방언 버그, 드라이버 제한, 백엔드/스위트 한계)
+#    이슈를 연결한 뒤 이 레인의 태그만 수정합니다.
+# 3. CI와 동일하게 검증합니다.
+CUBRID_STRICT_KNOWN_FAILURES=1 pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" -q
+```
+
+레인을 추가할 때는 CUBRID 10.2와 11.4 모두에서 수집한 뒤, 같은 변경에서 `ci.yml`의
+고정 버전, `test/known_failures.txt` 헤더, `test/test_known_failures.py`의
+`_GATED_LANES`를 함께 갱신합니다.
 
 ### pycubrid 릴리스 후보 채택
 

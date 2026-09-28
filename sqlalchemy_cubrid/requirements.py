@@ -195,6 +195,14 @@ class Requirements(SuiteRequirements):
         return _CLOSED
 
     @property
+    def precision_generic_float_type(self) -> compound:
+        """CUBRID FLOAT is IEEE single precision (~7 significant digits), so the
+        generic Float type cannot return seven decimal places (15.7563827 comes
+        back as 15.7563829) on either driver. SQLAlchemy excludes MySQL's FLOAT
+        for the same reason."""
+        return _CLOSED
+
+    @property
     def text_type(self) -> compound:
         return _OPEN
 

@@ -475,6 +475,19 @@ class TestExistenceChecks:
         connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_table(connection, "users") is False
 
+    def test_has_table_honors_inspector_info_cache(self):
+        """Inspector.has_table() is cached until clear_cache() (SA HasTableTest)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        info_cache: dict = {}
+
+        connection.execute.return_value.scalar.return_value = 0
+        assert dialect.has_table(connection, "t", info_cache=info_cache) is False
+        connection.execute.return_value.scalar.return_value = 1
+        assert dialect.has_table(connection, "t", info_cache=info_cache) is False
+        assert connection.execute.call_count == 1
+        assert dialect.has_table(connection, "t", info_cache={}) is True
+
     def test_has_table_recognizes_views(self):
         dialect = CubridDialect()
         connection = MagicMock()

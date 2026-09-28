@@ -206,11 +206,18 @@ jobs:
         # Reduced PR matrix: newest (3.14 x 11.4) + oldest (3.10 x 10.2)
         # supported combinations. The full 5x4 matrix runs nightly / on tags
         # via integration-full.yml.
+        #
+        # pycubrid-compliance-sqlalchemy: the pinned SQLAlchemy version of the
+        # blocking released-pycubrid compliance lane in that cell (#463). The
+        # two cells split SQLAlchemy 2.0 and 2.1 across CUBRID 11.4 and 10.2 so
+        # neither cell runs the suite for pycubrid twice.
         include:
           - python-version: "3.14"
             cubrid-version: "11.4"
+            pycubrid-compliance-sqlalchemy: "2.0.53"
           - python-version: "3.10"
             cubrid-version: "10.2"
+            pycubrid-compliance-sqlalchemy: "2.1.1"
     services:
       cubrid:
         image: cubrid/cubrid:${{ matrix.cubrid-version }}
@@ -344,16 +351,16 @@ jobs:
         run: |
           python -m pytest test/test_regression.py -v --tb=short
 
-      - name: Run SQLAlchemy dialect compliance suite (gating)
+      - name: Run SQLAlchemy dialect compliance suite (gating, CUBRIDdb)
         if: matrix.python-version == '3.14' && matrix.cubrid-version == '11.4'
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
           CUBRID_STRICT_KNOWN_FAILURES: "1"
         run: |
-          # The known_failures.txt baseline is a SQLAlchemy-version-specific
-          # snapshot (suite parametrization changes between releases). Pin the
-          # gating run to the captured version; a SQLAlchemy bump requires
-          # recapturing the baseline. See test/known_failures.txt.
+          # Lane cubrid@sa2.0 in test/known_failures.txt. The baseline is a
+          # SQLAlchemy-version-specific snapshot (suite parametrization changes
+          # between releases). Pin the gating run to the captured version; a
+          # SQLAlchemy bump requires recapturing the baseline.
           pip install "sqlalchemy==2.0.53"
           python -m pytest test/test_suite.py \
             --dburi="$CUBRID_TEST_URL" \
@@ -365,6 +372,24 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
+          python -m pytest test/test_suite.py \
+            --dburi="$CUBRID_TEST_URL" \
+            -v --tb=short
+
+      - name: Run SQLAlchemy dialect compliance suite (gating, released pycubrid)
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+          CUBRID_STRICT_KNOWN_FAILURES: "1"
+          VERSION_REPORT_TITLE: "pycubrid compliance lane versions (Python ${{ matrix.python-version }}, CUBRID ${{ matrix.cubrid-version }})"
+        run: |
+          # Lane pycubrid@sa<major.minor> in test/known_failures.txt (#463):
+          # only entries tagged for this lane are strict-xfailed, so the
+          # CUBRIDdb baseline cannot hide a pycubrid regression or vice versa.
+          # Both the recommended released pycubrid and SQLAlchemy are pinned to
+          # the versions the lane baseline was captured with; bumping either
+          # requires recapturing that lane (see docs/DEVELOPMENT.md).
+          pip install "pycubrid==1.7.1" "sqlalchemy[asyncio]==${{ matrix.pycubrid-compliance-sqlalchemy }}"
+          python -m scripts.report_driver_versions
           python -m pytest test/test_suite.py \
             --dburi="$CUBRID_TEST_URL" \
             -v --tb=short
@@ -391,6 +416,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "PR runs a reduced live matrix (newest 3.14×11.4 + oldest 3.10×10.2)." >> $GITHUB_STEP_SUMMARY
           echo "The full 5×4 Python×CUBRID matrix runs nightly / on tags via integration-full.yml." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Blocking SQLAlchemy compliance lanes (part of Integration Tests; lane versions are in each cell's summary):" >> $GITHUB_STEP_SUMMARY
+          echo "- cubrid@sa2.0: CUBRIDdb, SQLAlchemy 2.0.53, CUBRID 11.4" >> $GITHUB_STEP_SUMMARY
+          echo "- pycubrid@sa2.0: pycubrid 1.7.1, SQLAlchemy 2.0.53, CUBRID 11.4" >> $GITHUB_STEP_SUMMARY
+          echo "- pycubrid@sa2.1: pycubrid 1.7.1, SQLAlchemy 2.1.1, CUBRID 10.2" >> $GITHUB_STEP_SUMMARY
       - name: Fail if required jobs failed
         if: >-
           needs.lint.result == 'failure' ||

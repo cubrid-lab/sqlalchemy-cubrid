@@ -4029,6 +4029,16 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 
 The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on tagged releases, and on demand via `workflow_dispatch`.
 
+### SQLAlchemy compliance lanes
+
+The official SQLAlchemy compliance suite blocks merges for both drivers. Each lane has its own reviewed known-failure baseline in `test/known_failures.txt`; see [Development Guide](DEVELOPMENT.md#sqlalchemy-compliance-lanes).
+
+| Lane | Driver | SQLAlchemy | CUBRID (PR CI) | Known failures |
+|---|---|---|---|---|
+| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 26 |
+| `pycubrid@sa2.0` | pycubrid 1.7.1 (recommended) | 2.0.53 | 11.4 (baseline identical on 10.2) | 19 |
+| `pycubrid@sa2.1` | pycubrid 1.7.1 (recommended) | 2.1.1 | 10.2 (baseline identical on 11.4) | 17 |
+
 ## Test Coverage
 
 | Metric | Value |
@@ -6120,8 +6130,12 @@ that profile does not claim to test CUBRIDdb. Formal CI's native-driver
 
 ```bash
 # Requires a running CUBRID instance
-pytest --dburi cubrid://dba@localhost:33000/testdb
+pytest test/test_suite.py --dburi cubrid://dba@localhost:33000/testdb
+pytest test/test_suite.py --dburi cubrid+pycubrid://dba@localhost:33000/testdb
 ```
+
+Known failures are baselined per driver and SQLAlchemy version; see
+[SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes).
 
 ---
 
@@ -6351,7 +6365,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
-3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage
+3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **Coverage** — Enforces ≥ 95% threshold
 
 ### Driver-differential lane
@@ -6385,6 +6399,69 @@ or the database is unavailable:
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
 ```
+
+### SQLAlchemy compliance lanes
+
+The official SQLAlchemy dialect compliance suite (`test/test_suite.py`, run
+with `--dburi`) blocks merges in two driver lanes. Both are steps of the
+`integration-tests` job in `ci.yml`, reuse that cell's CUBRID service, and
+therefore fail `matrix-result` when they fail:
+
+| Lane | URL | Pinned versions | CI cell |
+|---|---|---|---|
+| `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C-extension) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
+| `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.10 × CUBRID 10.2 |
+
+The two pycubrid lanes split SQLAlchemy 2.0 and 2.1 across the two PR cells,
+so each cell runs the suite for pycubrid only once; their baselines were
+captured on both CUBRID 10.2 and 11.4 and are identical. Each pycubrid step
+first runs `python -m scripts.report_driver_versions`, which records the exact
+Python, SQLAlchemy, pycubrid and CUBRID server versions in the job log and step
+summary. The CUBRIDdb suite in the CUBRID 10.2 cell stays non-gating.
+
+**Known failures are keyed per lane.** Every entry in `test/known_failures.txt`
+names the lanes it fails in, as `<driver>@sa<major.minor>`:
+
+```text
+test/test_suite.py::DistinctOnTest::test_distinct_on  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
+```
+
+`test/conftest.py` derives the current lane from the `--dburi` dialect and the
+installed SQLAlchemy version, and applies a strict xfail only to the entries
+tagged for it. A CUBRIDdb-only failure therefore cannot hide a pycubrid
+regression, and vice versa. There is no wildcard tag, and an untagged entry is
+a load error. With `CUBRID_STRICT_KNOWN_FAILURES=1` (set by every gating step)
+the run also fails when:
+
+- a listed test passes (strict XPASS): remove that lane's tag;
+- a listed entry for the lane matches no collected test (stale baseline);
+- the lane has no entries at all, so a new driver or SQLAlchemy minor cannot
+  gate on an empty baseline by accident.
+
+Tests that cannot apply to CUBRID at all (for example seven-digit precision
+from the single-precision `FLOAT`) are excluded in
+`sqlalchemy_cubrid/requirements.py` with a reason instead of being listed.
+
+**Updating a lane baseline** (a SQLAlchemy bump, a new pinned pycubrid, or a
+fix that makes a listed test pass):
+
+```bash
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
+pip install "pycubrid==1.7.1" "sqlalchemy[asyncio]==2.1.1"
+# 1. Capture: without strict mode, a missing lane just applies no xfails.
+pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" --maxfail=1000 -q -r fE
+# 2. Classify every failure (dialect bug, driver limitation, backend/suite
+#    limit), link its issue, and edit only this lane's tags.
+# 3. Verify exactly as CI does.
+CUBRID_STRICT_KNOWN_FAILURES=1 pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" -q
+```
+
+Run the capture against both CUBRID 10.2 and 11.4 when adding a lane, then
+update the pinned versions in `ci.yml`, the header of
+`test/known_failures.txt`, and the `_GATED_LANES` set in
+`test/test_known_failures.py` in the same change.
 
 ### pycubrid release-candidate adoption
 

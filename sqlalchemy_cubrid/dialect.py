@@ -1014,6 +1014,7 @@ class CubridDialect(default.DefaultDialect):
             qualified = f"{schema}.{object_name}" if schema else object_name
             raise NoSuchTableError(qualified)
 
+    @reflection.cache
     def has_table(
         self,
         connection: Any,

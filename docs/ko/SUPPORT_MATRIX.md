@@ -170,6 +170,16 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
 5 × 4 전체 통합 매트릭스는 `.github/workflows/integration-full.yml`이 나이틀리 일정, 태그 릴리스, `workflow_dispatch` 요청 시 실행합니다.
 
+### SQLAlchemy 컴플라이언스 레인
+
+공식 SQLAlchemy 컴플라이언스 스위트는 두 드라이버 모두에서 병합을 차단합니다. 각 레인은 `test/known_failures.txt`에 검토된 자체 알려진 실패 기준선을 가집니다. [개발 가이드](DEVELOPMENT.md#sqlalchemy-컴플라이언스-레인)를 참고하세요.
+
+| 레인 | 드라이버 | SQLAlchemy | CUBRID (PR CI) | 알려진 실패 |
+|---|---|---|---|---|
+| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 26 |
+| `pycubrid@sa2.0` | pycubrid 1.7.1 (권장) | 2.0.53 | 11.4 (10.2에서도 동일) | 19 |
+| `pycubrid@sa2.1` | pycubrid 1.7.1 (권장) | 2.1.1 | 10.2 (11.4에서도 동일) | 17 |
+
 ## 테스트 커버리지
 
 | 지표 | 값 |

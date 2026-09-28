@@ -87,6 +87,7 @@ class TestRequirements:
             ("time", True),
             ("datetime", True),
             ("timestamp", True),
+            ("precision_generic_float_type", False),
             ("text_type", True),
             ("json_type", True),
             ("array_type", False),

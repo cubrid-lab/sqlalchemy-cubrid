@@ -171,6 +171,16 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 
 The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on tagged releases, and on demand via `workflow_dispatch`.
 
+### SQLAlchemy compliance lanes
+
+The official SQLAlchemy compliance suite blocks merges for both drivers. Each lane has its own reviewed known-failure baseline in `test/known_failures.txt`; see [Development Guide](DEVELOPMENT.md#sqlalchemy-compliance-lanes).
+
+| Lane | Driver | SQLAlchemy | CUBRID (PR CI) | Known failures |
+|---|---|---|---|---|
+| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 26 |
+| `pycubrid@sa2.0` | pycubrid 1.7.1 (recommended) | 2.0.53 | 11.4 (baseline identical on 10.2) | 19 |
+| `pycubrid@sa2.1` | pycubrid 1.7.1 (recommended) | 2.1.1 | 10.2 (baseline identical on 11.4) | 17 |
+
 ## Test Coverage
 
 | Metric | Value |
