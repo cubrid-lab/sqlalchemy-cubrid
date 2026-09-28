@@ -789,21 +789,84 @@ class TestReflectionMethods:
 
         assert pk == {"name": None, "constrained_columns": ["id"]}
 
-    def test_is_no_such_table_error_detection(self):
-        """#387: the not-found predicate matches CUBRID's errno/sqlstate/message."""
-        from sqlalchemy_cubrid.dialect import _is_no_such_table_error
+    def test_unknown_class_error_detection(self):
+        """#387, #454: only CUBRID's ``Unknown class`` message marks a missing table.
 
-        class _ByErrno(Exception):
+        pycubrid before 1.8.0 reports every native -493 (including plain syntax
+        errors) with SQLSTATE 42S02 and a ``Table not found`` description, so neither the
+        code, the SQLSTATE nor that description identifies a missing table.
+        """
+        from sqlalchemy import exc
+
+        from sqlalchemy_cubrid.dialect import _is_unknown_class_error
+
+        class _PycubridError(Exception):
+            # Shape of pycubrid < 1.8.0's ProgrammingError for any native -493.
             errno = -493
-
-        class _BySqlstate(Exception):
             sqlstate = "42S02"
 
-        assert _is_no_such_table_error(_ByErrno()) is True
-        assert _is_no_such_table_error(_BySqlstate()) is True
-        assert _is_no_such_table_error(Exception('Unknown class "dba.x"')) is True
-        assert _is_no_such_table_error(Exception("Table not found")) is True
-        assert _is_no_such_table_error(Exception("some other error")) is False
+        syntax = _PycubridError(
+            "Syntax: Syntax error: unexpected 'SELEC' (errno=-493, "
+            "sqlstate='42S02', description='Table not found')"
+        )
+        missing = _PycubridError(
+            'Syntax: Unknown class "dba.missing". show columns from [missing] '
+            "(errno=-493, sqlstate='42S02', description='Table not found')"
+        )
+
+        # Native -493, SQLSTATE 42S02 or "Table not found" alone: not missing.
+        assert _is_unknown_class_error(syntax) is False
+        assert _is_unknown_class_error(exc.ProgrammingError("SELEC 1", {}, syntax)) is False
+        assert _is_unknown_class_error(Exception(-493, "Syntax error: unexpected 'SELEC'")) is False
+        assert _is_unknown_class_error(Exception("Table not found")) is False
+        assert _is_unknown_class_error(Exception("some other error")) is False
+        # The SQLAlchemy wrapper's text (the SQL statement) is not inspected.
+        assert (
+            _is_unknown_class_error(
+                exc.ProgrammingError(
+                    "SHOW COLUMNS IN [Unknown class]",
+                    {},
+                    Exception(-494, "Authorization failure"),
+                )
+            )
+            is False
+        )
+
+        # The server's "Unknown class" message, in pycubrid and CUBRIDdb shapes.
+        assert _is_unknown_class_error(missing) is True
+        assert _is_unknown_class_error(exc.ProgrammingError("SHOW", {}, missing)) is True
+        assert _is_unknown_class_error(Exception(-493, 'Unknown class "dba.x".')) is True
+        assert _is_unknown_class_error(Exception('Unknown class "dba.x"')) is True
+
+    @pytest.mark.parametrize("method", ["get_columns", "get_indexes"])
+    def test_syntax_error_is_not_no_such_table(self, method):
+        """#454: a pycubrid -493 / 42S02 syntax error from SHOW COLUMNS or SHOW
+        INDEXES propagates unchanged instead of becoming NoSuchTableError."""
+        from sqlalchemy import exc
+
+        class _PycubridError(Exception):
+            errno = -493
+            sqlstate = "42S02"
+
+        orig = _PycubridError(
+            "Syntax: unterminated identifier (errno=-493, sqlstate='42S02', "
+            "description='Table not found')"
+        )
+        failure = exc.ProgrammingError("SHOW ...", {}, orig)
+
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        if method == "get_columns":
+            connection.execute.side_effect = failure
+        else:
+            # db_class lookup, the index-flag catalog query, then SHOW INDEXES.
+            connection.execute.side_effect = [_class_type_result("CLASS"), [], failure]
+
+        with pytest.raises(exc.ProgrammingError) as exc_info:
+            _invoke_reflection(dialect, method, connection, "t")
+        assert exc_info.value is failure
 
     def test_get_columns_missing_table_raises_no_such_table(self):
         """#387: get_columns on a missing table raises NoSuchTableError."""
@@ -838,7 +901,7 @@ class TestReflectionMethods:
         connection.execute.side_effect = [
             _class_type_result(None),
             [],
-            Exception("Table not found"),
+            Exception('Syntax: Unknown class "dba.missing".'),
         ]
 
         with pytest.raises(NoSuchTableError):

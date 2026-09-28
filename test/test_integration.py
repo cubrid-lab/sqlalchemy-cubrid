@@ -404,6 +404,21 @@ class TestReflection:
         assert "user_id" in fk["constrained_columns"]
         assert fk["referred_table"] == "integration_users"
 
+    @pytest.mark.parametrize("method", ["get_columns", "get_indexes"])
+    def test_syntax_error_is_not_no_such_table(self, engine, method):
+        """#454: a -493 syntax error from SHOW COLUMNS / SHOW INDEXES propagates
+        as the driver error; only ``Unknown class`` means a missing table."""
+        with engine.connect() as conn:
+            with pytest.raises(sa.exc.NoSuchTableError):
+                getattr(inspect(conn), method)("nonexistent_table_xyz")
+        if not _server_at_least(engine, (11, 4)):
+            # CUBRID 10.2 accepts "]" in a quoted name and reports Unknown class.
+            pytest.skip("CUBRID < 11.4 accepts ']' in a quoted identifier")
+        with engine.connect() as conn:
+            # CUBRID 11.4 rejects "]" in an identifier with a -493 syntax error.
+            with pytest.raises(sa.exc.DBAPIError, match="cannot contain"):
+                getattr(inspect(conn), method)("bad]name")
+
 
 # More tables than a CUBRID connection has server query entries (100, #548): a
 # reflection query whose result is left open holds one entry each, and the

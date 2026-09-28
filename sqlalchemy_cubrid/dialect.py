@@ -96,31 +96,18 @@ from sqlalchemy.types import (
 
 log = logging.getLogger(__name__)
 
-# CUBRID "table not found" signature (errno -493, SQLSTATE 42S02). Used to
-# translate a raw driver error from SHOW COLUMNS / SHOW INDEXES on a missing
-# table into SQLAlchemy's NoSuchTableError, which the reflection contract
-# requires (e.g. Inspector.get_columns("missing") must raise NoSuchTableError).
-_NO_SUCH_TABLE_ERRNO = -493
-_NO_SUCH_TABLE_SQLSTATE = "42S02"
-
-
-def _is_no_such_table_error(error: BaseException) -> bool:
-    orig = getattr(error, "orig", error)
-    if getattr(orig, "errno", None) == _NO_SUCH_TABLE_ERRNO:
-        return True
-    if getattr(orig, "sqlstate", None) == _NO_SUCH_TABLE_SQLSTATE:
-        return True
-    message = str(orig)
-    return "Unknown class" in message or "Table not found" in message
-
 
 def _is_unknown_class_error(error: BaseException) -> bool:
     """True only for CUBRID's ``Unknown class "<owner>.<name>"`` error.
 
-    Stricter than :func:`_is_no_such_table_error`: pycubrid reports syntax
-    errors, ``<name> is not a class`` and some permission errors with the same
-    native code (-493) and SQLSTATE (42S02), so only the message identifies a
-    missing object (#454, #530).
+    Used to translate a driver error from a reflection query on a missing
+    table or view into SQLAlchemy's ``NoSuchTableError``. The native code
+    (-493) and SQLSTATE (42S02) are not enough: CUBRID uses -493 for every
+    parser error, and pycubrid before 1.8.0 reports syntax errors, ``<name>
+    is not a class`` and some permission errors with SQLSTATE 42S02 and a
+    ``Table not found`` description, so only the server message identifies a missing
+    object (#454, #530). Only the driver error (``orig``) is inspected, never
+    the SQLAlchemy wrapper, whose text includes the SQL statement.
     """
     return "Unknown class" in str(getattr(error, "orig", error))
 
@@ -478,7 +465,7 @@ class CubridDialect(default.DefaultDialect):
         try:
             result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
         except Exception as error:
-            if _is_no_such_table_error(error):
+            if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
             raise
         for row in result:
@@ -853,7 +840,7 @@ class CubridDialect(default.DefaultDialect):
         try:
             result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
         except Exception as error:
-            if _is_no_such_table_error(error):
+            if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
             raise
         for row in result:

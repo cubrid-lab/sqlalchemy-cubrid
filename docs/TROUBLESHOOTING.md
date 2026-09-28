@@ -655,6 +655,8 @@ NoSuchTableError: table_name
 
 3. **Wrong database** — ensure your connection URL points to the correct database
 
+> **Note:** Reflection raises `NoSuchTableError` only when the server reports `Unknown class "<owner>.<name>"`. A syntax error or any other failure of a reflection query propagates as the original exception (for example `sqlalchemy.exc.ProgrammingError`), even though CUBRID uses native error -493 for both (and pycubrid before 1.8.0 reports SQLSTATE `42S02`, `Table not found`, for every -493 error) (#454).
+
 ---
 
 ### Case Sensitivity in Table Names
