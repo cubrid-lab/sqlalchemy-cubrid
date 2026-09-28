@@ -291,8 +291,8 @@ remember the isolation level they set on each connection and re-apply it after
 every commit and rollback. An engine-level `isolation_level` survives commits,
 rollbacks and pool checkins. A connection-level
 `execution_options(isolation_level=...)` survives commits and rollbacks while
-that `Connection` stays open; on checkin the pool resets it (restoring the
-engine level instead of READ COMMITTED is #501). This costs one
+that `Connection` stays open; on checkin SQLAlchemy restores the engine level
+(or the server default when none is configured). This costs one
 `SET TRANSACTION ISOLATION LEVEL` + `COMMIT` per commit/rollback, and only on
 connections with a configured level. Because the re-apply makes pycubrid
 reconnect immediately, reading the rest of a result after `commit()` /
