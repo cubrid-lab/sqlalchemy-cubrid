@@ -5,20 +5,44 @@ on:
     - cron: "0 6 * * 1"
   workflow_dispatch:
 
+# Test jobs are read-only; only the report job below gets ``issues: write``.
+permissions:
+  contents: read
+
 jobs:
   # Offline test suite against pycubrid@main (HEAD).
   upstream-canary:
     name: Offline tests against pycubrid@main
     runs-on: ubuntu-latest
     continue-on-error: true
+    outputs:
+      status: ${{ steps.status.outputs.status }}
+      pycubrid_sha: ${{ steps.pycubrid.outputs.sha }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
-      - run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
+      - name: Resolve pycubrid@main commit
+        id: pycubrid
+        run: |
+          sha="$(git ls-remote https://github.com/cubrid-lab/pycubrid.git refs/heads/main | cut -f1)"
+          test -n "$sha"
+          echo "pycubrid@main is $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+      - env:
+          PYCUBRID_SHA: ${{ steps.pycubrid.outputs.sha }}
+        run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@${PYCUBRID_SHA}"
       - run: pytest test/ --ignore=test/test_integration.py --ignore=test/test_aio_integration.py --ignore=test/test_suite.py --ignore=test/test_regression.py -q
+      # Recorded even when an earlier step fails; with job-level
+      # continue-on-error the report job cannot rely on needs.<job>.result.
+      - name: Record job status
+        id: status
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: echo "status=$JOB_STATUS" >> "$GITHUB_OUTPUT"
 
   # Integration + async integration suite against pycubrid@main (HEAD).
   # Ensures cross-stack fixes landing in pycubrid main are exercised by the
@@ -28,6 +52,9 @@ jobs:
     name: Integration tests against pycubrid@main
     runs-on: ubuntu-latest
     continue-on-error: true
+    outputs:
+      status: ${{ steps.status.outputs.status }}
+      pycubrid_sha: ${{ steps.pycubrid.outputs.sha }}
     env:
       # pycubrid@main contains fixes that are not released yet, so the strict
       # xfails for them (test/pycubrid_upstream.py) must be no-ops here: the
@@ -53,8 +80,17 @@ jobs:
           python-version: "3.12"
       - name: Install project
         run: pip install -e ".[dev]"
+      - name: Resolve pycubrid@main commit
+        id: pycubrid
+        run: |
+          sha="$(git ls-remote https://github.com/cubrid-lab/pycubrid.git refs/heads/main | cut -f1)"
+          test -n "$sha"
+          echo "pycubrid@main is $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - name: Install pycubrid@main (HEAD)
-        run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
+        env:
+          PYCUBRID_SHA: ${{ steps.pycubrid.outputs.sha }}
+        run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@${PYCUBRID_SHA}"
       - name: Wait for CUBRID to be ready
         run: |
           for i in $(seq 1 30); do
@@ -83,3 +119,95 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: python -m pytest test/test_aio_integration.py -v --tb=short
+      # Recorded even when an earlier step fails; with job-level
+      # continue-on-error the report job cannot rely on needs.<job>.result.
+      - name: Record job status
+        id: status
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+        run: echo "status=$JOB_STATUS" >> "$GITHUB_OUTPUT"
+
+  # Opens (or comments on) one tracking issue when a canary job fails, and
+  # closes it once both jobs pass again. The canary jobs keep
+  # continue-on-error, so the run itself stays green and never blocks PRs.
+  report:
+    name: Report canary status
+    needs: [upstream-canary, upstream-canary-integration]
+    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the canary failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ISSUE_TITLE: "Upstream canary failing against pycubrid@main"
+          OFFLINE_STATUS: ${{ needs.upstream-canary.outputs.status }}
+          OFFLINE_RESULT: ${{ needs.upstream-canary.result }}
+          OFFLINE_SHA: ${{ needs.upstream-canary.outputs.pycubrid_sha }}
+          INTEGRATION_STATUS: ${{ needs.upstream-canary-integration.outputs.status }}
+          INTEGRATION_RESULT: ${{ needs.upstream-canary-integration.result }}
+          INTEGRATION_SHA: ${{ needs.upstream-canary-integration.outputs.pycubrid_sha }}
+        run: |
+          set -euo pipefail
+
+          commit_link() {
+            if [ -n "$1" ]; then
+              echo "[\`${1:0:12}\`](https://github.com/cubrid-lab/pycubrid/commit/$1)"
+            else
+              echo "unknown"
+            fi
+          }
+
+          # A job counts as passed only if it recorded "success" itself; a
+          # missing status means it never reached its last step.
+          failed=0
+          rows=""
+          add_row() {
+            local name="$1" status="$2" result="$3" sha="$4" outcome="passed"
+            if [ "$status" != "success" ] || [ "$result" != "success" ]; then
+              outcome="**failed** (status: ${status:-none}, result: ${result})"
+              failed=$((failed + 1))
+            fi
+            rows+="| ${name} | ${outcome} | $(commit_link "$sha") |"$'\n'
+          }
+          add_row "Offline tests against pycubrid@main" "$OFFLINE_STATUS" "$OFFLINE_RESULT" "$OFFLINE_SHA"
+          add_row "Integration tests against pycubrid@main" "$INTEGRATION_STATUS" "$INTEGRATION_RESULT" "$INTEGRATION_SHA"
+
+          table="| Job | Outcome | pycubrid commit tested |"$'\n'"|---|---|---|"$'\n'"${rows}"
+
+          # Existing open tracking issue: exact title match among open issues
+          # labelled "ci" (REST listing, so a just-created issue is found).
+          issue="$(gh api --paginate "repos/${GH_REPO}/issues?state=open&labels=ci&per_page=100" \
+            --jq '.[] | select(.pull_request == null and .title == env.ISSUE_TITLE) | .number' | head -n1)"
+
+          if [ "$failed" -gt 0 ]; then
+            body="The upstream canary failed against \`pycubrid@main\`.
+
+          ${table}
+          Run: ${RUN_URL}
+
+          This issue is updated by \`.github/workflows/upstream-canary.yml\` and closed automatically once both canary jobs pass again."
+            if [ -n "$issue" ]; then
+              gh issue comment "$issue" --body "$body"
+              echo "Commented on existing issue #${issue}"
+            else
+              gh issue create --title "$ISSUE_TITLE" --label ci --body "$body"
+            fi
+            {
+              echo "## Upstream canary failed"
+              echo
+              echo "$table"
+            } >> "$GITHUB_STEP_SUMMARY"
+          elif [ -n "$issue" ]; then
+            gh issue close "$issue" --comment "The upstream canary passed again.
+
+          ${table}
+          Run: ${RUN_URL}"
+            echo "Closed issue #${issue}"
+          else
+            echo "Canary passed; no open tracking issue."
+          fi

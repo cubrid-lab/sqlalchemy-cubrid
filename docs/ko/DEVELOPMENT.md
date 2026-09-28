@@ -506,7 +506,10 @@ CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v 
 
 `pycubrid@main`을 대상으로 하는 주간 `upstream-canary.yml` 실행은 비차단으로
 유지합니다. 다가오는 회귀를 경고하지만, 릴리스되지 않은 업스트림 HEAD가 관련 없는
-PR을 막아서는 안 됩니다. 의존성 범위 `pycubrid>=1.3.2,<2.0`은 정확한 버전으로 설치한
+PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 예약 실행이나 수동 실행에서 canary 작업이
+실패하면 워크플로가 "Upstream canary failing against pycubrid@main" 제목의 이슈(`ci` 레이블)를
+열거나, 이미 열려 있으면 댓글을 달아 실패한 작업, 실행 링크, 테스트한 pycubrid 커밋을 남기고,
+두 작업이 다시 통과하면 이슈를 닫습니다. 의존성 범위 `pycubrid>=1.3.2,<2.0`은 정확한 버전으로 설치한
 **특정** pycubrid 릴리스 후보(또는 새 메이저 릴리스)가 다운스트림 계약 스위트, 즉 일반·비동기
 통합 테스트, 위의 필수 드라이버 차분 레인, SQLAlchemy 호환성 스위트를 통과한 뒤에만
 넓힙니다. 채택 PR에는 `scripts/report_driver_versions.py`가 보고한 버전을 기록하고,
