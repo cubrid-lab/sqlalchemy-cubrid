@@ -32,6 +32,17 @@ jobs:
     name: Build and verify release artifact
     runs-on: ubuntu-latest
     steps:
+      - name: Validate release tag
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ ! "$INPUT_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.+-]*)$ ]]; then
+            echo "::error::tag input '$INPUT_TAG' is not a vX.Y.Z tag"
+            exit 1
+          fi
+          echo "TAG=$INPUT_TAG" >> "$GITHUB_ENV"
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ inputs.tag }}
@@ -57,16 +68,6 @@ jobs:
           )
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "Detected package version: $VERSION"
-
-      - name: Resolve release tag
-        env:
-          INPUT_TAG: ${{ inputs.tag }}
-        run: |
-          if ! printf '%s' "$INPUT_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.+-]*)$'; then
-            echo "::error::tag input '$INPUT_TAG' is not a vX.Y.Z tag"
-            exit 1
-          fi
-          echo "TAG=$INPUT_TAG" >> "$GITHUB_ENV"
 
       - name: Verify tag matches package version
         run: |
@@ -208,12 +209,12 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: true
+          skip-existing: true
 
   notify-cookbook:
     name: Dispatch cookbook smoke test
     runs-on: ubuntu-latest
     needs: [deploy]
-    if: success()
     # The dispatch uses COOKBOOK_DISPATCH_TOKEN (a PAT scoped to the cookbook
     # repo); this job needs no GITHUB_TOKEN permissions. The secret is only
     # referenced here, never in the build/verify or deploy jobs.

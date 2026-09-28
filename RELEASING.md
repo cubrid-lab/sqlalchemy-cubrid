@@ -139,4 +139,22 @@ gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
   ```
 
 - **Publish job failed after the checks passed** (for example a transient PyPI
-  error): re-dispatch `publish-pypi.yml -f tag=vX.Y.Z`.
+  error): rerun only the failed job, which reuses the already-verified build
+  artifact instead of rebuilding it:
+
+  ```bash
+  gh run list --workflow publish-pypi.yml --limit 5
+  gh run rerun <run-id> --failed
+  ```
+
+  The `skip-existing: true` publish step makes this safe to rerun even after
+  a partial upload already reached PyPI.
+
+- **`notify-cookbook` job failed** (for example `COOKBOOK_DISPATCH_TOKEN` is
+  missing or the dispatch errored): the package is already on PyPI, so never
+  re-dispatch `publish-pypi.yml`. Run the manual cookbook smoke test dispatch
+  from step 5 instead:
+
+  ```bash
+  gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
+  ```
