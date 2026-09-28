@@ -4,11 +4,6 @@ on:
   schedule:
     - cron: "0 6 * * 1"
   workflow_dispatch:
-    inputs:
-      force_failure:
-        description: "TEMPORARY (#521 verification): fail the offline canary job"
-        type: boolean
-        default: false
 
 # Test jobs are read-only; only the report job below gets ``issues: write``.
 permissions:
@@ -39,9 +34,6 @@ jobs:
       - env:
           PYCUBRID_SHA: ${{ steps.pycubrid.outputs.sha }}
         run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@${PYCUBRID_SHA}"
-      - name: TEMPORARY forced failure (#521 verification)
-        if: inputs.force_failure
-        run: exit 1
       - run: pytest test/ --ignore=test/test_integration.py --ignore=test/test_aio_integration.py --ignore=test/test_suite.py --ignore=test/test_regression.py -q
       # Recorded even when an earlier step fails; with job-level
       # continue-on-error the report job cannot rely on needs.<job>.result.
