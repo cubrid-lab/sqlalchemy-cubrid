@@ -1141,7 +1141,12 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> bool:
-        """Check if *table_name* exists."""
+        """Check if *table_name* exists.
+
+        CUBRID stores identifiers folded to lower case, even quoted ones, so a
+        mixed-case *table_name* also matches its lower-case form, as in
+        :meth:`_get_class_type` (#543).
+        """
         if not self._schema_is_default(schema):
             return False
         result = connection.execute(
@@ -1149,7 +1154,7 @@ class CubridDialect(default.DefaultDialect):
                 "SELECT COUNT(*) FROM db_class "
                 "WHERE class_type IN ('CLASS', 'VCLASS') "
                 "AND is_system_class = 'NO' "
-                "AND class_name = :name"
+                "AND class_name IN (:name, LOWER(:name))"
             ),
             {"name": table_name},
         )
@@ -1170,17 +1175,29 @@ class CubridDialect(default.DefaultDialect):
         ``Inspector`` answers from its cache until ``clear_cache()`` (#533).
         A missing table or index returns ``False``; a failing catalog query
         raises instead of caching a false negative.
+
+        CUBRID stores identifiers folded to lower case, even quoted ones, so
+        both names also match their lower-case form, and the table is resolved
+        like :meth:`_get_class_type`: the current user's own class first
+        (#543).
         """
         if not self._schema_is_default(schema):
             return False
-        result = connection.execute(
+        # .first() closes the result (see _get_class_type).
+        row = connection.execute(
             text(
-                "SELECT COUNT(*) FROM _db_index "
-                "WHERE class_of.class_name = :table AND index_name = :name"
+                "SELECT (SELECT COUNT(*) FROM _db_index i "
+                "WHERE i.class_of.class_name = c.class_name "
+                "AND i.class_of.owner.name = c.owner_name "
+                "AND i.index_name IN (:name, LOWER(:name))) "
+                "FROM db_class c "
+                "WHERE c.class_name IN (:table, LOWER(:table)) "
+                "ORDER BY CASE WHEN c.owner_name = CURRENT_USER THEN 0 "
+                "WHEN c.is_system_class = 'YES' THEN 1 ELSE 2 END"
             ),
             {"table": table_name, "name": index_name},
-        )
-        return bool(result.scalar())
+        ).first()
+        return row is not None and bool(row[0])
 
     def has_sequence(
         self,

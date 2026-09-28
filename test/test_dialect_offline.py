@@ -502,20 +502,35 @@ class TestExistenceChecks:
         connection.execute.return_value.scalar.return_value = 1
         assert dialect.has_table(connection, "active_users") is True
 
+    def test_has_table_matches_lower_case_stored_name(self):
+        """CUBRID stores quoted mixed-case names in lower case (#543)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+
+        connection.execute.return_value.scalar.return_value = 1
+        assert dialect.has_table(connection, "Users543") is True
+        sql = str(connection.execute.call_args[0][0])
+        assert "class_name IN (:name, LOWER(:name))" in sql
+        assert connection.execute.call_args[0][1] == {"name": "Users543"}
+
     def test_has_index_true_false_and_error_propagates(self):
         dialect = CubridDialect()
         connection = MagicMock()
 
-        connection.execute.return_value.scalar.return_value = 2
+        connection.execute.return_value.first.return_value = (2,)
         assert dialect.has_index(connection, "users", "ix_users_name") is True
         call_args = connection.execute.call_args
         bound_params = call_args[0][1]
         assert bound_params == {"table": "users", "name": "ix_users_name"}
 
-        connection.execute.return_value.scalar.return_value = 0
+        connection.execute.return_value.first.return_value = (0,)
         assert dialect.has_index(connection, "users", "ix_users_name") is False
 
-        # A failing catalog query propagates instead of being cached as False.
+        # A missing table yields no db_class row.
+        connection.execute.return_value.first.return_value = None
+        assert dialect.has_index(connection, "users", "ix_users_name") is False
+
+        # A failing catalog query propagates instead of being cached as False (#444).
         connection.execute.side_effect = RuntimeError("metadata unavailable")
         with pytest.raises(RuntimeError, match="metadata unavailable"):
             dialect.has_index(connection, "users", "ix_users_name")
@@ -524,11 +539,27 @@ class TestExistenceChecks:
         dialect = CubridDialect()
         connection = MagicMock()
 
-        connection.execute.return_value.scalar.return_value = 0
+        connection.execute.return_value.first.return_value = (0,)
         assert dialect.has_index(connection, "orders", "ix_name") is False
         call_args = connection.execute.call_args
         bound_params = call_args[0][1]
         assert bound_params["table"] == "orders"
+
+    def test_has_index_matches_lower_case_names_and_prefers_own_class(self):
+        """Mixed-case names match their stored lower-case form (#543)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+
+        connection.execute.return_value.first.return_value = (1,)
+        assert dialect.has_index(connection, "Users543", "IX_Mixed543") is True
+        sql = str(connection.execute.call_args[0][0])
+        assert "c.class_name IN (:table, LOWER(:table))" in sql
+        assert "i.index_name IN (:name, LOWER(:name))" in sql
+        assert "c.owner_name = CURRENT_USER THEN 0" in sql
+        assert connection.execute.call_args[0][1] == {
+            "table": "Users543",
+            "name": "IX_Mixed543",
+        }
 
     def test_has_index_is_cached_per_info_cache(self):
         """An Inspector answers has_index from its cache until clear_cache() (#533)."""
@@ -536,9 +567,9 @@ class TestExistenceChecks:
         connection = MagicMock()
         info_cache: dict = {}
 
-        connection.execute.return_value.scalar.return_value = 0
+        connection.execute.return_value.first.return_value = (0,)
         assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
-        connection.execute.return_value.scalar.return_value = 1
+        connection.execute.return_value.first.return_value = (1,)
         assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
         assert connection.execute.call_count == 1
         info_cache.clear()

@@ -1250,6 +1250,55 @@ class TestCreateIndexIfNotExistsIntegration:
             meta.drop_all(engine)
 
 
+class TestMixedCaseExistenceIntegration:
+    """#543: CUBRID stores quoted mixed-case names in lower case."""
+
+    def test_has_table_and_has_index(self, engine):
+        meta = MetaData()
+        t = Table("Users543", meta, Column("id", Integer, primary_key=True), Column("v", Integer))
+        sa.Index("IX_Mixed543", t.c.v)
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            insp = inspect(engine)
+            assert insp.has_table("Users543")
+            assert insp.has_table("users543")
+            assert not insp.has_table("Missing543")
+            assert insp.has_index("Users543", "IX_Mixed543")
+            assert insp.has_index("users543", "ix_mixed543")
+            assert not insp.has_index("Users543", "IX_Missing543")
+            assert not insp.has_index("Missing543", "IX_Mixed543")
+        finally:
+            meta.drop_all(engine)
+        insp = inspect(engine)
+        assert not insp.has_table("Users543")
+        assert not insp.has_index("Users543", "IX_Mixed543")
+
+    def test_checkfirst_create_and_drop(self, engine):
+        meta = MetaData()
+        t = Table("Users543Cf", meta, Column("id", Integer, primary_key=True), Column("v", Integer))
+        idx = sa.Index("IX_Mixed543Cf", t.c.v)
+        meta.drop_all(engine)
+        try:
+            t.create(engine, checkfirst=True)
+            # has_table finds the lower-case stored table: no second CREATE.
+            t.create(engine, checkfirst=True)
+            # create_all creates the table's indexes with it.
+            assert inspect(engine).has_index("Users543Cf", "IX_Mixed543Cf")
+            idx.create(engine, checkfirst=True)
+            idx.drop(engine, checkfirst=True)
+            # Before #543 checkfirst saw no index and silently skipped the drop.
+            assert not inspect(engine).has_index("Users543Cf", "IX_Mixed543Cf")
+            idx.drop(engine, checkfirst=True)
+            idx.create(engine, checkfirst=True)
+            assert inspect(engine).has_index("Users543Cf", "IX_Mixed543Cf")
+            t.drop(engine, checkfirst=True)
+            assert not inspect(engine).has_table("Users543Cf")
+            t.drop(engine, checkfirst=True)
+        finally:
+            meta.drop_all(engine)
+
+
 class TestUnicodeTextIntegration:
     """#534: ``UnicodeText`` creates a CUBRID STRING column (CUBRID has no TEXT)."""
 
