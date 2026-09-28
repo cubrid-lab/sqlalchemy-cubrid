@@ -634,6 +634,24 @@ class TestTypeCompilation:
         result = self._compile_type(BIT(length=256, varying=True))
         assert result == "BIT VARYING(256)"
 
+    def test_bit_unspecified_length_defaults_to_one(self):
+        from sqlalchemy_cubrid.types import BIT
+
+        result = self._compile_type(BIT())
+        assert result == "BIT(1)"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(cubrid_types.BIT(length=0), id="BIT"),
+            pytest.param(cubrid_types.BIT(length=0, varying=True), id="BIT-VARYING"),
+        ],
+    )
+    def test_bit_zero_length_raises(self, type_):
+        """Regression (#441): explicit length=0 must not become BIT(1)."""
+        with pytest.raises(CompileError, match=r"BIT"):
+            self._compile_type(type_)
+
     def test_datetime(self):
         result = self._compile_type(sa.DateTime())
         assert result == "DATETIME"

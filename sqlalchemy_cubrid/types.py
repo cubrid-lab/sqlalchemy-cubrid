@@ -186,7 +186,10 @@ class BIT(sqltypes.TypeEngine[Any]):
         """
         self.length: int | None
         if not varying:
-            self.length = length or 1
+            # ``length is None`` means unspecified and defaults to 1.
+            # An explicit ``length=0`` is kept so the compiler can reject it
+            # instead of silently coercing to BIT(1).
+            self.length = 1 if length is None else length
         else:
             self.length = length  # BIT VARYING can be unlimited-length
         self.varying = varying

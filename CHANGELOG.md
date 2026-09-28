@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **`CHAR(0)` / `NCHAR(0)` no longer silently compile to bare `CHAR` / `NCHAR` (#476)** — the type compiler still checked fixed-width lengths by truthiness after #456, so an explicit `length=0` was treated as unspecified. `length=None` still emits bare `CHAR` / `NCHAR`; an explicit zero now raises `CompileError`.
+- **`BIT(length=0)` is no longer silently coerced to `BIT(1)` (#441)** — `BIT.__init__` used `length or 1`, so an explicit zero became 1 before the compiler ran. Unspecified length still defaults to `BIT(1)`; `BIT VARYING` with no length is still unlimited. An explicit zero now raises `CompileError`.
 
 ### Documentation
 - **Alembic import log lines (#561)** — `docs/ALEMBIC.md` (+ Korean) explains that loading the dialect imports Alembic when it is installed (about 0.1 s), so Alembic 1.18+ logs seven `INFO` `setup plugin ...` lines under `INFO` root logging, and gives the application-side fix `logging.getLogger("alembic").setLevel(logging.WARNING)`. No supported Alembic hook defers the registration; no behavior change.

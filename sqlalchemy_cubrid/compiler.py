@@ -942,6 +942,9 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
         return "BIGINT"
 
     def visit_BIT(self, type_: Any, **kw: Any) -> str:
+        ddl_name = "BIT VARYING" if type_.varying else "BIT"
+        hint = "an unlimited BIT VARYING" if type_.varying else "the default BIT(1)"
+        self._reject_zero_length(type_, ddl_name, default_hint=f"omit the length to get {hint}")
         if type_.varying:
             compiled = "BIT VARYING"
             if type_.length is not None:
