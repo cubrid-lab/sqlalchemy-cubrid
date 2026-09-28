@@ -151,13 +151,18 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
-| BIT | `BIT` | `bytes` | ✅ |
+| BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ 길이와 `VARYING` 유지 |
+| BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ `BIT(n*8)`로 리플렉트 |
+| BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ `BIT VARYING(n*8)`로 리플렉트 |
+| CHAR(32) | `sa.Uuid` / `sa.UUID` | `uuid.UUID`, `as_uuid=False`이면 `str` | ✅ `CHAR(32)`로 리플렉트 |
 | BLOB | `sa.LargeBinary` | `bytes` (문서상). NULL이 아닌 값 조회는 현재 드라이버 LOB 로케이터를 반환합니다. [드라이버 호환성, 알려진 문제 6](DRIVER_COMPAT.md#알려진-문제) 참고 | ✅ |
 | CLOB | `CLOB` | `str` (문서상). NULL이 아닌 값 조회는 현재 드라이버 LOB 로케이터를 반환합니다. [드라이버 호환성, 알려진 문제 6](DRIVER_COMPAT.md#알려진-문제) 참고 | ✅ |
 | SET | `SET` | 컬렉션 | ✅ |
 | MULTISET | `MULTISET` | 컬렉션 | ✅ |
 | SEQUENCE | `SEQUENCE` | 컬렉션 | ✅ |
 | OBJECT | `OBJECT` | OID 참조 | ❌ 선언/컴파일 전용 |
+
+CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)` / `sa.VARBINARY(n)`은 비트 단위 길이의 비트 문자열(`BIT(n*8)` / `BIT VARYING(n*8)`)로 컴파일되며, `BINARY`는 더 짧은 값을 `\x00`으로 채웁니다. 빈 `b""`는 보존되지 않고 `None`(pycubrid의 `BINARY(n)`은 0 바이트)으로 조회됩니다. `sa.Uuid`와 `sa.UUID`는 `CHAR(32)`에 32자 16진 문자열로 저장됩니다. 리플렉트된 BIT 컬럼은 길이를 유지하므로 Alembic autogenerate가 이 컬럼들에 대해 잘못된 타입 변경을 보고하지 않습니다. [표준 SQL 타입](TYPES.md#표준-sql-타입) 참고.
 
 ---
 

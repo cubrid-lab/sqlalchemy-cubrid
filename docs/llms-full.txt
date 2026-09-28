@@ -4041,13 +4041,18 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
-| BIT | `BIT` | `bytes` | ✅ |
+| BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ Length and `VARYING` preserved |
+| BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ Reflects as `BIT(n*8)` |
+| BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ Reflects as `BIT VARYING(n*8)` |
+| CHAR(32) | `sa.Uuid` / `sa.UUID` | `uuid.UUID`; `str` with `as_uuid=False` | ✅ Reflects as `CHAR(32)` |
 | BLOB | `sa.LargeBinary` | `bytes` (documented); non-NULL reads currently return a driver LOB locator, see [Driver Compatibility, Known Issue 6](DRIVER_COMPAT.md#known-issues) | ✅ |
 | CLOB | `CLOB` | `str` (documented); non-NULL reads currently return a driver LOB locator, see [Driver Compatibility, Known Issue 6](DRIVER_COMPAT.md#known-issues) | ✅ |
 | SET | `SET` | Collection | ✅ |
 | MULTISET | `MULTISET` | Collection | ✅ |
 | SEQUENCE | `SEQUENCE` | Collection | ✅ |
 | OBJECT | `OBJECT` | OID reference | ❌ Declared/compiled only |
+
+CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINARY(n)` compile to bit strings sized in bits (`BIT(n*8)` / `BIT VARYING(n*8)`); `BINARY` pads shorter values with `\x00`. An empty `b""` is not preserved: it reads back as `None` (or as zero bytes from `BINARY(n)` on pycubrid). `sa.Uuid` and `sa.UUID` are stored as 32-character hex in `CHAR(32)`. Reflected BIT columns keep their length, so Alembic autogenerate reports no false type change for these columns. See [Standard SQL Types](TYPES.md#standard-sql-types).
 
 ---
 
