@@ -2151,10 +2151,10 @@ class TestDmlCoverage:
 
 
 class TestDialectReflectionExceptionPaths:
-    """Tests for dialect.py exception fallback paths."""
+    """Tests for dialect.py reflection exception paths."""
 
     def test_get_columns_comment_query_exception(self):
-        """dialect.py lines 270-271: Exception in comment query falls back to empty dict."""
+        """A failing comment query raises (#549)."""
         from unittest.mock import MagicMock
 
         dialect = CubridDialect()
@@ -2181,13 +2181,13 @@ class TestDialectReflectionExceptionPaths:
 
         conn.execute = MagicMock(side_effect=side_effect)
 
-        result = dialect.get_columns(conn, "test_table", None)
-        assert len(result) == 1
-        assert result[0]["name"] == "id"
-        assert result[0].get("comment") is None
+        # A failing comment query raises instead of silently dropping every
+        # column comment (#549).
+        with pytest.raises(Exception, match="comment query failed"):
+            dialect.get_columns(conn, "test_table", None)
 
     def test_get_pk_constraint_exception(self):
-        """When the catalog query raises, fall back to SHOW COLUMNS (#426)."""
+        """A failing catalog query raises; no silent SHOW COLUMNS fallback (#549)."""
         from unittest.mock import MagicMock
 
         dialect = CubridDialect()
@@ -2208,17 +2208,16 @@ class TestDialectReflectionExceptionPaths:
         def side_effect(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                # First call is the _db_index_key catalog query — make it fail.
+                # First call is the db_index_key catalog query — make it fail.
                 raise Exception("catalog query failed")
             return columns_result
 
         conn.execute = MagicMock(side_effect=side_effect)
 
-        result = dialect.get_pk_constraint(conn, "test_table", None)
-        assert result["constrained_columns"] == ["id"]
-        # constraint_name is None because the catalog query (which carries the
-        # name) failed and the SHOW COLUMNS fallback has no name.
-        assert result["name"] is None
+        # Falling back would lose the PK name and trailing composite columns.
+        with pytest.raises(Exception, match="catalog query failed"):
+            dialect.get_pk_constraint(conn, "test_table", None)
+        assert call_count[0] == 1
 
 
 # ---------------------------------------------------------------------------

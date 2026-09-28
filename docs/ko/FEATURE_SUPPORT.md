@@ -212,11 +212,12 @@
 
 - **CHECK 제약**: CUBRID는 CHECK 제약 구문을 파싱하지만 런타임에 강제하지 않습니다. 오해를 일으키는 메타데이터의 리플렉션을 피하기 위해 방언은 의도적으로 `get_check_constraints()`에서 빈 리스트를 반환합니다.
 - **테이블 코멘트**: `db_class.comment` 시스템 카탈로그 컬럼을 조회하는 `get_table_comment()`로 리플렉트됩니다.
-- **컬럼 코멘트**: `_db_attribute.comment` 시스템 카탈로그 컬럼을 조회하는 `get_columns()`로 리플렉트됩니다. 각 컬럼 dict의 `"comment"` 키로 반환됩니다.
-- **has_index**: CUBRID 방언은 `_db_index`를 조회해 `has_index()`를 구현합니다. MySQL SA 방언은 전용 `has_index()` 메서드를 제공하지 않습니다. CUBRID는 따옴표로 감싼 식별자도 소문자로 저장하므로, `has_table()`과 `has_index()`는 대소문자가 섞인 이름을 소문자로 저장된 이름과도 비교합니다(#543). 따라서 `Index("IX_Mixed", Table("Users", ...))`에서도 `Index.drop(checkfirst=True)`가 동작합니다.
+- **컬럼 코멘트**: `db_attribute.comment` 카탈로그 뷰 컬럼을 조회하는 `get_columns()`로 리플렉트됩니다. 각 컬럼 dict의 `"comment"` 키로 반환됩니다.
+- **has_index**: CUBRID 방언은 `db_index`를 조회해 `has_index()`를 구현합니다. MySQL SA 방언은 전용 `has_index()` 메서드를 제공하지 않습니다. CUBRID는 따옴표로 감싼 식별자도 소문자로 저장하므로, `has_table()`과 `has_index()`는 대소문자가 섞인 이름을 소문자로 저장된 이름과도 비교합니다(#543). 따라서 `Index("IX_Mixed", Table("Users", ...))`에서도 `Index.drop(checkfirst=True)`가 동작합니다.
 - **유니크 제약과 유니크 인덱스**: CUBRID는 `UNIQUE` 제약을 유니크 인덱스로 구현하며 `CREATE UNIQUE INDEX`와 구분할 수 없습니다. 따라서 MySQL과 마찬가지로 각 항목은 `get_indexes()`와 `get_unique_constraints()` 모두에 나타나며, 유니크 제약 항목에는 해당 인덱스 이름을 담은 `duplicates_index`가 있습니다. `Table` 리플렉션(및 Alembic autogenerate)은 이 키를 사용해 유니크 인덱스만 남깁니다. 뷰에 대해서는 `get_indexes()`가 빈 리스트를 반환합니다.
 - **존재하지 않는 테이블과 뷰**: `get_columns()`, `get_pk_constraint()`, `get_foreign_keys()`, `get_indexes()`, `get_unique_constraints()`, `get_table_comment()`, `get_view_definition()`은 존재하지 않는 객체에 대해 `NoSuchTableError`를 발생시키므로 `get_multi_*()` 변형은 해당 객체를 결과에서 제외합니다. `get_view_definition()`은 테이블에 대해서도 이 예외를 발생시킵니다. 뷰에 대해서는 `get_foreign_keys()`와 `get_unique_constraints()`가 `SHOW CREATE TABLE`을 실행하지 않고 빈 리스트를 반환합니다.
-- **리플렉션 소스**: 리플렉션은 여러 소스에 분산되어 있습니다: 컬럼/코멘트는 `SHOW COLUMNS IN` + `_db_attribute`, PK 이름은 `SHOW COLUMNS IN` + 선택적 `db_constraint` 조회, 외래 키와 유니크 제약은 `SHOW CREATE TABLE` 파싱, 인덱스는 `SHOW INDEXES IN` + `_db_index`, 뷰 정의는 `SHOW CREATE VIEW`, 테이블/뷰 이름과 테이블 코멘트는 `db_class`.
+- **리플렉션 소스**: 리플렉션은 여러 소스에 분산되어 있습니다: 컬럼/코멘트는 `SHOW COLUMNS IN` + `db_attribute`, 기본 키(이름과 키 순서의 모든 컬럼)는 `db_index` + `db_index_key`, 외래 키는 `SHOW CREATE TABLE` 파싱, 유니크 제약은 `db_index` + `SHOW INDEXES IN`(찾지 못하면 `SHOW CREATE TABLE` 파싱으로 대체), 인덱스는 `SHOW INDEXES IN` + `db_index`, 뷰 정의는 `SHOW CREATE VIEW`, 테이블/뷰 이름과 테이블 코멘트는 `db_class`.
+- **DBA가 아닌 사용자의 리플렉션**: 리플렉션은 모든 사용자가 읽을 수 있는 카탈로그 뷰(`db_class`, `db_index`, `db_index_key`, `db_attribute`)만 읽고, DBA만 읽을 수 있는 `_db_index`, `_db_index_key`, `_db_attribute` 카탈로그 테이블은 읽지 않습니다. 따라서 DBA가 아닌 사용자도 DBA와 같은 인덱스, 기본 키, 유니크 제약, `has_index()` 결과와 컬럼 코멘트를 얻습니다. 테이블 이름은 `SHOW COLUMNS IN <name>`과 같이 입력한 그대로 또는 소문자로 변환해 비교합니다. CUBRID 11.2부터 이 뷰에는 다른 소유자의 같은 이름 클래스도 나타나므로, 리플렉트하는 클래스의 소유자 행만 사용합니다(`db_class`와 마찬가지로 현재 사용자의 클래스가 우선). 카탈로그 조회가 실패하면 불완전한 메타데이터로 조용히 대체하지 않고 예외를 발생시킵니다.
 
 ---
 

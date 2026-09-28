@@ -432,6 +432,92 @@ class TestSameNameClassOfOtherOwner:
             ]
 
 
+class TestReflectionAsNonDba:
+    """#549: ``_db_index``, ``_db_index_key`` and ``_db_attribute`` are readable
+    only by DBA, so reflection reads the public catalog views. Reflect the same
+    table as DBA and as a new user, by its name and in upper case. Since 11.2
+    the other user also owns a same-named decoy table readable by the
+    reflecting user, whose indexes and comments must not leak into the
+    result."""
+
+    @pytest.fixture(params=["dba", "u549"])
+    def reflecting_engine(self, request, engine):
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
+
+        def run(eng, *statements, ignore_errors=False):
+            # One transaction per statement: DDL is transactional, so a
+            # rollback after a failed DROP must not undo the previous one.
+            with eng.connect() as conn:
+                for statement in statements:
+                    try:
+                        conn.exec_driver_sql(statement)
+                        conn.commit()
+                    except Exception:
+                        if not ignore_errors:
+                            raise
+                        conn.rollback()
+
+        u549 = create_engine(engine.url.set(username="u549", password=None))
+        owner, other = (engine, u549) if request.param == "dba" else (u549, engine)
+
+        def cleanup():
+            for eng in (u549, engine):
+                run(
+                    eng,
+                    "DROP TABLE r549_t",
+                    "DROP TABLE r549_parent",
+                    ignore_errors=True,
+                )
+            u549.dispose()
+            run(engine, "DROP USER u549", ignore_errors=True)
+
+        run(engine, "CREATE USER u549", ignore_errors=True)
+        cleanup()
+        run(engine, "CREATE USER u549")
+        try:
+            run(
+                owner,
+                "CREATE TABLE r549_parent (id INT PRIMARY KEY)",
+                "CREATE TABLE r549_t (a INT, b INT, p INT, u INT UNIQUE, "
+                "v INT COMMENT 'v comment', "
+                "CONSTRAINT pk_r549_t PRIMARY KEY (a, b), "
+                "CONSTRAINT fk_r549_t_p FOREIGN KEY (p) REFERENCES r549_parent (id))",
+                "CREATE INDEX ix_r549_t_v ON r549_t (v)",
+            )
+            if _server_at_least(engine, (11, 2)):
+                run(
+                    other,
+                    "CREATE TABLE r549_t (id INT PRIMARY KEY, v INT COMMENT 'decoy', w INT UNIQUE)",
+                    "CREATE INDEX ix_r549_decoy_v ON r549_t (v)",
+                    "GRANT SELECT ON r549_t TO PUBLIC",
+                )
+            yield owner
+        finally:
+            cleanup()
+
+    @pytest.mark.parametrize("name", ["r549_t", "R549_T"])
+    def test_reflection(self, reflecting_engine, name):
+        with reflecting_engine.connect() as conn:
+            insp = inspect(conn)
+            indexes = {i["name"]: (i["column_names"], i["unique"]) for i in insp.get_indexes(name)}
+            # No PK index, no FK auto-index, no index of the decoy table.
+            assert indexes == {"u_r549_t_u": (["u"], True), "ix_r549_t_v": (["v"], False)}
+            assert insp.get_pk_constraint(name) == {
+                "name": "pk_r549_t",
+                "constrained_columns": ["a", "b"],
+            }
+            assert insp.get_unique_constraints(name) == [
+                {"name": "u_r549_t_u", "column_names": ["u"], "duplicates_index": "u_r549_t_u"}
+            ]
+            assert insp.has_index(name, "ix_r549_t_v")
+            assert insp.has_index(name, "pk_r549_t")
+            assert not insp.has_index(name, "ix_r549_decoy_v")
+            assert not insp.has_index(name, "no_such_index")
+            comments = {c["name"]: c["comment"] for c in insp.get_columns(name)}
+            assert comments == {"a": None, "b": None, "p": None, "u": None, "v": "v comment"}
+
+
 class TestTransactions:
     def test_savepoint(self, engine, metadata):
         """Savepoint support (CUBRID supports savepoints, not RELEASE SAVEPOINT)."""

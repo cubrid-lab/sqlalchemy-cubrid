@@ -118,7 +118,7 @@ sequenceDiagram
       CAS-->>Dialect: FK constraints
       
       SA->>Dialect: get_indexes(connection, table_name)
-      Dialect->>CAS: SELECT ... FROM _db_index (batch PK/FK flags)
+      Dialect->>CAS: SELECT ... FROM db_index (batch PK/FK flags)
       Dialect->>CAS: SHOW INDEXES IN "table_name"
       CAS-->>Dialect: Non-PK/non-FK index definitions
     end

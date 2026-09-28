@@ -46,7 +46,7 @@ class TestSplitCollectionMembers:
 def _class_type_result(class_type):
     """Result of the ``db_class`` class-type lookup (``None``: no such object)."""
     result = MagicMock()
-    result.first.return_value = (class_type,) if class_type else None
+    result.first.return_value = (class_type, "DBA") if class_type else None
     return result
 
 
@@ -517,17 +517,15 @@ class TestExistenceChecks:
         dialect = CubridDialect()
         connection = MagicMock()
 
-        connection.execute.return_value.first.return_value = (2,)
+        connection.execute.return_value.scalar.return_value = 2
         assert dialect.has_index(connection, "users", "ix_users_name") is True
         call_args = connection.execute.call_args
+        assert "FROM db_index" in str(call_args[0][0])
         bound_params = call_args[0][1]
         assert bound_params == {"table": "users", "name": "ix_users_name"}
 
-        connection.execute.return_value.first.return_value = (0,)
-        assert dialect.has_index(connection, "users", "ix_users_name") is False
-
-        # A missing table yields no db_class row.
-        connection.execute.return_value.first.return_value = None
+        # No matching db_index row: a missing index or table.
+        connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_index(connection, "users", "ix_users_name") is False
 
         # A failing catalog query propagates instead of being cached as False (#444).
@@ -539,27 +537,30 @@ class TestExistenceChecks:
         dialect = CubridDialect()
         connection = MagicMock()
 
-        connection.execute.return_value.first.return_value = (0,)
+        connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_index(connection, "orders", "ix_name") is False
         call_args = connection.execute.call_args
         bound_params = call_args[0][1]
         assert bound_params["table"] == "orders"
 
     def test_has_index_matches_lower_case_names_and_prefers_own_class(self):
-        """Mixed-case names match their stored lower-case form (#543)."""
+        """Mixed-case names match their stored lower-case form (#543); since
+        11.2 the index must belong to the owner the db_class lookup prefers."""
         dialect = CubridDialect()
+        dialect.server_version_info = (11, 4, 6, 1963)
         connection = MagicMock()
+        count = MagicMock()
+        count.scalar.return_value = 1
+        connection.execute.side_effect = [_class_type_result("CLASS"), count]
 
-        connection.execute.return_value.first.return_value = (1,)
         assert dialect.has_index(connection, "Users543", "IX_Mixed543") is True
-        sql = str(connection.execute.call_args[0][0])
-        assert "c.class_name IN (:table, LOWER(:table))" in sql
-        assert "i.index_name IN (:name, LOWER(:name))" in sql
-        assert "c.owner_name = CURRENT_USER THEN 0" in sql
-        assert connection.execute.call_args[0][1] == {
-            "table": "Users543",
-            "name": "IX_Mixed543",
-        }
+        lookup_sql = str(connection.execute.call_args_list[0][0][0])
+        assert "owner_name = CURRENT_USER THEN 0" in lookup_sql
+        sql, params = connection.execute.call_args_list[1][0]
+        assert "class_name IN (:table, LOWER(:table))" in str(sql)
+        assert "index_name IN (:name, LOWER(:name))" in str(sql)
+        assert "owner_name = :owner" in str(sql)
+        assert params == {"table": "Users543", "name": "IX_Mixed543", "owner": "DBA"}
 
     def test_has_index_is_cached_per_info_cache(self):
         """An Inspector answers has_index from its cache until clear_cache() (#533)."""
@@ -567,9 +568,9 @@ class TestExistenceChecks:
         connection = MagicMock()
         info_cache: dict = {}
 
-        connection.execute.return_value.first.return_value = (0,)
+        connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
-        connection.execute.return_value.first.return_value = (1,)
+        connection.execute.return_value.scalar.return_value = 1
         assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
         assert connection.execute.call_count == 1
         info_cache.clear()
@@ -724,7 +725,7 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        # _db_index_key catalog rows: (key_attr_name, index_name), ordered.
+        # db_index_key catalog rows: (key_attr_name, index_name), ordered.
         catalog_rows = [("id", "pk_users")]
         connection.execute.side_effect = [catalog_rows]
 
@@ -747,7 +748,7 @@ class TestReflectionMethods:
         assert pk == {"name": "pk_t_a_b", "constrained_columns": ["a", "b"]}
 
     def test_get_pk_constraint_falls_back_to_show_columns(self):
-        """If the catalog query fails, fall back to SHOW COLUMNS (single PK)."""
+        """If the catalog has no PK row, fall back to SHOW COLUMNS (single PK)."""
         dialect = CubridDialect()
         connection = MagicMock()
         connection.info_cache = {}
@@ -757,7 +758,7 @@ class TestReflectionMethods:
             ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
             ("name", "VARCHAR(50)", "YES", "", None, ""),
         ]
-        connection.execute.side_effect = [Exception("catalog unavailable"), show_columns_rows]
+        connection.execute.side_effect = [[], show_columns_rows]
 
         pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 
@@ -985,9 +986,9 @@ class TestReflectionMethods:
         # tuples for every index on the table.  PK and FK auto-indexes are
         # filtered from the SHOW INDEXES output.
         flag_rows = [
-            ("uq_name", 0, 0),
-            ("pk_users", 1, 0),
-            ("idx_email", 0, 0),
+            ("uq_name", "NO", "NO"),
+            ("pk_users", "YES", "NO"),
+            ("idx_email", "NO", "NO"),
         ]
 
         show_indexes_rows = [
@@ -999,7 +1000,7 @@ class TestReflectionMethods:
 
         connection.execute.side_effect = [
             _class_type_result("CLASS"),  # db_class lookup
-            flag_rows,  # batch _db_index query
+            flag_rows,  # batch db_index query
             show_indexes_rows,  # SHOW INDEXES
         ]
 
@@ -1011,32 +1012,24 @@ class TestReflectionMethods:
         ]
 
     def test_get_indexes_batch_pk_query_failure(self):
-        """When the batch catalog query fails, all indexes are returned."""
+        """#549: a failing batch catalog query raises instead of reporting the
+        PK and FK auto-indexes as ordinary indexes."""
         dialect = CubridDialect()
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        show_indexes_rows = [
-            (None, 0, "uq_name", None, "first_name"),
-            (None, 0, "pk_users", None, "id"),
-        ]
-
         connection.execute.side_effect = [
             _class_type_result("CLASS"),  # db_class lookup
             RuntimeError("catalog unavailable"),  # batch flag query fails
-            show_indexes_rows,  # SHOW INDEXES
         ]
 
-        indexes = _invoke_reflection(dialect, "get_indexes", connection, "users")
-
-        # Both indexes returned since PK/FK detection failed gracefully.
-        assert len(indexes) == 2
-        assert indexes[0]["name"] == "uq_name"
-        assert indexes[1]["name"] == "pk_users"
+        with pytest.raises(RuntimeError, match="catalog unavailable"):
+            _invoke_reflection(dialect, "get_indexes", connection, "users")
+        assert connection.execute.call_count == 2
 
     def test_get_indexes_excludes_fk_auto_indexes(self):
-        """FK auto-indexes (``_db_index.is_foreign_key`` true) are filtered.
+        """FK auto-indexes (``db_index.is_foreign_key = 'YES'``) are filtered.
 
         See cubrid-lab/sqlalchemy-cubrid#120 — otherwise Alembic
         autogenerate emits spurious drop_index/create_index diffs.
@@ -1047,9 +1040,9 @@ class TestReflectionMethods:
         connection.dialect_options = {}
 
         flag_rows = [
-            ("fk_orders_user", 0, 1),
-            ("fk_orders_product", 0, 1),
-            ("idx_orders_status", 0, 0),
+            ("fk_orders_user", "NO", "YES"),
+            ("fk_orders_product", "NO", "YES"),
+            ("idx_orders_status", "NO", "NO"),
         ]
 
         connection.execute.side_effect = [
@@ -1104,6 +1097,75 @@ class TestReflectionMethods:
         assert "WHEN is_system_class = 'YES' THEN 1 ELSE 2 END" in sql
         assert params == {"name": "Users"}
 
+    @pytest.mark.parametrize(
+        ("version", "owner_filtered"),
+        [
+            (None, False),
+            ((10, 2, 18, 9024), False),
+            ((11, 0, 16, 419), False),
+            ((11, 2, 9, 866), True),
+        ],
+    )
+    def test_catalog_views_filter_owner_since_11_2(self, version, owner_filtered):
+        """#549: reflection reads the public catalog views (``_db_index`` and
+        friends are DBA-only). Since 11.2 they list same-named classes of other
+        owners, so the rows are limited to the owner ``_get_class_info``
+        prefers; before 11.2 the views have no ``owner_name`` column."""
+        dialect = CubridDialect()
+        dialect.server_version_info = version
+        connection = MagicMock()
+        info_cache: dict = {}
+
+        def execute(statement, params=None):
+            sql = str(statement)
+            if "FROM db_class" in sql:
+                return _class_type_result("CLASS")
+            result = MagicMock()
+            result.__iter__.return_value = iter([])
+            result.scalar.return_value = 1
+            return result
+
+        connection.execute.side_effect = execute
+        dialect.get_pk_constraint(connection, "t", info_cache=info_cache)
+        dialect.get_unique_constraints(connection, "t", info_cache=info_cache)
+        dialect.has_index(connection, "t", "ix", info_cache=info_cache)
+        dialect.get_columns(connection, "t", info_cache=info_cache)
+        dialect.get_indexes(connection, "t", info_cache=info_cache)
+
+        catalog_calls = [
+            (str(call.args[0]), call.args[1])
+            for call in connection.execute.call_args_list
+            if " db_index" in str(call.args[0]) or "db_attribute" in str(call.args[0])
+        ]
+        assert len(catalog_calls) == 5
+        for sql, params in catalog_calls:
+            assert "_db_" not in sql
+            # Matched as given or lower-cased, like the db_class lookup.
+            assert "class_name IN (:table, LOWER(:table))" in sql
+            assert params["table"] == "t"
+            assert ("owner_name = :owner" in sql) is owner_filtered
+            assert (params.get("owner") == "DBA") is owner_filtered
+        pk_sql = catalog_calls[0][0]
+        assert "FROM db_index i, db_index_key k" in pk_sql
+        if owner_filtered:
+            assert "AND i.owner_name = :owner AND k.owner_name = :owner" in pk_sql
+        # The db_class lookup runs at most once per name per Inspector.
+        class_lookups = [
+            call for call in connection.execute.call_args_list if "db_class" in str(call.args[0])
+        ]
+        assert len(class_lookups) == 1
+
+    def test_catalog_class_filter_missing_class_has_no_owner_filter(self):
+        dialect = CubridDialect()
+        dialect.server_version_info = (11, 4, 6, 1963)
+        connection = MagicMock()
+        connection.execute.return_value = _class_type_result(None)
+
+        assert dialect._catalog_class_filter(connection, "Missing", info_cache={}) == (
+            "class_name IN (:table, LOWER(:table))",
+            {"table": "Missing"},
+        )
+
     def test_get_unique_constraints_success_and_exception(self):
         dialect = CubridDialect()
 
@@ -1150,13 +1212,14 @@ class TestReflectionMethods:
         failed_conn.execute.side_effect = [
             _class_type_result("CLASS"),
             RuntimeError("catalog unavailable"),
-            RuntimeError("uc lookup failed"),
         ]
 
-        assert _invoke_reflection(dialect, "get_unique_constraints", failed_conn, "users") == []
+        # A failing catalog query raises (#549).
+        with pytest.raises(RuntimeError, match="catalog unavailable"):
+            _invoke_reflection(dialect, "get_unique_constraints", failed_conn, "users")
 
     def test_get_unique_constraints_from_catalog_success(self):
-        """Primary path: _db_index catalog query returns unique index names,
+        """Primary path: db_index catalog query returns unique index names,
         SHOW INDEXES resolves column names."""
         dialect = CubridDialect()
 
@@ -1164,7 +1227,7 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        # First execute: _db_index returns unique index names (excluding PK/FK)
+        # First execute: db_index returns unique index names (excluding PK/FK)
         # Second execute: SHOW INDEXES returns column details
         unique_name_rows = [
             ("uq_users_email",),
@@ -1198,7 +1261,7 @@ class TestReflectionMethods:
         ]
 
     def test_get_unique_constraints_catalog_empty_falls_back_to_ddl(self):
-        """When _db_index returns no unique indexes, fall back to DDL regex."""
+        """When db_index returns no unique indexes, fall back to DDL regex."""
         dialect = CubridDialect()
 
         ddl = (
@@ -1212,7 +1275,7 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        # First execute: _db_index returns empty list (no unique indexes found)
+        # First execute: db_index returns empty list (no unique indexes found)
         # Second execute: SHOW CREATE TABLE for DDL fallback
         ddl_result = MagicMock()
         ddl_result.first.return_value = ("users", ddl)
@@ -1228,43 +1291,36 @@ class TestReflectionMethods:
             }
         ]
 
-    def test_get_unique_constraints_catalog_exception_falls_back_to_ddl(self):
-        """When _db_index query raises an exception, fall back to DDL regex."""
+    def test_get_unique_constraints_catalog_missing_table_raises(self):
+        """SHOW INDEXES failing with ``Unknown class`` after the catalog found
+        unique indexes (e.g. another owner's class) raises NoSuchTableError."""
         dialect = CubridDialect()
-
-        ddl = (
-            "CREATE TABLE [users] (\n"
-            "  [id] INTEGER NOT NULL,\n"
-            "  CONSTRAINT [uq_users_email] UNIQUE KEY ([email])\n"
-            ")"
-        )
 
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
-
-        # First execute: _db_index raises an exception
-        # Second execute: SHOW CREATE TABLE for DDL fallback
-        ddl_result = MagicMock()
-        ddl_result.first.return_value = ("users", ddl)
         connection.execute.side_effect = [
             _class_type_result("CLASS"),
-            RuntimeError("catalog unavailable"),
-            ddl_result,
+            [("uq_users_email",)],
+            Exception('Unknown class "dba.users"'),
         ]
 
-        uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
-        assert uqs == [
-            {
-                "name": "uq_users_email",
-                "column_names": ["email"],
-                "duplicates_index": "uq_users_email",
-            }
+        other_error = MagicMock()
+        other_error.info_cache = {}
+        other_error.dialect_options = {}
+        other_error.execute.side_effect = [
+            _class_type_result("CLASS"),
+            [("uq_users_email",)],
+            RuntimeError("connection reset"),
         ]
+        with pytest.raises(RuntimeError, match="connection reset"):
+            _invoke_reflection(dialect, "get_unique_constraints", other_error, "users")
 
     def test_get_pk_constraint_name_from_index(self):
-        """PK columns and name come from the _db_index_key catalog (#426)."""
+        """PK columns and name come from the db_index_key catalog (#426)."""
         dialect = CubridDialect()
 
         connection = MagicMock()
@@ -1278,22 +1334,18 @@ class TestReflectionMethods:
 
         assert pk == {"name": "pk_users", "constrained_columns": ["id"]}
 
-    def test_get_pk_constraint_name_query_failure_returns_none(self):
-        """When the catalog query fails, fall back to SHOW COLUMNS with no name."""
+    def test_get_pk_constraint_catalog_failure_raises(self):
+        """#549: a failing catalog query raises; falling back to SHOW COLUMNS
+        would lose the PK name and every composite column after the first."""
         dialect = CubridDialect()
 
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
+        connection.execute.side_effect = [RuntimeError("index query failed")]
 
-        show_columns_rows = [
-            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
-        ]
-        connection.execute.side_effect = [RuntimeError("index query failed"), show_columns_rows]
-
-        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
-
-        assert pk == {"name": None, "constrained_columns": ["id"]}
+        with pytest.raises(RuntimeError, match="index query failed"):
+            _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 
     def test_get_check_constraints_get_table_comment_and_schema_names(self):
         dialect = CubridDialect()

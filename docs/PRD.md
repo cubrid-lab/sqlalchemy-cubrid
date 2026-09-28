@@ -210,16 +210,16 @@ class CubridDialect(default.DefaultDialect):
 | `get_table_names()` | `db_class` (`class_type = 'CLASS'`, non-system tables) |
 | `get_view_names()` | `db_class` (`class_type = 'VCLASS'`) |
 | `get_view_definition()` | `SHOW CREATE VIEW` |
-| `get_columns()` | `SHOW COLUMNS IN` + `_db_attribute.comment` |
-| `get_pk_constraint()` | `SHOW COLUMNS IN` (+ optional `db_constraint` lookup for PK name) |
+| `get_columns()` | `SHOW COLUMNS IN` + `db_attribute.comment` |
+| `get_pk_constraint()` | `db_index` + `db_index_key` (falls back to `SHOW COLUMNS IN` when no PK row is found) |
 | `get_foreign_keys()` | `SHOW CREATE TABLE` parsing |
-| `get_indexes()` | `SHOW INDEXES IN` + `_db_index` flags |
-| `get_unique_constraints()` | `SHOW CREATE TABLE` parsing |
+| `get_indexes()` | `SHOW INDEXES IN` + `db_index` flags |
+| `get_unique_constraints()` | `db_index` + `SHOW INDEXES IN` (falls back to `SHOW CREATE TABLE` parsing when none is found) |
 | `get_table_comment()` | `db_class.comment` |
 | `get_check_constraints()` | Returns `[]` (CUBRID ignores CHECK) |
 | `get_schema_names()` | Returns `[]` (no schema objects) |
 | `has_table()` | Parameterized query on `db_class` |
-| `has_index()` | Query on `_db_index` |
+| `has_index()` | Query on `db_index` |
 | `has_sequence()` | Returns `False` always |
 
 #### Connection & Isolation

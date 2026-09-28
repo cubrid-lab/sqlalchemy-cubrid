@@ -3585,11 +3585,12 @@ High-level overview by feature category.
 
 - **Check constraints**: CUBRID parses CHECK constraint syntax but does not enforce it at runtime. To avoid reflecting misleading metadata, the dialect intentionally returns an empty list from `get_check_constraints()`.
 - **Table comments**: Reflected via `get_table_comment()` querying the `db_class.comment` system catalog column.
-- **Column comments**: Reflected via `get_columns()` querying the `_db_attribute.comment` system catalog column. Returned in the `"comment"` key of each column dict.
-- **has_index**: The CUBRID dialect implements `has_index()` by querying `_db_index`. The MySQL SA dialect does not provide a dedicated `has_index()` method. CUBRID stores identifiers in lower case, even quoted ones, so `has_table()` and `has_index()` also match a mixed-case name against its lower-case stored form (#543); `Index.drop(checkfirst=True)` therefore works for `Index("IX_Mixed", Table("Users", ...))`.
+- **Column comments**: Reflected via `get_columns()` querying the `db_attribute.comment` catalog view column. Returned in the `"comment"` key of each column dict.
+- **has_index**: The CUBRID dialect implements `has_index()` by querying `db_index`. The MySQL SA dialect does not provide a dedicated `has_index()` method. CUBRID stores identifiers in lower case, even quoted ones, so `has_table()` and `has_index()` also match a mixed-case name against its lower-case stored form (#543); `Index.drop(checkfirst=True)` therefore works for `Index("IX_Mixed", Table("Users", ...))`.
 - **Unique constraints and unique indexes**: CUBRID implements a `UNIQUE` constraint as a unique index and cannot tell it apart from `CREATE UNIQUE INDEX`, so, as with MySQL, each one is reported by both `get_indexes()` and `get_unique_constraints()`, and the unique-constraint entry carries `duplicates_index` naming the index. `Table` reflection (and Alembic autogenerate) uses that key to keep only the unique index. `get_indexes()` returns an empty list for a view.
 - **Missing tables and views**: `get_columns()`, `get_pk_constraint()`, `get_foreign_keys()`, `get_indexes()`, `get_unique_constraints()`, `get_table_comment()` and `get_view_definition()` raise `NoSuchTableError` for an object that does not exist, so the `get_multi_*()` variants leave it out; `get_view_definition()` also raises it for a table. For a view, `get_foreign_keys()` and `get_unique_constraints()` return an empty list without running `SHOW CREATE TABLE`.
-- **Reflection source**: Reflection is split across multiple sources: `SHOW COLUMNS IN` + `_db_attribute` for columns/comments, `SHOW COLUMNS IN` + optional `db_constraint` lookup for PK names, `SHOW CREATE TABLE` parsing for foreign keys and unique constraints, `SHOW INDEXES IN` + `_db_index` for indexes, `SHOW CREATE VIEW` for view definitions, and `db_class` for table/view names and table comments.
+- **Reflection source**: Reflection is split across multiple sources: `SHOW COLUMNS IN` + `db_attribute` for columns/comments, `db_index` + `db_index_key` for the primary key (name and every column in key order), `SHOW CREATE TABLE` parsing for foreign keys, `db_index` + `SHOW INDEXES IN` for unique constraints (with `SHOW CREATE TABLE` parsing as the fallback when none is found), `SHOW INDEXES IN` + `db_index` for indexes, `SHOW CREATE VIEW` for view definitions, and `db_class` for table/view names and table comments.
+- **Reflection as a non-DBA user**: Reflection reads only the catalog views every user can read (`db_class`, `db_index`, `db_index_key`, `db_attribute`), never the DBA-only `_db_index`, `_db_index_key` or `_db_attribute` catalog tables, so a non-DBA user gets the same indexes, primary key, unique constraints, `has_index()` answer and column comments as DBA. The table name matches as given or folded to lower case, as in `SHOW COLUMNS IN <name>`. Since CUBRID 11.2 these views also list same-named classes of other owners, so the rows are limited to the owner of the reflected class (the current user's own class first, as for `db_class`). A failing catalog query raises instead of silently falling back to incomplete metadata.
 
 ---
 
@@ -4180,7 +4181,7 @@ sequenceDiagram
       CAS-->>Dialect: FK constraints
       
       SA->>Dialect: get_indexes(connection, table_name)
-      Dialect->>CAS: SELECT ... FROM _db_index (batch PK/FK flags)
+      Dialect->>CAS: SELECT ... FROM db_index (batch PK/FK flags)
       Dialect->>CAS: SHOW INDEXES IN "table_name"
       CAS-->>Dialect: Non-PK/non-FK index definitions
     end

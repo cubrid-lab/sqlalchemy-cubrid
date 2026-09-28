@@ -63,10 +63,10 @@ CREATE TABLE [users] (
             )
         ]
         self._db_index = [
-            ("pk_users", True, False),
-            ("fk_users_team", False, True),
-            ("idx_users_team_id", False, False),
-            ("uq_users_email", False, False),
+            ("pk_users", "YES", "NO"),
+            ("fk_users_team", "NO", "YES"),
+            ("idx_users_team_id", "NO", "NO"),
+            ("uq_users_email", "NO", "NO"),
         ]
         self._db_unique_names = [("uq_users_email",)]
         self._db_attribute = [
@@ -84,20 +84,20 @@ CREATE TABLE [users] (
             return _Result(self._show_indexes)
         if sql.startswith("SHOW CREATE TABLE"):
             return _Result(self._show_create)
-        # The UNIQUE-constraint catalog query filters is_unique = 1.
-        # Dispatch it separately from the general _db_index flag query
+        # The UNIQUE-constraint catalog query filters is_unique = 'YES'.
+        # Dispatch it separately from the general db_index flag query
         # used by get_indexes() so the mock returns pre-filtered results.
-        if "is_unique = 1" in sql:
+        if "is_unique = 'YES'" in sql:
             return _Result(self._db_unique_names)
-        # The PK catalog query joins _db_index_key and filters is_primary_key
-        # = 1, returning (key_attr_name, index_name) rows in key order (#426).
-        if "is_primary_key = 1" in sql:
+        # The PK catalog query joins db_index_key and filters is_primary_key
+        # = 'YES', returning (key_attr_name, index_name) rows in key order (#426).
+        if "is_primary_key = 'YES'" in sql:
             return _Result([("id", "pk_users")])
-        if "FROM _db_index" in sql:
+        if "FROM db_index" in sql:
             return _Result(self._db_index)
         if "FROM db_class" in sql:
-            return _Result([("CLASS",)])
-        if "FROM _db_attribute" in sql:
+            return _Result([("CLASS", "DBA")])
+        if "FROM db_attribute" in sql:
             return _Result(self._db_attribute)
         raise AssertionError(f"Unexpected SQL: {sql}, params={params}")
 
@@ -226,22 +226,22 @@ CREATE TABLE [items] (
                     )
                 ]
             )
-        if "is_primary_key = 1" in sql:
+        if "is_primary_key = 'YES'" in sql:
             return _Result([("tenant_id", "pk_items"), ("item_id", "pk_items")])
-        if "is_unique = 1" in sql:
+        if "is_unique = 'YES'" in sql:
             return _Result([("uq_items_tenant_sku",)])
-        if "FROM _db_index" in sql:
+        if "FROM db_index" in sql:
             return _Result(
                 [
-                    ("pk_items", True, False),
-                    ("uq_items_tenant_sku", False, False),
-                    ("idx_items_category", False, False),
-                    ("fk_items_tenant", False, True),
+                    ("pk_items", "YES", "NO"),
+                    ("uq_items_tenant_sku", "NO", "NO"),
+                    ("idx_items_category", "NO", "NO"),
+                    ("fk_items_tenant", "NO", "YES"),
                 ]
             )
         if "FROM db_class" in sql:
-            return _Result([("CLASS",)])
-        if "FROM _db_attribute" in sql:
+            return _Result([("CLASS", "DBA")])
+        if "FROM db_attribute" in sql:
             return _Result(
                 [
                     ("tenant_id", None),
@@ -341,16 +341,16 @@ class _MockEmptyTable:
             return _Result([])  # no indexes
         if sql.startswith("SHOW CREATE TABLE"):
             return _Result([])  # no DDL
-        if "is_primary_key = 1" in sql:
+        if "is_primary_key = 'YES'" in sql:
             return _Result([])  # no PK
-        if "is_unique = 1" in sql:
+        if "is_unique = 'YES'" in sql:
             return _Result([])  # no unique
-        if "FROM _db_index" in sql:
+        if "FROM db_index" in sql:
             return _Result([])  # no indexes at all
-        if "FROM _db_attribute" in sql:
+        if "FROM db_attribute" in sql:
             return _Result([])  # no column comments
-        if "class_type FROM db_class" in sql:
-            return _Result([("CLASS",)])  # the table exists
+        if "SELECT class_type, owner_name" in sql:
+            return _Result([("CLASS", "DBA")])  # the table exists
         if "FROM db_class" in sql or "comment FROM db_class" in sql:
             return _Result([(None,)])  # table comment is NULL
         raise AssertionError(f"Unexpected SQL: {sql}, params={params}")
@@ -406,10 +406,9 @@ def test_get_table_comment_empty(dialect: CubridDialect, mock_empty_table: _Mock
 
 
 class _MockNullFlags:
-    """Mock connection where _db_index returns NULL for is_primary_key/is_foreign_key.
+    """Mock connection where db_index returns NULL for is_primary_key/is_foreign_key.
 
-    Some CUBRID versions may return NULL instead of 0 for boolean flags.
-    The parsing code should handle both (truthy check via `if flag_row[1]`).
+    The parsing code only treats ``'YES'`` as set, so NULL counts as not set.
     """
 
     def __init__(self) -> None:
@@ -428,16 +427,16 @@ class _MockNullFlags:
             return _Result(self._show_indexes)
         if sql.startswith("SHOW CREATE TABLE"):
             return _Result([])
-        if "is_primary_key = 1" in sql:
+        if "is_primary_key = 'YES'" in sql:
             return _Result([("id", "pk_test")])
-        if "is_unique = 1" in sql:
+        if "is_unique = 'YES'" in sql:
             return _Result([])
-        if "FROM _db_index" in sql:
+        if "FROM db_index" in sql:
             # Return NULL for boolean flags instead of False (0)
             return _Result([("pk_test", None, None)])
         if "FROM db_class" in sql:
-            return _Result([("CLASS",)])
-        if "FROM _db_attribute" in sql:
+            return _Result([("CLASS", "DBA")])
+        if "FROM db_attribute" in sql:
             return _Result([])
         raise AssertionError(f"Unexpected SQL: {sql}")
 
@@ -448,19 +447,15 @@ def mock_null_flags() -> _MockNullFlags:
 
 
 def test_get_indexes_null_flags(dialect: CubridDialect, mock_null_flags: _MockNullFlags) -> None:
-    """Document behavior when _db_index returns NULL for boolean flags.
+    """Document behavior when db_index returns NULL for the flag columns.
 
-    In CUBRID's ``_db_index`` system view, ``is_primary_key`` and
-    ``is_foreign_key`` are NOT NULL boolean columns. However, if a future
-    schema change or corruption introduces NULL, the parsing code uses
-    Python truthiness (``if flag_row[1]:``), so NULL is treated as
-    ``False`` — the index is NOT excluded from ``get_indexes()``.
-
-    This is a known limitation: the batch flag query relies on truthy
-    values, not an explicit ``== 1`` check. In practice, CUBRID always
-    returns 0 or 1 for these columns, so this scenario does not arise.
+    CUBRID's public ``db_index`` view reports ``is_primary_key`` and
+    ``is_foreign_key`` as ``'YES'``/``'NO'``. The parsing code checks for
+    ``'YES'``, so a NULL flag is treated as not set and the index is NOT
+    excluded from ``get_indexes()``. In practice CUBRID never returns NULL
+    for these columns.
     """
     indexes = dialect.get_indexes(mock_null_flags, "test")
-    # NULL is falsy → pk_indexes is empty → pk_test is NOT excluded
+    # NULL is not 'YES' → pk_indexes is empty → pk_test is NOT excluded
     assert len(indexes) == 1
     assert indexes[0]["name"] == "pk_test"

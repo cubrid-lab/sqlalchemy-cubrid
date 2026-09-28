@@ -201,7 +201,7 @@ _RE_FOREIGN_KEY = re.compile(
 )
 # Parses ``CONSTRAINT [name] UNIQUE KEY ([col1], [col2])`` from
 # ``SHOW CREATE TABLE`` output. Used as a fallback when the
-# ``_db_index`` system catalog query fails.
+# ``db_index`` catalog view finds no unique index.
 _RE_UNIQUE_KEY = re.compile(
     r"CONSTRAINT\s+\[(?P<name>[^\]]+)\]\s+UNIQUE\s+KEY\s*"
     rf"\(\s*(?P<cols>{_BRACKETED_COLUMN_LIST})\s*\)",
@@ -565,18 +565,18 @@ class CubridDialect(default.DefaultDialect):
                 }
             )
 
-        try:
-            comment_result = connection.execute(
-                text(
-                    "SELECT attr_name, comment FROM _db_attribute "
-                    "WHERE class_of.class_name = :name ORDER BY def_order"
-                ),
-                {"name": table_name},
-            )
-            comment_map = {row[0]: row[1] for row in comment_result}
-        except Exception:
-            log.debug("Column comment query failed for %s", table_name, exc_info=True)
-            comment_map = {}
+        # ``db_attribute`` is the public catalog view; ``_db_attribute`` is
+        # readable only by DBA (#549). A failing query raises instead of
+        # silently dropping every column comment.
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        comment_result = connection.execute(
+            text(
+                "SELECT attr_name, comment FROM db_attribute "  # nosec B608 - constant clause
+                "WHERE " + class_filter + " ORDER BY def_order"
+            ),
+            filter_params,
+        )
+        comment_map = {row[0]: row[1] for row in comment_result}
 
         for column in columns:
             column["comment"] = comment_map.get(column["name"])
@@ -597,30 +597,33 @@ class CubridDialect(default.DefaultDialect):
         constraint_name = None
         constrained_columns: list[str] = []
 
-        # Read the PK columns from the ``_db_index`` / ``_db_index_key`` system
-        # catalog. ``SHOW COLUMNS`` marks only the *first* column of a composite
-        # PK as ``PRI`` and gives no column order, so it drops the trailing
-        # columns of a multi-column key (#426). The catalog gives every column in
-        # ``key_order``.
-        try:
-            pk_result = connection.execute(
-                text(
-                    "SELECT k.key_attr_name, i.index_name "
-                    "FROM _db_index i, _db_index_key k "
-                    "WHERE i.class_of.class_name = :table "
-                    "AND i.is_primary_key = 1 AND k.index_of = i "
-                    "ORDER BY k.key_order"
-                ),
-                {"table": table_name},
-            )
-            for row in pk_result:
-                constrained_columns.append(row[0])
-                constraint_name = row[1]
-        except Exception:  # nosec B110 — fall back to SHOW COLUMNS below
-            log.debug("PK catalog query failed for %s", table_name, exc_info=True)
-            constrained_columns = []
-            constraint_name = None
+        # Read the PK columns from the public ``db_index`` / ``db_index_key``
+        # catalog views (the ``_db_index`` tables are DBA-only, #549).
+        # ``SHOW COLUMNS`` marks only the *first* column of a composite PK as
+        # ``PRI`` and gives no column order, so it drops the trailing columns of
+        # a multi-column key (#426). The catalog gives every column in
+        # ``key_order``. A failing query raises.
+        class_filter, filter_params = self._catalog_class_filter(
+            connection, table_name, "i", "k", **kw
+        )
+        pk_result = connection.execute(
+            text(
+                "SELECT k.key_attr_name, i.index_name "  # nosec B608 - constant clause
+                "FROM db_index i, db_index_key k WHERE "
+                + class_filter
+                + " AND i.is_primary_key = 'YES' "
+                "AND k.class_name = i.class_name AND k.index_name = i.index_name "
+                "ORDER BY k.key_order"
+            ),
+            filter_params,
+        )
+        for row in pk_result:
+            constrained_columns.append(row[0])
+            constraint_name = row[1]
 
+        # No catalog row: the table has no PK or does not exist. ``SHOW
+        # COLUMNS`` resolves the name like the server and raises for a missing
+        # table.
         if not constrained_columns:
             quoted = self.identifier_preparer.quote_identifier(table_name)
             try:
@@ -810,8 +813,10 @@ class CubridDialect(default.DefaultDialect):
         idict: dict[str, ReflectedIndex] = {}
 
         # Batch-fetch primary-key and foreign-key flags for all indexes on
-        # this table from CUBRID's ``_db_index`` catalog (single query for
-        # both, instead of N+1 lookups).
+        # this table from CUBRID's public ``db_index`` catalog view (single
+        # query for both, instead of N+1 lookups). ``_db_index`` is readable
+        # only by DBA (#549); a failing query raises rather than silently
+        # reporting the PK and FK indexes as ordinary ones.
         #
         # PK indexes are filtered because SQLAlchemy reports the PK via
         # ``get_pk_constraint`` separately.  FK indexes are filtered because
@@ -822,27 +827,19 @@ class CubridDialect(default.DefaultDialect):
         # See cubrid-lab/sqlalchemy-cubrid#120.
         pk_indexes: set[str] = set()
         fk_indexes: set[str] = set()
-        try:
-            flag_result = connection.execute(
-                text(
-                    "SELECT index_name, is_primary_key, is_foreign_key "
-                    "FROM _db_index WHERE class_of.class_name = :table"
-                ),
-                {"table": table_name},
-            )
-            for flag_row in flag_result:
-                if flag_row[1]:
-                    pk_indexes.add(flag_row[0])
-                if flag_row[2]:
-                    fk_indexes.add(flag_row[0])
-        except Exception:
-            # Fallback: if the catalog query fails, both sets stay empty so
-            # no indexes will be wrongly excluded.
-            log.debug(
-                "Batch index-flag query failed for table %s, falling back",
-                table_name,
-                exc_info=True,
-            )
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        flag_result = connection.execute(
+            text(
+                "SELECT index_name, is_primary_key, is_foreign_key "  # nosec B608 - constant clause
+                "FROM db_index WHERE " + class_filter
+            ),
+            filter_params,
+        )
+        for flag_row in flag_result:
+            if flag_row[1] == "YES":
+                pk_indexes.add(flag_row[0])
+            if flag_row[2] == "YES":
+                fk_indexes.add(flag_row[0])
 
         quoted = self.identifier_preparer.quote_identifier(table_name)
         try:
@@ -877,17 +874,17 @@ class CubridDialect(default.DefaultDialect):
         """Return unique constraints for *table_name*.
 
         CUBRID implements a ``UNIQUE`` constraint as a unique index and cannot
-        tell it apart from ``CREATE UNIQUE INDEX`` (same ``_db_index`` flags,
+        tell it apart from ``CREATE UNIQUE INDEX`` (same ``db_index`` flags,
         and ``SHOW CREATE TABLE`` prints both as ``UNIQUE KEY``), so, as in
         SQLAlchemy's MySQL dialect, every entry is also returned by
         :meth:`get_indexes` and carries ``duplicates_index`` naming that index.
         ``Table`` reflection then keeps the unique index and skips the
         duplicate constraint.
 
-        Primary path: query the ``_db_index`` system catalog for unique
+        Primary path: query the public ``db_index`` catalog view for unique
         indexes (excluding PK and FK auto-indexes), then resolve column
-        names via ``SHOW INDEXES``. Fallback: parse ``SHOW CREATE TABLE``
-        DDL output via regex.
+        names via ``SHOW INDEXES``. When it finds none, parse ``SHOW CREATE
+        TABLE`` DDL output via regex. A failing catalog query raises (#549).
 
         Raises :class:`NoSuchTableError` when *table_name* does not exist; a
         view has no unique constraints.
@@ -901,16 +898,9 @@ class CubridDialect(default.DefaultDialect):
             return []
 
         # Primary path: system catalog + SHOW INDEXES
-        try:
-            uqs = self._get_unique_constraints_from_catalog(connection, table_name)
-            if uqs:
-                return uqs
-        except Exception:  # nosec B110 — graceful fallback
-            log.debug(
-                "Catalog query failed for unique constraints on %s; falling back to DDL regex",
-                table_name,
-                exc_info=True,
-            )
+        uqs = self._get_unique_constraints_from_catalog(connection, table_name, **kw)
+        if uqs:
+            return uqs
 
         # Fallback: DDL regex (legacy path)
         return self._get_unique_constraints_from_ddl(connection, table_name)
@@ -919,22 +909,24 @@ class CubridDialect(default.DefaultDialect):
         self,
         connection: Any,
         table_name: str,
+        **kw: Any,
     ) -> list[ReflectedUniqueConstraint]:
-        """Query _db_index + SHOW INDEXES for UNIQUE constraints.
+        """Query db_index + SHOW INDEXES for UNIQUE constraints.
 
         Uses the same two-query pattern as ``get_indexes()``: first fetch
-        unique index names from ``_db_index`` (filtering out PK and FK
+        unique index names from ``db_index`` (filtering out PK and FK
         auto-indexes), then resolve column names from ``SHOW INDEXES``.
         """
         # Step 1: get unique index names (excluding PK and FK auto-indexes)
         unique_names: set[str] = set()
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
         name_result = connection.execute(
             text(
-                "SELECT index_name FROM _db_index "
-                "WHERE class_of.class_name = :table "
-                "AND is_unique = 1 AND is_primary_key = 0 AND is_foreign_key = 0"
+                "SELECT index_name FROM db_index WHERE "  # nosec B608 - constant clause
+                + class_filter
+                + " AND is_unique = 'YES' AND is_primary_key = 'NO' AND is_foreign_key = 'NO'"
             ),
-            {"table": table_name},
+            filter_params,
         )
         for row in name_result:
             unique_names.add(row[0])
@@ -943,7 +935,12 @@ class CubridDialect(default.DefaultDialect):
 
         # Step 2: resolve column names from SHOW INDEXES
         quoted = self.identifier_preparer.quote_identifier(table_name)
-        col_result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        try:
+            col_result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
         constraints: dict[str, list[str]] = {}
         for row in col_result:
             index_name = row[2]
@@ -1107,9 +1104,17 @@ class CubridDialect(default.DefaultDialect):
             qualified = f"{schema}.{object_name}" if schema else object_name
             raise NoSuchTableError(qualified)
 
-    @reflection.cache
     def _get_class_type(self, connection: Any, name: str, **kw: Any) -> str | None:
         """Return ``'CLASS'`` (table), ``'VCLASS'`` (view) or ``None`` (missing).
+
+        See :meth:`_get_class_info` for how *name* is matched.
+        """
+        info = self._get_class_info(connection, name, **kw)
+        return info[0] if info is not None else None
+
+    @reflection.cache
+    def _get_class_info(self, connection: Any, name: str, **kw: Any) -> tuple[str, str] | None:
+        """Return ``(class_type, owner_name)`` of *name*, or ``None`` if missing.
 
         CUBRID stores identifiers folded to lower case, so a mixed-case *name*
         also matches its lower-case form, as in ``SHOW COLUMNS IN <name>``.
@@ -1124,14 +1129,44 @@ class CubridDialect(default.DefaultDialect):
         # connection's server query entries (at most 100, then -830).
         row = connection.execute(
             text(
-                "SELECT class_type FROM db_class "
+                "SELECT class_type, owner_name FROM db_class "
                 "WHERE class_name IN (:name, LOWER(:name)) "
                 "ORDER BY CASE WHEN owner_name = CURRENT_USER THEN 0 "
                 "WHEN is_system_class = 'YES' THEN 1 ELSE 2 END"
             ),
             {"name": name},
         ).first()
-        return str(row[0]) if row is not None and row[0] is not None else None
+        if row is None or row[0] is None:
+            return None
+        return str(row[0]), str(row[1])
+
+    def _catalog_class_filter(
+        self, connection: Any, table_name: str, *aliases: str, **kw: Any
+    ) -> tuple[str, dict[str, str]]:
+        """Return a condition selecting *table_name*'s rows in a catalog view.
+
+        For the public ``db_index``, ``db_index_key`` and ``db_attribute``
+        views (the ``_db_*`` tables are DBA-only, #549). The name matches as
+        given or folded to lower case, like :meth:`_get_class_info`. Since
+        CUBRID 11.2 classes of different owners may share a name and these
+        views list every class the user may read, so the rows are limited to
+        the owner :meth:`_get_class_info` prefers (the current user's class
+        first). Before 11.2 class names are global and the views have no
+        ``owner_name``.
+        *aliases* are the (constant) table aliases to filter, the first one
+        also by name; the result is SQL with bound parameters only.
+        """
+        first, *others = [f"{alias}." if alias else "" for alias in aliases or ("",)]
+        condition = f"{first}class_name IN (:table, LOWER(:table))"
+        params = {"table": table_name}
+        version = self.server_version_info
+        if version is None or version < (11, 2):
+            return condition, params
+        info = self._get_class_info(connection, table_name, **kw)
+        if info is None:
+            return condition, params
+        condition += "".join(f" AND {prefix}owner_name = :owner" for prefix in (first, *others))
+        return condition, {**params, "owner": info[1]}
 
     @reflection.cache
     def has_table(
@@ -1183,21 +1218,16 @@ class CubridDialect(default.DefaultDialect):
         """
         if not self._schema_is_default(schema):
             return False
-        # .first() closes the result (see _get_class_type).
-        row = connection.execute(
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        result = connection.execute(
             text(
-                "SELECT (SELECT COUNT(*) FROM _db_index i "
-                "WHERE i.class_of.class_name = c.class_name "
-                "AND i.class_of.owner.name = c.owner_name "
-                "AND i.index_name IN (:name, LOWER(:name))) "
-                "FROM db_class c "
-                "WHERE c.class_name IN (:table, LOWER(:table)) "
-                "ORDER BY CASE WHEN c.owner_name = CURRENT_USER THEN 0 "
-                "WHEN c.is_system_class = 'YES' THEN 1 ELSE 2 END"
+                "SELECT COUNT(*) FROM db_index WHERE "  # nosec B608 - constant clause
+                + class_filter
+                + " AND index_name IN (:name, LOWER(:name))"
             ),
-            {"table": table_name, "name": index_name},
-        ).first()
-        return row is not None and bool(row[0])
+            {**filter_params, "name": index_name},
+        )
+        return bool(result.scalar())
 
     def has_sequence(
         self,
