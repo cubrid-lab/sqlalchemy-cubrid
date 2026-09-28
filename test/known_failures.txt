@@ -84,8 +84,8 @@
 # unexpected successes) and gated unicode_ddl on a UTF-8 database.
 #
 # As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
-#   cubrid@sa2.0 127 / 120, pycubrid@sa2.0 (gated on 10.2 only) 113,
-#   pycubrid@sa2.1 117 / 110;
+#   cubrid@sa2.0 119 / 112, pycubrid@sa2.0 (gated on 10.2 only) 105,
+#   pycubrid@sa2.1 109 / 102;
 # 0 XPASS, 0 unclassified. The 7 server-specific entries are
 # BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
 # is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
@@ -93,21 +93,6 @@
 # covered by targeted strict xfails elsewhere (#480-#482). Every [DIALECT BUG]
 # group found by this recapture links its tracking issue (#529-#535); the
 # #535 JSON as_numeric() group was removed when it was fixed.
-
-# [DIALECT BUG] ComponentReflectionTest::test_get_multi_foreign_keys (use
-# schema False, #531): foreign keys are returned in DDL order, but SQLAlchemy
-# expects them sorted by name (`fk_dingalings_id_user` before
-# `zz_email_add_id_fg`); the reflected content is correct, only the positions
-# differ. Runs since implicitly_named_constraints was opened. Same on both
-# drivers and servers.
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 
 # [DIALECT BUG] ComponentReflectionTest missing-object handling (#530):
 # reflection of a table or view that does not exist must raise

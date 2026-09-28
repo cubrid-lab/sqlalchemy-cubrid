@@ -636,6 +636,8 @@ class CubridDialect(default.DefaultDialect):
         ON DELETE/UPDATE actions) in any system catalog view. The DDL
         output of ``SHOW CREATE TABLE`` is the only reliable source.
         See cubrid-lab/sqlalchemy-cubrid#120.
+
+        The constraints are returned sorted by name.
         """
         self._raise_if_non_default_schema(schema, table_name)
 
@@ -695,6 +697,10 @@ class CubridDialect(default.DefaultDialect):
                     "referred_columns": referred_columns,
                 }
             )
+        # ``SHOW CREATE TABLE`` lists constraints in its own order, not by
+        # name; return them sorted by name like SQLAlchemy's built-in
+        # dialects so the result is deterministic (#531).
+        foreign_keys.sort(key=lambda fk: fk["name"] or "")
         return foreign_keys
 
     @reflection.cache

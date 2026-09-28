@@ -823,6 +823,10 @@ class TestReflectionMethods:
         assert second["referred_table"] == "legacy"
         assert second["referred_columns"] == ["id"]
 
+        # SHOW CREATE TABLE lists fk_order_user first; the result is sorted
+        # by constraint name (#531).
+        assert [fk["name"] for fk in fks] == ["fk_order_legacy", "fk_order_user"]
+
         failed_conn = MagicMock()
         failed_conn.info_cache = {}
         failed_conn.dialect_options = {}
