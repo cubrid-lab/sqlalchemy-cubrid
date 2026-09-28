@@ -91,6 +91,14 @@ def test_server_narrowed_tag_must_be_a_gated_pair(tmp_path: Path, tag: str):
         _load_known_failures(manifest)
 
 
+@pytest.mark.parametrize("tag", ["pycubrid@sa2.2", "cubrid@sa9.9", "cubrid@sa2.1@cubrid11.4"])
+def test_lane_that_ci_does_not_gate_is_rejected(tmp_path: Path, tag: str):
+    manifest = tmp_path / "known_failures.txt"
+    manifest.write_text(f"test/test_suite.py::X::test_y  {tag}\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="unknown lane"):
+        _load_known_failures(manifest)
+
+
 def test_duplicate_node_id_is_rejected(tmp_path: Path):
     manifest = tmp_path / "known_failures.txt"
     manifest.write_text(

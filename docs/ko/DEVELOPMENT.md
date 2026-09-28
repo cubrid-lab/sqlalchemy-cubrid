@@ -540,7 +540,7 @@ test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
 `test/conftest.py`는 `--dburi` 방언, 설치된 SQLAlchemy 버전, 연결된 서버 버전으로 현재 레인을
 결정하고, 그 레인에 태그된 항목에만 strict xfail을 적용합니다. 따라서
 CUBRIDdb 전용 실패가 pycubrid 회귀를 가릴 수 없고, 그 반대도 마찬가지입니다.
-와일드카드 태그는 없으며, 태그가 없는 항목은 로드 오류입니다.
+와일드카드 태그는 없으며, 태그가 없는 항목이나 CI가 게이트하지 않는 레인(예: `pycubrid@sa2.2`)은 로드 오류입니다.
 `CUBRID_STRICT_KNOWN_FAILURES=1`(모든 게이트 단계에서 설정)이면 다음 경우에도
 실행이 실패합니다.
 

@@ -195,7 +195,12 @@ def _load_known_failures(path: Path) -> dict[str, set[str]]:
             )
         seen[nodeid] = lineno
         for tag in match["tags"].split():
-            _, _, server = tag.partition("@cubrid")
+            lane, _, server = tag.partition("@cubrid")
+            if lane not in _PINNED_SQLALCHEMY:
+                raise ValueError(
+                    f"{path.name}:{lineno}: unknown lane {lane!r}; CI gates only "
+                    f"{sorted(_PINNED_SQLALCHEMY)}"
+                )
             if server and (server not in _CUBRID_SERVERS or tag not in _GATED_SERVER_LANES):
                 raise ValueError(
                     f"{path.name}:{lineno}: server-narrowed tag {tag!r} is not a gated "

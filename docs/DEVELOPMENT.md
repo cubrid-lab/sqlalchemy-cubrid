@@ -559,8 +559,8 @@ test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
 `test/conftest.py` derives the current lane from the `--dburi` dialect, the
 installed SQLAlchemy version and the connected server version, and applies a strict xfail only to the entries
 tagged for it. A CUBRIDdb-only failure therefore cannot hide a pycubrid
-regression, and vice versa. There is no wildcard tag, and an untagged entry is
-a load error. With `CUBRID_STRICT_KNOWN_FAILURES=1` (set by every gating step)
+regression, and vice versa. There is no wildcard tag, and an untagged entry or
+a lane CI does not gate (e.g. `pycubrid@sa2.2`) is a load error. With `CUBRID_STRICT_KNOWN_FAILURES=1` (set by every gating step)
 the run also fails when:
 
 - a listed test passes (strict XPASS): remove that lane's tag;
