@@ -147,5 +147,11 @@ class PyCubridAsyncDialect(PyCubridDialect):
     def do_ping(self, dbapi_connection: Any) -> bool:
         return bool(dbapi_connection.ping(False))
 
+    def get_driver_connection(self, connection: Any) -> Any:
+        # ``connection`` is the AsyncAdapt adapter; return the ``pycubrid.aio``
+        # connection it wraps, as SQLAlchemy's asyncpg/aiomysql dialects do, so
+        # ``driver_connection`` is the driver's own connection object.
+        return connection._connection
+
 
 dialect = PyCubridAsyncDialect

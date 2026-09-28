@@ -223,16 +223,29 @@ class TestAsyncCRUD:
                 )
             )
 
+    async def test_driver_connection_is_pycubrid_aio_connection(self, engine: AsyncEngine):
+        pycubrid_aio = pytest.importorskip("pycubrid.aio")
+        async with engine.connect() as conn:
+            raw = await conn.get_raw_connection()
+            driver_conn = cast(Any, raw.driver_connection)
+            assert isinstance(driver_conn, pycubrid_aio.AsyncConnection)
+            assert driver_conn is cast(Any, raw.dbapi_connection)._connection
+            # Driver-level async APIs work on the returned object.
+            assert await driver_conn.ping(False) is True
+            cursor = driver_conn.cursor()
+            try:
+                await cursor.execute("SELECT 1")
+                assert await cursor.fetchall() == [(1,)]
+            finally:
+                await cursor.close()
+
     async def test_pool_pre_ping_recovers_after_connection_drop(
         self,
         pre_ping_engine: AsyncEngine,
     ):
         async with pre_ping_engine.connect() as conn:
             raw = await conn.get_raw_connection()
-            dropped_driver_connection = cast(
-                object,
-                getattr(cast(object, raw.driver_connection), "_connection"),
-            )
+            dropped_driver_connection = cast(object, raw.driver_connection)
             close_streams = cast(
                 Callable[[], Awaitable[None]],
                 getattr(dropped_driver_connection, "_close_streams"),
@@ -251,10 +264,7 @@ class TestAsyncCRUD:
         with patch.object(dialect, "do_ping", side_effect=record_do_ping):
             async with pre_ping_engine.connect() as conn:
                 raw = await conn.get_raw_connection()
-                recovered_driver_connection = cast(
-                    object,
-                    getattr(cast(object, raw.driver_connection), "_connection"),
-                )
+                recovered_driver_connection = cast(object, raw.driver_connection)
                 result = await conn.execute(text("SELECT 1"))
                 assert result.scalar_one() == 1
 
@@ -700,11 +710,7 @@ class TestAsyncResultCompletenessAcrossTransactionBoundary:
         end the transaction, then fetch the rest.
         """
         async with engine.connect() as conn:
-            # ``_ConnectionFairy.driver_connection`` returns the SQLAlchemy adapter
-            # here (the dialect does not override ``get_driver_connection()``),
-            # so reach the ``pycubrid.aio`` connection through the adapter.
-            adapter = (await conn.get_raw_connection()).dbapi_connection
-            driver_conn = adapter.driver_connection
+            driver_conn = cast(Any, (await conn.get_raw_connection()).driver_connection)
             cursor = driver_conn.cursor()
             try:
                 await cursor.execute("SELECT 1")
