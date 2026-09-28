@@ -34,8 +34,8 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
 | `Numeric(p, s)`      | `NUMERIC(p, s)`   | Exact numeric, up to 38 digits             |
 | `String(n)`          | `VARCHAR(n)`      | Variable-length character data             |
 | `Text`               | `STRING`          | Alias for `VARCHAR(1,073,741,823)`         |
-| `Unicode(n)`         | `NVARCHAR(n)`     | National character set                     |
-| `UnicodeText`        | `NVARCHAR`        | National character, max length             |
+| `Unicode(n)`         | `VARCHAR(n)`      | Database charset (no `NCHAR` needed)       |
+| `UnicodeText`        | `STRING`          | Same as `Text`; CUBRID has no `TEXT` type  |
 | `LargeBinary`        | `BLOB`            | Binary Large Object                        |
 | `Boolean`            | `SMALLINT`        | ⚠️ No native boolean — mapped to 0/1      |
 | `Date`               | `DATE`            | Calendar date                              |
@@ -44,6 +44,8 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
 | `TIMESTAMP`          | `TIMESTAMP`       | Timestamp with auto-update behavior        |
 
 > **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`. An explicit zero length (`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) is not a valid CUBRID length and raises `CompileError` instead of being widened to the default.
+
+> **Character set and collation**: the dialect does not render a column-level `CHARSET` or `COLLATE` clause for string and text types. A `collation=` argument (for example `String(50, collation="utf8_bin")`, `Text(collation=...)` or `UnicodeText(collation=...)`) is dropped, and the column uses the database charset and collation. `Unicode` / `UnicodeText` do not select a different charset either: they compile to `VARCHAR(n)` / `STRING` like `String` / `Text`, so non-ASCII text (for example Korean, Japanese, Chinese or emoji) round-trips only when the database was created with a UTF-8 charset (for example `cubrid createdb testdb en_US.utf8`).
 
 ---
 

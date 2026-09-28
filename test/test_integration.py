@@ -1219,6 +1219,32 @@ class TestDropIndexIntegration:
                 conn.commit()
 
 
+class TestUnicodeTextIntegration:
+    """#534: ``UnicodeText`` creates a CUBRID STRING column (CUBRID has no TEXT)."""
+
+    def test_create_table_and_cjk_round_trip(self, engine):
+        meta = MetaData()
+        t = Table(
+            "unicode_text_534",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("body", sa.UnicodeText()),
+        )
+        values = ["한국어 텍스트", "日本語のテキスト", "中文文本 😀", "", None, "x" * 5000]
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            with engine.begin() as conn:
+                conn.execute(t.insert(), [{"id": i, "body": v} for i, v in enumerate(values)])
+            with engine.connect() as conn:
+                got = conn.execute(select(t.c.body).order_by(t.c.id)).scalars().all()
+                col = {c["name"]: c for c in inspect(conn).get_columns("unicode_text_534")}
+            assert got == values
+            assert isinstance(col["body"]["type"], sa.String)
+        finally:
+            meta.drop_all(engine)
+
+
 class TestExecutemanyNoneAndRowcount:
     """#502: executemany stores ``None`` as NULL and reports the total rowcount.
 

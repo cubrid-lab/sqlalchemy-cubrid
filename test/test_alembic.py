@@ -634,7 +634,12 @@ class TestCubridImplAutogenerate:
 
         impl = object.__new__(CubridImpl)
         inspector_column = sa.Column("v", cubrid_types.VARCHAR(1073741823))
-        for metadata_type in (sa.Text(), cubrid_types.CLOB(), cubrid_types.STRING()):
+        for metadata_type in (
+            sa.Text(),
+            sa.UnicodeText(),
+            cubrid_types.CLOB(),
+            cubrid_types.STRING(),
+        ):
             metadata_column = sa.Column("v", metadata_type)
             assert impl.compare_type(inspector_column, metadata_column) is False
             # Reverse direction must also hold.

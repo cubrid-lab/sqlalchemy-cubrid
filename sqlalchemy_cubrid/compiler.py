@@ -1002,6 +1002,16 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_text(self, type_: Any, **kw: Any) -> str:
         return self.visit_STRING(type_)
 
+    # CUBRID has no TEXT type ("TEXT is not defined"). GenericTypeCompiler
+    # routes ``UnicodeText`` (visit_unicode_text) and ``sqltypes.TEXT`` to
+    # visit_TEXT, so map both to STRING like ``Text`` (#534). CUBRID strings
+    # use the database charset, so there is no separate national text type.
+    def visit_TEXT(self, type_: Any, **kw: Any) -> str:
+        return self.visit_STRING(type_)
+
+    def visit_unicode_text(self, type_: Any, **kw: Any) -> str:
+        return self.visit_STRING(type_)
+
     def visit_BLOB(self, type_: Any, **kw: Any) -> str:
         return "BLOB"
 

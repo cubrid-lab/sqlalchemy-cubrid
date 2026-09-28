@@ -208,9 +208,10 @@ class CubridImpl(DefaultImpl):
     # ``Text`` / ``CLOB`` / ``STRING`` column it sees a VARCHAR with that
     # exact length, which trips Alembic's default compare_type into
     # reporting a spurious type change on every autogenerate run
-    # (see cubrid-lab/sqlalchemy-cubrid#120).
+    # (see cubrid-lab/sqlalchemy-cubrid#120). ``UnicodeText`` also compiles
+    # to STRING (#534).
     _CUBRID_UNBOUNDED_VARCHAR_LENGTH: int = 1073741823
-    _unbounded_string_type_names: set[str] = {"TEXT", "CLOB", "STRING"}
+    _unbounded_string_type_names: set[str] = {"TEXT", "UNICODETEXT", "CLOB", "STRING"}
 
     def emit_begin(self) -> None:
         """Emit nothing: CUBRID has no ``BEGIN`` statement.

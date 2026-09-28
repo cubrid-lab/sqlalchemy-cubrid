@@ -177,9 +177,9 @@ The official SQLAlchemy compliance suite blocks merges for both drivers. Each la
 
 | Lane | Driver | SQLAlchemy | CUBRID (PR CI) | Known failures (11.4 / 10.2) |
 |---|---|---|---|---|
-| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 83 / 76 |
-| `pycubrid@sa2.0` | pycubrid 1.7.1 (recommended) | 2.0.53 | 10.2 | 69 (gated on 10.2 only) |
-| `pycubrid@sa2.1` | pycubrid 1.7.1 (recommended) | 2.1.1 | 11.4 | 73 / 66 |
+| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 77 / 70 |
+| `pycubrid@sa2.0` | pycubrid 1.7.1 (recommended) | 2.0.53 | 10.2 | 63 (gated on 10.2 only) |
+| `pycubrid@sa2.1` | pycubrid 1.7.1 (recommended) | 2.1.1 | 11.4 | 67 / 60 |
 
 Most known failures are shared by both drivers: CUBRID backend rules (identifier case folding, `[ ]` identifier delimiters, no window frame clause, per-row foreign-key checks, single-precision `FLOAT`) and open dialect reflection/DDL bugs listed in `test/known_failures.txt`. Only the CUBRIDdb lane carries its NUMERIC truncation and integer-division entries.
 

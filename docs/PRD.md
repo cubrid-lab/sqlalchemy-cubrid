@@ -123,8 +123,8 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 | `Numeric(p, s)` | `NUMERIC(p, s)` | Exact numeric, up to 38 digits |
 | `String(n)` | `VARCHAR(n)` | Variable-length |
 | `Text` | `STRING` | VARCHAR(1,073,741,823) |
-| `Unicode(n)` | `NVARCHAR(n)` | National character set |
-| `UnicodeText` | `NVARCHAR` | Max-length national |
+| `Unicode(n)` | `VARCHAR(n)` | Database charset |
+| `UnicodeText` | `STRING` | Same as `Text` (CUBRID has no `TEXT`) |
 | `LargeBinary` | `BLOB` | Binary Large Object |
 | `Boolean` | `SMALLINT` | Emulated 0/1 |
 | `Date` / `Time` / `DateTime` / `TIMESTAMP` | Native | Direct mapping |

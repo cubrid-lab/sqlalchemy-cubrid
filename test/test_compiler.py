@@ -551,6 +551,23 @@ class TestTypeCompilation:
         result = self._compile_type(sa.Text())
         assert result == "STRING"
 
+    @pytest.mark.parametrize(
+        "type_",
+        [sa.UnicodeText(), sa.UnicodeText(length=100), sa.TEXT(), sa.Text(length=100)],
+        ids=["UnicodeText", "UnicodeText(100)", "TEXT", "Text(100)"],
+    )
+    def test_text_family_compiles_to_string(self, type_):
+        """#534: CUBRID has no TEXT; every Text variant compiles like Text."""
+        assert self._compile_type(type_) == "STRING"
+
+    def test_unicode_text_column_ddl(self):
+        from sqlalchemy.schema import CreateTable
+
+        t = Table("ut", MetaData(), Column("body", sa.UnicodeText()))
+        ddl = CreateTable(t).compile(dialect=CubridDialect()).string
+        assert "body STRING" in ddl
+        assert "TEXT" not in ddl
+
     def test_float(self):
         from sqlalchemy_cubrid.types import FLOAT
 

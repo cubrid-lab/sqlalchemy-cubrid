@@ -36,8 +36,8 @@
 | `Numeric(p, s)`      | `NUMERIC(p, s)`   | 정확한 숫자, 최대 38자리                    |
 | `String(n)`          | `VARCHAR(n)`      | 가변 길이 문자 데이터                       |
 | `Text`               | `STRING`          | `VARCHAR(1,073,741,823)`의 별칭             |
-| `Unicode(n)`         | `NVARCHAR(n)`     | 국가 문자 집합                              |
-| `UnicodeText`        | `NVARCHAR`        | 국가 문자, 최대 길이                        |
+| `Unicode(n)`         | `VARCHAR(n)`      | 데이터베이스 문자셋 (`NCHAR` 불필요)        |
+| `UnicodeText`        | `STRING`          | `Text`와 동일, CUBRID에는 `TEXT` 타입 없음  |
 | `LargeBinary`        | `BLOB`            | Binary Large Object                         |
 | `Boolean`            | `SMALLINT`        | ⚠️ 네이티브 불리언 없음 — 0/1로 매핑        |
 | `Date`               | `DATE`            | 달력 날짜                                   |
@@ -46,6 +46,8 @@
 | `TIMESTAMP`          | `TIMESTAMP`       | 자동 갱신 동작을 갖는 타임스탬프            |
 
 > **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다. 길이를 명시적으로 0으로 지정하면(`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) CUBRID에서 유효한 길이가 아니므로 기본값으로 바뀌지 않고 `CompileError`가 발생합니다.
+
+> **문자셋과 콜레이션**: 방언은 문자열·텍스트 타입에 컬럼 수준 `CHARSET`이나 `COLLATE` 절을 생성하지 않습니다. `collation=` 인자(예: `String(50, collation="utf8_bin")`, `Text(collation=...)`, `UnicodeText(collation=...)`)는 무시되며, 컬럼은 데이터베이스의 문자셋과 콜레이션을 사용합니다. `Unicode` / `UnicodeText`도 다른 문자셋을 선택하지 않고 `String` / `Text`와 똑같이 `VARCHAR(n)` / `STRING`으로 컴파일되므로, 한국어·일본어·중국어·이모지 같은 비 ASCII 텍스트는 데이터베이스를 UTF-8 문자셋으로 생성한 경우(예: `cubrid createdb testdb en_US.utf8`)에만 그대로 왕복됩니다.
 
 ---
 
