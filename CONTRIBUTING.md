@@ -230,8 +230,9 @@ a short type prefix such as `docs:`, `ci:`, or `test:`. An optional scope goes
 before the colon, for example `fix(reflection): ...`.
 
 Reporters describe impact and reproduction; they do **not** need permission
-to apply GitHub labels. Maintainers assign one type label, one
+to apply GitHub labels. Maintainers assign a matching type label, one
 `priority: <value>` and one `size: <value>` label (plus `area:` when relevant).
+Topical labels such as `testing` may also be present.
 Human-submitted CLI/API issues with incomplete metadata receive
 `status: needs triage`. The maintainer corrects the metadata and removes
 that label. Workflows creating issues with `GITHUB_TOKEN` must set the title

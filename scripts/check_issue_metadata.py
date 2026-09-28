@@ -18,12 +18,13 @@ _TYPES_BY_PREFIX = {
     "docs": frozenset({"documentation"}),
     "ci": frozenset({"ci"}),
     "chore": frozenset({"chore"}),
-    "test": frozenset({"bug", "enhancement", "ci"}),
+    "test": frozenset({"bug", "enhancement", "ci", "testing"}),
     "perf": frozenset({"enhancement", "performance"}),
-    "refactor": frozenset({"chore", "enhancement"}),
+    "refactor": frozenset({"chore", "enhancement", "refactor"}),
     "epic": frozenset({"enhancement"}),
 }
 _TYPES = frozenset().union(*_TYPES_BY_PREFIX.values())
+_PRIMARY_TYPES = frozenset({"bug", "enhancement", "documentation", "chore", "ci", "performance"})
 _PRIORITIES = frozenset(
     {"priority: critical", "priority: high", "priority: medium", "priority: low"}
 )
@@ -37,8 +38,13 @@ def metadata_gaps(title: str, labels: Iterable[str]) -> tuple[str, ...]:
     if title_match is None:
         gaps.append("title")
     expected_types = _TYPES_BY_PREFIX[title_match.group(1)] if title_match else _TYPES
-    type_labels = names.intersection(_TYPES)
-    if len(type_labels) != 1 or not type_labels.intersection(expected_types):
+    primary_types = names.intersection(_PRIMARY_TYPES)
+    supplemental_type = bool(names.intersection({"testing", "refactor"}))
+    if (
+        len(primary_types) > 1
+        or not names.intersection(expected_types)
+        or (not primary_types and not supplemental_type)
+    ):
         gaps.append("type")
     priority = [name for name in names if name.startswith("priority:")]
     if len(priority) != 1 or priority[0] not in _PRIORITIES:
