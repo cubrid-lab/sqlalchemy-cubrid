@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import weakref
 from importlib import import_module
 from typing import Any, Callable, cast
 
@@ -21,6 +22,11 @@ from sqlalchemy_cubrid.base import CubridExecutionContext
 from sqlalchemy_cubrid.dialect import CubridDialect
 
 log = logging.getLogger(__name__)
+
+
+def _unwrap(connection: Any) -> Any:
+    """Return the DBAPI connection behind a SQLAlchemy pool proxy, else *connection*."""
+    return getattr(connection, "dbapi_connection", None) or connection
 
 
 class PyCubridExecutionContext(CubridExecutionContext):
@@ -67,6 +73,14 @@ class PyCubridDialect(CubridDialect):
 
     # pycubrid uses qmark paramstyle natively
     default_paramstyle = "qmark"
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        # Isolation level last applied to each DBAPI connection, re-applied
+        # after every driver commit/rollback (#505).
+        self._connection_isolation_levels: weakref.WeakKeyDictionary[Any, str] = (
+            weakref.WeakKeyDictionary()
+        )
 
     @classmethod
     def import_dbapi(cls) -> DBAPIModule:
@@ -117,6 +131,42 @@ class PyCubridDialect(CubridDialect):
             log.debug("on_connect: autocommit=False isolation_level=%s", isolation_level)
 
         return connect
+
+    def set_isolation_level(self, dbapi_connection: DBAPIConnection, level: str) -> None:
+        """Set the isolation level and remember it for :meth:`do_commit` / :meth:`do_rollback`."""
+        super().set_isolation_level(dbapi_connection, level)
+        self._connection_isolation_levels[_unwrap(dbapi_connection)] = level
+
+    def do_commit(self, dbapi_connection: DBAPIConnection) -> None:
+        """Commit, then re-apply the connection's isolation level (#505)."""
+        dbapi_connection.commit()
+        self._restore_isolation_level(dbapi_connection)
+
+    def do_rollback(self, dbapi_connection: DBAPIConnection) -> None:
+        """Roll back, then re-apply the connection's isolation level (#505)."""
+        dbapi_connection.rollback()
+        self._restore_isolation_level(dbapi_connection)
+
+    def _restore_isolation_level(self, dbapi_connection: DBAPIConnection) -> None:
+        """Re-apply the isolation level pycubrid drops at the end of a transaction.
+
+        After ``commit()`` / ``rollback()`` the broker reports the CAS as
+        inactive (``CAS_INFO_STATUS_INACTIVE``), and pycubrid (1.7.1 and
+        ``main``) then opens a new CAS session before the next request. That
+        session starts at the server's default isolation level; pycubrid only
+        restores ``autocommit``. CUBRIDdb keeps the same session, so only the
+        pycubrid dialects need this. The re-apply (``SET TRANSACTION ISOLATION
+        LEVEL`` + ``COMMIT``) runs once per commit/rollback, never per
+        statement, and only on connections whose level was set through the
+        dialect (engine- or connection-level ``isolation_level``); other
+        connections pay nothing.
+        """
+        # SQLAlchemy passes a pool proxy to do_commit/do_rollback but the raw
+        # DBAPI connection to set_isolation_level.
+        raw_connection = _unwrap(dbapi_connection)
+        level = self._connection_isolation_levels.get(raw_connection)
+        if level is not None:
+            super().set_isolation_level(raw_connection, level)
 
     def do_executemany(
         self,

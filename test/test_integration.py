@@ -370,6 +370,69 @@ class TestIsolationLevel:
             dialect.set_isolation_level(raw_conn, "SERIALIZABLE")
             new_level = dialect.get_isolation_level(raw_conn)
             assert new_level is not None
+            # SQLAlchemy does not know about this raw set, so the pool would
+            # hand the SERIALIZABLE connection to later tests; discard it.
+            conn.invalidate()
+
+
+class TestIsolationLevelAcrossTransactionBoundaries:
+    """The configured isolation level survives commit, rollback and pool checkin (#505).
+
+    pycubrid opens a new CAS session after the driver's ``commit()`` /
+    ``rollback()``, which starts at the server default (READ COMMITTED).
+    """
+
+    # Own engines: a re-applied level changes how later tests on a shared
+    # pooled pycubrid connection see an unfinished result (DRIVER_COMPAT #10).
+    @pytest.fixture
+    def serializable_engine(self):
+        eng = create_engine(
+            _cubrid_url(), isolation_level="SERIALIZABLE", pool_size=1, max_overflow=0
+        )
+        yield eng
+        eng.dispose()
+
+    @pytest.fixture
+    def default_engine(self):
+        eng = create_engine(_cubrid_url(), pool_size=1, max_overflow=0)
+        yield eng
+        eng.dispose()
+
+    def test_engine_level_survives_commit_rollback_and_checkin(self, serializable_engine):
+        with serializable_engine.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+            conn.execute(text("SELECT 1"))
+            conn.commit()
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+            conn.execute(text("SELECT 1"))
+            conn.rollback()
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+
+        with serializable_engine.connect() as conn:
+            assert conn.connection.dbapi_connection is dbapi_conn
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+
+    def test_engine_level_survives_begin_block_and_session(self, serializable_engine):
+        with serializable_engine.begin() as conn:
+            conn.execute(text("SELECT 1"))
+        with Session(serializable_engine) as session:
+            session.execute(text("SELECT 1"))
+            session.commit()
+            assert session.connection().get_isolation_level() == "SERIALIZABLE"
+            session.rollback()
+        with serializable_engine.connect() as conn:
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+
+    def test_connection_level_survives_commit_and_rollback(self, default_engine):
+        with default_engine.connect() as conn:
+            conn = conn.execution_options(isolation_level="REPEATABLE READ")
+            conn.execute(text("SELECT 1"))
+            conn.commit()
+            assert conn.get_isolation_level() == "REPEATABLE READ"
+            conn.execute(text("SELECT 1"))
+            conn.rollback()
+            assert conn.get_isolation_level() == "REPEATABLE READ"
 
 
 class TestDoPing:

@@ -1011,3 +1011,38 @@ class TestAsyncCursorDescriptionContract:
         finally:
             sync_engine.dispose()
         assert async_desc == sync_desc
+
+
+class TestAsyncIsolationLevelAcrossTransactionBoundaries:
+    """The configured isolation level survives commit, rollback and pool checkin (#505)."""
+
+    async def test_engine_level_survives_commit_rollback_and_checkin(self):
+        eng = create_async_engine(
+            _async_url(), isolation_level="SERIALIZABLE", pool_size=1, max_overflow=0
+        )
+        try:
+            async with eng.connect() as conn:
+                dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+                _ = await conn.execute(text("SELECT 1"))
+                await conn.commit()
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+                _ = await conn.execute(text("SELECT 1"))
+                await conn.rollback()
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+
+            async with eng.connect() as conn:
+                assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+        finally:
+            await eng.dispose()
+
+    async def test_connection_level_survives_commit_and_rollback(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            conn = await conn.execution_options(isolation_level="REPEATABLE READ")
+            _ = await conn.execute(text("SELECT 1"))
+            await conn.commit()
+            assert await conn.get_isolation_level() == "REPEATABLE READ"
+            _ = await conn.execute(text("SELECT 1"))
+            await conn.rollback()
+            assert await conn.get_isolation_level() == "REPEATABLE READ"

@@ -281,6 +281,78 @@ class TestPyCubridIsolationLevels:
         cursor.execute.assert_any_call("SET TRANSACTION ISOLATION LEVEL 4")
 
 
+class TestPyCubridIsolationLevelReapply:
+    """pycubrid drops the isolation level at commit/rollback; the dialect re-applies it (#505)."""
+
+    @staticmethod
+    def _dbapi_conn() -> MagicMock:
+        conn = MagicMock(spec=["cursor", "commit", "rollback"])
+        conn.cursor.return_value = MagicMock()
+        return conn
+
+    @pytest.mark.parametrize("method", ["do_commit", "do_rollback"])
+    def test_end_of_transaction_without_level_does_not_reapply(self, method):
+        dialect = PyCubridDialect()
+        dbapi_conn = self._dbapi_conn()
+
+        getattr(dialect, method)(dbapi_conn)
+
+        getattr(dbapi_conn, method.removeprefix("do_")).assert_called_once_with()
+        dbapi_conn.cursor.assert_not_called()
+
+    @pytest.mark.parametrize("method", ["do_commit", "do_rollback"])
+    def test_end_of_transaction_reapplies_last_level(self, method):
+        dialect = PyCubridDialect()
+        dbapi_conn = self._dbapi_conn()
+        dialect.set_isolation_level(dbapi_conn, "SERIALIZABLE")
+        dialect.set_isolation_level(dbapi_conn, "REPEATABLE READ")
+        cursor = MagicMock()
+        dbapi_conn.cursor.return_value = cursor
+
+        # SQLAlchemy passes a pool proxy here, not the raw DBAPI connection.
+        proxy = types.SimpleNamespace(
+            dbapi_connection=dbapi_conn, commit=dbapi_conn.commit, rollback=dbapi_conn.rollback
+        )
+        getattr(dialect, method)(proxy)
+
+        getattr(dbapi_conn, method.removeprefix("do_")).assert_called_once_with()
+        assert [c.args for c in cursor.execute.call_args_list] == [
+            ("SET TRANSACTION ISOLATION LEVEL 5",),
+            ("COMMIT",),
+        ]
+
+    def test_reapply_runs_after_the_driver_call(self):
+        dialect = PyCubridDialect()
+        dbapi_conn = self._dbapi_conn()
+        dialect.set_isolation_level(dbapi_conn, "SERIALIZABLE")
+        calls: list[str] = []
+        dbapi_conn.commit.side_effect = lambda: calls.append("commit")
+        dbapi_conn.cursor.side_effect = lambda: calls.append("cursor") or MagicMock()
+
+        dialect.do_commit(dbapi_conn)
+
+        assert calls == ["commit", "cursor"]
+
+    def test_levels_are_tracked_per_connection(self):
+        dialect = PyCubridDialect()
+        first, second = self._dbapi_conn(), self._dbapi_conn()
+        dialect.set_isolation_level(first, "SERIALIZABLE")
+
+        dialect.do_commit(second)
+
+        second.cursor.assert_not_called()
+
+    def test_invalid_level_is_not_tracked(self):
+        dialect = PyCubridDialect()
+        dbapi_conn = self._dbapi_conn()
+        with pytest.raises(ValueError, match="Invalid isolation level"):
+            dialect.set_isolation_level(dbapi_conn, "INVALID_LEVEL")
+
+        dialect.do_rollback(dbapi_conn)
+
+        dbapi_conn.cursor.assert_not_called()
+
+
 class TestPyCubridDoReleaseAndMiscMethods:
     def test_do_release_savepoint_is_noop(self):
         dialect = PyCubridDialect()

@@ -211,6 +211,12 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 
 cubrid-lab/pycubrid#390을 수정한 pycubrid 릴리스를 채택하기 전까지, pycubrid를 통한 NOT NULL 및 외래 키 실패는 `sqlalchemy.exc.DatabaseError`(`IntegrityError`의 기반 클래스)로 잡으세요. 방언은 의도적으로 메시지 기반으로 예외를 재분류하지 않습니다. 모든 드라이버에서 `rollback()` 후 연결이나 `Session`을 계속 사용할 수 있습니다.
 
+### 10. pycubrid는 `commit()` / `rollback()` 후 새 세션을 시작 (방언이 격리 수준을 다시 적용)
+
+CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#505). 드라이버의 `commit()` 또는 `rollback()` 후 브로커는 CAS 상태 바이트를 비활성(트랜잭션 밖)으로 돌려줍니다. pycubrid 1.7.1(및 `main`)은 이를 CAS가 해제된 것으로 보고 다음 요청 전에 새 브로커 연결을 엽니다. 새 세션은 서버 기본 격리 수준(READ COMMITTED)으로 시작하고 세션 변수도 사라집니다. pycubrid는 `autocommit`만 복원합니다. `CUBRIDdb`는 같은 세션을 유지하며, SQL `COMMIT` 문은 재연결을 일으키지 않습니다.
+
+**방언 우회.** `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 각 연결에 설정한 격리 수준을 기억했다가 commit과 rollback마다 다시 적용하므로, 엔진 수준 및 연결 수준 `isolation_level`이 commit, rollback, 풀 반환 후에도 유지됩니다. 비용은 commit/rollback마다 `SET TRANSACTION ISOLATION LEVEL` + `COMMIT` 한 번이며, 수준을 설정한 연결에만 해당합니다. 다시 적용하면 pycubrid가 즉시 재연결하므로, 이런 연결에서 `commit()` / `rollback()` 후 결과의 나머지를 읽으면 버퍼에 있는 행만 반환하는 대신 `OperationalError`가 발생합니다([알려진 문제 8](#8-commit--rollback-이후-다-읽지-않은-결과)). 원시 SQL로 설정한 세션 상태(`SET @var`나 직접 실행한 `SET TRANSACTION` 문 등)는 pycubrid에서 `commit()` / `rollback()` 후 여전히 사라집니다.
+
 ---
 
 ## 설치 참고

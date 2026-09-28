@@ -275,6 +275,29 @@ foreign-key failures through pycubrid. The dialect deliberately does not
 reclassify exceptions by message. On every driver the connection or `Session`
 remains usable after `rollback()`.
 
+### 10. pycubrid starts a new session after `commit()` / `rollback()` (dialect re-applies the isolation level)
+
+Verified live on CUBRID 10.2 and 11.4 (#505). After the driver's `commit()` or
+`rollback()`, the broker returns the CAS status byte as inactive (out of
+transaction). pycubrid 1.7.1 (and `main`) treats that as a released CAS and
+opens a new broker connection before the next request. The new session starts
+at the server default isolation level (READ COMMITTED), and session variables
+are gone. pycubrid restores only `autocommit`. `CUBRIDdb` keeps the same
+session, and an SQL `COMMIT` statement does not trigger the reconnect.
+
+**Dialect workaround.** `cubrid+pycubrid://` and `cubrid+aiopycubrid://`
+remember the isolation level they set on each connection and re-apply it after
+every commit and rollback, so engine- and connection-level `isolation_level`
+survive commits, rollbacks and pool checkins. This costs one
+`SET TRANSACTION ISOLATION LEVEL` + `COMMIT` per commit/rollback, and only on
+connections with a configured level. Because the re-apply makes pycubrid
+reconnect immediately, reading the rest of a result after `commit()` /
+`rollback()` on such a connection raises `OperationalError` instead of returning
+only the buffered rows ([Known Issue 8](#8-unfinished-results-after-commit--rollback)).
+Session state set with raw SQL (such as `SET @var` or a `SET TRANSACTION`
+statement you run yourself) is still lost after `commit()` / `rollback()` on
+pycubrid.
+
 ---
 
 ## Installation Notes

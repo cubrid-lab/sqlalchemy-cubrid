@@ -163,6 +163,10 @@ SELECT X
 
 > **참고 — 읽기 시 정규 이름.** `get_isolation_level()`은 수준의 **정규(canonical)** 이름을 반환하며, 이는 `set_isolation_level()`에 전달한 별칭과 다를 수 있습니다. CUBRID는 같은 숫자 수준으로 매핑되는 여러 별칭을 받습니다([허용되는 수준 이름](#허용되는-수준-이름) 참고) — 예컨대 `"REPEATABLE READ"`와 `"REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES"` 둘 다 수준 5로 매핑 — 하지만 수준 읽기는 숫자 코드를 단일 정규 항목으로 되돌려 해석합니다. 따라서 `set` → `get` 왕복은 (전달한 정확한 문자열이 아니라) 정규 이름(예: `"REPEATABLE READ"`)을 반환합니다.
 
+### pycubrid에서 commit과 rollback 후에도 유지
+
+pycubrid는 드라이버의 `commit()` / `rollback()` 후 새 CAS 세션을 열며, 이 세션은 서버 기본 수준으로 시작합니다([드라이버 호환성, 알려진 문제 10](DRIVER_COMPAT.md#10-pycubrid는-commit--rollback-후-새-세션을-시작-방언이-격리-수준을-다시-적용) 참고). 따라서 `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 연결에 마지막으로 설정한 수준을 commit과 rollback마다 다시 적용하여 엔진 수준 또는 연결 수준 `isolation_level`이 계속 적용되도록 합니다. `cubrid://`(CUBRIDdb)는 세션을 유지하므로 다시 적용할 필요가 없습니다.
+
 ### 연결 반환 시 리셋
 
 연결이 풀로 반환되면 방언은 다음 체크아웃을 위한 깨끗한 상태를 보장하기 위해 격리를 수준 4(`READ COMMITTED`)로 리셋합니다.

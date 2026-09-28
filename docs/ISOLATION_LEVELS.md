@@ -174,6 +174,16 @@ The returned numeric value is mapped back to a descriptive string.
 > returns the canonical name (e.g. `"REPEATABLE READ"`), not necessarily the
 > exact string you supplied.
 
+### Kept Across Commit and Rollback on pycubrid
+
+pycubrid opens a new CAS session after the driver's `commit()` / `rollback()`,
+and that session starts at the server default level (see
+[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-starts-a-new-session-after-commit--rollback-dialect-re-applies-the-isolation-level)).
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` therefore re-apply the level
+they last set on a connection after every commit and rollback, so an engine- or
+connection-level `isolation_level` stays in effect. `cubrid://` (CUBRIDdb) keeps
+the session and needs no re-apply.
+
 ### Reset on Connection Return
 
 When a connection is returned to the pool, the dialect resets isolation to level 4 (`READ COMMITTED`) to ensure a clean state for the next checkout.
