@@ -139,12 +139,12 @@ class PyCubridDialect(CubridDialect):
 
     def do_commit(self, dbapi_connection: DBAPIConnection) -> None:
         """Commit, then re-apply the connection's isolation level (#505)."""
-        dbapi_connection.commit()
+        super().do_commit(dbapi_connection)  # type: ignore[no-untyped-call]  # unannotated in SQLAlchemy
         self._restore_isolation_level(dbapi_connection)
 
     def do_rollback(self, dbapi_connection: DBAPIConnection) -> None:
         """Roll back, then re-apply the connection's isolation level (#505)."""
-        dbapi_connection.rollback()
+        super().do_rollback(dbapi_connection)  # type: ignore[no-untyped-call]  # unannotated in SQLAlchemy
         self._restore_isolation_level(dbapi_connection)
 
     def _restore_isolation_level(self, dbapi_connection: DBAPIConnection) -> None:
