@@ -1,17 +1,14 @@
 #!/usr/bin/env python3
 """Validate CHANGELOG.md structure.
-Checks:
-    1. First section is [Unreleased]
-    2. Exactly one [Unreleased] section
-    3. No duplicate version sections
-    4. Released versions in descending semver order
+
 Usage:
     python scripts/lint_changelog.py
 
 Checks:
     1. First section is [Unreleased]
-    2. No duplicate version sections
-    3. Versions in descending semver order
+    2. Exactly one [Unreleased] section
+    3. No duplicate version sections
+    4. Released versions in descending semver order
 
 Exit codes:
     0 — changelog is valid

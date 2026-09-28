@@ -54,6 +54,8 @@ dev = [
     "bandit[toml]==1.9.4",
     "pre-commit",
     "tox",
+    "build",
+    "twine",
     "alembic>=1.7.2,<2.0",
 ]
 alembic = [

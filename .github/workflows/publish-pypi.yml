@@ -1,4 +1,10 @@
-# Publish to PyPI via Trusted Publisher (OIDC) when a GitHub Release is published.
+# Publish to PyPI via Trusted Publisher (OIDC).
+#
+# Manual gate: dispatch after the tag-triggered integration-full passes:
+#   gh workflow run publish-pypi.yml -f tag=vX.Y.Z
+# The GitHub Release created by create-release.yml does NOT trigger this
+# workflow. On success, the notify-cookbook job dispatches the cookbook smoke
+# test. See RELEASING.md for the full procedure.
 #
 # Canonical cubrid-lab publish workflow — kept identical across pycubrid,
 # sqlalchemy-cubrid, and cubrid-mcp-server. Only the package/module name and the
@@ -10,8 +16,6 @@
 name: Publish to PyPI
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -30,7 +34,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ inputs.tag }}
           fetch-depth: 0
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
@@ -55,12 +59,14 @@ jobs:
           echo "Detected package version: $VERSION"
 
       - name: Resolve release tag
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "TAG=${{ inputs.tag }}" >> "$GITHUB_ENV"
-          else
-            echo "TAG=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+          if ! printf '%s' "$INPUT_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9.+-]*)$'; then
+            echo "::error::tag input '$INPUT_TAG' is not a vX.Y.Z tag"
+            exit 1
           fi
+          echo "TAG=$INPUT_TAG" >> "$GITHUB_ENV"
 
       - name: Verify tag matches package version
         run: |
@@ -84,16 +90,6 @@ jobs:
           if [ -z "$TAG_COMMIT" ]; then
             echo "::error::Tag $TAG not found in repository"
             exit 1
-          fi
-          if [ "${{ github.event_name }}" = "release" ]; then
-            TARGET="${{ github.event.release.target_commitish }}"
-            if git show-ref --verify --quiet "refs/remotes/origin/$TARGET"; then
-              TARGET=$(git rev-parse "origin/$TARGET")
-            fi
-            if [ "$TAG_COMMIT" != "$TARGET" ]; then
-              echo "::error::Tag $TAG points to $TAG_COMMIT but release targets $TARGET"
-              exit 1
-            fi
           fi
           if ! git merge-base --is-ancestor "$TAG_COMMIT" origin/main; then
             echo "::error::Tag $TAG ($TAG_COMMIT) is not contained in origin/main"
@@ -196,3 +192,35 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: true
+
+  notify-cookbook:
+    name: Dispatch cookbook smoke test
+    runs-on: ubuntu-latest
+    needs: [deploy]
+    if: success()
+    # The dispatch uses COOKBOOK_DISPATCH_TOKEN (a PAT scoped to the cookbook
+    # repo); this job needs no GITHUB_TOKEN permissions. The secret is only
+    # referenced here, never in the build/verify or deploy jobs.
+    permissions: {}
+    steps:
+      - name: Check dispatch token
+        id: token
+        env:
+          COOKBOOK_DISPATCH_TOKEN: ${{ secrets.COOKBOOK_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$COOKBOOK_DISPATCH_TOKEN" ]; then
+            echo "::warning::COOKBOOK_DISPATCH_TOKEN not set; skipping cookbook dispatch"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dispatch smoke test to cookbook
+        if: steps.token.outputs.present == 'true'
+        uses: peter-evans/repository-dispatch@28959ce8df70de7be546dd1250a005dd32156697 # v4.0.1
+        with:
+          token: ${{ secrets.COOKBOOK_DISPATCH_TOKEN }}
+          repository: cubrid-lab/cubrid-cookbook-python
+          event-type: upstream-released
+          client-payload: |
+            {"package": "sqlalchemy-cubrid", "ref": "${{ inputs.tag }}"}

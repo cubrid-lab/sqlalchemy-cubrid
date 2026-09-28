@@ -470,7 +470,9 @@ pre-commit run --all-files
 | 워크플로 | 파일 | 트리거 |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | main 푸시, PR |
-| Publish | `.github/workflows/publish-pypi.yml` | GitHub Release |
+| Integration Full | `.github/workflows/integration-full.yml` | 야간, 태그 푸시, 수동 실행 |
+| Create Release | `.github/workflows/create-release.yml` | 태그 푸시, 수동 실행 (게시하지 않음) |
+| Publish | `.github/workflows/publish-pypi.yml` | 태그로 트리거된 전체 매트릭스 통과 후 수동 실행 |
 
 ### CI 파이프라인 단계
 
@@ -611,7 +613,9 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 
 ### Publish 파이프라인
 
-GitHub Release 생성 시 트리거. 패키지를 빌드해 PyPI에 게시합니다.
+GitHub Release로 트리거되지 않습니다. 태그로 트리거된 전체 매트릭스가 통과한 뒤
+유지보수자가 `publish-pypi.yml`을 `-f tag=vX.Y.Z`로 수동 실행하면, 검증 후 PyPI에
+게시하고 cookbook 스모크 테스트를 디스패치합니다. [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md)를 참고하세요.
 
 ---
 

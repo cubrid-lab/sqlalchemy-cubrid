@@ -3,7 +3,9 @@ name: Create GitHub Release
 # Creates a GitHub Release from the CHANGELOG section for a pushed vX.Y.Z tag.
 # The CHANGELOG is the single source of truth: release notes are the extracted
 # "## [X.Y.Z] - YYYY-MM-DD" section (fail-closed, no generated-notes fallback).
-# Publishing the Release triggers publish-pypi.yml (on: release: published).
+# Creating the Release does NOT publish to PyPI: publish-pypi.yml is a manual
+# workflow_dispatch run after the tag-triggered integration-full passes
+# (see RELEASING.md).
 
 on:
   push:
@@ -92,7 +94,7 @@ jobs:
           fi
 
       - name: Generate SBOM
-        uses: anchore/sbom-action@v0
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           format: spdx-json
           output-file: sbom.spdx.json

@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SQLAlchemy 2.1 is documented as released and tested, not a pre-release (#492)** — `docs/SUPPORT_MATRIX.md` (+ Korean) listed 2.1.x as the "latest tested pre-release until GA"; it now says CI tests SQLAlchemy 2.1.1. `docs/SA_COMPAT.md` describes the non-blocking canary as what it is: a `--pre` install of `SQLAlchemy>=2.1.0b1,<2.3` that tracks upcoming SQLAlchemy pre-releases with `continue-on-error`.
 - **Samples use the recommended pycubrid driver (#498)** — `samples/create_engine.py` and `samples/cubrid_datatypes.py` connected with `cubrid://`, the CUBRID-Python C-extension dialect, which a plain install does not provide. They now use `cubrid+pycubrid://` and name the install command `pip install "sqlalchemy-cubrid[pycubrid]"` in their docstrings.
 
+### Changed
+- Release workflow unified with the sibling repos: new `RELEASING.md`; `make release`
+  replaced by the read-only `make release-check VERSION=x.y.z`; `publish-pypi.yml` is
+  manual-dispatch only and now dispatches the cookbook smoke test after a successful
+  publish (replacing `notify-cookbook.yml`); CI lints `CHANGELOG.md`.
+
 ## [1.8.0] - 2026-09-29
 
 ### Upgrade notes
