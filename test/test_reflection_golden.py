@@ -349,6 +349,8 @@ class _MockEmptyTable:
             return _Result([])  # no indexes at all
         if "FROM _db_attribute" in sql:
             return _Result([])  # no column comments
+        if "class_type FROM db_class" in sql:
+            return _Result([("CLASS",)])  # the table exists
         if "FROM db_class" in sql or "comment FROM db_class" in sql:
             return _Result([(None,)])  # table comment is NULL
         raise AssertionError(f"Unexpected SQL: {sql}, params={params}")

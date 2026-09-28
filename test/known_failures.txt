@@ -84,8 +84,8 @@
 # unexpected successes) and gated unicode_ddl on a UTF-8 database.
 #
 # As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
-#   cubrid@sa2.0 77 / 70, pycubrid@sa2.0 (gated on 10.2 only) 63,
-#   pycubrid@sa2.1 67 / 60;
+#   cubrid@sa2.0 68 / 61, pycubrid@sa2.0 (gated on 10.2 only) 54,
+#   pycubrid@sa2.1 58 / 51;
 # 0 XPASS, 0 unclassified. The 7 server-specific entries are
 # BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
 # is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
@@ -93,24 +93,6 @@
 # covered by targeted strict xfails elsewhere (#480-#482). Every [DIALECT BUG]
 # group found by this recapture links its tracking issue (#529-#535); the
 # #535 JSON as_numeric() group was removed when it was fixed.
-
-# [DIALECT BUG] ComponentReflectionTest missing-object handling (#530):
-# reflection of a table or view that does not exist must raise
-# NoSuchTableError. Instead get_foreign_keys / get_unique_constraints /
-# get_table_comment return empty results, get_pk_constraint and
-# get_view_definition surface the raw -493 ProgrammingError, and the
-# get_multi_* variants with an explicit name list therefore include the
-# nonexistent `does-not-exist` in their result. Same on both drivers and
-# servers.
-test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_pk_constraint[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_table_comment[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_view_definition_does_not_exist  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_foreign_keys-_exclusions_03]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_pk_constraint-_exclusions_02]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_table_comment-_exclusions_07]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_unique_constraints-_exclusions_05]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 
 # [BACKEND / SUITE LIMIT] ComponentReflectionTest quoted names: CUBRID folds
 # every identifier, quoted or not, to lower case, so a constraint or index

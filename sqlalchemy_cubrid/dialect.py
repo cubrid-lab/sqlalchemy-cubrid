@@ -114,6 +114,17 @@ def _is_no_such_table_error(error: BaseException) -> bool:
     return "Unknown class" in message or "Table not found" in message
 
 
+def _is_unknown_class_error(error: BaseException) -> bool:
+    """True only for CUBRID's ``Unknown class "<owner>.<name>"`` error.
+
+    Stricter than :func:`_is_no_such_table_error`: pycubrid reports syntax
+    errors, ``<name> is not a class`` and some permission errors with the same
+    native code (-493) and SQLSTATE (42S02), so only the message identifies a
+    missing object (#454, #530).
+    """
+    return "Unknown class" in str(getattr(error, "orig", error))
+
+
 # Pre-compiled patterns for column type parsing in get_columns().
 # Avoids re-compilation on every reflection call.
 _RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
@@ -612,7 +623,12 @@ class CubridDialect(default.DefaultDialect):
 
         if not constrained_columns:
             quoted = self.identifier_preparer.quote_identifier(table_name)
-            result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+            try:
+                result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+            except Exception as error:
+                if _is_unknown_class_error(error):
+                    raise NoSuchTableError(table_name) from error
+                raise
             for row in result:
                 if row[3] == "PRI":
                     constrained_columns.append(row[0])
@@ -637,10 +653,17 @@ class CubridDialect(default.DefaultDialect):
         output of ``SHOW CREATE TABLE`` is the only reliable source.
         See cubrid-lab/sqlalchemy-cubrid#120.
 
-        The constraints are returned sorted by name.
+        The constraints are returned sorted by name. Raises
+        :class:`NoSuchTableError` when *table_name* does not exist; a view has
+        no foreign keys.
         """
         self._raise_if_non_default_schema(schema, table_name)
 
+        class_type = self._get_class_type(connection, table_name, **kw)
+        if class_type is None:
+            raise NoSuchTableError(table_name)
+        if class_type == "VCLASS":
+            return []
         return self._get_foreign_keys_from_ddl(connection, table_name, schema)
 
     def _get_foreign_keys_from_ddl(
@@ -660,7 +683,9 @@ class CubridDialect(default.DefaultDialect):
             quoted = self.identifier_preparer.quote_identifier(table_name)
             result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
             row = result.first()
-        except Exception:  # nosec B110 — graceful fallback when DDL unavailable
+        except Exception as error:  # nosec B110 — graceful fallback when DDL unavailable
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
             log.warning(
                 "SHOW CREATE TABLE failed for %s; foreign keys will be empty",
                 table_name,
@@ -745,14 +770,23 @@ class CubridDialect(default.DefaultDialect):
     def get_view_definition(
         self, connection: Any, view_name: str, schema: str | None = None, **kw: Any
     ) -> str:
-        """Return the CREATE VIEW definition."""
+        """Return the CREATE VIEW definition.
+
+        Raises :class:`NoSuchTableError` when *view_name* does not exist or is
+        not a view (``SHOW CREATE VIEW`` on a table returns no row).
+        """
         self._raise_if_non_default_schema(schema, view_name)
 
         quoted = self.identifier_preparer.quote_identifier(view_name)
-        result = connection.execute(text(f"SHOW CREATE VIEW {quoted}"))
+        try:
+            result = connection.execute(text(f"SHOW CREATE VIEW {quoted}"))
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(view_name) from error
+            raise
         row = result.first()
         if row is None:
-            return ""
+            raise NoSuchTableError(view_name)
         return str(row[1])
 
     @reflection.cache
@@ -854,8 +888,17 @@ class CubridDialect(default.DefaultDialect):
         indexes (excluding PK and FK auto-indexes), then resolve column
         names via ``SHOW INDEXES``. Fallback: parse ``SHOW CREATE TABLE``
         DDL output via regex.
+
+        Raises :class:`NoSuchTableError` when *table_name* does not exist; a
+        view has no unique constraints.
         """
         self._raise_if_non_default_schema(schema, table_name)
+
+        class_type = self._get_class_type(connection, table_name, **kw)
+        if class_type is None:
+            raise NoSuchTableError(table_name)
+        if class_type == "VCLASS":
+            return []
 
         # Primary path: system catalog + SHOW INDEXES
         try:
@@ -923,7 +966,9 @@ class CubridDialect(default.DefaultDialect):
             quoted = self.identifier_preparer.quote_identifier(table_name)
             result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
             row = result.first()
-        except Exception:  # nosec B110 — graceful fallback when DDL unavailable
+        except Exception as error:  # nosec B110 — graceful fallback when DDL unavailable
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
             log.warning(
                 "SHOW CREATE TABLE failed for %s; unique constraints will be empty",
                 table_name,
@@ -975,15 +1020,26 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> ReflectedTableComment:
-        """Return table comment from CUBRID system catalog."""
+        """Return table comment from CUBRID system catalog.
+
+        Raises :class:`NoSuchTableError` when *table_name* does not exist. The
+        name and owner are matched like :meth:`_get_class_type`: the name as
+        given or folded to lower case, and the current user's class first.
+        """
         self._raise_if_non_default_schema(schema, table_name)
 
-        result = connection.execute(
-            text("SELECT comment FROM db_class WHERE class_name = :name"),
+        row = connection.execute(
+            text(
+                "SELECT comment FROM db_class "
+                "WHERE class_name IN (:name, LOWER(:name)) "
+                "ORDER BY CASE WHEN owner_name = CURRENT_USER THEN 0 "
+                "WHEN is_system_class = 'YES' THEN 1 ELSE 2 END"
+            ),
             {"name": table_name},
-        )
-        row = result.first()
-        return {"text": row[0] if row and row[0] else None}
+        ).first()
+        if row is None:
+            raise NoSuchTableError(table_name)
+        return {"text": row[0] if row[0] else None}
 
     def get_schema_names(self, connection: Any, **kw: Any) -> list[str]:
         """Return the schema names visible to this connection.

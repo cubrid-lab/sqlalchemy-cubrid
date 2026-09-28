@@ -810,7 +810,7 @@ class TestReflectionMethods:
         success_conn.dialect_options = {}
         success_result = MagicMock()
         success_result.first.return_value = ("orders", ddl)
-        success_conn.execute.return_value = success_result
+        success_conn.execute.side_effect = [_class_type_result("CLASS"), success_result]
 
         fks = _invoke_reflection(
             dialect,
@@ -839,7 +839,12 @@ class TestReflectionMethods:
         failed_conn = MagicMock()
         failed_conn.info_cache = {}
         failed_conn.dialect_options = {}
-        failed_conn.execute.side_effect = RuntimeError("fk lookup failed")
+        # Any SHOW CREATE TABLE failure other than a missing table keeps the
+        # graceful empty result.
+        failed_conn.execute.side_effect = [
+            _class_type_result("CLASS"),
+            RuntimeError("fk lookup failed"),
+        ]
 
         assert _invoke_reflection(dialect, "get_foreign_keys", failed_conn, "orders") == []
 
@@ -932,10 +937,12 @@ class TestReflectionMethods:
             == "SELECT * FROM users"
         )
 
+        # SHOW CREATE VIEW on a table returns no row: not a view (#530).
         empty_result = MagicMock()
         empty_result.first.return_value = None
         connection.execute.return_value = empty_result
-        assert _invoke_reflection(dialect, "get_view_definition", connection, "user_view") == ""
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_view_definition", connection, "users")
 
     def test_get_indexes_with_primary_key_and_exception_paths(self):
         dialect = CubridDialect()
@@ -1083,7 +1090,8 @@ class TestReflectionMethods:
         success_conn.dialect_options = {}
         success_result = MagicMock()
         success_result.first.return_value = ("users", ddl)
-        success_conn.execute.return_value = success_result
+        # class-type lookup, empty unique-index catalog, SHOW CREATE TABLE
+        success_conn.execute.side_effect = [_class_type_result("CLASS"), [], success_result]
 
         unique_constraints = _invoke_reflection(
             dialect,
@@ -1108,7 +1116,11 @@ class TestReflectionMethods:
         failed_conn = MagicMock()
         failed_conn.info_cache = {}
         failed_conn.dialect_options = {}
-        failed_conn.execute.side_effect = RuntimeError("uc lookup failed")
+        failed_conn.execute.side_effect = [
+            _class_type_result("CLASS"),
+            RuntimeError("catalog unavailable"),
+            RuntimeError("uc lookup failed"),
+        ]
 
         assert _invoke_reflection(dialect, "get_unique_constraints", failed_conn, "users") == []
 
@@ -1133,7 +1145,11 @@ class TestReflectionMethods:
             (None, 0, "uq_users_name", 1, "name"),
             (None, 1, "pk_users", 1, "id"),  # PK — should be excluded
         ]
-        connection.execute.side_effect = [unique_name_rows, show_indexes_rows]
+        connection.execute.side_effect = [
+            _class_type_result("CLASS"),
+            unique_name_rows,
+            show_indexes_rows,
+        ]
 
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
@@ -1169,7 +1185,7 @@ class TestReflectionMethods:
         # Second execute: SHOW CREATE TABLE for DDL fallback
         ddl_result = MagicMock()
         ddl_result.first.return_value = ("users", ddl)
-        connection.execute.side_effect = [[], ddl_result]
+        connection.execute.side_effect = [_class_type_result("CLASS"), [], ddl_result]
 
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
@@ -1200,7 +1216,11 @@ class TestReflectionMethods:
         # Second execute: SHOW CREATE TABLE for DDL fallback
         ddl_result = MagicMock()
         ddl_result.first.return_value = ("users", ddl)
-        connection.execute.side_effect = [RuntimeError("catalog unavailable"), ddl_result]
+        connection.execute.side_effect = [
+            _class_type_result("CLASS"),
+            RuntimeError("catalog unavailable"),
+            ddl_result,
+        ]
 
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
@@ -1259,6 +1279,118 @@ class TestReflectionMethods:
         assert checks == []
         assert comment == {"text": "users table comment"}
         assert dialect.get_schema_names(connection) == []
+
+
+class TestMissingObjectReflection:
+    """#530: reflecting a table or view that does not exist raises
+    NoSuchTableError, and a view skips the table-only SHOW CREATE TABLE."""
+
+    @staticmethod
+    def _connection(*side_effect):
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = list(side_effect)
+        return connection
+
+    @staticmethod
+    def _unknown_class(name="missing"):
+        return Exception(f'Syntax: Unknown class "dba.{name}".')
+
+    @staticmethod
+    def _syntax_error():
+        """A generic -493 error that is not a missing object.
+
+        pycubrid reports syntax errors with the same native code and SQLSTATE
+        (42S02) as a missing class (#454), so only the message tells them
+        apart.
+        """
+        from sqlalchemy import exc
+
+        orig = Exception("Syntax: syntax error, unexpected 'SELEC'")
+        orig.errno = -493  # type: ignore[attr-defined]
+        orig.sqlstate = "42S02"  # type: ignore[attr-defined]
+        return exc.ProgrammingError("SHOW ...", {}, orig)
+
+    @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
+    def test_missing_table_raises_before_show_create_table(self, method_name):
+        connection = self._connection(_class_type_result(None))
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), method_name, connection, "missing")
+        assert connection.execute.call_count == 1
+
+    @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
+    def test_view_returns_empty_without_show_create_table(self, method_name, caplog):
+        connection = self._connection(_class_type_result("VCLASS"))
+        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
+            assert _invoke_reflection(CubridDialect(), method_name, connection, "v") == []
+        assert connection.execute.call_count == 1
+        assert not caplog.records
+
+    def test_foreign_keys_ddl_missing_table_raises(self):
+        """A table dropped between the lookup and SHOW CREATE TABLE."""
+        connection = self._connection(_class_type_result("CLASS"), self._unknown_class())
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_foreign_keys", connection, "missing")
+
+    def test_unique_constraints_ddl_fallback_does_not_swallow_missing_table(self):
+        connection = self._connection(_class_type_result("CLASS"), [], self._unknown_class())
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_unique_constraints", connection, "missing")
+
+    @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
+    def test_ddl_fallback_syntax_error_is_not_a_missing_table(self, method_name, caplog):
+        side_effect = [_class_type_result("CLASS")]
+        if method_name == "get_unique_constraints":
+            side_effect.append([])  # empty unique-index catalog
+        connection = self._connection(*side_effect, self._syntax_error())
+        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
+            assert _invoke_reflection(CubridDialect(), method_name, connection, "t") == []
+        assert "SHOW CREATE TABLE failed" in caplog.text
+
+    def test_table_comment_missing_table_raises(self):
+        result = MagicMock()
+        result.first.return_value = None
+        connection = self._connection(result)
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_table_comment", connection, "missing")
+
+    def test_table_comment_prefers_own_class_and_closes_result(self):
+        result = MagicMock()
+        result.first.return_value = (None,)
+        connection = self._connection(result)
+        assert _invoke_reflection(CubridDialect(), "get_table_comment", connection, "T") == {
+            "text": None
+        }
+        result.first.assert_called_once_with()
+        sql = str(connection.execute.call_args.args[0])
+        assert "class_name IN (:name, LOWER(:name))" in sql
+        assert "ORDER BY CASE WHEN owner_name = CURRENT_USER THEN 0" in sql
+
+    def test_pk_constraint_missing_table_raises(self):
+        # Empty PK catalog, then SHOW COLUMNS fails with "Unknown class".
+        connection = self._connection([], self._unknown_class())
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_pk_constraint", connection, "missing")
+
+    def test_pk_constraint_syntax_error_propagates(self):
+        from sqlalchemy.exc import ProgrammingError
+
+        connection = self._connection([], self._syntax_error())
+        with pytest.raises(ProgrammingError):
+            _invoke_reflection(CubridDialect(), "get_pk_constraint", connection, "t")
+
+    def test_view_definition_missing_view_raises(self):
+        connection = self._connection(self._unknown_class("missing_v"))
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_view_definition", connection, "missing_v")
+
+    def test_view_definition_syntax_error_propagates(self):
+        from sqlalchemy.exc import ProgrammingError
+
+        connection = self._connection(self._syntax_error())
+        with pytest.raises(ProgrammingError):
+            _invoke_reflection(CubridDialect(), "get_view_definition", connection, "v")
 
 
 class TestDoReleaseSavepoint:
