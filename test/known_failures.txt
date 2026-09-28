@@ -84,8 +84,8 @@
 # unexpected successes) and gated unicode_ddl on a UTF-8 database.
 #
 # As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
-#   cubrid@sa2.0 133 / 126, pycubrid@sa2.0 (gated on 10.2 only) 119,
-#   pycubrid@sa2.1 123 / 116;
+#   cubrid@sa2.0 127 / 120, pycubrid@sa2.0 (gated on 10.2 only) 113,
+#   pycubrid@sa2.1 117 / 110;
 # 0 XPASS, 0 unclassified. The 7 server-specific entries are
 # BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
 # is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
@@ -183,18 +183,6 @@ test/test_suite.py::ComponentReflectionTest::test_get_pk_constraint_quoted_name[
 test/test_suite.py::ComponentReflectionTest::test_get_pk_constraint_quoted_name[mixedCasePK]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints_quoted_name[UQ_email]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints_quoted_name[mixedCaseUQ]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-
-# [DIALECT BUG] BizarroCharacterTest FK reflection with a parenthesized column
-# name (#532): the FK / UNIQUE DDL parser does not handle a bracketed column
-# name containing parentheses such as `[(3)]`, so the reflected foreign key
-# has a different number of constrained and referred columns and SQLAlchemy
-# raises ArgumentError while rebuilding it.
-test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 
 # [BACKEND / SUITE LIMIT] BizarroCharacterTest bracket names: CUBRID also uses
 # [ ] as identifier delimiters, so a table or column named `[brackets]` /

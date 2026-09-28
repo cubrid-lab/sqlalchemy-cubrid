@@ -173,10 +173,17 @@ _RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:,\s*(\d+))?\)")
 #
 # We parse this DDL fragment because CUBRID exposes no queryable view that
 # carries the referenced table/columns alongside the constraint name.
+#
+# A column list is matched as bracketed names only (each optionally followed
+# by ASC/DESC), because a name may itself contain ``(``, ``)``, ``,`` or spaces
+# (``([(3)], [a, b])``, #532). CUBRID cannot put ``]`` inside an identifier, so
+# ``[^\]]+`` spans one whole name. Whitespace is allowed inside the parentheses.
+_BRACKETED_COLUMN = r"\[[^\]]+\](?:\s+(?:ASC|DESC))?"
+_BRACKETED_COLUMN_LIST = rf"{_BRACKETED_COLUMN}(?:\s*,\s*{_BRACKETED_COLUMN})*"
 _RE_FOREIGN_KEY = re.compile(
     r"CONSTRAINT\s+\[(?P<name>[^\]]+)\]\s+FOREIGN\s+KEY\s*"
-    r"\((?P<cols>[^)]+)\)\s+REFERENCES\s+"
-    r"\[(?P<ref_table>[^\]]+)\]\s*\((?P<ref_cols>[^)]+)\)"
+    rf"\(\s*(?P<cols>{_BRACKETED_COLUMN_LIST})\s*\)\s+REFERENCES\s+"
+    rf"\[(?P<ref_table>[^\]]+)\]\s*\(\s*(?P<ref_cols>{_BRACKETED_COLUMN_LIST})\s*\)"
     r"(?:\s+ON\s+DELETE\s+(?P<ondelete>CASCADE|SET\s+NULL|NO\s+ACTION|RESTRICT))?"
     r"(?:\s+ON\s+UPDATE\s+(?P<onupdate>CASCADE|SET\s+NULL|NO\s+ACTION|RESTRICT))?",
     re.IGNORECASE,
@@ -186,7 +193,7 @@ _RE_FOREIGN_KEY = re.compile(
 # ``_db_index`` system catalog query fails.
 _RE_UNIQUE_KEY = re.compile(
     r"CONSTRAINT\s+\[(?P<name>[^\]]+)\]\s+UNIQUE\s+KEY\s*"
-    r"\((?P<cols>[^)]+)\)",
+    rf"\(\s*(?P<cols>{_BRACKETED_COLUMN_LIST})\s*\)",
     re.IGNORECASE,
 )
 _RE_BRACKET_IDENT = re.compile(r"\[([^\]]+)\]")

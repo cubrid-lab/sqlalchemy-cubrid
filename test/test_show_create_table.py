@@ -360,6 +360,73 @@ FK_FIXTURES: list[tuple[str, str, list[dict[str, Any]]]] = [
             }
         ],
     ),
+    # Names containing ( ) , and spaces (#532), as printed by CUBRID 11.4:
+    # the column lists must not stop at the first ")".
+    (
+        "fk_bracketed_names_with_parens_commas_spaces",
+        (
+            "CREATE TABLE [c532] ([id] INTEGER NOT NULL, [r(1)] INTEGER, [r, 2] INTEGER,  "
+            "CONSTRAINT [pk_c532_id] PRIMARY KEY  ([id]),  "
+            "CONSTRAINT [fk (odd), name] FOREIGN KEY  ([r(1)], [r, 2]) "
+            "REFERENCES [dba.p532] ([(3)], [a, b]) ON DELETE CASCADE ON UPDATE RESTRICT"
+            ") REUSE_OID, COLLATE iso88591_bin"
+        ),
+        [
+            {
+                "name": "fk (odd), name",
+                "constrained_columns": ["r(1)", "r, 2"],
+                "options": {"ondelete": "CASCADE", "onupdate": "RESTRICT"},
+                "referred_table": "p532",
+                "referred_columns": ["(3)", "a, b"],
+            }
+        ],
+    ),
+    (
+        "fk_whitespace_inside_parentheses",
+        "CONSTRAINT [fk_ws] FOREIGN KEY (  [c (1)], [d] ) REFERENCES [dba.p] ( [(3)] ,[e] )",
+        [
+            {
+                "name": "fk_ws",
+                "constrained_columns": ["c (1)", "d"],
+                "options": {},
+                "referred_table": "p",
+                "referred_columns": ["(3)", "e"],
+            }
+        ],
+    ),
+    (
+        "fk_referred_column_is_parenthesized",
+        (
+            "CREATE TABLE [c] ([id] INTEGER NOT NULL, [plain] INTEGER,  "
+            "CONSTRAINT [fk_c_plain] FOREIGN KEY  ([plain]) REFERENCES [dba.p] ([(3)]) "
+            "ON DELETE RESTRICT ON UPDATE RESTRICT)"
+        ),
+        [
+            {
+                "name": "fk_c_plain",
+                "constrained_columns": ["plain"],
+                "options": {"ondelete": "RESTRICT", "onupdate": "RESTRICT"},
+                "referred_table": "p",
+                "referred_columns": ["(3)"],
+            }
+        ],
+    ),
+    (
+        "fk_constrained_column_has_closing_paren_and_percent",
+        (
+            "CONSTRAINT [fk_x] FOREIGN KEY ([x ) y], [per % cent]) "
+            "REFERENCES [dba.p] ([(2)], [two words])"
+        ),
+        [
+            {
+                "name": "fk_x",
+                "constrained_columns": ["x ) y", "per % cent"],
+                "options": {},
+                "referred_table": "p",
+                "referred_columns": ["(2)", "two words"],
+            }
+        ],
+    ),
 ]
 
 
@@ -482,6 +549,35 @@ UNIQUE_FIXTURES: list[tuple[str, str, list[dict[str, Any]]]] = [
             ")"
         ),
         [{"name": "uq_multiline", "column_names": ["a", "b"]}],
+    ),
+    # Names containing ( ) , and spaces (#532), as printed by CUBRID 11.4.
+    (
+        "unique_bracketed_names_with_parens_commas_spaces",
+        (
+            "CREATE TABLE [p532] ([(3)] INTEGER NOT NULL, [a, b] INTEGER NOT NULL, "
+            "[x ) y] INTEGER, [per % cent] INTEGER,  "
+            "CONSTRAINT [pk_p532_(3)_a, b] PRIMARY KEY  ([(3)], [a, b]),  "
+            "CONSTRAINT [uq (w), z] UNIQUE KEY  ([x ) y], [per % cent])"
+            ") REUSE_OID, COLLATE iso88591_bin"
+        ),
+        [{"name": "uq (w), z", "column_names": ["x ) y", "per % cent"]}],
+    ),
+    (
+        "unique_whitespace_inside_parentheses",
+        "CONSTRAINT [uq_ws] UNIQUE KEY ( [a (1)] ,  [b] DESC )",
+        [{"name": "uq_ws", "column_names": ["a (1)", "b"]}],
+    ),
+    (
+        "unique_parenthesized_name_with_descending_key_order",
+        (
+            "CREATE TABLE [d532] ([a] INTEGER, [b (x)] CHARACTER VARYING(20),  "
+            "CONSTRAINT [u1] UNIQUE KEY  ([a] DESC, [b (x)]),  "
+            "CONSTRAINT [u3] UNIQUE KEY  ([b (x)] DESC, [a])) REUSE_OID, COLLATE iso88591_bin"
+        ),
+        [
+            {"name": "u1", "column_names": ["a", "b (x)"]},
+            {"name": "u3", "column_names": ["b (x)", "a"]},
+        ],
     ),
 ]
 
