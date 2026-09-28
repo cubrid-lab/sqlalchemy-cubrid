@@ -293,3 +293,11 @@ class TestPyCubridAsyncDialectDoPing:
 
         mock_conn.ping.assert_called_once_with(False)
         assert result is False
+
+
+class TestPyCubridAsyncDialectGetDriverConnection:
+    def test_returns_wrapped_pycubrid_aio_connection(self):
+        mock_async_conn = MagicMock()
+        adapter = AsyncAdapt_pycubrid_connection(MagicMock(), mock_async_conn)
+
+        assert PyCubridAsyncDialect().get_driver_connection(adapter) is mock_async_conn
