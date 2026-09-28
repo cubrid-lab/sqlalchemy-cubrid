@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- **Alembic import log lines (#561)** — `docs/ALEMBIC.md` (+ Korean) explains that loading the dialect imports Alembic when it is installed (about 0.1 s), so Alembic 1.18+ logs seven `INFO` `setup plugin ...` lines under `INFO` root logging, and gives the application-side fix `logging.getLogger("alembic").setLevel(logging.WARNING)`. No supported Alembic hook defers the registration; no behavior change.
+
 ## [1.8.0] - 2026-09-29
 
 ### Upgrade notes
