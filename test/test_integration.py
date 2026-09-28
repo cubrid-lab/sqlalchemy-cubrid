@@ -1219,6 +1219,37 @@ class TestDropIndexIntegration:
                 conn.commit()
 
 
+class TestCreateIndexIfNotExistsIntegration:
+    """#540: CUBRID rejects CREATE INDEX IF NOT EXISTS; plain CREATE INDEX works."""
+
+    def test_plain_create_index_and_if_not_exists(self, engine):
+        meta = MetaData()
+        t = Table(
+            "create_idx_540", meta, Column("id", Integer, primary_key=True), Column("v", Integer)
+        )
+        idx = sa.Index("ix_create_idx_540_v", t.c.v)
+        meta.drop_all(engine)
+        t.create(engine)
+        try:
+            idx.drop(engine)
+            assert not inspect(engine).has_index("create_idx_540", "ix_create_idx_540_v")
+            idx.create(engine)
+            assert inspect(engine).has_index("create_idx_540", "ix_create_idx_540_v")
+            # checkfirst is the supported guard: a second create is a no-op.
+            idx.create(engine, checkfirst=True)
+            with engine.connect() as conn:
+                with pytest.raises(sa.exc.CompileError, match="CREATE INDEX IF NOT EXISTS"):
+                    conn.execute(sa.schema.CreateIndex(idx, if_not_exists=True))
+                # The server itself rejects the syntax, which is why it is refused.
+                with pytest.raises(sa.exc.DBAPIError):
+                    conn.exec_driver_sql(
+                        "CREATE INDEX IF NOT EXISTS ix_create_idx_540_w ON create_idx_540 (v)"
+                    )
+                conn.rollback()
+        finally:
+            meta.drop_all(engine)
+
+
 class TestUnicodeTextIntegration:
     """#534: ``UnicodeText`` creates a CUBRID STRING column (CUBRID has no TEXT)."""
 

@@ -2424,6 +2424,28 @@ class TestDropIndexDDL533:
             self._drop(sa.Index(None))
 
 
+class TestCreateIndexIfNotExists540:
+    """#540: CUBRID has no CREATE INDEX IF NOT EXISTS (10.2-11.4 answer a syntax error)."""
+
+    def test_create_index_if_not_exists_is_rejected(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        idx = sa.Index("ix_users_email", t.c.email)
+        with pytest.raises(CompileError, match="does not support CREATE INDEX IF NOT EXISTS"):
+            sa.schema.CreateIndex(idx, if_not_exists=True).compile(dialect=CubridDialect())
+
+    def test_unique_create_index_if_not_exists_is_rejected(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        idx = sa.Index("ux_users_email", t.c.email, unique=True)
+        with pytest.raises(CompileError, match="has_index"):
+            sa.schema.CreateIndex(idx, if_not_exists=True).compile(dialect=CubridDialect())
+
+    def test_plain_create_index_is_unchanged(self):
+        t = Table("Users", MetaData(), Column("email", String(50)))
+        idx = sa.Index("IX_Mixed", t.c.email)
+        ddl = sa.schema.CreateIndex(idx).compile(dialect=CubridDialect()).string.strip()
+        assert ddl == 'CREATE INDEX "IX_Mixed" ON "Users" (email)'
+
+
 class TestNumericBindCast386:
     """#386: scaled numeric binds are cast so CUBRID keeps their scale; a
     FROM-less SELECT with WHERE gets a synthetic FROM db_root."""

@@ -102,7 +102,7 @@
 
 - **ALTER TABLE**: CUBRID는 컬럼과 제약조건 추가/삭제를 위한 표준 `ALTER TABLE`을 지원합니다. SQLite는 ALTER 지원이 제한적입니다 (컬럼 추가만, 3.35 이전에는 drop/rename 불가).
 - **코멘트**: CUBRID는 테이블(예: `CREATE TABLE t (...) COMMENT = 'text'`)과 컬럼(예: `col TYPE COMMENT 'text'`) 모두 인라인 `COMMENT` 구문을 지원합니다. 방언은 `SetTableComment`, `DropTableComment`, `SetColumnComment` DDL 구성을 구현합니다. 코멘트 리플렉션은 `get_table_comment()`와 `get_columns()`의 컬럼 코멘트로 지원됩니다.
-- **IF NOT EXISTS / IF EXISTS**: CUBRID는 `CREATE TABLE IF NOT EXISTS`와 `DROP TABLE IF EXISTS`를 지원합니다. 기본 SA 컴파일러가 이를 네이티브로 처리합니다.
+- **IF NOT EXISTS / IF EXISTS**: CUBRID는 `CREATE TABLE IF NOT EXISTS`와 `DROP TABLE IF EXISTS`를 지원합니다. 기본 SA 컴파일러가 이를 네이티브로 처리합니다. CUBRID에는 `CREATE INDEX IF NOT EXISTS`와 `DROP INDEX IF EXISTS`가 없으므로 `CreateIndex(..., if_not_exists=True)`와 `DropIndex(..., if_exists=True)`는 `CompileError`를 발생시킵니다(#540, #533). 대신 `checkfirst=True` 또는 `inspect(conn).has_index()`를 사용하세요.
 - **임시 테이블**: CUBRID는 `CREATE TEMPORARY TABLE`이나 세션 범위 테이블을 지원하지 않습니다.
 - **다중 스키마**: CUBRID는 단일 스키마 모델로 동작합니다. MySQL은 데이터베이스를 스키마로 사용합니다. SQLite는 데이터베이스를 attach할 수 있지만 진정한 스키마 지원은 없습니다.
 

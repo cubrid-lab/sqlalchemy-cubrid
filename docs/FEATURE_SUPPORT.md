@@ -100,7 +100,7 @@ High-level overview by feature category.
 
 - **ALTER TABLE**: CUBRID supports standard `ALTER TABLE` for adding/dropping columns and constraints. SQLite has limited ALTER support (add column only; no drop/rename column before 3.35).
 - **Comments**: CUBRID supports inline `COMMENT` syntax for both tables (e.g., `CREATE TABLE t (...) COMMENT = 'text'`) and columns (e.g., `col TYPE COMMENT 'text'`). The dialect implements `SetTableComment`, `DropTableComment`, and `SetColumnComment` DDL constructs. Comment reflection is supported via `get_table_comment()` and column comments in `get_columns()`.
-- **IF NOT EXISTS / IF EXISTS**: CUBRID supports `CREATE TABLE IF NOT EXISTS` and `DROP TABLE IF EXISTS`. The base SA compiler handles these natively.
+- **IF NOT EXISTS / IF EXISTS**: CUBRID supports `CREATE TABLE IF NOT EXISTS` and `DROP TABLE IF EXISTS`. The base SA compiler handles these natively. CUBRID has no `CREATE INDEX IF NOT EXISTS` or `DROP INDEX IF EXISTS`, so `CreateIndex(..., if_not_exists=True)` and `DropIndex(..., if_exists=True)` raise `CompileError` (#540, #533); use `checkfirst=True` or `inspect(conn).has_index()` instead.
 - **Temporary tables**: CUBRID does not support `CREATE TEMPORARY TABLE` or session-scoped tables.
 - **Multiple schemas**: CUBRID operates in a single-schema model. MySQL uses databases as schemas. SQLite can attach databases but does not have true schema support.
 

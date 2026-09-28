@@ -269,6 +269,25 @@ class TestCubridImpl:
         with pytest.raises(sa.exc.CompileError, match="DROP INDEX IF EXISTS"):
             Operations(context).drop_index("ix_users_email", table_name="users", if_exists=True)
 
+    def test_offline_sql_create_index_if_not_exists_rejected(self):
+        """CUBRID has no CREATE INDEX IF NOT EXISTS, so the op fails at compile time (#540)."""
+        import io
+
+        import inspect
+
+        from alembic.operations import Operations
+
+        if "if_not_exists" not in inspect.signature(Operations.create_index).parameters:
+            pytest.skip("create_index(if_not_exists=...) needs Alembic 1.12+")
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": io.StringIO()},
+        )
+        with pytest.raises(sa.exc.CompileError, match="CREATE INDEX IF NOT EXISTS"):
+            Operations(context).create_index(
+                "ix_users_email", "users", ["email"], if_not_exists=True
+            )
+
     def test_offline_sql_drop_index_without_table_name_rejected(self):
         """Alembic's ``no_table`` placeholder must not reach the SQL (#533)."""
         import io

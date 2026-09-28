@@ -784,7 +784,17 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         Non-unique indexes are passed through to CUBRID as-is.
 
         Closes #355.
+
+        CUBRID (10.2 through 11.4) also has no ``CREATE INDEX IF NOT EXISTS``;
+        a requested ``if_not_exists`` raises ``CompileError`` like
+        ``if_exists`` in :meth:`visit_drop_index` (#540).
         """
+        if create.if_not_exists:
+            raise CompileError(
+                "CUBRID does not support CREATE INDEX IF NOT EXISTS; "
+                "check inspect(conn).has_index() before creating, "
+                "or use Index.create(checkfirst=True), instead"
+            )
         index = create.element
         table = index.table
 
