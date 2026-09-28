@@ -1305,7 +1305,7 @@ Output includes SQL statements, parameters, and execution times.
 
 ```python
 import sqlalchemy_cubrid
-print(sqlalchemy_cubrid.__version__)  # e.g., "1.4.0"
+print(sqlalchemy_cubrid.__version__)  # e.g., "1.8.0"
 
 from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")

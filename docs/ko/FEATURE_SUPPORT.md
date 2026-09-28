@@ -485,4 +485,4 @@ stmt = (
 
 ---
 
-*최종 갱신: 2026년 4월 · sqlalchemy-cubrid v1.4.0 Beta · SQLAlchemy 2.0–2.1*
+*최종 갱신: 2026년 9월 · sqlalchemy-cubrid v1.8.0 · SQLAlchemy 2.0–2.1*

@@ -3,7 +3,7 @@
 ## 1. Overview
 
 **Project**: sqlalchemy-cubrid
-**Current Version**: 1.4.0
+**Current Version**: 1.8.0
 **Status**: Beta (actively maintained; async + JSON shipped)
 **Repository**: [github.com/cubrid-lab/sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 **License**: MIT
@@ -461,7 +461,7 @@ table-recreate strategy when they need full control over data migration.
 
 ---
 
-*Last updated: April 2026 · sqlalchemy-cubrid v1.4.0 Beta*
+*Last updated: September 2026 · sqlalchemy-cubrid v1.8.0*
 
 ---
 

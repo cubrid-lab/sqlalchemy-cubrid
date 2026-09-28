@@ -2956,7 +2956,7 @@ default single-line mode, csql reports the error, **continues with the next
 statements, runs the trailing `COMMIT;` and exits 0**, so a failed script can
 leave partial schema and a bumped `alembic_version`.
 
-!!! note "Changed after 1.7.1"
+!!! note "Changed in 1.8.0"
     Earlier releases set `transactional_ddl = False`. Alembic still wrapped each
     revision in its own transaction in online mode, so each revision was already
     atomic, but a failed `upgrade` kept the revisions before it. Now the whole
@@ -3883,7 +3883,7 @@ Features not currently supported that may be added in future releases, depending
 
 ---
 
-*Last updated: April 2026 · sqlalchemy-cubrid v1.4.0 Beta · SQLAlchemy 2.0–2.1*
+*Last updated: September 2026 · sqlalchemy-cubrid v1.8.0 · SQLAlchemy 2.0–2.1*
 
 ---
 
@@ -5858,7 +5858,7 @@ Output includes SQL statements, parameters, and execution times.
 
 ```python
 import sqlalchemy_cubrid
-print(sqlalchemy_cubrid.__version__)  # e.g., "1.4.0"
+print(sqlalchemy_cubrid.__version__)  # e.g., "1.8.0"
 
 from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")

@@ -1287,7 +1287,7 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)
 
 ```python
 import sqlalchemy_cubrid
-print(sqlalchemy_cubrid.__version__)  # 예: "1.4.0"
+print(sqlalchemy_cubrid.__version__)  # 예: "1.8.0"
 
 from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")

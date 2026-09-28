@@ -222,7 +222,7 @@ default single-line mode, csql reports the error, **continues with the next
 statements, runs the trailing `COMMIT;` and exits 0**, so a failed script can
 leave partial schema and a bumped `alembic_version`.
 
-!!! note "Changed after 1.7.1"
+!!! note "Changed in 1.8.0"
     Earlier releases set `transactional_ddl = False`. Alembic still wrapped each
     revision in its own transaction in online mode, so each revision was already
     atomic, but a failed `upgrade` kept the revisions before it. Now the whole

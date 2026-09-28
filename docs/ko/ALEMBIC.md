@@ -176,7 +176,7 @@ csql -u dba demodb --no-auto-commit --no-single-line -i upgrade.sql
 
 `--no-auto-commit`은 그 `COMMIT;` 줄만 커밋 지점이 되게 합니다. csql의 기본 자동 커밋 모드에서는 문마다 커밋됩니다. `--no-single-line`은 첫 번째로 실패한 문에서 csql을 멈추고 상태 1로 종료시키므로, 열린 트랜잭션이 롤백되어 업그레이드 전체(`transaction_per_migration=True`이면 실패한 리비전)의 변경이 남지 않습니다. csql의 기본 단일 행 모드에서는 오류를 보고한 뒤 **다음 문을 계속 실행하고, 마지막 `COMMIT;`까지 실행한 다음 0으로 종료**하므로, 실패한 스크립트가 부분 스키마와 올라간 `alembic_version`을 남길 수 있습니다.
 
-!!! note "1.7.1 이후 변경"
+!!! note "1.8.0에서 변경"
     이전 릴리스는 `transactional_ddl = False`였습니다. 그래도 온라인 모드의 Alembic은 리비전마다 트랜잭션을 감쌌기 때문에 각 리비전은 이미 원자적이었지만, 실패한 `upgrade`는 앞선 리비전을 남겼습니다. 이제는 기본적으로 업그레이드 전체가 원자적입니다. 이전의 리비전 단위 동작을 유지하려면 `transaction_per_migration=True`를 설정하세요.
 
 ### 자동 등록
