@@ -150,6 +150,20 @@ class TestDialectBasics:
         dbapi_conn.set_autocommit.assert_called_once_with(False)
         dialect.set_isolation_level.assert_not_called()
 
+    @pytest.mark.parametrize("level", [6, b"SERIALIZABLE", 4.0])
+    def test_non_string_isolation_level_raises_argument_error(self, level):
+        with pytest.raises(ArgumentError, match="isolation_level must be a string"):
+            CubridDialect(isolation_level=level)
+
+    @pytest.mark.parametrize("level", ["AUTOCOMMIT", "SERIALIZABLE"])
+    def test_connection_without_autocommit_property_fails_loudly(self, level):
+        """A DBAPI connection lacking ``autocommit`` is a driver mismatch, not 'off'."""
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock(spec=["cursor"])
+        with pytest.raises(AttributeError, match="autocommit"):
+            dialect.set_isolation_level(dbapi_conn, level)
+        dbapi_conn.cursor.assert_not_called()
+
     def test_on_connect_leaves_isolation_level_to_sqlalchemy(self):
         """SQLAlchemy's built-in connect hook applies it, with ArgumentError validation (#501)."""
         dialect = CubridDialect(isolation_level="SERIALIZABLE")
@@ -278,7 +292,8 @@ class TestIsolationLevelMethods:
         }
         for level_name, expected_num in expected_map.items():
             cursor = MagicMock()
-            dbapi_conn = MagicMock(spec=[])
+            dbapi_conn = MagicMock(spec=["cursor", "autocommit"])
+            dbapi_conn.autocommit = False
             dbapi_conn.cursor = MagicMock(return_value=cursor)
 
             dialect.set_isolation_level(dbapi_conn, level_name)
@@ -292,6 +307,8 @@ class TestIsolationLevelMethods:
         cursor = MagicMock()
 
         class PlainDBAPIConnection:
+            autocommit = False
+
             def cursor(self):
                 return cursor
 

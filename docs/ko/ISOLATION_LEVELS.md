@@ -123,7 +123,7 @@ with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
     # 다른 세션에 이미 보이며, conn.rollback()으로 되돌릴 수 없음
 ```
 
-`AUTOCOMMIT`은 서버 격리 수준이 아니라 드라이버 모드입니다. 서버 수준은 그대로이며 `conn.get_isolation_level()`도 그 수준을 보고합니다. 다른 수준을 설정하면 드라이버 오토커밋이 다시 꺼지고, 풀링된 연결은 반환될 때 트랜잭션 모드로 돌아갑니다([연결 반환 시 리셋](#연결-반환-시-리셋) 참고). DBAPI 연결의 모드는 `engine.dialect.detect_autocommit_setting(dbapi_connection)`으로 확인할 수 있습니다.
+`AUTOCOMMIT`은 서버 격리 수준이 아니라 드라이버 모드입니다. `cubrid://`(CUBRIDdb)에서는 서버 수준이 그대로이며 `conn.get_isolation_level()`도 그 수준을 보고합니다. `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`에서는 그렇지 않습니다. pycubrid는 오토커밋된 문장마다 새 브로커 세션을 열므로(cubrid-lab/pycubrid#468) 문장은 서버 기본 수준(보통 READ COMMITTED)으로 실행되고, 세션 변수(`SET @v`)는 다음 문장까지 유지되지 않습니다. 문장마다 그 재연결 비용도 듭니다. pycubrid에서 엔진 수준 `AUTOCOMMIT`을 쓸 때는 `create_engine()`에 `skip_autocommit_rollback=True`를 전달해 풀 반환 시 rollback이 재연결을 한 번 더 일으키지 않게 하세요([드라이버 호환성, 알려진 문제 10](DRIVER_COMPAT.md#10-pycubrid는-commit--rollback-후-새-세션을-시작-방언이-격리-수준을-다시-적용) 참고). 다른 수준을 설정하면 드라이버 오토커밋이 다시 꺼지고, 풀링된 연결은 반환될 때 트랜잭션 모드로 돌아갑니다([연결 반환 시 리셋](#연결-반환-시-리셋) 참고). DBAPI 연결의 모드는 `engine.dialect.detect_autocommit_setting(dbapi_connection)`으로 확인할 수 있습니다.
 
 ---
 

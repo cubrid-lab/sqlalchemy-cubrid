@@ -1159,6 +1159,26 @@ class TestAsyncAutocommitIsolationLevel:
             await conn.commit()
             assert await conn.get_isolation_level() == "SERIALIZABLE"
 
+    async def test_engine_level_autocommit_is_restored_after_connection_override(
+        self,
+        observer: Callable[[int], Awaitable[int]],
+        make_engine: Callable[..., AsyncEngine],
+    ):
+        eng = make_engine(isolation_level="AUTOCOMMIT")
+        async with eng.connect() as conn:
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            conn = await conn.execution_options(isolation_level="SERIALIZABLE")
+            await self._insert(conn, 1)
+            assert await observer(1) == 0
+            await conn.rollback()
+
+        async with eng.connect() as conn:
+            assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            await self._insert(conn, 2)
+            assert await observer(2) == 1
+        assert await observer(1) == 0
+
     async def test_invalid_level_raises_argument_error_on_every_path(
         self, make_engine: Callable[..., AsyncEngine]
     ):

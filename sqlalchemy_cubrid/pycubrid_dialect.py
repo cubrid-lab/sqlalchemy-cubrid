@@ -150,7 +150,7 @@ class PyCubridDialect(CubridDialect):
         server default, which pycubrid's new session already starts at, so the
         per-commit re-apply after a one-off per-connection override is dropped.
         """
-        super().reset_isolation_level(dbapi_conn)
+        super().reset_isolation_level(dbapi_conn)  # type: ignore[no-untyped-call]  # unannotated in SQLAlchemy
         if self.isolation_level is None:
             raw_connection = _unwrap(dbapi_conn)
             self._connection_isolation_levels.pop(raw_connection, None)

@@ -108,7 +108,7 @@ SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위�
 |---|---|---|
 | `conn.ping()` | 연결 생존 확인 | `CubridDialect.do_ping()` |
 | `conn.get_last_insert_id()` | auto-increment 값 조회 | `CubridExecutionContext.get_lastrowid()` |
-| `conn.set_autocommit(bool)` | 오토커밋 제어 | `CubridDialect.on_connect()` |
+| `conn.set_autocommit(bool)` / `conn.autocommit` | 오토커밋 제어 | `CubridDialect.on_connect()`, `set_isolation_level()`(`AUTOCOMMIT` 전환과 복귀), `detect_autocommit_setting()` |
 | `conn.cursor()` | 커서 생성 | 표준 DB-API |
 
 ### 오류 코드 추출
@@ -216,6 +216,8 @@ cubrid-lab/pycubrid#390을 수정한 pycubrid 릴리스를 채택하기 전까�
 CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#505). 드라이버의 `commit()` 또는 `rollback()` 후 브로커는 CAS 상태 바이트를 비활성(트랜잭션 밖)으로 돌려줍니다. pycubrid 1.7.1(및 `main`)은 이를 CAS가 해제된 것으로 보고 다음 요청 전에 새 브로커 연결을 엽니다. 새 세션은 서버 기본 격리 수준(READ COMMITTED)으로 시작하고 세션 변수도 사라집니다. pycubrid는 `autocommit`만 복원합니다. `CUBRIDdb`는 같은 세션을 유지하며, SQL `COMMIT` 문은 재연결을 일으키지 않습니다. 업스트림에 cubrid-lab/pycubrid#468로 보고되었습니다.
 
 **방언 우회.** `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 각 연결에 설정한 격리 수준을 기억했다가 commit과 rollback마다 다시 적용합니다. 엔진 수준 `isolation_level`은 commit, rollback, 풀 반환 후에도 유지됩니다. 연결 수준 `execution_options(isolation_level=...)`는 해당 `Connection`이 열려 있는 동안 commit과 rollback 후에도 유지되며, 풀 반환 시에는 SQLAlchemy가 엔진 수준(설정이 없으면 서버 기본값)을 복원합니다. 비용은 commit/rollback마다 `SET TRANSACTION ISOLATION LEVEL` + `COMMIT` 한 번이며, 수준을 설정한 연결에만 해당합니다. 다시 적용하면 pycubrid가 즉시 재연결하므로, 이런 연결에서 `commit()` / `rollback()` 후 결과의 나머지를 읽으면 버퍼에 있는 행만 반환하는 대신 `OperationalError`가 발생합니다([알려진 문제 8](#8-commit--rollback-이후-다-읽지-않은-결과)). 다시 적용할 때 commit/rollback 직후 재연결하므로, 수준을 설정한 풀링된 연결은 풀에서 유휴 상태인 동안에도 브로커 CAS를 하나씩 점유합니다(설정이 없으면 pycubrid는 다음 요청까지 CAS를 반환합니다). 풀 크기에 맞게 브로커의 `MAX_NUM_APPL_SERVER`를 잡으세요. 다시 적용 자체가 실패해도 commit이나 rollback은 성공으로 보고되고(rollback을 일으킨 원래 예외도 그대로 전달됨), 실패는 경고로 기록된 뒤 다음 트랜잭션 시작 시 재시도되며, 거기서 다시 실패하면 문장 실행 전에 예외가 발생합니다. 엔진 수준 설정이 없는 엔진에서 일회성 `execution_options()` 재정의를 한 경우, 풀 반환 시 해당 연결의 다시 적용이 중단됩니다. 원시 SQL로 설정한 세션 상태(`SET @var`나 직접 실행한 `SET TRANSACTION` 문 등)는 pycubrid에서 `commit()` / `rollback()` 후 여전히 사라집니다. 이 우회는 cubrid-lab/pycubrid#468을 수정한 pycubrid 릴리스가 최소 지원 버전이 되면 제거됩니다.
+
+**pycubrid의 `AUTOCOMMIT`.** 오토커밋 모드에서는 문장마다 트랜잭션이 끝나므로 pycubrid가 다음 문장 전마다 재연결합니다(1.7.1에서 문장당 두 번의 재연결을 측정). 문장은 `AUTOCOMMIT`으로 바꾸기 전에 설정한 수준이 아니라 서버 기본 격리 수준으로 실행되며, 세션 변수는 문장 사이에 사라집니다. 방언은 문장마다 문장을 하나 더 실행하지 않고는 여기서 아무것도 다시 적용할 수 없습니다. 엔진 수준 `AUTOCOMMIT`에서는 `create_engine(..., skip_autocommit_rollback=True)`로 풀 반환 시 rollback의 추가 재연결을 피할 수 있습니다. `CUBRIDdb`는 오토커밋 모드에서도 세션과 수준을 유지합니다.
 
 ---
 

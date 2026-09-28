@@ -292,7 +292,8 @@ class TestPyCubridIsolationLevelReapply:
 
     @staticmethod
     def _dbapi_conn() -> MagicMock:
-        conn = MagicMock(spec=["cursor", "commit", "rollback"])
+        conn = MagicMock(spec=["cursor", "commit", "rollback", "autocommit"])
+        conn.autocommit = False
         conn.cursor.return_value = MagicMock()
         return conn
 
@@ -403,6 +404,7 @@ class TestPyCubridIsolationLevelReapply:
     @pytest.mark.parametrize(("engine_level", "tracked"), [(None, False), ("SERIALIZABLE", True)])
     def test_reset_drops_tracking_only_without_engine_level(self, engine_level, tracked):
         dialect = PyCubridDialect(isolation_level=engine_level)
+        dialect.default_isolation_level = engine_level or "READ COMMITTED"
         dbapi_conn = self._dbapi_conn()
         dialect.set_isolation_level(dbapi_conn, "REPEATABLE READ")
 

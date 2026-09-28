@@ -28,7 +28,7 @@ import warnings
 from typing import Any, Callable, Optional, Sequence, cast
 
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy.exc import ArgumentError, NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
     DBAPIConnection,
@@ -342,6 +342,11 @@ class CubridDialect(default.DefaultDialect):
         **kwargs: Any,
     ) -> None:
         if isolation_level is not None:
+            if not isinstance(isolation_level, str):
+                raise ArgumentError(
+                    f"isolation_level must be a string such as 'SERIALIZABLE' or "
+                    f"'AUTOCOMMIT', got {isolation_level!r}"
+                )
             # SQLAlchemy applies the engine-level level on connect and restores
             # it on pool checkin, asserting that it equals the level read back
             # at first connect, so pass the canonical spelling of an alias.
@@ -1194,8 +1199,8 @@ class CubridDialect(default.DefaultDialect):
         ``autocommit`` property.
         """
         if level.upper() == "AUTOCOMMIT":
-            if not getattr(dbapi_connection, "autocommit", False):
-                dbapi_connection.autocommit = True
+            if not dbapi_connection.autocommit:  # pyright: ignore[reportAttributeAccessIssue]
+                dbapi_connection.autocommit = True  # pyright: ignore[reportAttributeAccessIssue]
             return
         # Note: do NOT unwrap dbapi_conn.connection — the inner C-level
         # _cubrid.connection cursor cannot handle SET TRANSACTION SQL.
@@ -1207,8 +1212,8 @@ class CubridDialect(default.DefaultDialect):
                 f"Invalid isolation level: {level!r}. "
                 f"Valid values: {list(self.get_isolation_level_values())}"
             )
-        if getattr(dbapi_connection, "autocommit", False):
-            dbapi_connection.autocommit = False
+        if dbapi_connection.autocommit:  # pyright: ignore[reportAttributeAccessIssue]
+            dbapi_connection.autocommit = False  # pyright: ignore[reportAttributeAccessIssue]
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute(f"SET TRANSACTION ISOLATION LEVEL {numeric_level}")

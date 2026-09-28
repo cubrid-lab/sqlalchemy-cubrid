@@ -123,8 +123,17 @@ with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
     # Already visible to other sessions; conn.rollback() cannot undo it
 ```
 
-`AUTOCOMMIT` is a driver mode, not a server isolation level: the server level
-stays what it was, and `conn.get_isolation_level()` still reports it. Setting
+`AUTOCOMMIT` is a driver mode, not a server isolation level. On `cubrid://`
+(CUBRIDdb) the server level stays what it was, and `conn.get_isolation_level()`
+still reports it. On `cubrid+pycubrid://` and `cubrid+aiopycubrid://` it does
+not: pycubrid opens a new broker session after every autocommitted statement
+(cubrid-lab/pycubrid#468), so statements run at the server default level
+(normally READ COMMITTED), and session variables (`SET @v`) do not survive from
+one statement to the next. Each statement also pays for that reconnect. With an
+engine-level `AUTOCOMMIT` on pycubrid, pass `skip_autocommit_rollback=True` to
+`create_engine()` so the pool's checkin rollback does not add another one (see
+[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-starts-a-new-session-after-commit--rollback-dialect-re-applies-the-isolation-level)).
+Setting
 any other level turns driver autocommit off again, and a pooled connection
 returns to transactional mode when it is checked in (see
 [Reset on Connection Return](#reset-on-connection-return)). Use

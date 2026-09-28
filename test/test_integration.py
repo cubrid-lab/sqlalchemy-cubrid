@@ -618,6 +618,40 @@ class TestAutocommitIsolationLevel:
             assert observer(2) == 1
         assert observer(1) == 0
 
+    @pytest.mark.parametrize(
+        ("alias", "canonical"),
+        [("CURSOR STABILITY", "READ COMMITTED"), ("repeatable_read", "REPEATABLE READ")],
+    )
+    def test_engine_level_alias_is_restored_after_connection_override(
+        self, make_engine, alias, canonical
+    ):
+        eng = make_engine(isolation_level=alias)
+        assert eng.dialect.isolation_level == canonical
+        with eng.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            assert conn.get_isolation_level() == canonical
+            conn = conn.execution_options(isolation_level="SERIALIZABLE")
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+        with eng.connect() as conn:
+            # Same connection: SQLAlchemy's checkin reset did not fail and invalidate it.
+            assert conn.connection.dbapi_connection is dbapi_conn
+            assert conn.get_isolation_level() == canonical
+
+    def test_skip_autocommit_rollback_with_engine_level_autocommit(self, observer, make_engine):
+        eng = make_engine(isolation_level="AUTOCOMMIT", skip_autocommit_rollback=True)
+        with eng.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            self._insert(conn, 1)
+            conn.rollback()  # skipped: detect_autocommit_setting() reports True
+        assert observer(1) == 1
+        with eng.connect() as conn:
+            assert conn.connection.dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            conn = conn.execution_options(isolation_level="SERIALIZABLE")
+            self._insert(conn, 2)
+            conn.rollback()  # not skipped: the connection is transactional now
+        assert observer(2) == 0
+
     def test_invalid_level_raises_argument_error_on_every_path(self, make_engine):
         with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
             with make_engine(isolation_level="BOGUS").connect():

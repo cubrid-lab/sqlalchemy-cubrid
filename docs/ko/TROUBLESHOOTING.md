@@ -1019,8 +1019,9 @@ with engine.connect().execution_options(
 | `"SERIALIZABLE"` | 6 |
 | `"REPEATABLE READ"` | 5 |
 | `"READ COMMITTED"` *(기본)* | 4 |
+| `"AUTOCOMMIT"` | 드라이버 오토커밋 모드([오토커밋 충돌](#오토커밋-충돌) 참고) |
 
-레거시 pre-MVCC 수준(`READ UNCOMMITTED`와 숫자 코드 1–3으로 해석되던 세분화된 class/instance 조합)은 CUBRID 10.0에서 제거되었으며 더 이상 받지 않습니다. 전달하면 `ValueError`가 발생합니다. [격리 수준](ISOLATION_LEVELS.md)을 참고하세요.
+레거시 pre-MVCC 수준(`READ UNCOMMITTED`와 숫자 코드 1–3으로 해석되던 세분화된 class/instance 조합)은 CUBRID 10.0에서 제거되었으며 더 이상 받지 않습니다. `create_engine(isolation_level=...)`이나 `execution_options(isolation_level=...)`에 전달하면 `sqlalchemy.exc.ArgumentError`가 발생합니다. [격리 수준](ISOLATION_LEVELS.md)을 참고하세요.
 
 ---
 
@@ -1087,7 +1088,7 @@ with engine.connect().execution_options(
     # 즉시 커밋됨; conn.rollback()으로 되돌릴 수 없음
 ```
 
-`create_engine(..., isolation_level="AUTOCOMMIT")`과 `engine.execution_options(isolation_level="AUTOCOMMIT")`도 동작합니다. `execution_options()`로 `AUTOCOMMIT`으로 바꾼 연결은 풀로 돌아가면 다시 트랜잭션 모드가 됩니다. #501 이전 릴리스는 `AUTOCOMMIT`에 대해 `ArgumentError`(`execution_options`) 또는 `ValueError`(`create_engine`)를 발생시켰습니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
+`create_engine(..., isolation_level="AUTOCOMMIT")`과 `engine.execution_options(isolation_level="AUTOCOMMIT")`도 동작합니다. `execution_options()`로 `AUTOCOMMIT`으로 바꾼 연결은 풀로 돌아가면 다시 트랜잭션 모드가 됩니다. pycubrid에서는 오토커밋된 문장이 서버 기본 격리 수준으로 실행되고 매번 브로커 세션을 재연결하므로(cubrid-lab/pycubrid#468), 엔진 수준 `AUTOCOMMIT`을 쓸 때는 `skip_autocommit_rollback=True`도 전달하세요. #501 이전 릴리스는 `AUTOCOMMIT`에 대해 `ArgumentError`(`execution_options`) 또는 `ValueError`(`create_engine`)를 발생시켰습니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
 
 ---
 

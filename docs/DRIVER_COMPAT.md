@@ -114,7 +114,7 @@ The dialect relies on these driver-specific APIs:
 |---|---|---|
 | `conn.ping()` | Check connection liveness | `CubridDialect.do_ping()` |
 | `conn.get_last_insert_id()` | Get auto-increment value | `CubridExecutionContext.get_lastrowid()` |
-| `conn.set_autocommit(bool)` | Control autocommit | `CubridDialect.on_connect()` |
+| `conn.set_autocommit(bool)` / `conn.autocommit` | Control autocommit | `CubridDialect.on_connect()`, `set_isolation_level()` (`AUTOCOMMIT` and back), `detect_autocommit_setting()` |
 | `conn.cursor()` | Create cursor | Standard DB-API |
 
 ### Error Code Extraction
@@ -311,6 +311,16 @@ Session state set with raw SQL (such as `SET @var` or a `SET TRANSACTION`
 statement you run yourself) is still lost after `commit()` / `rollback()` on
 pycubrid. The workaround will be removed once a pycubrid release fixing
 cubrid-lab/pycubrid#468 is the minimum supported version.
+
+**`AUTOCOMMIT` on pycubrid.** In autocommit mode every statement ends a
+transaction, so pycubrid reconnects before each following statement (two
+reconnects per statement were measured on 1.7.1). Statements run at the server
+default isolation level, not at a level set before switching to `AUTOCOMMIT`,
+and session variables are lost between statements. The dialect cannot
+re-apply anything here without adding a statement per statement. With an
+engine-level `AUTOCOMMIT`, `create_engine(..., skip_autocommit_rollback=True)`
+avoids the extra reconnect from the pool's checkin rollback. `CUBRIDdb` keeps
+the session and the level in autocommit mode.
 
 ---
 
