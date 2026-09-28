@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from sqlalchemy_cubrid import requirements as requirements_module
 from sqlalchemy_cubrid.requirements import Requirements
 
 
@@ -164,10 +165,14 @@ def test_stacking_keeps_open_requirements_open(requirements):
 
 
 @pytest.mark.parametrize("charset, expected_open", [("utf8", True), ("iso88591", False)])
-def test_unicode_ddl_requires_a_utf8_database(requirements, charset, expected_open):
+def test_unicode_ddl_requires_a_utf8_database(requirements, monkeypatch, charset, expected_open):
     from unittest.mock import MagicMock
 
+    # The probe is cached per URL; isolate the cache and use a stable URL
+    # (a MagicMock's default str() embeds id(), which can be reused).
+    monkeypatch.setattr(requirements_module, "_UTF8_BY_URL", {})
     config = MagicMock()
+    config.db.url = f"cubrid+pycubrid://dba@localhost:33000/{charset}"
     conn = config.db.connect.return_value.__enter__.return_value
     conn.exec_driver_sql.return_value.scalar.return_value = charset
     assert requirements.unicode_ddl.enabled_for_config(config) is expected_open
@@ -176,10 +181,12 @@ def test_unicode_ddl_requires_a_utf8_database(requirements, charset, expected_op
     assert conn.exec_driver_sql.call_count == 1
 
 
-def test_unicode_ddl_skips_when_the_charset_probe_fails(requirements):
+def test_unicode_ddl_skips_when_the_charset_probe_fails(requirements, monkeypatch):
     from unittest.mock import MagicMock
 
+    monkeypatch.setattr(requirements_module, "_UTF8_BY_URL", {})
     config = MagicMock()
+    config.db.url = "cubrid+pycubrid://dba@localhost:33000/unreachable"
     config.db.connect.side_effect = RuntimeError("server unreachable")
     assert requirements.unicode_ddl.enabled_for_config(config) is False
 
