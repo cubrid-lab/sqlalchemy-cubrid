@@ -116,6 +116,22 @@ jobs:
           fi
           echo "Full compatibility matrix passed for $TAG_COMMIT (run $success)."
 
+      - name: Require the GitHub Release and SBOM from create-release.yml
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # create-release.yml uploads the SBOM as its last step, so a Release
+          # carrying sbom.spdx.json means that workflow completed for this tag.
+          if ! assets=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name'); then
+            echo "::error::GitHub Release $TAG not found. create-release.yml must succeed before publishing."
+            exit 1
+          fi
+          if ! printf '%s\n' "$assets" | grep -qx 'sbom.spdx.json'; then
+            echo "::error::GitHub Release $TAG has no sbom.spdx.json. Re-run create-release.yml before publishing."
+            exit 1
+          fi
+          echo "GitHub Release $TAG with SBOM found."
+
       - name: Build sdist and wheel
         run: |
           python -m pip install --upgrade pip build twine

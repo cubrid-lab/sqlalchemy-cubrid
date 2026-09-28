@@ -78,11 +78,16 @@ gh run list --workflow create-release.yml --limit 3
 
 ```bash
 gh workflow run publish-pypi.yml -f tag=vX.Y.Z
-gh run watch "$(gh run list --workflow publish-pypi.yml --limit 1 --json databaseId -q '.[0].databaseId')"
+# Identify the run you just dispatched (newest workflow_dispatch run, started
+# by you a moment ago) and watch that exact run ID, failing on failure:
+gh run list --workflow publish-pypi.yml --event workflow_dispatch --limit 5
+gh run watch <run-id> --exit-status
 ```
 
 The workflow re-verifies tag == `__version__`, the dated CHANGELOG entry, that
-the tag is contained in `main`, and the successful full matrix; it then builds,
+the tag is contained in `main`, the successful full matrix, and that the GitHub
+Release for the tag exists with its SBOM (so `create-release.yml` must have
+succeeded); it then builds,
 smoke-tests the wheel and sdist, and publishes via Trusted Publisher (OIDC)
 behind the `pypi` environment.
 
