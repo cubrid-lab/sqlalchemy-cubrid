@@ -216,9 +216,10 @@ class PyCubridDialect(CubridDialect):
 
         The declared dependency range is still ``pycubrid>=1.3.2,<2.0``, so
         this workaround remains active for pycubrid versions before 1.8.0
-        (and covers the residual real-CAS-restart case on 1.8.0+, where it is
-        otherwise a harmless no-op). Remove it once the minimum supported
-        pycubrid version is raised to 1.8.0 or later (tracked in #559).
+        (on 1.8.0+ it is a harmless no-op). It does not cover a CAS restart
+        while the connection is idle: it only runs right after a commit or
+        rollback. Remove it once the minimum supported pycubrid version is
+        raised to 1.8.0 or later (tracked in #559).
         """
         # SQLAlchemy passes a pool proxy to do_commit/do_rollback but the raw
         # DBAPI connection to set_isolation_level.
