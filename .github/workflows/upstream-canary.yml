@@ -130,12 +130,22 @@ jobs:
 
   # Opens (or comments on) one tracking issue when a canary job fails, and
   # closes it once both jobs pass again. The canary jobs keep
-  # continue-on-error, so the run itself stays green and never blocks PRs.
+  # continue-on-error, so canary test failures leave the run green and never
+  # block PRs. This job deliberately has no continue-on-error: a red run is
+  # the only signal that reporting itself broke. It runs only for the default
+  # branch, so dispatches from feature branches never touch the shared issue,
+  # and it is skipped for cancelled runs.
   report:
     name: Report canary status
     needs: [upstream-canary, upstream-canary-integration]
-    if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    if: >-
+      !cancelled()
+      && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+      && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
+    concurrency:
+      group: upstream-canary-report
+      cancel-in-progress: false
     permissions:
       issues: write
     steps:
@@ -145,6 +155,8 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           ISSUE_TITLE: "Upstream canary failing against pycubrid@main"
+          SA_REF: ${{ github.ref_name }}
+          SA_SHA: ${{ github.sha }}
           OFFLINE_STATUS: ${{ needs.upstream-canary.outputs.status }}
           OFFLINE_RESULT: ${{ needs.upstream-canary.result }}
           OFFLINE_SHA: ${{ needs.upstream-canary.outputs.pycubrid_sha }}
@@ -178,16 +190,21 @@ jobs:
           add_row "Integration tests against pycubrid@main" "$INTEGRATION_STATUS" "$INTEGRATION_RESULT" "$INTEGRATION_SHA"
 
           table="| Job | Outcome | pycubrid commit tested |"$'\n'"|---|---|---|"$'\n'"${rows}"
+          tested="sqlalchemy-cubrid: \`${SA_REF}\` at [\`${SA_SHA:0:12}\`](https://github.com/${GH_REPO}/commit/${SA_SHA})"
 
           # Existing open tracking issue: exact title match among open issues
           # labelled "ci" (REST listing, so a just-created issue is found).
+          # jq runs once per page, so keep the first line in bash instead of
+          # piping to head (which could SIGPIPE gh under pipefail).
           issue="$(gh api --paginate "repos/${GH_REPO}/issues?state=open&labels=ci&per_page=100" \
-            --jq '.[] | select(.pull_request == null and .title == env.ISSUE_TITLE) | .number' | head -n1)"
+            --jq 'first(.[] | select(.pull_request == null and .title == env.ISSUE_TITLE) | .number) // empty')"
+          issue="${issue%%$'\n'*}"
 
           if [ "$failed" -gt 0 ]; then
             body="The upstream canary failed against \`pycubrid@main\`.
 
           ${table}
+          ${tested}
           Run: ${RUN_URL}
 
           This issue is updated by \`.github/workflows/upstream-canary.yml\` and closed automatically once both canary jobs pass again."
@@ -206,6 +223,7 @@ jobs:
             gh issue close "$issue" --comment "The upstream canary passed again.
 
           ${table}
+          ${tested}
           Run: ${RUN_URL}"
             echo "Closed issue #${issue}"
           else

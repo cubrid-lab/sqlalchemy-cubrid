@@ -526,7 +526,8 @@ CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v 
 The weekly `upstream-canary.yml` run against `pycubrid@main` stays
 non-blocking: it warns about upcoming regressions, but an unreleased upstream
 HEAD must not block unrelated pull requests. Its failures are still reported:
-when a canary job fails on a scheduled or manually dispatched run, the workflow
+when a canary job fails on a scheduled or manually dispatched run of the
+default branch, the workflow
 opens an issue titled "Upstream canary failing against pycubrid@main" (label
 `ci`), or comments on it if it is already open, with the failing jobs, the run
 link and the pycubrid commit tested, and closes it once both jobs pass again.
