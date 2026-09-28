@@ -293,6 +293,14 @@ Maintainers or triagers assign/create the canonical GitHub labels. Outside
 reporters can describe urgency and effort without label permissions; those
 descriptions help triage but do not themselves assign a label.
 
+Use a short issue title prefix such as `fix:`, `feat:`, `docs:`, `ci:`,
+`chore:`, `test:`, or `perf:` (with an optional scope before the colon).
+`.github/workflows/issue-triage.yml` flags incomplete human-submitted issue
+titles or labels as `status: needs triage` without posting a comment or
+guessing priority/size. Maintainers remove that label once triage is complete.
+Agents and workflows creating issues through CLI/API must supply canonical
+metadata at creation; `GITHUB_TOKEN`-created issues do not retrigger this guard.
+
 Use the following exact names, with **one space after the colon**:
 
 - Priority: `priority: critical`, `priority: high`, `priority: medium`, `priority: low`.
@@ -318,10 +326,10 @@ helps contributors pick appropriately scoped work.
 Rules:
 
 1. **Size reflects effort, not importance** — a one-line fix for a critical bug is still `size: XS`.
-2. **Assign both `priority:` and `size:` when filing the issue.** If scope or impact
+2. **Maintainers and agents assign both `priority:` and `size:` when filing.** If scope or impact
    is uncertain, use a provisional estimate, explain the uncertainty in the body,
-   and add `status: needs triage` (or the repo's equivalent). Refine the estimates
-   during triage rather than omitting either required label.
+   and add `status: needs triage`. External reports may start with that label;
+   refine estimates during maintainer triage.
 3. **`good first issue` should be `size: XS` or `size: S`.** If a good-first-issue grows
    past `size: S`, re-scope it or drop the `good first issue` label.
 4. **`size: XL` is a signal to split**, not a green light to start a sprawling change.
