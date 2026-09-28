@@ -570,6 +570,34 @@ class TestTypeCompilation:
         assert "body STRING" in ddl
         assert "TEXT" not in ddl
 
+    @pytest.mark.parametrize(
+        ("type_", "expected"),
+        [
+            (sa.BINARY(), "BIT(8)"),
+            (sa.BINARY(4), "BIT(32)"),
+            (sa.VARBINARY(), "BIT VARYING"),
+            (sa.VARBINARY(16), "BIT VARYING(128)"),
+        ],
+        ids=["BINARY", "BINARY(4)", "VARBINARY", "VARBINARY(16)"],
+    )
+    def test_binary_types_compile_to_bit_strings(self, type_, expected):
+        """#545: CUBRID has no BINARY/VARBINARY; lengths are bytes -> bits."""
+        assert self._compile_type(type_) == expected
+
+    @pytest.mark.parametrize("type_", [sa.BINARY(0), sa.VARBINARY(0)], ids=["BINARY", "VARBINARY"])
+    def test_binary_types_reject_zero_length(self, type_):
+        with pytest.raises(CompileError, match=r"BINARY\(0\)"):
+            self._compile_type(type_)
+
+    @pytest.mark.parametrize(
+        "type_",
+        [sa.UUID(), sa.UUID(as_uuid=False), sa.Uuid(), sa.Uuid(as_uuid=False)],
+        ids=["UUID", "UUID(as_uuid=False)", "Uuid", "Uuid(as_uuid=False)"],
+    )
+    def test_uuid_types_compile_to_char32(self, type_):
+        """#545: CUBRID has no UUID; sa.UUID is stored like sa.Uuid."""
+        assert self._compile_type(type_) == "CHAR(32)"
+
     def test_float(self):
         from sqlalchemy_cubrid.types import FLOAT
 
@@ -863,6 +891,160 @@ class TestTypeCompilation:
         # Test with kw override
         result = get_method("length", t, {"length": 200})
         assert result == 200
+
+
+# Column types CUBRID rejects in CREATE TABLE, and the ones it accepts.
+# Both lists come from live ``CREATE TABLE t (x <type>)`` attempts on CUBRID
+# 10.2 and 11.4 (#545); the two versions agree.
+_CUBRID_REJECTED_TYPE_NAMES = {
+    "ARRAY",
+    "BINARY",
+    "BOOL",
+    "BOOLEAN",
+    "BYTEA",
+    "DATETIME2",
+    "IMAGE",
+    "INTERVAL",
+    "JSONB",
+    "LONG",
+    "LONGBLOB",
+    "LONGTEXT",
+    "MEDIUMBLOB",
+    "MEDIUMTEXT",
+    "MONEY",
+    "NTEXT",
+    "NUMBER",
+    "NVARCHAR",
+    "NVARCHAR2",
+    "RAW",
+    "SERIAL",
+    "TEXT",
+    "TIME WITH TIME ZONE",
+    "TINYBLOB",
+    "TINYTEXT",
+    "UNIQUEIDENTIFIER",
+    "UUID",
+    "VARBINARY",
+    "VARCHAR2",
+    "YEAR",
+}
+_CUBRID_ACCEPTED_TYPE_NAMES = {
+    "BIGINT",
+    "BIT",
+    "BIT VARYING",
+    "BLOB",
+    "CHAR",
+    "CLOB",
+    "DATE",
+    "DATETIME",
+    "DATETIMELTZ",
+    "DATETIMETZ",
+    "DECIMAL",
+    "DOUBLE",
+    "DOUBLE PRECISION",
+    "ENUM",
+    "FLOAT",
+    "INTEGER",
+    "JSON",
+    "NCHAR",
+    "NCHAR VARYING",
+    "NUMERIC",
+    "REAL",
+    "SMALLINT",
+    "STRING",
+    "TIME",
+    "TIMESTAMP",
+    "TIMESTAMPLTZ",
+    "TIMESTAMPTZ",
+    "VARCHAR",
+}
+# Not column types in their own right (abstract bases, wrappers, tuples).
+_NON_COLUMN_TYPE_NAMES = {
+    "NullType",
+    "TupleType",
+    "TypeDecorator",
+    "TypeEngine",
+    "UserDefinedType",
+    "Variant",
+}
+
+
+def _generic_type_instances():
+    """Every public generic SQLAlchemy type, plus common argument variants."""
+    import inspect
+
+    instances = []
+    for name in sorted(dir(sa.types)):
+        cls = getattr(sa.types, name)
+        if (
+            name.startswith("_")
+            or name in _NON_COLUMN_TYPE_NAMES
+            or not inspect.isclass(cls)
+            or not issubclass(cls, sa.types.TypeEngine)
+        ):
+            continue
+        if issubclass(cls, sa.Enum):
+            instances.append(cls("a", "b"))
+        elif issubclass(cls, sa.ARRAY):
+            instances.append(cls(sa.Integer()))
+        else:
+            instances.append(cls())
+    instances += [
+        sa.String(10),
+        sa.Unicode(10),
+        sa.VARCHAR(10),
+        sa.NVARCHAR(10),
+        sa.CHAR(5),
+        sa.NCHAR(5),
+        sa.Text(100),
+        sa.UnicodeText(100),
+        sa.BINARY(4),
+        sa.VARBINARY(4),
+        sa.LargeBinary(100),
+        sa.Numeric(10, 2),
+        sa.DECIMAL(10, 2),
+        sa.Float(10),
+        sa.DateTime(timezone=True),
+        sa.DATETIME(timezone=True),
+        sa.TIMESTAMP(timezone=True),
+        sa.Time(timezone=True),
+        sa.TIME(timezone=True),
+        sa.Uuid(as_uuid=False),
+        sa.Uuid(native_uuid=False),
+        sa.UUID(as_uuid=False),
+        sa.Enum("a", "b", native_enum=False),
+        sa.Boolean(create_constraint=True),
+        sa.Interval(native=True),
+    ]
+    return instances
+
+
+def _type_name(ddl: str) -> str:
+    """``NCHAR VARYING(10)`` -> ``NCHAR VARYING``; ``ENUM('a')`` -> ``ENUM``."""
+    return ddl.split("(", 1)[0].strip().upper()
+
+
+def test_rejected_and_accepted_type_names_are_disjoint():
+    assert not _CUBRID_REJECTED_TYPE_NAMES & _CUBRID_ACCEPTED_TYPE_NAMES
+
+
+@pytest.mark.parametrize("type_", _generic_type_instances(), ids=repr)
+def test_generic_types_never_compile_to_a_type_cubrid_rejects(type_):
+    """#545: sweep every generic SQLAlchemy type through the type compiler.
+
+    A type either compiles to a column type CUBRID accepts, or raises
+    ``CompileError`` (e.g. ``ARRAY``) -- never DDL the server rejects.
+    A new SQLAlchemy type whose DDL is in neither list fails here, so its
+    CUBRID mapping gets checked live before it is added to the allowlist.
+    """
+    try:
+        ddl = CubridDialect().type_compiler_instance.process(type_)
+    except CompileError:
+        assert isinstance(type_, sa.ARRAY)
+        return
+    name = _type_name(ddl)
+    assert name not in _CUBRID_REJECTED_TYPE_NAMES, ddl
+    assert name in _CUBRID_ACCEPTED_TYPE_NAMES, ddl
 
 
 class TestDDLCompilation:

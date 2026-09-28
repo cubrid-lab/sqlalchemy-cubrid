@@ -2046,6 +2046,9 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
 | `Unicode(n)`         | `VARCHAR(n)`      | Database charset (no `NCHAR` needed)       |
 | `UnicodeText`        | `STRING`          | Same as `Text`; CUBRID has no `TEXT` type  |
 | `LargeBinary`        | `BLOB`            | Binary Large Object                        |
+| `BINARY(n)`          | `BIT(n*8)`        | Fixed-length bytes; CUBRID has no `BINARY` |
+| `VARBINARY(n)`       | `BIT VARYING(n*8)`| Variable-length bytes; no `VARBINARY`      |
+| `Uuid` / `UUID`      | `CHAR(32)`        | No native UUID; stored as 32-char hex      |
 | `Boolean`            | `SMALLINT`        | ⚠️ No native boolean — mapped to 0/1      |
 | `Date`               | `DATE`            | Calendar date                              |
 | `Time`               | `TIME`            | Time of day                                |
@@ -2053,6 +2056,10 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
 | `TIMESTAMP`          | `TIMESTAMP`       | Timestamp with auto-update behavior        |
 
 > **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`. An explicit zero length (`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) is not a valid CUBRID length and raises `CompileError` instead of being widened to the default.
+
+> **BINARY / VARBINARY**: CUBRID has no `BINARY` or `VARBINARY` type, so the dialect stores them as bit strings, whose length is in bits: `BINARY(n)` compiles to `BIT(n*8)` (`BINARY()` to `BIT(8)`), `VARBINARY(n)` to `BIT VARYING(n*8)` and `VARBINARY()` to `BIT VARYING` (up to 1,073,741,823 bits). Values bind and return as `bytes` on both drivers. `BINARY` is fixed-length, so a shorter value comes back padded with `\x00` bytes. An empty `b""` is not preserved: depending on the driver it reads back as `None` (or as zero bytes for `BINARY` on pycubrid). A zero length (`BINARY(0)`, `VARBINARY(0)`) raises `CompileError`. These columns reflect as `BIT(n*8)` / `BIT VARYING(n*8)`, so Alembic autogenerate reports no type change for them.
+
+> **UUID**: CUBRID has no `UUID` type. `sa.Uuid` and `sa.UUID` both compile to `CHAR(32)` and use SQLAlchemy's non-native UUID handling: values are stored as 32-character hex strings, and read back as `uuid.UUID` (default) or as a hyphenated `str` with `as_uuid=False`. The column reflects as `CHAR(32)`.
 
 > **Character set and collation**: the dialect does not render a column-level `CHARSET` or `COLLATE` clause for string and text types. A `collation=` argument (for example `String(50, collation="utf8_bin")`, `Text(collation=...)` or `UnicodeText(collation=...)`) is dropped, and the column uses the database charset and collation. `Unicode` / `UnicodeText` do not select a different charset either: they compile to `VARCHAR(n)` / `STRING` like `String` / `Text`, so non-ASCII text (for example Korean, Japanese, Chinese or emoji) round-trips only when the database was created with a UTF-8 charset (for example `cubrid createdb testdb en_US.utf8`).
 
@@ -2272,12 +2279,13 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
 | `DATETIME`          | `DATETIME`         |
-| `BIT`               | `BIT`              |
-| `BIT VARYING`       | `BIT`              |
+| `BIT(n)`            | `BIT(n)`           |
+| `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
 | `VARCHAR`           | `VARCHAR`          |
 | `NCHAR`             | `NCHAR`            |
-| `CHAR VARYING`      | `NVARCHAR`         |
+| `CHAR VARYING`      | `VARCHAR`          |
+| `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
@@ -2412,12 +2420,13 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | Time of day only. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | Date + time in one value. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID timestamp semantics may auto-update depending on schema defaults. |
-| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` | `bytes` / `str` | Representation may vary by DBAPI driver. |
-| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` | `bytes` / `str` | Variable-length bit string. |
+| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | Fixed-length bit string; `sa.BINARY(n)` compiles to `BIT(n*8)`. |
+| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | Variable-length bit string; `sa.VARBINARY(n)` compiles to `BIT VARYING(n*8)`. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | Fixed-length character data. |
 | `VARCHAR(n)` | `sqlalchemy_cubrid.VARCHAR` / `sqlalchemy.String` | `str` | Variable-length string. |
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | National character set type. |
-| `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | Reflected to NVARCHAR by this dialect. |
+| `CHAR VARYING(n)` | `sqlalchemy_cubrid.VARCHAR` | `str` | Synonym of `VARCHAR(n)`; reflected to VARCHAR. |
+| `CHAR(32)` (UUID) | `sqlalchemy.Uuid` / `sqlalchemy.UUID` | `uuid.UUID` / `str` | No native UUID; 32-char hex. Reflects as `CHAR(32)`. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | Equivalent to very large `VARCHAR`. |
 | `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
 | `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (documented) | Binary LOB. Current drivers return a LOB locator on read; see the warning below. |

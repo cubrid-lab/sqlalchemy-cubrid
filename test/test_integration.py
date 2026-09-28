@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime
 from inspect import signature
 import os
+import uuid
 from decimal import Decimal
 
 import pytest
@@ -1567,6 +1568,94 @@ class TestUnicodeTextIntegration:
             assert isinstance(col["body"]["type"], sa.String)
         finally:
             meta.drop_all(engine)
+
+
+class TestBinaryAndUuidIntegration:
+    """#545: ``BINARY``/``VARBINARY`` map to BIT strings and ``UUID`` to CHAR(32)."""
+
+    @pytest.fixture()
+    def table(self, engine):
+        meta = MetaData()
+        t = Table(
+            "binary_uuid_545",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("bin", sa.BINARY(4)),
+            Column("varbin", sa.VARBINARY(16)),
+            Column("varbin_max", sa.VARBINARY()),
+            Column("u", sa.UUID()),
+            Column("u_str", sa.UUID(as_uuid=False)),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        yield t
+        meta.drop_all(engine)
+
+    def test_bytes_and_uuid_round_trip(self, engine, table):
+        u1, u2 = uuid.uuid4(), uuid.uuid4()
+        rows = [
+            {
+                "id": 1,
+                "bin": b"\x00\x01\xfe\xff",
+                "varbin": b"\x00\xff" * 8,
+                "varbin_max": bytes(range(256)) * 4,
+                "u": u1,
+                "u_str": str(u1),
+            },
+            {"id": 2, "bin": b"ab", "varbin": b"ab", "varbin_max": b"x", "u": u2, "u_str": str(u2)},
+            {"id": 3, "bin": None, "varbin": None, "varbin_max": None, "u": None, "u_str": None},
+        ]
+        with engine.begin() as conn:
+            conn.execute(table.insert(), rows)
+        with engine.connect() as conn:
+            got = [dict(r._mapping) for r in conn.execute(select(table).order_by(table.c.id))]
+            by_bytes = conn.execute(select(table.c.id).where(table.c.varbin == b"ab")).scalar()
+            by_uuid = conn.execute(select(table.c.id).where(table.c.u == u2)).scalar()
+            by_str = conn.execute(select(table.c.id).where(table.c.u_str == str(u1))).scalar()
+        # BINARY is fixed-length: shorter values come back zero-padded.
+        rows[1]["bin"] = b"ab\x00\x00"
+        assert got == rows
+        assert isinstance(got[0]["bin"], bytes) and isinstance(got[0]["varbin"], bytes)
+        assert isinstance(got[0]["u"], uuid.UUID) and isinstance(got[0]["u_str"], str)
+        assert (by_bytes, by_uuid, by_str) == (2, 2, 1)
+
+    def test_reflection_and_autogenerate_have_no_false_diffs(self, engine, table):
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        with engine.connect() as conn:
+            cols = {c["name"]: c["type"] for c in inspect(conn).get_columns(table.name)}
+            ctx = MigrationContext.configure(
+                connection=conn,
+                opts={
+                    "compare_type": True,
+                    "include_name": lambda name, type_, parent: (
+                        type_ != "table" or name == table.name
+                    ),
+                },
+            )
+            assert compare_metadata(ctx, table.metadata) == []
+
+            # A real length change is still detected.
+            changed = MetaData()
+            Table(
+                table.name,
+                changed,
+                *[
+                    Column(c.name, c.type, primary_key=c.primary_key)
+                    for c in table.c
+                    if c.name != "varbin"
+                ],
+                Column("varbin", sa.VARBINARY(32)),
+            )
+            diffs = compare_metadata(ctx, changed)
+        compiled = {n: engine.dialect.type_compiler_instance.process(t) for n, t in cols.items()}
+        assert compiled["bin"] == "BIT(32)"
+        assert compiled["varbin"] == "BIT VARYING(128)"
+        assert compiled["varbin_max"] == "BIT VARYING(1073741823)"
+        assert compiled["u"] == compiled["u_str"] == "CHAR(32)"
+        assert [d[0][0] for d in diffs] == ["modify_type"]
+        assert diffs[0][0][3] == "varbin"
 
 
 class TestExecutemanyNoneAndRowcount:

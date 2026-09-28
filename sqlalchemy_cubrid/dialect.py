@@ -540,6 +540,14 @@ class CubridDialect(default.DefaultDialect):
                     coltype = self.ischema_names[coltype_key](precision=precision, scale=scale)  # pyright: ignore[reportCallIssue]
                 else:
                     coltype = self.ischema_names[coltype_key]()
+            elif coltype_key in ("BIT", "BIT VARYING"):
+                # Keep the bit length and VARYING so a reflected BIT(32) /
+                # BIT VARYING(64) compiles back to the same DDL (#545).
+                length_match = _RE_LENGTH.search(coltype_raw)
+                coltype = BIT(
+                    length=int(length_match.group(1)) if length_match else None,
+                    varying=coltype_key == "BIT VARYING",
+                )
             else:
                 try:
                     coltype_cls = self.ischema_names[coltype_key]

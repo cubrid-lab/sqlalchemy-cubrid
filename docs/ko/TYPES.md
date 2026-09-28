@@ -39,6 +39,9 @@
 | `Unicode(n)`         | `VARCHAR(n)`      | 데이터베이스 문자셋 (`NCHAR` 불필요)        |
 | `UnicodeText`        | `STRING`          | `Text`와 동일, CUBRID에는 `TEXT` 타입 없음  |
 | `LargeBinary`        | `BLOB`            | Binary Large Object                         |
+| `BINARY(n)`          | `BIT(n*8)`        | 고정 길이 바이트, CUBRID에는 `BINARY` 없음  |
+| `VARBINARY(n)`       | `BIT VARYING(n*8)`| 가변 길이 바이트, `VARBINARY` 없음          |
+| `Uuid` / `UUID`      | `CHAR(32)`        | 네이티브 UUID 없음, 32자 16진 문자열로 저장 |
 | `Boolean`            | `SMALLINT`        | ⚠️ 네이티브 불리언 없음 — 0/1로 매핑        |
 | `Date`               | `DATE`            | 달력 날짜                                   |
 | `Time`               | `TIME`            | 시각                                        |
@@ -46,6 +49,10 @@
 | `TIMESTAMP`          | `TIMESTAMP`       | 자동 갱신 동작을 갖는 타임스탬프            |
 
 > **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다. 길이를 명시적으로 0으로 지정하면(`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) CUBRID에서 유효한 길이가 아니므로 기본값으로 바뀌지 않고 `CompileError`가 발생합니다.
+
+> **BINARY / VARBINARY**: CUBRID에는 `BINARY`나 `VARBINARY` 타입이 없으므로 방언은 이를 비트 단위 길이를 갖는 비트 문자열로 저장합니다. `BINARY(n)`은 `BIT(n*8)`(`BINARY()`는 `BIT(8)`), `VARBINARY(n)`은 `BIT VARYING(n*8)`, `VARBINARY()`는 `BIT VARYING`(최대 1,073,741,823비트)으로 컴파일됩니다. 값은 두 드라이버 모두에서 `bytes`로 바인딩되고 반환됩니다. `BINARY`는 고정 길이이므로 더 짧은 값은 `\x00` 바이트로 채워져 반환됩니다. 빈 `b""`는 보존되지 않으며, 드라이버에 따라 `None`(pycubrid의 `BINARY`는 0 바이트)으로 조회됩니다. 길이 0(`BINARY(0)`, `VARBINARY(0)`)은 `CompileError`를 발생시킵니다. 이 컬럼은 `BIT(n*8)` / `BIT VARYING(n*8)`로 리플렉트되므로 Alembic autogenerate가 타입 변경을 보고하지 않습니다.
+
+> **UUID**: CUBRID에는 `UUID` 타입이 없습니다. `sa.Uuid`와 `sa.UUID`는 모두 `CHAR(32)`로 컴파일되며 SQLAlchemy의 비네이티브 UUID 처리를 사용합니다. 값은 32자 16진 문자열로 저장되고, 기본값에서는 `uuid.UUID`로, `as_uuid=False`에서는 하이픈이 포함된 `str`로 조회됩니다. 컬럼은 `CHAR(32)`로 리플렉트됩니다.
 
 > **문자셋과 콜레이션**: 방언은 문자열·텍스트 타입에 컬럼 수준 `CHARSET`이나 `COLLATE` 절을 생성하지 않습니다. `collation=` 인자(예: `String(50, collation="utf8_bin")`, `Text(collation=...)`, `UnicodeText(collation=...)`)는 무시되며, 컬럼은 데이터베이스의 문자셋과 콜레이션을 사용합니다. `Unicode` / `UnicodeText`도 다른 문자셋을 선택하지 않고 `String` / `Text`와 똑같이 `VARCHAR(n)` / `STRING`으로 컴파일되므로, 한국어·일본어·중국어·이모지 같은 비 ASCII 텍스트는 데이터베이스를 UTF-8 문자셋으로 생성한 경우(예: `cubrid createdb testdb en_US.utf8`)에만 그대로 왕복됩니다.
 
@@ -259,12 +266,13 @@ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
 | `DATETIME`          | `DATETIME`         |
-| `BIT`               | `BIT`              |
-| `BIT VARYING`       | `BIT`              |
+| `BIT(n)`            | `BIT(n)`           |
+| `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
 | `VARCHAR`           | `VARCHAR`          |
 | `NCHAR`             | `NCHAR`            |
-| `CHAR VARYING`      | `NVARCHAR`         |
+| `CHAR VARYING`      | `VARCHAR`          |
+| `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
@@ -399,12 +407,13 @@ for col in users.columns:
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | 시각만. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | 하나의 값으로 날짜 + 시간. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID 타임스탬프 의미론은 스키마 기본값에 따라 자동 갱신될 수 있음. |
-| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` | `bytes` / `str` | 표현은 DBAPI 드라이버에 따라 다를 수 있음. |
-| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` | `bytes` / `str` | 가변 길이 비트 문자열. |
+| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | 고정 길이 비트 문자열. `sa.BINARY(n)`은 `BIT(n*8)`로 컴파일. |
+| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | 가변 길이 비트 문자열. `sa.VARBINARY(n)`은 `BIT VARYING(n*8)`로 컴파일. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | 고정 길이 문자 데이터. |
 | `VARCHAR(n)` | `sqlalchemy_cubrid.VARCHAR` / `sqlalchemy.String` | `str` | 가변 길이 문자열. |
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | 국가 문자 집합 타입. |
-| `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | 이 방언에서 NVARCHAR로 리플렉트. |
+| `CHAR VARYING(n)` | `sqlalchemy_cubrid.VARCHAR` | `str` | `VARCHAR(n)`의 동의어. VARCHAR로 리플렉트. |
+| `CHAR(32)` (UUID) | `sqlalchemy.Uuid` / `sqlalchemy.UUID` | `uuid.UUID` / `str` | 네이티브 UUID 없음, 32자 16진 문자열. `CHAR(32)`로 리플렉트. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | 매우 큰 `VARCHAR`와 동등. |
 | `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (문서상) | 문자 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
 | `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (문서상) | 바이너리 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |

@@ -693,6 +693,31 @@ class TestReflectionMethods:
         assert columns[1]["type"].length == 20
         assert columns[1]["nullable"] is False
 
+    def test_get_columns_bit_keeps_length_and_varying(self):
+        """#545: BIT(n) / BIT VARYING(n) reflect with their length, so they compile back unchanged."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        rows = [
+            ("bit_col", "BIT(32)", "YES", "", None, ""),
+            ("varbit_col", "BIT VARYING(128)", "YES", "", None, ""),
+            ("varbit_max_col", "BIT VARYING(1073741823)", "YES", "", None, ""),
+            ("bare_col", "BIT VARYING", "YES", "", None, ""),
+        ]
+        connection.execute.side_effect = [rows, []]
+
+        columns = _invoke_reflection(dialect, "get_columns", connection, "bit_table")
+
+        compiled = [dialect.type_compiler_instance.process(c["type"]) for c in columns]
+        assert compiled == [
+            "BIT(32)",
+            "BIT VARYING(128)",
+            "BIT VARYING(1073741823)",
+            "BIT VARYING",
+        ]
+
     def test_get_columns_collection_with_precision_scale_member(self):
         """Regression: SET(NUMERIC(10,2)) must not split on the inner comma. (#204)"""
         dialect = CubridDialect()

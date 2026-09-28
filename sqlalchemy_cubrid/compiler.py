@@ -1042,6 +1042,28 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_unicode_text(self, type_: Any, **kw: Any) -> str:
         return self.visit_STRING(type_)
 
+    # CUBRID has no BINARY/VARBINARY ("BINARY" is a syntax error, "VARBINARY"
+    # is not defined). Map them to CUBRID's bit strings, whose length is in
+    # bits: BINARY(n) -> BIT(n*8), VARBINARY(n) -> BIT VARYING(n*8) (#545).
+    # Both drivers bind and return BIT values as ``bytes``.
+    def visit_BINARY(self, type_: Any, **kw: Any) -> str:
+        if type_.length == 0:
+            raise CompileError("CUBRID does not support BINARY(0); use a length of at least 1")
+        return "BIT(%d)" % ((type_.length or 1) * 8)
+
+    def visit_VARBINARY(self, type_: Any, **kw: Any) -> str:
+        if type_.length == 0:
+            raise CompileError("CUBRID does not support VARBINARY(0); use a length of at least 1")
+        if type_.length is None:
+            return "BIT VARYING"
+        return "BIT VARYING(%d)" % (type_.length * 8)
+
+    # CUBRID has no UUID type. ``sa.UUID`` gets the same CHAR(32) storage as
+    # ``sa.Uuid``; the dialect has no native UUID support, so SQLAlchemy's
+    # Uuid bind/result processors convert to and from 32-char hex (#545).
+    def visit_UUID(self, type_: Any, **kw: Any) -> str:
+        return "CHAR(32)"
+
     def visit_BLOB(self, type_: Any, **kw: Any) -> str:
         return "BLOB"
 
