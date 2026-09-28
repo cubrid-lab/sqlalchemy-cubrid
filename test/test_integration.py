@@ -1404,14 +1404,15 @@ class TestAutogenerateTextStringIntegration:
 
     @pytest.fixture()
     def conn(self, engine):
+        table = Table(self.TABLE, MetaData())
         with engine.connect() as conn:
-            conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+            table.drop(conn, checkfirst=True)
             conn.commit()
             try:
                 yield conn
             finally:
                 conn.rollback()
-                conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+                table.drop(conn, checkfirst=True)
                 conn.commit()
 
     def test_unbounded_types_have_no_false_diffs(self, conn):
