@@ -117,7 +117,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 네이티브 Enum | ✅ | 네이티브 `ENUM('a','b')` DDL (10.2+ 검증) |
 | Interval 타입 | ❌ | CUBRID 미지원 |
 | RETURNING 절 | ❌ | `INSERT/UPDATE/DELETE ... RETURNING` 미지원 |
-| BOOLEAN | ⚠️ | SMALLINT(0/1)로 매핑 — 네이티브 불리언 없음 |
+| BOOLEAN | ⚠️ | SMALLINT(0/1)로 매핑 — 네이티브 불리언 없음. CUBRID의 `IS`는 `NULL`/`TRUE`/`FALSE`만 받으므로 `col.is_(True)` / `is_not(False)` 등은 null-safe `<=>`로 에뮬레이트합니다(`col <=> 1`, `(col <=> 1) = 0`) (#465). `IS [NOT] NULL`, `col == True`, `not_(col)`은 그대로 컴파일됩니다. CUBRID는 SELECT 목록의 `AND`/`OR`/`NOT`을 거부하므로 `WHERE`에서 사용하거나 `case()`로 감싸세요. [불리언 조건식](TYPES.md#불리언-조건식) 참고 |
 | 시퀀스 | ❌ | CUBRID는 AUTO_INCREMENT만 사용 |
 | CHECK 제약 리플렉션 | ❌ | `get_check_constraints()`가 빈 리스트 반환 |
 | 멀티 스키마 | ❌ | CUBRID는 단일 스키마 모델 |

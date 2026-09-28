@@ -7,6 +7,8 @@ a database connection.
 
 from __future__ import annotations
 
+import operator
+
 import pytest
 import sqlalchemy as sa
 from typing import Any, cast
@@ -2368,8 +2370,10 @@ class TestBooleanIsCompilation:
         [
             (_flags.c.b.is_(None), "flags.b IS NULL"),
             (_flags.c.b.is_not(None), "flags.b IS NOT NULL"),
-            (_flags.c.b == None, "flags.b IS NULL"),  # noqa: E711
-            (_flags.c.b != None, "flags.b IS NOT NULL"),  # noqa: E711
+            # SQLAlchemy's ``== None`` / ``!= None`` operator path, which builds
+            # IS [NOT] NULL; operator.eq/ne avoid a Python None comparison.
+            (operator.eq(_flags.c.b, None), "flags.b IS NULL"),
+            (operator.ne(_flags.c.b, None), "flags.b IS NOT NULL"),
             (_flags.c.b.is_(sa.null()), "flags.b IS NULL"),
         ],
     )
