@@ -224,6 +224,20 @@ main-based assets; pinning the caller does not freeze those assets.
 
 ## Reporting Issues
 
+Search for an existing issue first, then use the closest issue form. Keep its
+prefilled title prefix (`fix:`, `feat:`, or `chore:`); for a custom issue, use
+a short type prefix such as `docs:`, `ci:`, or `test:`. An optional scope goes
+before the colon, for example `fix(reflection): ...`.
+
+Reporters describe impact and reproduction; they do **not** need permission
+to apply GitHub labels. Maintainers assign a type label, one
+`priority: <value>` and one `size: <value>` label (plus `area:` when relevant).
+Topical labels such as `testing` may also be present.
+Human-submitted CLI/API issues with incomplete metadata receive
+`status: needs triage`. The maintainer corrects the metadata and removes
+that label. Workflows creating issues with `GITHUB_TOKEN` must set the title
+and labels themselves: GitHub does not start another workflow from that event.
+
 When reporting a bug, please include:
 
 - Python version (`python --version`)

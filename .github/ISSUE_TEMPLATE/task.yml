@@ -1,12 +1,14 @@
 name: Task
 description: A general task or chore (refactoring, maintenance, etc.)
-title: "[Task]: "
+title: "chore: "
 labels: ["chore"]
 body:
   - type: markdown
     attributes:
       value: |
         Use this template for maintenance tasks, refactoring, or other chores.
+        Keep the `chore:` title prefix. You do not need to apply labels;
+        maintainers assign priority and size after triage.
 
   - type: textarea
     id: problem

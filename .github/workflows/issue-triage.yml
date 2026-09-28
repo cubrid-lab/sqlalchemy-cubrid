@@ -1,0 +1,29 @@
+name: Flag incomplete issue metadata
+
+on:
+  issues:
+    types: [opened]
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - name: Check title and labels
+        id: metadata
+        run: python3 scripts/check_issue_metadata.py "$GITHUB_EVENT_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Flag incomplete metadata for maintainer triage
+        if: steps.metadata.outputs.needs_triage == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ISSUE_NUMBER: ${{ github.event.issue.number }}
+        run: |
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --add-label 'status: needs triage'
