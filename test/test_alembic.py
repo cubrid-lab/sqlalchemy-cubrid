@@ -673,6 +673,32 @@ class TestCubridImplAutogenerate:
         metadata_column = sa.Column("v", sa.String())
         assert impl.compare_type(inspector_column, metadata_column) is False
 
+    @pytest.mark.parametrize(
+        "metadata_type",
+        [sa.String(10), sa.Unicode(10), sa.String(1073741822)],
+        ids=["String(10)", "Unicode(10)", "String(1073741822)"],
+    )
+    def test_compare_type_string_with_length_vs_varchar_max_is_diff(self, metadata_type):
+        """#544: generic String(n) is not the dialect's unbounded STRING."""
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        impl.dialect = CubridDialect()
+        inspector_column = sa.Column("v", cubrid_types.VARCHAR(1073741823))
+        metadata_column = sa.Column("v", metadata_type)
+        assert impl._is_unbounded_string_match(inspector_column.type, metadata_type) is False
+        assert impl.compare_type(inspector_column, metadata_column) is True
+        assert impl.compare_type(metadata_column, inspector_column) is True
+
+    def test_compare_type_cubrid_string_with_length_vs_varchar_max_no_diff(self):
+        """#544: the dialect STRING always compiles to STRING, whatever its length."""
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        inspector_column = sa.Column("v", cubrid_types.VARCHAR(1073741823))
+        metadata_column = sa.Column("v", cubrid_types.STRING(10))
+        assert impl.compare_type(inspector_column, metadata_column) is False
+
     def test_compare_type_varchar_bounded_still_compared(self):
         """VARCHAR(100) vs Text() must still be detected as a real diff."""
         from alembic.ddl.impl import DefaultImpl

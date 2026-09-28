@@ -72,6 +72,8 @@ from alembic.ddl.base import (
 )
 from sqlalchemy.ext.compiler import compiles
 
+from sqlalchemy_cubrid.types import STRING as CUBRID_STRING
+
 if TYPE_CHECKING:
     from typing import Protocol
 
@@ -209,9 +211,11 @@ class CubridImpl(DefaultImpl):
     # exact length, which trips Alembic's default compare_type into
     # reporting a spurious type change on every autogenerate run
     # (see cubrid-lab/sqlalchemy-cubrid#120). ``UnicodeText`` also compiles
-    # to STRING (#534).
+    # to STRING (#534). The dialect's own ``STRING`` type is matched by
+    # class, not by name: the generic ``sa.String`` has the same upper-cased
+    # name, and ``String(n)`` must go through the length comparison (#544).
     _CUBRID_UNBOUNDED_VARCHAR_LENGTH: int = 1073741823
-    _unbounded_string_type_names: set[str] = {"TEXT", "UNICODETEXT", "CLOB", "STRING"}
+    _unbounded_string_type_names: set[str] = {"TEXT", "UNICODETEXT", "CLOB"}
 
     def emit_begin(self) -> None:
         """Emit nothing: CUBRID has no ``BEGIN`` statement.
@@ -407,8 +411,10 @@ class CubridImpl(DefaultImpl):
         unbounded_name = unbounded_side.__class__.__name__.upper()
         if unbounded_name in cls._unbounded_string_type_names:
             return True
-        # Plain SQLAlchemy String() with no length declared also maps to
-        # VARCHAR(1073741823) on CUBRID.
+        if isinstance(unbounded_side, CUBRID_STRING):
+            return True
+        # A generic String() with no length declared is treated as unbounded
+        # too; String(n) falls through to the normal length comparison (#544).
         if unbounded_name == "STRING" or unbounded_name.endswith("STRING"):
             return getattr(unbounded_side, "length", None) is None
         return False

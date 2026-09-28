@@ -43,7 +43,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
-from sqlalchemy_cubrid import BLOB, CLOB, DOUBLE, MULTISET, SEQUENCE, SET
+from sqlalchemy_cubrid import BLOB, CLOB, DOUBLE, MULTISET, SEQUENCE, SET, STRING
 from sqlalchemy_cubrid.dialect import CubridDialect
 
 from test.pycubrid_upstream import PYCUBRID_DRIVERS, xfail_unreleased_pycubrid_fix
@@ -1356,6 +1356,95 @@ class TestAlembicAlterColumnIntegration:
             finally:
                 conn.execute(text("DROP TABLE IF EXISTS alter_it_change"))
                 conn.commit()
+
+
+class TestAutogenerateTextStringIntegration:
+    """#544: autogenerate against live STRING / VARCHAR(n) columns."""
+
+    TABLE = "autogen_text_544"
+
+    @staticmethod
+    def _metadata(**column_types):
+        meta = MetaData()
+        Table(
+            TestAutogenerateTextStringIntegration.TABLE,
+            meta,
+            Column("id", Integer, primary_key=True),
+            *[Column(name, type_) for name, type_ in column_types.items()],
+        )
+        return meta
+
+    def _diffs(self, conn, meta):
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        ctx = MigrationContext.configure(
+            connection=conn,
+            opts={
+                "compare_type": True,
+                "include_name": lambda name, type_, parent: type_ != "table" or name == self.TABLE,
+            },
+        )
+        return compare_metadata(ctx, meta)
+
+    def _apply(self, conn, diffs):
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+
+        op = Operations(MigrationContext.configure(connection=conn))
+        for kind, _schema, table, column, existing, old_type, new_type in (d[0] for d in diffs):
+            assert kind == "modify_type"
+            op.alter_column(
+                table,
+                column,
+                type_=new_type,
+                existing_type=old_type,
+                existing_nullable=existing["existing_nullable"],
+            )
+
+    @pytest.fixture()
+    def conn(self, engine):
+        with engine.connect() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+            conn.commit()
+            try:
+                yield conn
+            finally:
+                conn.rollback()
+                conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+                conn.commit()
+
+    def test_unbounded_types_have_no_false_diffs(self, conn):
+        self._metadata(t=sa.Text(), ut=sa.UnicodeText(), s=STRING(), g=sa.Text()).create_all(conn)
+        conn.commit()
+        cols = {c["name"]: c["type"] for c in inspect(conn).get_columns(self.TABLE)}
+        assert {n: str(cols[n]) for n in ("t", "ut", "s", "g")} == dict.fromkeys(
+            ("t", "ut", "s", "g"), "VARCHAR(1073741823)"
+        )
+        meta = self._metadata(t=sa.Text(), ut=sa.UnicodeText(), s=STRING(), g=sa.String())
+        assert self._diffs(conn, meta) == []
+
+    def test_text_to_string_n_is_detected_and_applied(self, conn):
+        self._metadata(v=sa.Text()).create_all(conn)
+        conn.commit()
+        target = self._metadata(v=sa.String(10))
+        diffs = self._diffs(conn, target)
+        assert [(d[0][0], d[0][3]) for d in diffs] == [("modify_type", "v")]
+        self._apply(conn, diffs)
+        conn.commit()
+        assert str(inspect(conn).get_columns(self.TABLE)[1]["type"]) == "VARCHAR(10)"
+        assert self._diffs(conn, target) == []
+
+    def test_string_n_to_text_is_detected_and_applied(self, conn):
+        self._metadata(v=sa.String(10)).create_all(conn)
+        conn.commit()
+        target = self._metadata(v=sa.Text())
+        diffs = self._diffs(conn, target)
+        assert [(d[0][0], d[0][3]) for d in diffs] == [("modify_type", "v")]
+        self._apply(conn, diffs)
+        conn.commit()
+        assert str(inspect(conn).get_columns(self.TABLE)[1]["type"]) == "VARCHAR(1073741823)"
+        assert self._diffs(conn, target) == []
 
 
 class TestDropIndexIntegration:
