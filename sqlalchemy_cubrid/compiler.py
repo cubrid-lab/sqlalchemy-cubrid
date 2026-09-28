@@ -112,6 +112,26 @@ class CubridCompiler(compiler.SQLCompiler):
             self.process(binary.right, **kw),
         )
 
+    # ``col.is_(True)`` and friends (#465). Without a native BOOLEAN,
+    # SQLAlchemy renders ``IS 1`` / ``IS NOT 0``, which CUBRID rejects: its
+    # ``IS`` only takes ``[NOT] NULL`` or ``[NOT] TRUE/FALSE``, and since 11.2
+    # ``IS TRUE`` needs a logical operand (``b IS TRUE`` fails for a SMALLINT
+    # column), while ``(x = 1) IS NOT TRUE`` is rejected in a SELECT list.
+    # ``IS`` against a value is null-safe equality, so render it with ``<=>``
+    # as IS [NOT] DISTINCT FROM: ``b IS TRUE`` is 1 only for 1 and 0 (never
+    # NULL) for 0 and NULL, and ``b IS NOT TRUE`` is its exact complement.
+    # ``IS [NOT] NULL`` keeps its own syntax.
+
+    def visit_is__binary(self, binary: Any, operator: Any, **kw: Any) -> str:
+        if isinstance(binary.right, elements.Null):
+            return "%s IS NULL" % self.process(binary.left, **kw)
+        return self.visit_is_not_distinct_from_binary(binary, operator, **kw)
+
+    def visit_is_not_binary(self, binary: Any, operator: Any, **kw: Any) -> str:
+        if isinstance(binary.right, elements.Null):
+            return "%s IS NOT NULL" % self.process(binary.left, **kw)
+        return self.visit_is_distinct_from_binary(binary, operator, **kw)
+
     def visit_cast(self, cast: Any, **kw: Any) -> str:
         # https://www.cubrid.org/manual/en/11.0/sql/function/typecast_fn.html#cast
         type_ = self.process(cast.typeclause)

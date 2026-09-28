@@ -296,6 +296,23 @@ class User(Base):
 - `False` is stored as `0`
 - The `supports_native_boolean = False` flag tells SQLAlchemy to handle the conversion automatically
 
+### Boolean predicates
+
+CUBRID's `IS` accepts only `[NOT] NULL` and `[NOT] TRUE/FALSE`, and since CUBRID 11.2 `IS TRUE`/`IS FALSE` needs a logical operand (`b IS TRUE` fails for a `SMALLINT` column). SQLAlchemy renders `col.is_(True)` for a non-native Boolean as `col IS 1`, which CUBRID rejects on every version, so the dialect renders `IS`/`IS NOT` against a value with the null-safe equal `<=>`, like `IS [NOT] DISTINCT FROM`:
+
+| SQLAlchemy | SQL | Value for `1` / `0` / `NULL` |
+|---|---|---|
+| `col.is_(True)` | `col <=> 1` | true / false / false |
+| `col.is_(False)` | `col <=> 0` | false / true / false |
+| `col.is_not(True)` | `(col <=> 1) = 0` | false / true / true |
+| `col.is_not(False)` | `(col <=> 0) = 0` | true / false / true |
+| `col.is_(None)` / `col == None` | `col IS NULL` | false / false / true |
+| `col == True` / `col` | `col = 1` | true / false / NULL |
+| `col == False` / `not_(col)` | `col = 0` | false / true / NULL |
+| `true()` / `false()` | `1 = 1` / `0 = 1` (`1` / `0` in a SELECT list) | constant |
+
+`IS TRUE`/`IS FALSE` never yield `NULL`, and `IS NOT TRUE`/`IS NOT FALSE` are their exact complements, so SQLAlchemy's three-valued semantics are kept in `WHERE` clauses and in SELECT lists alike; the same applies to any expression, e.g. `(col == 5).is_(True)` renders `(col = 5) <=> 1`. One limitation is CUBRID's, not the dialect's: logical operators are not allowed in a SELECT list, so `select(and_(a, b))`, `select(or_(a, b))` or a projected `NOT (...)` fail; use them in `WHERE`, or wrap them in `case()` (a `NULL` condition then takes the `else_` branch).
+
 ---
 
 ## Text and STRING

@@ -177,6 +177,101 @@ class TestIsDistinctFromIntegration:
         assert bool(row.not_distinct_value) is (not expected_distinct)
 
 
+_bool_meta = MetaData()
+_bool_table = Table(
+    "bool_is_465",
+    _bool_meta,
+    Column("id", Integer, primary_key=True, autoincrement=False),
+    Column("b", sa.Boolean),
+    Column("x", Integer),
+)
+_bc = _bool_table.c
+
+
+class TestBooleanIsIntegration:
+    """#465: Boolean IS predicates compile to SQL CUBRID accepts, with
+    SQLAlchemy's three-valued semantics. Rows: id 1 (b true, x 5), id 2
+    (b false, x 6), id 3 (b NULL, x NULL). Each case gives the per-row value
+    (True/False/None); WHERE keeps the rows where it is True."""
+
+    @pytest.fixture(scope="class")
+    def bool_rows(self, engine):
+        _bool_meta.drop_all(engine)
+        _bool_meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(
+                _bool_table.insert(),
+                [
+                    {"id": 1, "b": True, "x": 5},
+                    {"id": 2, "b": False, "x": 6},
+                    {"id": 3, "b": None, "x": None},
+                ],
+            )
+        yield
+        _bool_meta.drop_all(engine)
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            pytest.param(_bc.b.is_(True), (True, False, False), id="is_true"),
+            pytest.param(_bc.b.is_(False), (False, True, False), id="is_false"),
+            pytest.param(_bc.b.is_not(True), (False, True, True), id="is_not_true"),
+            pytest.param(_bc.b.is_not(False), (True, False, True), id="is_not_false"),
+            pytest.param(_bc.b.is_(sa.true()), (True, False, False), id="is_true_const"),
+            pytest.param(_bc.b.is_not(sa.false()), (True, False, True), id="is_not_false_const"),
+            pytest.param(~_bc.b.is_(True), (False, True, True), id="negated_is_true"),
+            pytest.param(_bc.b.is_(None), (False, False, True), id="is_null"),
+            pytest.param(_bc.b.is_not(None), (True, True, False), id="is_not_null"),
+            pytest.param(_bc.b == True, (True, False, None), id="eq_true"),  # noqa: E712
+            pytest.param(_bc.b == False, (False, True, None), id="eq_false"),  # noqa: E712
+            pytest.param(_bc.b != True, (False, True, None), id="ne_true"),  # noqa: E712
+            pytest.param(sa.not_(_bc.b), (False, True, None), id="not_col"),
+            pytest.param(sa.true(), (True, True, True), id="true_const"),
+            pytest.param(sa.false(), (False, False, False), id="false_const"),
+            pytest.param((_bc.x == 5).is_(True), (True, False, False), id="cmp_is_true"),
+            pytest.param((_bc.x == 5).is_(False), (False, True, False), id="cmp_is_false"),
+            pytest.param((_bc.x == 5).is_not(True), (False, True, True), id="cmp_is_not_true"),
+            pytest.param((_bc.x == 5).is_not(False), (True, False, True), id="cmp_is_not_false"),
+            pytest.param(_bc.b.is_(sa.literal(True)), (True, False, False), id="is_literal"),
+            pytest.param(_bc.b == sa.literal(True), (True, False, None), id="eq_literal"),
+        ],
+    )
+    def test_truth_table(self, engine, bool_rows, expr, expected):
+        with engine.connect() as conn:
+            ids = conn.execute(select(_bc.id).where(expr).order_by(_bc.id)).scalars().all()
+            assert ids == [i for i, value in zip((1, 2, 3), expected) if value is True]
+            projection = select(expr.label("v")).select_from(_bool_table).order_by(_bc.id)
+            values = conn.execute(projection).scalars().all()
+        assert tuple(None if v is None else bool(v) for v in values) == expected
+
+    @pytest.mark.parametrize(
+        ("value", "is_ids", "is_not_ids"),
+        [(True, [1], [2, 3]), (False, [2], [1, 3]), (None, [3], [1, 2])],
+    )
+    def test_is_bound_parameter(self, engine, bool_rows, value, is_ids, is_not_ids):
+        # Renders ``b <=> ?``; a NULL parameter has the meaning of IS NULL.
+        flag = sa.bindparam("flag", type_=sa.Boolean)
+        with engine.connect() as conn:
+            for expr, expected in ((_bc.b.is_(flag), is_ids), (_bc.b.is_not(flag), is_not_ids)):
+                stmt = select(_bc.id).where(expr).order_by(_bc.id)
+                assert conn.execute(stmt, {"flag": value}).scalars().all() == expected
+
+    @pytest.mark.parametrize(
+        ("expr", "expected_ids"),
+        [
+            pytest.param(sa.and_(_bc.x == 5, _bc.b.is_(True)), [1], id="and"),
+            pytest.param(sa.or_(_bc.b.is_(False), _bc.b.is_(None)), [2, 3], id="or"),
+            pytest.param(sa.and_(_bc.b, sa.true()), [1], id="and_true"),
+            pytest.param(sa.or_(_bc.b, sa.false()), [1], id="or_false"),
+        ],
+    )
+    def test_combined_in_where(self, engine, bool_rows, expr, expected_ids):
+        # AND/OR are WHERE-only: CUBRID rejects logical operators in a SELECT list.
+        with engine.connect() as conn:
+            ids = conn.execute(select(_bc.id).where(expr).order_by(_bc.id)).scalars().all()
+        assert ids == expected_ids
+
+
 class TestDDLAndDML:
     def test_insert_and_select(self, engine, metadata):
         """INSERT rows and SELECT them back."""

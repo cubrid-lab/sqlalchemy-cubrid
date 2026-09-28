@@ -2309,6 +2309,117 @@ class TestIsDistinctFromCompilation:
         assert "(users.name <=> users.email) = 0" in sql
 
 
+# ---------------------------------------------------------------------------
+# Boolean IS / IS NOT predicates (#465)
+# ---------------------------------------------------------------------------
+
+_flags = Table(
+    "flags",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("b", sa.Boolean),
+    Column("x", Integer),
+)
+
+
+class TestBooleanIsCompilation:
+    """CUBRID's ``IS`` only takes ``[NOT] NULL`` / ``[NOT] TRUE/FALSE`` (and
+    since 11.2 ``IS TRUE`` needs a logical operand), so ``IS 1`` / ``IS NOT 0``
+    from SQLAlchemy's non-native Boolean is rendered with null-safe ``<=>``."""
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b.is_(True), "flags.b <=> 1"),
+            (_flags.c.b.is_(False), "flags.b <=> 0"),
+            (_flags.c.b.is_not(True), "(flags.b <=> 1) = 0"),
+            (_flags.c.b.is_not(False), "(flags.b <=> 0) = 0"),
+            (_flags.c.b.is_(sa.true()), "flags.b <=> 1"),
+            (_flags.c.b.is_not(sa.false()), "(flags.b <=> 0) = 0"),
+            (~_flags.c.b.is_(True), "(flags.b <=> 1) = 0"),
+            ((_flags.c.x == 5).is_(True), "(flags.x = 5) <=> 1"),
+            ((_flags.c.x == 5).is_not(False), "((flags.x = 5) <=> 0) = 0"),
+            (_flags.c.b.is_(sa.literal(True)), "flags.b <=> 1"),
+            (
+                sa.and_(_flags.c.x == 5, _flags.c.b.is_(True)),
+                "flags.x = 5 AND flags.b <=> 1",
+            ),
+        ],
+    )
+    def test_is_with_a_value_uses_null_safe_equality(self, expr, expected):
+        where = _compile(select(_flags.c.id).where(expr))
+        assert where.endswith("WHERE " + expected)
+        assert " IS 1" not in where and " IS 0" not in where
+        assert " IS NOT 1" not in where and " IS NOT 0" not in where
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b.is_(True), "flags.b <=> 1 AS v"),
+            (_flags.c.b.is_not(True), "(flags.b <=> 1) = 0 AS v"),
+        ],
+    )
+    def test_is_with_a_value_in_projection(self, expr, expected):
+        # ``NOT (a <=> b)`` and ``x IS NOT TRUE`` are rejected in a SELECT list.
+        assert expected in _compile(select(expr.label("v")))
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b.is_(None), "flags.b IS NULL"),
+            (_flags.c.b.is_not(None), "flags.b IS NOT NULL"),
+            (_flags.c.b == None, "flags.b IS NULL"),  # noqa: E711
+            (_flags.c.b != None, "flags.b IS NOT NULL"),  # noqa: E711
+            (_flags.c.b.is_(sa.null()), "flags.b IS NULL"),
+        ],
+    )
+    def test_is_null_keeps_its_syntax(self, expr, expected):
+        assert _compile(select(_flags.c.id).where(expr)).endswith("WHERE " + expected)
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (sa.null().is_(_flags.c.b), "NULL <=> flags.b"),
+            (_flags.c.b.is_(sa.literal(None, sa.Boolean)), "flags.b <=> NULL"),
+            (_flags.c.b.is_(_flags.c.x), "flags.b <=> flags.x"),
+            (_flags.c.b.is_not(_flags.c.x), "(flags.b <=> flags.x) = 0"),
+            (_flags.c.b.is_(True) == False, "(flags.b <=> 1) = 0"),  # noqa: E712
+            (
+                sa.case((_flags.c.b.is_(True), 1), else_=0) == 1,
+                "CASE WHEN (flags.b <=> 1) THEN 1 ELSE 0 END = 1",
+            ),
+        ],
+    )
+    def test_is_grouping_and_other_operands(self, expr, expected):
+        # ``<=> NULL`` has the meaning of ``IS NULL``.
+        assert _compile(select(_flags.c.id).where(expr)).endswith("WHERE " + expected)
+
+    def test_is_in_order_by(self):
+        stmt = select(_flags.c.id).order_by(_flags.c.b.is_(True).desc(), _flags.c.b.is_not(False))
+        assert _compile(stmt).endswith("ORDER BY flags.b <=> 1 DESC, (flags.b <=> 0) = 0")
+
+    def test_is_with_a_bound_parameter(self):
+        stmt = select(_flags.c.id).where(_flags.c.b.is_(sa.bindparam("flag", type_=sa.Boolean)))
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert str(compiled).endswith("WHERE flags.b <=> ?")
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b == True, "flags.b = 1"),  # noqa: E712
+            (_flags.c.b == False, "flags.b = 0"),  # noqa: E712
+            (_flags.c.b, "flags.b = 1"),
+            (sa.not_(_flags.c.b), "flags.b = 0"),
+            (sa.true(), "1 = 1"),
+            (sa.and_(_flags.c.b, sa.true()), "flags.b = 1"),
+            (sa.or_(_flags.c.b, sa.false()), "flags.b = 1"),
+            (_flags.c.b.is_distinct_from(True), "(flags.b <=> 1) = 0"),
+        ],
+    )
+    def test_other_boolean_forms_unchanged(self, expr, expected):
+        assert _compile(select(_flags.c.id).where(expr)).endswith("WHERE " + expected)
+
+
 class TestFKIndexCollisionDDL:
     """#355: CREATE INDEX on FK columns — DDL compiler behavior."""
 

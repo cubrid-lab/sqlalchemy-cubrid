@@ -292,6 +292,23 @@ class User(Base):
 - `False`는 `0`으로 저장
 - `supports_native_boolean = False` 플래그가 SQLAlchemy에게 변환을 자동 처리하도록 알립니다
 
+### 불리언 조건식
+
+CUBRID의 `IS`는 `[NOT] NULL`과 `[NOT] TRUE/FALSE`만 받으며, CUBRID 11.2부터 `IS TRUE`/`IS FALSE`의 피연산자는 논리식이어야 합니다(`SMALLINT` 컬럼에 대한 `b IS TRUE`는 실패). SQLAlchemy는 네이티브가 아닌 Boolean의 `col.is_(True)`를 `col IS 1`로 렌더링하는데, CUBRID는 모든 버전에서 이를 거부합니다. 그래서 방언은 값과의 `IS`/`IS NOT`을 `IS [NOT] DISTINCT FROM`과 같이 null-safe 동등 연산자 `<=>`로 렌더링합니다:
+
+| SQLAlchemy | SQL | `1` / `0` / `NULL`에 대한 값 |
+|---|---|---|
+| `col.is_(True)` | `col <=> 1` | 참 / 거짓 / 거짓 |
+| `col.is_(False)` | `col <=> 0` | 거짓 / 참 / 거짓 |
+| `col.is_not(True)` | `(col <=> 1) = 0` | 거짓 / 참 / 참 |
+| `col.is_not(False)` | `(col <=> 0) = 0` | 참 / 거짓 / 참 |
+| `col.is_(None)` / `col == None` | `col IS NULL` | 거짓 / 거짓 / 참 |
+| `col == True` / `col` | `col = 1` | 참 / 거짓 / NULL |
+| `col == False` / `not_(col)` | `col = 0` | 거짓 / 참 / NULL |
+| `true()` / `false()` | `1 = 1` / `0 = 1` (SELECT 목록에서는 `1` / `0`) | 상수 |
+
+`IS TRUE`/`IS FALSE`는 `NULL`을 반환하지 않고, `IS NOT TRUE`/`IS NOT FALSE`는 정확히 그 여집합이므로 `WHERE` 절과 SELECT 목록 모두에서 SQLAlchemy의 3값 논리 의미가 유지됩니다. 임의의 식에도 똑같이 적용되어, 예를 들어 `(col == 5).is_(True)`는 `(col = 5) <=> 1`로 렌더링됩니다. 방언이 아닌 CUBRID의 제약이 하나 있습니다. SELECT 목록에는 논리 연산자를 쓸 수 없으므로 `select(and_(a, b))`, `select(or_(a, b))` 또는 SELECT 목록의 `NOT (...)`은 실패합니다. `WHERE`에서 사용하거나 `case()`로 감싸세요(조건이 `NULL`이면 `else_` 분기가 선택됩니다).
+
 ---
 
 ## Text와 STRING
