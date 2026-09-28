@@ -211,6 +211,7 @@ High-level overview by feature category.
 - **Table comments**: Reflected via `get_table_comment()` querying the `db_class.comment` system catalog column.
 - **Column comments**: Reflected via `get_columns()` querying the `_db_attribute.comment` system catalog column. Returned in the `"comment"` key of each column dict.
 - **has_index**: The CUBRID dialect implements `has_index()` by querying `_db_index`. The MySQL SA dialect does not provide a dedicated `has_index()` method.
+- **Unique constraints and unique indexes**: CUBRID implements a `UNIQUE` constraint as a unique index and cannot tell it apart from `CREATE UNIQUE INDEX`, so, as with MySQL, each one is reported by both `get_indexes()` and `get_unique_constraints()`, and the unique-constraint entry carries `duplicates_index` naming the index. `Table` reflection (and Alembic autogenerate) uses that key to keep only the unique index. `get_indexes()` returns an empty list for a view.
 - **Reflection source**: Reflection is split across multiple sources: `SHOW COLUMNS IN` + `_db_attribute` for columns/comments, `SHOW COLUMNS IN` + optional `db_constraint` lookup for PK names, `SHOW CREATE TABLE` parsing for foreign keys and unique constraints, `SHOW INDEXES IN` + `_db_index` for indexes, `SHOW CREATE VIEW` for view definitions, and `db_class` for table/view names and table comments.
 
 ---

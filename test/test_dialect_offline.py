@@ -43,6 +43,13 @@ class TestSplitCollectionMembers:
         assert _split_collection_members("INT)") == ["INT)"]
 
 
+def _class_type_result(class_type):
+    """Result of the ``db_class`` class-type lookup (``None``: no such object)."""
+    result = MagicMock()
+    result.fetchone.return_value = (class_type,) if class_type else None
+    return result
+
+
 def _invoke_reflection(dialect, method_name, connection, *args, **kwargs):
     method = getattr(dialect, method_name)
     if hasattr(method, "__wrapped__"):
@@ -769,8 +776,10 @@ class TestReflectionMethods:
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
-        # First call is the batch index-flag catalog query; then SHOW INDEXES.
+        # db_class lookup (no such object), the batch index-flag catalog
+        # query, then SHOW INDEXES.
         connection.execute.side_effect = [
+            _class_type_result(None),
             [],
             Exception("Table not found"),
         ]
@@ -951,6 +960,7 @@ class TestReflectionMethods:
         ]
 
         connection.execute.side_effect = [
+            _class_type_result("CLASS"),  # db_class lookup
             flag_rows,  # batch _db_index query
             show_indexes_rows,  # SHOW INDEXES
         ]
@@ -975,6 +985,7 @@ class TestReflectionMethods:
         ]
 
         connection.execute.side_effect = [
+            _class_type_result("CLASS"),  # db_class lookup
             RuntimeError("catalog unavailable"),  # batch flag query fails
             show_indexes_rows,  # SHOW INDEXES
         ]
@@ -1004,6 +1015,7 @@ class TestReflectionMethods:
         ]
 
         connection.execute.side_effect = [
+            _class_type_result("CLASS"),
             flag_rows,
             [
                 (None, 1, "fk_orders_user", None, "user_id"),
@@ -1017,6 +1029,18 @@ class TestReflectionMethods:
         assert indexes == [
             {"name": "idx_orders_status", "column_names": ["status"], "unique": False},
         ]
+
+    def test_get_indexes_on_view_returns_empty(self):
+        """#529: a view has no indexes of its own; SHOW INDEXES IN <view>
+        would list the base table's indexes, so it is not run."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = [_class_type_result("VCLASS")]
+
+        assert _invoke_reflection(dialect, "get_indexes", connection, "users_v") == []
+        assert connection.execute.call_count == 1
 
     def test_get_unique_constraints_success_and_exception(self):
         dialect = CubridDialect()
@@ -1045,8 +1069,16 @@ class TestReflectionMethods:
         )
 
         assert unique_constraints == [
-            {"name": "uq_users_email", "column_names": ["email", "tenant_id"]},
-            {"name": "uq_users_name", "column_names": ["name"]},
+            {
+                "name": "uq_users_email",
+                "column_names": ["email", "tenant_id"],
+                "duplicates_index": "uq_users_email",
+            },
+            {
+                "name": "uq_users_name",
+                "column_names": ["name"],
+                "duplicates_index": "uq_users_name",
+            },
         ]
 
         failed_conn = MagicMock()
@@ -1082,8 +1114,16 @@ class TestReflectionMethods:
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
         assert uqs == [
-            {"name": "uq_users_email", "column_names": ["email", "tenant_id"]},
-            {"name": "uq_users_name", "column_names": ["name"]},
+            {
+                "name": "uq_users_email",
+                "column_names": ["email", "tenant_id"],
+                "duplicates_index": "uq_users_email",
+            },
+            {
+                "name": "uq_users_name",
+                "column_names": ["name"],
+                "duplicates_index": "uq_users_name",
+            },
         ]
 
     def test_get_unique_constraints_catalog_empty_falls_back_to_ddl(self):
@@ -1109,7 +1149,13 @@ class TestReflectionMethods:
 
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
-        assert uqs == [{"name": "uq_users_email", "column_names": ["email"]}]
+        assert uqs == [
+            {
+                "name": "uq_users_email",
+                "column_names": ["email"],
+                "duplicates_index": "uq_users_email",
+            }
+        ]
 
     def test_get_unique_constraints_catalog_exception_falls_back_to_ddl(self):
         """When _db_index query raises an exception, fall back to DDL regex."""
@@ -1134,7 +1180,13 @@ class TestReflectionMethods:
 
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
-        assert uqs == [{"name": "uq_users_email", "column_names": ["email"]}]
+        assert uqs == [
+            {
+                "name": "uq_users_email",
+                "column_names": ["email"],
+                "duplicates_index": "uq_users_email",
+            }
+        ]
 
     def test_get_pk_constraint_name_from_index(self):
         """PK columns and name come from the _db_index_key catalog (#426)."""

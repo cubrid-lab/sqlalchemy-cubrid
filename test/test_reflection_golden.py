@@ -92,6 +92,8 @@ CREATE TABLE [users] (
             return _Result([("id", "pk_users")])
         if "FROM _db_index" in sql:
             return _Result(self._db_index)
+        if "FROM db_class" in sql:
+            return _Result([("CLASS",)])
         if "FROM _db_attribute" in sql:
             return _Result(self._db_attribute)
         raise AssertionError(f"Unexpected SQL: {sql}, params={params}")
@@ -150,7 +152,9 @@ def test_get_unique_constraints_golden(
     dialect: CubridDialect, mock_connection: _MockConnection
 ) -> None:
     unique_constraints = dialect.get_unique_constraints(mock_connection, "users")
-    assert unique_constraints == [{"name": "uq_users_email", "column_names": ["email"]}]
+    assert unique_constraints == [
+        {"name": "uq_users_email", "column_names": ["email"], "duplicates_index": "uq_users_email"}
+    ]
 
 
 def test_get_indexes_golden(dialect: CubridDialect, mock_connection: _MockConnection) -> None:
@@ -232,6 +236,8 @@ CREATE TABLE [items] (
                     ("fk_items_tenant", False, True),
                 ]
             )
+        if "FROM db_class" in sql:
+            return _Result([("CLASS",)])
         if "FROM _db_attribute" in sql:
             return _Result(
                 [
@@ -261,7 +267,13 @@ def test_multi_column_unique_golden(
     dialect: CubridDialect, mock_multicol: _MockConnectionMultiCol
 ) -> None:
     ucs = dialect.get_unique_constraints(mock_multicol, "items")
-    assert ucs == [{"name": "uq_items_tenant_sku", "column_names": ["tenant_id", "sku"]}]
+    assert ucs == [
+        {
+            "name": "uq_items_tenant_sku",
+            "column_names": ["tenant_id", "sku"],
+            "duplicates_index": "uq_items_tenant_sku",
+        }
+    ]
 
 
 def test_autoincrement_non_first_pk_column(
@@ -418,6 +430,8 @@ class _MockNullFlags:
         if "FROM _db_index" in sql:
             # Return NULL for boolean flags instead of False (0)
             return _Result([("pk_test", None, None)])
+        if "FROM db_class" in sql:
+            return _Result([("CLASS",)])
         if "FROM _db_attribute" in sql:
             return _Result([])
         raise AssertionError(f"Unexpected SQL: {sql}")

@@ -105,6 +105,8 @@ class TestRequirements:
             ("foreign_keys", True),
             ("self_referential_foreign_keys", True),
             ("unique_constraint_reflection", True),
+            ("unique_constraints_reflect_as_index", True),
+            ("unique_index_reflect_as_unique_constraints", True),
             ("foreign_key_constraint_reflection", True),
             ("index_reflection", True),
             ("primary_key_constraint_reflection", True),

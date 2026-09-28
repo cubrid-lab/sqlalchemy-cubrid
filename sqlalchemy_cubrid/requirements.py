@@ -285,6 +285,19 @@ class Requirements(SuiteRequirements):
         return _open()
 
     @property
+    def unique_constraints_reflect_as_index(self) -> compound:
+        """A UNIQUE constraint is a unique index in CUBRID, so get_indexes()
+        also reports it; get_unique_constraints() marks it with
+        ``duplicates_index`` (as in SQLAlchemy's MySQL dialect, #529)."""
+        return _open()
+
+    @property
+    def unique_index_reflect_as_unique_constraints(self) -> compound:
+        """CUBRID cannot tell ``CREATE UNIQUE INDEX`` from a UNIQUE constraint,
+        so get_unique_constraints() also reports unique indexes (as MySQL, #529)."""
+        return _open()
+
+    @property
     def foreign_key_constraint_reflection(self) -> compound:
         return _open()
 

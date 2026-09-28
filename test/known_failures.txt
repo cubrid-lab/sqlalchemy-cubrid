@@ -84,8 +84,8 @@
 # unexpected successes) and gated unicode_ddl on a UTF-8 database.
 #
 # As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
-#   cubrid@sa2.0 119 / 112, pycubrid@sa2.0 (gated on 10.2 only) 105,
-#   pycubrid@sa2.1 109 / 102;
+#   cubrid@sa2.0 83 / 76, pycubrid@sa2.0 (gated on 10.2 only) 69,
+#   pycubrid@sa2.1 73 / 66;
 # 0 XPASS, 0 unclassified. The 7 server-specific entries are
 # BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
 # is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
@@ -111,50 +111,6 @@ test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_foreign
 test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_pk_constraint-_exclusions_02]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_table_comment-_exclusions_07]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_unique_constraints-_exclusions_05]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-
-# [DIALECT BUG] ComponentReflectionTest index / unique-constraint reflection
-# (#529), two causes: (1) CUBRID cannot tell `CREATE UNIQUE INDEX` from a
-# UNIQUE constraint, so get_indexes() and get_unique_constraints() both report
-# the same object and the unique-constraint dicts lack `duplicates_index`;
-# (2) get_indexes() on a view returns the base table's indexes (including the
-# PK), because `SHOW INDEXES IN <view>` returns them. Same on both drivers and
-# servers.
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints[False-_exclusions_01]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 
 # [BACKEND / SUITE LIMIT] ComponentReflectionTest quoted names: CUBRID folds
 # every identifier, quoted or not, to lower case, so a constraint or index
