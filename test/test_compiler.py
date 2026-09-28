@@ -2367,6 +2367,46 @@ class TestFKIndexCollisionDDL:
         assert "CREATE INDEX" in ddl.string
 
 
+class TestDropIndexDDL533:
+    """#533: CUBRID requires ``DROP INDEX <name> ON <table>``."""
+
+    @staticmethod
+    def _drop(index, **kw):
+        return sa.schema.DropIndex(index, **kw).compile(dialect=CubridDialect()).string.strip()
+
+    def test_drop_index_names_its_table(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        assert self._drop(sa.Index("ix_users_email", t.c.email)) == (
+            "DROP INDEX ix_users_email ON users"
+        )
+
+    def test_drop_index_quotes_name_and_table_and_keeps_schema(self):
+        t = Table("Users", MetaData(), Column("email", String(50)), schema="dba")
+        assert self._drop(sa.Index("IX_Mixed", t.c.email)) == (
+            'DROP INDEX "IX_Mixed" ON dba."Users"'
+        )
+
+    def test_drop_unique_index(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        assert self._drop(sa.Index("ux_email", t.c.email, unique=True)) == (
+            "DROP INDEX ux_email ON users"
+        )
+
+    def test_drop_index_if_exists_is_rejected(self):
+        """CUBRID has no DROP INDEX IF EXISTS (10.2-11.4 answer a syntax error)."""
+        t = Table("users", MetaData(), Column("email", String(50)))
+        with pytest.raises(CompileError, match="does not support DROP INDEX IF EXISTS"):
+            self._drop(sa.Index("ix_users_email", t.c.email), if_exists=True)
+
+    def test_drop_index_without_table_is_rejected(self):
+        with pytest.raises(CompileError, match="requires the index's table"):
+            self._drop(sa.Index("ix_orphan"))
+
+    def test_drop_index_without_name_is_rejected(self):
+        with pytest.raises(CompileError, match="requires that the index have a name"):
+            self._drop(sa.Index(None))
+
+
 class TestNumericBindCast386:
     """#386: scaled numeric binds are cast so CUBRID keeps their scale; a
     FROM-less SELECT with WHERE gets a synthetic FROM db_root."""

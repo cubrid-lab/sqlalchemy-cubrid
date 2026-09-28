@@ -84,8 +84,8 @@
 # unexpected successes) and gated unicode_ddl on a UTF-8 database.
 #
 # As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
-#   cubrid@sa2.0 135 / 128, pycubrid@sa2.0 (gated on 10.2 only) 121,
-#   pycubrid@sa2.1 125 / 118;
+#   cubrid@sa2.0 133 / 126, pycubrid@sa2.0 (gated on 10.2 only) 119,
+#   pycubrid@sa2.1 123 / 116;
 # 0 XPASS, 0 unclassified. The 7 server-specific entries are
 # BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
 # is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
@@ -245,12 +245,6 @@ test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-cte_nam
 test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-not_cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-not_cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-
-# [DIALECT BUG] HasIndexTest: `Index.drop()` compiles to `DROP INDEX my_idx_2`,
-# but CUBRID requires `DROP INDEX <name> ON <table>`, so the drop fails with a
-# -493 syntax error (Index.drop() and Alembic drop_index are affected). #533
-test/test_suite.py::HasIndexTest::test_has_index[dialect]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::HasIndexTest::test_has_index[inspector]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 
 # [DIALECT BUG] UnicodeTextTest: `UnicodeText` compiles to `TEXT`, which CUBRID
 # does not have ("dba.TEXT is not defined"); the type compiler overrides

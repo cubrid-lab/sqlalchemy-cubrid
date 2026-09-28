@@ -1055,6 +1055,49 @@ class TestAlembicAlterColumnIntegration:
                 conn.commit()
 
 
+class TestDropIndexIntegration:
+    """#533: ``Index.drop()`` and Alembic ``op.drop_index`` are accepted live."""
+
+    def test_index_drop(self, engine):
+        meta = MetaData()
+        t = Table(
+            "drop_idx_533", meta, Column("id", Integer, primary_key=True), Column("v", Integer)
+        )
+        idx = sa.Index("ix_drop_idx_533_v", t.c.v)
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            assert inspect(engine).has_index("drop_idx_533", "ix_drop_idx_533_v")
+            idx.drop(engine)
+            assert not inspect(engine).has_index("drop_idx_533", "ix_drop_idx_533_v")
+            # checkfirst consults has_index, so a second drop is a no-op.
+            idx.drop(engine, checkfirst=True)
+        finally:
+            meta.drop_all(engine)
+
+    def test_alembic_drop_index(self, engine):
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+
+        import sqlalchemy_cubrid.alembic_impl  # noqa: F401  (registers CubridImpl)
+
+        with engine.connect() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS drop_idx_533_op"))
+            conn.execute(text("CREATE TABLE drop_idx_533_op (id INT PRIMARY KEY, v INT)"))
+            conn.execute(text("CREATE INDEX ix_drop_idx_533_op_v ON drop_idx_533_op (v)"))
+            try:
+                ctx = MigrationContext.configure(connection=conn)
+                op = Operations(ctx)
+                with pytest.raises(sa.exc.CompileError, match="pass table_name"):
+                    op.drop_index("ix_drop_idx_533_op_v")
+                assert inspect(conn).has_index("drop_idx_533_op", "ix_drop_idx_533_op_v")
+                op.drop_index("ix_drop_idx_533_op_v", table_name="drop_idx_533_op")
+                assert not inspect(conn).has_index("drop_idx_533_op", "ix_drop_idx_533_op_v")
+            finally:
+                conn.execute(text("DROP TABLE IF EXISTS drop_idx_533_op"))
+                conn.commit()
+
+
 class TestExecutemanyNoneAndRowcount:
     """#502: executemany stores ``None`` as NULL and reports the total rowcount.
 

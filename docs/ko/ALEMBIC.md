@@ -293,7 +293,7 @@ CUBRID Alembic 구현은 `alter_column()`을 네이티브 CUBRID DDL로 매핑�
 | `alter_column` (type) | ✅ | 손실 변환에는 `batch_alter_table` |
 | `alter_column` (rename) | ✅ | — |
 | `create_index` | ✅ | — |
-| `drop_index` | ✅ | — |
+| `drop_index` | ✅ | `DROP INDEX <name> ON <table>`을 생성하므로 `table_name`이 필수입니다(없으면 `CompileError`). `if_exists=True`는 `CompileError`를 발생시킵니다(CUBRID에는 `DROP INDEX IF EXISTS`가 없음) |
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |
 | `bulk_insert` | ✅ | — |

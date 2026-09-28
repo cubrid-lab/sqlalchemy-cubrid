@@ -816,6 +816,37 @@ class CubridDDLCompiler(compiler.DDLCompiler):
             **kw,
         )
 
+    def visit_drop_index(self, drop: Any, **kw: Any) -> str:
+        """Emit ``DROP INDEX <name> ON <table>``.
+
+        CUBRID (10.2 through 11.4) rejects a bare ``DROP INDEX <name>`` with a
+        -493 syntax error: an index is scoped to its table, so the table is
+        required. CUBRID also has no ``DROP INDEX IF EXISTS``; a requested
+        ``if_exists`` raises ``CompileError`` rather than emitting SQL the
+        server rejects or silently dropping the guard (a compiler cannot check
+        existence). Callers that need the guard can check
+        ``inspect(conn).has_index(table, name)`` first.
+
+        Closes #533.
+        """
+        index = drop.element
+        if index.name is None:
+            raise CompileError("DROP INDEX requires that the index have a name")
+        if index.table is None:
+            raise CompileError(
+                "CUBRID DROP INDEX requires the index's table "
+                "(DROP INDEX <name> ON <table>); index %r is not bound to a table" % index.name
+            )
+        if drop.if_exists:
+            raise CompileError(
+                "CUBRID does not support DROP INDEX IF EXISTS; "
+                "check inspect(conn).has_index() before dropping instead"
+            )
+        return "\nDROP INDEX %s ON %s" % (
+            self._prepared_index_name(index, include_schema=False),
+            self.preparer.format_table(index.table),
+        )
+
 
 class CubridTypeCompiler(compiler.GenericTypeCompiler):
     """TypeCompiler for CUBRID data types."""

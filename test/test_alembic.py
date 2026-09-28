@@ -235,6 +235,55 @@ class TestCubridImpl:
         assert "BEGIN;" not in lines
         assert lines[-1] == "COMMIT;"
 
+    def test_offline_sql_drop_index_names_table(self):
+        """``op.drop_index`` in ``--sql`` mode emits ``DROP INDEX ... ON <table>`` (#533)."""
+        import io
+
+        from alembic.operations import Operations
+
+        buf = io.StringIO()
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": buf},
+        )
+        with context.begin_transaction():
+            Operations(context).drop_index("ix_users_email", table_name="users")
+
+        lines = [ln.strip() for ln in buf.getvalue().splitlines() if ln.strip()]
+        assert "DROP INDEX ix_users_email ON users;" in lines
+
+    def test_offline_sql_drop_index_if_exists_rejected(self):
+        """CUBRID has no DROP INDEX IF EXISTS, so the op fails at compile time (#533)."""
+        import io
+
+        import inspect
+
+        from alembic.operations import Operations
+
+        if "if_exists" not in inspect.signature(Operations.drop_index).parameters:
+            pytest.skip("drop_index(if_exists=...) needs Alembic 1.12+")
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": io.StringIO()},
+        )
+        with pytest.raises(sa.exc.CompileError, match="DROP INDEX IF EXISTS"):
+            Operations(context).drop_index("ix_users_email", table_name="users", if_exists=True)
+
+    def test_offline_sql_drop_index_without_table_name_rejected(self):
+        """Alembic's ``no_table`` placeholder must not reach the SQL (#533)."""
+        import io
+
+        from alembic.operations import Operations
+
+        buf = io.StringIO()
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": buf},
+        )
+        with pytest.raises(sa.exc.CompileError, match="pass table_name"):
+            Operations(context).drop_index("ix_users_email")
+        assert "no_table" not in buf.getvalue()
+
     def test_subclass_of_default_impl(self):
         """CubridImpl inherits from alembic.ddl.impl.DefaultImpl."""
         from alembic.ddl.impl import DefaultImpl

@@ -1036,6 +1036,7 @@ class CubridDialect(default.DefaultDialect):
         )
         return bool(result.scalar())
 
+    @reflection.cache
     def has_index(
         self,
         connection: Any,
@@ -1044,21 +1045,23 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> bool:
-        """Check if an index named *index_name* exists on *table_name*."""
+        """Check if an index named *index_name* exists on *table_name*.
+
+        Cached per ``info_cache`` like the other reflection methods, so an
+        ``Inspector`` answers from its cache until ``clear_cache()`` (#533).
+        A missing table or index returns ``False``; a failing catalog query
+        raises instead of caching a false negative.
+        """
         if not self._schema_is_default(schema):
             return False
-        try:
-            result = connection.execute(
-                text(
-                    "SELECT COUNT(*) FROM _db_index "
-                    "WHERE class_of.class_name = :table AND index_name = :name"
-                ),
-                {"table": table_name, "name": index_name},
-            )
-            return bool(result.scalar())
-        except Exception:
-            log.debug("has_index query failed for %s.%s", table_name, index_name, exc_info=True)
-            return False
+        result = connection.execute(
+            text(
+                "SELECT COUNT(*) FROM _db_index "
+                "WHERE class_of.class_name = :table AND index_name = :name"
+            ),
+            {"table": table_name, "name": index_name},
+        )
+        return bool(result.scalar())
 
     def has_sequence(
         self,

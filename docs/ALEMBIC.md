@@ -387,7 +387,7 @@ so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 | `alter_column` (type) | ✅ | `batch_alter_table` for lossy conversions |
 | `alter_column` (rename) | ✅ | — |
 | `create_index` | ✅ | — |
-| `drop_index` | ✅ | — |
+| `drop_index` | ✅ | Emits `DROP INDEX <name> ON <table>`, so `table_name` is required (`CompileError` without it); `if_exists=True` raises `CompileError` (CUBRID has no `DROP INDEX IF EXISTS`) |
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |
 | `bulk_insert` | ✅ | — |

@@ -456,3 +456,20 @@ class CubridImpl(DefaultImpl):
                     )
 
         super().create_index(index, **kw)
+
+    def drop_index(self, index: Any, **kw: Any) -> None:
+        """Require ``table_name`` for ``op.drop_index()`` (#533).
+
+        CUBRID needs ``DROP INDEX <name> ON <table>``. Without
+        ``table_name`` Alembic binds the index to a placeholder table named
+        ``no_table``, which would otherwise be emitted verbatim.
+        """
+        from sqlalchemy.exc import CompileError
+
+        table = index.table
+        if table is not None and table.name == "no_table":
+            raise CompileError(
+                "CUBRID DROP INDEX requires the table (DROP INDEX <name> ON <table>); "
+                "pass table_name to op.drop_index(%r, table_name=...)" % index.name
+            )
+        super().drop_index(index, **kw)

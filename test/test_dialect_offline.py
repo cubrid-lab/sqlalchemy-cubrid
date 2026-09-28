@@ -495,7 +495,7 @@ class TestExistenceChecks:
         connection.execute.return_value.scalar.return_value = 1
         assert dialect.has_table(connection, "active_users") is True
 
-    def test_has_index_true_false_and_exception(self):
+    def test_has_index_true_false_and_error_propagates(self):
         dialect = CubridDialect()
         connection = MagicMock()
 
@@ -508,8 +508,10 @@ class TestExistenceChecks:
         connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_index(connection, "users", "ix_users_name") is False
 
+        # A failing catalog query propagates instead of being cached as False.
         connection.execute.side_effect = RuntimeError("metadata unavailable")
-        assert dialect.has_index(connection, "users", "ix_users_name") is False
+        with pytest.raises(RuntimeError, match="metadata unavailable"):
+            dialect.has_index(connection, "users", "ix_users_name")
 
     def test_has_index_filters_by_table(self):
         dialect = CubridDialect()
@@ -520,6 +522,23 @@ class TestExistenceChecks:
         call_args = connection.execute.call_args
         bound_params = call_args[0][1]
         assert bound_params["table"] == "orders"
+
+    def test_has_index_is_cached_per_info_cache(self):
+        """An Inspector answers has_index from its cache until clear_cache() (#533)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        info_cache: dict = {}
+
+        connection.execute.return_value.scalar.return_value = 0
+        assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
+        connection.execute.return_value.scalar.return_value = 1
+        assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
+        assert connection.execute.call_count == 1
+        info_cache.clear()
+        assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is True
+        # Without an info_cache (e.g. Index.drop(checkfirst=True)) nothing is cached.
+        assert dialect.has_index(connection, "t", "ix") is True
+        assert connection.execute.call_count == 3
 
     def test_has_sequence_always_false(self):
         dialect = CubridDialect()
