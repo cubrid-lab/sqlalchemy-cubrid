@@ -209,7 +209,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 - **No `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` not supported; for ORM use `await session.flush()` to populate `id` on the object (see [Async Quick Start](#async)), or for Core use `cursor.lastrowid` / `SELECT LAST_INSERT_ID()` after the statement
 - **No sequences** — CUBRID uses `AUTO_INCREMENT` only
 - **Single effective schema** — CUBRID exposes one schema per connection (the current user's schema); `get_schema_names()` reports that one schema and every reflection method honours `schema=` consistently (the default schema is reflected; any other schema yields no tables/views). Owner-qualified cross-schema reflection is not supported.
-- **DDL auto-commits** — migrations are not transactional (`transactional_ddl = False`); use Alembic batch migrations and test rollback scenarios manually
+- **Uncommitted DDL holds schema locks** — CUBRID DDL is transactional (`ROLLBACK` undoes it; only client autocommit, which the dialect turns off, commits it early), so by default a whole Alembic upgrade is one transaction (`transactional_ddl = True`) and keeps the tables it touches locked until it commits; use `transaction_per_migration=True` for long or large-table migrations
 - **SQLAlchemy 2.0–2.1 only** — pinned to `<2.3`; SA 2.1 pre-releases are forward-tested via shims and a `--pre` canary CI job ([details](docs/ARCHITECTURE.md))
 - **Async requires pycubrid >= 1.3.2,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project
 - **CARDINALITY() broken** — `func.cardinality()` raises `CompileError` with workaround guidance; the CUBRID server has a [known bug](https://github.com/cubrid-lab/.github/issues/3)
@@ -260,7 +260,7 @@ Yes. sqlalchemy-cubrid is built for SQLAlchemy 2.0–2.1 and supports the 2.0-st
 
 ### Does sqlalchemy-cubrid support Alembic migrations?
 
-Yes. Install with `pip install "sqlalchemy-cubrid[alembic]"`. The CUBRID migration implementation registers itself when the dialect loads, so the default `env.py` works unchanged with synchronous URLs; for `cubrid+aiopycubrid://`, use Alembic's async template (`alembic init -t async`). Note that CUBRID auto-commits DDL, so migrations are not transactional.
+Yes. Install with `pip install "sqlalchemy-cubrid[alembic]"`. The CUBRID migration implementation registers itself when the dialect loads, so the default `env.py` works unchanged with synchronous URLs; for `cubrid+aiopycubrid://`, use Alembic's async template (`alembic init -t async`). CUBRID DDL is transactional, so by default a failed `alembic upgrade` is rolled back whole, version bump included; set `transaction_per_migration=True` to commit after each revision for long or large-table migrations.
 
 ### What Python versions are supported?
 

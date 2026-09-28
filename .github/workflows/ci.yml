@@ -328,6 +328,14 @@ jobs:
             python -m scripts.report_driver_versions
           python -m pytest test/test_driver_differential.py -v --tb=short -rs
 
+      - name: Run transactional DDL tests (#503)
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          # Feeds Alembic's offline --sql output to csql inside the service container.
+          CUBRID_CSQL: "docker exec -i ${{ job.services.cubrid.id }} csql -u dba testdb"
+        run: |
+          python -m pytest test/test_transactional_ddl.py -v --tb=short -rs
+
       - name: Run regression tests
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"

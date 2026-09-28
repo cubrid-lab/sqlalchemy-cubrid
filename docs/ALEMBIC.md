@@ -158,18 +158,58 @@ alembic history --verbose
 
 ## CUBRID-Specific Behavior
 
-### DDL Auto-Commit
+### Transactional DDL
 
-CUBRID implicitly commits every DDL statement. The `CubridImpl` sets
-`transactional_ddl = False`, which tells Alembic:
+CUBRID DDL is transactional. With client autocommit off — the dialect turns it
+off on every connection — `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`,
+`TRUNCATE`, `CREATE INDEX` (including `WITH ONLINE [PARALLEL n]`),
+`CREATE VIEW`, `CREATE SERIAL` and `RENAME TABLE` run inside the current
+transaction: `ROLLBACK` undoes them, and they never commit DML issued earlier in
+the same transaction (see the
+[CUBRID manual](https://www.cubrid.org/manual/en/11.4/sql/transaction.html),
+where `ROLLBACK WORK` undoes an `ALTER TABLE … DROP`). The only auto-commit
+behavior in CUBRID is client autocommit (`CCI_DEFAULT_AUTOCOMMIT`, or csql's
+default auto-commit mode), which commits after every statement, DDL or DML.
 
-- **No transaction wrapping** around DDL statements
-- Each `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE` commits immediately
-- A failed migration may leave the database in a partially-migrated state
+`CubridImpl` therefore sets `transactional_ddl = True`, which tells Alembic:
 
-**Implication**: If a migration with multiple DDL operations fails halfway
-through, you cannot simply roll back — the earlier operations have already
-been committed. Write migrations with small, atomic steps.
+- **The whole `alembic upgrade` runs in one transaction** by default. If any
+  revision fails, every revision in that run is rolled back, including the
+  `alembic_version` update, so the database stays at its starting revision.
+- With `transaction_per_migration=True` in `context.configure()`, each
+  revision runs and commits in its own transaction instead: revisions that
+  finished stay applied, and the failing revision is rolled back as a whole.
+- `context.is_transactional_ddl()` returns `True`.
+
+**Schema locks.** Uncommitted DDL keeps its schema lock on the table until the
+transaction ends, so other sessions that touch the table wait (as `SCH_S_LOCK`
+waits) for the whole transaction. For long migrations, or migrations on large
+tables, set `transaction_per_migration=True` so each revision commits and
+releases its locks as soon as it finishes:
+
+```python
+# env.py
+context.configure(
+    connection=connection,
+    target_metadata=target_metadata,
+    transaction_per_migration=True,
+)
+```
+
+**Offline (`--sql`) scripts.** CUBRID has no `BEGIN` statement (csql rejects it
+with `Syntax error: unexpected 'BEGIN'`); a transaction starts implicitly. The
+CUBRID implementation therefore emits no `BEGIN;` and ends each transaction with
+`COMMIT;` (one per upgrade, or one per revision with
+`transaction_per_migration=True`). Run the script with
+`csql --no-auto-commit` so that those `COMMIT;` lines are the only commit
+points; in csql's default auto-commit mode every statement commits on its own.
+
+!!! note "Changed after 1.7.1"
+    Earlier releases set `transactional_ddl = False`. Alembic still wrapped each
+    revision in its own transaction in online mode, so each revision was already
+    atomic, but a failed `upgrade` kept the revisions before it. Now the whole
+    upgrade is atomic by default; set `transaction_per_migration=True` to keep the
+    previous per-revision behavior.
 
 ### Auto-Registration
 
@@ -204,7 +244,11 @@ and can stay.
 ```python
 class CubridImpl(DefaultImpl):
     __dialect__ = "cubrid"
-    transactional_ddl = False
+    transactional_ddl = True
+
+    def emit_begin(self):
+        # CUBRID has no BEGIN statement; offline scripts only emit COMMIT;
+        pass
 ```
 
 The implementation inherits all standard Alembic operations from `DefaultImpl`:
@@ -277,11 +321,15 @@ def upgrade():
     op.alter_column("users", "old_name", new_column_name="new_name")
 ```
 
-### ⚠️ DDL Auto-Commit
+### ⚠️ Long migrations hold schema locks
 
-As noted above, DDL is auto-committed. Be aware:
+DDL is transactional (see [Transactional DDL](#transactional-ddl)), so a failed
+upgrade rolls back cleanly. The cost is that each DDL statement keeps its schema
+lock until the transaction commits. Be aware:
 
-- Keep migrations small (one logical change per migration)
+- By default the whole upgrade is one transaction, so every table it touches
+  stays locked until the last revision finishes
+- Use `transaction_per_migration=True` for long migrations or large tables
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
 
@@ -325,7 +373,7 @@ so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |
 | `bulk_insert` | ✅ | — |
-| Transactional DDL | ❌ | Small atomic migrations |
+| Transactional DDL | ✅ | `transaction_per_migration=True` for long or large-table migrations |
 
 ---
 
@@ -423,8 +471,17 @@ pip install "alembic>=1.7.2,<2.0"
 
 ### Migration partially applied
 
-**Cause**: A migration with multiple DDL statements failed partway through.
-Because CUBRID auto-commits DDL, some statements already took effect.
+**Cause**: CUBRID DDL is transactional, so a failed online upgrade does not leave
+a half-applied revision: the failing transaction is rolled back. By default that
+is the whole upgrade; with `transaction_per_migration=True` it is the failing
+revision, and the revisions before it stay committed and recorded in
+`alembic_version`. Partial state can still come from:
+
+- client autocommit (for example `isolation_level="AUTOCOMMIT"` on the engine,
+  or a driver connection with autocommit on), which commits every statement;
+- an offline (`--sql`) script run in csql's default auto-commit mode instead
+  of `csql --no-auto-commit`;
+- a revision that calls `COMMIT` itself (for example through `op.execute`).
 
 **Fix**:
 1. Manually inspect the database state
@@ -443,9 +500,11 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 ## Migration Safety Checklist
 
-!!! warning "DDL is not transactional"
-    CUBRID auto-commits DDL. A failed migration can leave partial schema changes applied.
-    Prefer small revisions with one logical schema change each.
+!!! note "DDL is transactional"
+    CUBRID rolls back DDL with the transaction; only client autocommit commits it early.
+    By default a failed `alembic upgrade` leaves no partial schema and no version bump.
+    Uncommitted DDL holds schema locks, so use `transaction_per_migration=True` for
+    long or large-table migrations.
 
 !!! warning "Lossy type changes may be rejected by the server"
     `alter_column(type_=...)` and `alter_column(new_column_name=...)` emit native
@@ -464,7 +523,8 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 Before running migrations in production:
 
-- [ ] **One DDL operation per revision** — since each DDL auto-commits, a failure mid-revision leaves partial state. Split multi-DDL revisions.
+- [ ] **Plan lock duration** — DDL holds schema locks until commit, and by default the whole upgrade is one transaction. Use `transaction_per_migration=True` for long or large-table migrations.
+- [ ] **No client autocommit** — run migrations without `isolation_level="AUTOCOMMIT"`, and run offline scripts with `csql --no-auto-commit`, so a failure rolls back cleanly.
 - [ ] **Backup database** — `cubrid backupdb demodb` before destructive operations
 - [ ] **Test upgrade + downgrade cycle** — run `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` on staging
 - [ ] **Verify state after each step** — query `db_class` system table to confirm schema matches expectations
@@ -482,15 +542,19 @@ Before running migrations in production:
 
 ### Advisory CI Safety Check
 
-Add the following script to catch multi-DDL revisions early. This is advisory (warning-only)
-and does not block CI:
+Add the following script to list revisions with several DDL operations. This is advisory
+(warning-only) and does not block CI. Such revisions still roll back as a whole on failure,
+but they hold schema locks longer:
 
 ```python
 #!/usr/bin/env python3
 """Check Alembic revisions for multiple DDL operations (advisory).
 
-Warns when a single revision contains multiple DDL calls, which is risky
-with CUBRID's non-transactional DDL.
+CUBRID DDL is transactional, so a failing revision is rolled back as a
+whole. Every DDL statement holds a schema lock on its table until the
+transaction commits, though, so this lists revisions with several DDL
+calls: they keep tables locked longer and are candidates for running with
+``transaction_per_migration=True`` or for splitting.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
@@ -521,7 +585,7 @@ def check_revision(path: Path) -> list[str]:
         if ddl_count > 1:
             warnings.append(
                 f"{path.name}:{func.name}() has {ddl_count} DDL operations "
-                f"(recommended: 1 per revision for CUBRID)"
+                "(schema locks are held until the transaction commits)"
             )
     return warnings
 
@@ -541,7 +605,11 @@ def main() -> None:
         for w in all_warnings:
             print(f"  • {w}")
         print(f"\nTotal: {len(all_warnings)} warning(s)")
-        print("Tip: Split multi-DDL revisions to avoid partial migration state.")
+        print(
+            "Tip: these revisions roll back whole on failure but hold schema locks "
+            "until commit; use transaction_per_migration=True for long or "
+            "large-table migrations."
+        )
     else:
         print("✓ All revisions have single DDL operations per function.")
 

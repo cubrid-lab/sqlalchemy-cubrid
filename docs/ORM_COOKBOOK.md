@@ -488,11 +488,22 @@ CUBRID uses `SET`, `MULTISET`, and `SEQUENCE` instead of SQL `ARRAY`:
 | `MULTISET` | ✗ | ✓ | Counts, repeated values |
 | `SEQUENCE` | ✓ | ✓ | Ordered lists, history |
 
-### 5. DDL Auto-Commits
+### 5. DDL Is Transactional
 
-CUBRID implicitly commits all DDL statements (`CREATE TABLE`, `ALTER TABLE`, etc.).
-This means `Base.metadata.create_all(engine)` commits immediately — it cannot be
-rolled back. The Alembic integration sets `transactional_ddl = False` accordingly.
+CUBRID does not implicitly commit DDL. With client autocommit off, which the
+dialect sets on every connection, `CREATE TABLE`, `ALTER TABLE` and other DDL
+join the current transaction and are undone by a rollback:
+
+```python
+with engine.connect() as conn:
+    Base.metadata.create_all(conn)
+    conn.rollback()  # no table is left behind
+```
+
+`Base.metadata.create_all(engine)` runs in its own `engine.begin()` block and
+commits when it succeeds. Uncommitted DDL holds schema locks on its tables, so
+commit it promptly. The Alembic integration sets `transactional_ddl = True`
+accordingly.
 
 ### 6. No Temporary Tables
 

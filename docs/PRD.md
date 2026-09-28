@@ -258,7 +258,7 @@ stmt = (
 
 ### 3.5 Alembic Support (`alembic_impl.py` — 141 lines)
 
-- `CubridImpl(DefaultImpl)` with `transactional_ddl = False`
+- `CubridImpl(DefaultImpl)` with `transactional_ddl = True` (CUBRID DDL is transactional); `emit_begin()` is a no-op because CUBRID has no `BEGIN` statement, so offline scripts only emit `COMMIT;`
 - Registered with Alembic when the dialect module loads
 - Autogenerate: `render_type()` for SET/MULTISET/SEQUENCE rendering in migration scripts
 - Autogenerate: `compare_type()` for semantic comparison of collection types

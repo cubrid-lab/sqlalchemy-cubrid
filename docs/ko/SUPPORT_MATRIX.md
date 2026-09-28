@@ -93,7 +93,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 자동 등록 | ✅ | 방언 로드 시 등록 (`env.py` 임포트 불필요) |
 | 스키마 마이그레이션 | ✅ | CREATE, ALTER, DROP |
 | Autogenerate | ✅ | 컬렉션 타입(SET, MULTISET, SEQUENCE) 포함 |
-| 트랜잭션 DDL | ❌ | CUBRID는 DDL을 자동 커밋 |
+| 트랜잭션 DDL | ✅ | DDL은 트랜잭션과 함께 롤백됨. 기본적으로 업그레이드 전체가 원자적 (리비전별 커밋은 `transaction_per_migration=True`) |
 
 ### DML 확장
 

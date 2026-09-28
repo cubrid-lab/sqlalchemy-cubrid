@@ -205,7 +205,7 @@ Provides the `trace_query()` utility for enabling CUBRID query tracing around a 
 Defines feature flags used by the SQLAlchemy test suite to determine which behavioral tests should be executed against a CUBRID backend.
 
 #### `alembic_impl.py`
-Provides the `CubridImpl` class for Alembic, enabling DDL migration support and defining CUBRID's lack of transactional DDL capabilities.
+Provides the `CubridImpl` class for Alembic, enabling DDL migration support and declaring CUBRID's DDL transactional (`transactional_ddl = True`).
 
 ## Dialect Discovery
 SQLAlchemy uses entry points to discover and load the appropriate dialect class based on the provided connection URL.
@@ -228,7 +228,7 @@ flowchart TD
     pycubrid_dialect --> import_py["import pycubrid"]
     aio_pycubrid_dialect --> import_aio["import pycubrid.aio"]
     
-    cubrid_dialect -->|"imports if Alembic is installed"| alembic_impl["CubridImpl<br/>transactional_ddl = False"]
+    cubrid_dialect -->|"imports if Alembic is installed"| alembic_impl["CubridImpl<br/>transactional_ddl = True"]
 ```
 
 ## Driver Architecture
@@ -255,7 +255,7 @@ flowchart TD
 *   **SQLAlchemy `<2.3` pin**: Uses three remaining private SA attributes (`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`) via `_compat.py` helpers at compiler.py:93, 104-105 — requires version pinning until public alternatives exist.
 *   **BOOLEAN → SMALLINT mapping**: CUBRID has no native BOOLEAN — dialect maps to `SMALLINT` (0/1).
 *   **JSON type support (v1.2.0+)**: Full JSON type mapping including `JSON`, `JSONIndexType`, `JSONPathType`, with path access via `json_getattr` and `json_getitem_op`. Requires CUBRID ≥ 10.2.
-*   **`transactional_ddl = False`**: CUBRID auto-commits DDL statements — Alembic cannot roll back failed migrations.
+*   **`transactional_ddl = True`**: CUBRID DDL rolls back with the transaction (only client autocommit, which the dialect turns off, commits it early), so a failed Alembic upgrade is rolled back whole by default. `CubridImpl.emit_begin()` emits nothing because CUBRID has no `BEGIN` statement; offline scripts end each transaction with `COMMIT;`.
 *   **`supports_statement_cache = True`**: Required for SA 2.0 performance — dialect is cache-safe.
 *   **Lowercase identifier folding**: CUBRID folds to lowercase (not SQL-standard uppercase) — `CubridIdentifierPreparer` handles this.
 *   **No RELEASE SAVEPOINT**: CUBRID doesn't support it — `do_release_savepoint()` is a no-op.

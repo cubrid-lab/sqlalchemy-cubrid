@@ -480,10 +480,17 @@ CUBRID는 SQL `ARRAY` 대신 `SET`, `MULTISET`, `SEQUENCE`를 사용합니다:
 | `MULTISET` | ✗ | ✓ | 개수, 반복 값 |
 | `SEQUENCE` | ✓ | ✓ | 순서 있는 목록, 이력 |
 
-### 5. DDL 자동 커밋
+### 5. DDL은 트랜잭션으로 처리됨
 
-CUBRID는 모든 DDL 문(`CREATE TABLE`, `ALTER TABLE` 등)을 암시적으로 커밋합니다.
-즉 `Base.metadata.create_all(engine)`은 즉시 커밋되며 — 롤백할 수 없습니다. Alembic 연동은 그에 맞게 `transactional_ddl = False`를 설정합니다.
+CUBRID는 DDL을 암묵적으로 커밋하지 않습니다. 방언이 모든 연결에서 설정하듯 클라이언트 자동 커밋이 꺼져 있으면 `CREATE TABLE`, `ALTER TABLE` 등의 DDL은 현재 트랜잭션에 포함되며 롤백으로 되돌려집니다:
+
+```python
+with engine.connect() as conn:
+    Base.metadata.create_all(conn)
+    conn.rollback()  # 테이블이 남지 않음
+```
+
+`Base.metadata.create_all(engine)`은 자체 `engine.begin()` 블록에서 실행되어 성공하면 커밋됩니다. 커밋되지 않은 DDL은 테이블의 스키마 잠금을 유지하므로 바로 커밋하세요. Alembic 연동은 그에 맞게 `transactional_ddl = True`를 설정합니다.
 
 ### 6. 임시 테이블 없음
 

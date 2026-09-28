@@ -92,7 +92,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Auto-registration | ✅ | Registered when the dialect loads (no `env.py` import) |
 | Schema migrations | ✅ | CREATE, ALTER, DROP |
 | Autogenerate | ✅ | Including collection types (SET, MULTISET, SEQUENCE) |
-| Transactional DDL | ❌ | CUBRID auto-commits DDL |
+| Transactional DDL | ✅ | DDL rolls back with the transaction; the whole upgrade is atomic by default (`transaction_per_migration=True` for per-revision commits) |
 
 ### DML Extensions
 

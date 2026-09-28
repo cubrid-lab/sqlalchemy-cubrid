@@ -202,11 +202,37 @@ class TestCubridImpl:
 
         assert CubridImpl.__dialect__ == "cubrid"
 
-    def test_transactional_ddl_false(self):
-        """CUBRID auto-commits DDL, so transactional_ddl must be False."""
+    def test_transactional_ddl_true(self):
+        """CUBRID DDL is rolled back with the transaction (#503).
+
+        Only client autocommit commits DDL early, and the dialect turns it
+        off, so Alembic may run the whole upgrade in one transaction.
+        """
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
-        assert CubridImpl.transactional_ddl is False
+        assert CubridImpl.transactional_ddl is True
+
+    def test_offline_sql_has_commit_but_no_begin(self):
+        """``--sql`` output must run in csql, which rejects ``BEGIN`` (#503)."""
+        import io
+
+        from alembic.operations import Operations
+
+        import sqlalchemy_cubrid.alembic_impl  # noqa: F401
+
+        buf = io.StringIO()
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": buf},
+        )
+        assert context.impl.transactional_ddl is True
+        with context.begin_transaction():
+            Operations(context).create_table("t503", sa.Column("id", sa.Integer))
+
+        lines = [ln.strip().upper() for ln in buf.getvalue().splitlines() if ln.strip()]
+        assert "CREATE TABLE T503 (" in lines
+        assert "BEGIN;" not in lines
+        assert lines[-1] == "COMMIT;"
 
     def test_subclass_of_default_impl(self):
         """CubridImpl inherits from alembic.ddl.impl.DefaultImpl."""

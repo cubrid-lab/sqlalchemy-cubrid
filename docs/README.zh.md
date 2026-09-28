@@ -155,7 +155,7 @@ async with AsyncSession(engine) as session:
 - **不支持 `RETURNING`** —— 不支持 `INSERT/UPDATE/DELETE ... RETURNING`；请改用 `cursor.lastrowid` 或 `LAST_INSERT_ID()`
 - **不支持序列** —— CUBRID 仅使用 `AUTO_INCREMENT`
 - **不支持多 schema** —— 每个数据库只有单一 schema
-- **DDL 会自动提交** —— 迁移不是事务性的（`transactional_ddl = False`）
+- **未提交的 DDL 会持有模式锁** —— CUBRID 的 DDL 是事务性的（`ROLLBACK` 可撤销；只有方言已关闭的客户端自动提交才会提前提交它），因此默认情况下整个 Alembic 升级是一个事务（`transactional_ddl = True`），在提交前会一直锁住涉及的表；耗时较长或针对大表的迁移请使用 `transaction_per_migration=True`
 - **仅支持 SQLAlchemy 2.0–2.1** —— 由于内部 API 依赖，版本固定为 `<2.3`（[详情](ARCHITECTURE.md)）
 - **Async 需要 pycubrid >= 1.2.0,<2.0** —— `cubrid+aiopycubrid://` 驱动需要本项目当前支持的 async 能力 pycubrid 包线
 
@@ -203,7 +203,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### sqlalchemy-cubrid 支持 Alembic 迁移吗？
 
-支持。请通过 `pip install "sqlalchemy-cubrid[alembic]"` 安装。CUBRID 迁移实现会在方言加载时自动注册，因此默认的 `env.py` 在同步 URL 下无需修改即可使用；`cubrid+aiopycubrid://` 请使用 Alembic 的异步模板（`alembic init -t async`）。请注意，CUBRID 会自动提交 DDL，因此迁移不是事务性的。
+支持。请通过 `pip install "sqlalchemy-cubrid[alembic]"` 安装。CUBRID 迁移实现会在方言加载时自动注册，因此默认的 `env.py` 在同步 URL 下无需修改即可使用；`cubrid+aiopycubrid://` 请使用 Alembic 的异步模板（`alembic init -t async`）。CUBRID 的 DDL 是事务性的，因此默认情况下失败的 `alembic upgrade` 会整体回滚（包括版本号更新）；耗时较长或针对大表的迁移可设置 `transaction_per_migration=True`，在每个修订后提交。
 
 ### 支持哪些 Python 版本？
 

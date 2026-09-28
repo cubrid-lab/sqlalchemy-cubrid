@@ -157,7 +157,7 @@ async with AsyncSession(engine) as session:
 - **Kein `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` wird nicht unterstützt; stattdessen `cursor.lastrowid` oder `LAST_INSERT_ID()` verwenden
 - **Keine Sequenzen** — CUBRID verwendet ausschließlich `AUTO_INCREMENT`
 - **Kein Multi-Schema** — ein einzelnes Schema pro Datenbank
-- **DDL committet automatisch** — Migrationen sind nicht transaktional (`transactional_ddl = False`)
+- **Nicht committetes DDL hält Schemasperren** — DDL ist in CUBRID transaktional (`ROLLBACK` macht es rückgängig; vorzeitig committet es nur das Client-Autocommit, das der Dialekt abschaltet), daher ist ein Alembic-Upgrade standardmäßig eine einzige Transaktion (`transactional_ddl = True`) und hält die betroffenen Tabellen bis zum Commit gesperrt; für lange Migrationen oder große Tabellen `transaction_per_migration=True` verwenden
 - **Nur SQLAlchemy 2.0–2.1** — wegen interner API-Abhängigkeiten auf `<2.3` festgelegt ([Details](ARCHITECTURE.md))
 - **Async erfordert pycubrid >= 1.2.0,<2.0** — der Treiber `cubrid+aiopycubrid://` benötigt die von diesem Projekt aktuell unterstützte async-fähige pycubrid-Paketlinie
 
@@ -205,7 +205,7 @@ Ja. sqlalchemy-cubrid wurde für SQLAlchemy 2.0–2.1 entwickelt und unterstütz
 
 ### Unterstützt sqlalchemy-cubrid Alembic-Migrationen?
 
-Ja. Installieren Sie mit `pip install "sqlalchemy-cubrid[alembic]"`. Die CUBRID-Migrationsimplementierung registriert sich beim Laden des Dialekts selbst, daher funktioniert die Standard-`env.py` mit synchronen URLs unverändert; für `cubrid+aiopycubrid://` verwenden Sie Alembics async-Vorlage (`alembic init -t async`). Beachten Sie, dass CUBRID DDL automatisch committet, daher sind Migrationen nicht transaktional.
+Ja. Installieren Sie mit `pip install "sqlalchemy-cubrid[alembic]"`. Die CUBRID-Migrationsimplementierung registriert sich beim Laden des Dialekts selbst, daher funktioniert die Standard-`env.py` mit synchronen URLs unverändert; für `cubrid+aiopycubrid://` verwenden Sie Alembics async-Vorlage (`alembic init -t async`). DDL ist in CUBRID transaktional, daher wird ein fehlgeschlagenes `alembic upgrade` standardmäßig vollständig zurückgerollt, einschließlich der Versionsänderung; für lange Migrationen oder große Tabellen setzen Sie `transaction_per_migration=True`, um nach jeder Revision zu committen.
 
 ### Welche Python-Versionen werden unterstützt?
 

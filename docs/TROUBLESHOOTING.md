@@ -48,11 +48,11 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [No Implementation Found for Dialect 'cubrid'](#no-implementation-found-for-dialect-cubrid)
   - [ALTER COLUMN TYPE Rejected (lossy conversion)](#alter-column-type-rejected-lossy-conversion)
   - [RENAME COLUMN](#rename-column)
-  - [Partial Migration (DDL Auto-Commit)](#partial-migration-ddl-auto-commit)
+  - [Partial Migration After a Failure](#partial-migration-after-a-failure)
   - [Autogenerate Not Detecting Changes](#autogenerate-not-detecting-changes)
 - [Isolation Level Issues](#isolation-level-issues)
   - [Setting Isolation Levels](#setting-isolation-levels)
-  - [DDL Commits Current Transaction](#ddl-commits-current-transaction)
+  - [DDL Runs in the Current Transaction](#ddl-runs-in-the-current-transaction)
 - [Transaction Issues](#transaction-issues)
   - [Data Not Persisted](#data-not-persisted)
   - [Autocommit Conflicts](#autocommit-conflicts)
@@ -947,17 +947,24 @@ def upgrade():
 
 ---
 
-### Partial Migration (DDL Auto-Commit)
+### Partial Migration After a Failure
 
 **Symptom:** A migration fails partway through, leaving the database in an inconsistent state.
 
-**Cause:** CUBRID auto-commits every DDL statement (`CREATE`, `ALTER`, `DROP`). The `CubridImpl` sets `transactional_ddl = False`, meaning Alembic cannot roll back DDL operations.
+**Background:** CUBRID DDL is transactional: with client autocommit off, which the dialect always sets, `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `CREATE INDEX`, `RENAME` and the rest are undone by `ROLLBACK`. `CubridImpl` sets `transactional_ddl = True`, so by default a failed `alembic upgrade` rolls back every revision of that run, including the `alembic_version` update. With `transaction_per_migration=True`, the revisions that finished stay committed and only the failing one is rolled back.
+
+**Cause:** Something committed before the failure:
+
+- client autocommit — `isolation_level="AUTOCOMMIT"` on the engine, or a driver connection with autocommit on — commits every statement;
+- an offline (`--sql`) script ran in csql's default auto-commit mode instead of `csql --no-auto-commit`;
+- a revision issued `COMMIT` itself, for example through `op.execute()`.
 
 **Prevention:**
 
-1. Keep migrations small — one logical change per migration
-2. Test migrations against a staging database first
-3. Back up the database before running migrations
+1. Run migrations without client autocommit, and run offline scripts with `csql --no-auto-commit`
+2. Use `transaction_per_migration=True` for long or large-table migrations: uncommitted DDL holds schema locks, so other sessions wait until the transaction ends
+3. Test migrations against a staging database first
+4. Back up the database before running migrations
 
 **Recovery:**
 
@@ -1024,19 +1031,21 @@ removed in CUBRID 10.0 and are no longer accepted; passing them raises
 
 ---
 
-### DDL Commits Current Transaction
+### DDL Runs in the Current Transaction
 
-**All DDL statements auto-commit in CUBRID.** This means:
+**CUBRID does not implicitly commit DDL.** With client autocommit off — the dialect turns it off on every connection — DDL is part of the current transaction, whatever the isolation level:
 
 ```python
 with engine.begin() as conn:
     conn.execute(text("INSERT INTO users (name) VALUES ('Alice')"))
-    conn.execute(text("CREATE TABLE temp (id INT)"))  # AUTO-COMMITS everything!
-    # The INSERT above is now committed, even if an error occurs below
+    conn.execute(text("CREATE TABLE temp (id INT)"))  # not committed yet
     conn.execute(text("INSERT INTO users (name) VALUES ('Bob')"))
+    raise RuntimeError("abort")  # rolls back both INSERTs and the CREATE TABLE
 ```
 
-**Best practice:** Never mix DML and DDL in the same transaction.
+The only auto-commit behavior is client autocommit (`CCI_DEFAULT_AUTOCOMMIT`, `isolation_level="AUTOCOMMIT"`, or csql's default mode), which commits after every statement, DDL or DML.
+
+**Watch out for schema locks:** uncommitted DDL holds a schema lock on its table until the transaction ends, so other sessions that use the table wait (`SCH_S_LOCK` waits, or a lock timeout). Commit DDL promptly, and keep long DDL transactions out of busy periods.
 
 ---
 
@@ -1232,7 +1241,7 @@ flowchart TD
     kind -->|Import / Module error| install[Check driver install]
     kind -->|Connection failure| conn[Validate URL, host, port, credentials]
     kind -->|SQL compile/runtime error| sql[Inspect generated SQL and unsupported feature]
-    kind -->|Migration failure| mig[Check Alembic limitations and DDL auto-commit]
+    kind -->|Migration failure| mig[Check Alembic limitations and client autocommit]
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}

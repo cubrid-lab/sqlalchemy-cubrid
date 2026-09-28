@@ -1249,11 +1249,22 @@ CUBRID uses `SET`, `MULTISET`, and `SEQUENCE` instead of SQL `ARRAY`:
 | `MULTISET` | ✗ | ✓ | Counts, repeated values |
 | `SEQUENCE` | ✓ | ✓ | Ordered lists, history |
 
-### 5. DDL Auto-Commits
+### 5. DDL Is Transactional
 
-CUBRID implicitly commits all DDL statements (`CREATE TABLE`, `ALTER TABLE`, etc.).
-This means `Base.metadata.create_all(engine)` commits immediately — it cannot be
-rolled back. The Alembic integration sets `transactional_ddl = False` accordingly.
+CUBRID does not implicitly commit DDL. With client autocommit off, which the
+dialect sets on every connection, `CREATE TABLE`, `ALTER TABLE` and other DDL
+join the current transaction and are undone by a rollback:
+
+```python
+with engine.connect() as conn:
+    Base.metadata.create_all(conn)
+    conn.rollback()  # no table is left behind
+```
+
+`Base.metadata.create_all(engine)` runs in its own `engine.begin()` block and
+commits when it succeeds. Uncommitted DDL holds schema locks on its tables, so
+commit it promptly. The Alembic integration sets `transactional_ddl = True`
+accordingly.
 
 ### 6. No Temporary Tables
 
@@ -2618,7 +2629,7 @@ When a connection is returned to the pool, the dialect resets isolation to level
 
 3. **Set isolation at the engine level** for application-wide defaults, and override per-connection only when needed.
 
-4. **Be aware of DDL auto-commit.** CUBRID auto-commits DDL statements regardless of isolation level. This means `CREATE TABLE`, `ALTER TABLE`, etc. are immediately visible to all transactions.
+4. **DDL is transactional.** At every isolation level, CUBRID runs DDL inside the current transaction: `ROLLBACK` undoes `CREATE TABLE`, `ALTER TABLE` and the like, and DDL never commits earlier DML. Uncommitted DDL holds a schema lock on its table, so other transactions that use the table wait until it commits or rolls back. Only client autocommit (for example `isolation_level="AUTOCOMMIT"`) commits DDL immediately.
 
 ---
 
@@ -2795,18 +2806,58 @@ alembic history --verbose
 
 ## CUBRID-Specific Behavior
 
-### DDL Auto-Commit
+### Transactional DDL
 
-CUBRID implicitly commits every DDL statement. The `CubridImpl` sets
-`transactional_ddl = False`, which tells Alembic:
+CUBRID DDL is transactional. With client autocommit off — the dialect turns it
+off on every connection — `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`,
+`TRUNCATE`, `CREATE INDEX` (including `WITH ONLINE [PARALLEL n]`),
+`CREATE VIEW`, `CREATE SERIAL` and `RENAME TABLE` run inside the current
+transaction: `ROLLBACK` undoes them, and they never commit DML issued earlier in
+the same transaction (see the
+[CUBRID manual](https://www.cubrid.org/manual/en/11.4/sql/transaction.html),
+where `ROLLBACK WORK` undoes an `ALTER TABLE … DROP`). The only auto-commit
+behavior in CUBRID is client autocommit (`CCI_DEFAULT_AUTOCOMMIT`, or csql's
+default auto-commit mode), which commits after every statement, DDL or DML.
 
-- **No transaction wrapping** around DDL statements
-- Each `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE` commits immediately
-- A failed migration may leave the database in a partially-migrated state
+`CubridImpl` therefore sets `transactional_ddl = True`, which tells Alembic:
 
-**Implication**: If a migration with multiple DDL operations fails halfway
-through, you cannot simply roll back — the earlier operations have already
-been committed. Write migrations with small, atomic steps.
+- **The whole `alembic upgrade` runs in one transaction** by default. If any
+  revision fails, every revision in that run is rolled back, including the
+  `alembic_version` update, so the database stays at its starting revision.
+- With `transaction_per_migration=True` in `context.configure()`, each
+  revision runs and commits in its own transaction instead: revisions that
+  finished stay applied, and the failing revision is rolled back as a whole.
+- `context.is_transactional_ddl()` returns `True`.
+
+**Schema locks.** Uncommitted DDL keeps its schema lock on the table until the
+transaction ends, so other sessions that touch the table wait (as `SCH_S_LOCK`
+waits) for the whole transaction. For long migrations, or migrations on large
+tables, set `transaction_per_migration=True` so each revision commits and
+releases its locks as soon as it finishes:
+
+```python
+# env.py
+context.configure(
+    connection=connection,
+    target_metadata=target_metadata,
+    transaction_per_migration=True,
+)
+```
+
+**Offline (`--sql`) scripts.** CUBRID has no `BEGIN` statement (csql rejects it
+with `Syntax error: unexpected 'BEGIN'`); a transaction starts implicitly. The
+CUBRID implementation therefore emits no `BEGIN;` and ends each transaction with
+`COMMIT;` (one per upgrade, or one per revision with
+`transaction_per_migration=True`). Run the script with
+`csql --no-auto-commit` so that those `COMMIT;` lines are the only commit
+points; in csql's default auto-commit mode every statement commits on its own.
+
+!!! note "Changed after 1.7.1"
+    Earlier releases set `transactional_ddl = False`. Alembic still wrapped each
+    revision in its own transaction in online mode, so each revision was already
+    atomic, but a failed `upgrade` kept the revisions before it. Now the whole
+    upgrade is atomic by default; set `transaction_per_migration=True` to keep the
+    previous per-revision behavior.
 
 ### Auto-Registration
 
@@ -2841,7 +2892,11 @@ and can stay.
 ```python
 class CubridImpl(DefaultImpl):
     __dialect__ = "cubrid"
-    transactional_ddl = False
+    transactional_ddl = True
+
+    def emit_begin(self):
+        # CUBRID has no BEGIN statement; offline scripts only emit COMMIT;
+        pass
 ```
 
 The implementation inherits all standard Alembic operations from `DefaultImpl`:
@@ -2914,11 +2969,15 @@ def upgrade():
     op.alter_column("users", "old_name", new_column_name="new_name")
 ```
 
-### ⚠️ DDL Auto-Commit
+### ⚠️ Long migrations hold schema locks
 
-As noted above, DDL is auto-committed. Be aware:
+DDL is transactional (see [Transactional DDL](#transactional-ddl)), so a failed
+upgrade rolls back cleanly. The cost is that each DDL statement keeps its schema
+lock until the transaction commits. Be aware:
 
-- Keep migrations small (one logical change per migration)
+- By default the whole upgrade is one transaction, so every table it touches
+  stays locked until the last revision finishes
+- Use `transaction_per_migration=True` for long migrations or large tables
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
 
@@ -2962,7 +3021,7 @@ so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |
 | `bulk_insert` | ✅ | — |
-| Transactional DDL | ❌ | Small atomic migrations |
+| Transactional DDL | ✅ | `transaction_per_migration=True` for long or large-table migrations |
 
 ---
 
@@ -3060,8 +3119,17 @@ pip install "alembic>=1.7.2,<2.0"
 
 ### Migration partially applied
 
-**Cause**: A migration with multiple DDL statements failed partway through.
-Because CUBRID auto-commits DDL, some statements already took effect.
+**Cause**: CUBRID DDL is transactional, so a failed online upgrade does not leave
+a half-applied revision: the failing transaction is rolled back. By default that
+is the whole upgrade; with `transaction_per_migration=True` it is the failing
+revision, and the revisions before it stay committed and recorded in
+`alembic_version`. Partial state can still come from:
+
+- client autocommit (for example `isolation_level="AUTOCOMMIT"` on the engine,
+  or a driver connection with autocommit on), which commits every statement;
+- an offline (`--sql`) script run in csql's default auto-commit mode instead
+  of `csql --no-auto-commit`;
+- a revision that calls `COMMIT` itself (for example through `op.execute`).
 
 **Fix**:
 1. Manually inspect the database state
@@ -3080,9 +3148,11 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 ## Migration Safety Checklist
 
-!!! warning "DDL is not transactional"
-    CUBRID auto-commits DDL. A failed migration can leave partial schema changes applied.
-    Prefer small revisions with one logical schema change each.
+!!! note "DDL is transactional"
+    CUBRID rolls back DDL with the transaction; only client autocommit commits it early.
+    By default a failed `alembic upgrade` leaves no partial schema and no version bump.
+    Uncommitted DDL holds schema locks, so use `transaction_per_migration=True` for
+    long or large-table migrations.
 
 !!! warning "Lossy type changes may be rejected by the server"
     `alter_column(type_=...)` and `alter_column(new_column_name=...)` emit native
@@ -3101,7 +3171,8 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 Before running migrations in production:
 
-- [ ] **One DDL operation per revision** — since each DDL auto-commits, a failure mid-revision leaves partial state. Split multi-DDL revisions.
+- [ ] **Plan lock duration** — DDL holds schema locks until commit, and by default the whole upgrade is one transaction. Use `transaction_per_migration=True` for long or large-table migrations.
+- [ ] **No client autocommit** — run migrations without `isolation_level="AUTOCOMMIT"`, and run offline scripts with `csql --no-auto-commit`, so a failure rolls back cleanly.
 - [ ] **Backup database** — `cubrid backupdb demodb` before destructive operations
 - [ ] **Test upgrade + downgrade cycle** — run `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` on staging
 - [ ] **Verify state after each step** — query `db_class` system table to confirm schema matches expectations
@@ -3119,15 +3190,19 @@ Before running migrations in production:
 
 ### Advisory CI Safety Check
 
-Add the following script to catch multi-DDL revisions early. This is advisory (warning-only)
-and does not block CI:
+Add the following script to list revisions with several DDL operations. This is advisory
+(warning-only) and does not block CI. Such revisions still roll back as a whole on failure,
+but they hold schema locks longer:
 
 ```python
 #!/usr/bin/env python3
 """Check Alembic revisions for multiple DDL operations (advisory).
 
-Warns when a single revision contains multiple DDL calls, which is risky
-with CUBRID's non-transactional DDL.
+CUBRID DDL is transactional, so a failing revision is rolled back as a
+whole. Every DDL statement holds a schema lock on its table until the
+transaction commits, though, so this lists revisions with several DDL
+calls: they keep tables locked longer and are candidates for running with
+``transaction_per_migration=True`` or for splitting.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
@@ -3158,7 +3233,7 @@ def check_revision(path: Path) -> list[str]:
         if ddl_count > 1:
             warnings.append(
                 f"{path.name}:{func.name}() has {ddl_count} DDL operations "
-                f"(recommended: 1 per revision for CUBRID)"
+                "(schema locks are held until the transaction commits)"
             )
     return warnings
 
@@ -3178,7 +3253,11 @@ def main() -> None:
         for w in all_warnings:
             print(f"  • {w}")
         print(f"\nTotal: {len(all_warnings)} warning(s)")
-        print("Tip: Split multi-DDL revisions to avoid partial migration state.")
+        print(
+            "Tip: these revisions roll back whole on failure but hold schema locks "
+            "until commit; use transaction_per_migration=True for long or "
+            "large-table migrations."
+        )
     else:
         print("✓ All revisions have single DDL operations per function.")
 
@@ -3793,7 +3872,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Auto-registration | ✅ | Registered when the dialect loads (no `env.py` import) |
 | Schema migrations | ✅ | CREATE, ALTER, DROP |
 | Autogenerate | ✅ | Including collection types (SET, MULTISET, SEQUENCE) |
-| Transactional DDL | ❌ | CUBRID auto-commits DDL |
+| Transactional DDL | ✅ | DDL rolls back with the transaction; the whole upgrade is atomic by default (`transaction_per_migration=True` for per-revision commits) |
 
 ### DML Extensions
 
@@ -4094,7 +4173,7 @@ Provides the `trace_query()` utility for enabling CUBRID query tracing around a 
 Defines feature flags used by the SQLAlchemy test suite to determine which behavioral tests should be executed against a CUBRID backend.
 
 #### `alembic_impl.py`
-Provides the `CubridImpl` class for Alembic, enabling DDL migration support and defining CUBRID's lack of transactional DDL capabilities.
+Provides the `CubridImpl` class for Alembic, enabling DDL migration support and declaring CUBRID's DDL transactional (`transactional_ddl = True`).
 
 ## Dialect Discovery
 SQLAlchemy uses entry points to discover and load the appropriate dialect class based on the provided connection URL.
@@ -4117,7 +4196,7 @@ flowchart TD
     pycubrid_dialect --> import_py["import pycubrid"]
     aio_pycubrid_dialect --> import_aio["import pycubrid.aio"]
     
-    cubrid_dialect -->|"imports if Alembic is installed"| alembic_impl["CubridImpl<br/>transactional_ddl = False"]
+    cubrid_dialect -->|"imports if Alembic is installed"| alembic_impl["CubridImpl<br/>transactional_ddl = True"]
 ```
 
 ## Driver Architecture
@@ -4144,7 +4223,7 @@ flowchart TD
 *   **SQLAlchemy `<2.3` pin**: Uses three remaining private SA attributes (`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`) via `_compat.py` helpers at compiler.py:93, 104-105 — requires version pinning until public alternatives exist.
 *   **BOOLEAN → SMALLINT mapping**: CUBRID has no native BOOLEAN — dialect maps to `SMALLINT` (0/1).
 *   **JSON type support (v1.2.0+)**: Full JSON type mapping including `JSON`, `JSONIndexType`, `JSONPathType`, with path access via `json_getattr` and `json_getitem_op`. Requires CUBRID ≥ 10.2.
-*   **`transactional_ddl = False`**: CUBRID auto-commits DDL statements — Alembic cannot roll back failed migrations.
+*   **`transactional_ddl = True`**: CUBRID DDL rolls back with the transaction (only client autocommit, which the dialect turns off, commits it early), so a failed Alembic upgrade is rolled back whole by default. `CubridImpl.emit_begin()` emits nothing because CUBRID has no `BEGIN` statement; offline scripts end each transaction with `COMMIT;`.
 *   **`supports_statement_cache = True`**: Required for SA 2.0 performance — dialect is cache-safe.
 *   **Lowercase identifier folding**: CUBRID folds to lowercase (not SQL-standard uppercase) — `CubridIdentifierPreparer` handles this.
 *   **No RELEASE SAVEPOINT**: CUBRID doesn't support it — `do_release_savepoint()` is a no-op.
@@ -4396,11 +4475,11 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [No Implementation Found for Dialect 'cubrid'](#no-implementation-found-for-dialect-cubrid)
   - [ALTER COLUMN TYPE Rejected (lossy conversion)](#alter-column-type-rejected-lossy-conversion)
   - [RENAME COLUMN](#rename-column)
-  - [Partial Migration (DDL Auto-Commit)](#partial-migration-ddl-auto-commit)
+  - [Partial Migration After a Failure](#partial-migration-after-a-failure)
   - [Autogenerate Not Detecting Changes](#autogenerate-not-detecting-changes)
 - [Isolation Level Issues](#isolation-level-issues)
   - [Setting Isolation Levels](#setting-isolation-levels)
-  - [DDL Commits Current Transaction](#ddl-commits-current-transaction)
+  - [DDL Runs in the Current Transaction](#ddl-runs-in-the-current-transaction)
 - [Transaction Issues](#transaction-issues)
   - [Data Not Persisted](#data-not-persisted)
   - [Autocommit Conflicts](#autocommit-conflicts)
@@ -5295,17 +5374,24 @@ def upgrade():
 
 ---
 
-### Partial Migration (DDL Auto-Commit)
+### Partial Migration After a Failure
 
 **Symptom:** A migration fails partway through, leaving the database in an inconsistent state.
 
-**Cause:** CUBRID auto-commits every DDL statement (`CREATE`, `ALTER`, `DROP`). The `CubridImpl` sets `transactional_ddl = False`, meaning Alembic cannot roll back DDL operations.
+**Background:** CUBRID DDL is transactional: with client autocommit off, which the dialect always sets, `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `CREATE INDEX`, `RENAME` and the rest are undone by `ROLLBACK`. `CubridImpl` sets `transactional_ddl = True`, so by default a failed `alembic upgrade` rolls back every revision of that run, including the `alembic_version` update. With `transaction_per_migration=True`, the revisions that finished stay committed and only the failing one is rolled back.
+
+**Cause:** Something committed before the failure:
+
+- client autocommit — `isolation_level="AUTOCOMMIT"` on the engine, or a driver connection with autocommit on — commits every statement;
+- an offline (`--sql`) script ran in csql's default auto-commit mode instead of `csql --no-auto-commit`;
+- a revision issued `COMMIT` itself, for example through `op.execute()`.
 
 **Prevention:**
 
-1. Keep migrations small — one logical change per migration
-2. Test migrations against a staging database first
-3. Back up the database before running migrations
+1. Run migrations without client autocommit, and run offline scripts with `csql --no-auto-commit`
+2. Use `transaction_per_migration=True` for long or large-table migrations: uncommitted DDL holds schema locks, so other sessions wait until the transaction ends
+3. Test migrations against a staging database first
+4. Back up the database before running migrations
 
 **Recovery:**
 
@@ -5372,19 +5458,21 @@ removed in CUBRID 10.0 and are no longer accepted; passing them raises
 
 ---
 
-### DDL Commits Current Transaction
+### DDL Runs in the Current Transaction
 
-**All DDL statements auto-commit in CUBRID.** This means:
+**CUBRID does not implicitly commit DDL.** With client autocommit off — the dialect turns it off on every connection — DDL is part of the current transaction, whatever the isolation level:
 
 ```python
 with engine.begin() as conn:
     conn.execute(text("INSERT INTO users (name) VALUES ('Alice')"))
-    conn.execute(text("CREATE TABLE temp (id INT)"))  # AUTO-COMMITS everything!
-    # The INSERT above is now committed, even if an error occurs below
+    conn.execute(text("CREATE TABLE temp (id INT)"))  # not committed yet
     conn.execute(text("INSERT INTO users (name) VALUES ('Bob')"))
+    raise RuntimeError("abort")  # rolls back both INSERTs and the CREATE TABLE
 ```
 
-**Best practice:** Never mix DML and DDL in the same transaction.
+The only auto-commit behavior is client autocommit (`CCI_DEFAULT_AUTOCOMMIT`, `isolation_level="AUTOCOMMIT"`, or csql's default mode), which commits after every statement, DDL or DML.
+
+**Watch out for schema locks:** uncommitted DDL holds a schema lock on its table until the transaction ends, so other sessions that use the table wait (`SCH_S_LOCK` waits, or a lock timeout). Commit DDL promptly, and keep long DDL transactions out of busy periods.
 
 ---
 
@@ -5580,7 +5668,7 @@ flowchart TD
     kind -->|Import / Module error| install[Check driver install]
     kind -->|Connection failure| conn[Validate URL, host, port, credentials]
     kind -->|SQL compile/runtime error| sql[Inspect generated SQL and unsupported feature]
-    kind -->|Migration failure| mig[Check Alembic limitations and DDL auto-commit]
+    kind -->|Migration failure| mig[Check Alembic limitations and client autocommit]
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}

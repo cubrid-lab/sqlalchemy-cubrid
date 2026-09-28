@@ -120,6 +120,10 @@ def test_offline_upgrade_with_default_env_py(tmp_path: Path, scheme: str) -> Non
     # CubridImpl-specific rendering proves the CUBRID impl, not a generic
     # fallback, handled the migration.
     assert "RENAME COLUMN name TO label" in result.stdout
+    # transactional_ddl is True, but CUBRID has no BEGIN statement (#503).
+    lines = [ln.strip() for ln in result.stdout.splitlines()]
+    assert "BEGIN;" not in lines
+    assert "COMMIT;" in lines
 
 
 # Loads every CUBRID dialect in a fresh interpreter after ``setup`` has shaped

@@ -60,7 +60,7 @@ graph TD
 | `base.py` | Execution context (`get_lastrowid`), identifier preparer (lowercase folding, 254-char max, reserved words). |
 | `trace.py` | `trace_query()` helper that enables CUBRID tracing around a statement and returns trace output. |
 | `requirements.py` | Test requirement flags — marks what CUBRID does/doesn't support for SA's test suite. |
-| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = False`. Registered with Alembic when `dialect.py` imports it (only if Alembic is installed); Alembic has no entry-point lookup for dialect impls. |
+| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = True` (CUBRID DDL rolls back with the transaction); `emit_begin()` emits nothing because CUBRID has no `BEGIN`. Registered with Alembic when `dialect.py` imports it (only if Alembic is installed); Alembic has no entry-point lookup for dialect impls. |
 | `_compat.py` | Internal compatibility helpers that wrap SQLAlchemy private APIs used by the dialect/compiler. |
 
 ### Entry Points (pyproject.toml)
@@ -228,7 +228,7 @@ type mapping, and reflection logic without a database. Only `test_integration.py
 - **No Sequences** — uses `AUTO_INCREMENT`
 - **No multi-schema** — single-schema model
 - **No RELEASE SAVEPOINT** — `do_release_savepoint()` is a no-op
-- **DDL auto-commits** — `transactional_ddl = False`
+- **DDL is transactional** — `ROLLBACK` undoes DDL and DDL never commits earlier DML; only client autocommit (turned off by the dialect) commits it early. `transactional_ddl = True`, so a whole Alembic upgrade is one transaction by default; recommend `transaction_per_migration=True` for long or large-table migrations (uncommitted DDL holds schema locks)
 - **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - **Identifier folding** — lowercase (not uppercase like SQL standard)
 - **Max identifier length** — 254 characters

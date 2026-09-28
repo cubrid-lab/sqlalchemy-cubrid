@@ -157,7 +157,7 @@ async with AsyncSession(engine) as session:
 - **Нет `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` не поддерживается; используйте `cursor.lastrowid` или `LAST_INSERT_ID()`
 - **Нет последовательностей** — CUBRID использует только `AUTO_INCREMENT`
 - **Нет мультисхемности** — одна схема на базу данных
-- **DDL коммитится автоматически** — миграции не являются транзакционными (`transactional_ddl = False`)
+- **Незакоммиченный DDL удерживает блокировки схемы** — DDL в CUBRID транзакционный (`ROLLBACK` отменяет его; раньше времени его коммитит только клиентский autocommit, который диалект отключает), поэтому по умолчанию всё обновление Alembic — одна транзакция (`transactional_ddl = True`), и затронутые таблицы остаются заблокированными до коммита; для долгих миграций и больших таблиц используйте `transaction_per_migration=True`
 - **Только SQLAlchemy 2.0–2.1** — зафиксировано на `<2.3` из-за зависимости от внутренних API ([подробности](ARCHITECTURE.md))
 - **Async требует pycubrid >= 1.2.0,<2.0** — драйвер `cubrid+aiopycubrid://` требует async-совместимую линейку pycubrid, которую сейчас поддерживает этот проект
 
@@ -205,7 +205,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### Поддерживает ли sqlalchemy-cubrid миграции Alembic?
 
-Да. Установите пакет через `pip install "sqlalchemy-cubrid[alembic]"`. Реализация миграций CUBRID регистрируется сама при загрузке диалекта, поэтому стандартный `env.py` работает без изменений с синхронными URL; для `cubrid+aiopycubrid://` используйте асинхронный шаблон Alembic (`alembic init -t async`). Учтите, что CUBRID автоматически коммитит DDL, поэтому миграции не являются транзакционными.
+Да. Установите пакет через `pip install "sqlalchemy-cubrid[alembic]"`. Реализация миграций CUBRID регистрируется сама при загрузке диалекта, поэтому стандартный `env.py` работает без изменений с синхронными URL; для `cubrid+aiopycubrid://` используйте асинхронный шаблон Alembic (`alembic init -t async`). DDL в CUBRID транзакционный, поэтому по умолчанию неудачный `alembic upgrade` откатывается целиком, включая обновление версии; для долгих миграций и больших таблиц задайте `transaction_per_migration=True`, чтобы коммитить после каждой ревизии.
 
 ### Какие версии Python поддерживаются?
 

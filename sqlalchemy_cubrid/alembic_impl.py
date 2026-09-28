@@ -25,8 +25,18 @@ Usage::
 
 CUBRID-specific notes
 ---------------------
-* **DDL is auto-committed** — CUBRID implicitly commits every DDL
-  statement, so ``transactional_ddl`` is set to ``False``.
+* **DDL is transactional** — CUBRID does not implicitly commit DDL.
+  With client autocommit off (the dialect always turns it off),
+  ``CREATE``/``ALTER``/``DROP``/``TRUNCATE``/``CREATE INDEX``/``RENAME``
+  and friends are undone by ``ROLLBACK`` and never commit earlier DML, so
+  ``transactional_ddl`` is ``True``: by default Alembic runs the whole
+  upgrade in one transaction.  Pass ``transaction_per_migration=True`` to
+  ``context.configure()`` to commit after each revision instead, which
+  releases schema locks sooner on long or large-table migrations.
+* **Offline scripts have no ``BEGIN``** — CUBRID has no ``BEGIN``
+  statement (csql rejects it); a transaction starts implicitly, so
+  :meth:`CubridImpl.emit_begin` emits nothing and ``--sql`` output ends
+  each transaction with ``COMMIT;`` only.
 * **Native column rename** — CUBRID supports
   ``ALTER TABLE … RENAME COLUMN old TO new``.  Alembic's
   ``alter_column(new_column_name=…)`` emits it directly.
@@ -184,11 +194,12 @@ class CubridImpl(DefaultImpl):
     __dialect__ : str
         ``"cubrid"`` — matches the SQLAlchemy dialect name.
     transactional_ddl : bool
-        ``False`` — CUBRID implicitly commits DDL statements.
+        ``True`` — CUBRID DDL runs inside the current transaction and is
+        undone by ``ROLLBACK``; only client autocommit commits it early.
     """
 
     __dialect__: str = "cubrid"
-    transactional_ddl: bool = False
+    transactional_ddl: bool = True
 
     _collection_type_names: set[str] = {"SET", "MULTISET", "SEQUENCE"}
 
@@ -200,6 +211,15 @@ class CubridImpl(DefaultImpl):
     # (see cubrid-lab/sqlalchemy-cubrid#120).
     _CUBRID_UNBOUNDED_VARCHAR_LENGTH: int = 1073741823
     _unbounded_string_type_names: set[str] = {"TEXT", "CLOB", "STRING"}
+
+    def emit_begin(self) -> None:
+        """Emit nothing: CUBRID has no ``BEGIN`` statement.
+
+        A CUBRID transaction starts implicitly with the first statement
+        after a ``COMMIT``/``ROLLBACK``, and csql rejects ``BEGIN``.  The
+        inherited :meth:`emit_commit` still writes ``COMMIT;``, which ends
+        each transaction in ``--sql`` output.
+        """
 
     @staticmethod
     def _normalize_collection_value(value: object) -> str:

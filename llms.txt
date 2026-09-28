@@ -8,7 +8,7 @@ Key facts:
 - Connection URL: `cubrid://user:password@host:33000/dbname` (C-extension) or `cubrid+pycubrid://user:password@host:33000/dbname` (pure Python)
 - CUBRID uses `AUTO_INCREMENT` instead of sequences, `SMALLINT` for booleans, and collection types (`SET`, `MULTISET`, `SEQUENCE`) instead of arrays
 - CUBRID does not support `RETURNING`, JSON, or multi-schema — this dialect handles all differences transparently
-- DDL is auto-committed (`transactional_ddl = False`)
+- DDL is transactional: `ROLLBACK` undoes it and it never commits earlier DML; only client autocommit (off by default in the dialect) commits it early. Alembic runs a whole upgrade in one transaction (`transactional_ddl = True`); use `transaction_per_migration=True` for long or large-table migrations
 - Identifier folding is lowercase (not uppercase like SQL standard)
 - 6 isolation levels with dual-granularity (class-level + instance-level)
 - Install: `pip install sqlalchemy-cubrid` or `pip install "sqlalchemy-cubrid[pycubrid]"` for the pure Python driver

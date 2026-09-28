@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 """Check Alembic revisions for multiple DDL operations (advisory).
 
-Warns when a single revision contains multiple DDL calls, which is risky
-with CUBRID's non-transactional DDL.
+CUBRID DDL is transactional, so a failing revision is rolled back as a
+whole. Every DDL statement holds a schema lock on its table until the
+transaction commits, though, so this lists revisions with several DDL
+calls: they keep tables locked longer and are candidates for running with
+``transaction_per_migration=True`` or for splitting.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
 
 Exit codes:
-    0 — all revisions are safe (single DDL per function)
+    0 — no revision has more than one DDL call per function
     0 — warnings found (advisory only, does not fail CI)
 """
 
@@ -45,7 +48,7 @@ def check_revision(path: Path) -> list[str]:
         if ddl_count > 1:
             warnings.append(
                 f"{path.name}:{func.name}() has {ddl_count} DDL operations "
-                f"(recommended: 1 per revision for CUBRID)"
+                "(schema locks are held until the transaction commits)"
             )
     return warnings
 
@@ -65,7 +68,11 @@ def main() -> None:
         for w in all_warnings:
             print(f"  \u2022 {w}")
         print(f"\nTotal: {len(all_warnings)} warning(s)")
-        print("Tip: Split multi-DDL revisions to avoid partial migration state.")
+        print(
+            "Tip: these revisions roll back whole on failure but hold schema locks "
+            "until commit; use transaction_per_migration=True for long or "
+            "large-table migrations."
+        )
     else:
         print("\u2713 All revisions have single DDL operations per function.")
 

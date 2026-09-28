@@ -156,7 +156,7 @@ async with AsyncSession(engine) as session:
 - **`RETURNING` नहीं** — `INSERT/UPDATE/DELETE ... RETURNING` समर्थित नहीं है; `cursor.lastrowid` या `LAST_INSERT_ID()` का उपयोग करें
 - **कोई sequences नहीं** — CUBRID केवल `AUTO_INCREMENT` का उपयोग करता है
 - **कोई multi-schema नहीं** — प्रति डेटाबेस एक single schema
-- **DDL auto-commit करता है** — migrations transactional नहीं हैं (`transactional_ddl = False`)
+- **Uncommitted DDL schema locks रखता है** — CUBRID में DDL transactional है (`ROLLBACK` उसे undo करता है; उसे पहले commit सिर्फ client autocommit करता है, जिसे dialect बंद रखता है), इसलिए default रूप से पूरा Alembic upgrade एक transaction है (`transactional_ddl = True`) और commit होने तक छुई गई tables को lock रखता है; लंबे या बड़ी tables वाले migrations के लिए `transaction_per_migration=True` इस्तेमाल करें
 - **केवल SQLAlchemy 2.0–2.1** — internal API dependencies के कारण `<2.3` पर pinned ([details](ARCHITECTURE.md))
 - **Async के लिए pycubrid >= 1.2.0,<2.0 आवश्यक है** — `cubrid+aiopycubrid://` driver को वही async-capable pycubrid package line चाहिए जिसे यह परियोजना वर्तमान में सपोर्ट करती है
 
@@ -204,7 +204,7 @@ Pure Python driver के लिए (CUBRID native libraries की आवश्
 
 ### क्या sqlalchemy-cubrid Alembic migrations को सपोर्ट करता है?
 
-हाँ। `pip install "sqlalchemy-cubrid[alembic]"` के साथ इंस्टॉल करें। CUBRID migration implementation dialect load होते ही खुद register हो जाता है, इसलिए synchronous URLs के साथ default `env.py` बिना बदलाव के काम करता है; `cubrid+aiopycubrid://` के लिए Alembic का async template (`alembic init -t async`) इस्तेमाल करें। ध्यान दें कि CUBRID DDL को auto-commit करता है, इसलिए migrations transactional नहीं हैं।
+हाँ। `pip install "sqlalchemy-cubrid[alembic]"` के साथ इंस्टॉल करें। CUBRID migration implementation dialect load होते ही खुद register हो जाता है, इसलिए synchronous URLs के साथ default `env.py` बिना बदलाव के काम करता है; `cubrid+aiopycubrid://` के लिए Alembic का async template (`alembic init -t async`) इस्तेमाल करें। CUBRID में DDL transactional है, इसलिए default रूप से fail हुआ `alembic upgrade` version bump समेत पूरा rollback होता है; लंबे या बड़ी tables वाले migrations में हर revision के बाद commit करने के लिए `transaction_per_migration=True` सेट करें।
 
 ### कौन-से Python versions समर्थित हैं?
 

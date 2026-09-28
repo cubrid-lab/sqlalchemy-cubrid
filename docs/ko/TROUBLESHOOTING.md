@@ -50,11 +50,11 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [방언 'cubrid'에 대한 구현을 찾을 수 없음](#방언-cubrid에-대한-구현을-찾을-수-없음)
   - [ALTER COLUMN TYPE 거부됨 (손실 변환)](#alter-column-type-거부됨-손실-변환)
   - [RENAME COLUMN](#rename-column)
-  - [부분 마이그레이션 (DDL 자동 커밋)](#부분-마이그레이션-ddl-자동-커밋)
+  - [실패 후 부분 마이그레이션](#실패-후-부분-마이그레이션)
   - [Autogenerate가 변경을 감지하지 못함](#autogenerate가-변경을-감지하지-못함)
 - [격리 수준 문제](#격리-수준-문제)
   - [격리 수준 설정](#격리-수준-설정)
-  - [DDL이 현재 트랜잭션 커밋](#ddl이-현재-트랜잭션-커밋)
+  - [DDL은 현재 트랜잭션 안에서 실행됨](#ddl은-현재-트랜잭션-안에서-실행됨)
 - [트랜잭션 문제](#트랜잭션-문제)
   - [데이터가 저장되지 않음](#데이터가-저장되지-않음)
   - [오토커밋 충돌](#오토커밋-충돌)
@@ -943,17 +943,24 @@ def upgrade():
 
 ---
 
-### 부분 마이그레이션 (DDL 자동 커밋)
+### 실패 후 부분 마이그레이션
 
 **증상:** 마이그레이션이 중간에 실패해 데이터베이스가 불일치 상태로 남음.
 
-**원인:** CUBRID는 모든 DDL 문(`CREATE`, `ALTER`, `DROP`)을 자동 커밋합니다. `CubridImpl`은 `transactional_ddl = False`를 설정하므로 Alembic이 DDL 연산을 롤백할 수 없습니다.
+**배경:** CUBRID의 DDL은 트랜잭션으로 처리됩니다. 방언이 항상 설정하듯 클라이언트 자동 커밋이 꺼져 있으면 `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `CREATE INDEX`, `RENAME` 등은 `ROLLBACK`으로 되돌려집니다. `CubridImpl`은 `transactional_ddl = True`를 설정하므로, 기본적으로 실패한 `alembic upgrade`는 `alembic_version` 갱신을 포함해 그 실행의 모든 리비전을 롤백합니다. `transaction_per_migration=True`이면 끝난 리비전은 커밋된 채 남고 실패한 리비전만 롤백됩니다.
+
+**원인:** 실패 전에 무언가가 커밋했습니다:
+
+- 클라이언트 자동 커밋 — 엔진의 `isolation_level="AUTOCOMMIT"` 또는 자동 커밋이 켜진 드라이버 연결 — 은 문마다 커밋합니다
+- 오프라인(`--sql`) 스크립트를 `csql --no-auto-commit` 대신 csql의 기본 자동 커밋 모드로 실행했습니다
+- 리비전이 `op.execute()` 등으로 직접 `COMMIT`을 실행했습니다
 
 **예방:**
 
-1. 마이그레이션을 작게 유지 — 마이그레이션당 하나의 논리적 변경
-2. 먼저 스테이징 데이터베이스에서 마이그레이션 테스트
-3. 마이그레이션 실행 전 데이터베이스 백업
+1. 클라이언트 자동 커밋 없이 마이그레이션을 실행하고, 오프라인 스크립트는 `csql --no-auto-commit`으로 실행
+2. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True` 사용 — 커밋되지 않은 DDL은 스키마 잠금을 유지하므로 다른 세션이 트랜잭션이 끝날 때까지 기다립니다
+3. 먼저 스테이징 데이터베이스에서 마이그레이션 테스트
+4. 마이그레이션 실행 전 데이터베이스 백업
 
 **복구:**
 
@@ -1017,19 +1024,21 @@ with engine.connect().execution_options(
 
 ---
 
-### DDL이 현재 트랜잭션 커밋
+### DDL은 현재 트랜잭션 안에서 실행됨
 
-**모든 DDL 문은 CUBRID에서 자동 커밋됩니다.** 즉:
+**CUBRID는 DDL을 암묵적으로 커밋하지 않습니다.** 클라이언트 자동 커밋이 꺼져 있으면(방언은 모든 연결에서 이를 끕니다) 격리 수준과 관계없이 DDL은 현재 트랜잭션의 일부입니다:
 
 ```python
 with engine.begin() as conn:
     conn.execute(text("INSERT INTO users (name) VALUES ('Alice')"))
-    conn.execute(text("CREATE TABLE temp (id INT)"))  # 모든 것을 자동 커밋!
-    # 위의 INSERT는 이제 커밋됨. 아래에서 오류가 나도 롤백 안 됨
+    conn.execute(text("CREATE TABLE temp (id INT)"))  # 아직 커밋되지 않음
     conn.execute(text("INSERT INTO users (name) VALUES ('Bob')"))
+    raise RuntimeError("abort")  # 두 INSERT와 CREATE TABLE이 모두 롤백됨
 ```
 
-**모범 사례:** 같은 트랜잭션에서 DML과 DDL을 절대 혼용하지 마세요.
+자동 커밋이 일어나는 경우는 클라이언트 자동 커밋(`CCI_DEFAULT_AUTOCOMMIT`, `isolation_level="AUTOCOMMIT"`, csql의 기본 모드)뿐이며, 이때는 DDL이든 DML이든 문마다 커밋됩니다.
+
+**스키마 잠금에 주의:** 커밋되지 않은 DDL은 트랜잭션이 끝날 때까지 테이블의 스키마 잠금을 유지하므로, 그 테이블을 사용하는 다른 세션은 기다립니다(`SCH_S_LOCK` 대기 또는 잠금 타임아웃). DDL은 바로 커밋하고, 긴 DDL 트랜잭션은 바쁜 시간대를 피하세요.
 
 ---
 
@@ -1225,7 +1234,7 @@ flowchart TD
     kind -->|Import / Module error| install[Check driver install]
     kind -->|Connection failure| conn[Validate URL, host, port, credentials]
     kind -->|SQL compile/runtime error| sql[Inspect generated SQL and unsupported feature]
-    kind -->|Migration failure| mig[Check Alembic limitations and DDL auto-commit]
+    kind -->|Migration failure| mig[Check Alembic limitations and client autocommit]
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}

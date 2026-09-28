@@ -206,7 +206,7 @@ CUBRID 전용 타입 시스템을 구현하며, SQLAlchemy의 일반 타입을 `
 SQLAlchemy 테스트 스위트가 CUBRID 백엔드에서 어떤 동작 테스트를 실행할지 결정하는 기능 플래그를 정의합니다.
 
 #### `alembic_impl.py`
-Alembic용 `CubridImpl` 클래스를 제공해 DDL 마이그레이션 지원을 가능하게 하고, CUBRID에 트랜잭션 DDL 기능이 없음을 정의합니다.
+Alembic용 `CubridImpl` 클래스를 제공해 DDL 마이그레이션 지원을 가능하게 하고, CUBRID의 DDL이 트랜잭션으로 처리됨을 선언합니다(`transactional_ddl = True`).
 
 ## 방언 발견
 
@@ -230,7 +230,7 @@ flowchart TD
     pycubrid_dialect --> import_py["import pycubrid"]
     aio_pycubrid_dialect --> import_aio["import pycubrid.aio"]
 
-    cubrid_dialect -->|"Alembic 설치 시 임포트"| alembic_impl["CubridImpl<br/>transactional_ddl = False"]
+    cubrid_dialect -->|"Alembic 설치 시 임포트"| alembic_impl["CubridImpl<br/>transactional_ddl = True"]
 ```
 
 ## 드라이버 아키텍처
@@ -258,7 +258,7 @@ flowchart TD
 *   **SQLAlchemy `<2.3` 핀**: `_compat.py` 헬퍼를 통해 남은 세 개의 비공개 SA 속성(`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`)을 compiler.py:93, 104-105에서 사용 — 공개 대안이 나올 때까지 버전 고정 필요.
 *   **BOOLEAN → SMALLINT 매핑**: CUBRID에는 네이티브 BOOLEAN이 없음 — 방언이 `SMALLINT`(0/1)로 매핑.
 *   **JSON 타입 지원 (v1.2.0+)**: `JSON`, `JSONIndexType`, `JSONPathType`를 포함한 완전한 JSON 타입 매핑. `json_getattr`과 `json_getitem_op`를 통한 경로 접근. CUBRID ≥ 10.2 필요.
-*   **`transactional_ddl = False`**: CUBRID는 DDL 문을 자동 커밋 — Alembic이 실패한 마이그레이션을 롤백할 수 없음.
+*   **`transactional_ddl = True`**: CUBRID의 DDL은 트랜잭션과 함께 롤백됨(DDL을 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) — 실패한 Alembic 업그레이드는 기본적으로 통째로 롤백됨. CUBRID에는 `BEGIN` 문이 없으므로 `CubridImpl.emit_begin()`은 아무것도 내지 않으며, 오프라인 스크립트는 각 트랜잭션을 `COMMIT;`으로 끝냄.
 *   **`supports_statement_cache = True`**: SA 2.0 성능에 필요 — 방언은 캐시 안전.
 *   **소문자 식별자 폴딩**: CUBRID는 (SQL 표준의 대문자가 아니라) 소문자로 폴딩 — `CubridIdentifierPreparer`가 처리.
 *   **RELEASE SAVEPOINT 없음**: CUBRID가 미지원 — `do_release_savepoint()`는 no-op.
