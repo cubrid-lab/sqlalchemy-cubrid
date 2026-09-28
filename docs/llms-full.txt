@@ -3673,7 +3673,7 @@ SQLAlchemy's `AUTOCOMMIT` level is also accepted on every driver; it switches th
 - **Statement caching**: `supports_statement_cache = True`. The dialect is fully compatible with SQLAlchemy 2.0's compiled cache.
 - **Name normalization**: CUBRID folds unquoted identifiers to lowercase, which already matches SQLAlchemy's lowercase convention for case-insensitive names. The dialect therefore sets `requires_name_normalize = False` and does not apply SQLAlchemy's upper-case name normalization.
 - **Max identifier length**: CUBRID allows identifiers up to 254 characters — significantly longer than MySQL (64) or PostgreSQL (63).
-- **Result metadata (`cursor.description`)**: the dialect passes the driver's `cursor.description` through unchanged (`CursorResult.cursor.description`) and normalizes none of it. Verified live on CUBRID 10.2 and 11.4 for sync and async pycubrid and CUBRIDdb (#482): `Result.keys()` equals the description names, including `text()` aliases and expressions (`1 + 1` is named `1+1`); scalar type codes are the CUBRID codes on every driver (for example `VARCHAR` 2, `NUMERIC` 7, `INTEGER` 8, `DOUBLE` 12, `DATE` 13, `TIMESTAMP` 15, `BIGINT` 21); sync and async pycubrid report the same values. Driver differences: collection columns are `SET` 16 / `MULTISET` 17 / `SEQUENCE` 18 on pycubrid but CCI composite codes on CUBRIDdb (the kind in bits `0x60` plus the element type, so `SET(INTEGER)` is 40); `null_ok` is a `bool` on pycubrid and `0`/`1` on CUBRIDdb. Released pycubrid 1.7.1 reports `null_ok` inverted (cubrid-lab/pycubrid#431) and collection columns with their element type code (cubrid-lab/pycubrid#430); both are fixed on pycubrid `main`. SQLAlchemy itself does not consume `null_ok`, and reflection (`Inspector.get_columns()`) reads nullability from the catalog, so it is unaffected.
+- **Result metadata (`cursor.description`)**: the dialect passes the driver's `cursor.description` through unchanged (`CursorResult.cursor.description`) and normalizes none of it. Verified live on CUBRID 10.2 and 11.4 for sync and async pycubrid and CUBRIDdb (#482): `Result.keys()` equals the description names, including `text()` aliases and expressions (`1 + 1` is named `1+1`); scalar type codes are the CUBRID codes on every driver (for example `VARCHAR` 2, `NUMERIC` 7, `INTEGER` 8, `DOUBLE` 12, `DATE` 13, `TIMESTAMP` 15, `BIGINT` 21); sync and async pycubrid report the same values. Driver differences: collection columns are `SET` 16 / `MULTISET` 17 / `SEQUENCE` 18 on pycubrid but CCI composite codes on CUBRIDdb (the kind in bits `0x60` plus the element type, so `SET(INTEGER)` is 40); `null_ok` is a `bool` on pycubrid and `0`/`1` on CUBRIDdb. Released pycubrid 1.7.1 reports `null_ok` inverted (cubrid-lab/pycubrid#431) and collection columns with their element type code (cubrid-lab/pycubrid#430); both are fixed in pycubrid 1.8.0, which the contract tests require. SQLAlchemy itself does not consume `null_ok`, and reflection (`Inspector.get_columns()`) reads nullability from the catalog, so it is unaffected.
 
 ---
 
@@ -6416,10 +6416,9 @@ Core `executemany` with integer, UTF-8/CJK and NULL values, textual
 result column names, and commit/rollback visibility. It also compares
 constraint-violation exception classes (#480), results read across a
 rollback (#481), and scalar `cursor.description` names, type codes and
-`null_ok` (#482). NOT NULL/foreign-key classes, post-rollback results and
-`null_ok` are fixed on pycubrid `main` but not released, so the pycubrid side
-of those cases is a strict xfail on released pycubrid (see
-[Unreleased pycubrid fixes](#unreleased-pycubrid-fixes-cubrid_pycubrid_upstream)).
+`null_ok` (#482). These checks require the fixed pycubrid behavior shipped in
+pycubrid 1.8.0 (NOT NULL/foreign-key classes, post-rollback results and
+`null_ok`) and run unconditionally.
 Areas still blocked upstream are tracked separately (#483–#484); LOB values are
 covered by #485.
 
@@ -6539,36 +6538,8 @@ Record the versions reported by `scripts/report_driver_versions.py` in the
 adoption pull request, and update `CHANGELOG.md` and the support documentation
 with the newly supported range in the same change.
 
-### Unreleased pycubrid fixes (`CUBRID_PYCUBRID_UPSTREAM`)
-
-Contract tests for tracker #479 can land before the pycubrid release that fixes
-the behavior they check. On the released driver such a case is marked with
-`xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, issue)` from
-`test/pycubrid_upstream.py`, which applies
-`xfail(strict=True, reason="cubrid-lab/pycubrid#NNN, fixed on main, unreleased")`
-only to the `pycubrid` and `aiopycubrid` drivers. CUBRIDdb (`cubrid://`) cases
-are never affected by it; a CUBRIDdb defect gets its own per-driver strict xfail.
-
-pycubrid `main` keeps reporting the last released `__version__`, so the helper
-does not inspect versions. Instead, `CUBRID_PYCUBRID_UPSTREAM=1` declares that
-the installed pycubrid contains every gated upstream fix and turns the markers
-into no-ops, so the same tests must pass. The `pycubrid@main`
-integration job in `upstream-canary.yml` sets it. Set it locally only with such
-a build:
-
-```bash
-pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
-CUBRID_PYCUBRID_UPSTREAM=1 pytest test/test_integration.py test/test_aio_integration.py -v
-```
-
-List the gated issues with `grep -rn "xfail_unreleased_pycubrid_fix(" test/`.
-
-**Removing a marker after the release.** The regular lanes install the newest
-pycubrid release in the supported range, so once a release containing a fix is
-published, its cases report a strict XPASS and fail. Adopt that release: raise
-the `pycubrid` lower bound to it and delete the `xfail_unreleased_pycubrid_fix`
-calls naming the issue. When no call is left, delete `test/pycubrid_upstream.py`
-and the `CUBRID_PYCUBRID_UPSTREAM` entry in `upstream-canary.yml`.
+The `CUBRID_PYCUBRID_UPSTREAM` strict-xfail gating was removed once pycubrid 1.8.0
+shipped the fixes it covered (pycubrid#390, #395, #430, #431).
 
 ### Documentation gates
 
@@ -6690,7 +6661,7 @@ Observed on CUBRID 11.4:
 
 SQLAlchemy wraps the class it receives, so `cubrid://` raises
 `sqlalchemy.exc.IntegrityError` for constraint violations; see
-[Known Issue 9](#9-not-null--foreign-key-violations-on-released-pycubrid) for
+[Known Issue 9](#9-not-null--foreign-key-violations-on-pycubrid-171-and-earlier) for
 pycubrid. The `sqlalchemy-cubrid` dialect uses **string-based message matching**
 to distinguish disconnect errors from other failures.
 
@@ -6844,12 +6815,13 @@ driver:
 | `cubrid+aiopycubrid://` | all rows: `AsyncConnection.execute()` buffers the whole result before it returns | all rows |
 | raw `pycubrid.aio` cursor (pycubrid 1.7.1) | **silently returns only the buffered rows** | same as commit |
 
-cubrid-lab/pycubrid#395 makes pycubrid raise `InterfaceError` instead of
-returning a partial result; until that release is adopted, fully consume a
-result before ending its transaction. `AsyncConnection.stream()` is not
+**Fixed in pycubrid 1.8.0:** cubrid-lab/pycubrid#395 makes pycubrid raise
+`InterfaceError` instead of returning a partial result, and the contract tests
+require that behavior. With pycubrid 1.7.1 or earlier, fully consume a result
+before ending its transaction. `AsyncConnection.stream()` is not
 available because the dialect does not support server-side cursors.
 
-### 9. NOT NULL / foreign-key violations on released pycubrid
+### 9. NOT NULL / foreign-key violations on pycubrid 1.7.1 and earlier
 
 Verified live on CUBRID 10.2 and 11.4 (#480). SQLAlchemy wraps the DB-API
 exception class it receives, so the SQLAlchemy exception class depends on the
@@ -6861,7 +6833,9 @@ driver:
 | Foreign key (-922) | `IntegrityError` | `DatabaseError` |
 | Unique / primary key (-670) | `IntegrityError` | `IntegrityError` |
 
-Until the pycubrid release fixing cubrid-lab/pycubrid#390 is adopted, catch
+**Fixed in pycubrid 1.8.0:** cubrid-lab/pycubrid#390 raises `IntegrityError`
+for NOT NULL and foreign-key violations, matching `CUBRIDdb`, and the contract
+tests require that behavior. With pycubrid 1.7.1 or earlier, catch
 `sqlalchemy.exc.DatabaseError` (the base of `IntegrityError`) for NOT NULL and
 foreign-key failures through pycubrid. The dialect deliberately does not
 reclassify exceptions by message. On every driver the connection or `Session`

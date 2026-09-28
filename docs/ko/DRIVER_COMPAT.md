@@ -94,7 +94,7 @@ graph TD
 | 실패한 `CAST` (-181) | `DatabaseError` |
 | `rollback()` 이후 결과 읽기 (CCI -20040) | `InterfaceError` |
 
-SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위반에 `sqlalchemy.exc.IntegrityError`를 발생시킵니다. pycubrid는 [알려진 문제 9](#9-릴리스된-pycubrid의-not-null--외래-키-위반)를 참고하세요. `sqlalchemy-cubrid` 방언은 연결 해제 오류를 다른 실패와 구별하기 위해 **문자열 기반 메시지 매칭**을 사용합니다.
+SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위반에 `sqlalchemy.exc.IntegrityError`를 발생시킵니다. pycubrid는 [알려진 문제 9](#9-pycubrid-171-이하의-not-null--외래-키-위반)를 참고하세요. `sqlalchemy-cubrid` 방언은 연결 해제 오류를 다른 실패와 구별하기 위해 **문자열 기반 메시지 매칭**을 사용합니다.
 
 ---
 
@@ -197,9 +197,9 @@ SQLAlchemy를 통하면 `text()` 및 Core `UPDATE`/`DELETE` executemany가 잘�
 | `cubrid+aiopycubrid://` | 모든 행: `AsyncConnection.execute()`가 반환 전에 전체 결과를 버퍼링 | 모든 행 |
 | 원시 `pycubrid.aio` 커서 (pycubrid 1.7.1) | **버퍼에 있는 행만 오류 없이 반환** | commit과 동일 |
 
-cubrid-lab/pycubrid#395는 pycubrid가 부분 결과를 반환하는 대신 `InterfaceError`를 발생시키도록 합니다. 해당 릴리스를 채택하기 전까지는 트랜잭션을 끝내기 전에 결과를 모두 소비하세요. 방언이 서버 측 커서를 지원하지 않으므로 `AsyncConnection.stream()`은 사용할 수 없습니다.
+**pycubrid 1.8.0에서 수정됨:** cubrid-lab/pycubrid#395는 pycubrid가 부분 결과를 반환하는 대신 `InterfaceError`를 발생시키도록 하며, 계약 테스트는 이 동작을 요구합니다. pycubrid 1.7.1 이하에서는 트랜잭션을 끝내기 전에 결과를 모두 소비하세요. 방언이 서버 측 커서를 지원하지 않으므로 `AsyncConnection.stream()`은 사용할 수 없습니다.
 
-### 9. 릴리스된 pycubrid의 NOT NULL / 외래 키 위반
+### 9. pycubrid 1.7.1 이하의 NOT NULL / 외래 키 위반
 
 CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전달받은 DB-API 예외 클래스를 그대로 감싸므로, SQLAlchemy 예외 클래스는 드라이버에 따라 달라집니다:
 
@@ -209,7 +209,7 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 | 외래 키 (-922) | `IntegrityError` | `DatabaseError` |
 | 고유 / 기본 키 (-670) | `IntegrityError` | `IntegrityError` |
 
-cubrid-lab/pycubrid#390을 수정한 pycubrid 릴리스를 채택하기 전까지, pycubrid를 통한 NOT NULL 및 외래 키 실패는 `sqlalchemy.exc.DatabaseError`(`IntegrityError`의 기반 클래스)로 잡으세요. 방언은 의도적으로 메시지 기반으로 예외를 재분류하지 않습니다. 모든 드라이버에서 `rollback()` 후 연결이나 `Session`을 계속 사용할 수 있습니다.
+**pycubrid 1.8.0에서 수정됨:** cubrid-lab/pycubrid#390으로 NOT NULL 및 외래 키 위반이 `CUBRIDdb`와 같이 `IntegrityError`로 발생하며, 계약 테스트는 이 동작을 요구합니다. pycubrid 1.7.1 이하에서는 pycubrid를 통한 NOT NULL 및 외래 키 실패를 `sqlalchemy.exc.DatabaseError`(`IntegrityError`의 기반 클래스)로 잡으세요. 방언은 의도적으로 메시지 기반으로 예외를 재분류하지 않습니다. 모든 드라이버에서 `rollback()` 후 연결이나 `Session`을 계속 사용할 수 있습니다.
 
 ### 10. pycubrid는 `commit()` / `rollback()` 후 새 세션을 시작 (방언이 격리 수준을 다시 적용)
 

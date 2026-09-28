@@ -20,7 +20,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy_cubrid import BLOB, CLOB, DOUBLE, MULTISET, SEQUENCE, SET
 
 from scripts.integration_urls import async_url
-from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
 _DEFAULT_SYNC_URL = "cubrid://dba@localhost:33000/testdb"
 
@@ -698,7 +697,6 @@ class TestAsyncResultCompletenessAcrossTransactionBoundary:
     @pytest.mark.parametrize("boundary", ["commit", "rollback"])
     async def test_raw_driver_cursor_is_complete_or_raises(
         self,
-        request: pytest.FixtureRequest,
         engine: AsyncEngine,
         wide_table: Table,
         boundary: str,
@@ -737,11 +735,6 @@ class TestAsyncResultCompletenessAcrossTransactionBoundary:
                     ids = [row[0] for row in returned]
                     assert ids == list(range(len(ids)))
                     assert all(row[1] == _WIDE_PAYLOAD for row in returned)
-                # Only the completeness check is gated; an explicit error passes,
-                # which is a strict XPASS on a build that already raises.
-                xfail_unreleased_pycubrid_fix(
-                    request, engine.dialect.driver, 395, raises=AssertionError
-                )
                 if rest is not None:
                     assert len(ids) == _WIDE_ROWS, (
                         f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
@@ -782,13 +775,6 @@ _ASYNC_INTEGRITY_VIOLATIONS: dict[str, tuple[type[_AsyncIntegrityBase], dict[str
 }
 
 
-def _xfail_async_integrity(request: pytest.FixtureRequest, driver: str, kind: str) -> None:
-    # Released pycubrid raises NOT NULL (-631) and FK (-922) violations as a
-    # generic DatabaseError; unique/PK (-670) is already an IntegrityError.
-    if kind != "unique_pk":
-        xfail_unreleased_pycubrid_fix(request, driver, 390, raises=AssertionError)
-
-
 def _assert_integrity_error(engine: AsyncEngine, exc: sa.exc.DBAPIError) -> None:
     assert isinstance(exc, sa.exc.IntegrityError), (
         f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
@@ -821,9 +807,7 @@ class TestAsyncIntegrityErrorContract:
             await conn.run_sync(_AsyncIntegrityBase.metadata.drop_all)
 
     @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
-    async def test_core_violation_raises_integrity_error(
-        self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
-    ):
+    async def test_core_violation_raises_integrity_error(self, engine: AsyncEngine, kind: str):
         model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
         async with engine.connect() as conn:
             raw = await _dbapi_connection(conn)
@@ -840,14 +824,10 @@ class TestAsyncIntegrityErrorContract:
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await conn.rollback()
         assert excinfo.value.orig.code == code  # pycubrid Error.code
-        # Only the class check is gated; the checks above never are.
-        _xfail_async_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(engine, excinfo.value)
 
     @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
-    async def test_orm_flush_violation_raises_integrity_error(
-        self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
-    ):
+    async def test_orm_flush_violation_raises_integrity_error(self, engine: AsyncEngine, kind: str):
         model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
         # The AsyncSession is bound to one AsyncConnection, so after its rollback
         # it keeps using that connection and its DBAPI connection.
@@ -866,8 +846,6 @@ class TestAsyncIntegrityErrorContract:
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await session.rollback()
         assert excinfo.value.orig.code == code  # pycubrid Error.code
-        # Only the class check is gated; the checks above never are.
-        _xfail_async_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(engine, excinfo.value)
 
 
@@ -967,12 +945,10 @@ class TestAsyncCursorDescriptionContract:
             codes = {d[0]: d[1] for d in _description(result)}
         assert codes == {name: spec[2] for name, spec in _DESC_COLUMNS.items()}
 
-    async def test_null_ok(self, request: pytest.FixtureRequest, engine: AsyncEngine):
+    async def test_null_ok(self, engine: AsyncEngine):
         async with engine.connect() as conn:
             result = await conn.execute(select(_desc_table))
             null_ok = {d[0]: bool(d[6]) for d in _description(result)}
-        # Released pycubrid reports null_ok inverted (NOT NULL -> True).
-        xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, 431, raises=AssertionError)
         assert null_ok == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
 
     async def test_reflected_nullability_uses_catalog(self, engine: AsyncEngine):
@@ -984,16 +960,12 @@ class TestAsyncCursorDescriptionContract:
         nullable = {c["name"]: c["nullable"] for c in columns}
         assert nullable == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
 
-    async def test_collection_type_codes(self, request: pytest.FixtureRequest):
+    async def test_collection_type_codes(self):
         # A dedicated engine keeps any broken connection out of the shared pool:
-        # released pycubrid misreads the collection column header.
+        # pycubrid < 1.8.0 misreads the collection column header.
         engine = create_async_engine(_async_url())
         try:
             async with engine.connect() as conn:
-                # Released pycubrid reports the element type code (INTEGER 8).
-                xfail_unreleased_pycubrid_fix(
-                    request, engine.dialect.driver, 430, raises=AssertionError
-                )
                 result = await conn.execute(
                     select(*(_desc_collections.c[name] for name in _DESC_COLLECTIONS))
                 )

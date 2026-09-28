@@ -487,9 +487,8 @@ CUBRIDdb C 확장에서 실행하고 결과가 일치하는지 확인합니다. 
 값을 사용하는 Core `executemany`, 정수·UTF-8/CJK 값을 사용하는 텍스트 `executemany`, 스칼라 바인드, 텍스트 SQL 결과 컬럼 이름,
 커밋/롤백 가시성이 해당합니다. 또한 제약 조건 위반 예외 클래스(#480), 롤백 이후 읽은
 결과(#481), 스칼라 `cursor.description`의 이름·타입 코드·`null_ok`(#482)도 비교합니다.
-NOT NULL/외래 키 예외 클래스, 롤백 이후 결과, `null_ok`는 pycubrid `main`에서는 수정되었지만
-릴리스되지 않았으므로, 릴리스된 pycubrid에서는 해당 케이스의 pycubrid 쪽이 strict xfail입니다([릴리스되지 않은 pycubrid
-수정](#릴리스되지-않은-pycubrid-수정-cubrid_pycubrid_upstream) 참고). 업스트림에 막힌
+이 검사들은 pycubrid 1.8.0에 포함된 수정 동작(NOT NULL/외래 키 예외 클래스, 롤백 이후 결과,
+`null_ok`)을 요구하며 조건 없이 실행됩니다. 업스트림에 막힌
 영역은 별도로 추적하며(#483–#484), LOB 값은 #485에서 다룹니다.
 
 `ci.yml`과 `integration-full.yml`의 통합 잡은 두 드라이버를 모두 설치하고
@@ -598,35 +597,8 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 넓힙니다. 채택 PR에는 `scripts/report_driver_versions.py`가 보고한 버전을 기록하고,
 같은 변경에서 `CHANGELOG.md`와 지원 문서에 새로 지원하는 범위를 반영합니다.
 
-### 릴리스되지 않은 pycubrid 수정 (`CUBRID_PYCUBRID_UPSTREAM`)
-
-트래커 #479의 계약 테스트는 해당 동작을 고치는 pycubrid 릴리스보다 먼저 들어올 수
-있습니다. 릴리스된 드라이버에서 이런 케이스는 `test/pycubrid_upstream.py`의
-`xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, issue)`로 표시하며,
-이 헬퍼는 `pycubrid`와 `aiopycubrid` 드라이버에만
-`xfail(strict=True, reason="cubrid-lab/pycubrid#NNN, fixed on main, unreleased")`를
-적용합니다. CUBRIDdb(`cubrid://`) 케이스에는 영향을 주지 않으며, CUBRIDdb 자체 결함은
-별도의 드라이버별 strict xfail로 표시합니다.
-
-pycubrid `main`은 마지막 릴리스의 `__version__`을 그대로 보고하므로 헬퍼는 버전을
-검사하지 않습니다. 대신 `CUBRID_PYCUBRID_UPSTREAM=1`은 설치된 pycubrid가
-게이트된 모든 업스트림 수정을 포함한다고 선언하며, 이때 마커는 아무 동작도
-하지 않으므로 같은 테스트가 통과해야 합니다. `upstream-canary.yml`의 `pycubrid@main`
-통합 잡이 이 변수를 설정합니다. 로컬에서는 그런 빌드를 설치했을 때만 설정하세요.
-
-```bash
-pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
-CUBRID_PYCUBRID_UPSTREAM=1 pytest test/test_integration.py test/test_aio_integration.py -v
-```
-
-게이트된 이슈 목록은 `grep -rn "xfail_unreleased_pycubrid_fix(" test/`로 확인합니다.
-
-**릴리스 후 마커 제거.** 일반 레인은 지원 범위 안의 최신 pycubrid 릴리스를 설치하므로,
-수정이 포함된 릴리스가 게시되면 해당 케이스가 strict XPASS로 실패합니다. 그 릴리스를
-채택하세요. `pycubrid` 하한을 그 릴리스로 올리고 해당 이슈를 지정한
-`xfail_unreleased_pycubrid_fix` 호출을 삭제합니다. 남은 호출이 없으면
-`test/pycubrid_upstream.py`와 `upstream-canary.yml`의 `CUBRID_PYCUBRID_UPSTREAM`
-항목을 삭제합니다.
+`CUBRID_PYCUBRID_UPSTREAM` strict xfail 게이트는 pycubrid 1.8.0이 해당 수정(pycubrid#390, #395,
+#430, #431)을 포함해 릴리스되면서 제거되었습니다.
 
 ### 문서 검사
 

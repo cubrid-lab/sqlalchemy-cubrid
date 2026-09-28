@@ -98,7 +98,7 @@ Observed on CUBRID 11.4:
 
 SQLAlchemy wraps the class it receives, so `cubrid://` raises
 `sqlalchemy.exc.IntegrityError` for constraint violations; see
-[Known Issue 9](#9-not-null--foreign-key-violations-on-released-pycubrid) for
+[Known Issue 9](#9-not-null--foreign-key-violations-on-pycubrid-171-and-earlier) for
 pycubrid. The `sqlalchemy-cubrid` dialect uses **string-based message matching**
 to distinguish disconnect errors from other failures.
 
@@ -252,12 +252,13 @@ driver:
 | `cubrid+aiopycubrid://` | all rows: `AsyncConnection.execute()` buffers the whole result before it returns | all rows |
 | raw `pycubrid.aio` cursor (pycubrid 1.7.1) | **silently returns only the buffered rows** | same as commit |
 
-cubrid-lab/pycubrid#395 makes pycubrid raise `InterfaceError` instead of
-returning a partial result; until that release is adopted, fully consume a
-result before ending its transaction. `AsyncConnection.stream()` is not
+**Fixed in pycubrid 1.8.0:** cubrid-lab/pycubrid#395 makes pycubrid raise
+`InterfaceError` instead of returning a partial result, and the contract tests
+require that behavior. With pycubrid 1.7.1 or earlier, fully consume a result
+before ending its transaction. `AsyncConnection.stream()` is not
 available because the dialect does not support server-side cursors.
 
-### 9. NOT NULL / foreign-key violations on released pycubrid
+### 9. NOT NULL / foreign-key violations on pycubrid 1.7.1 and earlier
 
 Verified live on CUBRID 10.2 and 11.4 (#480). SQLAlchemy wraps the DB-API
 exception class it receives, so the SQLAlchemy exception class depends on the
@@ -269,7 +270,9 @@ driver:
 | Foreign key (-922) | `IntegrityError` | `DatabaseError` |
 | Unique / primary key (-670) | `IntegrityError` | `IntegrityError` |
 
-Until the pycubrid release fixing cubrid-lab/pycubrid#390 is adopted, catch
+**Fixed in pycubrid 1.8.0:** cubrid-lab/pycubrid#390 raises `IntegrityError`
+for NOT NULL and foreign-key violations, matching `CUBRIDdb`, and the contract
+tests require that behavior. With pycubrid 1.7.1 or earlier, catch
 `sqlalchemy.exc.DatabaseError` (the base of `IntegrityError`) for NOT NULL and
 foreign-key failures through pycubrid. The dialect deliberately does not
 reclassify exceptions by message. On every driver the connection or `Session`

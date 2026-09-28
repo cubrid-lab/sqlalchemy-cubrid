@@ -44,7 +44,6 @@ from sqlalchemy import (
 )
 
 from sqlalchemy_cubrid.dialect import CubridDialect
-from test.pycubrid_upstream import xfail_unreleased_pycubrid_fix
 
 pytestmark = pytest.mark.integration
 
@@ -340,9 +339,7 @@ def test_commit_rollback_visibility_agrees(both_engines: Any) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_result_after_rollback_is_never_partial(
-    request: pytest.FixtureRequest, both_engines: Any
-) -> None:
+def test_result_after_rollback_is_never_partial(both_engines: Any) -> None:
     """A result spanning several FETCHes is complete or raises after rollback.
 
     500 rows of 1000 bytes exceed pycubrid's 100-row FETCH batch and the
@@ -388,11 +385,8 @@ def test_result_after_rollback_is_never_partial(
         assert all(row.payload == "x" * 1000 for row in returned)
         return "complete" if len(ids) == rows else f"partial ({len(ids)} of {rows})"
 
-    # CUBRIDdb, the precondition and the prefix checks stay outside the
-    # pycubrid-only xfail; only pycubrid's completeness is gated.
     assert run(cext) == "raises"
     py_outcome = run(pyc)
-    xfail_unreleased_pycubrid_fix(request, "pycubrid", 395, raises=AssertionError)
     assert py_outcome in ("complete", "raises"), py_outcome
 
 
@@ -408,9 +402,7 @@ _CONSTRAINT_VIOLATIONS = {
 
 
 @pytest.mark.parametrize("kind", list(_CONSTRAINT_VIOLATIONS))
-def test_constraint_violation_class_agrees(
-    request: pytest.FixtureRequest, both_engines: Any, kind: str
-) -> None:
+def test_constraint_violation_class_agrees(both_engines: Any, kind: str) -> None:
     """NOT NULL, FK and unique/PK violations raise IntegrityError on both drivers."""
     pyc, cext = both_engines
     sql, code = _CONSTRAINT_VIOLATIONS[kind]
@@ -440,16 +432,12 @@ def test_constraint_violation_class_agrees(
                 conn.execute(text("DROP TABLE IF EXISTS drvdiff_ie"))
         return type(excinfo.value).__name__, excinfo.value.orig
 
-    # CUBRIDdb, the server error codes and the recovery checks in run() stay
-    # outside the pycubrid xfail.
     c_class, c_orig = run(cext)
     assert CubridDialect._extract_error_code(c_orig) == code
     assert c_class == "IntegrityError"
     assert isinstance(c_orig, cext.dialect.loaded_dbapi.IntegrityError)
     py_class, py_orig = run(pyc)
     assert py_orig.code == code
-    if kind != "unique_pk":
-        xfail_unreleased_pycubrid_fix(request, "pycubrid", 390, raises=AssertionError)
     assert py_class == "IntegrityError"
     assert isinstance(py_orig, pyc.dialect.loaded_dbapi.IntegrityError)
 
@@ -459,7 +447,7 @@ def test_constraint_violation_class_agrees(
 # ---------------------------------------------------------------------------
 
 
-def test_scalar_description_agrees(request: pytest.FixtureRequest, both_engines: Any) -> None:
+def test_scalar_description_agrees(both_engines: Any) -> None:
     """Textual-SQL names, scalar type codes and null_ok agree across drivers.
 
     Collection type codes intentionally differ (pycubrid SET/MULTISET/SEQUENCE
@@ -496,12 +484,9 @@ def test_scalar_description_agrees(request: pytest.FixtureRequest, both_engines:
         ("n", 7, True),
         ("dt", 13, True),
     ]
-    # CUBRIDdb, and pycubrid's names and type codes, are asserted before the
-    # pycubrid-only xfail exists; only pycubrid's null_ok comparison is gated.
     assert run(cext) == expected
     py_desc = run(pyc)
     assert [d[:2] for d in py_desc] == [e[:2] for e in expected]
-    xfail_unreleased_pycubrid_fix(request, "pycubrid", 431, raises=AssertionError)
     assert [d[2] for d in py_desc] == [e[2] for e in expected]
 
 

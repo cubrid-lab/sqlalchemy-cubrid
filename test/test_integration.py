@@ -46,8 +46,6 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 from sqlalchemy_cubrid import BLOB, CLOB, DOUBLE, MULTISET, SEQUENCE, SET, STRING
 from sqlalchemy_cubrid.dialect import CubridDialect
 
-from test.pycubrid_upstream import PYCUBRID_DRIVERS, xfail_unreleased_pycubrid_fix
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -740,7 +738,7 @@ class TestIsolationLevelAcrossTransactionBoundaries:
     @pytest.fixture
     def fail_next_reapply(self, serializable_engine, monkeypatch):
         """Make the next dialect-level SET TRANSACTION fail once (pycubrid re-apply only)."""
-        if serializable_engine.dialect.driver not in PYCUBRID_DRIVERS:
+        if serializable_engine.dialect.driver not in ("pycubrid", "aiopycubrid"):
             pytest.skip("only the pycubrid dialects re-apply the level")
         state = {"armed": False, "failed": 0}
         original = CubridDialect.set_isolation_level
@@ -2217,9 +2215,7 @@ class TestResultCompletenessAcrossTransactionBoundary:
 
     @pytest.mark.parametrize("method", ["fetchone", "fetchmany", "fetchall"])
     @pytest.mark.parametrize("boundary", ["commit", "rollback", "none"])
-    def test_unfinished_result_is_complete_or_raises(
-        self, request, engine, wide_table, boundary, method
-    ):
+    def test_unfinished_result_is_complete_or_raises(self, engine, wide_table, boundary, method):
         """After a transaction boundary, the rest of a result is complete or an error.
 
         ``none`` is the control: the full result needs FETCHes past the first
@@ -2263,13 +2259,6 @@ class TestResultCompletenessAcrossTransactionBoundary:
             ids = [row.id for row in returned]
             assert ids == list(range(len(ids)))
             assert all(row.payload == _WIDE_PAYLOAD for row in returned)
-        if boundary != "none":
-            # Only the completeness check below is gated. On an explicit
-            # error the test passes, which is a strict XPASS on a build that
-            # already raises instead of truncating.
-            xfail_unreleased_pycubrid_fix(
-                request, engine.dialect.driver, 395, raises=AssertionError
-            )
         if rest is not None:
             assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
 
@@ -2313,13 +2302,6 @@ def _native_error_code(engine, orig):
     return CubridDialect._extract_error_code(orig)
 
 
-def _xfail_integrity(request, driver, kind):
-    # Released pycubrid raises NOT NULL (-631) and FK (-922) violations as a
-    # generic DatabaseError; unique/PK (-670) is already an IntegrityError.
-    if kind != "unique_pk":
-        xfail_unreleased_pycubrid_fix(request, driver, 390, raises=AssertionError)
-
-
 def _assert_integrity_error(engine, exc):
     assert isinstance(exc, sa.exc.IntegrityError), (
         f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
@@ -2346,7 +2328,7 @@ class TestIntegrityErrorContract:
         _IntegrityBase.metadata.drop_all(engine)
 
     @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
-    def test_core_violation_raises_integrity_error(self, request, engine, kind):
+    def test_core_violation_raises_integrity_error(self, engine, kind):
         model, values, code = _INTEGRITY_VIOLATIONS[kind]
         with engine.connect() as conn:
             raw = conn.connection.dbapi_connection
@@ -2363,12 +2345,10 @@ class TestIntegrityErrorContract:
             assert _integrity_counts(conn) == (1, 1)
             conn.rollback()
         assert _native_error_code(engine, excinfo.value.orig) == code
-        # Only the class check is gated; the checks above never are.
-        _xfail_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(engine, excinfo.value)
 
     @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
-    def test_orm_flush_violation_raises_integrity_error(self, request, engine, kind):
+    def test_orm_flush_violation_raises_integrity_error(self, engine, kind):
         model, values, code = _INTEGRITY_VIOLATIONS[kind]
         # The Session is bound to one Connection, so after its rollback it keeps
         # using that Connection and its DBAPI connection.
@@ -2387,8 +2367,6 @@ class TestIntegrityErrorContract:
             assert _integrity_counts(session.connection()) == (1, 1)
             session.rollback()
         assert _native_error_code(engine, excinfo.value.orig) == code
-        # Only the class check is gated; the checks above never are.
-        _xfail_integrity(request, engine.dialect.driver, kind)
         _assert_integrity_error(engine, excinfo.value)
 
 
@@ -2492,14 +2470,12 @@ class TestCursorDescriptionContract:
             result.all()
         assert codes == {name: spec[2] for name, spec in _DESC_COLUMNS.items()}
 
-    def test_null_ok(self, request, engine, desc_tables):
+    def test_null_ok(self, engine, desc_tables):
         table, _ = desc_tables
         with engine.connect() as conn:
             result = conn.execute(select(table))
             null_ok = {d[0]: bool(d[6]) for d in result.cursor.description}
             result.all()
-        # Released pycubrid reports null_ok inverted (NOT NULL -> True).
-        xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, 431, raises=AssertionError)
         assert null_ok == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
 
     def test_reflected_nullability_uses_catalog(self, engine, desc_tables):
@@ -2509,10 +2485,10 @@ class TestCursorDescriptionContract:
         }
         assert columns == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
 
-    def test_collection_type_codes(self, request, desc_tables):
+    def test_collection_type_codes(self, desc_tables):
         _, collections = desc_tables
         # A dedicated engine keeps any broken connection out of the shared pool:
-        # released pycubrid misreads the collection column header.
+        # pycubrid < 1.8.0 misreads the collection column header.
         engine = create_engine(_cubrid_url())
         try:
             if engine.dialect.driver == "pycubrid":
@@ -2520,11 +2496,6 @@ class TestCursorDescriptionContract:
             else:
                 expected = {name: spec[2] for name, spec in _DESC_COLLECTIONS.items()}
             with engine.connect() as conn:
-                # Released pycubrid reports the element type code (INTEGER 8);
-                # only that assertion is gated, and only for pycubrid.
-                xfail_unreleased_pycubrid_fix(
-                    request, engine.dialect.driver, 430, raises=AssertionError
-                )
                 result = conn.execute(select(*(collections.c[name] for name in _DESC_COLLECTIONS)))
                 codes = {d[0]: d[1] for d in result.cursor.description}
                 assert len(result.all()) == 1

@@ -503,10 +503,9 @@ Core `executemany` with integer, UTF-8/CJK and NULL values, textual
 result column names, and commit/rollback visibility. It also compares
 constraint-violation exception classes (#480), results read across a
 rollback (#481), and scalar `cursor.description` names, type codes and
-`null_ok` (#482). NOT NULL/foreign-key classes, post-rollback results and
-`null_ok` are fixed on pycubrid `main` but not released, so the pycubrid side
-of those cases is a strict xfail on released pycubrid (see
-[Unreleased pycubrid fixes](#unreleased-pycubrid-fixes-cubrid_pycubrid_upstream)).
+`null_ok` (#482). These checks require the fixed pycubrid behavior shipped in
+pycubrid 1.8.0 (NOT NULL/foreign-key classes, post-rollback results and
+`null_ok`) and run unconditionally.
 Areas still blocked upstream are tracked separately (#483–#484); LOB values are
 covered by #485.
 
@@ -626,36 +625,8 @@ Record the versions reported by `scripts/report_driver_versions.py` in the
 adoption pull request, and update `CHANGELOG.md` and the support documentation
 with the newly supported range in the same change.
 
-### Unreleased pycubrid fixes (`CUBRID_PYCUBRID_UPSTREAM`)
-
-Contract tests for tracker #479 can land before the pycubrid release that fixes
-the behavior they check. On the released driver such a case is marked with
-`xfail_unreleased_pycubrid_fix(request, engine.dialect.driver, issue)` from
-`test/pycubrid_upstream.py`, which applies
-`xfail(strict=True, reason="cubrid-lab/pycubrid#NNN, fixed on main, unreleased")`
-only to the `pycubrid` and `aiopycubrid` drivers. CUBRIDdb (`cubrid://`) cases
-are never affected by it; a CUBRIDdb defect gets its own per-driver strict xfail.
-
-pycubrid `main` keeps reporting the last released `__version__`, so the helper
-does not inspect versions. Instead, `CUBRID_PYCUBRID_UPSTREAM=1` declares that
-the installed pycubrid contains every gated upstream fix and turns the markers
-into no-ops, so the same tests must pass. The `pycubrid@main`
-integration job in `upstream-canary.yml` sets it. Set it locally only with such
-a build:
-
-```bash
-pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@main"
-CUBRID_PYCUBRID_UPSTREAM=1 pytest test/test_integration.py test/test_aio_integration.py -v
-```
-
-List the gated issues with `grep -rn "xfail_unreleased_pycubrid_fix(" test/`.
-
-**Removing a marker after the release.** The regular lanes install the newest
-pycubrid release in the supported range, so once a release containing a fix is
-published, its cases report a strict XPASS and fail. Adopt that release: raise
-the `pycubrid` lower bound to it and delete the `xfail_unreleased_pycubrid_fix`
-calls naming the issue. When no call is left, delete `test/pycubrid_upstream.py`
-and the `CUBRID_PYCUBRID_UPSTREAM` entry in `upstream-canary.yml`.
+The `CUBRID_PYCUBRID_UPSTREAM` strict-xfail gating was removed once pycubrid 1.8.0
+shipped the fixes it covered (pycubrid#390, #395, #430, #431).
 
 ### Documentation gates
 
