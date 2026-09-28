@@ -10,14 +10,12 @@ Before you start, make sure the following are available:
 
 - CUBRID server (running and reachable)
 - Python 3.10+
-- One supported driver configuration:
-  - `cubrid://` via CUBRID-Python (C-extension)
+- Recommended driver configuration:
   - `cubrid+pycubrid://` via pycubrid
   - `cubrid+aiopycubrid://` via pycubrid.aio
 
 ```bash
-pip install sqlalchemy-cubrid
-# or: pip install "sqlalchemy-cubrid[pycubrid]"
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
 
 ---
@@ -25,8 +23,18 @@ pip install sqlalchemy-cubrid
 ## Install the Dialect
 
 ```bash
-pip install sqlalchemy-cubrid
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+### Alternative: C-extension driver
+
+If you specifically need CUBRID-Python, install it with:
+
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"
+```
+
+Then use `cubrid+cubriddb://`; the bare `cubrid://` URL selects the same C-extension driver.
 
 ---
 
@@ -45,7 +53,7 @@ Example:
 ```python
 from sqlalchemy import create_engine
 
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 ---
