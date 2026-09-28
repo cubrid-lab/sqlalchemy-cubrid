@@ -411,8 +411,11 @@ class TestReflection:
         with engine.connect() as conn:
             with pytest.raises(sa.exc.NoSuchTableError):
                 getattr(inspect(conn), method)("nonexistent_table_xyz")
+        if not _server_at_least(engine, (11, 4)):
+            # CUBRID 10.2 accepts "]" in a quoted name and reports Unknown class.
+            pytest.skip("CUBRID < 11.4 accepts ']' in a quoted identifier")
         with engine.connect() as conn:
-            # CUBRID rejects "]" in an identifier with a -493 syntax error.
+            # CUBRID 11.4 rejects "]" in an identifier with a -493 syntax error.
             with pytest.raises(sa.exc.DBAPIError, match="cannot contain"):
                 getattr(inspect(conn), method)("bad]name")
 
