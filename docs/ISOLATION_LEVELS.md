@@ -123,16 +123,11 @@ with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
     # Already visible to other sessions; conn.rollback() cannot undo it
 ```
 
-`AUTOCOMMIT` is a driver mode, not a server isolation level. On `cubrid://`
-(CUBRIDdb) the server level stays what it was, and `conn.get_isolation_level()`
-still reports it. On `cubrid+pycubrid://` and `cubrid+aiopycubrid://` it does
-not: pycubrid opens a new broker session after every autocommitted statement
-(cubrid-lab/pycubrid#468), so statements run at the server default level
-(normally READ COMMITTED), and session variables (`SET @v`) do not survive from
-one statement to the next. Each statement also pays for that reconnect. With an
-engine-level `AUTOCOMMIT` on pycubrid, pass `skip_autocommit_rollback=True` to
-`create_engine()` so the pool's checkin rollback does not add another one (see
-[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-starts-a-new-session-after-commit--rollback-dialect-re-applies-the-isolation-level)).
+`AUTOCOMMIT` is a driver mode, not a server isolation level. The server level
+stays what it was, and `conn.get_isolation_level()` still reports it, on
+`cubrid://` (CUBRIDdb) and, since pycubrid 1.8.0 keeps the session in
+autocommit mode, on `cubrid+pycubrid://` and `cubrid+aiopycubrid://` (see
+[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-replaces-the-session-after-a-cas-restart-dialect-re-applies-the-isolation-level)).
 Setting
 any other level turns driver autocommit off again, and a pooled connection
 returns to transactional mode when it is checked in (see
@@ -219,13 +214,14 @@ The returned numeric value is mapped back to a descriptive string.
 
 ### Kept Across Commit and Rollback on pycubrid
 
-pycubrid opens a new CAS session after the driver's `commit()` / `rollback()`,
-and that session starts at the server default level (see
-[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-starts-a-new-session-after-commit--rollback-dialect-re-applies-the-isolation-level)).
+pycubrid 1.8.0 keeps the CAS session, and with it the isolation level, across
+`commit()` / `rollback()`. It opens a new session, at the server default level,
+only when the CAS itself was restarted (see
+[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-replaces-the-session-after-a-cas-restart-dialect-re-applies-the-isolation-level)).
 `cubrid+pycubrid://` and `cubrid+aiopycubrid://` therefore re-apply the level
 they last set on a connection after every commit and rollback, so an engine- or
-connection-level `isolation_level` stays in effect. `cubrid://` (CUBRIDdb) keeps
-the session and needs no re-apply.
+connection-level `isolation_level` also survives a CAS replaced at the end of a
+transaction. `cubrid://` (CUBRIDdb) keeps the session and needs no re-apply.
 
 ### Reset on Connection Return
 

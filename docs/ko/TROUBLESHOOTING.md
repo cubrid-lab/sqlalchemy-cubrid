@@ -1088,7 +1088,7 @@ with engine.connect().execution_options(
     # 즉시 커밋됨; conn.rollback()으로 되돌릴 수 없음
 ```
 
-`create_engine(..., isolation_level="AUTOCOMMIT")`과 `engine.execution_options(isolation_level="AUTOCOMMIT")`도 동작합니다. `execution_options()`로 `AUTOCOMMIT`으로 바꾼 연결은 풀로 돌아가면 다시 트랜잭션 모드가 됩니다. pycubrid에서는 오토커밋된 문장이 서버 기본 격리 수준으로 실행되고 매번 브로커 세션을 재연결하므로(cubrid-lab/pycubrid#468), 엔진 수준 `AUTOCOMMIT`을 쓸 때는 `skip_autocommit_rollback=True`도 전달하세요. #501 이전 릴리스는 `AUTOCOMMIT`에 대해 `ArgumentError`(`execution_options`) 또는 `ValueError`(`create_engine`)를 발생시켰습니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
+`create_engine(..., isolation_level="AUTOCOMMIT")`과 `engine.execution_options(isolation_level="AUTOCOMMIT")`도 동작합니다. `execution_options()`로 `AUTOCOMMIT`으로 바꾼 연결은 풀로 돌아가면 다시 트랜잭션 모드가 됩니다. #501 이전 릴리스는 `AUTOCOMMIT`에 대해 `ArgumentError`(`execution_options`) 또는 `ValueError`(`create_engine`)를 발생시켰습니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
 
 ---
 

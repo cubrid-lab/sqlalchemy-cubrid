@@ -157,7 +157,7 @@ async with AsyncSession(engine) as session:
 - **不支持多 schema** —— 每个数据库只有单一 schema
 - **未提交的 DDL 会持有模式锁** —— CUBRID 的 DDL 是事务性的（`ROLLBACK` 可撤销；只有方言已关闭的客户端自动提交才会提前提交它），因此默认情况下整个 Alembic 升级是一个事务（`transactional_ddl = True`），在提交前会一直锁住涉及的表；耗时较长或针对大表的迁移请使用 `transaction_per_migration=True`
 - **仅支持 SQLAlchemy 2.0–2.1** —— 由于内部 API 依赖，版本固定为 `<2.3`（[详情](ARCHITECTURE.md)）
-- **Async 需要 pycubrid >= 1.2.0,<2.0** —— `cubrid+aiopycubrid://` 驱动需要本项目当前支持的 async 能力 pycubrid 包线
+- **Async 需要 pycubrid >= 1.8.0,<2.0** —— `cubrid+aiopycubrid://` 驱动需要本项目当前支持的 async 能力 pycubrid 包线
 
 ## 文档
 
@@ -183,8 +183,8 @@ async with AsyncSession(engine) as session:
 | CUBRID | 10.2、11.0、11.2、11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
-| pycubrid（sync） | >=1.2.0,<2.0 |
-| pycubrid（async） | >=1.2.0,<2.0 |
+| pycubrid（sync） | >=1.8.0,<2.0 |
+| pycubrid（async） | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -226,7 +226,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### sqlalchemy-cubrid 支持 async 吗？
 
-支持。请配合 pycubrid 异步驱动使用 `create_async_engine("cubrid+aiopycubrid://...")`。需要 `pycubrid>=1.3.2,<2.0`。两个 pycubrid 方言现在都会在 `pool_pre_ping` 中使用原生 `Connection.ping(False)` / `AsyncConnection.ping(False)`，所有 Core 和 ORM 功能都可在 `AsyncSession` 中使用。
+支持。请配合 pycubrid 异步驱动使用 `create_async_engine("cubrid+aiopycubrid://...")`。需要 `pycubrid>=1.8.0,<2.0`。两个 pycubrid 方言现在都会在 `pool_pre_ping` 中使用原生 `Connection.ping(False)` / `AsyncConnection.ping(False)`，所有 Core 和 ORM 功能都可在 `AsyncSession` 中使用。
 
 
 ## 相关项目

@@ -160,7 +160,7 @@ async with AsyncSession(engine) as session:
 - **멀티 스키마 미지원** — 데이터베이스당 단일 스키마 모델입니다
 - **커밋되지 않은 DDL은 스키마 잠금을 유지** — CUBRID의 DDL은 트랜잭션으로 처리되므로(`ROLLBACK`이 되돌리며, 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) 기본적으로 Alembic 업그레이드 전체가 하나의 트랜잭션(`transactional_ddl = True`)이고, 커밋할 때까지 건드린 테이블을 잠급니다. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True`를 사용하세요
 - **SQLAlchemy 2.0–2.1만 지원** — 내부 API 의존성 때문에 `<2.3`로 고정되어 있습니다([자세한 내용](ARCHITECTURE.md))
-- **Async는 pycubrid >= 1.2.0,<2.0 필요** — `cubrid+aiopycubrid://` 드라이버는 현재 이 프로젝트가 지원하는 async 가능 pycubrid 패키지 라인이 필요합니다
+- **Async는 pycubrid >= 1.8.0,<2.0 필요** — `cubrid+aiopycubrid://` 드라이버는 현재 이 프로젝트가 지원하는 async 가능 pycubrid 패키지 라인이 필요합니다
 
 ## 문서
 
@@ -186,8 +186,8 @@ async with AsyncSession(engine) as session:
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
-| pycubrid (sync) | >=1.2.0,<2.0 |
-| pycubrid (async) | >=1.2.0,<2.0 |
+| pycubrid (sync) | >=1.8.0,<2.0 |
+| pycubrid (async) | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -229,7 +229,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### sqlalchemy-cubrid는 async를 지원하나요?
 
-예. pycubrid async 드라이버와 함께 `create_async_engine("cubrid+aiopycubrid://...")`를 사용하세요. `pycubrid>=1.3.2,<2.0`이 필요합니다. 두 pycubrid 방언 모두 `pool_pre_ping`에서 네이티브 `Connection.ping(False)` / `AsyncConnection.ping(False)`를 사용하며, Core와 ORM 기능 모두 `AsyncSession`에서 동작합니다.
+예. pycubrid async 드라이버와 함께 `create_async_engine("cubrid+aiopycubrid://...")`를 사용하세요. `pycubrid>=1.8.0,<2.0`이 필요합니다. 두 pycubrid 방언 모두 `pool_pre_ping`에서 네이티브 `Connection.ping(False)` / `AsyncConnection.ping(False)`를 사용하며, Core와 ORM 기능 모두 `AsyncSession`에서 동작합니다.
 
 
 ## 관련 프로젝트

@@ -211,21 +211,23 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 
 **pycubrid 1.8.0에서 수정됨:** cubrid-lab/pycubrid#390으로 NOT NULL 및 외래 키 위반이 `CUBRIDdb`와 같이 `IntegrityError`로 발생하며, 계약 테스트는 이 동작을 요구합니다. pycubrid 1.7.1 이하에서는 pycubrid를 통한 NOT NULL 및 외래 키 실패를 `sqlalchemy.exc.DatabaseError`(`IntegrityError`의 기반 클래스)로 잡으세요. 방언은 의도적으로 메시지 기반으로 예외를 재분류하지 않습니다. 모든 드라이버에서 `rollback()` 후 연결이나 `Session`을 계속 사용할 수 있습니다.
 
-### 10. pycubrid는 `commit()` / `rollback()` 후 새 세션을 시작 (방언이 격리 수준을 다시 적용)
+### 10. pycubrid는 CAS 재시작 후 세션을 교체 (방언이 격리 수준을 다시 적용)
 
-**pycubrid 1.8.0에서 수정되었습니다** (cubrid-lab/pycubrid#468, #472). 1.8.0 이전에는 드라이버의 `commit()` 또는 `rollback()` 후 브로커가 CAS 상태 바이트를 비활성(트랜잭션 밖)으로 돌려주면, pycubrid(1.7.1 이하)는 이를 CAS가 해제된 것으로 보고 다음 요청 전에 무조건 새 브로커 연결을 열었습니다. 새 세션은 서버 기본 격리 수준(READ COMMITTED)으로 시작했고 세션 변수도 사라졌으며, pycubrid는 `autocommit`만 복원했습니다. CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#505). pycubrid 1.8.0은 대신 `commit()` / `rollback()` 이후에도 CAS 세션을 유지합니다. `CHECK_CAS`로 CAS 상태를 확인해 브로커가 실제로 연결을 끊었을 때만(예: CAS 재시작이나 브로커 리셋) 재연결하며, commit/rollback마다 매번 재연결하지 않습니다. `CUBRIDdb`는 항상 같은 세션을 유지했으며, SQL `COMMIT` 문은 두 드라이버 모두에서 재연결을 일으키지 않습니다.
+**pycubrid 1.8.0에서 수정되었습니다** (cubrid-lab/pycubrid#468, #472). 1.8.0이 지원하는 최소 버전입니다. 1.8.0 이전에는 드라이버의 `commit()` / `rollback()`마다(이때 브로커는 CAS를 트랜잭션 밖으로 보고합니다) pycubrid가 새 브로커 세션을 열었기 때문에, 격리 수준이 서버 기본값(READ COMMITTED)으로 돌아가고 세션 변수가 사라졌습니다(#505). pycubrid 1.8.0은 `commit()` / `rollback()` 이후와 오토커밋 모드에서도 CAS 세션을 유지합니다. 다음 요청 전에 트랜잭션 밖의 CAS를 `CHECK_CAS`로 확인하고, CAS가 사라졌을 때만 재연결합니다. `CUBRIDdb`는 항상 같은 세션을 유지했습니다.
 
-**잔여 사례.** pycubrid 1.8.0에서도 실제 CAS 재시작(브로커 프로세스 재시작이나 CAS 리셋)이 일어나면 여전히 서버 기본 격리 수준으로 새 세션이 열리고 `SET TIME ZONE`이나 다른 세션 변수 같은 세션 상태가 사라집니다. 아래 우회는 이 경우를 처리하지 못합니다. 격리 수준을 commit이나 rollback 직후에만 다시 적용하므로, 연결이 풀에서 유휴 상태일 때 CAS가 재시작되면 다음 트랜잭션은 서버 기본 격리 수준으로 실행됩니다. CAS 재시작 후에도 격리 수준이 유지되어야 한다면 서버 쪽에서 설정하세요(`cubrid.conf`의 `isolation_level`).
+**잔여 사례: 교체된 CAS.** CAS가 실제로 사라지면(예: `APPL_SERVER_MAX_SIZE` 메모리 재시작처럼 트랜잭션 후의 CAS 재시작, 또는 브로커 리셋) pycubrid 1.8.0은 새 세션을 엽니다. 그 세션은 서버 기본 격리 수준으로 시작하고, pycubrid는 `autocommit`만 복원하며, 원시 SQL로 설정한 세션 상태(`SET @var`, 직접 실행한 `SET TRANSACTION` 문)는 사라집니다. 방언 없이도 이 경우에 격리 수준이 유지되어야 한다면 서버 쪽에서 설정하세요(`cubrid.conf`의 `isolation_level`).
 
-**방언 우회 (pycubrid 1.8.0 미만에서는 필요하고, 1.8.0 이상에서는 무해합니다).** `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 각 연결에 설정한 격리 수준을 기억했다가 commit과 rollback마다 다시 적용합니다. 엔진 수준 `isolation_level`은 commit, rollback, 풀 반환 후에도 유지됩니다. 연결 수준 `execution_options(isolation_level=...)`는 해당 `Connection`이 열려 있는 동안 commit과 rollback 후에도 유지되며, 풀 반환 시에는 SQLAlchemy가 엔진 수준(설정이 없으면 서버 기본값)을 복원합니다. 비용은 commit/rollback마다 `SET TRANSACTION ISOLATION LEVEL` + `COMMIT` 한 번이며, 수준을 설정한 연결에만 해당합니다. pycubrid 1.8.0 미만에서는 다시 적용하면 pycubrid가 즉시 재연결하므로, 이런 연결에서 `commit()` / `rollback()` 후 결과의 나머지를 읽으면 버퍼에 있는 행만 반환하는 대신 `OperationalError`가 발생합니다([알려진 문제 8](#8-commit--rollback-이후-다-읽지-않은-결과)). 같은 이유로 pycubrid 1.8.0 미만에서는 수준을 설정한 풀링된 연결은 풀에서 유휴 상태인 동안에도 브로커 CAS를 하나씩 점유합니다(설정이 없으면 pycubrid는 다음 요청까지 CAS를 반환합니다). 풀 크기에 맞게 브로커의 `MAX_NUM_APPL_SERVER`를 잡으세요. 다시 적용 자체가 실패해도 commit이나 rollback은 성공으로 보고되고(rollback을 일으킨 원래 예외도 그대로 전달됨), 실패는 경고로 기록된 뒤 다음 트랜잭션 시작 시 재시도되며, 거기서 다시 실패하면 문장 실행 전에 예외가 발생합니다. 엔진 수준 설정이 없는 엔진에서 일회성 `execution_options()` 재정의를 한 경우, 풀 반환 시 해당 연결의 다시 적용이 중단됩니다. 원시 SQL로 설정한 세션 상태(`SET @var`나 직접 실행한 `SET TRANSACTION` 문 등)는 pycubrid 1.8.0 미만에서는 `commit()` / `rollback()` 후 사라지며, 모든 버전에서 실제 CAS 재시작 후에도 사라집니다. 선언된 의존성 범위는 여전히 `pycubrid>=1.3.2,<2.0`이므로 이 우회는 1.8.0 이전 pycubrid 버전에서는 계속 동작합니다. 최소 버전이 1.8.0 이상으로 올라가면 제거될 예정입니다(#559에서 추적).
+**방언의 다시 적용.** `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 각 연결에 설정한 격리 수준을 기억했다가, 수준을 설정한 연결에서만 commit과 rollback마다 다시 적용합니다(`SET TRANSACTION ISOLATION LEVEL` + `COMMIT`). 엔진 수준 `isolation_level`은 commit, rollback, 풀 반환 후에도 유지됩니다. 연결 수준 `execution_options(isolation_level=...)`는 해당 `Connection`이 열려 있는 동안 commit과 rollback 후에도 유지되며, 풀 반환 시에는 SQLAlchemy가 엔진 수준(설정이 없으면 서버 기본값)을 복원하고, 엔진 수준 설정이 없는 엔진에서는 풀 반환 시 해당 연결의 다시 적용이 중단됩니다. 다시 적용은 트랜잭션이 끝난 뒤의 첫 요청이므로, 그 시점에 CAS가 교체되면 새 세션에서 실행되어 격리 수준이 유지됩니다(CUBRID 11.4와 pycubrid 1.8.0에서 `commit()` 직후 CAS를 종료해 검증했습니다. 격리 수준은 SERIALIZABLE로 유지되었고, 다시 적용이 없으면 READ COMMITTED로 떨어졌습니다). 다시 적용 자체가 실패해도 commit이나 rollback은 성공으로 보고되고(rollback을 일으킨 원래 예외도 그대로 전달됨), 실패는 경고로 기록된 뒤 다음 트랜잭션 시작 시 재시도되며, 거기서 다시 실패하면 문장 실행 전에 예외가 발생합니다.
 
-**pycubrid의 `AUTOCOMMIT`.** 오토커밋 모드에서는 문장마다 트랜잭션이 끝나므로 pycubrid가 다음 문장 전마다 재연결합니다(1.7.1에서 문장당 두 번의 재연결을 측정). 문장은 `AUTOCOMMIT`으로 바꾸기 전에 설정한 수준이 아니라 서버 기본 격리 수준으로 실행되며, 세션 변수는 문장 사이에 사라집니다. 방언은 문장마다 문장을 하나 더 실행하지 않고는 여기서 아무것도 다시 적용할 수 없습니다. 엔진 수준 `AUTOCOMMIT`에서는 `create_engine(..., skip_autocommit_rollback=True)`로 풀 반환 시 rollback의 추가 재연결을 피할 수 있습니다. `CUBRIDdb`는 오토커밋 모드에서도 세션과 수준을 유지합니다.
+**수준을 설정한 유휴 연결.** 다시 적용의 SQL `COMMIT`은 CAS를 트랜잭션 중으로 표시해 두므로, 브로커는 풀링된 연결이 유휴 상태인 동안에도 그 CAS를 연결에 묶어 둡니다(`cubrid broker status`에서 `CLIENT_WAIT`, 수준 설정이 없으면 `CLOSE_WAIT`). 풀 크기에 맞게 브로커의 `MAX_NUM_APPL_SERVER`를 잡으세요. 또한 이런 연결의 CAS가 유휴 중에 종료되면 pycubrid가 스스로 재연결하지 않습니다. 다음 문장은 `OperationalError`를 발생시키고, 방언은 이를 연결 끊김으로 보고하므로 SQLAlchemy는 서버 기본 수준으로 조용히 실행하는 대신 그 연결을 버립니다. `create_engine(..., pool_pre_ping=True)`를 사용하면 풀이 체크아웃 시 연결을 교체하고, 새 연결은 엔진 수준을 받습니다.
+
+**pycubrid의 `AUTOCOMMIT`.** pycubrid 1.8.0은 오토커밋 모드에서도 세션을 유지하므로, `CUBRIDdb`와 마찬가지로 문장은 적용 중이던 서버 수준을 유지하고 세션 변수도 문장 사이에 유지됩니다. 연결을 `AUTOCOMMIT`으로 바꾸면 방언은 격리 수준 다시 적용을 멈춥니다.
 
 ---
 
 ## 설치 참고
 
-순수 Python pycubrid 방언 변형은 `pycubrid>=1.3.2,<2.0`과 함께 `sqlalchemy-cubrid[pycubrid]`를 설치하세요. 그 최소 버전은 `pool_pre_ping`이 사용하는 네이티브 동기·비동기 `ping(False)` 지원에 필요합니다.
+순수 Python pycubrid 방언 변형은 `pycubrid>=1.8.0,<2.0`과 함께 `sqlalchemy-cubrid[pycubrid]`를 설치하세요. pycubrid 1.8.0이 최소 버전인 이유는 `commit()` / `rollback()` 이후에도 CAS 세션을 유지하고, 계약 테스트가 요구하는 수정을 포함하기 때문입니다([알려진 문제 8~10](#8-commit--rollback-이후-다-읽지-않은-결과)). `pool_pre_ping`이 사용하는 네이티브 동기·비동기 `ping(False)`도 제공합니다.
 
 `[pycubrid]` extra는 동기·비동기 연결을 모두 지원하며, SQLAlchemy 2.0과 2.1에서
 `greenlet`을 제공하는 `SQLAlchemy[asyncio]`를 포함합니다. `[dev]` extra도 비동기

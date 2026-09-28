@@ -137,7 +137,7 @@ For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID nati
 
 ## Async Connection
 
-For async applications, use the `cubrid+aiopycubrid://` URL scheme with `create_async_engine`. Requires `pycubrid>=1.3.2,<2.0`.
+For async applications, use the `cubrid+aiopycubrid://` URL scheme with `create_async_engine`. Requires `pycubrid>=1.8.0,<2.0`.
 
 Install `sqlalchemy-cubrid[pycubrid]` to include the driver and SQLAlchemy's async
 bridge. If installing the packages separately, also install `SQLAlchemy[asyncio]`.

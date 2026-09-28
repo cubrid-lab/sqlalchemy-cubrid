@@ -278,76 +278,65 @@ foreign-key failures through pycubrid. The dialect deliberately does not
 reclassify exceptions by message. On every driver the connection or `Session`
 remains usable after `rollback()`.
 
-### 10. pycubrid starts a new session after `commit()` / `rollback()` (dialect re-applies the isolation level)
+### 10. pycubrid replaces the session after a CAS restart (dialect re-applies the isolation level)
 
-**Fixed in pycubrid 1.8.0** (cubrid-lab/pycubrid#468, #472). Before 1.8.0,
-after the driver's `commit()` or `rollback()`, the broker returned the CAS
-status byte as inactive (out of transaction), and pycubrid (1.7.1 and earlier)
-treated that as a released CAS and unconditionally opened a new broker
-connection before the next request; the new session started at the server
-default isolation level (READ COMMITTED), session variables were gone, and
-pycubrid restored only `autocommit`. Verified live on CUBRID 10.2 and 11.4
-(#505). pycubrid 1.8.0 instead keeps the CAS session across `commit()` /
-`rollback()`: it probes the CAS with `CHECK_CAS` and only reconnects when the
-broker actually dropped the connection (for example a CAS restart or broker
-reset), not on every commit/rollback. `CUBRIDdb` has always kept the same
-session, and an SQL `COMMIT` statement does not trigger a reconnect on either
-driver.
+**Fixed in pycubrid 1.8.0** (cubrid-lab/pycubrid#468, #472), the minimum
+supported version. Before 1.8.0, pycubrid opened a new broker session after
+every driver `commit()` / `rollback()` (the broker reports the CAS as out of
+transaction then), so the level dropped to the server default (READ COMMITTED)
+and session variables were lost (#505). pycubrid 1.8.0 keeps the CAS session
+across `commit()` / `rollback()` and in autocommit mode: before the next request
+it probes an out-of-transaction CAS with `CHECK_CAS` and reconnects only when
+the CAS is gone. `CUBRIDdb` has always kept the same session.
 
-**Residual case.** Even on pycubrid 1.8.0, a real CAS restart (the broker
-process restarting or resetting the CAS) still opens a new session at the
-server default isolation level and loses session state such as
-`SET TIME ZONE` or other session variables. The workaround below does not
-cover this case: it re-applies the level only right after a commit or
-rollback, so if the CAS restarts while a connection sits idle in the pool,
-the next transaction runs at the server default level. Set the isolation
-level server-side (`isolation_level` in `cubrid.conf`) if it must
-survive CAS restarts.
+**Residual case: a replaced CAS.** When the CAS does go away (for example a CAS
+restart after a transaction, such as the `APPL_SERVER_MAX_SIZE` memory restart,
+or a broker reset), pycubrid 1.8.0 opens a new session. That session starts at
+the server default isolation level, pycubrid restores only `autocommit`, and
+session state set with raw SQL (`SET @var`, a `SET TRANSACTION` statement you
+run yourself) is lost. Set the level server-side (`isolation_level` in
+`cubrid.conf`) if it must survive this without the dialect.
 
-**Dialect workaround (kept for pycubrid < 1.8.0, and harmless on 1.8.0+).**
-`cubrid+pycubrid://` and `cubrid+aiopycubrid://`
-remember the isolation level they set on each connection and re-apply it after
-every commit and rollback. An engine-level `isolation_level` survives commits,
-rollbacks and pool checkins. A connection-level
-`execution_options(isolation_level=...)` survives commits and rollbacks while
-that `Connection` stays open; on checkin SQLAlchemy restores the engine level
-(or the server default when none is configured). This costs one
-`SET TRANSACTION ISOLATION LEVEL` + `COMMIT` per commit/rollback, and only on
-connections with a configured level. On pycubrid before 1.8.0, the re-apply
-makes pycubrid reconnect immediately, so reading the rest of a result after `commit()` /
-`rollback()` on such a connection raises `OperationalError` instead of returning
-only the buffered rows ([Known Issue 8](#8-unfinished-results-after-commit--rollback)).
-For the same reason, on pycubrid before 1.8.0 every pooled
-connection with a configured level holds a broker CAS while it sits idle in the
-pool (without one, pycubrid releases the CAS until the next request); size the
-broker's `MAX_NUM_APPL_SERVER` for the pool accordingly. If the re-apply itself
-fails, the commit or rollback still reports success (or the rollback's original
-exception still propagates): the failure is logged as a warning and retried at
-the start of the next transaction, where a second failure raises before any
-statement runs. After a one-off `execution_options()` override on an engine
-without a configured level, checkin stops the re-apply for that connection.
-Session state set with raw SQL (such as `SET @var` or a `SET TRANSACTION`
-statement you run yourself) is lost after `commit()` / `rollback()` on
-pycubrid before 1.8.0, and on any version after a real CAS restart. The declared
-dependency range stays `pycubrid>=1.3.2,<2.0`, so the workaround remains
-active for pycubrid versions before 1.8.0; it will be dropped once the floor
-is raised to 1.8.0 or later (tracked in #559).
+**Dialect re-apply.** `cubrid+pycubrid://` and `cubrid+aiopycubrid://`
+remember the isolation level they set on each connection and re-apply it
+(`SET TRANSACTION ISOLATION LEVEL` + `COMMIT`) after every commit and rollback,
+only on connections with a configured level. An engine-level
+`isolation_level` survives commits, rollbacks and pool checkins. A
+connection-level `execution_options(isolation_level=...)` survives commits and
+rollbacks while that `Connection` stays open; on checkin SQLAlchemy restores
+the engine level (or the server default when none is configured), and on an
+engine without a configured level checkin stops the re-apply for that
+connection. The re-apply is the first request after the end of the
+transaction, so when the CAS is replaced at that point, it runs on the new
+session and the level is kept (verified with pycubrid 1.8.0 on CUBRID 11.4 by
+killing the CAS right after `commit()`: the level stays SERIALIZABLE, and drops
+to READ COMMITTED without the re-apply). If the re-apply itself fails, the
+commit or rollback still reports success (or the rollback's original exception
+still propagates): the failure is logged as a warning and retried at the start
+of the next transaction, where a second failure raises before any statement
+runs.
 
-**`AUTOCOMMIT` on pycubrid.** In autocommit mode every statement ends a
-transaction, so pycubrid reconnects before each following statement (two
-reconnects per statement were measured on 1.7.1). Statements run at the server
-default isolation level, not at a level set before switching to `AUTOCOMMIT`,
-and session variables are lost between statements. The dialect cannot
-re-apply anything here without adding a statement per statement. With an
-engine-level `AUTOCOMMIT`, `create_engine(..., skip_autocommit_rollback=True)`
-avoids the extra reconnect from the pool's checkin rollback. `CUBRIDdb` keeps
-the session and the level in autocommit mode.
+**Idle connections with a configured level.** The re-apply's SQL `COMMIT`
+leaves the CAS marked as in transaction, so the broker keeps that CAS bound to
+the pooled connection while it sits idle (`CLIENT_WAIT` in
+`cubrid broker status`; `CLOSE_WAIT` without a configured level). Size the
+broker's `MAX_NUM_APPL_SERVER` for the pool. It also means pycubrid does not
+reconnect such a connection by itself if its CAS is killed while idle: the next
+statement raises `OperationalError`, which the dialect reports as a disconnect,
+so SQLAlchemy discards the connection instead of silently running at the server
+default level. With `create_engine(..., pool_pre_ping=True)` the pool replaces
+it at checkout, and the new connection gets the engine level.
+
+**`AUTOCOMMIT` on pycubrid.** pycubrid 1.8.0 keeps the session in autocommit
+mode, so statements keep the server level that was in effect and session
+variables survive between statements, as on `CUBRIDdb`. The dialect stops
+re-applying a level once a connection is switched to `AUTOCOMMIT`.
 
 ---
 
 ## Installation Notes
 
-For the pure Python pycubrid dialect variants, install `sqlalchemy-cubrid[pycubrid]` with `pycubrid>=1.3.2,<2.0`. That minimum version is required for native sync and async `ping(False)` support used by `pool_pre_ping`.
+For the pure Python pycubrid dialect variants, install `sqlalchemy-cubrid[pycubrid]` with `pycubrid>=1.8.0,<2.0`. pycubrid 1.8.0 is the minimum because it keeps the CAS session across `commit()` / `rollback()` and ships the fixes the contract tests require ([Known Issues 8 to 10](#8-unfinished-results-after-commit--rollback)); it also provides the native sync and async `ping(False)` used by `pool_pre_ping`.
 
 The `[pycubrid]` extra supports both sync and async connections. It includes
 `SQLAlchemy[asyncio]`, which supplies `greenlet` on SQLAlchemy 2.0 and 2.1. The

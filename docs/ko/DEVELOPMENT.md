@@ -515,8 +515,8 @@ CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v 
 | 레인 | URL | 고정 버전 | CI 셀 |
 |---|---|---|---|
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C 확장) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
-| `pycubrid@sa2.1` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.1` | `cubrid+pycubrid://` (권장) | pycubrid 1.8.0, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
 
 두 pycubrid 레인은 SQLAlchemy 2.0과 2.1을 두 PR 셀에 나누어 실행하므로 각 셀은
 pycubrid 스위트를 한 번만 실행합니다(SQLAlchemy 2.1은 Python 3.11 이상이 필요하므로
@@ -571,7 +571,7 @@ SQLAlchemy는 중첩된 `@testing.requires` 체인의 첫 requirement 객체를 
 
 ```bash
 export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
-pip install "pycubrid==1.7.1" "sqlalchemy[asyncio]==2.1.1"
+pip install "pycubrid==1.8.0" "sqlalchemy[asyncio]==2.1.1"
 # 1. 수집: strict 모드가 아니면 없는 레인은 xfail을 적용하지 않을 뿐입니다.
 pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" --maxfail=1000 -q -r fE
 # 2. 모든 실패를 분류하고(방언 버그, 드라이버 제한, 백엔드/스위트 한계)
@@ -591,7 +591,7 @@ CUBRID_STRICT_KNOWN_FAILURES=1 pytest test/test_suite.py --dburi="$CUBRID_TEST_U
 PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브랜치의 예약 실행이나 수동 실행에서 canary 작업이
 실패하면 워크플로가 "Upstream canary failing against pycubrid@main" 제목의 이슈(`ci` 레이블)를
 열거나, 이미 열려 있으면 댓글을 달아 실패한 작업, 실행 링크, 테스트한 pycubrid 커밋을 남기고,
-두 작업이 다시 통과하면 이슈를 닫습니다. 의존성 범위 `pycubrid>=1.3.2,<2.0`은 정확한 버전으로 설치한
+두 작업이 다시 통과하면 이슈를 닫습니다. 의존성 범위 `pycubrid>=1.8.0,<2.0`은 정확한 버전으로 설치한
 **특정** pycubrid 릴리스 후보(또는 새 메이저 릴리스)가 다운스트림 계약 스위트, 즉 일반·비동기
 통합 테스트, 위의 필수 드라이버 차분 레인, SQLAlchemy 호환성 스위트를 통과한 뒤에만
 넓힙니다. 채택 PR에는 `scripts/report_driver_versions.py`가 보고한 버전을 기록하고,
