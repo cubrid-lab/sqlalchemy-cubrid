@@ -493,7 +493,9 @@ pre-commit run --all-files
 | Workflow | File | Trigger |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | Push to main, PRs |
-| Publish | `.github/workflows/publish-pypi.yml` | GitHub Release |
+| Integration Full | `.github/workflows/integration-full.yml` | Nightly, tag push, manual dispatch |
+| Create Release | `.github/workflows/create-release.yml` | Tag push, manual dispatch (does not publish) |
+| Publish | `.github/workflows/publish-pypi.yml` | Manual dispatch after the tag-triggered full matrix passes |
 
 ### CI Pipeline Steps
 
@@ -649,7 +651,9 @@ Korean-required and other-language advisory translation checks are unchanged.
 
 ### Publish Pipeline
 
-Triggered on GitHub Release creation. Builds and publishes the package to PyPI.
+Not triggered by the GitHub Release. A maintainer dispatches `publish-pypi.yml`
+(`-f tag=vX.Y.Z`) after the tag-triggered full matrix passes; it verifies, publishes
+to PyPI, and then dispatches the cookbook smoke test. See [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md).
 
 ---
 

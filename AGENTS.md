@@ -252,7 +252,8 @@ The dialect translates automatically in `create_connect_args()`.
 |---|---|---|
 | `.github/workflows/ci.yml` | Push to main, PRs | Lint + offline tests (Py 3.10–3.14) + regular integration matrix |
 | `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), tag push, manual dispatch | Full Python × CUBRID compatibility matrix |
-| `.github/workflows/publish-pypi.yml` | GitHub Release | Build and publish to PyPI |
+| `.github/workflows/create-release.yml` | Tag push, manual dispatch | Create the GitHub Release from CHANGELOG + attach SBOM (does not publish) |
+| `.github/workflows/publish-pypi.yml` | Manual dispatch (`-f tag=vX.Y.Z`) after tag-triggered integration-full passes | Verify, build, publish to PyPI, then dispatch the cookbook smoke test |
 
 ### CI Matrix
 
@@ -404,30 +405,12 @@ do not require a named agent, tool credit or a blanket coauthor trailer.
 Maintainers own release/tag/publication actions and repository credentials.
 Contributors provide the change and validation evidence through the normal PR path.
 
-1. Bump the version in `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`.
-   `pyproject.toml` derives it dynamically (`dynamic = ["version"]` +
-   `version = {attr = "sqlalchemy_cubrid.__version__"}`), so it is the single source of truth.
-2. Add a dated changelog entry in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`)
-3. Open a PR and merge to `main` (direct pushes are not allowed)
-4. Push the tag `v{major}.{minor}.{patch}` on the merged commit:
-   `git tag vx.y.z <merged-sha> && git push origin vx.y.z` (tag pushes are allowed; only
-   direct branch pushes to `main` are forbidden).
-5. The tag push triggers `.github/workflows/integration-full.yml`, which runs the **full
-   5×4 Python × CUBRID compatibility matrix** on the release commit. PR CI only runs a
-   reduced 2-cell matrix, so this tag run is the authoritative full-compatibility check.
-6. The tag push also triggers `.github/workflows/create-release.yml`, which extracts the
-   `## [x.y.z] - YYYY-MM-DD` section from `CHANGELOG.md` (fail-closed — no fallback) and
-   creates the GitHub Release titled `vx.y.z` with that body, after verifying the tag is
-   an ancestor of `origin/main`.
-7. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
-   which rebuilds, verifies (tag == version, dated CHANGELOG, tag on main, smoke tests,
-   **and that a successful `integration-full.yml` run exists for the release commit** —
-   PyPI publish is blocked until the full matrix passes), and publishes to PyPI via
-   Trusted Publisher (OIDC).
-
-Release notes are never hand-written: `CHANGELOG.md` is the single source of truth and
-`scripts/extract_release_notes.py` renders the Release body. To re-create a release body,
-re-run `create-release.yml` via `workflow_dispatch` with `update_existing: true`.
+Version is single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`
+(`pyproject.toml` reads it dynamically). The full maintainer procedure — release PR,
+`make release-check VERSION=x.y.z`, tagging the squash-merged commit, waiting for the
+tag-triggered `integration-full.yml` + `create-release.yml`, the manual
+`publish-pypi.yml` dispatch, cookbook smoke, and recovery — lives in
+[`RELEASING.md`](RELEASING.md). There is no `make release`; never tag a local commit.
 
 ## Project Context — Performance Loop System
 

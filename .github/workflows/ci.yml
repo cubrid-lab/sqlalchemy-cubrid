@@ -53,6 +53,8 @@ jobs:
         run: pip install -e ".[dev]"
       - name: Lint maintained Python sources
         run: make lint
+      - name: Lint CHANGELOG structure
+        run: python scripts/lint_changelog.py
       - name: llms-full.txt is in sync with source docs
         run: |
           python scripts/generate_llms_full.py
