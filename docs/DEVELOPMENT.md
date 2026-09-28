@@ -535,26 +535,29 @@ therefore fail `matrix-result` when they fail:
 | Lane | URL | Pinned versions | CI cell |
 |---|---|---|---|
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C-extension) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
 
 The two pycubrid lanes split SQLAlchemy 2.0 and 2.1 across the two PR cells,
-so each cell runs the suite for pycubrid only once; their baselines were
-captured on both CUBRID 10.2 and 11.4 and are identical. Each pycubrid step
+so each cell runs the suite for pycubrid only once (SQLAlchemy 2.1 needs
+Python 3.11+, so it runs in the 3.14 cell). Every lane baseline was captured on
+fresh CUBRID 10.2 and 11.4 databases. Each pycubrid step
 first runs `python -m scripts.report_driver_versions`, which records the exact
 Python, SQLAlchemy, pycubrid and CUBRID server versions in the job log and step
 summary. The CUBRIDdb suite in the CUBRID 10.2 cell stays non-gating.
 
 **Known failures are keyed per lane.** Every entry in `test/known_failures.txt`
-names the lanes it fails in, as `<driver>@sa<major.minor>`:
+names the lanes it fails in, as `<driver>@sa<major.minor>`, or as
+`<driver>@sa<major.minor>@cubrid<major.minor>` when it fails on one CUBRID
+server version only:
 
 ```text
 test/test_suite.py::DistinctOnTest::test_distinct_on  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
 ```
 
-`test/conftest.py` derives the current lane from the `--dburi` dialect and the
-installed SQLAlchemy version, and applies a strict xfail only to the entries
+`test/conftest.py` derives the current lane from the `--dburi` dialect, the
+installed SQLAlchemy version and the connected server version, and applies a strict xfail only to the entries
 tagged for it. A CUBRIDdb-only failure therefore cannot hide a pycubrid
 regression, and vice versa. There is no wildcard tag, and an untagged entry is
 a load error. With `CUBRID_STRICT_KNOWN_FAILURES=1` (set by every gating step)
@@ -566,8 +569,14 @@ the run also fails when:
   gate on an empty baseline by accident.
 
 Tests that cannot apply to CUBRID at all (for example seven-digit precision
-from the single-precision `FLOAT`) are excluded in
-`sqlalchemy_cubrid/requirements.py` with a reason instead of being listed.
+from the single-precision `FLOAT`, or non-ASCII identifiers on a non-UTF-8
+database) are excluded in `sqlalchemy_cubrid/requirements.py` with a reason
+instead of being listed. Every requirement property must return a **new**
+`exclusions.open()` / `exclusions.closed()` object: SQLAlchemy extends the
+first requirement of a stacked `@testing.requires` chain in place, so a shared
+object silently turns every other requirement closed and skips most of the
+suite (`test_stacked_requirements_do_not_leak_into_other_properties` guards
+this).
 
 **Updating a lane baseline** (a SQLAlchemy bump, a new pinned pycubrid, or a
 fix that makes a listed test pass):

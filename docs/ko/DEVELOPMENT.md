@@ -516,25 +516,28 @@ CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v 
 | 레인 | URL | 고정 버전 | CI 셀 |
 |---|---|---|---|
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C 확장) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.1` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.1` | `cubrid+pycubrid://` (권장) | pycubrid 1.7.1, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
 
 두 pycubrid 레인은 SQLAlchemy 2.0과 2.1을 두 PR 셀에 나누어 실행하므로 각 셀은
-pycubrid 스위트를 한 번만 실행합니다. 두 레인의 기준선은 CUBRID 10.2와 11.4에서
-모두 수집했으며 결과가 동일합니다. 각 pycubrid 단계는 먼저
+pycubrid 스위트를 한 번만 실행합니다(SQLAlchemy 2.1은 Python 3.11 이상이 필요하므로
+3.14 셀에서 실행). 모든 레인 기준선은 새로 만든 CUBRID 10.2와 11.4 데이터베이스에서
+수집했습니다. 각 pycubrid 단계는 먼저
 `python -m scripts.report_driver_versions`를 실행해 정확한 Python, SQLAlchemy,
 pycubrid, CUBRID 서버 버전을 잡 로그와 단계 요약에 기록합니다. CUBRID 10.2 셀의
 CUBRIDdb 스위트는 계속 비차단입니다.
 
 **알려진 실패는 레인별로 키가 지정됩니다.** `test/known_failures.txt`의 모든
-항목은 실패하는 레인을 `<driver>@sa<major.minor>` 형식으로 명시합니다.
+항목은 실패하는 레인을 `<driver>@sa<major.minor>` 형식으로, 특정 CUBRID 서버
+버전에서만 실패하면 `<driver>@sa<major.minor>@cubrid<major.minor>` 형식으로
+명시합니다.
 
 ```text
 test/test_suite.py::DistinctOnTest::test_distinct_on  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
 ```
 
-`test/conftest.py`는 `--dburi` 방언과 설치된 SQLAlchemy 버전으로 현재 레인을
+`test/conftest.py`는 `--dburi` 방언, 설치된 SQLAlchemy 버전, 연결된 서버 버전으로 현재 레인을
 결정하고, 그 레인에 태그된 항목에만 strict xfail을 적용합니다. 따라서
 CUBRIDdb 전용 실패가 pycubrid 회귀를 가릴 수 없고, 그 반대도 마찬가지입니다.
 와일드카드 태그는 없으며, 태그가 없는 항목은 로드 오류입니다.
@@ -546,8 +549,14 @@ CUBRIDdb 전용 실패가 pycubrid 회귀를 가릴 수 없고, 그 반대도 �
 - 레인 항목이 전혀 없음: 새 드라이버나 SQLAlchemy 마이너 버전이 실수로 빈
   기준선으로 게이트되지 않도록 합니다.
 
-CUBRID에 전혀 적용할 수 없는 테스트(예: 단정밀도 `FLOAT`의 7자리 소수 정밀도)는
-목록에 넣지 않고 `sqlalchemy_cubrid/requirements.py`에서 사유와 함께 제외합니다.
+CUBRID에 전혀 적용할 수 없는 테스트(예: 단정밀도 `FLOAT`의 7자리 소수 정밀도,
+UTF-8이 아닌 데이터베이스의 비 ASCII 식별자)는 목록에 넣지 않고
+`sqlalchemy_cubrid/requirements.py`에서 사유와 함께 제외합니다. 모든 requirement
+속성은 **새** `exclusions.open()` / `exclusions.closed()` 객체를 반환해야 합니다.
+SQLAlchemy는 중첩된 `@testing.requires` 체인의 첫 requirement 객체를 제자리에서
+확장하므로, 공유 객체를 쓰면 다른 모든 requirement가 조용히 닫혀 스위트 대부분이
+건너뛰어집니다(`test_stacked_requirements_do_not_leak_into_other_properties`가 이를
+검사합니다).
 
 **레인 기준선 갱신** (SQLAlchemy 버전 업, 새 고정 pycubrid, 등록된 테스트를
 통과시키는 수정):

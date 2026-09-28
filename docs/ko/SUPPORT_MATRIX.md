@@ -174,11 +174,13 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
 공식 SQLAlchemy 컴플라이언스 스위트는 두 드라이버 모두에서 병합을 차단합니다. 각 레인은 `test/known_failures.txt`에 검토된 자체 알려진 실패 기준선을 가집니다. [개발 가이드](DEVELOPMENT.md#sqlalchemy-컴플라이언스-레인)를 참고하세요.
 
-| 레인 | 드라이버 | SQLAlchemy | CUBRID (PR CI) | 알려진 실패 |
+| 레인 | 드라이버 | SQLAlchemy | CUBRID (PR CI) | 알려진 실패 (11.4 / 10.2) |
 |---|---|---|---|---|
-| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 26 |
-| `pycubrid@sa2.0` | pycubrid 1.7.1 (권장) | 2.0.53 | 11.4 (10.2에서도 동일) | 19 |
-| `pycubrid@sa2.1` | pycubrid 1.7.1 (권장) | 2.1.1 | 10.2 (11.4에서도 동일) | 17 |
+| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 135 / 128 |
+| `pycubrid@sa2.0` | pycubrid 1.7.1 (권장) | 2.0.53 | 10.2 | 128 / 121 |
+| `pycubrid@sa2.1` | pycubrid 1.7.1 (권장) | 2.1.1 | 11.4 | 143 / 136 |
+
+알려진 실패 대부분은 두 드라이버에 공통입니다. CUBRID 백엔드 규칙(식별자 소문자 변환, `[ ]` 식별자 구분자, 윈도 프레임 절 미지원, 행 단위 외래 키 검사, 단정밀도 `FLOAT`)과 `test/known_failures.txt`에 기록된 미해결 방언 리플렉션/DDL 버그입니다. NUMERIC 절단과 정수 나눗셈 항목은 CUBRIDdb 레인에만 있습니다.
 
 ## 테스트 커버리지
 

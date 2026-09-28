@@ -209,15 +209,16 @@ jobs:
         #
         # pycubrid-compliance-sqlalchemy: the pinned SQLAlchemy version of the
         # blocking released-pycubrid compliance lane in that cell (#463). The
-        # two cells split SQLAlchemy 2.0 and 2.1 across CUBRID 11.4 and 10.2 so
-        # neither cell runs the suite for pycubrid twice.
+        # two cells split SQLAlchemy 2.1 and 2.0 across CUBRID 11.4 and 10.2 so
+        # neither cell runs the suite for pycubrid twice (SQLAlchemy 2.1
+        # requires Python >= 3.11, so it runs in the 3.14 cell).
         include:
           - python-version: "3.14"
             cubrid-version: "11.4"
-            pycubrid-compliance-sqlalchemy: "2.0.53"
+            pycubrid-compliance-sqlalchemy: "2.1.1"
           - python-version: "3.10"
             cubrid-version: "10.2"
-            pycubrid-compliance-sqlalchemy: "2.1.1"
+            pycubrid-compliance-sqlalchemy: "2.0.53"
     services:
       cubrid:
         image: cubrid/cubrid:${{ matrix.cubrid-version }}
@@ -419,8 +420,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Blocking SQLAlchemy compliance lanes (part of Integration Tests; lane versions are in each cell's summary):" >> $GITHUB_STEP_SUMMARY
           echo "- cubrid@sa2.0: CUBRIDdb, SQLAlchemy 2.0.53, CUBRID 11.4" >> $GITHUB_STEP_SUMMARY
-          echo "- pycubrid@sa2.0: pycubrid 1.7.1, SQLAlchemy 2.0.53, CUBRID 11.4" >> $GITHUB_STEP_SUMMARY
-          echo "- pycubrid@sa2.1: pycubrid 1.7.1, SQLAlchemy 2.1.1, CUBRID 10.2" >> $GITHUB_STEP_SUMMARY
+          echo "- pycubrid@sa2.0: pycubrid 1.7.1, SQLAlchemy 2.0.53, CUBRID 10.2" >> $GITHUB_STEP_SUMMARY
+          echo "- pycubrid@sa2.1: pycubrid 1.7.1, SQLAlchemy 2.1.1, CUBRID 11.4" >> $GITHUB_STEP_SUMMARY
       - name: Fail if required jobs failed
         if: >-
           needs.lint.result == 'failure' ||

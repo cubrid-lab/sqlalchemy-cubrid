@@ -146,10 +146,13 @@ _VERSION_SUFFIX = re.compile(r"_cubrid\+(?:py)?cubrid_[0-9_]+")
 # `A|B` parameter fragments before matching to keep the manifest stable.
 _FLAG_FRAGMENT = re.compile(r"([A-Za-z_]+(?:\|[A-Za-z_]+)+)")
 
-# A manifest lane is `<driver>@sa<major.minor>` (#463): each entry xfails
-# only in the lanes it names, so one driver's baseline cannot hide a
-# regression on the other.
-_LANE = re.compile(r"(?:cubrid|pycubrid)@sa[0-9]+\.[0-9]+")
+# A manifest lane is `<driver>@sa<major.minor>`, optionally narrowed to one
+# CUBRID server as `<driver>@sa<major.minor>@cubrid<major.minor>` (#463): each
+# entry xfails only in the lanes it names, so one driver's baseline cannot hide
+# a regression on the other. Lane tags follow the node id, which may itself
+# contain spaces (e.g. BizarroCharacterTest's `per % cent` parameter).
+_LANE = r"(?:cubrid|pycubrid)@sa[0-9]+\.[0-9]+(?:@cubrid[0-9]+\.[0-9]+)?"
+_ENTRY = re.compile(rf"(?P<nodeid>\S.*?)(?P<tags>(?:\s+{_LANE})+)")
 
 
 def _load_known_failures(path: Path) -> dict[str, set[str]]:
@@ -162,15 +165,14 @@ def _load_known_failures(path: Path) -> dict[str, set[str]]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
-        nodeid, *tags = line.split()
-        bad = [tag for tag in tags if not _LANE.fullmatch(tag)]
-        if not tags or bad:
+        match = _ENTRY.fullmatch(line)
+        if match is None or " " not in line:
             raise ValueError(
-                f"{path.name}:{lineno}: every entry needs one or "
-                f"more <driver>@sa<major.minor> lane tags, got {tags!r}"
+                f"{path.name}:{lineno}: every entry is a node id followed by one or "
+                f"more <driver>@sa<major.minor>[@cubrid<major.minor>] lane tags"
             )
-        for tag in tags:
-            lanes.setdefault(tag, set()).add(_normalize_nodeid(nodeid))
+        for tag in match["tags"].split():
+            lanes.setdefault(tag, set()).add(_normalize_nodeid(match["nodeid"]))
     return lanes
 
 
@@ -197,24 +199,32 @@ if "--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv):
     )
     from sqlalchemy.testing.plugin.pytestplugin import *  # noqa: E402, F401, F403
 
-    def _current_lane() -> str:
+    def _current_lanes() -> tuple[str, str]:
+        """The lane (`driver@saX.Y`) and its server-specific form (`...@cubridA.B`)."""
         import sqlalchemy
         from sqlalchemy.testing import config as sa_config
 
-        major_minor = ".".join(sqlalchemy.__version__.split(".")[:2])
-        return f"{sa_config.db.dialect.driver}@sa{major_minor}"
+        dialect = sa_config.db.dialect
+        if dialect.server_version_info is None:  # not initialized until first connect
+            sa_config.db.connect().close()
+        sa_version = ".".join(sqlalchemy.__version__.split(".")[:2])
+        server = ".".join(str(part) for part in dialect.server_version_info[:2])
+        lane = f"{dialect.driver}@sa{sa_version}"
+        return lane, f"{lane}@cubrid{server}"
 
     _KNOWN_FAILURES_BY_LANE = _load_known_failures(_KNOWN_FAILURES_FILE)
 
     def pytest_collection_modifyitems(session, config, items):  # noqa: ANN001
         _sa_collection_modifyitems(session, config, items)
-        lane = _current_lane()
-        known = _KNOWN_FAILURES_BY_LANE.get(lane, set())
+        lane, server_lane = _current_lanes()
+        known = _KNOWN_FAILURES_BY_LANE.get(lane, set()) | _KNOWN_FAILURES_BY_LANE.get(
+            server_lane, set()
+        )
         strict_mode = os.environ.get("CUBRID_STRICT_KNOWN_FAILURES") == "1"
         reporter = config.pluginmanager.get_plugin("terminalreporter")
         if reporter is not None:
             reporter.write_line(
-                f"compliance lane {lane}: {len(known)} known failure(s) from "
+                f"compliance lane {server_lane}: {len(known)} known failure(s) from "
                 f"{_KNOWN_FAILURES_FILE.name}" + (" (strict)" if strict_mode else ""),
                 bold=True,
             )

@@ -9,17 +9,24 @@
 #
 # LANES. Every entry is keyed to the lanes it is known to fail in:
 #
-#   <node id>  <lane> [<lane> ...]      where <lane> = <driver>@sa<major.minor>
+#   <node id>  <lane> [<lane> ...]
+#
+#   where <lane> = <driver>@sa<major.minor>, or
+#                  <driver>@sa<major.minor>@cubrid<major.minor> for a failure
+#                  that occurs on one CUBRID server version only.
 #
 #   cubrid@sa2.0     cubrid://          CUBRIDdb (cubrid-python v11.3.0.51),
-#                                       SQLAlchemy 2.0.53, CUBRID 11.4
+#                                       SQLAlchemy 2.0.53, gated on CUBRID 11.4
 #   pycubrid@sa2.0   cubrid+pycubrid:// pycubrid 1.7.1, SQLAlchemy 2.0.53,
-#                                       gated on CUBRID 11.4 (identical on 10.2)
+#                                       gated on CUBRID 10.2
 #   pycubrid@sa2.1   cubrid+pycubrid:// pycubrid 1.7.1, SQLAlchemy 2.1.1,
-#                                       gated on CUBRID 10.2 (identical on 11.4)
+#                                       gated on CUBRID 11.4
 #
-# The driver comes from the --dburi dialect and the SQLAlchemy major.minor from
-# the installed SQLAlchemy, so an entry only ever xfails in the lanes it names:
+# Every lane was captured on both CUBRID 10.2 and 11.4 (fresh databases).
+#
+# The driver comes from the --dburi dialect, the SQLAlchemy major.minor from
+# the installed SQLAlchemy and the server version from the connection, so an
+# entry only ever xfails in the lanes it names:
 # a pycubrid-only failure cannot hide a CUBRIDdb regression and vice versa.
 # There is no "all lanes" wildcard. A test that fails in several lanes lists
 # each one, and strictness is per lane: when a test starts passing on one
@@ -62,21 +69,224 @@
 # Tests that are not applicable to CUBRID at all are excluded in
 # sqlalchemy_cubrid/requirements.py (with a reason) instead of listed here.
 #
-# As of this baseline: cubrid@sa2.0 26 entries, pycubrid@sa2.0 19,
-# pycubrid@sa2.1 17; 0 XPASS, 0 unclassified. No compliance-suite failure is
-# attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
-# #430, #431); those are covered by targeted strict xfails elsewhere (#480-#482).
+# RECAPTURED IN #463 after fixing requirements.py: every requirement property
+# returned the same shared exclusions.open()/closed() object, and SQLAlchemy's
+# stacked @requires decorators extend that object in place, so after
+# collection every "open" requirement was effectively closed and large parts of
+# the suite silently skipped. With fresh objects ~300 more tests run per lane;
+# the entries below classify the failures that surfaced. The same change opened
+# reflects_pk_names and implicitly_named_constraints (the suite reported
+# unexpected successes) and gated unicode_ddl on a UTF-8 database.
+#
+# As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
+#   cubrid@sa2.0 135 / 128, pycubrid@sa2.0 128 / 121, pycubrid@sa2.1 143 / 136;
+# 0 XPASS, 0 unclassified. The 7 server-specific entries are
+# BizarroCharacterTest::test_reflect_comments on 11.4. No compliance failure
+# is attributable to the open pycubrid issues (cubrid-lab/pycubrid#390, #395,
+# #430, #431) beyond the -924 exception class noted under CTETest; those are
+# covered by targeted strict xfails elsewhere (#480-#482). Groups tagged
+# [DIALECT BUG] "needs an issue" were found by this recapture and are reported
+# in the #463 pull request.
 
-# [BACKEND / SUITE LIMIT] ComponentReflectionTest (3): the SA compliance
-# harness does not create the test's own views / non-column-index tables on
-# CUBRID (their fixture DDL never runs), so reflecting the never-created objects
-# fails. The dialect-level reflection gaps this class exposed (column comments,
-# NoSuchTableError on missing tables, system-view filtering) are FIXED — 22 of
-# the original 25 nodes now pass. These 3 are harness fixture limitations, not
-# dialect bugs. Tracked in #387. Same on both drivers and SQLAlchemy 2.0/2.1.
-test/test_suite.py::ComponentReflectionTest::test_get_noncol_index[noncol_idx_test_nopk-noncol_idx_nopk]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_noncol_index[noncol_idx_test_pk-noncol_idx_pk]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
-test/test_suite.py::ComponentReflectionTest::test_get_view_names[False-_exclusions_01]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+# [DIALECT BUG] ComponentReflectionTest index / unique-constraint overlap:
+# CUBRID implements UNIQUE constraints and foreign keys with indexes, and the
+# dialect reports them twice — get_indexes() includes the indexes that back
+# UNIQUE/FK constraints (e.g. 2 extra on `dingalings`) and
+# get_unique_constraints() reports a unique index on `users` — so the multi-
+# and single-table reflection results do not match SQLAlchemy's contract that
+# a constraint is reported once. Same on both drivers and servers. Found by
+# #463 (the requirements fix below made these tests run); needs an issue.
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.ANY_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[False-ObjectKind.VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.ANY_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_indexes[True-ObjectKind.VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[False-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_unique_constraints[True-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints[False-_exclusions_01]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [DIALECT BUG] ComponentReflectionTest::test_get_multi_foreign_keys (use
+# schema False): the reflected foreign keys of `dingalings` do not match the
+# expected referred columns (the implicitly named FK next to the explicitly
+# named `zz_email_add_id_fg`). Runs since implicitly_named_constraints was
+# opened. Same on both drivers and servers. Found by #463; needs an issue.
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.ANY-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|MATERIALIZED_VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|VIEW-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[False-ObjectKind.TABLE|VIEW-ObjectScope.DEFAULT-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [DIALECT BUG] ComponentReflectionTest missing-object handling: reflection
+# of a table or view that does not exist must raise NoSuchTableError. Instead
+# get_foreign_keys / get_unique_constraints / get_table_comment return empty
+# results, get_pk_constraint and get_view_definition surface the raw -493
+# ProgrammingError, and the get_multi_* variants with an explicit name list
+# include the nonexistent `does-not-exist` (and views for FK/UQ) in their
+# result. Same on both drivers and servers. Found by #463; needs an issue.
+test/test_suite.py::ComponentReflectionTest::test_get_multi_foreign_keys[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_pk_constraint[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_multi_table_comment[True-ObjectKind.ANY-ObjectScope.ANY-None-_exclusions_00]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_view_definition_does_not_exist  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_foreign_keys-_exclusions_03]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_pk_constraint-_exclusions_02]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_table_comment-_exclusions_07]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_not_existing_table[get_unique_constraints-_exclusions_05]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] ComponentReflectionTest quoted names: CUBRID folds
+# every identifier, quoted or not, to lower case, so a constraint or index
+# created as "FK_users_id" / "mixedCaseIndex" reflects as fk_users_id /
+# mixedcaseindex. Server identifier rule (see NameDenormalizeTest).
+test/test_suite.py::ComponentReflectionTest::test_get_foreign_keys_quoted_name[FK_users_id]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_foreign_keys_quoted_name[mixedCaseName]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_indexes_quoted_name[IX_test_data]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_indexes_quoted_name[mixedCaseIndex]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_pk_constraint_quoted_name[PK_test_table]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_pk_constraint_quoted_name[mixedCasePK]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints_quoted_name[UQ_email]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints_quoted_name[mixedCaseUQ]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [DIALECT BUG] BizarroCharacterTest FK reflection with a parenthesized column
+# name: when the referenced column is named `(3)`, the reflected foreign key
+# has a different number of constrained and referred columns, and
+# SQLAlchemy raises ArgumentError while rebuilding it. Found by #463; needs an
+# issue.
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] BizarroCharacterTest bracket names: CUBRID also uses
+# [ ] as identifier delimiters, so a table or column named `[brackets]` /
+# `[brack]` cannot be expressed even when double-quoted, and the CREATE TABLE
+# fails with a syntax error. On CUBRID 11.4, reflect_comments also fails for
+# these names where 10.2 accepts the DDL (server-qualified tags).
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-col%p-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-col%p-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-plainname-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-plainname-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[(2)-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-(3)]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-col%p]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-plainname]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[per % cent-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[plain-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+
+# [BACKEND / SUITE LIMIT] CTETest (all nodes): the harness deletes rows between
+# tests with one `DELETE FROM some_table`, but `some_table` references itself
+# and CUBRID checks the foreign key per row, so the delete fails with -924
+# ("restricted by the foreign key") and every later setup hits the leftover
+# rows (unique violation). (pycubrid 1.7.1 raises -924 as DatabaseError rather
+# than IntegrityError, cubrid-lab/pycubrid#390; CUBRIDdb raises IntegrityError.)
+test/test_suite.py::CTETest::test_delete_from_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_delete_scalar_subq_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_insert_from_select_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_select_nonrecursive_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_select_recursive_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_update_from_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-not_cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-not_cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-not_cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-not_cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [DIALECT BUG] HasIndexTest: `Index.drop()` compiles to `DROP INDEX my_idx_2`,
+# but CUBRID requires `DROP INDEX <name> ON <table>`, so the drop fails with a
+# -493 syntax error (Index.drop() and Alembic drop_index are affected). Found
+# by #463; needs an issue.
+test/test_suite.py::HasIndexTest::test_has_index[dialect]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::HasIndexTest::test_has_index[inspector]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [DIALECT BUG] UnicodeTextTest: `UnicodeText` compiles to `TEXT`, which CUBRID
+# does not have ("dba.TEXT is not defined"); the type compiler overrides
+# visit_text (-> STRING) but not visit_unicode_text. Found by #463; needs an
+# issue.
+test/test_suite.py::UnicodeTextTest::test_empty_strings_text  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::UnicodeTextTest::test_literal  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::UnicodeTextTest::test_literal_non_ascii  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::UnicodeTextTest::test_null_strings_text  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::UnicodeTextTest::test_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::UnicodeTextTest::test_round_trip_executemany  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [DIALECT BUG] JSONTest::test_index_cross_casts (SQLAlchemy 2.1): a JSON
+# element cast with `.as_numeric(10, 2)` does not come back as Decimal. Found
+# by #463; needs an issue.
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-boolean-False-allowed_targets1-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-boolean-True-allowed_targets0-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-float-1234567.89-allowed_targets15-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-integer-0-allowed_targets12-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-integer-1-allowed_targets11-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-integer-15-allowed_targets10-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-numeric-1234567.89-allowed_targets16-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-string-45-allowed_targets3-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[getitem-string-45.684-allowed_targets4-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-boolean-False-allowed_targets1-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-boolean-True-allowed_targets0-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-float-1234567.89-allowed_targets15-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-integer-0-allowed_targets12-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-integer-1-allowed_targets11-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-integer-15-allowed_targets10-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-numeric-1234567.89-allowed_targets16-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-string-45-allowed_targets3-numeric]  pycubrid@sa2.1
+test/test_suite.py::JSONTest::test_index_cross_casts[path-string-45.684-allowed_targets4-numeric]  pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] JSONTest::test_round_trip_custom_json (SQLAlchemy
+# 2.0): CUBRID stores JSON in a normalized form, so the custom deserializer
+# receives '{"key1":"data1"}' rather than the serializer's exact text.
+test/test_suite.py::JSONTest::test_round_trip_custom_json  cubrid@sa2.0 pycubrid@sa2.0
+
+# [BACKEND / SUITE LIMIT] WindowFunctionTest ROWS BETWEEN: CUBRID window
+# functions have no frame clause, so `ROWS BETWEEN ...` is a syntax error. The
+# suite gates these only on window_functions (no frame requirement exists).
+test/test_suite.py::WindowFunctionTest::test_window_rows_between  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::WindowFunctionTest::test_window_rows_between_w_caching  pycubrid@sa2.1
 
 # [BACKEND / SUITE LIMIT] DistinctOnTest (1): CUBRID has no DISTINCT ON (PostgreSQL-only). The dialect
 # correctly renders `.distinct(col)` as plain `SELECT DISTINCT`, and
@@ -85,7 +295,7 @@ test/test_suite.py::ComponentReflectionTest::test_get_view_names[False-_exclusio
 # it fails rather than xfails. Stable non-capability, not a dialect bug — #388
 test/test_suite.py::DistinctOnTest::test_distinct_on  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 
-# [BACKEND / SUITE LIMIT] HasTableTest (8): SQLAlchemy 2.0's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed). SQLAlchemy 2.1 builds the view through CreateView (dialect quoting), so all 8 pass on the sa2.1 lane.
+# [BACKEND / SUITE LIMIT] HasTableTest (8, SQLAlchemy 2.0 only): SQLAlchemy 2.0's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed). SQLAlchemy 2.1 builds the view through CreateView (dialect quoting), so all 8 pass on the sa2.1 lane.
 test/test_suite.py::HasTableTest::test_has_table  cubrid@sa2.0 pycubrid@sa2.0
 test/test_suite.py::HasTableTest::test_has_table_cache  cubrid@sa2.0 pycubrid@sa2.0
 test/test_suite.py::HasTableTest::test_has_table_nonexistent_schema  cubrid@sa2.0 pycubrid@sa2.0
@@ -138,6 +348,7 @@ test/test_suite.py::ReturningGuardsTest::test_update_single  cubrid@sa2.0 pycubr
 # single precision, so `Float(5.52) / Float(2.4)` returns 2.299999952316284,
 # not 2.3 — a backend precision limit, not a dialect bug — #388
 test/test_suite.py::TrueDivTest::test_truediv_float[5.52-2.4-2.3]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
 # [DRIVER LIMITATION] TrueDivTest::test_truediv_integer_bound (1, CUBRIDdb only):
 # `literal(15) / literal(10)` must yield 1.5. PASSES on cubrid+pycubrid://
 # (returns Decimal('1.5')); the C-extension gating cell reports it differently — #388

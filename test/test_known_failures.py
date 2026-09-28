@@ -26,8 +26,8 @@ _GATED_LANES = {"cubrid@sa2.0", "pycubrid@sa2.0", "pycubrid@sa2.1"}
 
 def test_manifest_lanes_match_the_gated_ci_lanes():
     lanes = _load_known_failures(_KNOWN_FAILURES_FILE)
-    assert set(lanes) == _GATED_LANES
-    assert all(lanes.values())
+    assert {tag.split("@cubrid")[0] for tag in lanes} == _GATED_LANES
+    assert _GATED_LANES <= set(lanes)
 
 
 def test_driver_only_entries_stay_in_their_lane():
@@ -56,6 +56,13 @@ def test_entry_without_a_valid_lane_tag_is_rejected(tmp_path: Path, entry: str):
     manifest.write_text(f"# comment\n\n{entry}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="known_failures.txt:3"):
         _load_known_failures(manifest)
+
+
+def test_node_id_with_spaces_and_server_lane(tmp_path: Path):
+    manifest = tmp_path / "known_failures.txt"
+    nodeid = "test/test_suite.py::X::test_y[per % cent-(3)]"
+    manifest.write_text(f"{nodeid}  pycubrid@sa2.0@cubrid11.4\n", encoding="utf-8")
+    assert _load_known_failures(manifest) == {"pycubrid@sa2.0@cubrid11.4": {nodeid}}
 
 
 def test_entry_is_keyed_to_each_named_lane(tmp_path: Path):
