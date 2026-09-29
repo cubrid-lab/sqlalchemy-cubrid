@@ -336,7 +336,9 @@ make integration
 or `make docker-up` (the `sqlalchemy-cubrid` project) and from every other run.
 Before starting, it checks that the project has no containers, volumes or networks
 and that no `<project>_cubrid-data` volume exists. If anything is found, it
-refuses to run and neither starts nor removes anything. Only after that check does
+refuses to run and neither starts nor removes anything. A Docker error during the
+check (for example an unreachable daemon) also stops the run before anything is
+started. Only after that check does
 it register cleanup, so `docker compose -p <project> down -v` only ever removes
 resources that this run created.
 

@@ -69,8 +69,9 @@ integration: ## Run integration tests in a fresh, run-owned Docker Compose proje
 	existing_containers=$$(docker ps -aq --filter "$$label"); \
 	existing_volumes=$$(docker volume ls -q --filter "$$label"); \
 	existing_networks=$$(docker network ls -q --filter "$$label"); \
-	if [ -n "$$existing_containers$$existing_volumes$$existing_networks" ] || \
-		docker volume inspect "$${project}_cubrid-data" >/dev/null 2>&1; then \
+	all_volumes=$$(docker volume ls -q); \
+	existing_data_volume=$$(printf '%s\n' "$$all_volumes" | grep -Fx "$${project}_cubrid-data" || true); \
+	if [ -n "$$existing_containers$$existing_volumes$$existing_networks$$existing_data_volume" ]; then \
 		echo "Refusing to run: Compose project '$$project' already has containers, volumes or networks." >&2; \
 		echo "make integration only starts and removes a project it creates; nothing was started or removed." >&2; \
 		exit 1; \

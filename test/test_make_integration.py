@@ -49,13 +49,20 @@ existing = set(filter(None, os.environ.get("EXISTING", "").split(",")))
 if name == "docker":
     if args[0] == "compose":
         phase = "UP" if "up" in args else "DOWN"
-    elif args[0] == "volume" and args[1] == "inspect":
-        sys.exit(0 if "named-volume" in existing else 1)
     else:
-        # Ownership probes: docker ps / volume ls / network ls with a label filter.
+        # Read-only ownership probes: docker ps / volume ls / network ls with a
+        # project label filter, and an unfiltered volume listing for the name.
         kind = {"ps": "container", "volume": "volume", "network": "network"}[args[0]]
-        if kind in existing:
+        if kind == "volume" and "--filter" not in args:
+            kind = "named-volume"
+            for volume in filter(None, os.environ.get("OTHER_VOLUMES", "").split(",")):
+                print(volume)
+            if kind in existing:
+                print(os.environ["PROJECT"] + "_cubrid-data")
+        elif kind in existing:
             print("pre-existing-" + kind)
+        if os.environ.get("FAILING_PROBE") == kind:
+            sys.exit(5)
         phase = "PROBE"
 elif name == "sleep":
     phase = "WAIT"
@@ -103,6 +110,7 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
             COMMAND_LOG=str(log),
             CUBRID_TEST_URL="cubrid://dba@localhost:33000/external",
             EXISTING=existing,
+            PROJECT=project or "",
             **{
                 phase + "_STATUS": str(statuses.get(phase.lower(), 0))
                 for phase in ("PROBE", "UP", "DOWN", "WAIT", "TEST")
@@ -186,7 +194,7 @@ def test_integration_probes_ownership_before_starting(integration_runner):
         f"docker ps -aq --filter {label}",
         f"docker volume ls -q --filter {label}",
         f"docker network ls -q --filter {label}",
-        f"docker volume inspect {PROJECT}_cubrid-data",
+        "docker volume ls -q",
     ]
     assert commands.index(UP) > 3
 
@@ -238,10 +246,26 @@ def test_integration_refuses_pre_existing_project(integration_runner, existing, 
     assert not any(command.startswith("docker compose") for command in commands)
 
 
-def test_integration_fails_closed_when_ownership_probe_fails(integration_runner):
-    result, commands = integration_runner(probe=5)
+@pytest.mark.parametrize("probe", ["container", "volume", "network", "named-volume"])
+def test_integration_fails_closed_when_ownership_probe_fails(integration_runner, probe):
+    # A Docker error (e.g. the daemon is unreachable) is not evidence of absence.
+    result, commands = integration_runner(extra_env={"FAILING_PROBE": probe})
     assert result.returncode != 0
+    assert "Refusing to run" not in result.stderr
     assert _lifecycle(commands) == []
+
+
+def test_integration_named_volume_probe_matches_exact_name(integration_runner):
+    # Only `<project>_cubrid-data` itself counts, not other volumes sharing part of it.
+    others = f"{PROJECT}_cubrid-data-old,x{PROJECT}_cubrid-data,{PROJECT}-2_cubrid-data"
+    result, commands = integration_runner(extra_env={"OTHER_VOLUMES": others})
+    assert result.returncode == 0, result.stderr
+    assert UP in commands
+    result, commands = integration_runner(
+        existing="named-volume", extra_env={"OTHER_VOLUMES": others}
+    )
+    assert result.returncode != 0
+    assert "Refusing to run" in result.stderr
 
 
 def test_integration_uses_fresh_project_per_run(integration_runner):
