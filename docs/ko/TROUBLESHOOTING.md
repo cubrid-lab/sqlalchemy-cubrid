@@ -245,10 +245,14 @@ DatabaseError: (-224) A database has not been restarted.
 
 ### 중단된 쿼리 (-4)
 
-**증상:** 실행 중인 문장이 다음과 같이 실패합니다:
+**증상:** 실행 중인 문장이 실패합니다. 정확한 문자열은 드라이버마다 다릅니다:
 
 ```
-DatabaseError: (-4) Has been interrupted.
+# CUBRIDdb
+DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
+
+# pycubrid
+OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
 ```
 
 **원인:** 다른 세션이 이 문장에 `KILL QUERY <tran_index>`를 실행했습니다. -4는 서버의 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. pycubrid의 `str()`은 -4를 `Communication error`로 설명하지만, 이는 pycubrid의 라벨일 뿐 서버 코드의 의미가 아닙니다.

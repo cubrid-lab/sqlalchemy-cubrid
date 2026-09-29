@@ -243,10 +243,14 @@ DatabaseError: (-224) A database has not been restarted.
 
 ### Interrupted Query (-4)
 
-**Symptom:** A running statement fails with:
+**Symptom:** A running statement fails. The exact text is driver-specific:
 
 ```
-DatabaseError: (-4) Has been interrupted.
+# CUBRIDdb
+DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
+
+# pycubrid
+OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
 ```
 
 **Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid's `str()` describes -4 as `Communication error`, which is a pycubrid label, not the meaning of the server code.

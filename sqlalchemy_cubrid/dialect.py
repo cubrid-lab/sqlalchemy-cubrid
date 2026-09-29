@@ -1427,9 +1427,19 @@ class CubridDialect(default.DefaultDialect):
     # call failed before or instead of a server error, and the server's own
     # code (``error_code.h``) otherwise, so server codes such as -4
     # (``ER_INTERRUPTED``, an interrupted query) must not appear here (#572).
-    # pycubrid never reports these codes; it keeps server codes in ``errno``.
+    # pycubrid doesn't negotiate CUBRID's renewed CAS/CCI error-code protocol
+    # (the -10xxx/-20xxx numbering below), so the CAS answers it with the
+    # legacy, unprefixed codes instead -- e.g. -4 for ``ER_INTERRUPTED``, the
+    # same code CUBRID's server uses internally (``error_code.h``). pycubrid
+    # keeps that legacy code in ``errno``, not in ``args[0]``.
+    #
+    # -10002 (CAS_ER_NO_MORE_MEMORY) is included below because cas.c's
+    # process_request() sends it when the CAS's read-buffer allocation fails,
+    # then returns FN_CLOSE_CONN, closing the connection (CUBRID v11.4.6
+    # src/broker/cas.c).
     _disconnect_error_codes = frozenset(
         {
+            -10002,  # CAS_ER_NO_MORE_MEMORY: CAS out of memory (see above)
             -10003,  # CAS_ER_COMMUNICATION (CCI's IS_ER_COMMUNICATION, with -20004)
             -20002,  # CCI_ER_CON_HANDLE: the connection handle is closed or invalid
             -20004,  # CCI_ER_COMMUNICATION: "Cannot communicate with server"

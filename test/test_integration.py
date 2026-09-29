@@ -1003,10 +1003,22 @@ class TestDoPing:
             eng.dispose()
 
 
-# Run in a separate process: CUBRIDdb holds the GIL while a statement runs.
-# It records the transactions already running a query (its own included),
+# Run in a separate process: CUBRIDdb holds the GIL while a statement runs
+# (and select() on a pipe, used to hear "ready" from it, is POSIX-only). It
+# records the transactions already running a query (its own included),
 # prints "ready", then sends KILL QUERY to the one new query that is still
 # running half a second later: the victim.
+#
+# This still identifies the victim by timing rather than by its SQL text.
+# CUBRID gives no way to do the latter: neither ``SHOW TRANSACTION TABLES``
+# nor ``SHOW THREADS`` exposes the running statement's text or any field an
+# application can tag (``Client_info``/``Client_program``/``Client_pid`` are
+# the CAS's own identity, not the driver's; verified live on 11.4). The slow
+# query below is still tagged with a unique comment, so a run can be found in
+# a broker SQL log by eye, but the helper itself cannot match on it. That
+# makes this test reliable only when it is the sole session running a slow
+# query against the target CUBRID instance at the time, e.g. one `make
+# integration` run at a time against a given container/database (#578).
 _KILL_QUERY_SCRIPT = """
 import sys, time
 import sqlalchemy as sa
@@ -1045,9 +1057,13 @@ finally:
 
 # Long enough to be killed mid-run. Its runtime is bounded by the catalog size
 # (under a minute on CUBRID 11.4) if the kill fails: the helper then exits
-# non-zero and the test fails instead of hanging.
+# non-zero and the test fails instead of hanging. The comment is a unique tag
+# for finding this run's query by eye in a broker SQL log; CUBRID does not
+# expose it back through SHOW TRANSACTION TABLES, so the helper above still
+# matches by timing, not by this text (see the comment on _KILL_QUERY_SCRIPT).
 _SLOW_QUERY = text(
-    "SELECT COUNT(*) FROM db_attribute a, db_attribute b, db_attribute c,"
+    f"SELECT /* kill-query-victim:{uuid.uuid4().hex} */ COUNT(*)"
+    " FROM db_attribute a, db_attribute b, db_attribute c,"
     " (SELECT attr_name FROM db_attribute LIMIT 10) d"
 )
 
@@ -1058,6 +1074,10 @@ class TestIsDisconnect:
 
         -4 is the server's ER_INTERRUPTED. CUBRIDdb reports it in ``args[0]``
         and pycubrid in ``errno``; neither is a disconnect.
+
+        Relies on ``_KILL_QUERY_SCRIPT``, which identifies its victim by
+        timing and waits on it through a pipe with ``select()`` (POSIX-only);
+        see the comment above that script for why (#578).
         """
         url = engine.url.render_as_string(hide_password=False)
         killer = subprocess.Popen(  # noqa: S603 - runs this interpreter on a fixed script

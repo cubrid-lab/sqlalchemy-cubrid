@@ -1706,8 +1706,9 @@ class TestIsDisconnect:
         exc = dbapi.DatabaseError(message)
         assert dialect.is_disconnect(exc, None, None) is False
 
-    # CUBRIDdb client-side codes for a dead or unusable connection (#572).
+    # CUBRIDdb client-side codes for a dead or unusable connection (#572, #578).
     _CUBRIDDB_DISCONNECT = [
+        (-10002, "ERROR: CAS, -10002, No more memory"),
         (-10003, "ERROR: CAS, -10003, Cannot receive data from client"),
         (-20002, "ERROR: CCI, -20002, Invalid connection handle"),
         (-20004, "ERROR: CCI, -20004, Cannot communicate with server"),

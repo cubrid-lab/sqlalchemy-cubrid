@@ -150,12 +150,14 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 - Numeric error code matching, on `args[0]` (CUBRIDdb only), for the CCI and CAS
   codes of a dead or unusable connection: -20004 (`CCI_ER_COMMUNICATION`), -10003
   (`CAS_ER_COMMUNICATION`; CCI treats both as communication errors), -20002
-  (`CCI_ER_CON_HANDLE`) and -20016 (`CCI_ER_CONNECT`). Releases up to 1.8.0 listed -4,
-  -10005, -10007, -21003 and -21005 instead (#572): -4 is the server's `ER_INTERRUPTED`
-  (a query interrupted by `KILL QUERY`), so CUBRIDdb invalidated a working connection;
-  -10005 and -10007 are `CAS_ER_TRAN_TYPE` and `CAS_ER_NUM_BIND`; -21003 and -21005 are
-  CUBRID JDBC codes that neither Python driver raises. -20004, which CUBRIDdb raises
-  when its CAS dies mid-transaction, was missing.
+  (`CCI_ER_CON_HANDLE`), -20016 (`CCI_ER_CONNECT`) and -10002
+  (`CAS_ER_NO_MORE_MEMORY`; the CAS closes the connection after sending it). Releases
+  up to 1.8.0 listed -4, -10005, -10007, -21003 and -21005 instead (#572): -4 is the
+  server's `ER_INTERRUPTED` (a query interrupted by `KILL QUERY`), so CUBRIDdb
+  invalidated a working connection; -10005 and -10007 are `CAS_ER_TRAN_TYPE` and
+  `CAS_ER_NUM_BIND`; -21003 and -21005 are CUBRID JDBC codes that neither Python
+  driver raises. -20004, which CUBRIDdb raises when its CAS dies mid-transaction, and
+  -10002 were missing (#578).
 - Numeric error code matching, on both drivers, for the server errors that make the
   broker reset the CAS because its session with `cub_server` is gone: -111
   (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224
