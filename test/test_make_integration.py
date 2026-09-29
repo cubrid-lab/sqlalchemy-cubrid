@@ -1,7 +1,7 @@
 """Exercise Docker ownership and failure propagation without starting Docker.
 
-Every command the ``integration`` recipe runs (``docker``, ``sleep`` and the
-pytest command) is a logging stub on ``PATH``, so no container, volume or
+Every command the ``integration`` recipe runs (``docker``, the readiness wait
+and the pytest command) is a logging stub on ``PATH``, so no container, volume or
 network is ever created or removed.
 """
 
@@ -21,7 +21,7 @@ import pytest
 PROJECT = "sa-it-stub"
 UP = f"docker compose -p {PROJECT} up -d"
 DOWN = f"docker compose -p {PROJECT} down -v"
-WAIT = "sleep 10"
+WAIT = "wait-stub"
 TEST = "pytest-stub test/ -m integration -v"
 
 
@@ -72,7 +72,7 @@ if name == "docker":
         if os.environ.get("FAILING_PROBE") == kind:
             sys.exit(5)
         phase = "PROBE"
-elif name == "sleep":
+elif name == "wait-stub":
     phase = "WAIT"
 else:
     phase = "TEST"
@@ -129,7 +129,7 @@ if phase in os.environ.get("BLOCK_PHASES", "").split(","):
 sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
 """
     )
-    for name in ("docker", "sleep", "pytest-stub"):
+    for name in ("docker", "wait-stub", "pytest-stub"):
         command = tmp_path / name
         command.write_text(stub, encoding="utf-8")
         command.chmod(0o755)
@@ -146,7 +146,14 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
     ):
         env = os.environ.copy()
         # Do not inherit outer make jobserver or command-line variable overrides.
-        for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "CUBRID_PORT", "INTEGRATION_PROJECT"):
+        for key in (
+            "MAKEFLAGS",
+            "MFLAGS",
+            "MAKEOVERRIDES",
+            "CUBRID_PORT",
+            "INTEGRATION_PROJECT",
+            "INTEGRATION_DRIVER",
+        ):
             env.pop(key, None)
         env.update(
             PATH=str(tmp_path) + os.pathsep + env.get("PATH", ""),
@@ -166,6 +173,7 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
             *(["-n"] if dry_run else []),
             target,
             "PYTEST=pytest-stub",
+            "WAIT_FOR_CUBRID=wait-stub",
             *([f"INTEGRATION_PROJECT={project}"] if project else []),
             *make_vars,
             *shell_override,
@@ -253,7 +261,7 @@ def test_integration_always_cleans_up(integration_runner, test_status, cleanup_s
         UP,
         WAIT,
         TEST,
-        "CUBRID_TEST_URL=cubrid://dba@localhost:33000/testdb",
+        "CUBRID_TEST_URL=cubrid+pycubrid://dba@localhost:33000/testdb",
         DOWN,
     ]
     assert (result.returncode == 0) == (test_status == cleanup_status == 0)
@@ -361,7 +369,33 @@ def test_integration_uses_fresh_project_per_run(integration_runner):
 def test_integration_honours_port_override(integration_runner):
     result, commands = integration_runner(make_vars=("CUBRID_PORT=33999",))
     assert result.returncode == 0, result.stderr
-    assert "CUBRID_TEST_URL=cubrid://dba@localhost:33999/testdb" in commands
+    assert "CUBRID_TEST_URL=cubrid+pycubrid://dba@localhost:33999/testdb" in commands
+
+
+@pytest.mark.parametrize(
+    ("driver", "url"),
+    [
+        ("pycubrid", "cubrid+pycubrid://dba@localhost:33000/testdb"),
+        ("cubriddb", "cubrid://dba@localhost:33000/testdb"),
+    ],
+)
+def test_integration_driver_selects_test_url(integration_runner, driver, url):
+    # pycubrid (the recommended driver) is the default; cubriddb runs the same
+    # suite through the CUBRIDdb C extension (#575).
+    result, commands = integration_runner(make_vars=(f"INTEGRATION_DRIVER={driver}",))
+    assert result.returncode == 0, result.stderr
+    assert f"CUBRID_TEST_URL={url}" in commands
+    assert f"(driver: {driver})" in result.stdout
+
+
+@pytest.mark.parametrize("driver", ["", "CUBRIDdb", "cubrid", "pycubrid ", "x;y"])
+def test_integration_rejects_unknown_driver(integration_runner, driver):
+    # Validated before any Docker command, including the read-only probes.
+    result, commands = integration_runner(make_vars=(f"INTEGRATION_DRIVER={driver}",))
+    assert result.returncode != 0
+    assert "Error 2" in result.stderr
+    assert "INTEGRATION_DRIVER must be pycubrid or cubriddb" in result.stderr
+    assert commands == []
 
 
 @pytest.mark.parametrize("test_status", [0, 7])
@@ -375,6 +409,30 @@ def test_integration_dry_run_does_not_execute_commands(integration_runner):
     result, commands = integration_runner(dry_run=True)
     assert result.returncode == 0
     assert commands == []
+
+
+def test_integration_waits_for_readiness_instead_of_a_fixed_sleep():
+    # #575: a fixed 10 s sleep let the suite start before a fresh container's
+    # database and broker were up. Check the real default command (make -n runs
+    # nothing).
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make is required for Makefile regression tests")
+    env = os.environ.copy()
+    for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "INTEGRATION_READY_TIMEOUT"):
+        env.pop(key, None)
+    result = subprocess.run(
+        [make, "--no-print-directory", "-n", "integration", "INTEGRATION_READY_TIMEOUT=42"],
+        cwd=Path(__file__).resolve().parents[1],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "python3 -m scripts.wait_for_cubrid --timeout 42" in result.stdout
+    assert "sleep 10" not in result.stdout
 
 
 def _finish(process: subprocess.Popen[str]) -> tuple[int, str]:

@@ -141,7 +141,7 @@ make typecheck     # 의존성 버전 출력 및 strict mypy 검사
 make format        # 린트 문제 자동 수정 및 코드 포맷
 make test          # 커버리지와 함께 오프라인 테스트 실행 (95% 임계값)
 make test-all      # 모든 Python 버전에서 tox 실행
-make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 → 삭제
+make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 (pycubrid) → 삭제
 make docker-up     # CUBRID Docker 컨테이너 시작
 make docker-down   # CUBRID Docker 컨테이너 중지 및 제거
 make clean         # 빌드 산출물과 캐시 제거
@@ -318,9 +318,30 @@ CUBRID_VERSION=10.2 docker compose up -d
 ### 빠른 통합 워크플로
 
 ```bash
-# 원커맨드: 시작, 테스트, 중지
+# 원커맨드: 시작, 테스트, 중지 (권장 드라이버 pycubrid)
 make integration
+
+# 같은 스위트를 CUBRIDdb C 확장으로 실행 (설치되어 있어야 함)
+make integration INTEGRATION_DRIVER=cubriddb
 ```
+
+`make integration`은 `integration` 마커가 붙은 모든 테스트를 하나의 pytest
+세션에서 실행합니다. `INTEGRATION_DRIVER`는 `CUBRID_TEST_URL`의 드라이버를
+선택합니다. `pycubrid`(기본값, `cubrid+pycubrid://`) 또는 `cubriddb`(`cubrid://`,
+CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
+`.github/workflows/ci.yml`의 "Build and install CUBRID Python driver" 단계를
+참고하세요)입니다. 다른 값을 주면 Docker 명령을 실행하기 전에 상태 2로
+종료합니다. 여러 테스트 파일이 URL이 선택한 드라이버와 관계없이 두 드라이버로
+연결하므로, 어느 드라이버를 쓰든 `.[dev,pycubrid]`를 설치하세요. PR CI는 기본
+드라이버로 CUBRID 11.4에서 `make integration`을 실행하고, 야간 및 태그
+`integration-full.yml` 워크플로는 두 드라이버로 CUBRID 10.2와 11.4에서 실행합니다.
+
+`docker compose up -d` 후에는 새 서버가 선택한 드라이버로 `SELECT 1`에 응답할
+때까지(`scripts/wait_for_cubrid.py`) 최대 `INTEGRATION_READY_TIMEOUT`초(기본값
+180) 기다리며, 끝내 응답하지 않으면 실패합니다. 새 컨테이너는 데이터베이스를
+만들고 브로커를 시작하는 데 약 20초가 걸립니다. #575 이전의 고정 10초 대기는
+스위트를 너무 일찍 시작시켜, 첫 테스트들이 CCI -20004로 실패하고 import 시점에
+서버를 확인하는 라이브 테스트 파일들이 스스로 skip되었습니다.
 
 `make integration`은 기본적으로 `sqlalchemy-cubrid-it-<timestamp>-<pid>`라는
 자체 Compose 프로젝트에서 실행됩니다. 따라서 컨테이너, 네트워크와 `cubrid-data`
@@ -563,7 +584,8 @@ pre-commit run --all-files
 1. **Lint** — Ruff check + 포맷 검증
 2. **오프라인 테스트** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × 오프라인 테스트 스위트
 3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
-4. **커버리지** — ≥ 95% 임계값 강제
+4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 야간 및 태그 시 `integration-full.yml`에서 실행)
+5. **커버리지** — ≥ 95% 임계값 강제
 
 ### 드라이버 차분 레인
 
