@@ -38,7 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comment on why pycubrid does not report the CAS/CCI codes above is
   reworded: pycubrid does not negotiate CUBRID's renewed error-code protocol,
   so the CAS answers it with the legacy, unprefixed codes instead (e.g. -4 for
-  `ER_INTERRUPTED`), which pycubrid keeps in `errno`. `docs/TROUBLESHOOTING.md`
+  `ER_INTERRUPTED`), which pycubrid keeps in `errno`. A CAS code specifically
+  (`cas_error.h`, sent with `CAS_ERROR_INDICATOR`) is instead legacy-renumbered
+  by the CAS itself (`CAS_CONV_ERROR_TO_OLD`, `src/broker/cas_protocol.h`:
+  `+9000`) before it reaches a driver that doesn't advertise understanding the
+  renewed protocol, so pycubrid actually receives -1002 for
+  `CAS_ER_NO_MORE_MEMORY`, not -10002; this was previously undetected (the
+  errno check only covered the four server-session codes from #565) and is now
+  matched too, in a new `_pycubrid_legacy_cas_codes`, with an offline test
+  (found in review). `docs/TROUBLESHOOTING.md`
   (+ Korean)'s Interrupted Query (-4) section now shows the real, driver-specific
   strings instead of an abbreviated one: CUBRIDdb's `(-4, 'ERROR: DBMS, -4, Has
   been interrupted.[CAS INFO-...]')` and pycubrid's `Has been interrupted.

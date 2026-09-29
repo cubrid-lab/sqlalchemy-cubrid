@@ -1890,6 +1890,20 @@ class TestIsDisconnect:
         exc = self._pycubrid_error(dbapi, "opaque server message", error_code)
         assert dialect.is_disconnect(exc, None, None) is True
 
+    # CAS codes (cas_error.h) as pycubrid actually receives them: legacy-
+    # renumbered by CAS_CONV_ERROR_TO_OLD (+9000), since pycubrid never
+    # advertises understanding the renewed error-code protocol (#578).
+    _PYCUBRID_LEGACY_CAS = [
+        -1002,  # legacy CAS_ER_NO_MORE_MEMORY (-10002 + 9000)
+    ]
+
+    @pytest.mark.parametrize("error_code", _PYCUBRID_LEGACY_CAS)
+    def test_pycubrid_legacy_cas_code_is_disconnect(self, pycubrid_dialect, error_code):
+        """pycubrid errors carrying a legacy-renumbered CAS disconnect code disconnect (#578)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", error_code)
+        assert dialect.is_disconnect(exc, None, None) is True
+
     @pytest.mark.parametrize(
         "errno",
         [

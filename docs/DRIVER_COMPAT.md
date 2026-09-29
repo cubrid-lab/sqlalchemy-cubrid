@@ -166,6 +166,11 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
   until the transaction ends, even after the server is back (#565). -671
   (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
   See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
+- Numeric error code matching, on pycubrid's `errno` only, for CAS codes as pycubrid
+  actually receives them: CUBRID's CAS legacy-renumbers `cas_error.h` codes (adds 9000)
+  for a driver, like pycubrid, that never advertises understanding the renewed
+  error-code protocol. -1002 (legacy `CAS_ER_NO_MORE_MEMORY`, i.e. -10002 + 9000) is
+  matched this way (#578).
 
 ### 2. CCI Library Dependency
 
