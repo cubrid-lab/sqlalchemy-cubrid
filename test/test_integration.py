@@ -24,6 +24,7 @@ from __future__ import annotations
 import datetime
 from inspect import signature
 import os
+import select as io_select
 import subprocess
 import sys
 import uuid
@@ -1004,7 +1005,8 @@ class TestDoPing:
 
 # Run in a separate process: CUBRIDdb holds the GIL while a statement runs.
 # It records the transactions already running a query (its own included),
-# prints "ready", then sends KILL QUERY to the first new one: the victim.
+# prints "ready", then sends KILL QUERY to the one new query that is still
+# running half a second later: the victim.
 _KILL_QUERY_SCRIPT = """
 import sys, time
 import sqlalchemy as sa
@@ -1023,14 +1025,17 @@ try:
     print("ready", flush=True)
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
-        victims = running(cur) - before
-        if victims:
+        new = running(cur) - before
+        if new:
             time.sleep(0.5)
-            for tran_index in victims:
+            # Only a query still running after the pause: a short one, such as
+            # the service health check, must not be mistaken for the victim.
+            victims = new & running(cur)
+            if len(victims) == 1:
                 # KILL takes no bind parameter; tran_index is an int from the server.
-                cur.execute("KILL QUERY " + str(int(tran_index)))
-            print("killed", flush=True)
-            break
+                cur.execute("KILL QUERY " + str(int(victims.pop())))
+                print("killed", flush=True)
+                break
         time.sleep(0.1)
     else:
         sys.exit("no running query to kill")
@@ -1038,10 +1043,12 @@ finally:
     raw.close()
 """
 
-# Long enough to be killed mid-run, bounded (about a minute) if the kill fails.
+# Long enough to be killed mid-run. Its runtime is bounded by the catalog size
+# (under a minute on CUBRID 11.4) if the kill fails: the helper then exits
+# non-zero and the test fails instead of hanging.
 _SLOW_QUERY = text(
     "SELECT COUNT(*) FROM db_attribute a, db_attribute b, db_attribute c,"
-    " (SELECT attr_name FROM db_attribute LIMIT 20) d"
+    " (SELECT attr_name FROM db_attribute LIMIT 10) d"
 )
 
 
@@ -1061,7 +1068,10 @@ class TestIsDisconnect:
         )
         try:
             assert killer.stdout is not None
-            if killer.stdout.readline().strip() != "ready":
+            # Bounded wait: the helper may stall connecting to a busy broker.
+            readable, _, _ = io_select.select([killer.stdout], [], [], 60)
+            if not readable or killer.stdout.readline().strip() != "ready":
+                killer.kill()
                 killer.wait(timeout=60)
                 pytest.fail(f"KILL QUERY helper failed: {killer.stderr.read()}")
             with engine.connect() as conn:

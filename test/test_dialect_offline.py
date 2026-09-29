@@ -1800,10 +1800,11 @@ class TestIsDisconnect:
         dialect.dbapi = dbapi
         return dialect, dbapi
 
-    def test_code_minus_four_in_args_is_not_disconnect(self, pycubrid_dialect):
-        """-4 in ``args[0]`` is the server's ER_INTERRUPTED, not a lost connection (#572)."""
+    def test_interrupted_query_is_not_disconnect_pycubrid(self, pycubrid_dialect):
+        """pycubrid's errno -4 is the server's ER_INTERRUPTED, not a lost connection (#572)."""
         dialect, dbapi = pycubrid_dialect
-        exc = dbapi.OperationalError(-4, "Has been interrupted.")
+        exc = dbapi.OperationalError("Has been interrupted.")
+        exc.code = exc.errno = -4
         assert dialect.is_disconnect(exc, None, None) is False
 
     def test_operational_error_without_code_or_cause_is_not_disconnect(self, pycubrid_dialect):
@@ -1956,13 +1957,13 @@ class TestExtractErrorCode:
 
     def test_integer_arg(self):
         """Extracts integer error code from args[0]."""
-        exc = Exception(-21003)
-        assert CubridDialect._extract_error_code(exc) == -21003
+        exc = Exception(-20004)
+        assert CubridDialect._extract_error_code(exc) == -20004
 
     def test_string_with_embedded_code(self):
-        """Extracts error code from string like '-21003 message'."""
-        exc = Exception("-21003 Cannot communicate")
-        assert CubridDialect._extract_error_code(exc) == -21003
+        """Extracts error code from string like '-20004 message'."""
+        exc = Exception("-20004 Cannot communicate")
+        assert CubridDialect._extract_error_code(exc) == -20004
 
     def test_string_without_code(self):
         """Returns None for string without leading number."""
