@@ -6,6 +6,14 @@
 # workflow. On success, the notify-cookbook job dispatches the cookbook smoke
 # test. See RELEASING.md for the full procedure.
 #
+# Duplicate uploads fail closed: the deploy job does not use `skip-existing`.
+# scripts/pypi_duplicate_guard.py compares each verified file with the SHA-256
+# PyPI already serves for the same filename. Identical files (an earlier attempt
+# of this same run uploaded part of the release) are dropped from dist/, any
+# mismatch or an unreachable PyPI fails the job. Partial-upload recovery is
+# `gh run rerun <run-id> --failed`, which reuses this run's verified artifact; a
+# new dispatch rebuilds, and the rebuilt bytes are not guaranteed to match.
+#
 # Canonical cubrid-lab publish workflow — kept identical across pycubrid,
 # sqlalchemy-cubrid, and cubrid-mcp-server. Only the package/module name and the
 # smoke-test assertions differ between repos. Do not fork this structure without
@@ -31,6 +39,8 @@ jobs:
   verify:
     name: Build and verify release artifact
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: Validate release tag
         shell: bash
@@ -53,6 +63,7 @@ jobs:
           python-version: "3.12"
 
       - name: Extract version from __init__.py (AST, no import)
+        id: version
         run: |
           VERSION=$(python - <<'PY'
           import ast, pathlib
@@ -67,6 +78,7 @@ jobs:
           PY
           )
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Detected package version: $VERSION"
 
       - name: Verify tag matches package version
@@ -197,24 +209,49 @@ jobs:
     needs: [verify]
     environment: pypi
     permissions:
+      contents: read # sparse checkout of the duplicate guard script
       id-token: write
     steps:
+      # The guard comes from the workflow's own commit (github.sha, the same on
+      # `gh run rerun`), not from the release tag, so older tags are covered too.
+      - name: Check out the PyPI duplicate guard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          sparse-checkout: scripts/pypi_duplicate_guard.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Download verified distribution
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: pypi-dist
           path: dist/
 
+      # Fails on a filename PyPI already serves with a different SHA-256, or when
+      # PyPI cannot be queried; drops files PyPI already serves byte for byte.
+      - name: Compare dist/ with files already on PyPI
+        id: guard
+        env:
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: python3 scripts/pypi_duplicate_guard.py --project sqlalchemy-cubrid --version "$VERSION" --dist dist
+
+      # No skip-existing: PyPI rejects a filename that already holds different
+      # bytes, and the job fails. Only an explicit upload=false (every file already
+      # identical on PyPI) skips this step; a missing guard output still uploads.
       - name: Publish to PyPI
+        if: steps.guard.outputs.upload != 'false'
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         with:
           attestations: true
-          skip-existing: true
 
   notify-cookbook:
     name: Dispatch cookbook smoke test
     runs-on: ubuntu-latest
     needs: [deploy]
+    # Runs whenever deploy succeeded, including a recovery rerun whose guard
+    # found every file already on PyPI with the verified SHA-256 and skipped the
+    # upload: PyPI then provably serves this run's verified build, and the
+    # cookbook smoke test only installs from PyPI, so a repeat dispatch is safe.
     # The dispatch uses COOKBOOK_DISPATCH_TOKEN (a PAT scoped to the cookbook
     # repo); this job needs no GITHUB_TOKEN permissions. The secret is only
     # referenced here, never in the build/verify or deploy jobs.

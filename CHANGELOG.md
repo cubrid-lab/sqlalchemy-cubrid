@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaced by the read-only `make release-check VERSION=x.y.z`; `publish-pypi.yml` is
   manual-dispatch only and now dispatches the cookbook smoke test after a successful
   publish (replacing `notify-cookbook.yml`); CI lints `CHANGELOG.md`.
+- **PyPI publish fails closed on duplicate files (#566)** — `publish-pypi.yml` no longer
+  passes `skip-existing: true`. The new stdlib-only `scripts/pypi_duplicate_guard.py`
+  compares the SHA-256 of every verified file with the file PyPI already serves under the
+  same name: an identical file (a partial upload recovered with `gh run rerun --failed`)
+  is dropped from the upload, and a different hash or an unreachable PyPI fails the job.
+  `RELEASING.md` documents the bounded recovery; offline tests cover the guard.
 
 ## [1.8.0] - 2026-09-29
 
