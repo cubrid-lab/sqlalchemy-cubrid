@@ -1415,6 +1415,10 @@ class CubridDialect(default.DefaultDialect):
         "connection refused",
         "connection was killed",
         "failed to connect",
+        # pycubrid closes the connection when its CHECK_CAS reconnect fails
+        # ("CAS did not answer CHECK_CAS out of transaction and reconnecting
+        # failed"), e.g. an idle connection while cub_server is down (#565).
+        "reconnecting failed",
     )
 
     # Numeric disconnect error codes (driver-independent, wording-agnostic).
@@ -1426,6 +1430,21 @@ class CubridDialect(default.DefaultDialect):
             -21005,  # CAS_ER_COMMUNICATION (alternate)
             -10005,  # ER_NET_CANT_CONNECT
             -10007,  # ER_NET_SERVER_COMM_ERROR
+        }
+    )
+
+    # Server error codes for which the CUBRID broker marks the CAS for reset
+    # (``reset_flag`` in CUBRID's src/broker/cas_error.c): the CAS's session
+    # with cub_server is gone. The CAS reconnects only after the client ends
+    # its transaction, so until then every statement fails, e.g. -111 and
+    # then -224 even after cub_server restarts (#565). Matched for both
+    # drivers: CUBRIDdb puts the code in ``args[0]``, pycubrid in ``errno``.
+    _server_session_lost_codes = frozenset(
+        {
+            -111,  # ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
+            -199,  # ER_NET_SERVER_CRASHED
+            -224,  # ER_OBJ_NO_CONNECT ("A database has not been restarted")
+            -677,  # ER_BO_CONNECT_FAILED
         }
     )
 
@@ -1458,7 +1477,16 @@ class CubridDialect(default.DefaultDialect):
 
         # 1. Stable numeric error codes (wording-independent).
         error_code = self._extract_error_code(e)
-        if error_code is not None and error_code in self._disconnect_error_codes:
+        if error_code is not None and (
+            error_code in self._disconnect_error_codes
+            or error_code in self._server_session_lost_codes
+        ):
+            return True
+        # pycubrid keeps the server code in ``errno`` (its ``args`` hold only
+        # the message). Only the server-session codes are matched there: the
+        # table above has never applied to pycubrid server errors, and its -4
+        # is also the server's ER_INTERRUPTED.
+        if getattr(e, "errno", None) in self._server_session_lost_codes:
             return True
 
         # 2. An OSError in the explicit cause chain means a transport-level

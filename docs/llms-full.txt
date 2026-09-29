@@ -676,9 +676,9 @@ engine = create_engine(
 
 The dialect implements `is_disconnect()` which detects connection failures using a layered strategy that is resilient to driver error-message wording changes:
 
-1. **Numeric error code matching (primary)** — checks stable CUBRID/CCI codes such as `ER_COMMUNICATION` (-4, pycubrid), `CAS_ER_COMMUNICATION` (-21003/-21005), `ER_NET_CANT_CONNECT` (-10005), and `ER_NET_SERVER_COMM_ERROR` (-10007).
+1. **Numeric error code matching (primary)** — checks stable CUBRID/CCI codes such as `ER_COMMUNICATION` (-4, pycubrid), `CAS_ER_COMMUNICATION` (-21003/-21005), `ER_NET_CANT_CONNECT` (-10005), and `ER_NET_SERVER_COMM_ERROR` (-10007), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, which is matched only against these four server codes. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
-3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive") that carry neither a code nor an `OSError` cause.
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", or "reconnecting failed" when pycubrid cannot replace a lost CAS session) that carry neither a code nor an `OSError` cause.
 
 Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 
@@ -4592,6 +4592,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Authentication Failed](#authentication-failed)
   - [Stale Connections / Disconnections](#stale-connections--disconnections)
+  - [Errors After a cub_server Restart or Crash](#errors-after-a-cub_server-restart-or-crash)
   - [Connection Pool Exhaustion](#connection-pool-exhaustion)
   - [Wrong URL Format](#wrong-url-format)
 - [SQL Compilation Issues](#sql-compilation-issues)
@@ -4797,6 +4798,23 @@ engine = create_engine(
 For `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, `pool_pre_ping=True` now uses pycubrid's native `CHECK_CAS` ping instead of issuing `SELECT 1`.
 
 See [Connection Guide — Pool Tuning](CONNECTION.md#connection-pool-tuning) for detailed recommendations.
+
+---
+
+### Errors After a cub_server Restart or Crash
+
+**Symptom:** A statement in an open transaction fails after `cub_server` was stopped, restarted or crashed:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**Cause:** The broker's CAS lost its session with `cub_server`. It reconnects only after the client ends the transaction, so until then the same connection fails every statement with -224, even after `cub_server` is back. `pool_pre_ping` cannot catch this: the connection is already checked out, and the CAS still answers the ping.
+
+**Behavior:** The dialect treats the codes for which the broker resets the CAS as disconnects on both drivers: -111 (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224 (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). SQLAlchemy invalidates the connection (`exc.connection_invalidated` is `True`) and the pool opens a new one. A pycubrid connection that fails to reconnect while `cub_server` is down (`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`) is also a disconnect. Releases up to 1.8.0 did not classify these errors, so the broken connection stayed in the pool.
+
+**Fix:** Nothing to configure. Roll back (leaving a `with engine.connect()` or `Session` block does this) and retry the transaction once `cub_server` accepts connections again.
 
 ---
 
@@ -6188,6 +6206,22 @@ the driver-differential comparisons are intentionally skipped;
 that profile does not claim to test CUBRIDdb. Formal CI's native-driver
 `--dburi` route remains separate and unchanged.
 
+`test/test_server_restart.py` (#565) stops and starts `cub_server` with
+`docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
+checks that the pool invalidates broken connections and recovers, through both
+drivers, with and without `pool_pre_ping`. It skips unless
+`CUBRID_TEST_DOCKER_CONTAINER` names the container that serves `CUBRID_TEST_URL`;
+point it at a disposable container, since the tests take the database down:
+
+```bash
+CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+  pytest test/test_server_restart.py -v -rs
+```
+
+CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
+which turns every skip into a failure.
+
 ### Full SA Test Suite
 
 ```bash
@@ -6730,6 +6764,10 @@ except CUBRIDdb.DatabaseError as e:
 The dialect's `_extract_error_code()` handles both integer codes and string-embedded
 codes (e.g., `"-21003 Cannot communicate with broker"`).
 
+pycubrid keeps only the message in `args` and the server error code in `errno`
+(and `code`). `is_disconnect()` reads `errno` for the server codes listed in
+[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror).
+
 ---
 
 ## Known Issues
@@ -6739,8 +6777,16 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 [Exception Hierarchy](#exception-hierarchy)), but the dialect's
 `is_disconnect()` does not classify disconnects by exception class. Instead, it uses:
-- String pattern matching against 15 known disconnect messages
+- String pattern matching against 16 known disconnect messages
 - Numeric error code matching for CCI communication errors
+- Numeric error code matching, on both drivers, for the server errors that make the
+  broker reset the CAS because its session with `cub_server` is gone: -111
+  (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224
+  (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). After `cub_server` stops or
+  crashes, a connection in a transaction gets -111 and then -224 on every statement
+  until the transaction ends, even after the server is back (#565). -671
+  (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
+  See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 
 ### 2. CCI Library Dependency
 

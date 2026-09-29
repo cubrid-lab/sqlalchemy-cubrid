@@ -130,6 +130,10 @@ except CUBRIDdb.DatabaseError as e:
 The dialect's `_extract_error_code()` handles both integer codes and string-embedded
 codes (e.g., `"-21003 Cannot communicate with broker"`).
 
+pycubrid keeps only the message in `args` and the server error code in `errno`
+(and `code`). `is_disconnect()` reads `errno` for the server codes listed in
+[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror).
+
 ---
 
 ## Known Issues
@@ -139,8 +143,16 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 [Exception Hierarchy](#exception-hierarchy)), but the dialect's
 `is_disconnect()` does not classify disconnects by exception class. Instead, it uses:
-- String pattern matching against 15 known disconnect messages
+- String pattern matching against 16 known disconnect messages
 - Numeric error code matching for CCI communication errors
+- Numeric error code matching, on both drivers, for the server errors that make the
+  broker reset the CAS because its session with `cub_server` is gone: -111
+  (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224
+  (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). After `cub_server` stops or
+  crashes, a connection in a transaction gets -111 and then -224 on every statement
+  until the transaction ends, even after the server is back (#565). -671
+  (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
+  See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 
 ### 2. CCI Library Dependency
 

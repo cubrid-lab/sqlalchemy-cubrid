@@ -16,6 +16,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [포트 33000 연결 거부](#포트-33000-연결-거부)
   - [인증 실패](#인증-실패)
   - [끊어진 연결 / 연결 해제](#끊어진-연결--연결-해제)
+  - [cub_server 재시작 또는 장애 후 오류](#cub_server-재시작-또는-장애-후-오류)
   - [커넥션 풀 고갈](#커넥션-풀-고갈)
   - [잘못된 URL 형식](#잘못된-url-형식)
 - [SQL 컴파일 문제](#sql-컴파일-문제)
@@ -221,6 +222,23 @@ engine = create_engine(
 `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`의 경우 `pool_pre_ping=True`는 이제 `SELECT 1`을 발행하는 대신 pycubrid의 네이티브 `CHECK_CAS` 핑을 사용합니다.
 
 자세한 권장사항은 [연결 가이드 — 풀 튜닝](CONNECTION.md#커넥션-풀-튜닝)을 참고하세요.
+
+---
+
+### cub_server 재시작 또는 장애 후 오류
+
+**증상:** `cub_server`가 중지, 재시작되거나 비정상 종료된 뒤 열린 트랜잭션의 문장이 실패합니다:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**원인:** 브로커의 CAS가 `cub_server`와의 세션을 잃었습니다. CAS는 클라이언트가 트랜잭션을 끝낸 뒤에만 다시 연결하므로, 그 전까지는 `cub_server`가 다시 올라와도 같은 연결의 모든 문장이 -224로 실패합니다. `pool_pre_ping`으로는 잡을 수 없습니다. 연결은 이미 체크아웃되어 있고, CAS는 여전히 핑에 응답하기 때문입니다.
+
+**동작:** 방언은 브로커가 CAS를 리셋하는 코드를 두 드라이버 모두에서 연결 끊김으로 취급합니다: -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). SQLAlchemy는 연결을 무효화하고(`exc.connection_invalidated`가 `True`) 풀은 새 연결을 엽니다. `cub_server`가 내려가 있는 동안 재연결에 실패한 pycubrid 연결(`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`)도 연결 끊김입니다. 1.8.0까지의 릴리스는 이 오류들을 분류하지 않아 망가진 연결이 풀에 남았습니다.
+
+**해결:** 설정할 것은 없습니다. 롤백하고(`with engine.connect()`나 `Session` 블록을 벗어나면 롤백됩니다) `cub_server`가 다시 연결을 받으면 트랜잭션을 재시도하세요.
 
 ---
 

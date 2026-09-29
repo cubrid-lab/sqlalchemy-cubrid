@@ -428,9 +428,9 @@ engine = create_engine(
 
 방언은 드라이버 오류 메시지 문구 변경에 강건한 계층적 전략으로 연결 실패를 감지하는 `is_disconnect()`를 구현합니다:
 
-1. **숫자 오류 코드 매칭 (주)** — `ER_COMMUNICATION`(-4, pycubrid), `CAS_ER_COMMUNICATION`(-21003/-21005), `ER_NET_CANT_CONNECT`(-10005), `ER_NET_SERVER_COMM_ERROR`(-10007) 등 안정적인 CUBRID/CCI 코드를 검사.
+1. **숫자 오류 코드 매칭 (주)** — `ER_COMMUNICATION`(-4, pycubrid), `CAS_ER_COMMUNICATION`(-21003/-21005), `ER_NET_CANT_CONNECT`(-10005), `ER_NET_SERVER_COMM_ERROR`(-10007) 등 안정적인 CUBRID/CCI 코드와, CAS의 `cub_server` 세션이 사라져 CUBRID 브로커가 CAS를 리셋하는 서버 코드 `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`(-111), `ER_NET_SERVER_CRASHED`(-199), `ER_OBJ_NO_CONNECT`(-224), `ER_BO_CONNECT_FAILED`(-677)를 검사. CUBRIDdb는 코드를 `args[0]`에, pycubrid는 `errno`에 담으며, `errno`는 이 네 서버 코드와만 비교합니다. [문제 해결 — cub_server 재시작 또는 장애 후 오류](TROUBLESHOOTING.md#cub_server-재시작-또는-장애-후-오류) 참고.
 2. **명시적 `OSError` 원인 체인 (문구 무관)** — 예외의 명시적 `__cause__` 체인(`raise ... from`)에 `OSError`(예: 소켓 오류)이 있으면 메시지 문구와 무관하게 연결이 끊긴 것으로 간주. 무관한 진행 중 `OSError`가 살아있는 연결을 오탐 무효화하지 않도록 암시적 `__context__`는 의도적으로 무시.
-3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. 레거시 CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive")를 커버.
+3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. 레거시 CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive", pycubrid가 잃어버린 CAS 세션을 교체하지 못했을 때의 "reconnecting failed")를 커버.
 
 감지는 의도적으로 보수적입니다: 해제 코드도, `OSError` 원인도, 해제 메시지도 아닌 데이터베이스 오류(예: 잘못된 격리 수준 오류, 닫힌 커서 오용)는 연결 해제로 취급하지 **않아** 오탐 풀 무효화를 피합니다.
 

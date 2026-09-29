@@ -14,6 +14,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Authentication Failed](#authentication-failed)
   - [Stale Connections / Disconnections](#stale-connections--disconnections)
+  - [Errors After a cub_server Restart or Crash](#errors-after-a-cub_server-restart-or-crash)
   - [Connection Pool Exhaustion](#connection-pool-exhaustion)
   - [Wrong URL Format](#wrong-url-format)
 - [SQL Compilation Issues](#sql-compilation-issues)
@@ -219,6 +220,23 @@ engine = create_engine(
 For `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, `pool_pre_ping=True` now uses pycubrid's native `CHECK_CAS` ping instead of issuing `SELECT 1`.
 
 See [Connection Guide — Pool Tuning](CONNECTION.md#connection-pool-tuning) for detailed recommendations.
+
+---
+
+### Errors After a cub_server Restart or Crash
+
+**Symptom:** A statement in an open transaction fails after `cub_server` was stopped, restarted or crashed:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**Cause:** The broker's CAS lost its session with `cub_server`. It reconnects only after the client ends the transaction, so until then the same connection fails every statement with -224, even after `cub_server` is back. `pool_pre_ping` cannot catch this: the connection is already checked out, and the CAS still answers the ping.
+
+**Behavior:** The dialect treats the codes for which the broker resets the CAS as disconnects on both drivers: -111 (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224 (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). SQLAlchemy invalidates the connection (`exc.connection_invalidated` is `True`) and the pool opens a new one. A pycubrid connection that fails to reconnect while `cub_server` is down (`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`) is also a disconnect. Releases up to 1.8.0 did not classify these errors, so the broken connection stayed in the pool.
+
+**Fix:** Nothing to configure. Roll back (leaving a `with engine.connect()` or `Session` block does this) and retry the transaction once `cub_server` accepts connections again.
 
 ---
 
