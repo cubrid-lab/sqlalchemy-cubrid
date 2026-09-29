@@ -51,7 +51,7 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` or `[cubriddb]` | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension) |
+| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension, v11.3.0.51+ only) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
 

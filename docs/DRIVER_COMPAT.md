@@ -20,7 +20,8 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 | Property | Value |
 |---|---|
-| PyPI package | `CUBRID-Python` |
+| Supported install | Built from source, [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later ([how](#building-cubriddb-from-source)) |
+| PyPI package | `CUBRID-Python`, newest release 9.3.x (2015): **untested, not supported** ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 | Import name | `CUBRIDdb` |
 | Type | C extension (CPython only) |
 | DBAPI level | DB-API 2.0 (PEP 249) |
@@ -43,6 +44,7 @@ Python driver and requires compilation against the CCI headers.
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ Tested |
+| any | PyPI `CUBRID-Python` 9.3.x | any | any | ❌ Not tested, not supported ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 
 ### CUBRID Server Version Support
 
@@ -176,7 +178,7 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 
 The driver requires the CCI library to be compiled from source. In CI, this is handled by:
 ```bash
-git clone --branch v11.3.0.51 --depth 1 https://github.com/CUBRID/cubrid-python.git
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules https://github.com/CUBRID/cubrid-python.git
 cd cubrid-python/cci-src && mkdir build_x86_64_release && cd build_x86_64_release
 cmake ../ && make -j$(nproc)
 ```
@@ -374,28 +376,55 @@ The `[pycubrid]` extra supports both sync and async connections. It includes
 keeps its existing SQLAlchemy dependency. The pycubrid driver remains pure Python,
 but `greenlet` may require build tools when no compatible wheel is available.
 
-### From Source (Required for CI)
+### PyPI `CUBRID-Python` 9.3.x is not supported
+
+The newest `CUBRID-Python` release on PyPI is 9.3.0.2 (sdist only, uploaded in 2015).
+There is no 11.x release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on
+`CUBRID-Python` without a version bound, so they install 9.3.x. That driver is not
+tested with this dialect. On CUBRID 11.4 it returns `BIGINT` values (including
+`COUNT(*)`) as `str` (#583) and fails parts of the integration suite: autocommit,
+large-object round-trips, fetch shapes, ping and recursive CTEs (#585).
+
+- **The `[cubrid]` and `[cubriddb]` extras are deprecated.** They are kept so that
+  existing installs keep resolving, but they cannot install a supported driver.
+- At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
+  driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
+  older than 11.3. It warns rather than refusing to connect, so existing deployments
+  keep working. To fail fast instead, turn the warning into an error:
+  `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
+- Supported paths: use the recommended pure-Python driver
+  (`pip install "sqlalchemy-cubrid[pycubrid]"`, `cubrid+pycubrid://`), or build CUBRIDdb
+  from source as shown below.
+
+### Building CUBRIDdb from Source
+
+This is the recipe CI uses:
 
 ```bash
-# Clone the driver
-git clone --branch v11.3.0.51 --depth 1 \
+# Clone the driver with its CCI submodule
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
   https://github.com/CUBRID/cubrid-python.git
+cd cubrid-python
 
-# Build CCI library
-cd cubrid-python/cci-src
-mkdir -p build_x86_64_release && cd build_x86_64_release
+# Build the CCI library
+mkdir -p cci-src/build_x86_64_release && cd cci-src/build_x86_64_release
 cmake ../ && make -j$(nproc)
+cd ../..
 
-# Install
-cd /path/to/cubrid-python
+# Skip setup.py's own CCI rebuild, then install
+printf '#!/bin/bash\nexit 0\n' > build_cci.sh
 pip install .
 ```
+
+A build from source installs the `cubrid_python` distribution. Its fourth version
+component is a git commit count, not the release tag, so a shallow clone of v11.3.0.51
+reports `11.3.0.0001`.
 
 ### Verify Installation
 
 ```python
 import CUBRIDdb
-print(CUBRIDdb.__version__)  # Should print version string
+print(CUBRIDdb._cubrid.__version__)  # b'11.3.0.0001' for a v11.3.0.51 build; b'9.3.0.0001' is the PyPI release
 ```
 
 ---

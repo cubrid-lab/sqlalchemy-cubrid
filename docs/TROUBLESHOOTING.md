@@ -83,13 +83,12 @@ ImportError: No module named 'CUBRIDdb'
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Install the C-extension driver:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **Note:** This requires the CUBRID CCI library and a C compiler. See the [CUBRID Python driver docs](https://www.cubrid.org/manual/en/11.0/api/python.html) for platform-specific instructions.
+**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
+cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
+CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
+9.3.x release, see
+[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
@@ -129,7 +128,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C Extension Build Failure
 
-**Symptom:** `pip install CUBRID-Python` fails with compilation errors.
+**Symptom:** building CUBRIDdb (cubrid-python) fails with compilation errors.
 
 **Common causes:**
 - Missing C compiler (`gcc` / `cl.exe`)
