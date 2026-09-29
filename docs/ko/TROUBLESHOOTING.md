@@ -85,13 +85,11 @@ ImportError: No module named 'CUBRIDdb'
 
 **원인:** CUBRID C 확장 Python 드라이버가 설치되지 않음.
 
-**해결 — 옵션 A: C 확장 드라이버 설치:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **참고:** CUBRID CCI 라이브러리와 C 컴파일러가 필요합니다. 플랫폼별 지침은 [CUBRID Python 드라이버 문서](https://www.cubrid.org/manual/en/11.0/api/python.html)를 참고하세요.
+**해결 — 옵션 A: C 확장 드라이버를 소스에서 빌드:** cubrid-python v11.3.0.51 이상에서
+CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를
+참고하세요. CMake와 C 컴파일러가 필요합니다. `pip install CUBRID-Python`은 사용하지 마세요.
+PyPI에는 테스트되지 않은 9.3.x 릴리스만 있습니다.
+[PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
 
 **해결 — 옵션 B: 순수 Python 드라이버 사용 (권장):**
 
@@ -131,7 +129,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C 확장 빌드 실패
 
-**증상:** `pip install CUBRID-Python`이 컴파일 오류로 실패.
+**증상:** CUBRIDdb(cubrid-python) 빌드가 컴파일 오류로 실패.
 
 **흔한 원인:**
 - C 컴파일러 누락 (`gcc` / `cl.exe`)

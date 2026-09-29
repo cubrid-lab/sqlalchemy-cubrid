@@ -70,7 +70,7 @@ Before you start, make sure the following are available:
 - CUBRID server (running and reachable)
 - Python 3.10+
 - One supported driver configuration:
-  - `cubrid://` via CUBRID-Python (C-extension)
+  - `cubrid://` via CUBRIDdb (C-extension, built from cubrid-python v11.3.0.51+; see [DRIVER_COMPAT](DRIVER_COMPAT.md#building-cubriddb-from-source))
   - `cubrid+pycubrid://` via pycubrid
   - `cubrid+aiopycubrid://` via pycubrid.aio
 
@@ -258,7 +258,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRID-Python (legacy) |
+| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (legacy) |
 
 ---
 
@@ -293,26 +293,25 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 > The `[pycubrid]` extra also installs `greenlet`, which may need build tools.
 > See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 
-### Legacy: C-extension Driver (CUBRID-Python)
+### Legacy: C-extension Driver (CUBRIDdb)
 
-The legacy [CUBRID-Python](https://github.com/CUBRID/cubrid-python) C-extension driver
-is the driver bound to the bare `cubrid://` URL. Install it via the `[cubriddb]` extra
-and select it explicitly with the `cubrid+cubriddb://` URL scheme:
-
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
-
-Or install the driver directly:
+The legacy CUBRIDdb C-extension driver from
+[cubrid-python](https://github.com/CUBRID/cubrid-python) is the driver bound to the bare
+`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. The
+supported way to install it is to build cubrid-python v11.3.0.51 or later from source,
+see [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
+then install the dialect on its own:
 
 ```bash
-pip install sqlalchemy-cubrid CUBRID-Python
+pip install sqlalchemy-cubrid
 ```
 
-> **Note**: `CUBRID-Python` is a C-extension driver. On some platforms you may need
-> the CUBRID CCI library installed. See the
-> [CUBRID Python driver documentation](https://www.cubrid.org/manual/en/11.0/api/python.html)
-> for platform-specific instructions.
+> **Warning**: do not install the driver from PyPI (`pip install CUBRID-Python`, or the
+> deprecated `[cubrid]` / `[cubriddb]` extras). PyPI only has `CUBRID-Python` 9.3.x, which
+> is untested with this dialect: it returns `BIGINT` as `str` and fails parts of the
+> integration suite. A `cubrid://` engine emits a `SAWarning` at its first connection
+> when the loaded CUBRIDdb is older than 11.3. See
+> [PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 ---
 
 ## Connection String Format
@@ -365,7 +364,7 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver; to select it explicitly use `cubrid+cubriddb://` with the `[cubriddb]` install extra.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
 ---
 
 ## Async Connection
@@ -552,11 +551,16 @@ The result (e.g., `11.2.0.0374`) is parsed into a tuple `(11, 2, 0, 374)` for in
 
 #### `ImportError: No module named 'CUBRIDdb'`
 
-The CUBRID Python driver is not installed:
+The CUBRIDdb C-extension driver that the `cubrid://` URL uses is not installed. Switch
+to the recommended pure-Python driver:
 
 ```bash
-pip install CUBRID-Python
+pip install "sqlalchemy-cubrid[pycubrid]"   # then use cubrid+pycubrid://
 ```
+
+or build CUBRIDdb from cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The
+`CUBRID-Python` 9.3.x release on PyPI is untested with this dialect.
 
 #### `Connection refused` on port 33000
 
@@ -3978,7 +3982,7 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` or `[cubriddb]` | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension) |
+| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension, v11.3.0.51+ only) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
 
@@ -4674,13 +4678,12 @@ ImportError: No module named 'CUBRIDdb'
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Install the C-extension driver:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **Note:** This requires the CUBRID CCI library and a C compiler. See the [CUBRID Python driver docs](https://www.cubrid.org/manual/en/11.0/api/python.html) for platform-specific instructions.
+**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
+cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
+CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
+9.3.x release, see
+[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
@@ -4720,7 +4723,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C Extension Build Failure
 
-**Symptom:** `pip install CUBRID-Python` fails with compilation errors.
+**Symptom:** building CUBRIDdb (cubrid-python) fails with compilation errors.
 
 **Common causes:**
 - Missing C compiler (`gcc` / `cl.exe`)
@@ -6775,7 +6778,8 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 | Property | Value |
 |---|---|
-| PyPI package | `CUBRID-Python` |
+| Supported install | Built from source, [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later ([how](#building-cubriddb-from-source)) |
+| PyPI package | `CUBRID-Python`, newest release 9.3.x (2015): **untested, not supported** ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 | Import name | `CUBRIDdb` |
 | Type | C extension (CPython only) |
 | DBAPI level | DB-API 2.0 (PEP 249) |
@@ -6798,6 +6802,7 @@ Python driver and requires compilation against the CCI headers.
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ Tested |
+| any | PyPI `CUBRID-Python` 9.3.x | any | any | ❌ Not tested, not supported ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 
 ### CUBRID Server Version Support
 
@@ -6931,7 +6936,7 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 
 The driver requires the CCI library to be compiled from source. In CI, this is handled by:
 ```bash
-git clone --branch v11.3.0.51 --depth 1 https://github.com/CUBRID/cubrid-python.git
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules https://github.com/CUBRID/cubrid-python.git
 cd cubrid-python/cci-src && mkdir build_x86_64_release && cd build_x86_64_release
 cmake ../ && make -j$(nproc)
 ```
@@ -7129,28 +7134,55 @@ The `[pycubrid]` extra supports both sync and async connections. It includes
 keeps its existing SQLAlchemy dependency. The pycubrid driver remains pure Python,
 but `greenlet` may require build tools when no compatible wheel is available.
 
-### From Source (Required for CI)
+### PyPI `CUBRID-Python` 9.3.x is not supported
+
+The newest `CUBRID-Python` release on PyPI is 9.3.0.2 (sdist only, uploaded in 2015).
+There is no 11.x release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on
+`CUBRID-Python` without a version bound, so they install 9.3.x. That driver is not
+tested with this dialect. On CUBRID 11.4 it returns `BIGINT` values (including
+`COUNT(*)`) as `str` (#583) and fails parts of the integration suite: autocommit,
+large-object round-trips, fetch shapes, ping and recursive CTEs (#585).
+
+- **The `[cubrid]` and `[cubriddb]` extras are deprecated.** They are kept so that
+  existing installs keep resolving, but they cannot install a supported driver.
+- At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
+  driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
+  older than 11.3. It warns rather than refusing to connect, so existing deployments
+  keep working. To fail fast instead, turn the warning into an error:
+  `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
+- Supported paths: use the recommended pure-Python driver
+  (`pip install "sqlalchemy-cubrid[pycubrid]"`, `cubrid+pycubrid://`), or build CUBRIDdb
+  from source as shown below.
+
+### Building CUBRIDdb from Source
+
+This is the recipe CI uses:
 
 ```bash
-# Clone the driver
-git clone --branch v11.3.0.51 --depth 1 \
+# Clone the driver with its CCI submodule
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
   https://github.com/CUBRID/cubrid-python.git
+cd cubrid-python
 
-# Build CCI library
-cd cubrid-python/cci-src
-mkdir -p build_x86_64_release && cd build_x86_64_release
+# Build the CCI library
+mkdir -p cci-src/build_x86_64_release && cd cci-src/build_x86_64_release
 cmake ../ && make -j$(nproc)
+cd ../..
 
-# Install
-cd /path/to/cubrid-python
+# Skip setup.py's own CCI rebuild, then install
+printf '#!/bin/bash\nexit 0\n' > build_cci.sh
 pip install .
 ```
+
+A build from source installs the `cubrid_python` distribution. Its fourth version
+component is a git commit count, not the release tag, so a shallow clone of v11.3.0.51
+reports `11.3.0.0001`.
 
 ### Verify Installation
 
 ```python
 import CUBRIDdb
-print(CUBRIDdb.__version__)  # Should print version string
+print(CUBRIDdb._cubrid.__version__)  # b'11.3.0.0001' for a v11.3.0.51 build; b'9.3.0.0001' is the PyPI release
 ```
 
 ---

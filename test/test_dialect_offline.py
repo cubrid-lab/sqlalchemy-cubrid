@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import sys
 import types
+import warnings
 from decimal import Decimal
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import ArgumentError, NoSuchTableError
+from sqlalchemy.exc import ArgumentError, NoSuchTableError, SAWarning
 from sqlalchemy.engine import url
 from sqlalchemy.sql.elements import quoted_name
 
@@ -232,6 +233,89 @@ class TestDialectBasics:
             dialect.initialize(connection)
 
         init_super.assert_called_once_with(connection)
+
+
+def _fake_cubriddb(version: object) -> types.ModuleType:
+    """A stand-in CUBRIDdb module whose ``_cubrid.__version__`` is *version*."""
+    ext = types.ModuleType("_cubrid")
+    if version is not None:
+        ext.__version__ = version  # type: ignore[attr-defined]
+    module = types.ModuleType("CUBRIDdb")
+    module._cubrid = ext  # type: ignore[attr-defined]
+    return module
+
+
+class TestCubriddbVersionGuard:
+    """Warn at first connect when CUBRIDdb is older than the tested 11.3 line (#585)."""
+
+    @pytest.mark.parametrize(
+        "version",
+        [
+            b"9.3.0.0001",  # PyPI CUBRID-Python 9.3.0.1
+            b"9.3.0.0002",  # PyPI CUBRID-Python 9.3.0.2
+            "8.4.3.0004",
+            b"11.2.0.0100",
+            "10.2.0.0001",
+        ],
+    )
+    def test_older_driver_warns(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+        raw = version.decode() if isinstance(version, bytes) else version
+
+        with pytest.warns(SAWarning, match=r"CUBRIDdb .* is older than the CUBRIDdb 11\.3") as rec:
+            dialect._warn_if_untested_cubriddb()
+
+        message = str(rec[0].message)
+        assert raw in message
+        assert "cubrid+pycubrid://" in message
+        assert "v11.3.0.51" in message
+
+    @pytest.mark.parametrize(
+        "version", [b"11.3.0.0001", "11.3.0.0051", b"11.4.0.0001", "12.0.0.0001"]
+    )
+    def test_tested_or_newer_driver_does_not_warn(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    @pytest.mark.parametrize("version", [None, b"unknown", "", 11])
+    def test_unknown_version_does_not_warn(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_module_without_extension_does_not_warn(self) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = types.ModuleType("CUBRIDdb")  # type: ignore[assignment]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_pycubrid_dialect_skips_check(self) -> None:
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        dialect = PyCubridDialect()
+        dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_initialize_runs_the_check(self) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
+
+        with patch("sqlalchemy.engine.default.DefaultDialect.initialize"):
+            with pytest.warns(SAWarning, match="CUBRIDdb 9.3.0.0001 is older"):
+                dialect.initialize(MagicMock())
 
 
 class TestIsolationLevelMethods:

@@ -52,7 +52,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
 | 드라이버 | 설치 | URL 스킴 | 상태 |
 |---|---|---|---|
-| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` 또는 `[cubriddb]` | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원 (레거시 C 확장) |
+| CUBRIDdb (CCI) | cubrid-python v11.3.0.51+에서 빌드 ([방법](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)). `[cubrid]` / `[cubriddb]` extra는 폐기 예정이며 테스트되지 않은 PyPI 9.3.x를 설치 | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원 (레거시 C 확장, v11.3.0.51+만) |
 | pycubrid (순수 Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ 지원 |
 | pycubrid 비동기 | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ 지원 |
 

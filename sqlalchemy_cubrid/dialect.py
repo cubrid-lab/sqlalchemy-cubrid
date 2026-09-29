@@ -28,6 +28,7 @@ import warnings
 from typing import Any, Callable, Optional, Sequence, cast
 
 from sqlalchemy import types as sqltypes
+from sqlalchemy import util
 from sqlalchemy.exc import ArgumentError, NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
@@ -106,6 +107,33 @@ def _count_is_positive(count: Any) -> bool:
     work (#583).
     """
     return int(count or 0) > 0
+
+
+# Oldest CUBRIDdb release line the dialect is tested with: CI builds
+# cubrid-python v11.3.0.51 from source. PyPI only has CUBRID-Python 9.3.x and
+# older, which fetches BIGINT as str and fails parts of the integration suite
+# (#583, #585). Only (major, minor) is compared: a source build's fourth
+# component is a git commit count, not the release tag.
+_MIN_TESTED_CUBRIDDB = (11, 3)
+
+
+def _cubriddb_version(dbapi: Any) -> tuple[str, tuple[int, int]] | None:
+    """Return the loaded CUBRIDdb C extension's version string and (major, minor).
+
+    ``CUBRIDdb`` imports its ``_cubrid`` extension module, whose ``__version__``
+    is the compiled-in driver version (``b'9.3.0.0001'`` from PyPI,
+    ``b'11.3.0.0001'`` from a v11.3.0.51 source build). ``None`` if it is
+    missing or unparseable.
+    """
+    raw = getattr(getattr(dbapi, "_cubrid", None), "__version__", None)
+    if isinstance(raw, bytes):
+        raw = raw.decode("ascii", "replace")
+    if not isinstance(raw, str):
+        return None
+    m = re.match(r"(\d+)\.(\d+)", raw)
+    if m is None:
+        return None
+    return raw, (int(m.group(1)), int(m.group(2)))
 
 
 def _is_unknown_class_error(error: BaseException) -> bool:
@@ -389,10 +417,11 @@ class CubridDialect(default.DefaultDialect):
         except ImportError as e:
             raise ImportError(
                 "Could not import CUBRIDdb. The bare cubrid:// URL uses the "
-                "legacy CUBRID-Python C-extension driver. Either install it "
-                "(pip install CUBRID-Python), or switch to the maintained "
+                "legacy CUBRIDdb C-extension driver. Switch to the maintained "
                 "pure-Python driver with a cubrid+pycubrid:// URL "
-                '(pip install "sqlalchemy-cubrid[pycubrid]").'
+                '(pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb '
+                "from cubrid-python v11.3.0.51 or later (the CUBRID-Python "
+                "9.3.x releases on PyPI are untested)."
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
 
@@ -450,9 +479,38 @@ class CubridDialect(default.DefaultDialect):
 
     def initialize(self, connection: Any) -> None:
         super().initialize(connection)
+        self._warn_if_untested_cubriddb()
         log.debug(
             "CUBRID dialect initialized: server_version=%s",
             self.server_version_info,
+        )
+
+    def _warn_if_untested_cubriddb(self) -> None:
+        """Warn once per engine when CUBRIDdb is older than the tested line (#585).
+
+        A warning rather than ``NotSupportedError``: the ``[cubrid]`` /
+        ``[cubriddb]`` extras have always installed the PyPI 9.3.x release, so
+        refusing to connect would break existing deployments in a minor
+        release. The pycubrid variants inherit :meth:`initialize` and skip this.
+        """
+        if self.driver != "cubrid":
+            return
+        found = _cubriddb_version(self.dbapi)
+        if found is None:
+            log.debug("CUBRIDdb version could not be determined; skipping version check")
+            return
+        raw, major_minor = found
+        if major_minor >= _MIN_TESTED_CUBRIDDB:
+            return
+        util.warn(
+            f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "
+            "sqlalchemy-cubrid is tested with. The CUBRID-Python releases on "
+            "PyPI (9.3.x, installed by the [cubrid] and [cubriddb] extras) are "
+            "untested: they return BIGINT as str and fail parts of the "
+            "integration suite. Use the recommended cubrid+pycubrid:// URL "
+            '(pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb '
+            "from cubrid-python v11.3.0.51 or later; see "
+            "https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/"
         )
 
     # ----- Reflection methods -----

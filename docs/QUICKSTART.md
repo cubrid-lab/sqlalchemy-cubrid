@@ -11,7 +11,7 @@ Before you start, make sure the following are available:
 - CUBRID server (running and reachable)
 - Python 3.10+
 - One supported driver configuration:
-  - `cubrid://` via CUBRID-Python (C-extension)
+  - `cubrid://` via CUBRIDdb (C-extension, built from cubrid-python v11.3.0.51+; see [DRIVER_COMPAT](DRIVER_COMPAT.md#building-cubriddb-from-source))
   - `cubrid+pycubrid://` via pycubrid
   - `cubrid+aiopycubrid://` via pycubrid.aio
 

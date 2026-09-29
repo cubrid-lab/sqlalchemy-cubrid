@@ -25,7 +25,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRID-Python (legacy) |
+| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (legacy) |
 
 ---
 
@@ -60,26 +60,25 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 > The `[pycubrid]` extra also installs `greenlet`, which may need build tools.
 > See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 
-### Legacy: C-extension Driver (CUBRID-Python)
+### Legacy: C-extension Driver (CUBRIDdb)
 
-The legacy [CUBRID-Python](https://github.com/CUBRID/cubrid-python) C-extension driver
-is the driver bound to the bare `cubrid://` URL. Install it via the `[cubriddb]` extra
-and select it explicitly with the `cubrid+cubriddb://` URL scheme:
-
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
-
-Or install the driver directly:
+The legacy CUBRIDdb C-extension driver from
+[cubrid-python](https://github.com/CUBRID/cubrid-python) is the driver bound to the bare
+`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. The
+supported way to install it is to build cubrid-python v11.3.0.51 or later from source,
+see [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
+then install the dialect on its own:
 
 ```bash
-pip install sqlalchemy-cubrid CUBRID-Python
+pip install sqlalchemy-cubrid
 ```
 
-> **Note**: `CUBRID-Python` is a C-extension driver. On some platforms you may need
-> the CUBRID CCI library installed. See the
-> [CUBRID Python driver documentation](https://www.cubrid.org/manual/en/11.0/api/python.html)
-> for platform-specific instructions.
+> **Warning**: do not install the driver from PyPI (`pip install CUBRID-Python`, or the
+> deprecated `[cubrid]` / `[cubriddb]` extras). PyPI only has `CUBRID-Python` 9.3.x, which
+> is untested with this dialect: it returns `BIGINT` as `str` and fails parts of the
+> integration suite. A `cubrid://` engine emits a `SAWarning` at its first connection
+> when the loaded CUBRIDdb is older than 11.3. See
+> [PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 ---
 
 ## Connection String Format
@@ -132,7 +131,7 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver; to select it explicitly use `cubrid+cubriddb://` with the `[cubriddb]` install extra.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
 ---
 
 ## Async Connection
@@ -319,11 +318,16 @@ The result (e.g., `11.2.0.0374`) is parsed into a tuple `(11, 2, 0, 374)` for in
 
 #### `ImportError: No module named 'CUBRIDdb'`
 
-The CUBRID Python driver is not installed:
+The CUBRIDdb C-extension driver that the `cubrid://` URL uses is not installed. Switch
+to the recommended pure-Python driver:
 
 ```bash
-pip install CUBRID-Python
+pip install "sqlalchemy-cubrid[pycubrid]"   # then use cubrid+pycubrid://
 ```
+
+or build CUBRIDdb from cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The
+`CUBRID-Python` 9.3.x release on PyPI is untested with this dialect.
 
 #### `Connection refused` on port 33000
 

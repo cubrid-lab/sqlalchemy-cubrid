@@ -21,7 +21,8 @@
 
 | 속성 | 값 |
 |---|---|
-| PyPI 패키지 | `CUBRID-Python` |
+| 지원하는 설치 방법 | [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상을 소스에서 빌드 ([방법](#소스에서-cubriddb-빌드)) |
+| PyPI 패키지 | `CUBRID-Python`, 최신 릴리스 9.3.x(2015년): **테스트되지 않음, 지원하지 않음** ([상세](#pypi-cubrid-python-93x는-지원하지-않음)) |
 | 임포트 이름 | `CUBRIDdb` |
 | 타입 | C 확장 (CPython 전용) |
 | DBAPI 수준 | DB-API 2.0 (PEP 249) |
@@ -43,6 +44,7 @@
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ CI에서 테스트 |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ CI에서 테스트 |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ 테스트됨 |
+| 전체 | PyPI `CUBRID-Python` 9.3.x | 전체 | 전체 | ❌ 테스트되지 않음, 지원하지 않음 ([상세](#pypi-cubrid-python-93x는-지원하지-않음)) |
 
 ### CUBRID 서버 버전 지원
 
@@ -141,7 +143,7 @@ CUBRIDdb 11.3.0.51은 `OperationalError`를 정의하지만([예외 계층](#예
 
 드라이버는 CCI 라이브러리를 소스에서 컴파일해야 합니다. CI에서는 다음으로 처리:
 ```bash
-git clone --branch v11.3.0.51 --depth 1 https://github.com/CUBRID/cubrid-python.git
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules https://github.com/CUBRID/cubrid-python.git
 cd cubrid-python/cci-src && mkdir build_x86_64_release && cd build_x86_64_release
 cmake ../ && make -j$(nproc)
 ```
@@ -239,28 +241,52 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 유지됩니다. pycubrid 드라이버 자체는 순수 Python이지만, 호환 wheel이 없으면
 `greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 
-### 소스에서 설치 (CI에 필요)
+### PyPI `CUBRID-Python` 9.3.x는 지원하지 않음
+
+PyPI의 최신 `CUBRID-Python` 릴리스는 9.3.0.2입니다(sdist만 있으며 2015년 업로드). PyPI에는
+11.x 릴리스가 없습니다. `[cubrid]`와 `[cubriddb]` extra는 버전 제한 없이 `CUBRID-Python`에
+의존하므로 9.3.x를 설치합니다. 이 드라이버는 이 방언과 함께 테스트되지 않았습니다. CUBRID
+11.4에서 `BIGINT` 값(`COUNT(*)` 포함)을 `str`로 반환하고(#583), 통합 테스트 일부가
+실패합니다: autocommit, 대용량 객체 왕복, fetch 결과 형태, ping, 재귀 CTE(#585).
+
+- **`[cubrid]`와 `[cubriddb]` extra는 폐기 예정(deprecated)입니다.** 기존 설치가 계속
+  해석되도록 유지하지만, 지원되는 드라이버를 설치할 수는 없습니다.
+- `cubrid://` 또는 `cubrid+cubriddb://` 엔진은 첫 연결 시 로드된 드라이버의 버전
+  (`_cubrid.__version__`)을 읽고, 11.3보다 오래되었으면 `sqlalchemy.exc.SAWarning`을 냅니다.
+  기존 배포가 계속 동작하도록 연결을 거부하지 않고 경고만 합니다. 즉시 실패하게 하려면 경고를
+  오류로 바꾸세요:
+  `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
+- 지원되는 방법: 권장 순수 Python 드라이버(`pip install "sqlalchemy-cubrid[pycubrid]"`,
+  `cubrid+pycubrid://`)를 사용하거나, 아래처럼 CUBRIDdb를 소스에서 빌드하세요.
+
+### 소스에서 CUBRIDdb 빌드
+
+CI가 사용하는 절차입니다:
 
 ```bash
-# 드라이버 클론
-git clone --branch v11.3.0.51 --depth 1 \
+# CCI 서브모듈과 함께 드라이버 클론
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
   https://github.com/CUBRID/cubrid-python.git
+cd cubrid-python
 
 # CCI 라이브러리 빌드
-cd cubrid-python/cci-src
-mkdir -p build_x86_64_release && cd build_x86_64_release
+mkdir -p cci-src/build_x86_64_release && cd cci-src/build_x86_64_release
 cmake ../ && make -j$(nproc)
+cd ../..
 
-# 설치
-cd /path/to/cubrid-python
+# setup.py의 CCI 재빌드를 건너뛰고 설치
+printf '#!/bin/bash\nexit 0\n' > build_cci.sh
 pip install .
 ```
+
+소스 빌드는 `cubrid_python` 배포판을 설치합니다. 버전의 네 번째 자리는 릴리스 태그가 아니라 git
+커밋 수이므로, v11.3.0.51의 얕은 클론은 `11.3.0.0001`로 표시됩니다.
 
 ### 설치 확인
 
 ```python
 import CUBRIDdb
-print(CUBRIDdb.__version__)  # 버전 문자열이 출력되어야 함
+print(CUBRIDdb._cubrid.__version__)  # v11.3.0.51 빌드는 b'11.3.0.0001', PyPI 릴리스는 b'9.3.0.0001'
 ```
 
 ---
