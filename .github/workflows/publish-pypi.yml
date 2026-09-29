@@ -227,8 +227,10 @@ jobs:
           name: pypi-dist
           path: dist/
 
-      # Fails on a filename PyPI already serves with a different SHA-256, or when
-      # PyPI cannot be queried; drops files PyPI already serves byte for byte.
+      # Fails on a filename PyPI already serves with a different SHA-256, on a
+      # file PyPI serves for this version that the verified build did not
+      # produce, or when PyPI cannot be queried; drops files PyPI already serves
+      # byte for byte.
       - name: Compare dist/ with files already on PyPI
         id: guard
         env:

@@ -159,7 +159,8 @@ gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
     from the upload set and logged. When every file is already on PyPI the
     upload step is skipped, and `notify-cookbook` still dispatches the smoke
     test, because PyPI provably serves this run's verified build;
-  - on PyPI with a different SHA-256, or PyPI cannot be queried (network
+  - on PyPI with a different SHA-256, PyPI serves a file for this version that
+    the verified build did not produce, or PyPI cannot be queried (network
     error, an HTTP status other than 404, an unexpected response): the job
     fails and nothing is uploaded.
 

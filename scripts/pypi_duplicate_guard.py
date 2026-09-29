@@ -11,6 +11,8 @@ each wheel/sdist in ``dist/`` the PyPI JSON API of the exact release
   attempt of this same run already uploaded these exact bytes (partial-upload
   recovery through ``gh run rerun <run-id> --failed``)
 * filename on PyPI with a different SHA-256 -> fail
+* PyPI serves a file for this release that the verified build did not produce
+  -> fail (the release must be a subset of ``dist/``)
 * PyPI unreachable, an unexpected HTTP status, or an ambiguous response -> fail
 
 Nothing is removed unless every file passes. The script writes
@@ -159,13 +161,14 @@ def main(argv: list[str] | None = None) -> int:
                 f"::error::{filename} is already on PyPI with sha256={published[filename]}, "
                 f"but the verified build has sha256={sha256}"
             )
-    for filename in sorted(set(published) - set(local)):
-        print(f"::warning::PyPI also serves {filename}, which this build did not produce")
+    unverified = sorted(set(published) - set(local))
+    for filename in unverified:
+        print(f"::error::PyPI also serves {filename}, which this verified build did not produce")
 
-    if mismatched:
+    if mismatched or unverified:
         print(
-            "::error::PyPI already serves different bytes under the same filename. PyPI "
-            "filenames are immutable: recover a partial upload only with "
+            "::error::PyPI already serves files for this release that this verified build "
+            "does not match. PyPI filenames are immutable: recover a partial upload only with "
             "`gh run rerun <run-id> --failed` of the run that uploaded it (see RELEASING.md)."
         )
         return 1

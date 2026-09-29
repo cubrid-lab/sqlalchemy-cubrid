@@ -129,6 +129,17 @@ def test_different_file_duplicate_fails_and_keeps_dist(dist, output, monkeypatch
     assert f"::error::{WHEEL} is already on PyPI" in capsys.readouterr().out
 
 
+def test_published_file_missing_from_dist_fails(dist, output, monkeypatch, capsys) -> None:
+    # The release on PyPI must be a subset of the verified dist/: a file this
+    # build did not produce (e.g. a platform wheel) would stay unverified.
+    extra = "example_pkg-1.2.3-cp312-cp312-manylinux_2_17_x86_64.whl"
+    serve(monkeypatch, release({WHEEL: sha(CONTENT[WHEEL]), extra: sha(b"unverified")}))
+    assert run(dist) == 1
+    assert remaining(dist) == set(CONTENT)
+    assert output.read_text() == ""
+    assert f"::error::PyPI also serves {extra}" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize(
     "failure",
     [
