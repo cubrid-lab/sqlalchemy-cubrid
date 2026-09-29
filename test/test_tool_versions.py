@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_tool_versions import check
+from scripts.check_tool_versions import check, check_environment, declared_pins
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -29,6 +29,30 @@ def tooling_config(tmp_path: Path) -> Path:
 
 def test_current_tooling_config_agrees() -> None:
     assert check(ROOT) == []
+
+
+def test_declared_pins_and_active_environment_agree() -> None:
+    assert check_environment(declared_pins(ROOT)) == []
+
+
+def test_wrong_installed_version_is_detected() -> None:
+    pins = declared_pins(ROOT)
+    errors = check_environment(pins, lambda tool: "0.0.0" if tool == "ruff" else pins[tool])
+    assert any("ruff" in error and "installed 0.0.0" in error for error in errors)
+
+
+def test_missing_installed_tool_is_detected() -> None:
+    import importlib.metadata as metadata
+
+    pins = declared_pins(ROOT)
+
+    def missing(tool: str) -> str:
+        if tool == "mypy":
+            raise metadata.PackageNotFoundError(tool)
+        return pins[tool]
+
+    errors = check_environment(pins, missing)
+    assert any("mypy" in error and "not installed" in error for error in errors)
 
 
 def test_hook_entry_drift_is_detected(tooling_config: Path) -> None:

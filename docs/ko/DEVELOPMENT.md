@@ -463,10 +463,19 @@ tox 린트, 로컬 pre-commit 훅에서 실행되므로 의존성만 갱신한 �
 
 ### 설정
 
+Ruff와 Mypy 훅은 `language: system`으로 실행되어, Git이 훅을 실행할 때 활성화된
+환경에서 `python3 -m ruff`/`python3 -m mypy`를 직접 호출합니다. 먼저 그 같은
+환경에 Ruff와 Mypy를 고정하는 프로젝트의 `dev` extra를 설치한 뒤 훅을
+설치하세요:
+
 ```bash
-pip install pre-commit
+pip install -e ".[dev]"
 pre-commit install
 ```
+
+커밋 시 훅이 실행되길 원한다면 그 환경(또는 이를 설치한 venv)을 항상
+활성화해두세요. 그렇지 않으면 Ruff/Mypy가 없거나, 고정된 버전 대신 오래되거나
+전역에 설치된 버전이 조용히 실행됩니다.
 
 ### 수동 실행
 

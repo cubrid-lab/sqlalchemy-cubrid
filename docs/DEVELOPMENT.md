@@ -479,10 +479,19 @@ pins.
 
 ### Setup
 
+The Ruff and Mypy hooks run via `language: system`, invoking `python3 -m
+ruff`/`python3 -m mypy` from whatever environment is active when Git runs the
+hook. Install the project's `dev` extra (which pins Ruff and Mypy) into that
+same environment first, then install the hooks:
+
 ```bash
-pip install pre-commit
+pip install -e ".[dev]"
 pre-commit install
 ```
+
+Activate that environment (or a venv where it's installed) whenever a commit
+should run the hooks; otherwise Ruff/Mypy are missing or a stale/global
+version silently runs instead of the pinned one.
 
 ### Manual Run
 

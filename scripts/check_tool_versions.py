@@ -5,7 +5,9 @@ from __future__ import annotations
 import configparser
 import re
 import shlex
+from importlib import metadata
 from pathlib import Path
+from typing import Callable
 
 
 def _unique(pattern: str, text: str, label: str) -> str:
@@ -15,15 +17,48 @@ def _unique(pattern: str, text: str, label: str) -> str:
     return matches[0]
 
 
+def declared_pins(root: Path) -> dict[str, str]:
+    project = (root / "pyproject.toml").read_text()
+    dev = _unique(r"^dev\s*=\s*\[\n(.*?)^\]", project, "dev dependencies")
+    return {
+        tool: _unique(rf'^\s*"{tool}==([^"\n]+)"\s*,?\s*$', dev, tool) for tool in ("ruff", "mypy")
+    }
+
+
+def check_environment(
+    pins: dict[str, str],
+    installed: Callable[[str], str] | None = None,
+) -> list[str]:
+    """Verify the active environment actually has what the local/system hooks
+    will run. `language: system` hooks trust whatever `python3 -m <tool>`
+    resolves to in the environment that invoked Git/pre-commit; unlike the
+    former pinned mirror repos, nothing installs or refreshes the tool for
+    you, so a checkout where `pyproject.toml` was bumped without reinstalling
+    `.[dev]` would otherwise silently run a stale or missing tool version."""
+    version = installed or metadata.version
+    errors = []
+    for tool, expected in pins.items():
+        try:
+            actual = version(tool)
+        except metadata.PackageNotFoundError:
+            errors.append(f"{tool}: not installed in the active environment; install .[dev]")
+            continue
+        if actual != expected:
+            errors.append(
+                f"{tool}: installed {actual}, expected {expected}; install .[dev] in the "
+                "active environment"
+            )
+    return errors
+
+
 def check(root: Path) -> list[str]:
     project = (root / "pyproject.toml").read_text()
     dev = _unique(r"^dev\s*=\s*\[\n(.*?)^\]", project, "dev dependencies")
     # Each tool must still declare exactly one exact dev pin (the single source
-    # of truth); nothing else compares against these values anymore, since the
-    # local/system hooks and dev-extra-sourced tox envs always run whatever
-    # that pin resolves to instead of a separately declared version.
-    for tool in ("ruff", "mypy"):
-        _unique(rf'^\s*"{tool}==([^"\n]+)"\s*,?\s*$', dev, tool)
+    # of truth); check_environment() verifies the active environment actually
+    # matches it, since the local/system hooks and dev-extra-sourced tox envs
+    # always run whatever is installed instead of a separately declared version.
+    declared_pins(root)
     alembic = _unique(r'^\s*"(alembic[^"\n]+)"\s*,?\s*$', dev, "Alembic requirement")
     alembic_extra = _unique(r"^alembic\s*=\s*\[\n(.*?)^\]", project, "Alembic extra")
     hooks = (root / ".pre-commit-config.yaml").read_text()
@@ -185,9 +220,11 @@ def check(root: Path) -> list[str]:
 
 
 def main() -> int:
+    root = Path(__file__).resolve().parent.parent
     try:
-        errors = check(Path(__file__).resolve().parent.parent)
-    except (ValueError, configparser.Error) as exc:
+        errors = check(root)
+        errors += check_environment(declared_pins(root))
+    except (ValueError, configparser.Error, metadata.PackageNotFoundError) as exc:
         errors = [str(exc)]
     if errors:
         print("Tooling drift detected:")
