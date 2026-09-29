@@ -140,7 +140,7 @@ make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
 make test          # Run offline tests with coverage (95% threshold)
 make test-all      # Run tox across all Python versions
-make integration   # Start Docker → run integration tests → stop Docker
+make integration   # Start a run-owned Docker project → run integration tests → remove it
 make docker-up     # Start CUBRID Docker container
 make docker-down   # Stop and remove CUBRID Docker container
 make clean         # Remove build artifacts and caches
@@ -330,11 +330,28 @@ CUBRID_VERSION=10.2 docker compose up -d
 make integration
 ```
 
-`make integration` attempts `docker compose down -v` on shell exit, including
-after failed startup, readiness waiting or tests. The original failure is preserved
-if cleanup also fails; cleanup failure after passing tests also makes the command
-fail. Cleanup errors are reported explicitly. This does not guarantee cleanup after
-an untrappable termination such as `SIGKILL` or a host shutdown.
+`make integration` runs in its own Compose project, named
+`sqlalchemy-cubrid-it-<timestamp>-<pid>` by default, so its container, network and
+`cubrid-data` volume are separate from a stack started with `docker compose up -d`
+or `make docker-up` (the `sqlalchemy-cubrid` project) and from every other run.
+Before starting, it checks that the project has no containers, volumes or networks
+and that no `<project>_cubrid-data` volume exists. If anything is found, it
+refuses to run and neither starts nor removes anything. Only after that check does
+it register cleanup, so `docker compose -p <project> down -v` only ever removes
+resources that this run created.
+
+Cleanup is attempted on shell exit, including after failed startup, readiness
+waiting or tests. The original failure is preserved if cleanup also fails; cleanup
+failure after passing tests also makes the command fail. Cleanup errors are
+reported explicitly. This does not guarantee cleanup after an untrappable
+termination such as `SIGKILL` or a host shutdown; remove such a leftover project
+with `docker compose -p <project> down -v` after checking its name with
+`docker compose ls -a`.
+
+The container publishes CUBRID on host port 33000. If that port is already in
+use, pick another one with `make integration CUBRID_PORT=33999`; the test URL
+follows it. `INTEGRATION_PROJECT=<name>` fixes the project name, and the same
+pre-existence check applies to it.
 
 For an already-running server, set `CUBRID_TEST_URL` and use `make integration-local`.
 That target never starts or stops Docker and leaves the external server running.

@@ -8,6 +8,10 @@ BANDIT = bandit
 SRC = sqlalchemy_cubrid
 TESTS = test
 LINT_PATHS = $(SRC) $(TESTS) scripts demos samples docs/source
+# make integration: host port for the run-owned CUBRID container, and an optional
+# fixed Compose project name (default: a fresh name per run; see docs/DEVELOPMENT.md).
+CUBRID_PORT ?= 33000
+INTEGRATION_PROJECT ?=
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -53,25 +57,39 @@ test: ## Run offline tests with coverage (no DB required)
 test-all: ## Run tests across all Python versions via tox
 	tox
 
-integration: ## Run integration tests against a Docker CUBRID and always attempt cleanup
+integration: ## Run integration tests in a fresh, run-owned Docker Compose project and always clean it up
 	@set -e; \
+	project="$(INTEGRATION_PROJECT)"; \
+	if [ -z "$$project" ]; then project="sqlalchemy-cubrid-it-$$(date +%Y%m%d%H%M%S)-$$$$"; fi; \
+	label="label=com.docker.compose.project=$$project"; \
+	existing_containers=$$(docker ps -aq --filter "$$label"); \
+	existing_volumes=$$(docker volume ls -q --filter "$$label"); \
+	existing_networks=$$(docker network ls -q --filter "$$label"); \
+	if [ -n "$$existing_containers$$existing_volumes$$existing_networks" ] || \
+		docker volume inspect "$${project}_cubrid-data" >/dev/null 2>&1; then \
+		echo "Refusing to run: Compose project '$$project' already has containers, volumes or networks." >&2; \
+		echo "make integration only starts and removes a project it creates; nothing was started or removed." >&2; \
+		exit 1; \
+	fi; \
+	CUBRID_PORT="$(CUBRID_PORT)"; export CUBRID_PORT; \
 	cleanup() { \
 		original_status=$$?; \
 		trap - 0; \
-		if docker compose down -v; then \
+		if docker compose -p "$$project" down -v; then \
 			cleanup_status=0; \
 		else \
 			cleanup_status=$$?; \
-			echo "Docker cleanup failed (status $$cleanup_status)" >&2; \
+			echo "Docker cleanup of Compose project '$$project' failed (status $$cleanup_status)" >&2; \
 		fi; \
 		if [ "$$original_status" -ne 0 ]; then exit "$$original_status"; fi; \
 		exit "$$cleanup_status"; \
 	}; \
 	trap cleanup 0; \
-	docker compose up -d; \
+	echo "Using run-owned Compose project '$$project' on host port $$CUBRID_PORT"; \
+	docker compose -p "$$project" up -d; \
 	echo "Waiting for CUBRID to be ready..."; \
 	sleep 10; \
-	CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
+	CUBRID_TEST_URL="cubrid://dba@localhost:$$CUBRID_PORT/testdb" \
 		$(PYTEST) $(TESTS)/ -m integration -v
 
 integration-local: ## Run integration tests against an already-running CUBRID (set CUBRID_TEST_URL; no Docker)

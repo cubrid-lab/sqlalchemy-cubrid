@@ -89,7 +89,7 @@ make install          # pip install -e ".[dev]" + pytest-cov + pre-commit + tox
 make test             # Offline tests with 95% coverage threshold
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
-make integration      # Docker → integration tests → cleanup
+make integration      # Run-owned Docker project → integration tests → cleanup
 make test-all         # tox across Python 3.10–3.14
 ```
 

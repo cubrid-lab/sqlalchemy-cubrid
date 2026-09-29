@@ -141,7 +141,7 @@ make typecheck     # 의존성 버전 출력 및 strict mypy 검사
 make format        # 린트 문제 자동 수정 및 코드 포맷
 make test          # 커버리지와 함께 오프라인 테스트 실행 (95% 임계값)
 make test-all      # 모든 Python 버전에서 tox 실행
-make integration   # Docker 시작 → 통합 테스트 실행 → Docker 중지
+make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 → 삭제
 make docker-up     # CUBRID Docker 컨테이너 시작
 make docker-down   # CUBRID Docker 컨테이너 중지 및 제거
 make clean         # 빌드 산출물과 캐시 제거
@@ -322,11 +322,26 @@ CUBRID_VERSION=10.2 docker compose up -d
 make integration
 ```
 
-`make integration`은 셸이 종료될 때 `docker compose down -v`를 시도합니다.
-컨테이너 시작, 준비 대기 또는 테스트가 실패한 경우에도 정리를 시도합니다.
-정리까지 실패하면 최초 실패를 유지하고, 테스트가 성공했더라도 정리가 실패하면
-명령은 실패합니다. 정리 오류는 명시적으로 출력됩니다. `SIGKILL`이나 호스트 종료처럼
-처리할 수 없는 종료 상황에서는 정리를 보장하지 않습니다.
+`make integration`은 기본적으로 `sqlalchemy-cubrid-it-<timestamp>-<pid>`라는
+자체 Compose 프로젝트에서 실행됩니다. 따라서 컨테이너, 네트워크와 `cubrid-data`
+볼륨은 `docker compose up -d`나 `make docker-up`으로 시작한 스택
+(`sqlalchemy-cubrid` 프로젝트) 및 다른 실행과 분리됩니다. 시작하기 전에 해당
+프로젝트에 컨테이너, 볼륨 또는 네트워크가 없고 `<project>_cubrid-data` 볼륨도
+없는지 확인합니다. 무엇이든 발견되면 실행을 거부하며 아무것도 시작하거나 삭제하지
+않습니다. 이 확인을 통과한 뒤에야 정리를 등록하므로
+`docker compose -p <project> down -v`는 이번 실행이 만든 리소스만 삭제합니다.
+
+정리는 셸이 종료될 때 시도하며, 컨테이너 시작, 준비 대기 또는 테스트가 실패한
+경우에도 시도합니다. 정리까지 실패하면 최초 실패를 유지하고, 테스트가 성공했더라도
+정리가 실패하면 명령은 실패합니다. 정리 오류는 명시적으로 출력됩니다. `SIGKILL`이나
+호스트 종료처럼 처리할 수 없는 종료 상황에서는 정리를 보장하지 않습니다. 이렇게 남은
+프로젝트는 `docker compose ls -a`로 이름을 확인한 뒤
+`docker compose -p <project> down -v`로 삭제하세요.
+
+컨테이너는 CUBRID를 호스트 포트 33000에 게시합니다. 이 포트가 이미 사용 중이면
+`make integration CUBRID_PORT=33999`처럼 다른 포트를 지정하세요. 테스트 URL도 이
+포트를 따릅니다. `INTEGRATION_PROJECT=<name>`으로 프로젝트 이름을 고정할 수 있으며,
+같은 사전 존재 확인이 적용됩니다.
 
 이미 실행 중인 서버에는 `CUBRID_TEST_URL`을 설정하고 `make integration-local`을
 사용하세요. 이 대상은 Docker를 시작하거나 중지하지 않으며 외부 서버를 유지합니다.
