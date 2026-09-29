@@ -97,6 +97,17 @@ from sqlalchemy.types import (
 log = logging.getLogger(__name__)
 
 
+def _count_is_positive(count: Any) -> bool:
+    """True if a catalog ``COUNT(*)`` result is greater than zero.
+
+    ``COUNT(*)`` is ``BIGINT`` in CUBRID, and the ``CUBRID-Python`` releases
+    on PyPI (9.3.x) fetch ``BIGINT`` as ``str``, so ``bool('0')`` would be
+    ``True``. Coerce first, so ``int``, ``str``, ``Decimal`` and ``None`` all
+    work (#583).
+    """
+    return int(count or 0) > 0
+
+
 def _is_unknown_class_error(error: BaseException) -> bool:
     """True only for CUBRID's ``Unknown class "<owner>.<name>"`` error.
 
@@ -1188,7 +1199,7 @@ class CubridDialect(default.DefaultDialect):
             ),
             {"name": table_name},
         )
-        return bool(result.scalar())
+        return _count_is_positive(result.scalar())
 
     @reflection.cache
     def has_index(
@@ -1222,7 +1233,7 @@ class CubridDialect(default.DefaultDialect):
             ),
             {**filter_params, "name": index_name},
         )
-        return bool(result.scalar())
+        return _count_is_positive(result.scalar())
 
     def has_sequence(
         self,

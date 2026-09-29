@@ -29,6 +29,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The pycubrid isolation-level re-apply is kept, and its documentation now describes pycubrid 1.8.0 (#559)** — pycubrid 1.8.0 no longer drops the level at every `commit()` / `rollback()`, but it still opens a new session at the server default level when the CAS itself went away out of transaction (a CAS restart after the transaction, a broker reset). Verified on CUBRID 11.4: when the CAS is killed right after `commit()`, the re-apply keeps SERIALIZABLE, and without it the level falls to READ COMMITTED. The re-apply's SQL `COMMIT` keeps the CAS bound to an idle pooled connection with a configured level (`CLIENT_WAIT` rather than `CLOSE_WAIT`), so if that CAS dies while idle the next statement fails as a disconnect instead of silently running at the default level; `pool_pre_ping=True` replaces such a connection at checkout. `docs/DRIVER_COMPAT.md` Known Issue 10 (renamed), `docs/ISOLATION_LEVELS.md` and `docs/TROUBLESHOOTING.md` (+ Korean) no longer claim that pycubrid reconnects after every commit, rollback or autocommitted statement. No code behavior change.
 
 ### Fixed
+- **`has_table()` / `has_index()` no longer report missing objects as existing
+  under `cubrid://` with the PyPI `CUBRID-Python` driver (#583)** — both methods
+  returned `bool(result.scalar())` on a catalog `COUNT(*)`, which is `BIGINT` in
+  CUBRID. The `CUBRID-Python` 9.3.x releases on PyPI fetch `BIGINT` as `str`, so
+  `bool('0')` was `True`: every missing table or index looked present,
+  `create_all(checkfirst=True)` silently skipped the `CREATE`, and
+  `drop_all(checkfirst=True)` failed with `-494 Unknown class`. The count is now
+  coerced with `int(...)` before the comparison, so `int`, `str`, `Decimal` and
+  `None` results all work. CUBRIDdb built from `cubrid-python` v11.3.0.51 (the
+  CI driver) and pycubrid return `int` and were not affected.
 - **Follow-ups from the #577 disconnect-code audit (#578)** — -10002
   (`CAS_ER_NO_MORE_MEMORY`) is added to `_disconnect_error_codes`: `cas.c`'s
   `process_request()` sends it when the CAS's read-buffer allocation fails and
