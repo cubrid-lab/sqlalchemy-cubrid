@@ -1,4 +1,10 @@
-"""Generate docs/llms-full.txt by concatenating documentation Markdown files."""
+"""Generate the LLM-facing documentation artifacts.
+
+* ``docs/llms-full.txt`` is the documentation Markdown files concatenated.
+* ``llms.txt`` (repository root) is a byte-identical copy of the canonical
+  ``docs/llms.txt`` index, which the docs site also serves as ``/llms.txt``.
+  Edit ``docs/llms.txt`` only; CI fails if either artifact is stale.
+"""
 
 from __future__ import annotations
 
@@ -38,6 +44,10 @@ def main() -> None:
 
     _ = output.write_text("\n\n---\n\n".join(sections) + "\n", encoding="utf-8")
     print(f"Generated {output} ({output.stat().st_size:,} bytes)")
+
+    root_index = repo_root / "llms.txt"
+    _ = root_index.write_bytes((docs_dir / "llms.txt").read_bytes())
+    print(f"Synced {root_index} from docs/llms.txt")
 
 
 if __name__ == "__main__":

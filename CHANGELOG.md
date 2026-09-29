@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Documentation
+- **`llms.txt` capabilities corrected and the two entry points single-sourced (#460)** — the root `llms.txt` said CUBRID has no JSON support, advertised six isolation levels, described only two driver backends and linked to the retired `cubrid-cookbook/python` paths, while `docs/llms.txt` was a separately maintained, differing index. `docs/llms.txt` is now the only maintained index, checked against the code: native `JSON` (CUBRID 10.2+), the three MVCC isolation levels (4/5/6) plus `AUTOCOMMIT` with `CURSOR STABILITY` and the long `SCHEMA, INSTANCES` spellings as aliases only, the three driver variants (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`, `cubrid://` / `cubrid+cubriddb://`) with their install extras, no driver in the bare install, single-schema reflection and `cubrid-cookbook-python` links. `scripts/generate_llms_full.py` copies it byte-for-byte to the root `llms.txt`, and the CI `lint` job now fails when either `docs/llms-full.txt` or `llms.txt` is stale. `CONTRIBUTING.md` documents the workflow.
 - **Cookbook smoke-test fallback is now pinned** — `RELEASING.md`'s manual `gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python` fallback now passes `-f package=sqlalchemy-cubrid -f version=X.Y.Z`, so it verifies the exact published release instead of testing the cookbook's latest releases (cubrid-lab/cubrid-cookbook-python#179).
 
 ### Changed

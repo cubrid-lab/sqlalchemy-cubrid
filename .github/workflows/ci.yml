@@ -55,12 +55,15 @@ jobs:
         run: make lint
       - name: Lint CHANGELOG structure
         run: python scripts/lint_changelog.py
-      - name: llms-full.txt is in sync with source docs
+      - name: llms-full.txt and root llms.txt are in sync with source docs
         run: |
           python scripts/generate_llms_full.py
-          if ! git diff --quiet -- docs/llms-full.txt; then
-            echo "::error::docs/llms-full.txt is stale. Run 'python scripts/generate_llms_full.py' and commit the result."
-            git diff -- docs/llms-full.txt
+          # --porcelain also reports a generated file that was deleted from the
+          # commit and recreated untracked, which `git diff` would miss.
+          if [ -n "$(git status --porcelain -- docs/llms-full.txt llms.txt)" ]; then
+            echo "::error::docs/llms-full.txt or llms.txt is stale or missing. Edit docs/llms.txt (the canonical index), run 'python scripts/generate_llms_full.py' and commit the result."
+            git status --short -- docs/llms-full.txt llms.txt
+            git diff -- docs/llms-full.txt llms.txt
             exit 1
           fi
 
