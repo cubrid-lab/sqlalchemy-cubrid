@@ -12,6 +12,10 @@ LINT_PATHS = $(SRC) $(TESTS) scripts demos samples docs/source
 # fixed Compose project name (default: a fresh name per run; see docs/DEVELOPMENT.md).
 CUBRID_PORT ?= 33000
 INTEGRATION_PROJECT ?=
+# Run a command in its own session, ignoring INT/TERM/HUP, so that signals sent to
+# the whole process group (Ctrl-C, a closed terminal, GNU timeout) cannot abort
+# make integration's cleanup halfway.
+RUN_DETACHED = $(PYTHON) -c 'import signal, subprocess, sys; [signal.signal(s, signal.SIG_IGN) for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)]; rc = subprocess.call(sys.argv[1:], start_new_session=True); sys.exit(128 - rc if rc < 0 else rc)'
 
 help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -72,10 +76,16 @@ integration: ## Run integration tests in a fresh, run-owned Docker Compose proje
 		exit 1; \
 	fi; \
 	CUBRID_PORT="$(CUBRID_PORT)"; export CUBRID_PORT; \
+	child=; cleaning=; \
+	run() { "$$@" & child=$$!; status=0; wait "$$child" || status=$$?; child=; return "$$status"; }; \
 	cleanup() { \
-		original_status=$$?; \
+		original_status=$$1; \
+		if [ -n "$$cleaning" ]; then return 0; fi; \
+		cleaning=1; \
+		trap '' INT TERM HUP; \
 		trap - 0; \
-		if docker compose -p "$$project" down -v; then \
+		if [ -n "$$child" ]; then kill "$$child" 2>/dev/null || true; wait "$$child" 2>/dev/null || true; fi; \
+		if $(RUN_DETACHED) docker compose -p "$$project" down -v; then \
 			cleanup_status=0; \
 		else \
 			cleanup_status=$$?; \
@@ -84,13 +94,16 @@ integration: ## Run integration tests in a fresh, run-owned Docker Compose proje
 		if [ "$$original_status" -ne 0 ]; then exit "$$original_status"; fi; \
 		exit "$$cleanup_status"; \
 	}; \
-	trap cleanup 0; \
+	trap 'cleanup $$?' 0; \
+	trap 'echo "Received SIGINT; cleaning up" >&2; cleanup 130' INT; \
+	trap 'echo "Received SIGTERM; cleaning up" >&2; cleanup 143' TERM; \
+	trap 'echo "Received SIGHUP; cleaning up" >&2; cleanup 129' HUP; \
 	echo "Using run-owned Compose project '$$project' on host port $$CUBRID_PORT"; \
-	docker compose -p "$$project" up -d; \
+	run docker compose -p "$$project" up -d; \
 	echo "Waiting for CUBRID to be ready..."; \
-	sleep 10; \
-	CUBRID_TEST_URL="cubrid://dba@localhost:$$CUBRID_PORT/testdb" \
-		$(PYTEST) $(TESTS)/ -m integration -v
+	run sleep 10; \
+	CUBRID_TEST_URL="cubrid://dba@localhost:$$CUBRID_PORT/testdb"; export CUBRID_TEST_URL; \
+	run $(PYTEST) $(TESTS)/ -m integration -v
 
 integration-local: ## Run integration tests against an already-running CUBRID (set CUBRID_TEST_URL; no Docker)
 	@if [ -z "$$CUBRID_TEST_URL" ]; then \

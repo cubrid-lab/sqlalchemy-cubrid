@@ -11,8 +11,10 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import subprocess
 import sys
+import time
 
 import pytest
 
@@ -35,7 +37,9 @@ def integration_runner(tmp_path: Path):
         + """\
 import os
 from pathlib import Path
+import signal
 import sys
+import time
 
 name = Path(sys.argv[0]).name
 args = sys.argv[1:]
@@ -59,6 +63,19 @@ else:
     phase = "TEST"
     with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
         stream.write("CUBRID_TEST_URL=" + os.environ.get("CUBRID_TEST_URL", "") + "\\n")
+if phase == "DOWN":
+    # Like Go programs such as docker compose, handle termination signals even
+    # if the parent shell ignores them, so only process isolation protects cleanup.
+    for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+        signal.signal(signum, signal.SIG_DFL)
+if phase in os.environ.get("BLOCK_PHASES", "").split(","):
+    # Tell the test which shell runs the recipe (our parent) and which process
+    # to check afterwards, then block until signalled or BLOCK_SECONDS pass.
+    ready = Path(os.environ["COMMAND_LOG"] + "." + phase + ".ready")
+    ready.write_text(f"{os.getppid()} {os.getpid()}", encoding="utf-8")
+    time.sleep(float(os.environ.get(phase + "_BLOCK_SECONDS", "30")))
+    with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
+        stream.write(phase + " finished\\n")
 sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
 """
     )
@@ -67,13 +84,14 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
         command.write_text(stub, encoding="utf-8")
         command.chmod(0o755)
 
-    def run(
+    def command_and_env(
         target: str = "integration",
         *,
         dry_run: bool = False,
         project: str | None = PROJECT,
         existing: str = "",
         make_vars: tuple[str, ...] = (),
+        extra_env: dict[str, str] | None = None,
         **statuses: int,
     ):
         env = os.environ.copy()
@@ -90,16 +108,24 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
                 for phase in ("PROBE", "UP", "DOWN", "WAIT", "TEST")
             },
         )
+        env.update(extra_env or {})
+        return [
+            make,
+            "--no-print-directory",
+            *(["-n"] if dry_run else []),
+            target,
+            "PYTEST=pytest-stub",
+            *([f"INTEGRATION_PROJECT={project}"] if project else []),
+            *make_vars,
+        ], env
+
+    def commands() -> list[str]:
+        return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+
+    def run(*args, **kwargs):
+        command, env = command_and_env(*args, **kwargs)
         result = subprocess.run(
-            [
-                make,
-                "--no-print-directory",
-                *(["-n"] if dry_run else []),
-                target,
-                "PYTEST=pytest-stub",
-                *([f"INTEGRATION_PROJECT={project}"] if project else []),
-                *make_vars,
-            ],
+            command,
             cwd=tmp_path,
             env=env,
             capture_output=True,
@@ -107,8 +133,39 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
             timeout=15,
             check=False,
         )
-        return result, log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+        return result, commands()
 
+    def wait_ready(phase: str, process: subprocess.Popen[str]) -> tuple[int, int]:
+        ready = Path(f"{log}.{phase}.ready")
+        deadline = time.monotonic() + 10
+        while not ready.exists() or not ready.read_text(encoding="utf-8"):
+            if process.poll() is not None or time.monotonic() > deadline:
+                process.kill()
+                out, err = process.communicate()
+                pytest.fail(f"stub never blocked at {phase}: {out}\n{err}")
+            time.sleep(0.02)
+        shell_pid, stub_pid = map(int, ready.read_text(encoding="utf-8").split())
+        return shell_pid, stub_pid
+
+    def start(*block_phases: str, extra_env: dict[str, str] | None = None, **kwargs):
+        """Start make in its own process group; stubs block at ``block_phases``."""
+        env_overrides = {"BLOCK_PHASES": ",".join(block_phases), **(extra_env or {})}
+        command, env = command_and_env(extra_env=env_overrides, **kwargs)
+        process = subprocess.Popen(
+            command,
+            cwd=tmp_path,
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
+        )
+        shell_pid, stub_pid = wait_ready(block_phases[0], process)
+        return process, shell_pid, stub_pid
+
+    run.start = start  # type: ignore[attr-defined]
+    run.commands = commands  # type: ignore[attr-defined]
+    run.wait_ready = wait_ready  # type: ignore[attr-defined]
     return run
 
 
@@ -219,3 +276,106 @@ def test_integration_dry_run_does_not_execute_commands(integration_runner):
     result, commands = integration_runner(dry_run=True)
     assert result.returncode == 0
     assert commands == []
+
+
+def _finish(process: subprocess.Popen[str]) -> tuple[int, str]:
+    try:
+        _, stderr = process.communicate(timeout=15)
+    except subprocess.TimeoutExpired:  # pragma: no cover - diagnostic path
+        os.killpg(process.pid, signal.SIGKILL)
+        _, stderr = process.communicate()
+        pytest.fail(f"make did not exit after the signal: {stderr}")
+    return process.returncode, stderr
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+SIGNALS = [
+    pytest.param(signal.SIGINT, "SIGINT", id="INT"),
+    pytest.param(signal.SIGTERM, "SIGTERM", id="TERM"),
+    pytest.param(signal.SIGHUP, "SIGHUP", id="HUP"),
+]
+
+
+@pytest.mark.parametrize("phase", ["WAIT", "TEST"])
+@pytest.mark.parametrize(("signum", "signame"), SIGNALS)
+def test_integration_cleans_up_once_on_signal(integration_runner, phase, signum, signame):
+    process, shell_pid, stub_pid = integration_runner.start(phase)
+    os.kill(shell_pid, signum)
+    returncode, stderr = _finish(process)
+    assert returncode != 0
+    # make reports the recipe shell's signal-style exit status 128 + N.
+    assert f"Error {128 + signum}" in stderr, stderr
+    assert f"Received {signame}; cleaning up" in stderr
+    lifecycle = _lifecycle(integration_runner.commands())
+    assert lifecycle.count(DOWN) == 1
+    assert lifecycle[-1] == DOWN
+    # The blocked command was stopped before cleanup, not left running.
+    assert not _alive(stub_pid)
+
+
+@pytest.mark.parametrize(("signum", "signame"), SIGNALS)
+def test_integration_cleans_up_once_when_process_group_is_signalled(
+    integration_runner, signum, signame
+):
+    # Ctrl-C and a closed terminal signal the whole foreground process group:
+    # make, the recipe shell and the running command all receive it.
+    process, _, stub_pid = integration_runner.start("TEST")
+    os.killpg(process.pid, signum)
+    returncode, _ = _finish(process)
+    assert returncode != 0
+    assert _lifecycle(integration_runner.commands()).count(DOWN) == 1
+    assert not _alive(stub_pid)
+
+
+def test_integration_cleans_up_once_when_make_is_terminated(integration_runner):
+    # `timeout make integration` and `kill <make pid>` signal only make, which
+    # forwards SIGTERM to the recipe shell.
+    process, _, stub_pid = integration_runner.start("TEST")
+    os.kill(process.pid, signal.SIGTERM)
+    returncode, _ = _finish(process)
+    assert returncode != 0
+    assert _lifecycle(integration_runner.commands()).count(DOWN) == 1
+    assert not _alive(stub_pid)
+
+
+@pytest.mark.parametrize("down_status", [0, 9])
+def test_integration_signal_during_cleanup_does_not_repeat_it(integration_runner, down_status):
+    process, shell_pid, _ = integration_runner.start(
+        "TEST", "DOWN", extra_env={"DOWN_BLOCK_SECONDS": "1"}, down=down_status
+    )
+    os.kill(shell_pid, signal.SIGTERM)
+    integration_runner.wait_ready("DOWN", process)
+    # A second Ctrl-C or kill while `down -v` runs neither restarts nor aborts it.
+    os.kill(shell_pid, signal.SIGINT)
+    os.kill(shell_pid, signal.SIGTERM)
+    returncode, stderr = _finish(process)
+    assert returncode != 0
+    # The first signal's status wins over the cleanup failure and later signals.
+    assert "Error 143" in stderr, stderr
+    assert "Received SIGINT" not in stderr
+    assert _lifecycle(integration_runner.commands()).count(DOWN) == 1
+
+
+@pytest.mark.parametrize(("signum", "signame"), SIGNALS)
+def test_integration_group_signal_during_cleanup_does_not_abort_it(
+    integration_runner, signum, signame
+):
+    # GNU timeout, Ctrl-C and a closed terminal signal the whole process group.
+    # `docker compose down -v` must not receive that signal halfway through.
+    process, _, _ = integration_runner.start("TEST", "DOWN", extra_env={"DOWN_BLOCK_SECONDS": "1"})
+    os.killpg(process.pid, signal.SIGTERM)
+    integration_runner.wait_ready("DOWN", process)
+    os.killpg(process.pid, signum)
+    returncode, stderr = _finish(process)
+    assert returncode != 0
+    commands = integration_runner.commands()
+    assert _lifecycle(commands).count(DOWN) == 1
+    assert "DOWN finished" in commands, stderr
+    assert "Docker cleanup of Compose project" not in stderr

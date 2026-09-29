@@ -341,10 +341,18 @@ it register cleanup, so `docker compose -p <project> down -v` only ever removes
 resources that this run created.
 
 Cleanup is attempted on shell exit, including after failed startup, readiness
-waiting or tests. The original failure is preserved if cleanup also fails; cleanup
-failure after passing tests also makes the command fail. Cleanup errors are
-reported explicitly. This does not guarantee cleanup after an untrappable
-termination such as `SIGKILL` or a host shutdown; remove such a leftover project
+waiting or tests, and when the run receives `SIGINT` (Ctrl-C), `SIGTERM` (for
+example from `timeout` or `kill`) or `SIGHUP` (a closed terminal). On a signal the
+running command is stopped first, cleanup runs once, and the command exits with
+status 128 + the signal number (130, 143 or 129). Further `SIGINT`, `SIGTERM` or
+`SIGHUP` signals are ignored until `docker compose down -v` finishes, and cleanup
+runs in its own session, so neither a second Ctrl-C nor a signal sent to the whole
+process group (as GNU `timeout` does) interrupts or repeats it. A signal that was
+already ignored when `make` started, such as `SIGINT` for a background job of a
+non-interactive shell, cannot be handled. The original failure is preserved if
+cleanup also fails; cleanup failure after passing tests also makes the command
+fail. Cleanup errors are reported explicitly. This does not guarantee cleanup after
+an untrappable termination such as `SIGKILL` or a host shutdown; remove such a leftover project
 with `docker compose -p <project> down -v` after checking its name with
 `docker compose ls -a`.
 
