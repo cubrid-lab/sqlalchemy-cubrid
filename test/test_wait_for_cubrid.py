@@ -68,6 +68,25 @@ def test_times_out_with_the_last_error(fake_engine, capsys):
     assert "secret" not in err
 
 
+def test_waits_the_full_timeout_before_giving_up(fake_engine, monkeypatch):
+    # Copilot review on #581: an interval longer than the remaining budget must
+    # not end the wait early; the last attempt runs at the deadline.
+    clock = {"now": 100.0}
+    sleeps: list[float] = []
+
+    def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock["now"] += seconds
+
+    monkeypatch.setattr(wait_for_cubrid.time, "monotonic", lambda: clock["now"])
+    monkeypatch.setattr(wait_for_cubrid.time, "sleep", fake_sleep)
+    engine = fake_engine(failures=10**6)
+    assert wait_for_cubrid.main(["--timeout", "5", "--interval", "2"]) == 1
+    assert sleeps == [2, 2, 1]
+    assert engine.attempts == 4
+    assert clock["now"] == 105.0
+
+
 def test_requires_a_url(monkeypatch, capsys):
     monkeypatch.delenv("CUBRID_TEST_URL", raising=False)
     assert wait_for_cubrid.main([]) == 1

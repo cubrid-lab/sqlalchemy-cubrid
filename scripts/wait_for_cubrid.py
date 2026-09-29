@@ -64,14 +64,16 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"CUBRID is ready at {target} (attempt {attempt})")
                 return 0
-            if time.monotonic() + args.interval > deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 print(
                     f"CUBRID at {target} was not ready after {args.timeout:g}s "
                     f"({attempt} attempts); last error: {last_error}",
                     file=sys.stderr,
                 )
                 return 1
-            time.sleep(args.interval)
+            # Never sleep past the deadline: the last attempt runs at the deadline.
+            time.sleep(min(args.interval, remaining))
     finally:
         engine.dispose()
 
