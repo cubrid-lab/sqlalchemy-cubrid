@@ -108,7 +108,7 @@ not configured, the job emits a warning and skips; trigger the smoke test
 manually instead:
 
 ```bash
-gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
+gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python -f package=sqlalchemy-cubrid -f version=X.Y.Z
 ```
 
 ## Recovery
@@ -187,5 +187,5 @@ gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
   from step 5 instead:
 
   ```bash
-  gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
+  gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python -f package=sqlalchemy-cubrid -f version=X.Y.Z
   ```

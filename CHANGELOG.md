@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- **Cookbook smoke-test fallback is now pinned** — `RELEASING.md`'s manual `gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python` fallback now passes `-f package=sqlalchemy-cubrid -f version=X.Y.Z`, so it verifies the exact published release instead of testing the cookbook's latest releases (cubrid-lab/cubrid-cookbook-python#179).
+
 ### Changed
 - **Ruff/Mypy pre-commit hooks and tox lint/typecheck envs are single-sourced from
   the `pyproject.toml` dev pin (#558)** — the Ruff and Mypy pre-commit hooks are
