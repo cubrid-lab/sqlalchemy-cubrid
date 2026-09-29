@@ -373,6 +373,32 @@ class TestReflection:
         assert insp.has_table("integration_users")
         assert not insp.has_table("nonexistent_table_xyz")
 
+    def test_existence_checks_for_missing_objects_and_checkfirst(self, engine):
+        """A missing table or index is not reported as existing (#583).
+
+        COUNT(*) is BIGINT, which the PyPI CUBRID-Python 9.3 driver fetches as
+        str; has_table() / has_index() must not treat ``'0'`` as true.
+        """
+        meta = MetaData()
+        t = Table("t583_fresh", meta, Column("id", Integer, primary_key=True), Column("v", Integer))
+        sa.Index("ix_t583_fresh_v", t.c.v)
+        meta.drop_all(engine, checkfirst=True)
+        try:
+            with engine.connect() as conn:
+                assert engine.dialect.has_table(conn, "t583_fresh") is False
+                assert engine.dialect.has_index(conn, "t583_fresh", "ix_t583_fresh_v") is False
+            meta.create_all(engine, checkfirst=True)
+            # checkfirst must not skip the CREATE of a table that does not exist.
+            insp = inspect(engine)
+            assert insp.has_table("t583_fresh")
+            assert insp.has_index("t583_fresh", "ix_t583_fresh_v")
+            assert not insp.has_index("t583_fresh", "ix_t583_missing")
+            meta.create_all(engine, checkfirst=True)
+        finally:
+            meta.drop_all(engine, checkfirst=True)
+        with engine.connect() as conn:
+            assert engine.dialect.has_table(conn, "t583_fresh") is False
+
     def test_get_table_names(self, engine, metadata):
         """get_table_names() includes our test tables."""
         insp = inspect(engine)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 import types
+from decimal import Decimal
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
@@ -481,6 +482,28 @@ class TestExistenceChecks:
 
         connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_table(connection, "users") is False
+
+    @pytest.mark.parametrize(
+        ("count", "expected"),
+        [
+            (0, False),
+            (1, True),
+            ("0", False),
+            ("1", True),
+            ("2", True),
+            (Decimal("0"), False),
+            (Decimal("1"), True),
+            (None, False),
+        ],
+    )
+    def test_has_table_and_has_index_coerce_count_type(self, count, expected):
+        """PyPI CUBRID-Python 9.3 fetches the BIGINT COUNT(*) as str (#583)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.execute.return_value.scalar.return_value = count
+
+        assert dialect.has_table(connection, "users") is expected
+        assert dialect.has_index(connection, "users", "ix_users_name") is expected
 
     def test_has_table_honors_inspector_info_cache(self):
         """Inspector.has_table() is cached until clear_cache() (SA HasTableTest)."""
