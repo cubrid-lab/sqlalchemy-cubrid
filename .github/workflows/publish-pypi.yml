@@ -31,6 +31,12 @@ on:
         required: true
         type: string
 
+# One publish per tag at a time; a second dispatch or rerun queues instead of
+# racing the first upload (and is never cancelled mid-upload).
+concurrency:
+  group: publish-pypi-${{ inputs.tag }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
   actions: read

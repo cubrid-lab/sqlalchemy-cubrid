@@ -7,6 +7,7 @@ sqlalchemy-cubrid and cubrid-mcp-server.
 from __future__ import annotations
 
 import hashlib
+import http.client
 import importlib.util
 import io
 import json
@@ -64,14 +65,30 @@ def release(files: dict[str, str], name: str = PROJECT, version: str = VERSION) 
     ).encode()
 
 
-def serve(monkeypatch: pytest.MonkeyPatch, result: bytes | BaseException) -> list[str]:
+@pytest.fixture(autouse=True)
+def sleeps(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    slept: list[float] = []
+    monkeypatch.setattr(guard.time, "sleep", slept.append)
+    return slept
+
+
+class TruncatedResponse(io.BytesIO):
+    def read(self, *args: object) -> bytes:
+        raise http.client.IncompleteRead(b"{", 100)
+
+
+def serve(monkeypatch: pytest.MonkeyPatch, *results: object) -> list[str]:
+    """Answer successive requests with ``results``; the last one repeats."""
     requested: list[str] = []
 
     def fake_urlopen(request, timeout=None):
         requested.append(request.full_url)
         assert timeout == guard.TIMEOUT_SECONDS
+        result = results[min(len(requested), len(results)) - 1]
         if isinstance(result, BaseException):
             raise result
+        if isinstance(result, io.BytesIO):
+            return result
         return io.BytesIO(result)
 
     monkeypatch.setattr(guard.urllib.request, "urlopen", fake_urlopen)
@@ -140,21 +157,55 @@ def test_published_file_missing_from_dist_fails(dist, output, monkeypatch, capsy
     assert f"::error::PyPI also serves {extra}" in capsys.readouterr().out
 
 
-@pytest.mark.parametrize(
-    "failure",
-    [
-        urllib.error.URLError("temporary failure in name resolution"),
-        TimeoutError("timed out"),
-        ConnectionResetError("reset"),
-        http_error(500),
-        http_error(403),
-    ],
-)
-def test_network_error_fails_closed(dist, output, monkeypatch, failure) -> None:
-    serve(monkeypatch, failure)
+TRANSIENT = [
+    pytest.param(lambda: urllib.error.URLError("name resolution"), id="URLError"),
+    pytest.param(lambda: TimeoutError("timed out"), id="timeout"),
+    pytest.param(lambda: ConnectionResetError("reset"), id="reset"),
+    pytest.param(lambda: http_error(500), id="HTTP500"),
+    pytest.param(lambda: http_error(503), id="HTTP503"),
+    pytest.param(lambda: TruncatedResponse(), id="IncompleteRead"),
+]
+
+
+@pytest.mark.parametrize("failure", TRANSIENT)
+def test_network_error_fails_closed_after_retries(
+    dist, output, monkeypatch, sleeps, capsys, failure
+) -> None:
+    requested = serve(monkeypatch, failure(), failure(), failure())
     assert run(dist) == 1
+    assert len(requested) == 3
+    assert sleeps == list(guard.RETRY_DELAYS_SECONDS)
     assert remaining(dist) == set(CONTENT)
     assert output.read_text() == ""
+    assert "::error::PyPI duplicate guard: GET" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("failure", TRANSIENT)
+def test_transient_error_is_retried(dist, output, monkeypatch, sleeps, failure) -> None:
+    requested = serve(monkeypatch, failure(), release({WHEEL: sha(CONTENT[WHEEL])}))
+    assert run(dist) == 0
+    assert len(requested) == 2
+    assert sleeps == [guard.RETRY_DELAYS_SECONDS[0]]
+    assert remaining(dist) == {SDIST}
+    assert output.read_text() == "upload=true\n"
+
+
+@pytest.mark.parametrize("code", [400, 403, 410, 429])
+def test_other_http_status_fails_without_retry(dist, output, monkeypatch, sleeps, code) -> None:
+    requested = serve(monkeypatch, http_error(code), http_error(404))
+    assert run(dist) == 1
+    assert len(requested) == 1
+    assert sleeps == []
+    assert remaining(dist) == set(CONTENT)
+    assert output.read_text() == ""
+
+
+def test_only_a_real_404_means_unpublished(dist, output, monkeypatch) -> None:
+    # Errors never turn into "upload everything"; a later genuine 404 does.
+    requested = serve(monkeypatch, http_error(503), http_error(404))
+    assert run(dist) == 0
+    assert len(requested) == 2
+    assert output.read_text() == "upload=true\n"
 
 
 @pytest.mark.parametrize(
@@ -234,5 +285,22 @@ def test_workflow_publishes_through_the_guard() -> None:
     # A missing guard output must not skip the upload: only an explicit
     # upload=false (every file already identical on PyPI) may.
     assert "if: steps.guard.outputs.upload != 'false'" in publish_step
-    assert "id-token: write" in deploy
     assert "attestations: true" in deploy
+    permissions = re.search(r"^    permissions:\n((?:      .*\n)+)", deploy, re.MULTILINE)
+    assert permissions is not None
+    assert {line.split("#")[0].strip() for line in permissions.group(1).splitlines()} == {
+        "contents: read",
+        "id-token: write",
+    }
+    start = deploy.index("uses: actions/checkout@")
+    checkout = deploy[start : deploy.index("- name:", start)]
+    assert "sparse-checkout: scripts/pypi_duplicate_guard.py\n" in checkout
+    assert "persist-credentials: false" in checkout
+    # The guard must come from the workflow commit, never from the release tag.
+    assert not re.search(r"^\s*ref\s*:", checkout, re.MULTILINE)
+    assert re.search(
+        r"^concurrency:\n  group: publish-pypi-\$\{\{ inputs\.tag \}\}\n"
+        r"  cancel-in-progress: false\n",
+        text,
+        re.MULTILINE,
+    )

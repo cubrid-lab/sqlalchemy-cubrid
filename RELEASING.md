@@ -170,10 +170,16 @@ gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
   hash mismatch, by design. The verified artifact is kept for one day; once it
   has expired, or if the guard reports a mismatch, the version cannot be
   completed. Handle it as a broken release (above): yank it on PyPI if needed
-  and ship `X.Y.(Z+1)`. Right after an upload, PyPI's JSON API can briefly lag;
-  a file it does not list yet goes to the upload step, where PyPI itself refuses
-  a filename that already holds different bytes. If that step fails, rerun
-  `--failed` again a few minutes later.
+  and ship `X.Y.(Z+1)`. Transient PyPI errors during the check (HTTP 5xx,
+  connection errors, timeouts) are retried a few times before the guard fails;
+  only a real HTTP 404 counts as "not published". If PyPI's JSON API lags right
+  after an upload and does not list a file yet, that file goes to the upload
+  step, which is still safe: PyPI accepts a byte-identical re-upload of an
+  existing filename and rejects different bytes (`400 File already exists`).
+  So when the upload step fails after the guard passed, it is a real error,
+  not lag: a `File already exists` rejection means PyPI holds different bytes
+  for that filename (handle it as a broken release); for any other error, read
+  the log before rerunning `--failed`.
 
 - **`notify-cookbook` job failed** (for example `COOKBOOK_DISPATCH_TOKEN` is
   missing or the dispatch errored): the package is already on PyPI, so never

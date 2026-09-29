@@ -15,6 +15,10 @@ each wheel/sdist in ``dist/`` the PyPI JSON API of the exact release
   -> fail (the release must be a subset of ``dist/``)
 * PyPI unreachable, an unexpected HTTP status, or an ambiguous response -> fail
 
+Transient errors (HTTP 5xx, connection errors, timeouts, truncated responses)
+are retried with a short backoff; when every attempt fails, the guard fails.
+Only an actual HTTP 404 response means "not published"; an error never does.
+
 Nothing is removed unless every file passes. The script writes
 ``upload=true`` (files left to upload) or ``upload=false`` (every file is
 already on PyPI byte for byte) to ``$GITHUB_OUTPUT``; the workflow skips the
@@ -28,10 +32,12 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -39,6 +45,7 @@ from pathlib import Path
 
 PYPI_JSON_URL = "https://pypi.org/pypi/{project}/{version}/json"
 TIMEOUT_SECONDS = 30
+RETRY_DELAYS_SECONDS = (2, 5)  # sleep before the 2nd and 3rd attempt
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _PROJECT = re.compile(r"^[A-Za-z0-9]([A-Za-z0-9._-]*[A-Za-z0-9])?$")
 _VERSION = re.compile(r"^[0-9][A-Za-z0-9.+!-]*$")
@@ -92,15 +99,28 @@ def published_files(project: str, version: str) -> dict[str, str]:
     request = urllib.request.Request(
         url, headers={"Accept": "application/json", "User-Agent": "pypi-duplicate-guard"}
     )
-    try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
-            body = response.read()
-    except urllib.error.HTTPError as exc:
-        if exc.code == 404:
-            return {}
-        raise GuardError(f"GET {url} returned HTTP {exc.code}") from exc
-    except (urllib.error.URLError, OSError) as exc:
-        raise GuardError(f"GET {url} failed: {exc}") from exc
+    body = None
+    error = ""
+    for attempt, delay in enumerate((0, *RETRY_DELAYS_SECONDS), start=1):
+        if delay:
+            time.sleep(delay)
+        try:
+            with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+                body = response.read()
+            break
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return {}
+            if exc.code < 500:
+                raise GuardError(f"GET {url} returned HTTP {exc.code}") from exc
+            error = f"HTTP {exc.code}"
+        except (urllib.error.URLError, OSError, http.client.HTTPException) as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        print(f"::warning::GET {url} attempt {attempt} failed: {error}")
+    if body is None:
+        raise GuardError(
+            f"GET {url} failed after {1 + len(RETRY_DELAYS_SECONDS)} attempts: {error}"
+        )
 
     try:
         data = json.loads(body)
