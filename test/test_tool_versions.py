@@ -1,9 +1,8 @@
-"""Regression coverage for tooling drift and interpreter-compatible hook pins."""
+"""Regression coverage for tooling drift and single-sourced hook/tox pins."""
 
 from __future__ import annotations
 
 import shutil
-import re
 from pathlib import Path
 
 import pytest
@@ -32,26 +31,74 @@ def test_current_tooling_config_agrees() -> None:
     assert check(ROOT) == []
 
 
-@pytest.mark.parametrize("marker", ["python_version < '3.11'", "python_version >= '3.11'"])
-def test_missing_hook_interpreter_branch_is_detected(tooling_config: Path, marker: str) -> None:
-    config = tooling_config / ".pre-commit-config.yaml"
-    config.write_text(config.read_text().replace(marker, "python_version >= '3.99'"))
-    errors = check(tooling_config)
-    assert any("mypy hook dependencies: missing" in error and marker in error for error in errors)
-
-
-def test_stale_ruff_hook_revision_is_detected(tooling_config: Path) -> None:
+def test_hook_entry_drift_is_detected(tooling_config: Path) -> None:
     config = tooling_config / ".pre-commit-config.yaml"
     config.write_text(
-        re.sub(
-            r"(repo: https://github.com/astral-sh/ruff-pre-commit\n\s+rev:) [^\n]+",
-            r"\1 v0.0.0",
-            config.read_text(),
-        )
+        config.read_text().replace("entry: python3 -m ruff format", "entry: ruff format")
     )
     assert any(
-        "ruff hook revision:" in error and "v0.0.0" in error for error in check(tooling_config)
+        "ruff-format" in error and "entry must be exactly" in error
+        for error in check(tooling_config)
     )
+
+
+def test_hook_swapped_subcommand_is_detected(tooling_config: Path) -> None:
+    """A hook that still invokes `python3 -m ruff` but runs the wrong
+    subcommand (formatting instead of checking, or vice versa) must be
+    rejected even though the module prefix looks right."""
+    config = tooling_config / ".pre-commit-config.yaml"
+    config.write_text(
+        config.read_text().replace("entry: python3 -m ruff format", "entry: python3 -m ruff check")
+    )
+    assert any(
+        "ruff-format" in error and "entry must be exactly" in error
+        for error in check(tooling_config)
+    )
+
+
+def test_hook_missing_language_system_is_detected(tooling_config: Path) -> None:
+    config = tooling_config / ".pre-commit-config.yaml"
+    config.write_text(
+        config.read_text().replace(
+            "        entry: python3 -m mypy\n        language: system\n",
+            "        entry: python3 -m mypy\n",
+        )
+    )
+    assert any("language: system" in error for error in check(tooling_config))
+
+
+def test_duplicate_local_hook_id_fails(tooling_config: Path) -> None:
+    config = tooling_config / ".pre-commit-config.yaml"
+    original = config.read_text()
+    anchor = "      - id: ruff\n        name: ruff\n"
+    assert original.count(anchor) == 1
+    duplicate = (
+        "      - id: ruff\n"
+        "        name: ruff (unpinned duplicate)\n"
+        "        entry: ruff check\n"
+        "        language: system\n"
+        "        types_or: [python, pyi]\n"
+    )
+    config.write_text(original.replace(anchor, duplicate + anchor, 1))
+    with pytest.raises(ValueError, match="duplicate local hook id"):
+        check(tooling_config)
+
+
+def test_dependabot_style_pin_bump_alone_does_not_require_hook_or_tox_edit(
+    tooling_config: Path,
+) -> None:
+    """The whole point of local/system pre-commit hooks and dev-extra-sourced
+    tox envs: bumping only the pyproject.toml pin (what Dependabot's pip
+    ecosystem does) must not require touching .pre-commit-config.yaml or
+    tox.ini, since neither has a separate version to keep in sync."""
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    config.write_text(
+        original.replace('"ruff==0.16.9"', '"ruff==99.0.0"').replace(
+            '"mypy==2.3.1"', '"mypy==99.0.0"'
+        )
+    )
+    assert check(tooling_config) == []
 
 
 def test_expanded_ruff_cli_scope_is_detected(tooling_config: Path) -> None:
