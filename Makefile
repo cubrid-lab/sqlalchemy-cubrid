@@ -8,11 +8,18 @@ BANDIT = bandit
 SRC = sqlalchemy_cubrid
 TESTS = test
 LINT_PATHS = $(SRC) $(TESTS) scripts demos samples docs/source
-# make integration: host port for the run-owned CUBRID container, an optional fixed
+# make integration: the driver the suite connects with (pycubrid, the recommended
+# pure-Python driver, via cubrid+pycubrid://; or cubriddb, the CUBRIDdb C extension,
+# via cubrid://), host port for the run-owned CUBRID container, an optional fixed
 # Compose project name (default: a fresh name per run), and how many seconds, on a
 # signal, `docker compose up -d` gets to finish before SIGTERM and any step gets
 # after SIGTERM before SIGKILL. See docs/DEVELOPMENT.md.
+INTEGRATION_DRIVER ?= pycubrid
 CUBRID_PORT ?= 33000
+# Seconds make integration waits for the new server to answer SELECT 1 through the
+# selected driver before it gives up (a fresh container needs about 20 seconds).
+INTEGRATION_READY_TIMEOUT ?= 180
+WAIT_FOR_CUBRID = $(PYTHON) -m scripts.wait_for_cubrid --timeout $(INTEGRATION_READY_TIMEOUT)
 INTEGRATION_PROJECT ?=
 INTEGRATION_STOP_GRACE ?= 10
 # Run a command in its own session, ignoring INT/TERM/HUP, so that signals sent to
@@ -77,8 +84,15 @@ test: ## Run offline tests with coverage (no DB required)
 test-all: ## Run tests across all Python versions via tox
 	tox
 
-integration: ## Run integration tests in a fresh, run-owned Docker Compose project and always clean it up
+integration: ## Run integration tests (INTEGRATION_DRIVER=pycubrid|cubriddb) in a fresh, run-owned Docker Compose project and always clean it up
 	@set -e; \
+	case "$(INTEGRATION_DRIVER)" in \
+		pycubrid) url_scheme="cubrid+pycubrid" ;; \
+		cubriddb) url_scheme="cubrid" ;; \
+		*) \
+			echo "INTEGRATION_DRIVER must be pycubrid or cubriddb (got '$(INTEGRATION_DRIVER)'); nothing was started." >&2; \
+			exit 2 ;; \
+	esac; \
 	project="$(INTEGRATION_PROJECT)"; \
 	if [ -n "$$project" ]; then \
 		case "$$project" in \
@@ -151,18 +165,18 @@ integration: ## Run integration tests in a fresh, run-owned Docker Compose proje
 	trap 'echo "Received SIGINT; cleaning up" >&2; cleanup 130' INT; \
 	trap 'echo "Received SIGTERM; cleaning up" >&2; cleanup 143' TERM; \
 	trap 'echo "Received SIGHUP; cleaning up" >&2; cleanup 129' HUP; \
-	echo "Using run-owned Compose project '$$project' on host port $$CUBRID_PORT"; \
+	echo "Using run-owned Compose project '$$project' on host port $$CUBRID_PORT (driver: $(INTEGRATION_DRIVER))"; \
 	starting=1; \
 	run $(RUN_IN_NEW_GROUP) docker compose -p "$$project" up -d; \
 	starting=; \
-	echo "Waiting for CUBRID to be ready..."; \
-	run sleep 10; \
-	CUBRID_TEST_URL="cubrid://dba@localhost:$$CUBRID_PORT/testdb"; export CUBRID_TEST_URL; \
+	CUBRID_TEST_URL="$$url_scheme://dba@localhost:$$CUBRID_PORT/testdb"; export CUBRID_TEST_URL; \
+	echo "Waiting for CUBRID to be ready (up to $(INTEGRATION_READY_TIMEOUT)s)..."; \
+	run $(WAIT_FOR_CUBRID); \
 	run $(PYTEST) $(TESTS)/ -m integration -v
 
 integration-local: ## Run integration tests against an already-running CUBRID (set CUBRID_TEST_URL; no Docker)
 	@if [ -z "$$CUBRID_TEST_URL" ]; then \
-		echo "ERROR: set CUBRID_TEST_URL (e.g. cubrid://dba@localhost:33000/testdb) to point at a running CUBRID"; \
+		echo "ERROR: set CUBRID_TEST_URL (e.g. cubrid+pycubrid://dba@localhost:33000/testdb) to point at a running CUBRID"; \
 		exit 1; \
 	fi
 	$(PYTEST) $(TESTS)/ -m integration -v

@@ -6112,7 +6112,7 @@ make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
 make test          # Run offline tests with coverage (95% threshold)
 make test-all      # Run tox across all Python versions
-make integration   # Start a run-owned Docker project → run integration tests → remove it
+make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
 make docker-down   # Stop and remove CUBRID Docker container
 make clean         # Remove build artifacts and caches
@@ -6298,9 +6298,31 @@ CUBRID_VERSION=10.2 docker compose up -d
 ### Quick Integration Workflow
 
 ```bash
-# One-command: start, test, stop
+# One-command: start, test, stop (pycubrid, the recommended driver)
 make integration
+
+# The same suite through the CUBRIDdb C extension (must be installed)
+make integration INTEGRATION_DRIVER=cubriddb
 ```
+
+`make integration` runs every `integration`-marked test in one pytest session.
+`INTEGRATION_DRIVER` selects the driver of `CUBRID_TEST_URL`: `pycubrid` (the
+default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
+CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
+"Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
+command. Several test files open connections through both drivers whichever one
+the URL selects, so install `.[dev,pycubrid]` for either driver. PR CI runs
+`make integration` with the default driver on CUBRID 11.4; the nightly and tag
+`integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
+11.4.
+
+After `docker compose up -d`, the run waits until the new server answers
+`SELECT 1` through the selected driver (`scripts/wait_for_cubrid.py`), for up to
+`INTEGRATION_READY_TIMEOUT` seconds (default 180), and fails if it never does. A
+fresh container needs about 20 seconds to create its database and start the
+broker; a fixed 10-second sleep used before #575 let the suite start too early,
+so the first tests failed with CCI -20004 and the live test files that probe the
+server at import time skipped themselves.
 
 `make integration` runs in its own Compose project, named
 `sqlalchemy-cubrid-it-<timestamp>-<pid>` by default. Its container, network and
@@ -6554,7 +6576,8 @@ pre-commit run --all-files
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
 3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
-4. **Coverage** — Enforces ≥ 95% threshold
+4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and on tags in `integration-full.yml`)
+5. **Coverage** — Enforces ≥ 95% threshold
 
 ### Driver-differential lane
 
