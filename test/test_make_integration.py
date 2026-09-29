@@ -25,11 +25,19 @@ WAIT = "sleep 10"
 TEST = "pytest-stub test/ -m integration -v"
 
 
-@pytest.fixture
-def integration_runner(tmp_path: Path):
+@pytest.fixture(params=["sh", "bash"])
+def integration_runner(request, tmp_path: Path):
     make = shutil.which("make")
     if make is None:
         pytest.skip("make is required for Makefile regression tests")
+    # make runs recipes with /bin/sh (dash on Debian/Ubuntu, bash on macOS);
+    # also run every case under bash explicitly.
+    shell_override: list[str] = []
+    if request.param == "bash":
+        bash = shutil.which("bash")
+        if bash is None:
+            pytest.skip("bash is not installed")
+        shell_override = [f"SHELL={bash}"]
     shutil.copyfile(Path(__file__).resolve().parents[1] / "Makefile", tmp_path / "Makefile")
     log = tmp_path / "commands.log"
     stub = (
@@ -70,6 +78,41 @@ else:
     phase = "TEST"
     with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
         stream.write("CUBRID_TEST_URL=" + os.environ.get("CUBRID_TEST_URL", "") + "\\n")
+        if os.environ.get("READ_STDIN"):
+            stream.write("stdin=" + sys.stdin.read().strip() + "\\n")
+if phase == os.environ.get("IGNORE_TERM_PHASE"):
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+if phase == "UP" and os.environ.get("UP_GRANDCHILD"):
+    # Like a Compose CLI plugin process started by `docker compose`.
+    import subprocess
+
+    # UP_GRANDCHILD=slow: finish its work for a second after SIGTERM, then log;
+    # UP_GRANDCHILD=ignore: ignore SIGTERM entirely.
+    helper_code = {
+        "slow": (
+            "import os, signal, sys, time\\n"
+            "def stop(*_):\\n"
+            "    time.sleep(1)\\n"
+            "    with open(os.environ['COMMAND_LOG'], 'a', encoding='utf-8') as stream:\\n"
+            "        stream.write('UP helper finished\\\\n')\\n"
+            "    sys.exit(0)\\n"
+            "signal.signal(signal.SIGTERM, stop)\\n"
+        ),
+        "ignore": "import signal; signal.signal(signal.SIGTERM, signal.SIG_IGN)\\n",
+    }.get(os.environ["UP_GRANDCHILD"], "")
+    # The helper announces its pid only once its signal handling is in place.
+    helper_code += (
+        "import os, time\\n"
+        "marker = os.environ['COMMAND_LOG'] + '.grandchild'\\n"
+        "with open(marker + '.tmp', 'w', encoding='utf-8') as stream:\\n"
+        "    stream.write(str(os.getpid()))\\n"
+        "os.replace(marker + '.tmp', marker)\\n"
+        "time.sleep(30)\\n"
+    )
+    subprocess.Popen([sys.executable, "-c", helper_code])
+    marker = Path(os.environ["COMMAND_LOG"] + ".grandchild")
+    while not marker.exists():
+        time.sleep(0.01)
 if phase == "DOWN":
     # Like Go programs such as docker compose, handle termination signals even
     # if the parent shell ignores them, so only process isolation protects cleanup.
@@ -125,17 +168,19 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
             "PYTEST=pytest-stub",
             *([f"INTEGRATION_PROJECT={project}"] if project else []),
             *make_vars,
+            *shell_override,
         ], env
 
     def commands() -> list[str]:
         return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
 
-    def run(*args, **kwargs):
+    def run(*args, stdin_text: str | None = None, **kwargs):
         command, env = command_and_env(*args, **kwargs)
         result = subprocess.run(
             command,
             cwd=tmp_path,
             env=env,
+            input=stdin_text,
             capture_output=True,
             text=True,
             timeout=15,
@@ -174,6 +219,7 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
     run.start = start  # type: ignore[attr-defined]
     run.commands = commands  # type: ignore[attr-defined]
     run.wait_ready = wait_ready  # type: ignore[attr-defined]
+    run.log = log  # type: ignore[attr-defined]
     return run
 
 
@@ -251,6 +297,9 @@ def test_integration_fails_closed_when_ownership_probe_fails(integration_runner,
     # A Docker error (e.g. the daemon is unreachable) is not evidence of absence.
     result, commands = integration_runner(extra_env={"FAILING_PROBE": probe})
     assert result.returncode != 0
+    assert "Error 5" in result.stderr
+    assert "Ownership check of Compose project" in result.stderr
+    assert "nothing was started" in result.stderr
     assert "Refusing to run" not in result.stderr
     assert _lifecycle(commands) == []
 
@@ -266,6 +315,32 @@ def test_integration_named_volume_probe_matches_exact_name(integration_runner):
     )
     assert result.returncode != 0
     assert "Refusing to run" in result.stderr
+
+
+@pytest.mark.parametrize("project", ["Upper", "-dash", "_under", "dot.ted", "sp ace", "semi;colon"])
+def test_integration_rejects_invalid_project_name(integration_runner, project):
+    # Validated before any Docker command, including the read-only probes.
+    result, commands = integration_runner(project=project)
+    assert result.returncode != 0
+    assert "Error 2" in result.stderr
+    assert "INTEGRATION_PROJECT must match ^[a-z0-9][a-z0-9_-]*$" in result.stderr
+    assert commands == []
+
+
+def test_integration_accepts_valid_fixed_project_name(integration_runner):
+    result, commands = integration_runner(project="0sa_it-x")
+    assert result.returncode == 0, result.stderr
+    assert "docker compose -p 0sa_it-x down -v" in commands
+
+
+def test_integration_pytest_keeps_terminal_stdin(integration_runner):
+    # Background jobs of a non-interactive shell otherwise read /dev/null, which
+    # would break `pytest --pdb`.
+    result, commands = integration_runner(
+        stdin_text="from-terminal\n", extra_env={"READ_STDIN": "1"}
+    )
+    assert result.returncode == 0, result.stderr
+    assert "stdin=from-terminal" in commands
 
 
 def test_integration_uses_fresh_project_per_run(integration_runner):
@@ -313,11 +388,16 @@ def _finish(process: subprocess.Popen[str]) -> tuple[int, str]:
 
 
 def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
+    # An orphaned process may stay a zombie briefly until init reaps it.
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        if time.monotonic() > deadline:
+            return True
+        time.sleep(0.05)
 
 
 SIGNALS = [
@@ -327,10 +407,13 @@ SIGNALS = [
 ]
 
 
-@pytest.mark.parametrize("phase", ["WAIT", "TEST"])
+@pytest.mark.parametrize("phase", ["UP", "WAIT", "TEST"])
 @pytest.mark.parametrize(("signum", "signame"), SIGNALS)
 def test_integration_cleans_up_once_on_signal(integration_runner, phase, signum, signame):
-    process, shell_pid, stub_pid = integration_runner.start(phase)
+    # A blocked `up -d` is given INTEGRATION_STOP_GRACE seconds to finish first.
+    process, shell_pid, stub_pid = integration_runner.start(
+        phase, make_vars=("INTEGRATION_STOP_GRACE=1",)
+    )
     os.kill(shell_pid, signum)
     returncode, stderr = _finish(process)
     assert returncode != 0
@@ -403,3 +486,84 @@ def test_integration_group_signal_during_cleanup_does_not_abort_it(
     assert _lifecycle(commands).count(DOWN) == 1
     assert "DOWN finished" in commands, stderr
     assert "Docker cleanup of Compose project" not in stderr
+
+
+@pytest.mark.parametrize(("signum", "signame"), SIGNALS)
+def test_integration_signal_during_startup_stops_its_process_group(
+    integration_runner, signum, signame
+):
+    # `docker compose up -d` runs as its own process-group leader, so stopping
+    # it (after the grace period) also stops helpers it started, such as the
+    # Compose CLI plugin process.
+    process, shell_pid, stub_pid = integration_runner.start(
+        "UP", extra_env={"UP_GRANDCHILD": "1"}, make_vars=("INTEGRATION_STOP_GRACE=1",)
+    )
+    helper_pid = int(Path(f"{integration_runner.log}.grandchild").read_text(encoding="utf-8"))
+    os.kill(shell_pid, signum)
+    returncode, stderr = _finish(process)
+    assert f"Error {128 + signum}" in stderr, stderr
+    lifecycle = _lifecycle(integration_runner.commands())
+    assert lifecycle == [UP, DOWN]
+    assert not _alive(stub_pid)
+    assert not _alive(helper_pid)
+
+
+def test_integration_kills_step_that_ignores_sigterm(integration_runner):
+    # A step that ignores SIGTERM is killed after INTEGRATION_STOP_GRACE seconds,
+    # so cleanup cannot hang on it.
+    process, shell_pid, stub_pid = integration_runner.start(
+        "TEST",
+        extra_env={"IGNORE_TERM_PHASE": "TEST"},
+        make_vars=("INTEGRATION_STOP_GRACE=1",),
+    )
+    started = time.monotonic()
+    os.kill(shell_pid, signal.SIGTERM)
+    returncode, stderr = _finish(process)
+    assert time.monotonic() - started < 10
+    assert "Error 143" in stderr, stderr
+    assert _lifecycle(integration_runner.commands()).count(DOWN) == 1
+    assert not _alive(stub_pid)
+
+
+@pytest.mark.parametrize("helper", ["slow", "ignore"])
+def test_integration_waits_for_startup_helpers_before_cleanup(integration_runner, helper):
+    # The Compose plugin can outlive the `docker` CLI after SIGTERM and keep
+    # creating resources; `down -v` must not run until the whole startup process
+    # group is gone, or those late resources would be left behind.
+    process, shell_pid, stub_pid = integration_runner.start(
+        "UP",
+        extra_env={"UP_GRANDCHILD": helper},
+        make_vars=("INTEGRATION_STOP_GRACE=1",),
+    )
+    helper_pid = int(Path(f"{integration_runner.log}.grandchild").read_text(encoding="utf-8"))
+    os.kill(shell_pid, signal.SIGTERM)
+    returncode, stderr = _finish(process)
+    assert "Error 143" in stderr, stderr
+    commands = integration_runner.commands()
+    assert not _alive(helper_pid)
+    if helper == "slow":
+        assert commands.index("UP helper finished") < commands.index(DOWN)
+    assert _lifecycle(commands)[-1] == DOWN
+
+
+@pytest.mark.parametrize(("signum", "signame"), SIGNALS)
+def test_integration_lets_startup_finish_before_cleanup(integration_runner, signum, signame):
+    # The Docker daemon completes a container create even after the client is
+    # killed, so interrupting `up -d` could leave a container (and a re-created,
+    # unlabeled volume) behind after `down -v`. On a signal, `up -d` is left to
+    # finish within INTEGRATION_STOP_GRACE seconds, and only then cleaned up.
+    process, shell_pid, stub_pid = integration_runner.start(
+        "UP", extra_env={"UP_BLOCK_SECONDS": "1"}, make_vars=("INTEGRATION_STOP_GRACE=10",)
+    )
+    started = time.monotonic()
+    os.kill(shell_pid, signum)
+    returncode, stderr = _finish(process)
+    assert time.monotonic() - started < 8
+    assert f"Error {128 + signum}" in stderr, stderr
+    assert "Letting docker compose up finish" in stderr
+    commands = integration_runner.commands()
+    # `up -d` ran to completion (it was not sent SIGTERM), then cleanup ran once.
+    assert commands.index("UP finished") < commands.index(DOWN)
+    assert _lifecycle(commands).count(DOWN) == 1
+    assert WAIT not in commands
+    assert not _alive(stub_pid)
