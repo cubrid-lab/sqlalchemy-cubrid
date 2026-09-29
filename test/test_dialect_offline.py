@@ -1706,20 +1706,47 @@ class TestIsDisconnect:
         exc = dbapi.DatabaseError(message)
         assert dialect.is_disconnect(exc, None, None) is False
 
-    @pytest.mark.parametrize(
-        "error_code",
-        [
-            -21003,  # CAS_ER_COMMUNICATION
-            -21005,  # CAS_ER_COMMUNICATION (alternate)
-            -10005,  # ER_NET_CANT_CONNECT
-            -10007,  # ER_NET_SERVER_COMM_ERROR
-        ],
-    )
-    def test_disconnect_by_error_code(self, dialect_with_dbapi, error_code):
-        """is_disconnect() returns True for known disconnect error codes."""
+    # CUBRIDdb client-side codes for a dead or unusable connection (#572).
+    _CUBRIDDB_DISCONNECT = [
+        (-10003, "ERROR: CAS, -10003, Cannot receive data from client"),
+        (-20002, "ERROR: CCI, -20002, Invalid connection handle"),
+        (-20004, "ERROR: CCI, -20004, Cannot communicate with server"),
+        (-20016, "ERROR: CCI, -20016, Cannot connect to CUBRID CAS"),
+    ]
+
+    # Codes the old table listed that are not disconnects (#572).
+    _NOT_DISCONNECT = [
+        -4,  # ER_INTERRUPTED: an interrupted query (e.g. KILL QUERY)
+        -10005,  # CAS_ER_TRAN_TYPE
+        -10007,  # CAS_ER_NUM_BIND
+        -21003,  # CUBRID JDBC's ER_COMMUNICATION; no Python driver raises it
+        -21005,  # CUBRID JDBC's ER_TYPE_CONVERSION
+    ]
+
+    @pytest.mark.parametrize(("error_code", "message"), _CUBRIDDB_DISCONNECT)
+    def test_disconnect_by_error_code(self, dialect_with_dbapi, error_code, message):
+        """CUBRIDdb ``(code, message)`` errors with a disconnect code disconnect."""
         dialect, dbapi = dialect_with_dbapi
-        exc = dbapi.DatabaseError(error_code)
+        exc = dbapi.InterfaceError(error_code, message)
         assert dialect.is_disconnect(exc, None, None) is True
+        # Wording-independent: the code alone decides.
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code), None, None) is True
+
+    @pytest.mark.parametrize("error_code", _NOT_DISCONNECT)
+    def test_removed_codes_are_not_disconnect_cubriddb(self, dialect_with_dbapi, error_code):
+        """CUBRIDdb errors carrying a code the old table wrongly listed do not disconnect."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(error_code, f"ERROR: DBMS, {error_code}, opaque message")
+        assert dialect.is_disconnect(exc, None, None) is False
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code), None, None) is False
+
+    def test_interrupted_query_is_not_disconnect_cubriddb(self, dialect_with_dbapi):
+        """CUBRIDdb's error for a query interrupted by KILL QUERY keeps the connection."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(
+            -4, "ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44]."
+        )
+        assert dialect.is_disconnect(exc, None, None) is False
 
     def test_disconnect_with_interface_error(self, dialect_with_dbapi):
         """is_disconnect() works with InterfaceError subclass."""
@@ -1734,10 +1761,10 @@ class TestIsDisconnect:
         assert dialect.is_disconnect(exc, None, None) is False
 
     def test_disconnect_error_code_in_string_arg(self, dialect_with_dbapi):
-        """is_disconnect() extracts numeric code from string like '-21003 msg'."""
+        """is_disconnect() extracts numeric code from string like '-20004 msg'."""
         dialect, dbapi = dialect_with_dbapi
-        exc = dbapi.DatabaseError("-21003 Cannot communicate with the broker")
-        assert dialect.is_disconnect(exc, None, None) is True
+        assert dialect.is_disconnect(dbapi.DatabaseError("-20004 opaque"), None, None) is True
+        assert dialect.is_disconnect(dbapi.DatabaseError("-4 opaque"), None, None) is False
 
     def test_disconnect_with_empty_args(self, dialect_with_dbapi):
         """is_disconnect() handles exception with no args gracefully."""
@@ -1773,11 +1800,11 @@ class TestIsDisconnect:
         dialect.dbapi = dbapi
         return dialect, dbapi
 
-    def test_disconnect_by_communication_code_minus_four(self, pycubrid_dialect):
-        """is_disconnect() returns True for pycubrid ER_COMMUNICATION (-4)."""
+    def test_code_minus_four_in_args_is_not_disconnect(self, pycubrid_dialect):
+        """-4 in ``args[0]`` is the server's ER_INTERRUPTED, not a lost connection (#572)."""
         dialect, dbapi = pycubrid_dialect
-        exc = dbapi.OperationalError(-4, "communication error")
-        assert dialect.is_disconnect(exc, None, None) is True
+        exc = dbapi.OperationalError(-4, "Has been interrupted.")
+        assert dialect.is_disconnect(exc, None, None) is False
 
     def test_operational_error_without_code_or_cause_is_not_disconnect(self, pycubrid_dialect):
         """OperationalError with a non-disconnect message is not a disconnect."""
@@ -1864,7 +1891,7 @@ class TestIsDisconnect:
     @pytest.mark.parametrize(
         "errno",
         [
-            -4,  # ER_INTERRUPTED on the wire, not a lost connection
+            *_NOT_DISCONNECT,
             -493,  # ER_PT_SYNTAX
             -671,  # ER_CSS_RECV_OR_SEND: evaluated and not added (#564)
             None,
@@ -1893,7 +1920,12 @@ class TestIsDisconnect:
 
     @pytest.mark.parametrize(
         ("errno", "expected"),
-        [(-4, False), (-671, False), (-493, False), (-111, True), (-224, True)],
+        [
+            *((code, False) for code in _NOT_DISCONNECT),
+            (-671, False),
+            (-493, False),
+            *((code, True) for code in _SERVER_SESSION_LOST),
+        ],
     )
     @pytest.mark.parametrize("variant", ["sync", "async"])
     def test_real_pycubrid_errors(self, variant, errno, expected):

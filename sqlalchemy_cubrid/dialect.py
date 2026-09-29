@@ -1421,15 +1421,19 @@ class CubridDialect(default.DefaultDialect):
         "reconnecting failed",
     )
 
-    # Numeric disconnect error codes (driver-independent, wording-agnostic).
-    # These stay stable even when the driver's error *messages* change.
+    # Client-side error codes that CUBRIDdb puts in ``args[0]`` for a dead or
+    # unusable connection. CUBRIDdb's ``args[0]`` holds a CCI code (-20xxx,
+    # CUBRID ``cas_cci.h``) or a CAS code (-10xxx, ``cas_error.h``) when the
+    # call failed before or instead of a server error, and the server's own
+    # code (``error_code.h``) otherwise, so server codes such as -4
+    # (``ER_INTERRUPTED``, an interrupted query) must not appear here (#572).
+    # pycubrid never reports these codes; it keeps server codes in ``errno``.
     _disconnect_error_codes = frozenset(
         {
-            -4,  # pycubrid ER_COMMUNICATION / SQLSTATE 08S01
-            -21003,  # CAS_ER_COMMUNICATION
-            -21005,  # CAS_ER_COMMUNICATION (alternate)
-            -10005,  # ER_NET_CANT_CONNECT
-            -10007,  # ER_NET_SERVER_COMM_ERROR
+            -10003,  # CAS_ER_COMMUNICATION (CCI's IS_ER_COMMUNICATION, with -20004)
+            -20002,  # CCI_ER_CON_HANDLE: the connection handle is closed or invalid
+            -20004,  # CCI_ER_COMMUNICATION: "Cannot communicate with server"
+            -20016,  # CCI_ER_CONNECT: "Cannot connect to CUBRID CAS"
         }
     )
 
@@ -1490,8 +1494,8 @@ class CubridDialect(default.DefaultDialect):
             return True
         # pycubrid keeps the server code in ``errno`` (its ``args`` hold only
         # the message). Only the server-session codes are matched there: the
-        # table above has never applied to pycubrid server errors, and its -4
-        # is also the server's ER_INTERRUPTED.
+        # CCI/CAS codes above are CUBRIDdb's, and an ``errno`` of -4 is the
+        # server's ER_INTERRUPTED (an interrupted query), not a disconnect.
         if getattr(e, "errno", None) in self._server_session_lost_codes:
             return True
 
@@ -1545,7 +1549,7 @@ class CubridDialect(default.DefaultDialect):
             first_arg = exception.args[0]
             if isinstance(first_arg, int):
                 return first_arg
-            # Some errors embed the code at the start: "-21003 ..."
+            # Some errors embed the code at the start: "-20004 ..."
             if isinstance(first_arg, str):
                 parts = first_arg.split(None, 1)
                 if parts:

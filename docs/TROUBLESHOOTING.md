@@ -15,6 +15,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [Authentication Failed](#authentication-failed)
   - [Stale Connections / Disconnections](#stale-connections--disconnections)
   - [Errors After a cub_server Restart or Crash](#errors-after-a-cub_server-restart-or-crash)
+  - [Interrupted Query (-4)](#interrupted-query--4)
   - [Connection Pool Exhaustion](#connection-pool-exhaustion)
   - [Wrong URL Format](#wrong-url-format)
 - [SQL Compilation Issues](#sql-compilation-issues)
@@ -237,6 +238,22 @@ DatabaseError: (-224) A database has not been restarted.
 **Behavior:** The dialect treats the codes for which the broker resets the CAS as disconnects on both drivers: -111 (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224 (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). SQLAlchemy invalidates the connection (`exc.connection_invalidated` is `True`) and the pool opens a new one. A pycubrid connection that fails to reconnect while `cub_server` is down (`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`) is also a disconnect. Releases up to 1.8.0 did not classify these errors, so the broken connection stayed in the pool.
 
 **Fix:** Nothing to configure. Roll back (leaving a `with engine.connect()` or `Session` block does this) and retry the transaction once `cub_server` accepts connections again.
+
+---
+
+### Interrupted Query (-4)
+
+**Symptom:** A running statement fails with:
+
+```
+DatabaseError: (-4) Has been interrupted.
+```
+
+**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid's `str()` describes -4 as `Communication error`, which is a pycubrid label, not the meaning of the server code.
+
+**Behavior:** The error is not a disconnect: SQLAlchemy keeps the connection (`exc.connection_invalidated` is `False`). Releases up to 1.8.0 treated -4 from CUBRIDdb as a disconnect and replaced the connection (#572).
+
+**Fix:** Roll back and retry the statement if it should run to completion.
 
 ---
 

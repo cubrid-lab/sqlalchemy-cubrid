@@ -24,6 +24,8 @@ from __future__ import annotations
 import datetime
 from inspect import signature
 import os
+import subprocess
+import sys
 import uuid
 from decimal import Decimal
 
@@ -1000,7 +1002,88 @@ class TestDoPing:
             eng.dispose()
 
 
+# Run in a separate process: CUBRIDdb holds the GIL while a statement runs.
+# It records the transactions already running a query (its own included),
+# prints "ready", then sends KILL QUERY to the first new one: the victim.
+_KILL_QUERY_SCRIPT = """
+import sys, time
+import sqlalchemy as sa
+
+def running(cur):
+    cur.execute("SHOW TRANSACTION TABLES")
+    cols = [d[0].lower() for d in cur.description]
+    index, started = cols.index("tran_index"), cols.index("query_start_time")
+    return {row[index] for row in cur.fetchall() if row[started] is not None}
+
+engine = sa.create_engine(sys.argv[1], poolclass=sa.pool.NullPool)
+raw = engine.raw_connection()
+try:
+    cur = raw.cursor()
+    before = running(cur)
+    print("ready", flush=True)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        victims = running(cur) - before
+        if victims:
+            time.sleep(0.5)
+            for tran_index in victims:
+                # KILL takes no bind parameter; tran_index is an int from the server.
+                cur.execute("KILL QUERY " + str(int(tran_index)))
+            print("killed", flush=True)
+            break
+        time.sleep(0.1)
+    else:
+        sys.exit("no running query to kill")
+finally:
+    raw.close()
+"""
+
+# Long enough to be killed mid-run, bounded (about a minute) if the kill fails.
+_SLOW_QUERY = text(
+    "SELECT COUNT(*) FROM db_attribute a, db_attribute b, db_attribute c,"
+    " (SELECT attr_name FROM db_attribute LIMIT 20) d"
+)
+
+
 class TestIsDisconnect:
+    def test_interrupted_query_keeps_connection(self, engine):
+        """A query interrupted by KILL QUERY fails with -4 but keeps the connection (#572).
+
+        -4 is the server's ER_INTERRUPTED. CUBRIDdb reports it in ``args[0]``
+        and pycubrid in ``errno``; neither is a disconnect.
+        """
+        url = engine.url.render_as_string(hide_password=False)
+        killer = subprocess.Popen(  # noqa: S603 - runs this interpreter on a fixed script
+            [sys.executable, "-c", _KILL_QUERY_SCRIPT, url],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert killer.stdout is not None
+            if killer.stdout.readline().strip() != "ready":
+                killer.wait(timeout=60)
+                pytest.fail(f"KILL QUERY helper failed: {killer.stderr.read()}")
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                dbapi_conn = conn.connection.dbapi_connection
+                with pytest.raises(sa.exc.DBAPIError) as info:
+                    conn.execute(_SLOW_QUERY)
+                orig = info.value.orig
+                code = getattr(orig, "errno", None)  # pycubrid
+                if code is None:
+                    code = orig.args[0]  # CUBRIDdb
+                assert code == -4
+                assert info.value.connection_invalidated is False
+                conn.rollback()
+                assert conn.execute(text("SELECT 1")).scalar() == 1
+                assert conn.connection.dbapi_connection is dbapi_conn
+            assert killer.wait(timeout=60) == 0, killer.stderr.read()
+        finally:
+            if killer.poll() is None:
+                killer.kill()
+                killer.wait()
+
     def test_is_disconnect_with_non_disconnect_error(self, engine):
         """is_disconnect() returns False for normal database errors."""
         dialect = engine.dialect
