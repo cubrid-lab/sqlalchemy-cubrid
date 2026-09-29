@@ -1464,6 +1464,12 @@ class CubridDialect(default.DefaultDialect):
         wording), and finally fall back to string matching for driver
         errors that carry neither a code nor an ``OSError`` cause (e.g.
         pycubrid's client-side "connection lost during receive").
+
+        Codes come from ``args[0]`` (CUBRIDdb) and, for pycubrid, from its
+        ``errno`` attribute; ``errno`` is matched only against the
+        server-session codes (``_server_session_lost_codes``, #565). The
+        message fallback reads the driver's own message (``args[0]`` when it
+        is a string), not pycubrid's ``str()`` with its code description.
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1495,8 +1501,16 @@ class CubridDialect(default.DefaultDialect):
             return True
 
         # 3. Message fallback for string-only driver errors that carry
-        #    neither a numeric code nor an OSError cause.
-        msg = str(e).lower()
+        #    neither a numeric code nor an OSError cause. Match the driver's
+        #    own message: pycubrid's ``str()`` appends a description looked
+        #    up from ``errno`` (-4 and -671 read "Communication error"), which
+        #    must not decide the outcome. For any exception that does not
+        #    override ``__str__`` a single string arg *is* ``str(e)``, and
+        #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
+        if len(e.args) == 1 and isinstance(e.args[0], str):
+            msg = e.args[0].lower()
+        else:
+            msg = str(e).lower()
         return any(pattern in msg for pattern in self._disconnect_messages)
 
     @staticmethod

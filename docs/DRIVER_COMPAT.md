@@ -132,7 +132,10 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 
 pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in
-[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror).
+[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror). pycubrid's
+`str()` also appends a description of `errno` (for example `Communication error`
+for -4 and -671), so the message patterns are matched against `args[0]`, the
+driver's own message, instead.
 
 ---
 

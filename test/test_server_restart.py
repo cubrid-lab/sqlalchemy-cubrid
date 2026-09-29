@@ -64,7 +64,11 @@ def _base_url() -> sa.engine.URL:
 
 
 def _can_connect(url: sa.engine.URL) -> bool:
-    engine = sa.create_engine(url, poolclass=sa.pool.NullPool)
+    try:
+        # create_engine() raises ImportError when the driver is not installed.
+        engine = sa.create_engine(url, poolclass=sa.pool.NullPool)
+    except Exception:
+        return False
     try:
         with engine.connect() as conn:
             conn.execute(_SELECT_1)
@@ -75,23 +79,36 @@ def _can_connect(url: sa.engine.URL) -> bool:
         engine.dispose()
 
 
+def _docker_exec(container: str, command: str) -> subprocess.CompletedProcess[str]:
+    """Run *command* as the ``cubrid`` user in a login shell inside *container*."""
+    return subprocess.run(  # noqa: S603 - container name comes from the test environment
+        ["docker", "exec", "-u", "cubrid", container, "bash", "-lc", command],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+
+
 class _Server:
     """Stop and start cub_server for the test database inside its container."""
 
     def __init__(self, container: str, url: sa.engine.URL) -> None:
         self.container = container
         self.url = url
+        self.db = shlex.quote(str(url.database))
+        # Set by ``driver_url``: the driver the current test uses.
+        self.ready_url: sa.engine.URL | None = None
         self.stopped = False
 
-    def _cubrid(self, action: str, *, check: bool = True) -> None:
-        command = f"cubrid server {action} {shlex.quote(str(self.url.database))}"
-        subprocess.run(  # noqa: S603 - container name comes from the test environment
-            ["docker", "exec", "-u", "cubrid", self.container, "bash", "-lc", command],
-            check=check,
-            capture_output=True,
-            text=True,
-            timeout=300,
-        )
+    def _cubrid(self, action: str) -> None:
+        result = _docker_exec(self.container, f"cubrid server {action} {self.db}")
+        if result.returncode != 0:
+            pytest.fail(
+                f"cubrid server {action} failed (rc={result.returncode}):\n"
+                f"{result.stdout}\n{result.stderr}",
+                pytrace=False,
+            )
 
     def stop(self) -> None:
         self.stopped = True
@@ -107,21 +124,28 @@ class _Server:
         self.start()
 
     def wait_ready(self) -> None:
-        # Right after "cubrid server start" returns, new connections can still
-        # fail for a few seconds.
+        """Wait until the server answers csql, then the test's driver.
+
+        csql (the service container's healthcheck) needs no Python driver.
+        Right after "cubrid server start" returns, broker connections can
+        still fail for a few seconds, so the test's own driver is probed too.
+        """
         deadline = time.monotonic() + _READY_TIMEOUT
-        while not _can_connect(self.url):
+        csql = f"csql -u dba {self.db} -c 'SELECT 1'"
+        while _docker_exec(self.container, csql).returncode != 0:
+            if time.monotonic() > deadline:
+                pytest.fail(f"cub_server did not answer csql within {_READY_TIMEOUT}s")
+            time.sleep(1)
+        while self.ready_url is not None and not _can_connect(self.ready_url):
             if time.monotonic() > deadline:
                 pytest.fail(f"cub_server did not accept connections within {_READY_TIMEOUT}s")
             time.sleep(1)
 
 
-@pytest.fixture
-def server() -> Iterator[_Server]:
+def _container() -> str:
     container = os.environ.get(_CONTAINER_ENV)
     if not container:
         _unavailable(f"{_CONTAINER_ENV} not set")
-    url = _base_url()
     try:
         subprocess.run(  # noqa: S603 - container name comes from the test environment
             ["docker", "exec", container, "true"],
@@ -131,11 +155,31 @@ def server() -> Iterator[_Server]:
         )
     except (OSError, subprocess.SubprocessError) as exc:
         _unavailable(f"cannot docker exec into {container!r}: {exc}")
-    srv = _Server(container, url)
+    return container
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _server_started_after_module() -> Iterator[None]:
+    """Whatever happened, leave cub_server running for later test modules."""
+    yield
+    container = os.environ.get(_CONTAINER_ENV)
+    if container:
+        try:
+            _docker_exec(container, f"cubrid server start {shlex.quote(str(_base_url().database))}")
+        except (OSError, subprocess.SubprocessError):
+            pass  # best effort; the per-test teardown reports real failures
+
+
+@pytest.fixture
+def server() -> Iterator[_Server]:
+    srv = _Server(_container(), _base_url())
     yield srv
     if srv.stopped:
-        # A failed test must not leave the server down for later tests.
-        srv._cubrid("start", check=False)
+        # A failed test must not leave the server down for the next test.
+        try:
+            _docker_exec(srv.container, f"cubrid server start {srv.db}")
+        except (OSError, subprocess.SubprocessError) as exc:
+            pytest.fail(f"could not restart cub_server after the test: {exc}", pytrace=False)
         srv.wait_ready()
 
 
@@ -144,6 +188,7 @@ def driver_url(request: pytest.FixtureRequest, server: _Server) -> sa.engine.URL
     url = server.url.set(drivername=_DRIVERS[request.param])
     if not _can_connect(url):
         _unavailable(f"{request.param} cannot connect to {url.render_as_string()}")
+    server.ready_url = url
     return url
 
 

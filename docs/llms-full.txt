@@ -678,7 +678,7 @@ The dialect implements `is_disconnect()` which detects connection failures using
 
 1. **Numeric error code matching (primary)** — checks stable CUBRID/CCI codes such as `ER_COMMUNICATION` (-4, pycubrid), `CAS_ER_COMMUNICATION` (-21003/-21005), `ER_NET_CANT_CONNECT` (-10005), and `ER_NET_SERVER_COMM_ERROR` (-10007), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, which is matched only against these four server codes. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
-3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", or "reconnecting failed" when pycubrid cannot replace a lost CAS session) that carry neither a code nor an `OSError` cause.
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", or "reconnecting failed" when pycubrid cannot replace a lost CAS session) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671.
 
 Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 
@@ -6766,7 +6766,10 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 
 pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in
-[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror).
+[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror). pycubrid's
+`str()` also appends a description of `errno` (for example `Communication error`
+for -4 and -671), so the message patterns are matched against `args[0]`, the
+driver's own message, instead.
 
 ---
 
