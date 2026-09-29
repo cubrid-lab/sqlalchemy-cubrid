@@ -403,6 +403,17 @@ jobs:
             --dburi="$CUBRID_TEST_URL" \
             -v --tb=short
 
+      - name: Run cub_server stop/start pool recovery tests (#565)
+        # Last step: it stops and restarts cub_server in the service container.
+        if: ${{ !cancelled() }}
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          CUBRID_TEST_DOCKER_CONTAINER: ${{ job.services.cubrid.id }}
+          # Fail instead of skip when a driver or the container is unavailable.
+          CUBRID_REQUIRE_SERVER_RESTART: "1"
+        run: |
+          python -m pytest test/test_server_restart.py -v --tb=short -rs
+
   matrix-result:
     if: always()
     runs-on: ubuntu-latest

@@ -251,6 +251,22 @@ the driver-differential comparisons are intentionally skipped;
 that profile does not claim to test CUBRIDdb. Formal CI's native-driver
 `--dburi` route remains separate and unchanged.
 
+`test/test_server_restart.py` (#565) stops and starts `cub_server` with
+`docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
+checks that the pool invalidates broken connections and recovers, through both
+drivers, with and without `pool_pre_ping`. It skips unless
+`CUBRID_TEST_DOCKER_CONTAINER` names the container that serves `CUBRID_TEST_URL`;
+point it at a disposable container, since the tests take the database down:
+
+```bash
+CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+  pytest test/test_server_restart.py -v -rs
+```
+
+CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
+which turns every skip into a failure.
+
 ### Full SA Test Suite
 
 ```bash

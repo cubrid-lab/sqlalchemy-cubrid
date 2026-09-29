@@ -242,6 +242,23 @@ docker compose down -v
 건너뛰며 CUBRIDdb를 검증했다고 주장하지 않습니다. 공식 CI의 네이티브 드라이버
 `--dburi` 경로는 별도로 유지됩니다.
 
+`test/test_server_restart.py`(#565)는
+`docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"`로
+`cub_server`를 중지·시작하고, 두 드라이버 모두에서 `pool_pre_ping` 사용 여부와
+무관하게 풀이 망가진 연결을 무효화하고 회복하는지 확인합니다.
+`CUBRID_TEST_DOCKER_CONTAINER`가 `CUBRID_TEST_URL`을 제공하는 컨테이너를 가리키지
+않으면 건너뜁니다. 테스트가 데이터베이스를 내리므로 버려도 되는 컨테이너를
+지정하세요:
+
+```bash
+CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+  pytest test/test_server_restart.py -v -rs
+```
+
+CI는 각 통합 잡의 마지막 단계에서 `CUBRID_REQUIRE_SERVER_RESTART=1`로 실행하며,
+이 변수는 모든 건너뛰기를 실패로 바꿉니다.
+
 ### 전체 SA 테스트 스위트
 
 ```bash
