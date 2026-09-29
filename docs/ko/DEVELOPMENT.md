@@ -452,33 +452,47 @@ make format
 
 Pre-commit 훅은 `git commit` 시 린트와 포맷 검사를 자동 실행합니다.
 
-Ruff/mypy 버전의 기준은 `pyproject.toml`의 개발 의존성 핀입니다. 격리된 mypy 훅은
-조건부 핀으로 Python 3.10에서 SQLAlchemy 2.0.53을, Python 3.11+에서 SQLAlchemy
-2.1.1(최소 Python 3.11)을 설치합니다. 비동기 extra와 기존 Alembic 지원 범위도
-포함한 뒤 프로젝트의 엄격한 설정으로 `sqlalchemy_cubrid/`를 검사합니다. 스텁을 자동
-설치하거나 누락된
-임포트를 무시하지 않습니다. Ruff의 명시적 `include = ["*.py", "*.pyi"]`와 동일한
-훅 타입 설정으로 CLI, CI, 훅 모두 Python 소스를 다루며 문서의 코드 스니펫을 다시
-작성하지 않습니다.
+Ruff와 Mypy 버전의 기준은 `pyproject.toml`의 개발 의존성 핀입니다. Ruff와 Mypy
+pre-commit 훅은 `repo: local` / `language: system` 훅으로, 같은 활성 `.[dev]`
+환경에서 `python3 -m ruff`/`python3 -m mypy`를 직접 호출합니다. 따라서 맞춰야 할
+별도의 훅 버전이 없습니다. mypy 훅은 활성 `.[dev,alembic]` 환경이 이미 제공하는
+SQLAlchemy/Alembic으로 프로젝트의 엄격한 설정에 따라 `sqlalchemy_cubrid/`를
+검사합니다. 스텁을 자동 설치하거나 누락된 임포트를 무시하지 않습니다. Ruff의 명시적
+`include = ["*.py", "*.pyi"]`와 동일한 훅 타입 설정으로 CLI, CI, 훅 모두 Python
+소스를 다루며 문서의 코드 스니펫을 다시 작성하지 않습니다.
 
 Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모, 샘플,
 `docs/source`의 Python 설정을 포함합니다. CI와 tox는 `make lint`를 실행하고,
 훅은 계속 모든 추적된 Python/pyi 파일을 검사합니다. 일관성 검사는 유지보수 대상
 디렉터리 누락이나 공통 타깃을 우회하는 실행 설정을 거부합니다.
 
-도구 핀을 바꿀 때는 같은 변경에서 pre-commit 리비전과 tox 핀도 갱신하세요. 필요한
-경우 CI의 mypy 핀도 갱신합니다. `scripts/check_tool_versions.py`는 SQLAlchemy 타입
-검사 조합을 CI에서 읽습니다. 갱신 후 `make check-tool-versions`,
-`pre-commit run --all-files`, `tox -e lint,typecheck-sa20,typecheck-sa21`을 실행하세요.
-일관성 검사는 CI 린트, tox 린트, 로컬 pre-commit 훅에서 실행되므로 의존성만 갱신한
-변경이 오래된 핀을 조용히 남길 수 없습니다.
+Ruff나 Mypy를 올릴 때는 `pyproject.toml`의 dev 핀만 갱신하면 됩니다(Dependabot의
+`pip` 생태계가 정확히 이 작업을 수행합니다): pre-commit 훅과
+`tox -e lint`/`typecheck-sa20`/`typecheck-sa21` 환경 모두 프로젝트 자체의 `dev`
+extra를 설치하므로 그 핀이 가리키는 버전을 그대로 사용합니다.
+`tox -e typecheck-sa20`/`typecheck-sa21`은 CI의 타입 검사 매트릭스에 맞추기 위해
+Python 버전별 정확한 SQLAlchemy 릴리스(3.10엔 2.0.53, 3.13엔 2.1.1)를 추가로
+고정하며, 이 조합은 `scripts/check_tool_versions.py`가 CI에서 읽습니다. 갱신 후
+`make check-tool-versions`, `pre-commit run --all-files`,
+`tox -e lint,typecheck-sa20,typecheck-sa21`을 실행하세요. 일관성 검사는 CI 린트,
+tox 린트, 로컬 pre-commit 훅에서 실행되므로 의존성만 갱신한 변경이 오래된 핀을
+조용히 남길 수 없습니다.
 
 ### 설정
 
+Ruff와 Mypy 훅은 `language: system`으로 실행되어, Git이 훅을 실행할 때 활성화된
+환경에서 `python3 -m ruff`/`python3 -m mypy`를 직접 호출합니다. 먼저 그 같은
+환경에 Ruff와 Mypy를 고정하는 프로젝트의 `dev` extra를 설치한 뒤 훅을
+설치하세요:
+
 ```bash
-pip install pre-commit
+pip install -e ".[dev]"
 pre-commit install
 ```
+
+커밋 시 훅이 실행되길 원한다면 그 환경(또는 이를 설치한 venv)을 항상
+활성화해두세요. 그렇지 않으면 Ruff/Mypy가 없거나, 고정된 버전 대신 오래되거나
+전역에 설치된 버전이 조용히 실행됩니다.
 
 ### 수동 실행
 

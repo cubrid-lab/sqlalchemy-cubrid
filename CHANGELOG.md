@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Ruff/Mypy pre-commit hooks and tox lint/typecheck envs are single-sourced from
+  the `pyproject.toml` dev pin (#558)** — the Ruff and Mypy pre-commit hooks are
+  now `repo: local` / `language: system` hooks invoking `python3 -m ruff`/`python3
+  -m mypy` from the active `.[dev]` environment, instead of separately versioned
+  `ruff-pre-commit`/`mirrors-mypy` mirror repos with a `rev:` to keep in sync.
+  `tox -e lint` and `tox -e typecheck-sa20`/`typecheck-sa21` now install the
+  project's own `dev` extra (`extras = dev`) instead of a hardcoded
+  `ruff==`/`mypy==` version in `tox.ini`, and CI's `typecheck` job installs
+  `.[dev,alembic]` instead of a hardcoded `"mypy==2.3.1"`. `scripts/
+  check_tool_versions.py` was updated to match. This fixes Dependabot's routine
+  `pip`-ecosystem Ruff/Mypy bumps, which previously left `.pre-commit-config.yaml`
+  and `tox.ini` stale and failed the tooling consistency gate (#558).
 - **pycubrid 1.8.0 is now the minimum (#559)** — the `[pycubrid]` extra requires `pycubrid>=1.8.0,<2.0` (was `>=1.3.2,<2.0`), because the contract tests already require the 1.8.0 fixes (NOT NULL / foreign-key `IntegrityError`, no silently truncated result after `commit()` / `rollback()`, `cursor.description` `null_ok` and collection type codes) and 1.8.0 keeps the CAS session across `commit()` / `rollback()` and in autocommit mode. README (and translations, several of which still said `>=1.2.0`), `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md`, `docs/SUPPORT_MATRIX.md`, `docs/DEVELOPMENT.md` (+ Korean) and the workflow comments state the new range.
 - **pycubrid compliance lanes re-baselined on pycubrid 1.8.0 (#559)** — the `pycubrid@sa2.0` and `pycubrid@sa2.1` steps in `ci.yml` pin `pycubrid==1.8.0` (was 1.7.1). Re-captured on fresh CUBRID 10.2 and 11.4 databases, both lanes fail exactly the same tests as on 1.7.1 (54 on 10.2 for `pycubrid@sa2.0`; 58 / 51 on 11.4 / 10.2 for `pycubrid@sa2.1`), so `test/known_failures.txt` keeps every entry; its header and the CTETest note are updated (pycubrid 1.8.0 still raises the -924 foreign-key restriction as `DatabaseError`; cubrid-lab/pycubrid#390 fixed -631 and -922 only). `docs/SUPPORT_MATRIX.md` and `docs/DEVELOPMENT.md` (+ Korean) list the new pin.
 - **The pycubrid isolation-level re-apply is kept, and its documentation now describes pycubrid 1.8.0 (#559)** — pycubrid 1.8.0 no longer drops the level at every `commit()` / `rollback()`, but it still opens a new session at the server default level when the CAS itself went away out of transaction (a CAS restart after the transaction, a broker reset). Verified on CUBRID 11.4: when the CAS is killed right after `commit()`, the re-apply keeps SERIALIZABLE, and without it the level falls to READ COMMITTED. The re-apply's SQL `COMMIT` keeps the CAS bound to an idle pooled connection with a configured level (`CLIENT_WAIT` rather than `CLOSE_WAIT`), so if that CAS dies while idle the next statement fails as a disconnect instead of silently running at the default level; `pool_pre_ping=True` replaces such a connection at checkout. `docs/DRIVER_COMPAT.md` Known Issue 10 (renamed), `docs/ISOLATION_LEVELS.md` and `docs/TROUBLESHOOTING.md` (+ Korean) no longer claim that pycubrid reconnects after every commit, rollback or autocommitted statement. No code behavior change.
