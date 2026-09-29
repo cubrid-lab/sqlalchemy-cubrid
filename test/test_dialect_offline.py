@@ -1830,6 +1830,94 @@ class TestIsDisconnect:
         exc = dbapi.InterfaceError("Cursor is closed")
         assert dialect.is_disconnect(exc, None, None) is False
 
+    # ----- cub_server crash / stop: broker CAS-reset codes (#565) -----
+
+    _SERVER_SESSION_LOST = [
+        -111,  # ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
+        -199,  # ER_NET_SERVER_CRASHED
+        -224,  # ER_OBJ_NO_CONNECT
+        -677,  # ER_BO_CONNECT_FAILED
+    ]
+
+    @pytest.mark.parametrize("error_code", _SERVER_SESSION_LOST)
+    def test_server_session_lost_code_cubriddb(self, dialect_with_dbapi, error_code):
+        """CUBRIDdb ``(code, message)`` errors for a lost server session disconnect."""
+        dialect, dbapi = dialect_with_dbapi
+        # Wording-independent: the code alone decides.
+        exc = dbapi.DatabaseError(error_code, "opaque server message")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @staticmethod
+    def _pycubrid_error(dbapi, message: str, errno: int | None):
+        """Mimic pycubrid: ``args`` hold only the message, the code is in ``errno``."""
+        exc = dbapi.DatabaseError(message)
+        exc.errno = errno
+        return exc
+
+    @pytest.mark.parametrize("error_code", _SERVER_SESSION_LOST)
+    def test_server_session_lost_code_pycubrid(self, pycubrid_dialect, error_code):
+        """pycubrid errors carrying a lost-server-session ``errno`` disconnect."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", error_code)
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @pytest.mark.parametrize(
+        "errno",
+        [
+            -4,  # ER_INTERRUPTED on the wire, not a lost connection
+            -493,  # ER_PT_SYNTAX
+            -671,  # ER_CSS_RECV_OR_SEND: evaluated and not added (#564)
+            None,
+        ],
+    )
+    def test_other_pycubrid_errno_is_not_disconnect(self, pycubrid_dialect, errno):
+        """Only the server-session codes are matched against pycubrid ``errno``."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", errno)
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_decorated_str_does_not_decide_message_match(self, pycubrid_dialect):
+        """Only the driver's own message is matched, not a decorated ``str()``.
+
+        pycubrid's ``str()`` appends a description looked up from ``errno``
+        (``Communication error`` for -4 and -671).
+        """
+        dialect, dbapi = pycubrid_dialect
+
+        class DecoratedError(dbapi.OperationalError):
+            def __str__(self) -> str:
+                return f"{self.args[0]} (errno=-4, description='Communication error')"
+
+        assert dialect.is_disconnect(DecoratedError("opaque"), None, None) is False
+        assert dialect.is_disconnect(DecoratedError("connection is closed"), None, None) is True
+
+    @pytest.mark.parametrize(
+        ("errno", "expected"),
+        [(-4, False), (-671, False), (-493, False), (-111, True), (-224, True)],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_errors(self, variant, errno, expected):
+        """Real pycubrid exceptions through both pycubrid dialects."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = pycubrid.OperationalError("opaque server message", code=errno, errno=errno)
+        assert dialect.is_disconnect(exc, None, None) is expected
+
+    def test_pycubrid_failed_reconnect_is_disconnect(self, pycubrid_dialect):
+        """pycubrid's failed CHECK_CAS reconnect leaves the connection closed."""
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.OperationalError(
+            "CAS did not answer CHECK_CAS out of transaction and reconnecting failed"
+        )
+        assert dialect.is_disconnect(exc, None, None) is True
+
 
 class TestExtractErrorCode:
     """Tests for CubridDialect._extract_error_code()."""
