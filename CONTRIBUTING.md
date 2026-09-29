@@ -205,7 +205,9 @@ pre-commit run --all-files
 
 Contributors install the dev extra, run the shared checks, update affected docs
 and open a PR with motivation, commands/results and reasons for checks not run.
-For documentation changes, run `python scripts/generate_llms_full.py` and, in a
+For documentation changes, run `python scripts/generate_llms_full.py` (it regenerates
+`docs/llms-full.txt` and copies the canonical `docs/llms.txt` index to the root
+`llms.txt`; edit only `docs/llms.txt`) and, in a
 docs environment with `mkdocs-material` and `pymdown-extensions`, `mkdocs build --strict`.
 Maintainers coordinate project-specific Oracle/Codex reviews, final integration,
 release classification, repository secrets and GitHub labels. No particular agent

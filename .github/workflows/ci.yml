@@ -55,12 +55,12 @@ jobs:
         run: make lint
       - name: Lint CHANGELOG structure
         run: python scripts/lint_changelog.py
-      - name: llms-full.txt is in sync with source docs
+      - name: llms-full.txt and root llms.txt are in sync with source docs
         run: |
           python scripts/generate_llms_full.py
-          if ! git diff --quiet -- docs/llms-full.txt; then
-            echo "::error::docs/llms-full.txt is stale. Run 'python scripts/generate_llms_full.py' and commit the result."
-            git diff -- docs/llms-full.txt
+          if ! git diff --quiet -- docs/llms-full.txt llms.txt; then
+            echo "::error::docs/llms-full.txt or llms.txt is stale. Edit docs/llms.txt (the canonical index), run 'python scripts/generate_llms_full.py' and commit the result."
+            git diff -- docs/llms-full.txt llms.txt
             exit 1
           fi
 
