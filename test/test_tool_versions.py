@@ -56,6 +56,22 @@ def test_hook_swapped_subcommand_is_detected(tooling_config: Path) -> None:
     )
 
 
+def test_ruff_hook_args_is_detected(tooling_config: Path) -> None:
+    """pre-commit appends `args:` to `entry:`, so an added `args: ["--check"]`
+    on ruff-format would silently turn formatting into a no-op check while
+    the exact-entry check alone still sees the pinned entry line."""
+    config = tooling_config / ".pre-commit-config.yaml"
+    config.write_text(
+        config.read_text().replace(
+            "        entry: python3 -m ruff format\n        language: system\n",
+            '        entry: python3 -m ruff format\n        language: system\n        args: ["--check"]\n',
+        )
+    )
+    assert any(
+        "ruff-format" in error and "must not add args" in error for error in check(tooling_config)
+    )
+
+
 def test_hook_missing_language_system_is_detected(tooling_config: Path) -> None:
     config = tooling_config / ".pre-commit-config.yaml"
     config.write_text(

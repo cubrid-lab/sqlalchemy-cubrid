@@ -116,6 +116,13 @@ def check(root: Path) -> list[str]:
             {item.strip() for item in scope[0].split(",")} != {"python", "pyi"} for scope in scopes
         ):
             errors.append("Both Ruff hooks must use the same Python/pyi scope as the CLI")
+        for hook_id in ("ruff", "ruff-format"):
+            if re.search(r"^        args:", hook_blocks[hook_id], re.MULTILINE):
+                errors.append(
+                    f"{hook_id}: Ruff hook must not add args (pre-commit appends them to "
+                    "entry, e.g. `--check` on ruff-format silently disables formatting); the "
+                    "full command already lives in entry"
+                )
     if "mypy" in hook_blocks:
         body = hook_blocks["mypy"]
         args = _unique(r"^\s*args:\s*\[(.*?)\]", body, "mypy hook arguments")
