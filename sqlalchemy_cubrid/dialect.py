@@ -1427,9 +1427,25 @@ class CubridDialect(default.DefaultDialect):
     # call failed before or instead of a server error, and the server's own
     # code (``error_code.h``) otherwise, so server codes such as -4
     # (``ER_INTERRUPTED``, an interrupted query) must not appear here (#572).
-    # pycubrid never reports these codes; it keeps server codes in ``errno``.
+    # pycubrid doesn't negotiate CUBRID's renewed CAS/CCI error-code protocol
+    # (the -10xxx/-20xxx numbering below), so the CAS answers it with the
+    # legacy, unprefixed codes instead -- e.g. -4 for ``ER_INTERRUPTED``, the
+    # same code CUBRID's server uses internally (``error_code.h``). pycubrid
+    # keeps that legacy code in ``errno``, not in ``args[0]``. This applies
+    # to server codes (``error_code.h``, e.g. -4); a *CAS* code (``cas_error.h``,
+    # sent with ``CAS_ERROR_INDICATOR``) is instead legacy-renumbered by the
+    # CAS itself, from -10xxx to -1xxx: CUBRID's ``CAS_CONV_ERROR_TO_OLD``
+    # (``src/broker/cas_protocol.h``) adds 9000, so e.g. CAS_ER_COMMUNICATION
+    # reaches pycubrid as -1003, not -10003. See ``_pycubrid_legacy_cas_codes``
+    # below for the one such code this dialect currently matches.
+    #
+    # -10002 (CAS_ER_NO_MORE_MEMORY) is included below because cas.c's
+    # process_request() sends it when the CAS's read-buffer allocation fails,
+    # then returns FN_CLOSE_CONN, closing the connection (CUBRID v11.4.6
+    # src/broker/cas.c).
     _disconnect_error_codes = frozenset(
         {
+            -10002,  # CAS_ER_NO_MORE_MEMORY: CAS out of memory (see above)
             -10003,  # CAS_ER_COMMUNICATION (CCI's IS_ER_COMMUNICATION, with -20004)
             -20002,  # CCI_ER_CON_HANDLE: the connection handle is closed or invalid
             -20004,  # CCI_ER_COMMUNICATION: "Cannot communicate with server"
@@ -1452,6 +1468,19 @@ class CubridDialect(default.DefaultDialect):
         }
     )
 
+    # CAS codes (``cas_error.h``) as pycubrid actually receives them: pycubrid
+    # never advertises understanding CUBRID's renewed error-code protocol (no
+    # ``driver_info`` flags in its handshake), so the CAS legacy-renumbers
+    # them with ``CAS_CONV_ERROR_TO_OLD`` (``src/broker/cas_protocol.h``:
+    # ``V + 9000``) before sending them. -1002 is legacy CAS_ER_NO_MORE_MEMORY
+    # (-10002 + 9000); see ``_disconnect_error_codes`` above for what it means
+    # and why it disconnects (#578).
+    _pycubrid_legacy_cas_codes = frozenset(
+        {
+            -1002,  # legacy CAS_ER_NO_MORE_MEMORY
+        }
+    )
+
     def is_disconnect(self, e: Exception, connection: Any, cursor: Any) -> bool:
         """Return True if *e* indicates a dropped connection.
 
@@ -1470,10 +1499,12 @@ class CubridDialect(default.DefaultDialect):
         pycubrid's client-side "connection lost during receive").
 
         Codes come from ``args[0]`` (CUBRIDdb) and, for pycubrid, from its
-        ``errno`` attribute; ``errno`` is matched only against the
-        server-session codes (``_server_session_lost_codes``, #565). The
-        message fallback reads the driver's own message (``args[0]`` when it
-        is a string), not pycubrid's ``str()`` with its code description.
+        ``errno`` attribute; ``errno`` is matched against the server-session
+        codes (``_server_session_lost_codes``, #565) and the legacy-renumbered
+        CAS codes pycubrid receives (``_pycubrid_legacy_cas_codes``, #578).
+        The message fallback reads the driver's own message (``args[0]``
+        when it is a string), not pycubrid's ``str()`` with its code
+        description.
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1493,10 +1524,16 @@ class CubridDialect(default.DefaultDialect):
         ):
             return True
         # pycubrid keeps the server code in ``errno`` (its ``args`` hold only
-        # the message). Only the server-session codes are matched there: the
-        # CCI/CAS codes above are CUBRIDdb's, and an ``errno`` of -4 is the
-        # server's ER_INTERRUPTED (an interrupted query), not a disconnect.
-        if getattr(e, "errno", None) in self._server_session_lost_codes:
+        # the message). An ``errno`` of -4 is the server's ER_INTERRUPTED (an
+        # interrupted query), not a disconnect. The CCI codes in
+        # ``_disconnect_error_codes`` above are CUBRIDdb's; the CAS codes
+        # there reach pycubrid legacy-renumbered instead, in
+        # ``_pycubrid_legacy_cas_codes`` (#578).
+        pycubrid_errno = getattr(e, "errno", None)
+        if (
+            pycubrid_errno in self._server_session_lost_codes
+            or pycubrid_errno in self._pycubrid_legacy_cas_codes
+        ):
             return True
 
         # 2. An OSError in the explicit cause chain means a transport-level

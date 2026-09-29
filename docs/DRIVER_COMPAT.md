@@ -150,12 +150,14 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 - Numeric error code matching, on `args[0]` (CUBRIDdb only), for the CCI and CAS
   codes of a dead or unusable connection: -20004 (`CCI_ER_COMMUNICATION`), -10003
   (`CAS_ER_COMMUNICATION`; CCI treats both as communication errors), -20002
-  (`CCI_ER_CON_HANDLE`) and -20016 (`CCI_ER_CONNECT`). Releases up to 1.8.0 listed -4,
-  -10005, -10007, -21003 and -21005 instead (#572): -4 is the server's `ER_INTERRUPTED`
-  (a query interrupted by `KILL QUERY`), so CUBRIDdb invalidated a working connection;
-  -10005 and -10007 are `CAS_ER_TRAN_TYPE` and `CAS_ER_NUM_BIND`; -21003 and -21005 are
-  CUBRID JDBC codes that neither Python driver raises. -20004, which CUBRIDdb raises
-  when its CAS dies mid-transaction, was missing.
+  (`CCI_ER_CON_HANDLE`), -20016 (`CCI_ER_CONNECT`) and -10002
+  (`CAS_ER_NO_MORE_MEMORY`; the CAS closes the connection after sending it). Releases
+  up to 1.8.0 listed -4, -10005, -10007, -21003 and -21005 instead (#572): -4 is the
+  server's `ER_INTERRUPTED` (a query interrupted by `KILL QUERY`), so CUBRIDdb
+  invalidated a working connection; -10005 and -10007 are `CAS_ER_TRAN_TYPE` and
+  `CAS_ER_NUM_BIND`; -21003 and -21005 are CUBRID JDBC codes that neither Python
+  driver raises. -20004, which CUBRIDdb raises when its CAS dies mid-transaction, and
+  -10002 were missing (#578).
 - Numeric error code matching, on both drivers, for the server errors that make the
   broker reset the CAS because its session with `cub_server` is gone: -111
   (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224
@@ -164,6 +166,11 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
   until the transaction ends, even after the server is back (#565). -671
   (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
   See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
+- Numeric error code matching, on pycubrid's `errno` only, for CAS codes as pycubrid
+  actually receives them: CUBRID's CAS legacy-renumbers `cas_error.h` codes (adds 9000)
+  for a driver, like pycubrid, that never advertises understanding the renewed
+  error-code protocol. -1002 (legacy `CAS_ER_NO_MORE_MEMORY`, i.e. -10002 + 9000) is
+  matched this way (#578).
 
 ### 2. CCI Library Dependency
 

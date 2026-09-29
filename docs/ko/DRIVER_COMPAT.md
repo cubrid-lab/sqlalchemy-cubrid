@@ -133,8 +133,9 @@ pycubrid는 `args`에 메시지만 담고 서버 오류 코드는 `errno`(및 `c
 
 CUBRIDdb 11.3.0.51은 `OperationalError`를 정의하지만([예외 계층](#예외-계층) 참고), 방언의 `is_disconnect()`는 예외 클래스로 연결 해제를 분류하지 않습니다. 대신:
 - 알려진 연결 해제 메시지 16종에 대한 문자열 패턴 매칭
-- 끊겼거나 쓸 수 없는 연결의 CCI·CAS 코드에 대한 `args[0]`(CUBRIDdb 전용) 숫자 오류 코드 매칭: -20004(`CCI_ER_COMMUNICATION`), -10003(`CAS_ER_COMMUNICATION`, CCI는 두 코드를 통신 오류로 취급), -20002(`CCI_ER_CON_HANDLE`), -20016(`CCI_ER_CONNECT`). 1.8.0까지의 릴리스는 대신 -4, -10005, -10007, -21003, -21005를 나열했습니다(#572). -4는 서버의 `ER_INTERRUPTED`(`KILL QUERY`로 중단된 쿼리)여서 CUBRIDdb는 멀쩡한 연결을 무효화했고, -10005와 -10007은 `CAS_ER_TRAN_TYPE`과 `CAS_ER_NUM_BIND`, -21003과 -21005는 어느 Python 드라이버도 내지 않는 CUBRID JDBC 코드입니다. CUBRIDdb가 트랜잭션 중 CAS가 죽었을 때 내는 -20004는 빠져 있었습니다.
+- 끊겼거나 쓸 수 없는 연결의 CCI·CAS 코드에 대한 `args[0]`(CUBRIDdb 전용) 숫자 오류 코드 매칭: -20004(`CCI_ER_COMMUNICATION`), -10003(`CAS_ER_COMMUNICATION`, CCI는 두 코드를 통신 오류로 취급), -20002(`CCI_ER_CON_HANDLE`), -20016(`CCI_ER_CONNECT`), -10002(`CAS_ER_NO_MORE_MEMORY`; CAS가 이 코드를 보낸 뒤 연결을 닫음). 1.8.0까지의 릴리스는 대신 -4, -10005, -10007, -21003, -21005를 나열했습니다(#572). -4는 서버의 `ER_INTERRUPTED`(`KILL QUERY`로 중단된 쿼리)여서 CUBRIDdb는 멀쩡한 연결을 무효화했고, -10005와 -10007은 `CAS_ER_TRAN_TYPE`과 `CAS_ER_NUM_BIND`, -21003과 -21005는 어느 Python 드라이버도 내지 않는 CUBRID JDBC 코드입니다. CUBRIDdb가 트랜잭션 중 CAS가 죽었을 때 내는 -20004와 -10002는 빠져 있었습니다(#578).
 - CAS의 `cub_server` 세션이 사라져 브로커가 CAS를 리셋하는 서버 오류에 대한 숫자 오류 코드 매칭(두 드라이버 모두): -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). `cub_server`가 중지되거나 비정상 종료되면 트랜잭션 중인 연결은 -111을 받고, 이후 트랜잭션이 끝날 때까지 서버가 다시 올라와도 모든 문장에서 -224를 받습니다(#565). -671(`ER_CSS_RECV_OR_SEND`)은 브로커가 CAS를 리셋하지 않으므로 포함하지 않습니다. [문제 해결](TROUBLESHOOTING.md#cub_server-재시작-또는-장애-후-오류) 참고.
+- pycubrid의 `errno`에 대해서만 하는 숫자 오류 코드 매칭으로, pycubrid가 실제로 받는 형태의 CAS 코드를 검사: pycubrid처럼 갱신된 오류 코드 프로토콜을 이해한다고 알리지 않는 드라이버에게 CUBRID의 CAS는 `cas_error.h` 코드에 9000을 더해 레거시 번호로 보냅니다. -1002(레거시 `CAS_ER_NO_MORE_MEMORY`, 즉 -10002 + 9000)가 이렇게 매칭됩니다(#578).
 
 ### 2. CCI 라이브러리 의존성
 
