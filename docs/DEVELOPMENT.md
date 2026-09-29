@@ -44,8 +44,7 @@ make install
 
 `make install` performs:
 1. `pip install -e ".[dev]"` — editable install with dev dependencies
-2. `pip install pytest-cov pre-commit tox` — test tooling
-3. `pre-commit install` — git hook setup
+2. `pre-commit install` — git hook setup
 
 ### Manual Setup
 
@@ -58,11 +57,7 @@ source venv/bin/activate  # Linux/macOS
 # Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
-# Install test coverage and multi-version tools
-pip install pytest-cov tox
-
-# (Optional) Install pre-commit hooks
-pip install pre-commit
+# Install pre-commit hooks
 pre-commit install
 ```
 
@@ -504,9 +499,6 @@ skip_missing_interpreters = true
 ### Running tox
 
 ```bash
-# Install tox
-pip install tox
-
 # Run all environments
 tox
 
