@@ -463,15 +463,16 @@ make format
 
 Pre-commit hooks run lint and format checks automatically on `git commit`.
 
-Ruff/mypy versions are single-sourced from the dev pins in `pyproject.toml`.
-The isolated mypy hook follows interpreter compatibility: Python 3.10 installs
-SQLAlchemy 2.0.53, and Python 3.11+ installs SQLAlchemy 2.1.1 (which requires
-Python 3.11+), using exact conditional dependencies for the async extra. It also
-installs the existing Alembic supported range, then checks `sqlalchemy_cubrid/`
-with the project's strict configuration. It does not install stubs automatically or
-suppress missing imports. Ruff's explicit `include = ["*.py", "*.pyi"]` and
-the matching hook types keep CLI, CI and hooks on Python sources rather than
-rewriting documentation snippets.
+Ruff and Mypy versions are single-sourced from the dev pins in `pyproject.toml`.
+The Ruff and Mypy pre-commit hooks are `repo: local` / `language: system` hooks
+that invoke `python3 -m ruff`/`python3 -m mypy` against the active `.[dev]`
+environment, so there is no separate hook revision to keep in sync: the pin in
+`pyproject.toml` is authoritative everywhere. The mypy hook checks
+`sqlalchemy_cubrid/` with the project's strict configuration using whatever
+SQLAlchemy/Alembic the active `.[dev,alembic]` environment already provides. It
+does not install stubs automatically or suppress missing imports. Ruff's
+explicit `include = ["*.py", "*.pyi"]` and the matching hook types keep CLI, CI
+and hooks on Python sources rather than rewriting documentation snippets.
 
 The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
 demos, samples and `docs/source` Python configuration. CI and tox invoke
@@ -479,19 +480,34 @@ demos, samples and `docs/source` Python configuration. CI and tox invoke
 checker rejects omitted maintained directories or a runner that bypasses this
 shared target.
 
-When updating a tool pin, update its pre-commit revision and tox pin in the same
-change; update the CI mypy pin when applicable. SQLAlchemy type-check pairs are
-read from CI by `scripts/check_tool_versions.py`. Run `make check-tool-versions`,
-`pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21` after
-the update. The consistency check runs through CI lint, tox lint and a local
-pre-commit hook, so a dependency-only update cannot silently leave old pins.
+Only `pyproject.toml`'s dev pin needs updating when bumping Ruff or Mypy
+(Dependabot's `pip` ecosystem does exactly this): the pre-commit hooks and the
+`tox -e lint`/`typecheck-sa20`/`typecheck-sa21` environments install the
+project's own `dev` extra, so they always run whatever that pin resolves to.
+`tox -e typecheck-sa20`/`typecheck-sa21` additionally pin an exact SQLAlchemy
+release per Python version (2.0.53 on 3.10, 2.1.1 on 3.13) to match CI's
+type-check matrix; those pairs are read from CI by
+`scripts/check_tool_versions.py`. Run `make check-tool-versions`,
+`pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21`
+after a change. The consistency check runs through CI lint, tox lint and a
+local pre-commit hook, so a dependency-only update cannot silently leave old
+pins.
 
 ### Setup
 
+The Ruff and Mypy hooks run via `language: system`, invoking `python3 -m
+ruff`/`python3 -m mypy` from whatever environment is active when Git runs the
+hook. Install the project's `dev` extra (which pins Ruff and Mypy) into that
+same environment first, then install the hooks:
+
 ```bash
-pip install pre-commit
+pip install -e ".[dev]"
 pre-commit install
 ```
+
+Activate that environment (or a venv where it's installed) whenever a commit
+should run the hooks; otherwise Ruff/Mypy are missing or a stale/global
+version silently runs instead of the pinned one.
 
 ### Manual Run
 

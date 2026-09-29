@@ -80,7 +80,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install type-check dependencies
-        run: pip install -e ".[alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}" "mypy==2.3.1"
+        run: pip install -e ".[dev,alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
       - name: Check strict typing and report dependency versions
         run: make typecheck
 
