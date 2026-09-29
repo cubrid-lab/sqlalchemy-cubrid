@@ -17,6 +17,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [인증 실패](#인증-실패)
   - [끊어진 연결 / 연결 해제](#끊어진-연결--연결-해제)
   - [cub_server 재시작 또는 장애 후 오류](#cub_server-재시작-또는-장애-후-오류)
+  - [중단된 쿼리 (-4)](#중단된-쿼리--4)
   - [커넥션 풀 고갈](#커넥션-풀-고갈)
   - [잘못된 URL 형식](#잘못된-url-형식)
 - [SQL 컴파일 문제](#sql-컴파일-문제)
@@ -239,6 +240,22 @@ DatabaseError: (-224) A database has not been restarted.
 **동작:** 방언은 브로커가 CAS를 리셋하는 코드를 두 드라이버 모두에서 연결 끊김으로 취급합니다: -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). SQLAlchemy는 연결을 무효화하고(`exc.connection_invalidated`가 `True`) 풀은 새 연결을 엽니다. `cub_server`가 내려가 있는 동안 재연결에 실패한 pycubrid 연결(`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`)도 연결 끊김입니다. 1.8.0까지의 릴리스는 이 오류들을 분류하지 않아 망가진 연결이 풀에 남았습니다.
 
 **해결:** 설정할 것은 없습니다. 롤백하고(`with engine.connect()`나 `Session` 블록을 벗어나면 롤백됩니다) `cub_server`가 다시 연결을 받으면 트랜잭션을 재시도하세요.
+
+---
+
+### 중단된 쿼리 (-4)
+
+**증상:** 실행 중인 문장이 다음과 같이 실패합니다:
+
+```
+DatabaseError: (-4) Has been interrupted.
+```
+
+**원인:** 다른 세션이 이 문장에 `KILL QUERY <tran_index>`를 실행했습니다. -4는 서버의 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. pycubrid의 `str()`은 -4를 `Communication error`로 설명하지만, 이는 pycubrid의 라벨일 뿐 서버 코드의 의미가 아닙니다.
+
+**동작:** 이 오류는 연결 끊김이 아닙니다. SQLAlchemy는 연결을 유지합니다(`exc.connection_invalidated`가 `False`). 1.8.0까지의 릴리스는 CUBRIDdb의 -4를 연결 끊김으로 취급해 연결을 교체했습니다(#572).
+
+**해결:** 문장을 끝까지 실행해야 한다면 롤백하고 재시도하세요.
 
 ---
 
