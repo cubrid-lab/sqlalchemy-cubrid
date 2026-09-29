@@ -6095,7 +6095,7 @@ make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
 make test          # Run offline tests with coverage (95% threshold)
 make test-all      # Run tox across all Python versions
-make integration   # Start Docker → run integration tests → stop Docker
+make integration   # Start a run-owned Docker project → run integration tests → remove it
 make docker-up     # Start CUBRID Docker container
 make docker-down   # Stop and remove CUBRID Docker container
 make clean         # Remove build artifacts and caches
@@ -6285,11 +6285,59 @@ CUBRID_VERSION=10.2 docker compose up -d
 make integration
 ```
 
-`make integration` attempts `docker compose down -v` on shell exit, including
-after failed startup, readiness waiting or tests. The original failure is preserved
-if cleanup also fails; cleanup failure after passing tests also makes the command
-fail. Cleanup errors are reported explicitly. This does not guarantee cleanup after
-an untrappable termination such as `SIGKILL` or a host shutdown.
+`make integration` runs in its own Compose project, named
+`sqlalchemy-cubrid-it-<timestamp>-<pid>` by default. Its container, network and
+`cubrid-data` volume are therefore separate from every other run and from a stack
+started with `docker compose up -d` or `make docker-up`, whose project Compose
+names after the checkout directory (or `COMPOSE_PROJECT_NAME`).
+
+Before starting, it checks that the project has no containers, volumes or
+networks and that no volume named exactly `<project>_cubrid-data` exists. If
+anything is found, it refuses to run and neither starts nor removes anything. If
+the check itself fails (for example, the Docker daemon is unreachable), it prints
+`Ownership check ... failed; nothing was started` and stops. Only after the check
+passes does it register cleanup, so `docker compose -p <project> down -v` only
+removes resources that this run created.
+
+Cleanup runs on shell exit, including after failed startup, readiness waiting or
+tests, and when the run receives `SIGINT` (Ctrl-C), `SIGTERM` (for example from
+`timeout` or `kill`) or `SIGHUP` (a closed terminal):
+
+- If the signal arrives while `docker compose up -d` runs, cleanup first lets it
+  finish, for up to `INTEGRATION_STOP_GRACE` seconds (default 10). The Docker
+  daemon completes a container create even after the client is killed, so
+  stopping `up -d` halfway could leave a container, and a re-created volume, that
+  `down -v` had already missed. `up -d` runs in its own process group, so a
+  terminal Ctrl-C does not reach it. If it is still running after the grace period,
+  its group, including the Compose plugin process, is sent `SIGTERM`, and cleanup
+  waits for the whole group to exit.
+- Any other running step (the readiness wait or pytest) is sent `SIGTERM` at once
+  and killed if it is still running `INTEGRATION_STOP_GRACE` seconds later.
+- Cleanup runs once, and the command exits with 128 + the signal number (130, 143
+  or 129).
+- Further `SIGINT`, `SIGTERM` or `SIGHUP` signals are ignored until
+  `docker compose down -v` finishes, and `down -v` runs in its own session.
+  Neither a second Ctrl-C nor a signal sent to the whole process group (as GNU
+  `timeout` does) interrupts or repeats it. If `down -v` itself hangs, `SIGQUIT`
+  (`Ctrl-\`) stops `make` without waiting for it.
+- A signal that was already ignored when `make` started, such as `SIGINT` for a
+  background job of a non-interactive shell, cannot be handled.
+
+The original failure is preserved if cleanup also fails; cleanup failure after
+passing tests also makes the command fail. Cleanup errors are reported
+explicitly. Cleanup is not guaranteed after an untrappable termination such as
+`SIGKILL` or a host shutdown. Remove such a leftover project with
+`docker compose -p <project> down -v` after checking its name with
+`docker compose ls -a`.
+
+The container publishes CUBRID on host port 33000. If that port is already in
+use, pick another one with `make integration CUBRID_PORT=33999`; the test URL
+follows it. `INTEGRATION_PROJECT=<name>` fixes the project name. It must match
+`^[a-z0-9][a-z0-9_-]*$` (otherwise the command exits with status 2 before running
+any Docker command), and the same pre-existence check applies. Two concurrent
+runs with the same fixed `INTEGRATION_PROJECT` are not supported. pytest keeps the
+terminal's standard input, so `make integration PYTEST="python3 -m pytest --pdb"`
+can stop in the debugger; Ctrl-C there ends the run and cleans up.
 
 For an already-running server, set `CUBRID_TEST_URL` and use `make integration-local`.
 That target never starts or stops Docker and leaves the external server running.

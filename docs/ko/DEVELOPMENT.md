@@ -141,7 +141,7 @@ make typecheck     # 의존성 버전 출력 및 strict mypy 검사
 make format        # 린트 문제 자동 수정 및 코드 포맷
 make test          # 커버리지와 함께 오프라인 테스트 실행 (95% 임계값)
 make test-all      # 모든 Python 버전에서 tox 실행
-make integration   # Docker 시작 → 통합 테스트 실행 → Docker 중지
+make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 → 삭제
 make docker-up     # CUBRID Docker 컨테이너 시작
 make docker-down   # CUBRID Docker 컨테이너 중지 및 제거
 make clean         # 빌드 산출물과 캐시 제거
@@ -322,11 +322,55 @@ CUBRID_VERSION=10.2 docker compose up -d
 make integration
 ```
 
-`make integration`은 셸이 종료될 때 `docker compose down -v`를 시도합니다.
-컨테이너 시작, 준비 대기 또는 테스트가 실패한 경우에도 정리를 시도합니다.
+`make integration`은 기본적으로 `sqlalchemy-cubrid-it-<timestamp>-<pid>`라는
+자체 Compose 프로젝트에서 실행됩니다. 따라서 컨테이너, 네트워크와 `cubrid-data`
+볼륨은 다른 모든 실행, 그리고 `docker compose up -d`나 `make docker-up`으로 시작한
+스택과 분리됩니다. 후자의 프로젝트 이름은 Compose가 체크아웃 디렉터리 이름(또는
+`COMPOSE_PROJECT_NAME`)으로 정합니다.
+
+시작하기 전에 해당 프로젝트에 컨테이너, 볼륨 또는 네트워크가 없고 이름이 정확히
+`<project>_cubrid-data`인 볼륨도 없는지 확인합니다. 무엇이든 발견되면 실행을
+거부하며 아무것도 시작하거나 삭제하지 않습니다. 확인 자체가 실패하면(예: Docker
+데몬에 연결할 수 없음) `Ownership check ... failed; nothing was started`를 출력하고
+중단합니다. 확인을 통과한 뒤에야 정리를 등록하므로 `docker compose -p <project> down -v`는
+이번 실행이 만든 리소스만 삭제합니다.
+
+정리는 셸이 종료될 때 실행되며, 컨테이너 시작, 준비 대기 또는 테스트가 실패한
+경우와 실행이 `SIGINT`(Ctrl-C), `SIGTERM`(예: `timeout`이나 `kill`) 또는
+`SIGHUP`(터미널 종료)을 받은 경우에도 실행됩니다.
+
+- `docker compose up -d` 실행 중에 시그널을 받으면 정리는 먼저
+  `INTEGRATION_STOP_GRACE`초(기본값 10)까지 `up -d`가 끝나기를 기다립니다. Docker
+  데몬은 클라이언트가 종료된 뒤에도 컨테이너 생성을 끝까지 수행하므로, `up -d`를
+  중간에 멈추면 `down -v`가 이미 놓친 컨테이너와 다시 생성된 볼륨이 남을 수 있습니다.
+  `up -d`는 자체 프로세스 그룹에서 실행되므로 터미널의 Ctrl-C가 전달되지 않습니다.
+  유예 시간이 지나도 실행 중이면 Compose 플러그인 프로세스를 포함한 그룹 전체에
+  `SIGTERM`을 보내고, 정리는 그 그룹 전체가 종료될 때까지 기다립니다.
+- 그 밖의 실행 중인 단계(준비 대기 또는 pytest)에는 즉시 `SIGTERM`을 보내고,
+  `INTEGRATION_STOP_GRACE`초 후에도 실행 중이면 강제 종료합니다.
+- 정리는 한 번만 실행되고, 명령은 128 + 시그널 번호(130, 143 또는 129)로 종료합니다.
+- `docker compose down -v`가 끝날 때까지 추가 `SIGINT`, `SIGTERM`, `SIGHUP`은
+  무시되며 `down -v`는 별도 세션에서 실행됩니다. Ctrl-C를 다시 누르거나 GNU
+  `timeout`처럼 프로세스 그룹 전체에 시그널을 보내도 정리가 중단되거나 반복되지
+  않습니다. `down -v` 자체가 멈추면 `SIGQUIT`(`Ctrl-\`)로 기다리지 않고 `make`를
+  중지할 수 있습니다.
+- 비대화형 셸의 백그라운드 작업에서 `SIGINT`처럼 `make`가 시작될 때 이미 무시되던
+  시그널은 처리할 수 없습니다.
+
 정리까지 실패하면 최초 실패를 유지하고, 테스트가 성공했더라도 정리가 실패하면
 명령은 실패합니다. 정리 오류는 명시적으로 출력됩니다. `SIGKILL`이나 호스트 종료처럼
-처리할 수 없는 종료 상황에서는 정리를 보장하지 않습니다.
+처리할 수 없는 종료 상황에서는 정리를 보장하지 않습니다. 이렇게 남은 프로젝트는
+`docker compose ls -a`로 이름을 확인한 뒤 `docker compose -p <project> down -v`로
+삭제하세요.
+
+컨테이너는 CUBRID를 호스트 포트 33000에 게시합니다. 이 포트가 이미 사용 중이면
+`make integration CUBRID_PORT=33999`처럼 다른 포트를 지정하세요. 테스트 URL도 이
+포트를 따릅니다. `INTEGRATION_PROJECT=<name>`으로 프로젝트 이름을 고정할 수
+있습니다. 이름은 `^[a-z0-9][a-z0-9_-]*$`와 일치해야 하며(그렇지 않으면 Docker 명령을
+실행하기 전에 상태 2로 종료), 같은 사전 존재 확인이 적용됩니다. 같은 고정
+`INTEGRATION_PROJECT`로 두 실행을 동시에 하는 것은 지원하지 않습니다. pytest는
+터미널의 표준 입력을 유지하므로 `make integration PYTEST="python3 -m pytest --pdb"`로
+디버거를 사용할 수 있습니다. 디버거에서 Ctrl-C를 누르면 실행이 끝나고 정리됩니다.
 
 이미 실행 중인 서버에는 `CUBRID_TEST_URL`을 설정하고 `make integration-local`을
 사용하세요. 이 대상은 Docker를 시작하거나 중지하지 않으며 외부 서버를 유지합니다.

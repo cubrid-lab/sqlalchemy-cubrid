@@ -117,6 +117,12 @@ docker compose down -v
 
 Supported CUBRID versions: `11.4`, `11.2`, `11.0`, `10.2`.
 
+`make integration` does not use this default stack. It starts its own uniquely
+named Compose project, refuses to run if that project already has containers,
+volumes or networks, and removes only what it created (`docker compose -p
+<project> down -v`), also after Ctrl-C, `SIGTERM` or `SIGHUP`. Use `make integration CUBRID_PORT=<port>` if port 33000 is
+taken. See [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#quick-integration-workflow).
+
 ---
 
 ## Code Style
