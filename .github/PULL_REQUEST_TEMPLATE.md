@@ -1,3 +1,10 @@
+<!--
+Title: `type: description` or `type(scope): description`; add `!` before the colon
+for a breaking change. Types: feat, fix, docs, test, perf, refactor, ci, build,
+chore, style, revert. English, lowercase start, no trailing period, no issue
+numbers (put "Closes #123" in Related Issues). The title becomes the squash
+commit title. See CONTRIBUTING.md#pull-request-and-commit-titles.
+-->
 ## Summary
 
 <!-- Brief description of changes -->
@@ -14,7 +21,7 @@
 
 - [ ] Bug fix (non-breaking change that fixes an issue)
 - [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
+- [ ] Breaking change (fix or feature that would cause existing functionality to change; add `!` to the title)
 - [ ] Documentation update
 - [ ] Refactoring (no functional changes)
 - [ ] Chore (maintenance, dependencies, CI, etc.)
@@ -41,4 +48,4 @@
 
 ## Related Issues
 
-<!-- Link to related issues: Closes #123, Fixes #456 -->
+<!-- Closes #123 / Refs #456. Issue numbers go here, not in the PR title. -->

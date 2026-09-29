@@ -149,7 +149,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          ISSUE_TITLE: "Upstream canary failing against pycubrid@main"
+          ISSUE_TITLE: "ci: upstream canary failing against pycubrid@main"
+          # Title used before the title rule; still matched so an issue that is
+          # already open keeps being updated and closed instead of duplicated.
+          LEGACY_ISSUE_TITLE: "Upstream canary failing against pycubrid@main"
           SA_REF: ${{ github.ref_name }}
           SA_SHA: ${{ github.sha }}
           OFFLINE_STATUS: ${{ needs.upstream-canary.outputs.status }}
@@ -187,12 +190,13 @@ jobs:
           table="| Job | Outcome | pycubrid commit tested |"$'\n'"|---|---|---|"$'\n'"${rows}"
           tested="sqlalchemy-cubrid: \`${SA_REF}\` at [\`${SA_SHA:0:12}\`](https://github.com/${GH_REPO}/commit/${SA_SHA})"
 
-          # Existing open tracking issue: exact title match among open issues
-          # labelled "ci" (REST listing, so a just-created issue is found).
+          # Existing open tracking issue: exact title match (current or legacy
+          # title) among open issues labelled "ci" (REST listing, so a
+          # just-created issue is found).
           # jq runs once per page, so keep the first line in bash instead of
           # piping to head (which could SIGPIPE gh under pipefail).
           issue="$(gh api --paginate "repos/${GH_REPO}/issues?state=open&labels=ci&per_page=100" \
-            --jq 'first(.[] | select(.pull_request == null and .title == env.ISSUE_TITLE) | .number) // empty')"
+            --jq 'first(.[] | select(.pull_request == null and (.title == env.ISSUE_TITLE or .title == env.LEGACY_ISSUE_TITLE)) | .number) // empty')"
           issue="${issue%%$'\n'*}"
 
           if [ "$failed" -gt 0 ]; then

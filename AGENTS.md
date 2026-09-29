@@ -293,8 +293,8 @@ Maintainers or triagers assign/create the canonical GitHub labels. Outside
 reporters can describe urgency and effort without label permissions; those
 descriptions help triage but do not themselves assign a label.
 
-Use a short issue title prefix such as `fix:`, `feat:`, `docs:`, `ci:`,
-`chore:`, `test:`, or `perf:` (with an optional scope before the colon).
+Issue titles use the same `type(scope): description` format as pull request
+titles (see [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-and-commit-titles)).
 `.github/workflows/issue-triage.yml` flags incomplete human-submitted issue
 titles or labels as `status: needs triage` without posting a comment or
 guessing priority/size. Maintainers remove that label once triage is complete.
@@ -358,6 +358,14 @@ Do not mark work complete until code, tests, and documentation are consistent.
 
 ## Commit Convention
 
+Issue titles, pull request titles and commit subjects follow
+[CONTRIBUTING.md - Pull request and commit titles](CONTRIBUTING.md#pull-request-and-commit-titles):
+`type(scope)!: description` with types `feat`, `fix`, `docs`, `test`, `perf`,
+`refactor`, `ci`, `build`, `chore`, `style`, `revert`; English, lowercase start,
+no trailing period, no issue numbers in pull request titles (use `Closes #N` /
+`Refs #N` in the body). Pull requests are squash-merged and the pull request
+title becomes the commit title. The `PR title` check enforces it.
+
 ### Format
 
 ```
@@ -375,19 +383,6 @@ Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 The tool-attribution example applies only to work produced with that tool.
 Preserve actual contributor authorship and real coauthors; outside contributions
 do not require a named agent, tool credit or a blanket coauthor trailer.
-
-### Types
-
-| Type | When to use |
-|------|-------------|
-| `feat` | New user-facing capability (new DML construct, new type, new dialect flag) |
-| `fix` | Bug fix — corrects wrong behavior |
-| `refactor` | Internal restructuring with no behavior change |
-| `test` | Add/update tests only |
-| `docs` | Documentation only |
-| `chore` | Tooling, deps, CI config, version bumps |
-| `ci` | CI workflow changes |
-| `perf` | Performance improvement with measurable impact |
 
 ### Rules (MANDATORY)
 

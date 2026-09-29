@@ -9,8 +9,8 @@ from collections.abc import Iterable
 from pathlib import Path
 
 _TITLE = re.compile(
-    r"^(?:fix|feat|docs|ci|chore|test|perf|refactor|epic)"
-    r"(?:\([a-z0-9_-]+\))?: \S"
+    r"^(?:feat|fix|docs|test|perf|refactor|ci|build|chore|style|revert)"
+    r"(?:\([a-z0-9][a-z0-9_-]*\))?!?: \S"
 )
 _TYPE_LABELS = frozenset(
     {"bug", "enhancement", "documentation", "chore", "ci", "testing", "refactor", "performance"}
