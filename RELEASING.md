@@ -89,7 +89,8 @@ the tag is contained in `main`, the successful full matrix, and that the GitHub
 Release for the tag exists with its SBOM (so `create-release.yml` must have
 succeeded); it then builds,
 smoke-tests the wheel and sdist, and publishes via Trusted Publisher (OIDC)
-behind the `pypi` environment.
+behind the `pypi` environment. The upload fails closed on duplicates: see the
+partial-upload recovery under **Recovery**.
 
 Verify the published package from a clean environment:
 
@@ -139,16 +140,46 @@ gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python
   ```
 
 - **Publish job failed after the checks passed** (for example a transient PyPI
-  error): rerun only the failed job, which reuses the already-verified build
-  artifact instead of rebuilding it:
+  error, or an upload that stopped after the wheel but before the sdist): rerun
+  only the failed jobs of the **same** run. The rerun reuses that run's
+  verified build artifact and workflow commit instead of rebuilding:
 
   ```bash
   gh run list --workflow publish-pypi.yml --limit 5
   gh run rerun <run-id> --failed
   ```
 
-  The `skip-existing: true` publish step makes this safe to rerun even after
-  a partial upload already reached PyPI.
+  The publish step does not use `skip-existing`. Before it,
+  `scripts/pypi_duplicate_guard.py` reads
+  `https://pypi.org/pypi/<project>/X.Y.Z/json` and compares the SHA-256 of each
+  file in the verified `dist/` with the file PyPI serves under the same name:
+
+  - not on PyPI (or no such release yet, HTTP 404): uploaded;
+  - on PyPI with the same SHA-256 (the earlier attempt uploaded it): removed
+    from the upload set and logged. When every file is already on PyPI the
+    upload step is skipped, and `notify-cookbook` still dispatches the smoke
+    test, because PyPI provably serves this run's verified build;
+  - on PyPI with a different SHA-256, PyPI serves a file for this version that
+    the verified build did not produce, or PyPI cannot be queried (network
+    error, an HTTP status other than 404, an unexpected response): the job
+    fails and nothing is uploaded.
+
+  The build is not bit-for-bit reproducible, so never dispatch a new
+  `publish-pypi.yml` run (or rerun all jobs) to finish a partial upload: the
+  rebuilt files differ from the ones already on PyPI and the guard fails on the
+  hash mismatch, by design. The verified artifact is kept for one day; once it
+  has expired, or if the guard reports a mismatch, the version cannot be
+  completed. Handle it as a broken release (above): yank it on PyPI if needed
+  and ship `X.Y.(Z+1)`. Transient PyPI errors during the check (HTTP 5xx,
+  connection errors, timeouts) are retried a few times before the guard fails;
+  only a real HTTP 404 counts as "not published". If PyPI's JSON API lags right
+  after an upload and does not list a file yet, that file goes to the upload
+  step, which is still safe: PyPI accepts a byte-identical re-upload of an
+  existing filename and rejects different bytes (`400 File already exists`).
+  So when the upload step fails after the guard passed, it is a real error,
+  not lag: a `File already exists` rejection means PyPI holds different bytes
+  for that filename (handle it as a broken release); for any other error, read
+  the log before rerunning `--failed`.
 
 - **`notify-cookbook` job failed** (for example `COOKBOOK_DISPATCH_TOKEN` is
   missing or the dispatch errored): the package is already on PyPI, so never
