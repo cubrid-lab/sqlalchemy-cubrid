@@ -163,7 +163,7 @@ TRANSIENT = [
     pytest.param(lambda: ConnectionResetError("reset"), id="reset"),
     pytest.param(lambda: http_error(500), id="HTTP500"),
     pytest.param(lambda: http_error(503), id="HTTP503"),
-    pytest.param(lambda: TruncatedResponse(), id="IncompleteRead"),
+    pytest.param(TruncatedResponse, id="IncompleteRead"),
 ]
 
 
