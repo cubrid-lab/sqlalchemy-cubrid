@@ -29,6 +29,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The pycubrid isolation-level re-apply is kept, and its documentation now describes pycubrid 1.8.0 (#559)** — pycubrid 1.8.0 no longer drops the level at every `commit()` / `rollback()`, but it still opens a new session at the server default level when the CAS itself went away out of transaction (a CAS restart after the transaction, a broker reset). Verified on CUBRID 11.4: when the CAS is killed right after `commit()`, the re-apply keeps SERIALIZABLE, and without it the level falls to READ COMMITTED. The re-apply's SQL `COMMIT` keeps the CAS bound to an idle pooled connection with a configured level (`CLIENT_WAIT` rather than `CLOSE_WAIT`), so if that CAS dies while idle the next statement fails as a disconnect instead of silently running at the default level; `pool_pre_ping=True` replaces such a connection at checkout. `docs/DRIVER_COMPAT.md` Known Issue 10 (renamed), `docs/ISOLATION_LEVELS.md` and `docs/TROUBLESHOOTING.md` (+ Korean) no longer claim that pycubrid reconnects after every commit, rollback or autocommitted statement. No code behavior change.
 
 ### Fixed
+- **The advisory Alembic safety checker now counts DDL calls, not attribute references (#447)** —
+  `scripts/alembic_safety_check.py` counted every `ast.Attribute` whose name was a DDL operation,
+  so `operations = [op.create_table, op.drop_table]` produced a two-DDL warning although nothing
+  was called, and its operation list lacked `create_unique_constraint`, `create_foreign_key`,
+  `create_check_constraint` and `create_primary_key`, so a revision with two constraint calls was
+  reported clean. It now counts only calls (`op.x(...)`, `batch_op.x(...)`) and includes those four
+  operations; `upgrade()` and `downgrade()` are still assessed separately and the checker stays
+  advisory. New offline tests in `test/test_alembic_safety_check.py`; the copied script in
+  `docs/ALEMBIC.md` (+ Korean) and `docs/llms-full.txt` are updated.
 - **`has_table()` / `has_index()` no longer report missing objects as existing
   under `cubrid://` with the PyPI `CUBRID-Python` driver (#583)** — both methods
   returned `bool(result.scalar())` on a catalog `COUNT(*)`, which is `BIGINT` in
