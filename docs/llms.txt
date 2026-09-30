@@ -23,7 +23,7 @@ Key facts:
 ## Docs
 
 - [Quick Start](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/): Installation, URL formats, first Core and ORM example
-- [Connection Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/CONNECTION/): URL schemes and entry points, async engine, connection options, autocommit, connection pool tuning
+- [Connection Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/CONNECTION/): URL schemes and entry points, pycubrid URL query options (`?connect_timeout=`, `?charset=`, ...), async engine, connection options, autocommit, connection pool tuning
 - [Driver Compatibility](https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/): CUBRIDdb C-extension versions, exception hierarchy, known driver issues
 - [ORM Cookbook](https://cubrid-lab.github.io/sqlalchemy-cubrid/ORM_COOKBOOK/): Models, relationships, CRUD, collections, LOBs, CUBRID-specific gotchas
 - [DML Extensions](https://cubrid-lab.github.io/sqlalchemy-cubrid/DML_EXTENSIONS/): ON DUPLICATE KEY UPDATE, REPLACE INTO, MERGE, GROUP_CONCAT, FOR UPDATE, UPDATE ... LIMIT, index hints, TRUNCATE

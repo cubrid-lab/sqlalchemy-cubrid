@@ -117,6 +117,42 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `port`     | `33000`     | CUBRID broker port                     |
 | `database` | *(required)* | Database name                         |
 
+### URL Query Options
+
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward these URL query options to
+`pycubrid.connect()` / `pycubrid.aio.connect()`, converted from the query string to
+the type pycubrid expects:
+
+```python
+engine = create_engine(
+    "cubrid+pycubrid://dba@localhost:33000/demodb?connect_timeout=5&read_timeout=30"
+)
+```
+
+| Option | Value | Description |
+|--------|-------|-------------|
+| `connect_timeout` | positive number of seconds | Timeout for opening the broker connection |
+| `read_timeout` | positive number of seconds | Socket read timeout after connecting |
+| `fetch_size` | integer >= 1 | Server-side fetch batch size (pycubrid default `100`) |
+| `charset` | codec name | Python codec, or CUBRID `utf8` / `euckr` / `iso88591`; set it to the database charset. Requires a pycubrid release newer than 1.8.0 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)); with pycubrid 1.8.0, `create_engine()` raises `ArgumentError` naming the installed version |
+| `ssl` | boolean | `true` enables TLS with pycubrid's default context (TLS 1.2+); pass an `ssl.SSLContext` through `connect_args` for anything else |
+| `decode_collections` | boolean | Decode `SET` / `MULTISET` / `SEQUENCE` values into Python collections |
+| `no_backslash_escapes` | boolean | pycubrid's own string-escape mode (auto-detected when omitted). This is not the `create_engine(no_backslash_escapes=...)` dialect option described [below](#backslash-escaping-no_backslash_escapes), which controls `literal_binds` rendering |
+| `enable_timing` | boolean | pycubrid timing statistics |
+
+Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`. An invalid value,
+a repeated option, `host` / `port` / `database` / `user` / `password` (set them in the
+URL itself), `autocommit` (use `isolation_level="AUTOCOMMIT"`) and `json_deserializer`
+(pass it through `connect_args`) raise `sqlalchemy.exc.ArgumentError` from
+`create_engine()`. Any other key is ignored with pycubrid's
+`UnknownConnectionOptionWarning`, which suggests the closest supported option;
+`warnings.simplefilter("error", pycubrid.UnknownConnectionOptionWarning)` makes it an
+error. `connect_args` values override URL query options.
+
+The `cubrid://` / `cubrid+cubriddb://` (CUBRIDdb) dialect does not read the URL query
+string: CUBRIDdb's `connect(url, user, password)` takes no keyword options, and any
+query options are ignored.
+
 ---
 
 ## Entry Points
@@ -216,6 +252,8 @@ The pycubrid dialect passes keyword arguments directly:
 kwargs = {"host": host, "port": port, "database": database, "user": user, "password": password}
 # → pycubrid.connect(host="myhost", port=33000, database="mydb", user="dba", password="password")
 ```
+
+[URL query options](#url-query-options) are added to these keyword arguments.
 
 ---
 

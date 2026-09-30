@@ -21,7 +21,6 @@ try:
 except ImportError:  # pragma: no cover — SA 2.0
     AsyncAdapt_dbapi_module = object  # type: ignore[assignment,misc]
 from sqlalchemy import pool as pool_module
-from sqlalchemy.engine.interfaces import ConnectArgsType
 from sqlalchemy_cubrid._compat import DBAPIModule
 from sqlalchemy.engine.url import URL
 from sqlalchemy.util.concurrency import await_only
@@ -120,19 +119,6 @@ class PyCubridAsyncDialect(PyCubridDialect):
         aio_module = import_module("pycubrid.aio")
 
         return cast(DBAPIModule, AsyncAdapt_pycubrid_dbapi(aio_module))
-
-    def create_connect_args(self, url: URL) -> ConnectArgsType:
-        if url is None:
-            raise ValueError("Unexpected database URL format")
-
-        opts = url.translate_connect_args(username="user", database="database")
-        return (), {
-            "host": opts.get("host", "localhost"),
-            "port": opts.get("port", 33000),
-            "database": opts.get("database", ""),
-            "user": opts.get("user", "dba"),
-            "password": opts.get("password", ""),
-        }
 
     def on_connect(self) -> Callable[[Any], None] | None:
         def connect(conn: Any) -> None:
