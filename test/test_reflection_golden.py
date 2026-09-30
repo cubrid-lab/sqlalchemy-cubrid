@@ -340,7 +340,11 @@ class _MockEmptyTable:
         if sql.startswith("SHOW INDEXES IN"):
             return _Result([])  # no indexes
         if sql.startswith("SHOW CREATE TABLE"):
-            return _Result([])  # no DDL
+            # An existing table always has DDL; this one has no constraints.
+            # (No row at all means the table is gone: NoSuchTableError, #589.)
+            return _Result(
+                [("heap_table", "CREATE TABLE [heap_table] ([data] CHARACTER VARYING(100))")]
+            )
         if "is_primary_key = 'YES'" in sql:
             return _Result([])  # no PK
         if "is_unique = 'YES'" in sql:

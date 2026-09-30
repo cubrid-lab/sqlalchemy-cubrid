@@ -695,6 +695,8 @@ NoSuchTableError: table_name
 
 > **Note:** Reflection raises `NoSuchTableError` only when the server reports `Unknown class "<owner>.<name>"`. A syntax error or any other failure of a reflection query propagates as the original exception (for example `sqlalchemy.exc.ProgrammingError`), even though CUBRID uses native error -493 for both (and pycubrid before 1.8.0 reports SQLSTATE `42S02`, `Table not found`, for every -493 error) (#454).
 
+> **Note:** `get_foreign_keys()` and `get_unique_constraints()` no longer turn a failed `SHOW CREATE TABLE` into an empty list (#589). A disconnect, an authorization error or a driver error during reflection now raises, so Alembic autogenerate stops with that error instead of proposing `add_fk` for foreign keys that already exist. Retry on a fresh connection (`pool_pre_ping=True` replaces stale pooled connections).
+
 ---
 
 ### Case Sensitivity in Table Names

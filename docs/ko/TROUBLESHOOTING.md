@@ -696,6 +696,8 @@ NoSuchTableError: table_name
 
 > **참고:** 리플렉션은 서버가 `Unknown class "<owner>.<name>"`을 보고할 때만 `NoSuchTableError`를 발생시킵니다. 구문 오류나 그 밖의 리플렉션 쿼리 실패는 원래 예외(예: `sqlalchemy.exc.ProgrammingError`)로 그대로 전파됩니다. CUBRID는 두 경우 모두 네이티브 오류 -493을 사용하며, 1.8.0 이전 pycubrid는 모든 -493 오류에 SQLSTATE `42S02`(`Table not found`)를 보고합니다 (#454).
 
+> **참고:** `get_foreign_keys()`와 `get_unique_constraints()`는 더 이상 실패한 `SHOW CREATE TABLE`을 빈 리스트로 바꾸지 않습니다 (#589). 리플렉션 중 연결 끊김, 권한 오류, 드라이버 오류가 발생하면 예외가 전파되므로, Alembic autogenerate는 이미 존재하는 외래 키에 대해 `add_fk`를 제안하는 대신 그 오류로 중단됩니다. 새 연결로 다시 시도하십시오(`pool_pre_ping=True`는 오래된 풀 연결을 교체합니다).
+
 ---
 
 ### 테이블 이름의 대소문자 구분

@@ -424,6 +424,18 @@ pip install "alembic>=1.7.2,<2.0"
 
 **해결**: 진짜 손실/미지원 변환에는 `batch_alter_table` 사용 — [ALTER COLUMN TYPE (네이티브)](#️-alter-column-type-네이티브) 참고.
 
+### `alembic revision --autogenerate`가 리플렉션 오류로 실패함
+
+**원인**: 외래 키는 `SHOW CREATE TABLE`에서 읽습니다. #589 이후 여기서 발생한 실패(끊긴
+연결, 권한 오류, 드라이버 오류)는 "이 테이블에는 외래 키가 없음"으로 보고되지 않고 예외를
+발생시킵니다. 이전 동작 때문에 autogenerate가 이미 존재하는 외래 키에 대해 `add_fk`를
+제안했습니다.
+
+**해결**: 원인이 된 오류를 해결한 뒤 autogenerate를 다시 실행하세요. 연결이 오래되었다면
+엔진에 `pool_pre_ping=True`를 설정하세요. CUBRID 11.2부터는 소유자를 붙이지 않은 이름을
+현재 사용자의 스키마에서 찾으므로 다른 소유자의 테이블은 `NoSuchTableError`가 됩니다.
+autogenerate는 테이블 소유자로 실행하세요.
+
 ---
 
 ## 마이그레이션 안전 체크리스트

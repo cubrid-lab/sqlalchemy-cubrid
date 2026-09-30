@@ -56,6 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not exist).
 
 ### Fixed
+- **`get_foreign_keys()` and `get_unique_constraints()` no longer report a failed `SHOW CREATE TABLE` as "no constraints" (#589)** —
+  both methods (for `get_unique_constraints()`, only its `SHOW CREATE TABLE` fallback, taken when
+  `db_index` lists no unique index) caught every exception from `SHOW CREATE TABLE`, logged a
+  warning and returned `[]`, so a disconnect, an authorization error or a driver bug looked like a
+  table without foreign keys and Alembic autogenerate emitted `add_fk` for foreign keys that already
+  exist. **Behavior change:** `Unknown class` still raises `NoSuchTableError` (#530), and no
+  `SHOW CREATE TABLE` row for a table the catalog listed now raises `NoSuchTableError` too; every
+  other exception propagates unchanged (a disconnect keeps `connection_invalidated`), and the
+  `SHOW CREATE TABLE failed ...` warning is gone. `[]` now means the query succeeded and found no
+  constraint. No leniency is kept for non-DBA users: on CUBRID 10.2 and 11.4 a non-DBA user sees in
+  `db_class` only tables it holds `SELECT` on, and `SHOW CREATE TABLE` on such a table does not fail
+  with an authorization error (without `SELECT` the table is not listed and reflection raises
+  `NoSuchTableError` before running it), and no catalog view exposes the referenced table or columns of a foreign key. Views still
+  return `[]` without running `SHOW CREATE TABLE`. `docs/FEATURE_SUPPORT.md`,
+  `docs/TROUBLESHOOTING.md` and `docs/ALEMBIC.md` (+ Korean) describe the contract.
 - **The advisory Alembic safety checker now counts DDL calls, not attribute references (#447)** —
   `scripts/alembic_safety_check.py` counted every `ast.Attribute` whose name was a DDL operation,
   so `operations = [op.create_table, op.drop_table]` produced a two-DDL warning although nothing
