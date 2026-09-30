@@ -23,6 +23,7 @@ a run-owned server).
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 from inspect import signature
 import os
@@ -500,15 +501,18 @@ class TestSameNameClassOfOtherOwner:
             pytest.skip("CUBRID < 11.2 has one global namespace for class names")
 
         def run(eng, *statements, ignore_errors=False):
+            # One transaction per statement: DDL is transactional, so a
+            # rollback after a failed statement must not undo an earlier
+            # successful one (#607).
             with eng.connect() as conn:
                 for statement in statements:
                     try:
                         conn.exec_driver_sql(statement)
+                        conn.commit()
                     except Exception:
                         if not ignore_errors:
                             raise
                         conn.rollback()
-                conn.commit()
 
         u2 = create_engine(engine.url.set(username="u2", password=None))
 
@@ -517,7 +521,8 @@ class TestSameNameClassOfOtherOwner:
             u2.dispose()
             run(engine, "DROP VIEW y_dup", "DROP USER u2", ignore_errors=True)
 
-        run(engine, "CREATE USER u2", ignore_errors=True)
+        # Idempotent: drop any state left by an interrupted prior run before
+        # creating, so reruns don't fail with "already exists" (#607).
         cleanup()
         run(engine, "CREATE USER u2")
         try:
@@ -552,6 +557,71 @@ class TestSameNameClassOfOtherOwner:
             ]
 
 
+@contextlib.contextmanager
+def _r549_user_cycle(engine, as_user):
+    """Create user ``u549`` and the ``r549_t`` / ``r549_parent`` tables (plus,
+    since CUBRID 11.2, a same-named decoy owned by the other side), yield the
+    owning engine, then drop everything.
+
+    Idempotent: ``cleanup()`` runs before the (unignored) ``CREATE USER`` so
+    state left behind by an interrupted prior run -- or an earlier call in
+    the same test -- is removed first instead of racing a plain ``CREATE``
+    into an "already exists" failure. Safe to call back to back against the
+    same database (#607).
+    """
+
+    def run(eng, *statements, ignore_errors=False):
+        # One transaction per statement: DDL is transactional, so a
+        # rollback after a failed statement must not undo an earlier
+        # successful one (#607).
+        with eng.connect() as conn:
+            for statement in statements:
+                try:
+                    conn.exec_driver_sql(statement)
+                    conn.commit()
+                except Exception:
+                    if not ignore_errors:
+                        raise
+                    conn.rollback()
+
+    u549 = create_engine(engine.url.set(username="u549", password=None))
+    owner, other = (engine, u549) if as_user == "dba" else (u549, engine)
+
+    def cleanup():
+        for eng in (u549, engine):
+            run(
+                eng,
+                "DROP TABLE r549_t",
+                "DROP TABLE r549_parent",
+                ignore_errors=True,
+            )
+        u549.dispose()
+        run(engine, "DROP USER u549", ignore_errors=True)
+
+    cleanup()
+    run(engine, "CREATE USER u549")
+    try:
+        run(
+            owner,
+            "CREATE TABLE r549_parent (id INT PRIMARY KEY)",
+            "CREATE TABLE r549_t (a INT, b INT, p INT, u INT UNIQUE, "
+            "v INT COMMENT 'v comment', "
+            "CONSTRAINT pk_r549_t PRIMARY KEY (a, b), "
+            "CONSTRAINT fk_r549_t_p FOREIGN KEY (p) REFERENCES r549_parent (id))",
+            "CREATE INDEX ix_r549_t_v ON r549_t (v)",
+        )
+        if _server_at_least(engine, (11, 2)):
+            run(
+                other,
+                "CREATE TABLE r549_t (id INT PRIMARY KEY, v INT COMMENT 'decoy', w INT UNIQUE)",
+                "CREATE INDEX ix_r549_decoy_v ON r549_t (v)",
+                "GRANT SELECT ON r549_t TO PUBLIC",
+            )
+        yield owner
+    finally:
+        cleanup()
+
+
 class TestReflectionAsNonDba:
     """#549: ``_db_index``, ``_db_index_key`` and ``_db_attribute`` are readable
     only by DBA, so reflection reads the public catalog views. Reflect the same
@@ -565,56 +635,25 @@ class TestReflectionAsNonDba:
         if engine.url.username is None or engine.url.username.lower() != "dba":
             pytest.skip("needs a DBA connection to create a user")
 
-        def run(eng, *statements, ignore_errors=False):
-            # One transaction per statement: DDL is transactional, so a
-            # rollback after a failed DROP must not undo the previous one.
-            with eng.connect() as conn:
-                for statement in statements:
-                    try:
-                        conn.exec_driver_sql(statement)
-                        conn.commit()
-                    except Exception:
-                        if not ignore_errors:
-                            raise
-                        conn.rollback()
-
-        u549 = create_engine(engine.url.set(username="u549", password=None))
-        owner, other = (engine, u549) if request.param == "dba" else (u549, engine)
-
-        def cleanup():
-            for eng in (u549, engine):
-                run(
-                    eng,
-                    "DROP TABLE r549_t",
-                    "DROP TABLE r549_parent",
-                    ignore_errors=True,
-                )
-            u549.dispose()
-            run(engine, "DROP USER u549", ignore_errors=True)
-
-        run(engine, "CREATE USER u549", ignore_errors=True)
-        cleanup()
-        run(engine, "CREATE USER u549")
-        try:
-            run(
-                owner,
-                "CREATE TABLE r549_parent (id INT PRIMARY KEY)",
-                "CREATE TABLE r549_t (a INT, b INT, p INT, u INT UNIQUE, "
-                "v INT COMMENT 'v comment', "
-                "CONSTRAINT pk_r549_t PRIMARY KEY (a, b), "
-                "CONSTRAINT fk_r549_t_p FOREIGN KEY (p) REFERENCES r549_parent (id))",
-                "CREATE INDEX ix_r549_t_v ON r549_t (v)",
-            )
-            if _server_at_least(engine, (11, 2)):
-                run(
-                    other,
-                    "CREATE TABLE r549_t (id INT PRIMARY KEY, v INT COMMENT 'decoy', w INT UNIQUE)",
-                    "CREATE INDEX ix_r549_decoy_v ON r549_t (v)",
-                    "GRANT SELECT ON r549_t TO PUBLIC",
-                )
+        with _r549_user_cycle(engine, request.param) as owner:
             yield owner
-        finally:
-            cleanup()
+
+    def test_reflection_setup_reruns_against_same_database(self, engine):
+        """#607 regression: run the non-DBA (``u549``) reflection setup/
+        teardown cycle twice in a row against the same database. A stale
+        user or table left behind by the first cycle must not make the
+        second cycle's ``CREATE USER`` fail with "already exists"."""
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
+
+        for _ in range(2):
+            with _r549_user_cycle(engine, "u549") as owner:
+                with owner.connect() as conn:
+                    insp = inspect(conn)
+                    assert insp.get_pk_constraint("r549_t") == {
+                        "name": "pk_r549_t",
+                        "constrained_columns": ["a", "b"],
+                    }
 
     @pytest.mark.parametrize("name", ["r549_t", "R549_T"])
     def test_reflection(self, reflecting_engine, name):
@@ -1863,15 +1902,18 @@ class TestHasIndexOwnerPreference:
             pytest.skip("CUBRID < 11.2 has one global namespace for class names")
 
         def run(eng, *statements, ignore_errors=False):
+            # One transaction per statement: DDL is transactional, so a
+            # rollback after a failed statement must not undo an earlier
+            # successful one (#607).
             with eng.connect() as conn:
                 for statement in statements:
                     try:
                         conn.exec_driver_sql(statement)
+                        conn.commit()
                     except Exception:
                         if not ignore_errors:
                             raise
                         conn.rollback()
-                conn.commit()
 
         u543 = create_engine(engine.url.set(username="u543", password=None))
 
@@ -1880,7 +1922,8 @@ class TestHasIndexOwnerPreference:
             u543.dispose()
             run(engine, 'DROP TABLE "Own543"', "DROP USER u543", ignore_errors=True)
 
-        run(engine, "CREATE USER u543", ignore_errors=True)
+        # Idempotent: drop any state left by an interrupted prior run before
+        # creating, so reruns don't fail with "already exists" (#607).
         cleanup()
         run(engine, "CREATE USER u543")
         try:
