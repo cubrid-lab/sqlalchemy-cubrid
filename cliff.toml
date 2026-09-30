@@ -4,7 +4,7 @@ body = """
 {% for group, commits in commits | group_by(attribute="group") %}
 ### {{ group | upper_first }}
 {% for commit in commits %}
-- {% if commit.scope %}*({{ commit.scope }})* {% endif %}{{ commit.message | upper_first }} \
+- {% if commit.breaking %}**BREAKING** {% endif %}{% if commit.scope %}*({{ commit.scope }})* {% endif %}{{ commit.message | upper_first }} \
 {% endfor %}
 {% endfor %}
 """
@@ -21,12 +21,13 @@ sort_commits = "newest"
 commit_parsers = [
     { message = "^feat", group = "Features" },
     { message = "^fix", group = "Bug Fixes" },
+    { message = "^perf", group = "Performance" },
+    { message = "^revert", group = "Reverts" },
     { message = "^docs", group = "Documentation" },
     { message = "^refactor", group = "Refactor" },
     { message = "^style", group = "Styling" },
     { message = "^test", group = "Testing" },
-    { message = "^perf", group = "Performance" },
+    { message = "^build", group = "Build" },
     { message = "^ci", group = "Miscellaneous Tasks" },
     { message = "^chore", group = "Miscellaneous Tasks" },
-    { message = "^build", group = "Other" },
 ]
