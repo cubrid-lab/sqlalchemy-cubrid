@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "publish-pypi.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 _spec = importlib.util.spec_from_file_location(
     "_pypi_duplicate_guard", ROOT / "scripts" / "pypi_duplicate_guard.py"
 )
@@ -267,9 +267,9 @@ def test_invalid_project_or_version_is_rejected(dist, output, monkeypatch) -> No
     assert requested == []
 
 
-def _deploy_job() -> str:
+def _publish_job() -> str:
     text = WORKFLOW.read_text()
-    match = re.search(r"^  deploy:\n(.*?)(?=^  [\w-]+:\n)", text, re.MULTILINE | re.DOTALL)
+    match = re.search(r"^  publish:\n(.*?)(?=^  [\w-]+:\n)", text, re.MULTILINE | re.DOTALL)
     assert match is not None
     return match.group(1)
 
@@ -277,30 +277,31 @@ def _deploy_job() -> str:
 def test_workflow_publishes_through_the_guard() -> None:
     text = WORKFLOW.read_text()
     assert not re.search(r"^\s*skip-existing\s*:", text, re.MULTILINE)
-    deploy = _deploy_job()
-    guard_at = deploy.index("scripts/pypi_duplicate_guard.py --project")
-    publish_at = deploy.index("uses: pypa/gh-action-pypi-publish@")
-    assert deploy.index("uses: actions/download-artifact@") < guard_at < publish_at
-    publish_step = deploy[deploy.rindex("- name:", 0, publish_at) : publish_at]
+    publish = _publish_job()
+    guard_at = publish.index("scripts/pypi_duplicate_guard.py --project")
+    upload_at = publish.index("uses: pypa/gh-action-pypi-publish@")
+    assert publish.index("uses: actions/download-artifact@") < guard_at < upload_at
+    upload_step = publish[publish.rindex("- name:", 0, upload_at) : upload_at]
     # A missing guard output must not skip the upload: only an explicit
     # upload=false (every file already identical on PyPI) may.
-    assert "if: steps.guard.outputs.upload != 'false'" in publish_step
-    assert "attestations: true" in deploy
-    permissions = re.search(r"^    permissions:\n((?:      .*\n)+)", deploy, re.MULTILINE)
+    assert "if: steps.guard.outputs.upload != 'false'" in upload_step
+    assert "attestations: true" in publish
+    permissions = re.search(r"^    permissions:\n((?:      .*\n)+)", publish, re.MULTILINE)
     assert permissions is not None
     assert {line.split("#")[0].strip() for line in permissions.group(1).splitlines()} == {
-        "contents: read",
+        "contents: write",
         "id-token: write",
     }
-    start = deploy.index("uses: actions/checkout@")
-    checkout = deploy[start : deploy.index("- name:", start)]
+    start = publish.index("uses: actions/checkout@")
+    checkout = publish[start : publish.index("- name:", start)]
     assert "sparse-checkout: scripts/pypi_duplicate_guard.py\n" in checkout
     assert "persist-credentials: false" in checkout
-    # The guard must come from the workflow commit, never from the release tag.
-    assert not re.search(r"^\s*ref\s*:", checkout, re.MULTILINE)
+    # The guard comes from the workflow's own commit (github.sha, the same on
+    # `gh run rerun`), so a resumed older tag is covered by the current guard.
+    assert "ref: ${{ github.sha }}\n" in checkout
     assert re.search(
-        r"^concurrency:\n  group: publish-pypi-\$\{\{ inputs\.tag \}\}\n"
-        r"  cancel-in-progress: false\n",
-        text,
+        r"^    concurrency:\n      group: release-publish-\$\{\{ needs\.detect\.outputs\.tag \}\}\n"
+        r"      cancel-in-progress: false\n",
+        publish,
         re.MULTILINE,
     )

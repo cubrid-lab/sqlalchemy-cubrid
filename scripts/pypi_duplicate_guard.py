@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail closed when a release file already on PyPI differs from the verified build.
 
-``publish-pypi.yml`` runs this in the ``deploy`` job, right before
+``release.yml`` runs this in the ``publish`` job, right before
 ``pypa/gh-action-pypi-publish`` (which no longer uses ``skip-existing``). For
 each wheel/sdist in ``dist/`` the PyPI JSON API of the exact release
 (``https://pypi.org/pypi/<project>/<version>/json``) decides:

@@ -340,7 +340,7 @@ CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
 "Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
 command. Several test files open connections through both drivers whichever one
 the URL selects, so install `.[dev,pycubrid]` for either driver. PR CI runs
-`make integration` with the default driver on CUBRID 11.4; the nightly and tag
+`make integration` with the default driver on CUBRID 11.4; the nightly and release-gate
 `integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
 11.4.
 
@@ -595,16 +595,16 @@ pre-commit run --all-files
 | Workflow | File | Trigger |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | Push to main, PRs |
-| Integration Full | `.github/workflows/integration-full.yml` | Nightly, tag push, manual dispatch |
-| Create Release | `.github/workflows/create-release.yml` | Tag push, manual dispatch (does not publish) |
-| Publish | `.github/workflows/publish-pypi.yml` | Manual dispatch after the tag-triggered full matrix passes |
+| Integration Full | `.github/workflows/integration-full.yml` | Nightly, manual dispatch, called by `release.yml` |
+| Prepare Release | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`); opens the `chore: release vX.Y.Z` PR |
+| Release | `.github/workflows/release.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
 3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
-4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and on tags in `integration-full.yml`)
+4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and in the release gate in `integration-full.yml`)
 5. **Coverage** — Enforces ≥ 95% threshold
 
 ### Driver-differential lane
@@ -752,11 +752,13 @@ Translation help requests do not authorize a bypass: maintainers explicitly
 approve the existing `translations-deferred` label and record follow-up. The
 Korean-required and other-language advisory translation checks are unchanged.
 
-### Publish Pipeline
+### Release Pipeline
 
-Not triggered by the GitHub Release. A maintainer dispatches `publish-pypi.yml`
-(`-f tag=vX.Y.Z`) after the tag-triggered full matrix passes; it verifies, publishes
-to PyPI, and then dispatches the cookbook smoke test. See [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md).
+Releases are maintainer-only and follow [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md):
+`prepare-release.yml` opens a release PR (version bump + dated CHANGELOG section, checked
+with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `release.yml`
+runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
+automatically. Nobody pushes tags or publishes by hand.
 
 ---
 

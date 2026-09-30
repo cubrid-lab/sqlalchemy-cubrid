@@ -168,12 +168,12 @@ CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)
 
 ## CI 매트릭스
 
-| 차원 | PR / push | 나이틀리 + 태그 + dispatch |
+| 차원 | PR / push | 나이틀리 + dispatch + 릴리스 |
 |---|---|---|
 | 오프라인 테스트 | Python 3.10, 3.11, 3.12, 3.13, 3.14 | 동일 |
 | 통합 테스트 | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8잡 | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20잡 |
 
-5 × 4 전체 통합 매트릭스는 `.github/workflows/integration-full.yml`이 나이틀리 일정, 태그 릴리스, `workflow_dispatch` 요청 시 실행합니다.
+5 × 4 전체 통합 매트릭스는 `.github/workflows/integration-full.yml`이 나이틀리 일정, `workflow_dispatch` 요청 시, 그리고 모든 릴리스에서 `release.yml`이 호출하는 릴리스 게이트로 실행합니다.
 
 ### SQLAlchemy 컴플라이언스 레인
 

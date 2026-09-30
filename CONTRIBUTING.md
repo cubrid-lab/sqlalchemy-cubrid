@@ -11,6 +11,7 @@ and instructions for contributing to the project.
 - [Code Style](#code-style)
 - [Pull Request Guidelines](#pull-request-guidelines)
 - [Pull request and commit titles](#pull-request-and-commit-titles)
+- [Releases](#releases)
 - [Reporting Issues](#reporting-issues)
 
 ---
@@ -297,6 +298,16 @@ same way. A tracking issue (epic) uses the type of the work it tracks.
 Maintainers merge with **squash merge only** and keep the pull request title as
 the commit title. Branch commits are squashed into the commit body, so keep
 their messages meaningful and keep any `Co-authored-by:` trailers intact.
+
+---
+
+## Releases
+
+Contributors never release. Add user-visible changes under `## [Unreleased]` in
+`CHANGELOG.md`, and do not change `__version__` or add a dated `## [X.Y.Z]`
+section in an ordinary PR: a merged version change is what starts an automatic
+release. Maintainers open release PRs with `prepare-release.yml`; see
+[`RELEASING.md`](RELEASING.md).
 
 ---
 

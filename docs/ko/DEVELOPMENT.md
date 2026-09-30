@@ -333,7 +333,7 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 참고하세요)입니다. 다른 값을 주면 Docker 명령을 실행하기 전에 상태 2로
 종료합니다. 여러 테스트 파일이 URL이 선택한 드라이버와 관계없이 두 드라이버로
 연결하므로, 어느 드라이버를 쓰든 `.[dev,pycubrid]`를 설치하세요. PR CI는 기본
-드라이버로 CUBRID 11.4에서 `make integration`을 실행하고, 야간 및 태그
+드라이버로 CUBRID 11.4에서 `make integration`을 실행하고, 야간 및 릴리스 게이트
 `integration-full.yml` 워크플로는 두 드라이버로 CUBRID 10.2와 11.4에서 실행합니다.
 
 `docker compose up -d` 후에는 새 서버가 선택한 드라이버로 `SELECT 1`에 응답할
@@ -575,16 +575,16 @@ pre-commit run --all-files
 | 워크플로 | 파일 | 트리거 |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | main 푸시, PR |
-| Integration Full | `.github/workflows/integration-full.yml` | 야간, 태그 푸시, 수동 실행 |
-| Create Release | `.github/workflows/create-release.yml` | 태그 푸시, 수동 실행 (게시하지 않음) |
-| Publish | `.github/workflows/publish-pypi.yml` | 태그로 트리거된 전체 매트릭스 통과 후 수동 실행 |
+| Integration Full | `.github/workflows/integration-full.yml` | 야간, 수동 실행, `release.yml`에서 호출 |
+| Prepare Release | `.github/workflows/prepare-release.yml` | 수동 실행 (`-f version=X.Y.Z`); `chore: release vX.Y.Z` PR 생성 |
+| Release | `.github/workflows/release.yml` | main 푸시 (병합된 릴리스 PR만 릴리스), 복구용 수동 실행 |
 
 ### CI 파이프라인 단계
 
 1. **Lint** — Ruff check + 포맷 검증
 2. **오프라인 테스트** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × 오프라인 테스트 스위트
 3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
-4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 야간 및 태그 시 `integration-full.yml`에서 실행)
+4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 야간 및 릴리스 게이트에서 `integration-full.yml`로 실행)
 5. **커버리지** — ≥ 95% 임계값 강제
 
 ### 드라이버 차분 레인
@@ -717,11 +717,12 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 권한을 부여하지 않습니다. 유지보수자가 기존 `translations-deferred` 라벨을 명시적으로
 승인하고 후속 작업을 기록합니다. 한국어 필수·다른 언어 권고 검사는 유지합니다.
 
-### Publish 파이프라인
+### 릴리스 파이프라인
 
-GitHub Release로 트리거되지 않습니다. 태그로 트리거된 전체 매트릭스가 통과한 뒤
-유지보수자가 `publish-pypi.yml`을 `-f tag=vX.Y.Z`로 수동 실행하면, 검증 후 PyPI에
-게시하고 cookbook 스모크 테스트를 디스패치합니다. [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md)를 참고하세요.
+릴리스는 유지보수자 전용이며 [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md)를 따릅니다:
+`prepare-release.yml`이 릴리스 PR(버전 갱신 + 날짜가 있는 CHANGELOG 섹션, `make release-check VERSION=X.Y.Z`로 확인)을
+엽니다. 검토 후 squash 병합하면 `release.yml`이 전체 매트릭스, 한 번의 빌드, 태그, PyPI 게시, cookbook 검증을
+자동으로 수행합니다. 태그 푸시나 게시를 수동으로 하지 않습니다.
 
 ---
 
