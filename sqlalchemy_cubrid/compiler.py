@@ -56,6 +56,10 @@ class _BaseDMLCompiler(Protocol):
 
     def update_post_criteria_clause(self, update_stmt: dml.Update, **kw: Any) -> str | None: ...
 
+    def _render_cte_clause(
+        self, nesting_level: int | None = None, include_following_stack: bool = False
+    ) -> str: ...
+
 
 class _BaseDDLCompiler(Protocol):
     def visit_create_index(
@@ -69,6 +73,10 @@ class _BaseDDLCompiler(Protocol):
 
 class CubridCompiler(compiler.SQLCompiler):
     """SQLCompiler subclass for CUBRID."""
+
+    # WITH clause returned by the latest _render_cte_clause() call; read by
+    # visit_replace() to find where SQLAlchemy wrote the INSERT verb (#591).
+    _cubrid_last_cte_clause: str | None = None
 
     def visit_sysdate_func(self, fn: Any, **kw: Any) -> str:
         return "SYSDATE"
@@ -618,15 +626,33 @@ class CubridCompiler(compiler.SQLCompiler):
 
         return "\n".join(lines)
 
-    def visit_replace(self, replace_stmt: Any, **kw: Any) -> str:
-        text = str(super().visit_insert(replace_stmt, **kw))  # type: ignore[no-untyped-call]
-        if "INSERT INTO" in text:
-            return text.replace("INSERT INTO", "REPLACE INTO", 1)
-        if text.startswith("INSERT"):
-            return "REPLACE" + text[len("INSERT") :]
-        raise NotImplementedError(
-            f"Could not convert INSERT to REPLACE: unexpected SQL format: {text!r}"
+    def _render_cte_clause(
+        self, nesting_level: int | None = None, include_following_stack: bool = False
+    ) -> str:
+        clause = cast(_BaseDMLCompiler, super())._render_cte_clause(
+            nesting_level=nesting_level, include_following_stack=include_following_stack
         )
+        self._cubrid_last_cte_clause = clause
+        return clause
+
+    def visit_replace(self, replace_stmt: Any, **kw: Any) -> str:
+        # SQLAlchemy's visit_insert writes the "INSERT " verb first, then the
+        # prefixes, "INTO" and the rest; the only text it may put in front of the
+        # verb is the WITH clause, prepended by its last _render_cte_clause() call.
+        # Swap the verb at that exact offset instead of searching the SQL text,
+        # which can hold "INSERT INTO" in prefixes, comments, literals or
+        # identifiers (#591).
+        outer_cte_clause = self._cubrid_last_cte_clause
+        self._cubrid_last_cte_clause = None
+        try:
+            text = cast(_BaseDMLCompiler, super()).visit_insert(replace_stmt, **kw)
+            cte_clause = self._cubrid_last_cte_clause
+        finally:
+            self._cubrid_last_cte_clause = outer_cte_clause
+        verb_at = len(cte_clause) if cte_clause and text.startswith(cte_clause) else 0
+        if not text.startswith("INSERT ", verb_at):
+            raise CompileError(f"Could not locate the INSERT verb to emit REPLACE: {text!r}")
+        return text[:verb_at] + "REPLACE" + text[verb_at + len("INSERT") :]
 
     def _render_json_extract_from_binary(
         self, binary: elements.BinaryExpression[Any], operator: Any, **kw: Any

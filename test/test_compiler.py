@@ -1567,6 +1567,141 @@ class TestReplaceCompilation:
         assert issubclass(Replace, StandardInsert)
 
 
+class TestReplaceKeywordIsStructural:
+    """REPLACE is emitted as the statement verb, never by rewriting SQL text (#591)."""
+
+    target = sa.table("t", sa.column("id", Integer), sa.column("s", String))
+    source = sa.table("src", sa.column("id", Integer), sa.column("s", String))
+
+    def test_issue_repro_prefix_and_literal_in_from_select(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .from_select(
+                ["id", "s"],
+                select(self.source.c.id, sa.literal("INSERT INTO", String)),
+            )
+        )
+        sql = _compile(stmt)
+        assert _norm(sql) == _norm(
+            "REPLACE /* c */ INTO t (id, s) SELECT src.id, 'INSERT INTO' AS anon_1 FROM src"
+        )
+
+    def test_prefix_and_literal_column_value(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .values(id=1, s=sa.literal_column("'INSERT INTO'"))
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == "REPLACE /* c */ INTO t (id, s) VALUES (?, 'INSERT INTO')"
+        assert compiled.positiontup == ["id"]
+        assert compiled.params == {"id": 1}
+
+    def test_prefix_and_bound_value_untouched(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = replace(self.target).prefix_with("/* c */").values(id=1, s="INSERT INTO")
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == "REPLACE /* c */ INTO t (id, s) VALUES (?, ?)"
+        assert compiled.positiontup == ["id", "s"]
+        assert compiled.params == {"id": 1, "s": "INSERT INTO"}
+
+    def test_prefix_comment_containing_insert_into(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = replace(self.target).prefix_with("/* INSERT INTO audit */").values(id=1, s="x")
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == ("REPLACE /* INSERT INTO audit */ INTO t (id, s) VALUES (?, ?)")
+        assert compiled.positiontup == ["id", "s"]
+
+    def test_identifier_spelled_insert_into(self):
+        from sqlalchemy_cubrid import replace
+
+        tbl = sa.table(
+            "insert_into", sa.column("INSERT INTO", Integer), sa.column("insert_into", Integer)
+        )
+        stmt = replace(tbl).prefix_with("/* c */").values({"INSERT INTO": 1, "insert_into": 2})
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == (
+            'REPLACE /* c */ INTO insert_into ("INSERT INTO", insert_into) VALUES (?, ?)'
+        )
+        assert list(compiled.params.values()) == [1, 2]
+
+    def test_multi_values_with_prefix(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .values([{"id": 1, "s": "INSERT INTO"}, {"id": 2, "s": "b"}])
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == ("REPLACE /* c */ INTO t (id, s) VALUES (?, ?), (?, ?)")
+        assert compiled.positiontup == ["id_m0", "s_m0", "id_m1", "s_m1"]
+        assert list(compiled.params.values()) == [1, "INSERT INTO", 2, "b"]
+
+    def test_prefix_for_other_dialect_is_not_rendered(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = replace(self.target).prefix_with("IGNORE", dialect="mysql").values(id=1)
+        assert _compile(stmt) == "REPLACE INTO t (id) VALUES (1)"
+
+    def test_cte_with_literal_and_prefix(self):
+        from sqlalchemy_cubrid import replace
+
+        cte = select(self.source.c.id, sa.literal("INSERT INTO", String).label("s")).cte("c")
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .from_select(["id", "s"], select(cte.c.id, cte.c.s))
+        )
+        sql = _norm(_compile(stmt))
+        assert sql == _norm(
+            "WITH c AS (SELECT src.id AS id, 'INSERT INTO' AS s FROM src) "
+            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c"
+        )
+
+    def test_cte_without_prefix(self):
+        from sqlalchemy_cubrid import replace
+
+        cte = select(self.source.c.id, self.source.c.s).cte("c")
+        stmt = replace(self.target).from_select(["id", "s"], select(cte.c.id, cte.c.s))
+        sql = _norm(_compile(stmt))
+        assert sql == _norm(
+            "WITH c AS (SELECT src.id AS id, src.s AS s FROM src) "
+            "REPLACE INTO t (id, s) SELECT c.id, c.s FROM c"
+        )
+
+    def test_insert_is_unchanged(self):
+        stmt = sa.insert(self.target).prefix_with("/* c */").values(id=1, s="INSERT INTO")
+        assert _compile(stmt) == "INSERT /* c */ INTO t (id, s) VALUES (1, 'INSERT INTO')"
+
+    def test_executemany_uses_replace(self):
+        from sqlalchemy_cubrid import replace
+
+        compiled = (
+            replace(users)
+            .prefix_with("/* c */")
+            .compile(dialect=CubridDialect(), column_keys=["id", "name"])
+        )
+        assert compiled.string == "REPLACE /* c */ INTO users (id, name) VALUES (?, ?)"
+        assert compiled.positiontup == ["id", "name"]
+
+    def test_unexpected_insert_text_raises(self, monkeypatch):
+        from sqlalchemy.sql import compiler as sa_compiler
+
+        from sqlalchemy_cubrid import replace
+
+        monkeypatch.setattr(sa_compiler.SQLCompiler, "visit_insert", lambda *a, **kw: "BOGUS")
+        with pytest.raises(CompileError, match="Could not locate the INSERT verb"):
+            _compile(replace(self.target).values(id=1))
+
+
 class TestTruncateCompilation:
     """Test TRUNCATE TABLE compilation."""
 

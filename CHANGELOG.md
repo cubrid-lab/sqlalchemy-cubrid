@@ -56,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not exist).
 
 ### Fixed
+- **`replace()` emits `REPLACE` as the statement verb instead of rewriting the first `INSERT INTO` in the compiled SQL (#591)** — `visit_replace()` compiled the statement as an `INSERT` and replaced the first `INSERT INTO` substring. With `prefix_with()`, SQLAlchemy renders `INSERT <prefix> INTO`, so the substitution hit an `INSERT INTO` inside the prefix, a comment, a string literal (`literal()` / `literal_column()` / `literal_binds`) or a quoted identifier instead: the statement stayed a plain `INSERT` (a duplicate key raised `IntegrityError` instead of replacing the row) and the stored value became `'REPLACE INTO'`. The compiler now swaps only the verb SQLAlchemy writes first (after the `WITH` clause, if any), so `replace(t).prefix_with("/* c */")` renders `REPLACE /* c */ INTO t ...` and values, identifiers, comments, bind parameters and their order are left untouched, including multi-row `values()`, `executemany` and `from_select()`. An unexpected compiled form now raises `CompileError` instead of `NotImplementedError`. Verified on CUBRID 11.4 with SQLAlchemy 2.0 and 2.1.
 - **`cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward URL query options to pycubrid (#592)** —
   `create_connect_args()` read only the host, port, database, user and password, so
   `?connect_timeout=5` or `?charset=euckr` connected without error and had no effect. Both
