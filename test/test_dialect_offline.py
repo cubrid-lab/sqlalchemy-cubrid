@@ -9,7 +9,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import ArgumentError, NoSuchTableError, SAWarning
+from sqlalchemy.exc import (
+    ArgumentError,
+    NoSuchTableError,
+    OperationalError,
+    ProgrammingError,
+    SAWarning,
+)
 from sqlalchemy.engine import url
 from sqlalchemy.sql.elements import quoted_name
 
@@ -1674,6 +1680,28 @@ class TestMissingObjectReflection:
             _invoke_reflection(CubridDialect(), "get_view_definition", connection, "v")
 
 
+class _DriverError(Exception):
+    pass
+
+
+_SHOW_CREATE_TABLE_ERRORS = [
+    OperationalError(
+        "SHOW CREATE TABLE",
+        {},
+        _DriverError("Cannot communicate with the broker"),
+        connection_invalidated=True,
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Syntax: select is not authorized on t.")
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Semantic: SELECT is not authorized on dba.t.")
+    ),
+    RuntimeError("boom"),
+]
+_SHOW_CREATE_TABLE_ERROR_IDS = ["disconnect", "not-authorized-493", "not-authorized-494", "runtime"]
+
+
 class TestShowCreateTableErrorsPropagate:
     """#589: ``get_foreign_keys`` and ``get_unique_constraints`` read
     ``SHOW CREATE TABLE``. A failure there must not be reported as "no
@@ -1694,35 +1722,9 @@ class TestShowCreateTableErrorsPropagate:
         connection.execute.side_effect = side_effect
         return connection
 
-    @staticmethod
-    def _errors():
-        from sqlalchemy import exc
-
-        class DriverError(Exception):
-            pass
-
-        return [
-            exc.OperationalError(
-                "SHOW CREATE TABLE",
-                {},
-                DriverError("Cannot communicate with the broker"),
-                connection_invalidated=True,
-            ),
-            exc.ProgrammingError(
-                "SHOW CREATE TABLE", {}, DriverError("Syntax: select is not authorized on t.")
-            ),
-            exc.ProgrammingError(
-                "SHOW CREATE TABLE",
-                {},
-                DriverError("Semantic: SELECT is not authorized on dba.t."),
-            ),
-            RuntimeError("boom"),
-        ]
-
     @pytest.mark.parametrize("method_name", METHODS)
-    @pytest.mark.parametrize("error_index", range(4))
-    def test_show_create_table_failure_propagates(self, method_name, error_index, caplog):
-        error = self._errors()[error_index]
+    @pytest.mark.parametrize("error", _SHOW_CREATE_TABLE_ERRORS, ids=_SHOW_CREATE_TABLE_ERROR_IDS)
+    def test_show_create_table_failure_propagates(self, method_name, error, caplog):
         connection = self._connection(method_name, error)
         with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
             with pytest.raises(type(error)) as excinfo:
@@ -1732,7 +1734,7 @@ class TestShowCreateTableErrorsPropagate:
         assert not caplog.records
 
     def test_disconnect_keeps_connection_invalidated(self):
-        error = self._errors()[0]
+        error = _SHOW_CREATE_TABLE_ERRORS[0]
         connection = self._connection("get_foreign_keys", error)
         with pytest.raises(type(error)) as excinfo:
             _invoke_reflection(CubridDialect(), "get_foreign_keys", connection, "t")
