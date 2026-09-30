@@ -37,6 +37,7 @@ _SECRET = "s3cret-pw"
 def fresh_probe(monkeypatch: pytest.MonkeyPatch) -> None:
     """Forget the session's cached probe result for the duration of one test."""
     monkeypatch.setattr(conftest, "_probe_error", None)
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
 
 
 # ----- scripts/integration_urls.py helpers -----
@@ -54,6 +55,37 @@ def test_configured_url_errors_do_not_expose_credentials() -> None:
     with pytest.raises(ValueError) as caught:
         integration_urls.configured_url({"CUBRID_TEST_URL": f"not a url {_SECRET}"})
     assert _SECRET not in str(caught.value)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "sqlite:///:memory:",
+        "postgresql://u@h/db",
+        "cubrid+aiopycubrid://dba@h/db",
+        "cubrid://dba@h",
+    ],
+)
+def test_configured_url_accepts_only_sync_cubrid_urls_with_a_database(value: str) -> None:
+    # Copilot review on #604: the fixtures run destructive DDL, so a URL that is
+    # not a synchronous CUBRID database must never pass the gate.
+    with pytest.raises(ValueError, match="must be a cubrid"):
+        integration_urls.configured_url({"CUBRID_TEST_URL": value})
+
+
+@pytest.mark.parametrize("scheme", ["cubrid", "cubrid+cubriddb", "cubrid+pycubrid"])
+def test_configured_url_accepts_the_sync_cubrid_schemes(scheme: str) -> None:
+    url = integration_urls.configured_url({"CUBRID_TEST_URL": f"{scheme}://dba@h:1/testdb"})
+    assert url.drivername == scheme
+
+
+def test_configured_async_url_reports_an_explicit_override() -> None:
+    sync = make_url("cubrid://dba@h:1/testdb")
+    derived, overridden = integration_urls.configured_async_url(sync, {})
+    assert (derived.drivername, overridden) == ("cubrid+aiopycubrid", False)
+    override = "cubrid+aiopycubrid://dba@other:2/testdb"
+    aurl, overridden = integration_urls.configured_async_url(sync, {"CUBRID_TEST_AURL": override})
+    assert (aurl, overridden) == (make_url(override), True)
 
 
 def test_describe_masks_the_password() -> None:
@@ -120,12 +152,42 @@ def test_reachable_server_passes_the_gate(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 @pytest.mark.usefixtures("fresh_probe")
+def test_async_override_is_probed_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Copilot review on #604: the async suites connect to CUBRID_TEST_AURL when
+    # it is set, so an unreachable override must fail the gate as well.
+    monkeypatch.setenv("CUBRID_TEST_URL", "cubrid+pycubrid://dba@h/testdb")
+    monkeypatch.setenv("CUBRID_TEST_AURL", f"cubrid+aiopycubrid://dba:{_SECRET}@other:2/testdb")
+    probe = MagicMock(return_value=None)
+    async_probe = MagicMock(side_effect=TimeoutError())
+    monkeypatch.setattr(integration_urls, "probe", probe)
+    monkeypatch.setattr(integration_urls, "async_probe", async_probe)
+    error = conftest._endpoint_error()
+    probe.assert_called_once()
+    async_probe.assert_called_once()
+    assert error.startswith(
+        "CUBRID_TEST_AURL is set, but CUBRID at cubrid+aiopycubrid://dba:***@other:2/testdb"
+    )
+    assert _SECRET not in error
+
+
+@pytest.mark.usefixtures("fresh_probe")
+def test_the_derived_async_route_is_not_probed_separately(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CUBRID_TEST_URL", "cubrid+pycubrid://dba@h/testdb")
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
+    async_probe = MagicMock()
+    monkeypatch.setattr(integration_urls, "probe", MagicMock(return_value=None))
+    monkeypatch.setattr(integration_urls, "async_probe", async_probe)
+    assert conftest._endpoint_error() == ""
+    async_probe.assert_not_called()
+
+
+@pytest.mark.usefixtures("fresh_probe")
 def test_unparsable_url_errors_without_probing(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CUBRID_TEST_URL", f"not a url {_SECRET}")
     probe = MagicMock()
     monkeypatch.setattr(integration_urls, "probe", probe)
     error = conftest._endpoint_error()
-    assert error.startswith("CUBRID_TEST_URL is set but unusable")
+    assert error.startswith("CUBRID test URL is set but unusable")
     assert _SECRET not in error
     probe.assert_not_called()
 

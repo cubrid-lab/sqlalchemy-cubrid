@@ -252,13 +252,17 @@ import 시점에 서버를 확인하지 않습니다.
 | --- | --- | --- |
 | 미설정 또는 빈 값 | (확인하지 않음) | 로컬에서는 건너뜀. `CI=true`이면 테스트 실행 전에 종료 코드 1로 끝남 |
 | 설정됨 | 예 | 실행 |
-| 설정됨 | 아니요(서버 중지, 잘못된 포트, 드라이버 미설치, 해석할 수 없는 URL) | 모두 같은 메시지로 **error** |
+| 설정됨 | 아니요(서버 중지, 잘못된 포트, 드라이버 미설치, 데이터베이스가 있는 CUBRID URL이 아님) | 모두 같은 메시지로 **error** |
 
 게이트는 `scripts/integration_urls.py`의 헬퍼(`scripts/wait_for_cubrid.py`와
 공유)로 세션당 한 번, URL이 선택한 드라이버를 통해 서버를 확인합니다.
 `cubrid+pycubrid://`에는 pycubrid가, `cubrid://`에는 CUBRIDdb C 확장이 필요하며,
 `cubrid+aiopycubrid://`로 연결하는 `test/test_aio_integration.py`도 마찬가지입니다.
-오류 메시지는 비밀번호를 가린 URL을 보여 줍니다. 예:
+파괴적인 테스트 픽스처가 다른 데이터베이스에서 실행되지 않도록 `CUBRID_TEST_URL`은
+데이터베이스를 지정한 `cubrid://`, `cubrid+cubriddb://` 또는 `cubrid+pycubrid://`
+URL이어야 합니다. `CUBRID_TEST_AURL`로 비동기 경로를 재정의하면 게이트는 그
+엔드포인트도 `cubrid+aiopycubrid://`로 확인합니다. 오류 메시지는 비밀번호를 가린
+URL을 보여 줍니다. 예:
 
 ```text
 CUBRID_TEST_URL is set, but CUBRID at cubrid+pycubrid://dba:***@127.0.0.1:33599/testdb

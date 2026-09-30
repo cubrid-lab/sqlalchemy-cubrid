@@ -10,6 +10,7 @@ helpers here, so they cannot disagree about which server is under test.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from collections.abc import Mapping
 from typing import Any
@@ -20,6 +21,9 @@ from sqlalchemy.exc import ArgumentError
 from sqlalchemy.pool import NullPool
 
 TEST_URL_VAR = "CUBRID_TEST_URL"
+ASYNC_URL_VAR = "CUBRID_TEST_AURL"
+#: Synchronous CUBRID schemes the integration suite accepts in CUBRID_TEST_URL.
+SYNC_DRIVERNAMES = frozenset({"cubrid", "cubrid+cubrid", "cubrid+cubriddb", "cubrid+pycubrid"})
 
 # pycubrid accepts socket timeouts, so one attempt cannot hang on a server that
 # accepts the connection but does not answer; CUBRIDdb takes no such options.
@@ -68,7 +72,23 @@ def configured_url(environ: Mapping[str, str] | None = None) -> URL:
     value = env.get(TEST_URL_VAR)
     if not value:
         raise ValueError(f"{TEST_URL_VAR} is not set")
-    return _parse(value)
+    url = _parse(value)
+    # Integration fixtures run destructive DDL: never probe, let alone pass, a
+    # non-CUBRID database or a URL without one.
+    if url.drivername not in SYNC_DRIVERNAMES or not url.database:
+        raise ValueError(
+            f"{TEST_URL_VAR} must be a {' / '.join(sorted(SYNC_DRIVERNAMES))} URL "
+            "with a database, e.g. cubrid+pycubrid://dba@localhost:33000/testdb"
+        )
+    return url
+
+
+def configured_async_url(sync: URL, environ: Mapping[str, str] | None = None) -> tuple[URL, bool]:
+    """The async route the async suites use, and whether ``CUBRID_TEST_AURL`` set it."""
+    env = os.environ if environ is None else environ
+    # Like the async suites, treat a set-but-empty override as set (and invalid).
+    override = env.get(ASYNC_URL_VAR)
+    return async_url(sync, override), override is not None
 
 
 def describe(url: URL) -> str:
@@ -90,6 +110,23 @@ def probe(url: URL) -> None:
                 raise RuntimeError("unexpected SELECT 1 result")
     finally:
         engine.dispose()
+
+
+def async_probe(url: URL, timeout: float = 15.0) -> None:
+    """Like :func:`probe`, through ``cubrid+aiopycubrid://``, bounded by *timeout* seconds."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    async def run() -> None:
+        engine = create_async_engine(url, poolclass=NullPool, connect_args=PYCUBRID_TIMEOUTS)
+        try:
+            async with engine.connect() as connection:
+                result = await connection.execute(text("SELECT 1"))
+                if result.scalar_one() != 1:
+                    raise RuntimeError("unexpected SELECT 1 result")
+        finally:
+            await engine.dispose()
+
+    asyncio.run(asyncio.wait_for(run(), timeout))
 
 
 def error_summary(exc: BaseException, url: URL) -> str:

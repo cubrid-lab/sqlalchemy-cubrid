@@ -51,24 +51,33 @@ def _endpoint_error() -> str:
     """Probe the ``CUBRID_TEST_URL`` server once per session; "" when it answers."""
     global _probe_error
     if _probe_error is None:
-        from scripts.integration_urls import configured_url, describe, error_summary, probe
+        from scripts import integration_urls as urls
 
         try:
-            url = configured_url()
+            url = urls.configured_url()
+            aurl, overridden = urls.configured_async_url(url)
         except ValueError as exc:
-            _probe_error = f"CUBRID_TEST_URL is set but unusable: {exc}"
+            _probe_error = f"CUBRID test URL is set but unusable: {exc}"
             return _probe_error
-        try:
-            probe(url)
-        except Exception as exc:  # noqa: BLE001 - any failure means "not usable"
-            _probe_error = (
-                f"CUBRID_TEST_URL is set, but CUBRID at {describe(url)} does not answer "
-                f"SELECT 1 through the driver the URL selects: {error_summary(exc, url)}. "
-                "Start the server (or run `make integration`), fix CUBRID_TEST_URL or "
-                "install its driver; unset CUBRID_TEST_URL to skip the integration tests."
-            )
-        else:
-            _probe_error = ""
+        # CUBRID_TEST_AURL is an explicit second endpoint (the async suites use
+        # it instead of the route derived from CUBRID_TEST_URL), so it must
+        # answer too; the derived route is exercised by the async tests themselves.
+        checks = [("CUBRID_TEST_URL", url, urls.probe)]
+        if overridden:
+            checks.append(("CUBRID_TEST_AURL", aurl, urls.async_probe))
+        for var, target, check in checks:
+            try:
+                check(target)
+            except Exception as exc:  # noqa: BLE001 - any failure means "not usable"
+                _probe_error = (
+                    f"{var} is set, but CUBRID at {urls.describe(target)} does not answer "
+                    f"SELECT 1 through the driver the URL selects: "
+                    f"{urls.error_summary(exc, target)}. Start the server (or run "
+                    f"`make integration`), fix {var} or install its driver; unset "
+                    "CUBRID_TEST_URL to skip the integration tests."
+                )
+                return _probe_error
+        _probe_error = ""
     return _probe_error
 
 
@@ -125,9 +134,11 @@ if not ("--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv)
         * ``CUBRID_TEST_URL`` unset: skip, so a bare ``pytest`` stays green locally
           (in CI, ``_ci_integration_guard`` fails the run instead);
         * ``CUBRID_TEST_URL`` set but its server does not answer ``SELECT 1``
-          through the driver the URL selects: error, never skip. The server is
-          probed once per session, and every integration test reports the same
-          error, naming the URL without its password.
+          through the driver the URL selects (or a ``CUBRID_TEST_AURL``
+          override does not answer through ``cubrid+aiopycubrid://``), or either
+          URL is not a CUBRID URL with a database: error, never skip. The
+          endpoints are probed once per session, and every integration test
+          reports the same error, naming the URL without its password.
 
         Per-driver skips inside a module (both drivers needed, a Docker
         container needed) still apply after the gate passes, with their own

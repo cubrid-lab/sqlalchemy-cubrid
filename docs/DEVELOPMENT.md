@@ -261,14 +261,18 @@ the server at import time any more.
 | --- | --- | --- |
 | unset or empty | (not probed) | skipped locally; with `CI=true` the run exits 1 before any test runs |
 | set | yes | run |
-| set | no (down, wrong port, driver not installed, unparsable URL) | **error**, every one, with the same message |
+| set | no (down, wrong port, driver not installed, not a CUBRID URL with a database) | **error**, every one, with the same message |
 
 The gate probes the server once per session through the helpers in
 `scripts/integration_urls.py` (shared with `scripts/wait_for_cubrid.py`), using
 the driver the URL selects: `cubrid+pycubrid://` needs pycubrid and `cubrid://`
 needs the CUBRIDdb C extension, also for `test/test_aio_integration.py`, which
-connects through `cubrid+aiopycubrid://`. The error names the URL with its
-password masked, for example:
+connects through `cubrid+aiopycubrid://`. `CUBRID_TEST_URL` must be a
+`cubrid://`, `cubrid+cubriddb://` or `cubrid+pycubrid://` URL with a database, so
+the destructive test fixtures can never run against another database. When
+`CUBRID_TEST_AURL` overrides the async route, the gate probes that endpoint too,
+through `cubrid+aiopycubrid://`. The error names the URL with its password
+masked, for example:
 
 ```text
 CUBRID_TEST_URL is set, but CUBRID at cubrid+pycubrid://dba:***@127.0.0.1:33599/testdb
