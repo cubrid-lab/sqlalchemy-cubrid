@@ -149,6 +149,38 @@ def test_cancelled_call_reason_names_the_called_workflow() -> None:
     assert "called workflow cancelled" in reason
 
 
+@pytest.mark.parametrize("result", ["skipped", "cancelled", "not run"])
+def test_missing_call_after_publish_is_a_failed_verification(result: str) -> None:
+    missing = {"result": result, "outputs": {}}
+    data = needs(verify_cookbook=missing, require_cookbook="skipped")
+    if result == "not run":
+        del data["verify-cookbook"], data["require-cookbook"]
+    assert summary.final_state(data) == "published; post-release verification failed"
+    status, reason = summary.verification(data)
+    assert status == "failure"
+    assert f"called workflow {result}" in reason
+
+
+def test_missing_call_in_dry_run_and_verify_only_is_a_failure() -> None:
+    skipped = {"verify_cookbook": "skipped", "require_cookbook": "skipped"}
+    assert (
+        summary.final_state(needs("dry-run", **skipped))
+        == "dry run passed; nothing published; cookbook verification failure"
+    )
+    data = needs("verify-only", consistency="skipped", matrix="skipped", build="skipped", **skipped)
+    assert summary.final_state(data) == "verification only of v1.9.0: failure"
+
+
+def test_verification_not_due_is_not_run() -> None:
+    skipped = {"verify_cookbook": "skipped", "require_cookbook": "skipped"}
+    data = needs(build="failure", publish="skipped", **skipped)
+    assert summary.verification(data) == ("not run", "")
+    data = needs(publish="failure", **skipped)
+    assert summary.verification(data) == ("not run", "")
+    data = needs("dry-run", matrix="failure", build="skipped", **skipped)
+    assert summary.verification(data) == ("not run", "")
+
+
 @pytest.mark.parametrize("job", ["consistency", "matrix", "build"])
 def test_failure_before_publish_says_nothing_was_published(job: str) -> None:
     data = needs(

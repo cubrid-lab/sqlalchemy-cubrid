@@ -9,8 +9,10 @@ publishing (nothing was tagged or uploaded) from "published; post-release
 verification failed". The cookbook verification is ``success`` only when the
 called smoke-test workflow (``verify-cookbook``) and ``require-cookbook``
 succeeded and its outputs report ``status == success`` with
-``installed_version == requested_version`` == the released version; a failed or
-cancelled called workflow is a failure, never a verified release.
+``installed_version == requested_version`` == the released version; a failed,
+cancelled or skipped call once verification was due (after a successful
+publish, a successful dry-run build, or for verify-only) is a failure, never a
+verified release.
 
 Environment: ``NEEDS`` (required), ``PACKAGE``, ``GITHUB_REPOSITORY``,
 ``GITHUB_SERVER_URL``, ``GITHUB_RUN_ID``. Always exits 0 unless ``NEEDS`` is
@@ -33,10 +35,24 @@ def job(needs: dict[str, Any], name: str) -> tuple[str, dict[str, str]]:
     return str(entry.get("result") or "not run"), dict(entry.get("outputs") or {})
 
 
+def verification_due(needs: dict[str, Any]) -> bool:
+    """Mirror the ``verify-cookbook`` condition: a published release, a successful
+    dry-run build, or verify-only. A call skipped or cancelled after that point is
+    a failed verification, not one that was never due."""
+    _, detect = job(needs, "detect")
+    if detect.get("verify") != "true":
+        return False
+    if job(needs, "publish")[0] == "success":
+        return True
+    return detect.get("publish") != "true" and (
+        detect.get("mode") == "verify-only" or job(needs, "build")[0] == "success"
+    )
+
+
 def verification(needs: dict[str, Any]) -> tuple[str, str]:
     """Return (``success`` | ``failure`` | ``not run``, reason) for the cookbook."""
     result, outputs = job(needs, "verify-cookbook")
-    if result in ("skipped", "not run") and not outputs:
+    if result in ("skipped", "not run") and not outputs and not verification_due(needs):
         return "not run", ""
     require_result, _ = job(needs, "require-cookbook")
     version = job(needs, "detect")[1].get("version", "")
