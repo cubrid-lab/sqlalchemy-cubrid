@@ -58,7 +58,8 @@ class _BaseDMLCompiler(Protocol):
 
     def _render_cte_clause(
         self, nesting_level: int | None = None, include_following_stack: bool = False
-    ) -> str: ...
+    ) -> str:
+        """Render the pending WITH clause (private SQLAlchemy hook, used for #591)."""
 
 
 class _BaseDDLCompiler(Protocol):
