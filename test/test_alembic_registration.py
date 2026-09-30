@@ -250,7 +250,7 @@ def test_working_alembic_registers_without_warning() -> None:
 
 
 # Collection only looks at the environment variable, so the offline suite never
-# opens a database connection; reachability is checked inside the test.
+# opens a database connection; the conftest gate checks reachability (#593).
 _LIVE_URL = os.environ.get("CUBRID_TEST_URL")
 
 
@@ -272,13 +272,8 @@ def test_online_upgrade_with_unmodified_template(
     import sqlalchemy as sa
 
     assert _LIVE_URL is not None
+    # test/conftest.py has already errored this test if the server is unreachable (#593).
     engine = sa.create_engine(_LIVE_URL)
-    try:
-        with engine.connect() as conn:
-            conn.execute(sa.text("SELECT 1"))
-    except Exception as exc:
-        engine.dispose()
-        pytest.skip(f"CUBRID instance not reachable: {type(exc).__name__}")
 
     # The default env.py uses the ``alembic_version`` table.  Never touch one
     # that already exists: it may hold a real database's migration history.

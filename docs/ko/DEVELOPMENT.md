@@ -242,6 +242,48 @@ docker compose down -v
 건너뛰며 CUBRIDdb를 검증했다고 주장하지 않습니다. 공식 CI의 네이티브 드라이버
 `--dburi` 경로는 별도로 유지됩니다.
 
+#### 건너뛸지 실패할지: `CUBRID_TEST_URL`이 스위치입니다
+
+`integration` 마커가 붙은 테스트의 실행 여부는 `test/conftest.py`의
+`pytest_runtest_setup` 게이트 한 곳에서 결정합니다(#593). 이제 어떤 테스트 모듈도
+import 시점에 서버를 확인하지 않습니다.
+
+| `CUBRID_TEST_URL` | 서버가 URL의 드라이버로 `SELECT 1`에 응답 | 통합 테스트 |
+| --- | --- | --- |
+| 미설정 또는 빈 값 | (확인하지 않음) | 로컬에서는 건너뜀. `CI=true`이면 테스트 실행 전에 종료 코드 1로 끝남 |
+| 설정됨 | 예 | 실행 |
+| 설정됨 | 아니요(서버 중지, 잘못된 포트, 드라이버 미설치, 해석할 수 없는 URL) | 모두 같은 메시지로 **error** |
+
+게이트는 `scripts/integration_urls.py`의 헬퍼(`scripts/wait_for_cubrid.py`와
+공유)로 세션당 한 번, URL이 선택한 드라이버를 통해 서버를 확인합니다.
+`cubrid+pycubrid://`에는 pycubrid가, `cubrid://`에는 CUBRIDdb C 확장이 필요하며,
+`cubrid+aiopycubrid://`로 연결하는 `test/test_aio_integration.py`도 마찬가지입니다.
+오류 메시지는 비밀번호를 가린 URL을 보여 줍니다. 예:
+
+```text
+CUBRID_TEST_URL is set, but CUBRID at cubrid+pycubrid://dba:***@127.0.0.1:33599/testdb
+does not answer SELECT 1 through the driver the URL selects: OperationalError: ...
+```
+
+따라서 서버가 있다고 믿는 레인이 테스트를 건너뛰어 녹색이 되는 일은 더 이상
+없습니다. #593 이전에는 연결할 수 없는 URL로 `pytest test/ -m integration`을 실행하면
+`CI=true`에서도 447개 중 421개가 건너뛰어졌습니다. 이제 447개 모두 error가 되고
+pytest는 종료 코드 1로 끝납니다. 의도적으로 건너뛰려면 `CUBRID_TEST_URL`을 해제하거나
+`-m "not integration"`으로 제외하세요(오프라인 스위트가 이렇게 합니다). 이 게이트는
+`--dburi` 컴플라이언스 실행에는 적용되지 않습니다. `--dburi`를 쓰면 SQLAlchemy
+플러그인이 세션 시작 시 연결하고, 서버에 연결할 수 없으면 직접 실행을 실패시킵니다.
+
+게이트를 통과한 뒤에도 일부 모듈은 자체 이유로 건너뜁니다. 드라이버 차분 테스트와
+트랜잭션 DDL 테스트는 두 드라이버가 모두 필요하고, 서버 재시작 테스트는
+`CUBRID_TEST_DOCKER_CONTAINER`가 필요합니다. 해당 CI 단계는
+`CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`, `CUBRID_REQUIRE_TRANSACTIONAL_DDL=1`,
+`CUBRID_REQUIRE_SERVER_RESTART=1`로 이 건너뛰기를 실패로 바꿉니다(#486, #503, #565).
+
+`test/test_integration.py`는 고정된 이름의 테이블과 데이터베이스 사용자(예:
+`t583_fresh`, `alter_it_modify`, `u543`)를 만들므로, 같은 데이터베이스에 대한 두
+실행은 서로 간섭합니다. 전용 데이터베이스에서 한 번에 하나씩 실행하세요.
+`make integration`은 이를 위해 실행 전용 서버를 시작합니다.
+
 `test/test_server_restart.py`(#565)는
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"`로
 `cub_server`를 중지·시작하고, 두 드라이버 모두에서 `pool_pre_ping` 사용 여부와
@@ -341,7 +383,9 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 180) 기다리며, 끝내 응답하지 않으면 실패합니다. 새 컨테이너는 데이터베이스를
 만들고 브로커를 시작하는 데 약 20초가 걸립니다. #575 이전의 고정 10초 대기는
 스위트를 너무 일찍 시작시켜, 첫 테스트들이 CCI -20004로 실패하고 import 시점에
-서버를 확인하는 라이브 테스트 파일들이 스스로 skip되었습니다.
+서버를 확인하던 라이브 테스트 파일들이 스스로 skip되었습니다. #593 이후로는 어떤
+파일도 import 시점에 확인하지 않으며, 서버가 응답하지 않으면 conftest 게이트가 모든
+통합 테스트를 error로 만들므로 준비되지 않은 서버는 실행을 건너뛰지 않고 실패시킵니다.
 
 `make integration`은 기본적으로 `sqlalchemy-cubrid-it-<timestamp>-<pid>`라는
 자체 Compose 프로젝트에서 실행됩니다. 따라서 컨테이너, 네트워크와 `cubrid-data`
@@ -605,8 +649,9 @@ CUBRIDdb C 확장에서 실행하고 결과가 일치하는지 확인합니다. 
 두 드라이버가 모두 연결되지 않은 레인이 성공으로 보고될 수 없습니다. 테스트 전에
 `python -m scripts.report_driver_versions`가 정확한 Python, SQLAlchemy, pycubrid,
 CUBRIDdb(패키지 버전과 소스 태그), CUBRID 서버 버전을 잡 로그와 GitHub 단계 요약에
-기록합니다. 변수를 설정하지 않은 로컬 실행은 드라이버나 데이터베이스가 없으면 계속
-깔끔하게 건너뜁니다.
+기록합니다. 변수를 설정하지 않은 로컬 실행은 드라이버가 없으면 계속 깔끔하게
+건너뜁니다. `CUBRID_TEST_URL`의 서버에 연결할 수 없으면 다른 모든 통합 테스트와
+마찬가지로 error가 됩니다(#593).
 
 ```bash
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"

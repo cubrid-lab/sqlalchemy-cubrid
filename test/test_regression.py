@@ -19,7 +19,6 @@ from sqlalchemy import (
     Table,
     create_engine,
     select,
-    text,
 )
 from sqlalchemy.orm import Session
 
@@ -30,26 +29,9 @@ def _cubrid_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
-def _can_connect() -> bool:
-    try:
-        engine = create_engine(_cubrid_url())
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        engine.dispose()
-        return True
-    except Exception:
-        return False
-
-
-_available = _can_connect()
-
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        not _available,
-        reason="CUBRID instance not available (set CUBRID_TEST_URL)",
-    ),
-]
+# The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
+# unset and errors them when its server is unreachable (#593).
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture()

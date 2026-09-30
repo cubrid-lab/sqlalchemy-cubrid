@@ -39,46 +39,62 @@ except ModuleNotFoundError:  # hypothesis is a dev-only dependency
     pass
 
 
-def _item_is_skipped(item) -> bool:  # noqa: ANN001
-    """True if the item carries an active skip/skipif for the current run.
+_UNCONFIGURED_REASON = (
+    "requires a live CUBRID server (set CUBRID_TEST_URL, or run `make integration`)"
+)
+# Outcome of the one live probe per session (#593): None = not probed yet,
+# "" = reachable, otherwise the error every integration test reports.
+_probe_error: str | None = None
 
-    ``pytest.mark.skipif(cond, ...)`` always attaches a ``skipif`` marker
-    regardless of ``cond``, so marker *presence* is not enough — the boolean
-    condition (``not _available``, evaluated at import) is the first positional
-    arg and must itself be truthy for the test to actually skip.
-    """
-    for marker in item.iter_markers(name="skip"):
-        return True
-    return any(
-        any(bool(cond) for cond in marker.args) for marker in item.iter_markers(name="skipif")
-    )
+
+def _endpoint_error() -> str:
+    """Probe the ``CUBRID_TEST_URL`` server once per session; "" when it answers."""
+    global _probe_error
+    if _probe_error is None:
+        from scripts.integration_urls import configured_url, describe, error_summary, probe
+
+        try:
+            url = configured_url()
+        except ValueError as exc:
+            _probe_error = f"CUBRID_TEST_URL is set but unusable: {exc}"
+            return _probe_error
+        try:
+            probe(url)
+        except Exception as exc:  # noqa: BLE001 - any failure means "not usable"
+            _probe_error = (
+                f"CUBRID_TEST_URL is set, but CUBRID at {describe(url)} does not answer "
+                f"SELECT 1 through the driver the URL selects: {error_summary(exc, url)}. "
+                "Start the server (or run `make integration`), fix CUBRID_TEST_URL or "
+                "install its driver; unset CUBRID_TEST_URL to skip the integration tests."
+            )
+        else:
+            _probe_error = ""
+    return _probe_error
 
 
 def _ci_integration_guard(items) -> None:  # noqa: ANN001
-    """Fail-hard when CI runs integration tests but every one is skipped.
+    """Fail-hard when CI selects integration tests but ``CUBRID_TEST_URL`` is unset.
 
-    The live-DB files mark themselves ``integration`` + ``skipif`` when no
-    CUBRID is reachable. That skip is correct locally and in the offline job
-    (``-m "not integration"`` deselects them entirely), but a CI job that runs
-    integration tests against a broken/absent CUBRID must fail loudly rather
+    Without the URL every ``integration``-marked test skips (see
+    ``pytest_runtest_setup`` below). That is correct locally and in the offline
+    job (``-m "not integration"`` deselects them entirely), but a CI job that
+    runs integration tests without a configured CUBRID must fail loudly rather
     than silently skip. ``items`` here is post-deselection (see the
     ``trylast`` hookwrapper below), so it only contains tests that will run.
     """
-    if os.environ.get("CI", "").lower() not in ("true", "1"):
+    from scripts.integration_urls import is_configured
+
+    if os.environ.get("CI", "").lower() not in ("true", "1") or is_configured():
         return
-    integration_items = [
-        item for item in items if item.get_closest_marker("integration") is not None
-    ]
-    if not integration_items:
-        return
-    if all(_item_is_skipped(item) for item in integration_items):
+    count = sum(1 for item in items if item.get_closest_marker("integration") is not None)
+    if count:
         import pytest
 
         pytest.exit(
-            f"CI=true is running {len(integration_items)} integration test(s) "
-            "but every one is skipped — CUBRID is not reachable. Integration "
-            "tests must not be silently skipped in CI; check the CUBRID service "
-            "container / CUBRID_TEST_URL.",
+            f"CI=true is running {count} integration test(s) but CUBRID_TEST_URL is "
+            "not set, so every one would be skipped. Integration tests must not be "
+            "silently skipped in CI; set CUBRID_TEST_URL to the CUBRID service or "
+            'deselect them with -m "not integration".',
             returncode=1,
         )
 
@@ -97,6 +113,35 @@ if not ("--dburi" in sys.argv or any(a.startswith("--dburi=") for a in sys.argv)
     @pytest.hookimpl(trylast=True)
     def pytest_collection_modifyitems(items):  # noqa: ANN001
         _ci_integration_guard(items)
+
+    def pytest_runtest_setup(item):  # noqa: ANN001
+        """Gate ``integration``-marked tests on a configured, reachable CUBRID (#593).
+
+        Classification lives entirely in the ``integration`` marker; no test
+        module probes the server at import time. This hook runs after ``skipif``
+        markers are evaluated but before any fixture is set up (including
+        module-scoped engines):
+
+        * ``CUBRID_TEST_URL`` unset: skip, so a bare ``pytest`` stays green locally
+          (in CI, ``_ci_integration_guard`` fails the run instead);
+        * ``CUBRID_TEST_URL`` set but its server does not answer ``SELECT 1``
+          through the driver the URL selects: error, never skip. The server is
+          probed once per session, and every integration test reports the same
+          error, naming the URL without its password.
+
+        Per-driver skips inside a module (both drivers needed, a Docker
+        container needed) still apply after the gate passes, with their own
+        ``CUBRID_REQUIRE_*`` switches (#486).
+        """
+        from scripts.integration_urls import is_configured
+
+        if item.get_closest_marker("integration") is None:
+            return
+        if not is_configured():
+            pytest.skip(_UNCONFIGURED_REASON)
+        error = _endpoint_error()
+        if error:
+            pytest.fail(error, pytrace=False)
 
     def pytest_runtest_logreport(report):  # noqa: ANN001
         if (

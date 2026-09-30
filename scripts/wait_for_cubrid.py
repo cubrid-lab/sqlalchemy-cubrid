@@ -2,8 +2,9 @@
 
 ``make integration`` runs this after ``docker compose up -d`` instead of a fixed
 sleep. A fresh container creates its database and starts the broker first, which
-takes about 20 seconds; tests that start earlier fail with connection errors, and
-the live test modules that probe the server at import time skip themselves.
+takes about 20 seconds; tests that start earlier would fail with connection errors
+(the ``test/conftest.py`` gate errors every integration test when the configured
+server does not answer, #593).
 
 The probe connects through the driver that ``CUBRID_TEST_URL`` selects, so it
 also fails early when that driver is not installed. Exits 0 once the server
@@ -14,17 +15,13 @@ unusable). Credentials are never printed.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import time
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.pool import NullPool
 
-# pycubrid accepts socket timeouts, so one attempt cannot hang on a server that
-# accepts the connection but does not answer yet; CUBRIDdb takes no such options.
-_PYCUBRID_TIMEOUTS = {"connect_timeout": 5, "read_timeout": 5}
+from scripts.integration_urls import configured_url, connect_args, describe, error_summary
 
 
 def _probe(engine) -> None:  # noqa: ANN001
@@ -39,18 +36,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--interval", type=float, default=2.0, help="seconds between attempts")
     args = parser.parse_args(argv)
 
-    raw_url = os.environ.get("CUBRID_TEST_URL")
-    if not raw_url:
-        print("CUBRID_TEST_URL is not set", file=sys.stderr)
+    try:
+        url = configured_url()
+    except ValueError as exc:
+        print(f"Cannot use CUBRID_TEST_URL: {exc}", file=sys.stderr)
         return 1
     try:
-        url = make_url(raw_url)
-        connect_args = _PYCUBRID_TIMEOUTS if url.get_driver_name() == "pycubrid" else {}
-        engine = create_engine(url, poolclass=NullPool, connect_args=connect_args)
+        engine = create_engine(url, poolclass=NullPool, connect_args=connect_args(url))
     except Exception as exc:
-        print(f"Cannot use CUBRID_TEST_URL: {type(exc).__name__}: {exc}", file=sys.stderr)
+        print(f"Cannot use CUBRID_TEST_URL: {error_summary(exc, url)}", file=sys.stderr)
         return 1
-    target = url.render_as_string(hide_password=True)
+    target = describe(url)
 
     deadline = time.monotonic() + args.timeout
     attempt = 0
@@ -60,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
             try:
                 _probe(engine)
             except Exception as exc:
-                last_error = f"{type(exc).__name__}: {str(exc).splitlines()[0]}"
+                last_error = error_summary(exc, url)
             else:
                 print(f"CUBRID is ready at {target} (attempt {attempt})")
                 return 0

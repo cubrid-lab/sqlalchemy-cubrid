@@ -37,33 +37,10 @@ def _async_url() -> URL:
     return async_url(sync, os.environ.get("CUBRID_TEST_AURL"))
 
 
-def _can_connect_async() -> bool:
-    async def _probe() -> bool:
-        engine = create_async_engine(_async_url())
-        try:
-            async with engine.connect() as conn:
-                _ = await conn.execute(text("SELECT 1"))
-            return True
-        finally:
-            await engine.dispose()
-
-    try:
-        return asyncio.run(_probe())
-    except Exception:
-        return False
-
-
-# In CI, CUBRID is intentionally provisioned — connectivity failure
-# should be a hard test error, not a silent skip.  Locally, developers
-# without a running CUBRID instance get a skip.
-_available = _can_connect_async()
-
+# The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
+# unset and errors them when its server is unreachable (#593).
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skipif(
-        not _available,
-        reason="CUBRID async instance not available (set CUBRID_TEST_URL)",
-    ),
     pytest.mark.asyncio,
 ]
 

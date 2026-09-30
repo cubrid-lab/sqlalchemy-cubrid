@@ -84,6 +84,13 @@ tox -e integration
 docker compose down
 ```
 
+`CUBRID_TEST_URL` decides whether integration tests run. Unset, they skip (and a
+`CI=true` run that selects them exits 1). Set, the server behind it must answer
+`SELECT 1` through the URL's driver, or every integration test errors with one
+message naming the URL without its password, instead of silently skipping
+(#593). Unset it, or use `-m "not integration"`, to skip them on purpose. See
+[docs/DEVELOPMENT.md](docs/DEVELOPMENT.md#skip-or-fail-cubrid_test_url-is-the-switch).
+
 ### Multi-Python Testing with tox
 
 ```bash
