@@ -51,6 +51,7 @@ class TestModuleImports:
             "sqlalchemy_cubrid.pycubrid_dialect",
             "sqlalchemy_cubrid.aio_pycubrid_dialect",
             "sqlalchemy_cubrid.alembic_impl",
+            "sqlalchemy_cubrid.alembic_plugin",
             "sqlalchemy_cubrid.trace",
             "sqlalchemy_cubrid.requirements",
         ],
@@ -99,9 +100,16 @@ class TestEntryPoints:
         assert entry_line in pyproject_text
 
     def test_no_alembic_ddl_entry_point_declared(self):
-        # Alembic never reads an ``alembic.ddl`` group; the dialect module
-        # registers CubridImpl on import instead (#504).
+        # Alembic never reads an ``alembic.ddl`` group; CubridImpl is registered
+        # by the alembic.plugins entry point or the dialect module (#504, #595).
         assert '[project.entry-points."alembic.ddl"]' not in _read_pyproject()
+
+    def test_alembic_plugin_entry_point_declared(self):
+        # Alembic 1.18+ loads this group on import and registers CubridImpl (#595).
+        pyproject_text = _read_pyproject()
+
+        assert '[project.entry-points."alembic.plugins"]' in pyproject_text
+        assert 'sqlalchemy_cubrid = "sqlalchemy_cubrid.alembic_plugin"' in pyproject_text
 
     @pytest.mark.parametrize(
         ("entry_name", "expected_module", "expected_class_name"),

@@ -10,8 +10,10 @@
 This module provides the Alembic ``DefaultImpl`` subclass that enables
 Alembic migrations against a CUBRID database.  Alembic keys its
 implementations by dialect name, and ``DefaultImpl`` subclasses register
-themselves on import via ``__dialect__``; ``sqlalchemy_cubrid.dialect``
-imports this module whenever Alembic is installed, so every CUBRID URL
+themselves on import via ``__dialect__``.  Alembic 1.18+ imports this module
+through the ``alembic.plugins`` entry point
+(:mod:`sqlalchemy_cubrid.alembic_plugin`); with Alembic 1.7.2-1.17
+``sqlalchemy_cubrid.dialect`` imports it.  Either way every CUBRID URL
 (``cubrid://``, ``cubrid+pycubrid://``, ``cubrid+aiopycubrid://``) finds it.
 
 Usage::
@@ -20,8 +22,8 @@ Usage::
     [alembic]
     sqlalchemy.url = cubrid://dba:password@localhost:33000/demodb
 
-    # That's it — loading the CUBRID dialect registers the CUBRID
-    # implementation; the default env.py needs no extra import.
+    # That's it — the CUBRID implementation is registered automatically;
+    # the default env.py needs no extra import.
 
 CUBRID-specific notes
 ---------------------

@@ -84,6 +84,10 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
 
+# Alembic 1.18+ loads this group on ``import alembic``; the plugin registers
+# CubridImpl so the dialect does not have to import Alembic itself (#595).
+[project.entry-points."alembic.plugins"]
+sqlalchemy_cubrid = "sqlalchemy_cubrid.alembic_plugin"
 
 [tool.setuptools]
 packages = ["sqlalchemy_cubrid"]

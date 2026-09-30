@@ -181,11 +181,18 @@ csql -u dba demodb --no-auto-commit --no-single-line -i upgrade.sql
 
 ### 자동 등록
 
-Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이션 구현을 고르며, `DefaultImpl` 하위 클래스는 모듈이 임포트될 때 이 레지스트리에 스스로 추가됩니다(`CubridImpl.__dialect__ = "cubrid"`). Alembic은 패키지 엔트리 포인트에서 방언 구현을 로드하지 않습니다.
+Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이션 구현을 고르며, `DefaultImpl` 하위 클래스는 모듈이 임포트될 때 이 레지스트리에 스스로 추가됩니다(`CubridImpl.__dialect__ = "cubrid"`). 모든 CUBRID URL(`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`)은 `dialect.name == "cubrid"`입니다. sqlalchemy-cubrid는 Alembic이 이 이름을 조회하기 전에, 설치된 Alembic에 따라 다음 두 가지 방법 중 하나로 `sqlalchemy_cubrid.alembic_impl`을 임포트합니다.
 
-그래서 `sqlalchemy_cubrid/dialect.py`는 Alembic이 설치되어 있으면 `sqlalchemy_cubrid.alembic_impl`을 임포트하고, 없으면 조용히 건너뜁니다. 모든 CUBRID URL(`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`)이 이 모듈을 로드하고 `dialect.name == "cubrid"`이므로, 엔진을 만들 때(오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) Alembic이 조회하기 전에 `CubridImpl`이 등록됩니다. `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다.
+| Alembic | `alembic_impl`을 임포트하는 주체 | 시점 |
+|---|---|---|
+| 1.18 이상 | sqlalchemy-cubrid가 게시하는 `alembic.plugins` 엔트리 포인트(`sqlalchemy_cubrid.alembic_plugin`)를 통해 Alembic이 | `import alembic` 중 |
+| 1.7.2 – 1.17.x | `sqlalchemy_cubrid/dialect.py` | CUBRID 방언을 로드할 때(엔진 생성 시, 오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) |
 
-이 때문에 Alembic이 설치되어 있으면, 마이그레이션을 전혀 실행하지 않는 애플리케이션에서도 CUBRID 방언을 로드할 때 Alembic을 임포트합니다. 이 임포트에는 약 0.1초가 걸리며, Alembic 1.18 이상은 임포트 중에 `alembic.runtime.plugins` 로거로 `INFO` 줄 일곱 개(`setup plugin alembic.autogenerate.schemas`, ..., `setup plugin alembic.ext.checkconstraint_byname`)를 남깁니다. 이는 Alembic 자체의 메시지이며, 애플리케이션이 `INFO` 레코드를 핸들러로 보낼 때(예: `logging.basicConfig(level=logging.INFO)`)에만 첫 CUBRID 엔진이나 방언에서 나타납니다. 로거 레벨은 애플리케이션이 정할 일이므로 방언은 `alembic` 로거를 건드리지 않습니다. 이 줄을 숨기려면 애플리케이션의 로깅 설정에서 해당 로거의 레벨을 올리세요.
+어느 경우든 `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다. Alembic이 없으면 아무것도 등록하거나 기록하지 않습니다.
+
+Alembic 1.18 이상에서는 CUBRID 방언을 로드해도 Alembic을 임포트하지 않으므로, 마이그레이션을 실행하지 않는 애플리케이션은 더 이상 그 임포트 비용을 치르지 않습니다(Alembic 1.20.0, SQLAlchemy 2.0.54, Python 3.10에서 새 프로세스의 첫 `create_engine("cubrid+pycubrid://...")`가 약 80 ms 대신 약 18 ms). 방언은 이를 Alembic 자체가 아니라 설치된 패키지 메타데이터로 판단합니다. Alembic이 이미 임포트되었거나 메타데이터를 읽을 수 없으면 직접 임포트로 돌아가며, 이는 무해합니다.
+
+Alembic 1.18 이상은 임포트될 때 `alembic.runtime.plugins` 로거로 `INFO` 줄(`setup plugin alembic.autogenerate.schemas`, ..., `setup plugin alembic.ext.checkconstraint_byname`)을 남기며, sqlalchemy-cubrid가 설치되어 있으면 `setup plugin sqlalchemy_cubrid`도 남깁니다. 이는 Alembic 자체의 메시지입니다. 이 버전들에서는 방언이 더 이상 Alembic을 임포트하지 않으므로, 이 줄은 Alembic을 사용하는 프로세스에서만, 그리고 애플리케이션이 `INFO` 레코드를 핸들러로 보낼 때(예: `logging.basicConfig(level=logging.INFO)`)에만 나타납니다. Alembic 1.7.2 – 1.17.x에서는 방언이 여전히 Alembic을 임포트하지만(약 0.1초), 이 릴리스들은 이런 줄을 남기지 않습니다. 로거 레벨은 애플리케이션이 정할 일이므로 방언은 `alembic` 로거를 건드리지 않습니다. 이 줄을 숨기려면 애플리케이션의 로깅 설정에서 해당 로거의 레벨을 올리세요.
 
 ```python
 import logging
@@ -193,7 +200,7 @@ import logging
 logging.getLogger("alembic").setLevel(logging.WARNING)
 ```
 
-Alembic은 마이그레이션이 실행될 때까지 등록을 미루는 지원 방법을 제공하지 않습니다. `DefaultImpl.get_by_dialect()`는 레지스트리를 그대로 조회할 뿐이고, `alembic.plugins` 엔트리 포인트(Alembic 1.18+)는 `import alembic`마다 로드되며 지원하는 이전 버전에는 없습니다.
+Alembic 1.18 – 1.20은 `alembic.plugins` 엔트리 포인트를 `for mod in entrypoint.load()`로 로드하지만, Alembic 문서는 엔트리 포인트 값을 플러그인 모듈 자체로 설명합니다. 일반 모듈은 반복할 수 없으므로 문서의 형태는 모든 `import alembic`을 `TypeError`로 실패시킵니다. `sqlalchemy_cubrid.alembic_plugin`은 자기 자신을 내놓는 반복 가능한 모듈이라 두 방식 모두에서 동작합니다. 그 `setup()`은 어떤 실패도 예외 대신 `RuntimeWarning`(`-W error`에서는 `sqlalchemy_cubrid.alembic_plugin` 로거의 로그 레코드)으로 바꾸므로, 같은 환경의 다른 프로젝트에서 `import alembic`을 깨뜨릴 수 없습니다. 그래도 등록에 실패하면 Alembic은 `KeyError: 'cubrid'`를 보고하며, `env.py`에서 `sqlalchemy_cubrid.alembic_impl`을 임포트하면 `CubridImpl`이 직접 등록됩니다.
 
 Alembic이 설치되어 있지만 임포트에 실패하면(예: SQLAlchemy 2.x에서 `NameError`를 내는 Alembic 1.7.0/1.7.1) 방언은 그대로 로드되고, Alembic 통합이 비활성화되었다는 `RuntimeWarning`을 원래 예외와 함께 한 번 냅니다. 경고 필터가 이 경고를 오류로 바꾸면(`-W error`) 대신 `sqlalchemy_cubrid.dialect` 로거로 기록하므로 방언은 그대로 로드됩니다. `alembic>=1.7.2,<2.0`으로 업그레이드하면 해결됩니다.
 
@@ -391,9 +398,9 @@ def downgrade():
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-### 방언 사용 시 `setup plugin alembic...` `INFO` 로그 줄
+### `setup plugin ...` `INFO` 로그 줄
 
-Alembic 1.18+는 임포트될 때 이 줄을 남기며, CUBRID 방언은 Alembic이 설치되어 있으면 이를 임포트합니다. 애플리케이션에서 `logging.getLogger("alembic").setLevel(logging.WARNING)`을 설정하세요. [자동 등록](#자동-등록)을 참고하세요.
+Alembic 1.18+는 임포트될 때 이 줄을 남깁니다. 이 버전들에서는 CUBRID 방언을 로드해도 더 이상 Alembic을 임포트하지 않으므로, 이 줄은 Alembic을 사용하는 프로세스에서만 나타납니다. 애플리케이션에서 `logging.getLogger("alembic").setLevel(logging.WARNING)`을 설정하세요. [자동 등록](#자동-등록)을 참고하세요.
 
 ### "Alembic is required for migration support"
 
