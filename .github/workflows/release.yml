@@ -8,8 +8,8 @@
 #
 # A release runs in this one workflow with explicit `needs:` (tags and Releases
 # created with GITHUB_TOKEN trigger no other workflow). Release content is
-# checked out at the detected SHA; the guard, wait and summary scripts come from
-# the workflow's own commit (the same SHA on a push):
+# checked out at the detected SHA; the guard and summary scripts come from the
+# workflow's own commit (the same SHA on a push):
 #   consistency  make release-check
 #   matrix       integration-full.yml through workflow_call
 #   build        wheel + sdist once, twine check, smoke installs, SHA-256 list,
@@ -17,7 +17,9 @@
 #   publish      annotated tag at the SHA, draft GitHub Release + SBOM, PyPI
 #                upload of that artifact through the duplicate guard (OIDC,
 #                `pypi` environment), then the Release is published
-#   verify-cookbook  cubrid-cookbook-python smoke test for that exact version
+#   verify-cookbook  cubrid-cookbook-python smoke-test.yml for that exact version,
+#                called as a reusable workflow (jobs of this run, no token)
+#   require-cookbook status success and installed == requested
 #   summary      one table; always runs
 #
 # Recovery dispatch (main only for resume/verify-only; see RELEASING.md):
@@ -28,7 +30,8 @@
 #
 # Canonical cubrid-lab release workflow, kept identical across pycubrid,
 # sqlalchemy-cubrid and cubrid-mcp-server except for the `env:` block below and
-# the smoke-test steps of the build job.
+# the smoke-test steps of the build job and the package name in the `with:`
+# inputs of verify-cookbook.
 name: Release
 
 on:
@@ -47,11 +50,6 @@ on:
       version:
         description: "Version X.Y.Z (resume/verify-only: an existing tag on main; dry-run: __version__ of the ref)"
         required: true
-        type: string
-      request_id:
-        description: "verify-only/dry-run: wait for this existing cookbook request instead of dispatching a new one"
-        required: false
-        default: ""
         type: string
 
 env:
@@ -89,18 +87,11 @@ jobs:
         env:
           ACTION: ${{ inputs.action }}
           INPUT_VERSION: ${{ inputs.version }}
-          REQUEST_ID: ${{ inputs.request_id }}
         run: |
           set -euo pipefail
           if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "::error::version must be X.Y.Z"
             exit 1
-          fi
-          if [ -n "$REQUEST_ID" ]; then
-            if [ "$ACTION" = "resume" ] || [[ ! "$REQUEST_ID" =~ ^[A-Za-z0-9._-]{8,80}$ ]]; then
-              echo "::error::request_id is only for verify-only/dry-run and must match ^[A-Za-z0-9._-]{8,80}$"
-              exit 1
-            fi
           fi
           if [ "$ACTION" != "dry-run" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::$ACTION must be dispatched from main (got $GITHUB_REF)"
@@ -293,7 +284,7 @@ jobs:
       TAG: ${{ needs.detect.outputs.tag }}
       VERSION: ${{ needs.detect.outputs.version }}
     steps:
-      # Release tooling (guard, wait and summary scripts) comes from the
+      # Release tooling (guard and summary scripts) comes from the
       # workflow's own commit, so a resume or verify-only of an older tag uses
       # the current scripts; on a push it is the release SHA itself.
       - name: Check out the PyPI duplicate guard
@@ -384,6 +375,10 @@ jobs:
       - name: Publish the GitHub Release
         run: gh release edit "$TAG" --draft=false
 
+  # The cookbook smoke test runs as jobs of this run through workflow_call
+  # (cubrid-cookbook-python CONTRIBUTING, "Release verification contract"): no
+  # token, no secrets, no polling. Pinned to a cookbook `main` commit; Dependabot
+  # moves the pin to the newest `main` commit (see RELEASING.md).
   verify-cookbook:
     name: Cookbook release verification
     needs: [detect, build, publish]
@@ -394,57 +389,45 @@ jobs:
       (needs.publish.result == 'success' ||
       (needs.detect.outputs.publish != 'true' &&
       (needs.detect.outputs.mode == 'verify-only' || needs.build.result == 'success')))
-    runs-on: ubuntu-latest
-    timeout-minutes: 60
     permissions:
-      contents: read # sparse checkout of the wait script
-      actions: read # cookbook runs/artifacts: public repo, readable with any authenticated token
-    outputs:
-      status: ${{ steps.wait.outputs.status }}
-      reason: ${{ steps.wait.outputs.reason }}
-      request_id: ${{ steps.wait.outputs.request_id }}
-      run_url: ${{ steps.wait.outputs.run_url }}
+      contents: read # all the called workflow needs
+    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@f208e8e98ea590146704bd7555b70888dce179cc # main
+    with:
+      package: sqlalchemy-cubrid
+      version: ${{ needs.detect.outputs.version }}
+      request_id: sqlalchemy-cubrid-v${{ needs.detect.outputs.version }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+  # The called workflow fails on a failed verification, but its outputs are
+  # still set; this job enforces them, so a release is never reported as
+  # verified unless the requested version is the one the cookbook installed.
+  require-cookbook:
+    name: Require a verified release
+    needs: [detect, verify-cookbook]
+    if: always() && needs.verify-cookbook.result != 'skipped'
+    runs-on: ubuntu-latest
+    permissions: {}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          sparse-checkout: scripts/cookbook_wait.py
-          sparse-checkout-cone-mode: false
-          persist-credentials: false
-
-      # Without COOKBOOK_DISPATCH_TOKEN the result is "incomplete" and the next
-      # step fails the job: a release is never reported as verified silently.
-      - name: Dispatch the cookbook smoke test and wait for that run
-        id: wait
-        continue-on-error: true
+      - name: Require status success and installed == requested
         env:
-          COOKBOOK_DISPATCH_TOKEN: ${{ secrets.COOKBOOK_DISPATCH_TOKEN }}
-          GITHUB_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.verify-cookbook.result }}
+          STATUS: ${{ needs.verify-cookbook.outputs.status }}
+          REQUESTED: ${{ needs.verify-cookbook.outputs.requested_version }}
+          INSTALLED: ${{ needs.verify-cookbook.outputs.installed_version }}
+          ARTIFACT: ${{ needs.verify-cookbook.outputs.artifact }}
           VERSION: ${{ needs.detect.outputs.version }}
-          EXISTING_REQUEST_ID: ${{ inputs.request_id }}
         run: |
-          if [ -n "$EXISTING_REQUEST_ID" ]; then
-            python3 scripts/cookbook_wait.py --package "$PACKAGE" --version "$VERSION" \
-              --request-id "$EXISTING_REQUEST_ID" --no-dispatch
+          echo "result=$RESULT status=$STATUS requested=$REQUESTED installed=$INSTALLED artifact=$ARTIFACT"
+          if [ "$RESULT" = success ] && [ "$STATUS" = success ] && [ -n "$INSTALLED" ] \
+            && [ "$INSTALLED" = "$REQUESTED" ] && [ "$REQUESTED" = "$VERSION" ]; then
+            echo "Cookbook verified $PACKAGE==$INSTALLED (report artifact $ARTIFACT)"
           else
-            python3 scripts/cookbook_wait.py --package "$PACKAGE" --version "$VERSION" \
-              --request-id "$PACKAGE-v$VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            echo "::error::Cookbook verification failed for $PACKAGE $VERSION: called workflow $RESULT, status '${STATUS:-none}', requested '${REQUESTED:-none}', installed '${INSTALLED:-none}'"
+            exit 1
           fi
-
-      - name: Require a verified release
-        env:
-          STATUS: ${{ steps.wait.outputs.status }}
-          REASON: ${{ steps.wait.outputs.reason }}
-        run: |
-          case "$STATUS" in
-            success) echo "Cookbook verification succeeded: $REASON" ;;
-            incomplete) echo "::error::Cookbook verification INCOMPLETE: $REASON"; exit 1 ;;
-            *) echo "::error::Cookbook verification failed: ${REASON:-no result}"; exit 1 ;;
-          esac
 
   summary:
     name: Release summary
-    needs: [detect, consistency, matrix, build, publish, verify-cookbook]
+    needs: [detect, consistency, matrix, build, publish, verify-cookbook, require-cookbook]
     if: always()
     runs-on: ubuntu-latest
     permissions:

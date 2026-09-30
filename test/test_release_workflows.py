@@ -17,6 +17,9 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github" / "workflows"
 PINNED = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
+COOKBOOK_SMOKE = re.compile(
+    r"^cubrid-lab/cubrid-cookbook-python/\.github/workflows/smoke-test\.yml@[0-9a-f]{40}$"
+)
 DETECT_SHA = "${{ needs.detect.outputs.sha }}"
 
 
@@ -58,7 +61,7 @@ def test_release_triggers() -> None:
     assert on["push"] == {"branches": ["main"]}
     inputs = on["workflow_dispatch"]["inputs"]
     assert inputs["action"]["options"] == ["dry-run", "verify-only", "resume"]
-    assert set(inputs) == {"action", "version", "request_id"}
+    assert set(inputs) == {"action", "version"}
 
 
 def test_prepare_release_is_dispatch_only() -> None:
@@ -93,7 +96,8 @@ EXPECTED_PERMISSIONS = {
     "matrix": {"contents": "read"},
     "build": {"contents": "read"},
     "publish": {"contents": "write", "id-token": "write"},
-    "verify-cookbook": {"contents": "read", "actions": "read"},
+    "verify-cookbook": {"contents": "read"},
+    "require-cookbook": {},
     "summary": {"contents": "read"},
 }
 
@@ -134,6 +138,7 @@ def test_job_graph() -> None:
     assert jobs["build"]["needs"] == ["detect", "matrix"]
     assert jobs["publish"]["needs"] == ["detect", "consistency", "matrix", "build"]
     assert jobs["verify-cookbook"]["needs"] == ["detect", "build", "publish"]
+    assert jobs["require-cookbook"]["needs"] == ["detect", "verify-cookbook"]
     assert jobs["summary"]["needs"] == [
         "detect",
         "consistency",
@@ -141,6 +146,7 @@ def test_job_graph() -> None:
         "build",
         "publish",
         "verify-cookbook",
+        "require-cookbook",
     ]
     for name in ("consistency", "matrix", "build"):
         assert jobs[name]["if"] == "needs.detect.outputs.build == 'true'", name
@@ -148,9 +154,12 @@ def test_job_graph() -> None:
     assert jobs["publish"]["if"] == "needs.detect.outputs.publish == 'true'"
     assert jobs["publish"]["environment"]["name"] == "pypi"
     verify_if = " ".join(jobs["verify-cookbook"]["if"].split())
-    # Not always(): cancelling a dry run must not dispatch the cookbook.
+    # Not always(): cancelling a dry run must not start the cookbook smoke test.
     assert verify_if.startswith("!cancelled() && needs.detect.outputs.verify == 'true' &&")
     assert "needs.publish.result == 'success'" in verify_if
+    assert jobs["require-cookbook"]["if"] == (
+        "always() && needs.verify-cookbook.result != 'skipped'"
+    )
     assert jobs["summary"]["if"] == "always()"
 
 
@@ -164,7 +173,6 @@ def test_release_content_comes_from_the_detected_sha() -> None:
     # Tooling-only jobs sparse-check out one script from the workflow commit.
     for name, script in (
         ("publish", "scripts/pypi_duplicate_guard.py"),
-        ("verify-cookbook", "scripts/cookbook_wait.py"),
         ("summary", "scripts/release_summary.py"),
     ):
         (checkout,) = checkouts(jobs[name])
@@ -222,16 +230,54 @@ def test_build_once_with_hashes_and_recoverable_artifacts() -> None:
     assert "python -m build" not in publish_runs
 
 
-def test_dispatch_token_only_in_the_verify_job() -> None:
-    for name, job in RELEASE["jobs"].items():
-        uses_secret = "secrets." in str(job)
-        assert uses_secret == (name == "verify-cookbook"), name
-    verify = steps(RELEASE["jobs"]["verify-cookbook"])
-    wait = next(s for s in verify if s.get("id") == "wait")
-    assert wait["continue-on-error"] is True
-    assert wait["env"]["COOKBOOK_DISPATCH_TOKEN"] == "${{ secrets.COOKBOOK_DISPATCH_TOKEN }}"
-    final = verify[-1]["run"]
-    assert "incomplete)" in final and "exit 1" in final
+def test_cookbook_is_verified_through_the_pinned_reusable_workflow() -> None:
+    verify = RELEASE["jobs"]["verify-cookbook"]
+    assert COOKBOOK_SMOKE.match(verify["uses"]), verify["uses"]
+    line = next(
+        line
+        for line in (WORKFLOWS / "release.yml").read_text().splitlines()
+        if "cubrid-cookbook-python/.github/workflows/smoke-test.yml@" in line
+    )
+    assert line.endswith(" # main"), line
+    assert verify["permissions"] == {"contents": "read"}
+    assert set(verify) == {"name", "needs", "if", "permissions", "uses", "with"}
+    assert verify["with"] == {
+        "package": "sqlalchemy-cubrid",
+        "version": "${{ needs.detect.outputs.version }}",
+        "request_id": (
+            "sqlalchemy-cubrid-v${{ needs.detect.outputs.version }}-${{ github.run_id }}"
+            "-${{ github.run_attempt }}"
+        ),
+    }
+    require = RELEASE["jobs"]["require-cookbook"]
+    (step,) = steps(require)
+    assert step["env"] == {
+        "RESULT": "${{ needs.verify-cookbook.result }}",
+        "STATUS": "${{ needs.verify-cookbook.outputs.status }}",
+        "REQUESTED": "${{ needs.verify-cookbook.outputs.requested_version }}",
+        "INSTALLED": "${{ needs.verify-cookbook.outputs.installed_version }}",
+        "ARTIFACT": "${{ needs.verify-cookbook.outputs.artifact }}",
+        "VERSION": "${{ needs.detect.outputs.version }}",
+    }
+    for check in (
+        '[ "$RESULT" = success ]',
+        '[ "$STATUS" = success ]',
+        '[ -n "$INSTALLED" ]',
+        '[ "$INSTALLED" = "$REQUESTED" ]',
+        '[ "$REQUESTED" = "$VERSION" ]',
+        "exit 1",
+    ):
+        assert check in step["run"], check
+
+
+def test_no_secrets_or_dispatch_token() -> None:
+    text = (WORKFLOWS / "release.yml").read_text()
+    assert "secrets." not in text and "secrets: inherit" not in text
+    assert "COOKBOOK_DISPATCH_TOKEN" not in text
+    assert "cookbook_wait" not in text
+    assert not (ROOT / "scripts" / "cookbook_wait.py").exists()
+    for job in RELEASE["jobs"].values():
+        assert "secrets" not in job
 
 
 def test_recovery_dispatch_is_limited_to_main() -> None:

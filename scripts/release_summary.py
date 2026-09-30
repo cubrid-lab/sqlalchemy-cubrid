@@ -3,11 +3,14 @@
 
 The ``summary`` job always runs and passes ``toJSON(needs)`` in ``NEEDS``. This
 script renders one Markdown table (SHA, tag, version, artifact hashes, matrix
-result, PyPI URLs, cookbook run and final state) to ``$GITHUB_STEP_SUMMARY``
-and stdout. The final state separates failures before publishing (nothing was
-tagged or uploaded) from "published; post-release verification failed" or
-"... incomplete", so a missing ``COOKBOOK_DISPATCH_TOKEN`` never reads as a
-verified release.
+result, PyPI URLs, cookbook verification and final state) to
+``$GITHUB_STEP_SUMMARY`` and stdout. The final state separates failures before
+publishing (nothing was tagged or uploaded) from "published; post-release
+verification failed". The cookbook verification is ``success`` only when the
+called smoke-test workflow (``verify-cookbook``) and ``require-cookbook``
+succeeded and its outputs report ``status == success`` with
+``installed_version == requested_version`` == the released version; a failed or
+cancelled called workflow is a failure, never a verified release.
 
 Environment: ``NEEDS`` (required), ``PACKAGE``, ``GITHUB_REPOSITORY``,
 ``GITHUB_SERVER_URL``, ``GITHUB_RUN_ID``. Always exits 0 unless ``NEEDS`` is
@@ -31,13 +34,29 @@ def job(needs: dict[str, Any], name: str) -> tuple[str, dict[str, str]]:
 
 
 def verification(needs: dict[str, Any]) -> tuple[str, str]:
+    """Return (``success`` | ``failure`` | ``not run``, reason) for the cookbook."""
     result, outputs = job(needs, "verify-cookbook")
-    status = outputs.get("status") or (
-        "incomplete" if result in ("success", "skipped") else "failure"
-    )
-    if result == "skipped" and not outputs:
-        status = "not run"
-    return status, outputs.get("reason", "")
+    if result in ("skipped", "not run") and not outputs:
+        return "not run", ""
+    require_result, _ = job(needs, "require-cookbook")
+    version = job(needs, "detect")[1].get("version", "")
+    status = outputs.get("status", "")
+    requested = outputs.get("requested_version", "")
+    installed = outputs.get("installed_version", "")
+    problems: list[str] = []
+    if result != "success":
+        problems.append(f"called workflow {result}")
+    if status != "success":
+        problems.append(f"status {status or 'missing'}")
+    if not installed or installed != requested or requested != version:
+        problems.append(
+            f"requested {requested or '-'}, installed {installed or '-'}, released {version or '-'}"
+        )
+    if require_result != "success":
+        problems.append(f"require-cookbook {require_result}")
+    if problems:
+        return "failure", "; ".join(problems)
+    return "success", f"installed {installed} == requested {requested}"
 
 
 def final_state(needs: dict[str, Any]) -> str:
@@ -90,11 +109,11 @@ def render(needs: dict[str, Any], env: dict[str, str]) -> str:
     _, build = job(needs, "build")
     status, reason = verification(needs)
     _, verify = job(needs, "verify-cookbook")
-    run_url = verify.get("run_url", "")
+    artifact = verify.get("artifact", "")
     cookbook = (
         f"{status}"
-        + (f" ([run]({run_url}))" if run_url else "")
         + (f": {reason}" if reason else "")
+        + (f" (report artifact `{artifact}`)" if artifact else "")
     )
     rows = [
         ("Final state", f"**{final_state(needs)}**"),
