@@ -64,12 +64,8 @@ _QUERY_OPTIONS_AFTER_FLOOR: dict[str, str] = {
 
 # pycubrid connect() options that a URL query string may not set.
 _QUERY_OPTIONS_REJECTED: dict[str, str] = {
-    "host": "set it in the URL itself",
-    "port": "set it in the URL itself",
-    "database": "set it in the URL itself",
-    "user": "set it in the URL itself",
-    "password": "set it in the URL itself",
-    "autocommit": ("the dialect manages autocommit; use isolation_level='AUTOCOMMIT' instead"),
+    **dict.fromkeys(("host", "port", "database", "user", "password"), "set it in the URL itself"),
+    "autocommit": "the dialect manages autocommit; use isolation_level='AUTOCOMMIT' instead",
     "json_deserializer": "pass the callable through create_engine(connect_args=...)",
 }
 
