@@ -8,7 +8,7 @@ Key facts:
 - Driver variants (URL scheme, install extra):
   - `cubrid+pycubrid://user:password@host:33000/dbname` — pure-Python pycubrid, recommended for new projects; `pip install "sqlalchemy-cubrid[pycubrid]"` (pycubrid>=1.8.0,<2.0)
   - `cubrid+aiopycubrid://user:password@host:33000/dbname` — async pycubrid for `create_async_engine`; same `[pycubrid]` extra, which also pulls in `sqlalchemy[asyncio]`
-  - `cubrid://` (also `cubrid+cubrid://`, `cubrid+cubriddb://`) — legacy CUBRIDdb C extension; `pip install "sqlalchemy-cubrid[cubriddb]"`
+  - `cubrid://` (also `cubrid+cubrid://`, `cubrid+cubriddb://`) — legacy CUBRIDdb C extension; build it from cubrid-python v11.3.0.51 or later. The `[cubrid]`/`[cubriddb]` extras are deprecated: they install PyPI `CUBRID-Python` 9.3.x, which is untested, and the dialect emits a `SAWarning` at first connect for a CUBRIDdb older than 11.3
 - A bare `pip install sqlalchemy-cubrid` installs no DB-API driver; choose an extra above
 - Isolation levels: the three CUBRID MVCC levels `READ COMMITTED` (4, server default), `REPEATABLE READ` (5) and `SERIALIZABLE` (6), plus `AUTOCOMMIT` (driver autocommit). `CURSOR STABILITY` and the two long `... SCHEMA, ... INSTANCES` spellings are accepted only as aliases of levels 4 and 5; the pre-MVCC levels 1–3 are rejected
 - Native `JSON` type (CUBRID 10.2+) with `col["key"]` / path indexing compiled to `JSON_EXTRACT`
@@ -23,7 +23,7 @@ Key facts:
 ## Docs
 
 - [Quick Start](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/): Installation, URL formats, first Core and ORM example
-- [Connection Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/CONNECTION/): URL schemes and entry points, async engine, connection options, autocommit, connection pool tuning
+- [Connection Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/CONNECTION/): URL schemes and entry points, pycubrid URL query options (`?connect_timeout=`, `?charset=`, ...), async engine, connection options, autocommit, connection pool tuning
 - [Driver Compatibility](https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/): CUBRIDdb C-extension versions, exception hierarchy, known driver issues
 - [ORM Cookbook](https://cubrid-lab.github.io/sqlalchemy-cubrid/ORM_COOKBOOK/): Models, relationships, CRUD, collections, LOBs, CUBRID-specific gotchas
 - [DML Extensions](https://cubrid-lab.github.io/sqlalchemy-cubrid/DML_EXTENSIONS/): ON DUPLICATE KEY UPDATE, REPLACE INTO, MERGE, GROUP_CONCAT, FOR UPDATE, UPDATE ... LIMIT, index hints, TRUNCATE

@@ -85,13 +85,11 @@ ImportError: No module named 'CUBRIDdb'
 
 **원인:** CUBRID C 확장 Python 드라이버가 설치되지 않음.
 
-**해결 — 옵션 A: C 확장 드라이버 설치:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **참고:** CUBRID CCI 라이브러리와 C 컴파일러가 필요합니다. 플랫폼별 지침은 [CUBRID Python 드라이버 문서](https://www.cubrid.org/manual/en/11.0/api/python.html)를 참고하세요.
+**해결 — 옵션 A: C 확장 드라이버를 소스에서 빌드:** cubrid-python v11.3.0.51 이상에서
+CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를
+참고하세요. CMake와 C 컴파일러가 필요합니다. `pip install CUBRID-Python`은 사용하지 마세요.
+PyPI에는 테스트되지 않은 9.3.x 릴리스만 있습니다.
+[PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
 
 **해결 — 옵션 B: 순수 Python 드라이버 사용 (권장):**
 
@@ -131,7 +129,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C 확장 빌드 실패
 
-**증상:** `pip install CUBRID-Python`이 컴파일 오류로 실패.
+**증상:** CUBRIDdb(cubrid-python) 빌드가 컴파일 오류로 실패.
 
 **흔한 원인:**
 - C 컴파일러 누락 (`gcc` / `cl.exe`)
@@ -696,7 +694,9 @@ NoSuchTableError: table_name
 
 3. **잘못된 데이터베이스** — 연결 URL이 올바른 데이터베이스를 가리키는지 확인
 
-> **참고:** 리플렉션은 서버가 `Unknown class "<owner>.<name>"`을 보고할 때만 `NoSuchTableError`를 발생시킵니다. 구문 오류나 그 밖의 리플렉션 쿼리 실패는 원래 예외(예: `sqlalchemy.exc.ProgrammingError`)로 그대로 전파됩니다. CUBRID는 두 경우 모두 네이티브 오류 -493을 사용하며, 1.8.0 이전 pycubrid는 모든 -493 오류에 SQLSTATE `42S02`(`Table not found`)를 보고합니다 (#454).
+> **참고:** 리플렉션은 객체가 없을 때만 `NoSuchTableError`를 발생시킵니다: `db_class` 조회에서 해당 테이블이나 뷰를 찾지 못하거나, 서버가 `Unknown class "<owner>.<name>"`을 보고하거나, 존재하는 객체라면 항상 행을 반환하는 쿼리(`SHOW CREATE TABLE`, `SHOW CREATE VIEW`)가 행을 반환하지 않는 경우입니다 (#589). 구문 오류나 그 밖의 리플렉션 쿼리 실패는 원래 예외(예: `sqlalchemy.exc.ProgrammingError`)로 그대로 전파됩니다. CUBRID는 두 경우 모두 네이티브 오류 -493을 사용하며, 1.8.0 이전 pycubrid는 모든 -493 오류에 SQLSTATE `42S02`(`Table not found`)를 보고합니다 (#454).
+
+> **참고:** `get_foreign_keys()`와 `get_unique_constraints()`는 더 이상 실패한 `SHOW CREATE TABLE`을 빈 리스트로 바꾸지 않습니다 (#589). 리플렉션 중 연결 끊김, 권한 오류, 드라이버 오류가 발생하면 예외가 전파되므로, Alembic autogenerate는 이미 존재하는 외래 키에 대해 `add_fk`를 제안하는 대신 그 오류로 중단됩니다. 새 연결로 다시 시도하십시오(`pool_pre_ping=True`는 오래된 풀 연결을 교체합니다).
 
 ---
 

@@ -424,6 +424,18 @@ pip install "alembic>=1.7.2,<2.0"
 
 **해결**: 진짜 손실/미지원 변환에는 `batch_alter_table` 사용 — [ALTER COLUMN TYPE (네이티브)](#️-alter-column-type-네이티브) 참고.
 
+### `alembic revision --autogenerate`가 리플렉션 오류로 실패함
+
+**원인**: 외래 키는 `SHOW CREATE TABLE`에서 읽습니다. #589 이후 여기서 발생한 실패(끊긴
+연결, 권한 오류, 드라이버 오류)는 "이 테이블에는 외래 키가 없음"으로 보고되지 않고 예외를
+발생시킵니다. 이전 동작 때문에 autogenerate가 이미 존재하는 외래 키에 대해 `add_fk`를
+제안했습니다.
+
+**해결**: 원인이 된 오류를 해결한 뒤 autogenerate를 다시 실행하세요. 연결이 오래되었다면
+엔진에 `pool_pre_ping=True`를 설정하세요. CUBRID 11.2부터는 소유자를 붙이지 않은 이름을
+현재 사용자의 스키마에서 찾으므로 다른 소유자의 테이블은 `NoSuchTableError`가 됩니다.
+autogenerate는 테이블 소유자로 실행하세요.
+
 ---
 
 ## 마이그레이션 안전 체크리스트
@@ -465,7 +477,7 @@ pip install "alembic>=1.7.2,<2.0"
 
 ### 자문 CI 안전 검사
 
-DDL 연산이 여러 개인 리비전을 나열하려면 다음 스크립트를 추가하세요. 자문 용도(경고만)이며 CI를 차단하지 않습니다. 그런 리비전도 실패하면 통째로 롤백되지만, 스키마 잠금을 더 오래 유지합니다:
+DDL 연산이 여러 개인 리비전을 나열하려면 다음 스크립트를 추가하세요. 자문 용도(경고만)이며 CI를 차단하지 않습니다. 그런 리비전도 실패하면 통째로 롤백되지만, 스키마 잠금을 더 오래 유지합니다. 스크립트는 `upgrade()`와 `downgrade()`마다 따로, 제약 조건 생성(`create_unique_constraint`, `create_foreign_key`, `create_check_constraint`, `create_primary_key`)을 포함한 Alembic DDL 연산의 호출 횟수를 셉니다. `op.drop_table`처럼 호출하지 않는 단순 참조는 세지 않습니다. 제어 흐름 분석이 아닌 휴리스틱입니다:
 
 ```python
 #!/usr/bin/env python3
@@ -476,6 +488,12 @@ whole. Every DDL statement holds a schema lock on its table until the
 transaction commits, though, so this lists revisions with several DDL
 calls: they keep tables locked longer and are candidates for running with
 ``transaction_per_migration=True`` or for splitting.
+
+Only calls such as ``op.create_table(...)`` or ``batch_op.add_column(...)``
+count; a bare reference like ``op.drop_table`` is not a DDL operation. This is
+a heuristic AST scan, not control-flow analysis: a call in a loop or branch
+counts once, as written, and DDL issued from helpers defined outside
+``upgrade()``/``downgrade()`` is not seen.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
@@ -490,6 +508,8 @@ DDL_CALLS = {
     "create_table", "drop_table", "add_column", "drop_column",
     "create_index", "drop_index", "alter_column",
     "add_constraint", "drop_constraint",
+    "create_unique_constraint", "create_foreign_key",
+    "create_check_constraint", "create_primary_key",
 }
 
 
@@ -501,7 +521,9 @@ def check_revision(path: Path) -> list[str]:
             continue
         ddl_count = sum(
             1 for node in ast.walk(func)
-            if isinstance(node, ast.Attribute) and node.attr in DDL_CALLS
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in DDL_CALLS
         )
         if ddl_count > 1:
             warnings.append(
@@ -532,7 +554,7 @@ def main() -> None:
             "large-table migrations."
         )
     else:
-        print("✓ All revisions have single DDL operations per function.")
+        print("✓ No revision has more than one DDL call per function.")
 
 
 if __name__ == "__main__":

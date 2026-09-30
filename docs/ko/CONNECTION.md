@@ -27,7 +27,7 @@
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID 서버        | 10.2 – 11.4     |
-| CUBRID Python 드라이버 | pycubrid (권장) 또는 CUBRID-Python (레거시) |
+| CUBRID Python 드라이버 | pycubrid (권장) 또는 cubrid-python v11.3.0.51+에서 빌드한 CUBRIDdb (레거시) |
 
 ---
 
@@ -59,21 +59,15 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 > **팁**: `pycubrid` 드라이버 자체는 순수 Python이며 네이티브 라이브러리가 필요 없습니다. `[pycubrid]` extra에 포함된 `greenlet`은 설치 시 빌드 도구가 필요할 수 있습니다. [GitHub의 pycubrid](https://github.com/cubrid-lab/pycubrid)를 참고하세요.
 
-### 레거시: C 확장 드라이버 (CUBRID-Python)
+### 레거시: C 확장 드라이버 (CUBRIDdb)
 
-레거시 [CUBRID-Python](https://github.com/CUBRID/cubrid-python) C 확장 드라이버는 `cubrid://` URL에 묶여 있습니다. `[cubriddb]` extra로 설치하고 `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택하세요:
-
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
-
-또는 드라이버를 직접 설치:
+[cubrid-python](https://github.com/CUBRID/cubrid-python)의 레거시 CUBRIDdb C 확장 드라이버는 `cubrid://` URL에 묶여 있으며, `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택할 수 있습니다. 지원되는 설치 방법은 cubrid-python v11.3.0.51 이상을 소스에서 빌드하는 것입니다. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고한 뒤 방언만 설치하세요:
 
 ```bash
-pip install sqlalchemy-cubrid CUBRID-Python
+pip install sqlalchemy-cubrid
 ```
 
-> **참고**: `CUBRID-Python`은 C 확장 드라이버입니다. 일부 플랫폼에서는 CUBRID CCI 라이브러리가 필요할 수 있습니다. 플랫폼별 지침은 [CUBRID Python 드라이버 문서](https://www.cubrid.org/manual/en/11.0/api/python.html)를 참고하세요.
+> **경고**: 드라이버를 PyPI에서 설치하지 마세요(`pip install CUBRID-Python` 또는 폐기 예정인 `[cubrid]` / `[cubriddb]` extra). PyPI에는 `CUBRID-Python` 9.3.x만 있으며, 이 방언과 함께 테스트되지 않았습니다. `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패합니다. `cubrid://` 엔진은 로드된 CUBRIDdb가 11.3보다 오래되었으면 첫 연결 시 `SAWarning`을 냅니다. [PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
 
 ---
 
@@ -113,6 +107,40 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `port`     | `33000`       | CUBRID 브로커 포트                     |
 | `database` | *(필수)*      | 데이터베이스 이름                      |
 
+### URL 쿼리 옵션
+
+`cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 다음 URL 쿼리 옵션을 쿼리 문자열에서
+pycubrid가 기대하는 타입으로 변환해 `pycubrid.connect()` / `pycubrid.aio.connect()`에
+전달합니다:
+
+```python
+engine = create_engine(
+    "cubrid+pycubrid://dba@localhost:33000/demodb?connect_timeout=5&read_timeout=30"
+)
+```
+
+| 옵션 | 값 | 설명 |
+|------|----|------|
+| `connect_timeout` | 양수 초 | 브로커 연결을 여는 동안의 타임아웃 |
+| `read_timeout` | 양수 초 | 연결 후 소켓 읽기 타임아웃 |
+| `fetch_size` | 1 이상의 정수 | 서버 측 fetch 배치 크기 (pycubrid 기본값 `100`) |
+| `charset` | 코덱 이름 | Python 코덱 또는 CUBRID `utf8` / `euckr` / `iso88591`. 데이터베이스 문자셋으로 설정합니다. 1.8.0보다 새로운 pycubrid 릴리스가 필요합니다 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)). pycubrid 1.8.0에서는 `create_engine()`이 설치된 버전을 알려 주는 `ArgumentError`를 발생시킵니다 |
+| `ssl` | 불리언 | `true`이면 pycubrid 기본 컨텍스트(TLS 1.2+)로 TLS를 사용합니다. 그 밖의 설정은 `connect_args`로 `ssl.SSLContext`를 전달합니다 |
+| `decode_collections` | 불리언 | `SET` / `MULTISET` / `SEQUENCE` 값을 Python 컬렉션으로 디코딩 |
+| `no_backslash_escapes` | 불리언 | pycubrid 자체의 문자열 이스케이프 모드 (생략하면 자동 감지). `literal_binds` 렌더링을 제어하는 [아래](#백슬래시-이스케이프-no_backslash_escapes)의 `create_engine(no_backslash_escapes=...)` 방언 옵션과는 별개입니다 |
+| `enable_timing` | 불리언 | pycubrid 타이밍 통계 |
+
+불리언은 `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`을 받습니다. 잘못된 값, 반복된 옵션,
+`host` / `port` / `database` / `user` / `password` (URL 자체에 지정), `autocommit`
+(`isolation_level="AUTOCOMMIT"` 사용), `json_deserializer` (`connect_args`로 전달)는
+`create_engine()`에서 `sqlalchemy.exc.ArgumentError`를 발생시킵니다. 그 밖의 키는 가장 가까운
+지원 옵션을 제안하는 pycubrid의 `UnknownConnectionOptionWarning`과 함께 무시됩니다.
+`warnings.simplefilter("error", pycubrid.UnknownConnectionOptionWarning)`로 오류로 바꿀 수
+있습니다. `connect_args` 값이 URL 쿼리 옵션보다 우선합니다.
+
+`cubrid://` / `cubrid+cubriddb://` (CUBRIDdb) 방언은 URL 쿼리 문자열을 읽지 않습니다.
+CUBRIDdb의 `connect(url, user, password)`는 키워드 옵션을 받지 않으며, 쿼리 옵션은 무시됩니다.
+
 ---
 
 ## 엔트리 포인트
@@ -127,7 +155,7 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `cubrid+pycubrid://` | pycubrid    | 순수 Python 드라이버 (CUBRID 네이티브 라이브러리 불필요) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | 비동기 순수 Python 드라이버        |
 
-새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 레거시 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `[cubriddb]` 설치 extra와 함께 `cubrid+cubriddb://`를 사용하세요.
+새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 cubrid-python v11.3.0.51 이상에서 빌드한 레거시 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `cubrid+cubriddb://`를 사용하세요.
 
 ---
 
@@ -210,6 +238,8 @@ pycubrid 방언은 키워드 인자를 직접 전달합니다:
 kwargs = {"host": host, "port": port, "database": database, "user": user, "password": password}
 # → pycubrid.connect(host="myhost", port=33000, database="mydb", user="dba", password="password")
 ```
+
+[URL 쿼리 옵션](#url-쿼리-옵션)이 이 키워드 인자에 추가됩니다.
 
 ---
 
@@ -303,11 +333,13 @@ SELECT VERSION()
 
 #### `ImportError: No module named 'CUBRIDdb'`
 
-CUBRID Python 드라이버가 설치되지 않았습니다:
+`cubrid://` URL이 사용하는 CUBRIDdb C 확장 드라이버가 설치되지 않았습니다. 권장 순수 Python 드라이버로 전환하세요:
 
 ```bash
-pip install CUBRID-Python
+pip install "sqlalchemy-cubrid[pycubrid]"   # 이후 cubrid+pycubrid:// 사용
 ```
+
+또는 cubrid-python v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요. PyPI의 `CUBRID-Python` 9.3.x 릴리스는 이 방언과 함께 테스트되지 않았습니다.
 
 #### 포트 33000에서 `Connection refused`
 

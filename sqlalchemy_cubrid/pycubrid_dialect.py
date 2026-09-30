@@ -9,11 +9,16 @@
 
 from __future__ import annotations
 
+import difflib
+import inspect
 import logging
+import math
+import warnings
 import weakref
 from importlib import import_module
-from typing import Any, Callable, cast
+from typing import Any, Callable, Mapping, cast
 
+from sqlalchemy import exc, util
 from sqlalchemy.engine.interfaces import DBAPIConnection, ConnectArgsType
 from sqlalchemy_cubrid._compat import DBAPIModule
 from sqlalchemy.engine.url import URL
@@ -28,6 +33,118 @@ def _unwrap(connection: Any) -> Any:
     """Return the DBAPI connection behind a SQLAlchemy pool proxy, else *connection*."""
     inner = getattr(connection, "dbapi_connection", None)
     return connection if inner is None else inner
+
+
+def _positive_float(value: str) -> float:
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise ValueError(f"expected a positive number of seconds, got {value!r}")
+    return number
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise ValueError(f"expected an integer >= 1, got {value!r}")
+    return number
+
+
+# pycubrid connect() options that a URL query string may set, each with the
+# conversion from the query string to the type pycubrid expects (#592).
+_QUERY_OPTION_TYPES: dict[str, Callable[[str], Any]] = {
+    "charset": str,
+    "connect_timeout": _positive_float,
+    "read_timeout": _positive_float,
+    "fetch_size": _positive_int,
+    "ssl": util.asbool,
+    "decode_collections": util.asbool,
+    "no_backslash_escapes": util.asbool,
+    "enable_timing": util.asbool,
+}
+
+# Options above that pycubrid 1.8.0, the ``[pycubrid]`` floor, does not accept,
+# with the pycubrid change that added them. Their support is detected from the
+# installed ``pycubrid.connect()`` signature.
+_QUERY_OPTIONS_AFTER_FLOOR: dict[str, str] = {
+    "charset": "cubrid-lab/pycubrid#510",
+}
+
+# pycubrid connect() options that a URL query string may not set.
+_QUERY_OPTIONS_REJECTED: dict[str, str] = {
+    **dict.fromkeys(("host", "port", "database", "user", "password"), "set it in the URL itself"),
+    "autocommit": "the dialect manages autocommit; use isolation_level='AUTOCOMMIT' instead",
+    "json_deserializer": "pass the callable through create_engine(connect_args=...)",
+}
+
+
+def _installed_pycubrid() -> Any | None:
+    try:
+        return import_module("pycubrid")
+    except ImportError:
+        return None
+
+
+def _query_connect_options(query: Mapping[str, str | tuple[str, ...]]) -> dict[str, Any]:
+    """Convert a URL's query string into pycubrid ``connect()`` keyword arguments.
+
+    Shared by the sync and async pycubrid dialects. Recognised options are
+    converted to the type pycubrid expects. An option that cannot be set from
+    the URL, has an invalid value, or is not accepted by the installed pycubrid
+    raises :class:`~sqlalchemy.exc.ArgumentError`. Unrecognised keys are
+    dropped with pycubrid's own ``UnknownConnectionOptionWarning``, as
+    ``pycubrid.connect()`` does for unknown keywords (cubrid-lab/pycubrid#377).
+    """
+    if not query:
+        return {}
+
+    pycubrid = _installed_pycubrid()
+    options: dict[str, Any] = {}
+    unknown: list[str] = []
+    for name, raw in query.items():
+        if name in _QUERY_OPTIONS_REJECTED:
+            raise exc.ArgumentError(
+                f"URL query option {name!r} is not supported: {_QUERY_OPTIONS_REJECTED[name]}"
+            )
+        convert = _QUERY_OPTION_TYPES.get(name)
+        if convert is None:
+            unknown.append(name)
+            continue
+        if not isinstance(raw, str):
+            raise exc.ArgumentError(f"URL query option {name!r} is given more than once")
+        if (
+            name in _QUERY_OPTIONS_AFTER_FLOOR
+            and pycubrid is not None
+            and name not in inspect.signature(pycubrid.connect).parameters
+        ):
+            raise exc.ArgumentError(
+                f"URL query option {name!r} requires a pycubrid release that supports "
+                f"it ({_QUERY_OPTIONS_AFTER_FLOOR[name]}); the installed pycubrid "
+                f"{getattr(pycubrid, '__version__', '?')} does not. Upgrade pycubrid "
+                f"or remove {name!r} from the URL."
+            )
+        try:
+            options[name] = convert(raw)
+        except ValueError as err:
+            raise exc.ArgumentError(
+                f"Invalid value {raw!r} for URL query option {name!r}: {err}"
+            ) from err
+
+    if unknown:
+        known = sorted(_QUERY_OPTION_TYPES)
+        fragments = []
+        for name in sorted(unknown):
+            matches = difflib.get_close_matches(name.lower(), known, n=1, cutoff=0.6)
+            suggestion = f" (did you mean {matches[0]!r}?)" if matches else ""
+            fragments.append(f"{name!r}{suggestion}")
+        category = getattr(pycubrid, "UnknownConnectionOptionWarning", UserWarning)
+        warnings.warn(
+            f"Unknown URL query option{'s' if len(unknown) > 1 else ''} ignored by "
+            f"sqlalchemy-cubrid: {', '.join(fragments)}. Supported URL query options: "
+            f"{', '.join(known)}.",
+            category,
+            stacklevel=2,
+        )
+    return options
 
 
 class PyCubridExecutionContext(CubridExecutionContext):
@@ -100,6 +217,10 @@ class PyCubridDialect(CubridDialect):
         pycubrid accepts keyword arguments directly::
 
             pycubrid.connect(host=..., port=..., database=..., user=..., password=...)
+
+        Supported URL query options (``?charset=...&connect_timeout=...``) are
+        forwarded as further keyword arguments; see :func:`_query_connect_options`.
+        The async dialect inherits this method.
         """
         if url is None:
             raise ValueError("Unexpected database URL format")
@@ -111,6 +232,7 @@ class PyCubridDialect(CubridDialect):
             "database": opts.get("database", ""),
             "user": opts.get("user", "dba"),
             "password": opts.get("password", ""),
+            **_query_connect_options(url.query),
         }
         log.debug(
             "connect args: host=%s port=%s database=%s user=%s",

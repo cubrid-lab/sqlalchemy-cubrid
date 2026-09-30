@@ -27,8 +27,75 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **pycubrid 1.8.0 is now the minimum (#559)** — the `[pycubrid]` extra requires `pycubrid>=1.8.0,<2.0` (was `>=1.3.2,<2.0`), because the contract tests already require the 1.8.0 fixes (NOT NULL / foreign-key `IntegrityError`, no silently truncated result after `commit()` / `rollback()`, `cursor.description` `null_ok` and collection type codes) and 1.8.0 keeps the CAS session across `commit()` / `rollback()` and in autocommit mode. README (and translations, several of which still said `>=1.2.0`), `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md`, `docs/SUPPORT_MATRIX.md`, `docs/DEVELOPMENT.md` (+ Korean) and the workflow comments state the new range.
 - **pycubrid compliance lanes re-baselined on pycubrid 1.8.0 (#559)** — the `pycubrid@sa2.0` and `pycubrid@sa2.1` steps in `ci.yml` pin `pycubrid==1.8.0` (was 1.7.1). Re-captured on fresh CUBRID 10.2 and 11.4 databases, both lanes fail exactly the same tests as on 1.7.1 (54 on 10.2 for `pycubrid@sa2.0`; 58 / 51 on 11.4 / 10.2 for `pycubrid@sa2.1`), so `test/known_failures.txt` keeps every entry; its header and the CTETest note are updated (pycubrid 1.8.0 still raises the -924 foreign-key restriction as `DatabaseError`; cubrid-lab/pycubrid#390 fixed -631 and -922 only). `docs/SUPPORT_MATRIX.md` and `docs/DEVELOPMENT.md` (+ Korean) list the new pin.
 - **The pycubrid isolation-level re-apply is kept, and its documentation now describes pycubrid 1.8.0 (#559)** — pycubrid 1.8.0 no longer drops the level at every `commit()` / `rollback()`, but it still opens a new session at the server default level when the CAS itself went away out of transaction (a CAS restart after the transaction, a broker reset). Verified on CUBRID 11.4: when the CAS is killed right after `commit()`, the re-apply keeps SERIALIZABLE, and without it the level falls to READ COMMITTED. The re-apply's SQL `COMMIT` keeps the CAS bound to an idle pooled connection with a configured level (`CLIENT_WAIT` rather than `CLOSE_WAIT`), so if that CAS dies while idle the next statement fails as a disconnect instead of silently running at the default level; `pool_pre_ping=True` replaces such a connection at checkout. `docs/DRIVER_COMPAT.md` Known Issue 10 (renamed), `docs/ISOLATION_LEVELS.md` and `docs/TROUBLESHOOTING.md` (+ Korean) no longer claim that pycubrid reconnects after every commit, rollback or autocommitted statement. No code behavior change.
+- **`cubrid://` warns at first connect when CUBRIDdb is older than 11.3 (#585)** —
+  `CubridDialect.initialize()` reads the loaded driver's compiled-in version
+  (`CUBRIDdb._cubrid.__version__`, `b'9.3.0.0001'` for the PyPI release) and emits a
+  `SAWarning` naming the version, the recommended `cubrid+pycubrid://` driver and the
+  source-build path when its major.minor is below 11.3. Only major.minor is compared,
+  because a source build's fourth component is a git commit count (a shallow v11.3.0.51
+  clone reports `11.3.0.0001`). It warns instead of raising `NotSupportedError` so that
+  deployments that followed the old install instructions keep connecting; filter the
+  warning to `"error"` to fail fast. pycubrid engines and a driver whose version
+  cannot be read are not affected. The `ImportError` for a missing CUBRIDdb no longer
+  suggests `pip install CUBRID-Python`.
+
+### Deprecated
+- **The `[cubrid]` and `[cubriddb]` extras (#585)** — both depend on an unbounded
+  `CUBRID-Python`, and PyPI has no release newer than 9.3.0.2 (sdist only, 2015), so
+  they install a driver this dialect has never tested: on CUBRID 11.4 it returns
+  `BIGINT` as `str` (#583) and fails parts of the integration suite. A version floor
+  would make the extras uninstallable and removing them would change what an existing
+  `pip install "sqlalchemy-cubrid[cubriddb]"` resolves to, so they are kept unchanged
+  for now and marked deprecated. The supported CUBRIDdb is built from cubrid-python
+  v11.3.0.51 or later; `cubrid+pycubrid://` remains the recommended driver.
+  README (+ Korean), `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md`,
+  `docs/TROUBLESHOOTING.md`, `docs/SUPPORT_MATRIX.md`, `docs/QUICKSTART.md` (+ Korean) and `docs/llms.txt`
+  now document that install path instead of `pip install CUBRID-Python`, and
+  `docs/DRIVER_COMPAT.md`'s build recipe now clones with `--recurse-submodules` and
+  its version check reads `CUBRIDdb._cubrid.__version__` (`CUBRIDdb.__version__`
+  does not exist).
 
 ### Fixed
+- **`replace()` emits `REPLACE` as the statement verb instead of rewriting the first `INSERT INTO` in the compiled SQL (#591)** — `visit_replace()` compiled the statement as an `INSERT` and replaced the first `INSERT INTO` substring. With `prefix_with()`, SQLAlchemy renders `INSERT <prefix> INTO`, so the substitution hit an `INSERT INTO` inside the prefix, a comment, a string literal (`literal()` / `literal_column()` / `literal_binds`) or a quoted identifier instead: the statement stayed a plain `INSERT` (a duplicate key raised `IntegrityError` instead of replacing the row) and the stored value became `'REPLACE INTO'`. The compiler now swaps only the verb SQLAlchemy writes first (after the `WITH` clause, if any), so `replace(t).prefix_with("/* c */")` renders `REPLACE /* c */ INTO t ...` and values, identifiers, comments, bind parameters and their order are left untouched, including multi-row `values()`, `executemany` and `from_select()`. An unexpected compiled form now raises `CompileError` instead of `NotImplementedError`. Verified on CUBRID 11.4 with SQLAlchemy 2.0 and 2.1.
+- **`cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward URL query options to pycubrid (#592)** —
+  `create_connect_args()` read only the host, port, database, user and password, so
+  `?connect_timeout=5` or `?charset=euckr` connected without error and had no effect. Both
+  dialects now share one implementation that forwards `charset`, `connect_timeout`,
+  `read_timeout`, `fetch_size`, `ssl`, `decode_collections`, `no_backslash_escapes` and
+  `enable_timing`, converted to the type pycubrid expects (positive float seconds, integer
+  >= 1, boolean). An invalid or repeated value, an option that belongs in the URL itself (`host`,
+  `port`, `database`, `user`, `password`), `autocommit` and `json_deserializer` raise
+  `ArgumentError` from `create_engine()`; other keys are ignored with pycubrid's
+  `UnknownConnectionOptionWarning` and a spelling suggestion, as `pycubrid.connect()` reports
+  unknown keywords (cubrid-lab/pycubrid#377). `charset` needs a pycubrid release newer than
+  1.8.0 (cubrid-lab/pycubrid#510): with pycubrid 1.8.0 it raises `ArgumentError` naming the
+  installed version instead of a `TypeError` or a silently ignored option. The CUBRIDdb
+  `cubrid://` dialect is unchanged (CUBRIDdb's `connect()` takes no keyword options).
+  `docs/CONNECTION.md` (+ Korean) documents the URL query options.
+- **`get_foreign_keys()` and `get_unique_constraints()` no longer report a failed `SHOW CREATE TABLE` as "no constraints" (#589)** —
+  both methods (for `get_unique_constraints()`, only its `SHOW CREATE TABLE` fallback, taken when
+  `db_index` lists no unique index) caught every exception from `SHOW CREATE TABLE`, logged a
+  warning and returned `[]`, so a disconnect, an authorization error or a driver bug looked like a
+  table without foreign keys and Alembic autogenerate emitted `add_fk` for foreign keys that already
+  exist. **Behavior change:** `Unknown class` still raises `NoSuchTableError` (#530), and no
+  `SHOW CREATE TABLE` row for a table the catalog listed now raises `NoSuchTableError` too; every
+  other exception propagates unchanged (a disconnect keeps `connection_invalidated`), and the
+  `SHOW CREATE TABLE failed ...` warning is gone. `[]` now means the query succeeded and found no
+  constraint. No leniency is kept for non-DBA users: on CUBRID 10.2 and 11.4 a non-DBA user sees in
+  `db_class` only tables it holds `SELECT` on, and `SHOW CREATE TABLE` on such a table does not fail
+  with an authorization error (without `SELECT` the table is not listed and reflection raises
+  `NoSuchTableError` before running it), and no catalog view exposes the referenced table or columns of a foreign key. Views still
+  return `[]` without running `SHOW CREATE TABLE`. `docs/FEATURE_SUPPORT.md`,
+  `docs/TROUBLESHOOTING.md` and `docs/ALEMBIC.md` (+ Korean) describe the contract.
+- **The advisory Alembic safety checker now counts DDL calls, not attribute references (#447)** —
+  `scripts/alembic_safety_check.py` counted every `ast.Attribute` whose name was a DDL operation,
+  so `operations = [op.create_table, op.drop_table]` produced a two-DDL warning although nothing
+  was called, and its operation list lacked `create_unique_constraint`, `create_foreign_key`,
+  `create_check_constraint` and `create_primary_key`, so a revision with two constraint calls was
+  reported clean. It now counts only calls (`op.x(...)`, `batch_op.x(...)`) and includes those four
+  operations; `upgrade()` and `downgrade()` are still assessed separately and the checker stays
+  advisory. New offline tests in `test/test_alembic_safety_check.py`; the copied script in
+  `docs/ALEMBIC.md` (+ Korean) and `docs/llms-full.txt` are updated.
 - **`has_table()` / `has_index()` no longer report missing objects as existing
   under `cubrid://` with the PyPI `CUBRID-Python` driver (#583)** — both methods
   returned `bool(result.scalar())` on a catalog `COUNT(*)`, which is `BIGINT` in

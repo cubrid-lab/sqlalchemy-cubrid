@@ -13,7 +13,7 @@
 - CUBRID 서버 (실행 중이고 도달 가능)
 - Python 3.10+
 - 지원되는 드라이버 구성 중 하나:
-  - CUBRID-Python(C 확장)을 통한 `cubrid://`
+  - CUBRIDdb(C 확장, cubrid-python v11.3.0.51 이상을 소스에서 빌드. [DRIVER_COMPAT](DRIVER_COMPAT.md#소스에서-cubriddb-빌드) 참고)를 통한 `cubrid://`
   - pycubrid를 통한 `cubrid+pycubrid://`
   - pycubrid.aio를 통한 `cubrid+aiopycubrid://`
 
