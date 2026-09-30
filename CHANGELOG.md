@@ -56,6 +56,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   does not exist).
 
 ### Fixed
+- **`cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward URL query options to pycubrid (#592)** —
+  `create_connect_args()` read only the host, port, database, user and password, so
+  `?connect_timeout=5` or `?charset=euckr` connected without error and had no effect. Both
+  dialects now share one implementation that forwards `charset`, `connect_timeout`,
+  `read_timeout`, `fetch_size`, `ssl`, `decode_collections`, `no_backslash_escapes` and
+  `enable_timing`, converted to the type pycubrid expects (positive float seconds, integer,
+  boolean). An invalid or repeated value, an option that belongs in the URL itself (`host`,
+  `port`, `database`, `user`, `password`), `autocommit` and `json_deserializer` raise
+  `ArgumentError` from `create_engine()`; other keys are ignored with pycubrid's
+  `UnknownConnectionOptionWarning` and a spelling suggestion, as `pycubrid.connect()` reports
+  unknown keywords (cubrid-lab/pycubrid#377). `charset` needs a pycubrid release newer than
+  1.8.0 (cubrid-lab/pycubrid#510): with pycubrid 1.8.0 it raises `ArgumentError` naming the
+  installed version instead of a `TypeError` or a silently ignored option. The CUBRIDdb
+  `cubrid://` dialect is unchanged (CUBRIDdb's `connect()` takes no keyword options).
+  `docs/CONNECTION.md` (+ Korean) documents the URL query options.
 - **`get_foreign_keys()` and `get_unique_constraints()` no longer report a failed `SHOW CREATE TABLE` as "no constraints" (#589)** —
   both methods (for `get_unique_constraints()`, only its `SHOW CREATE TABLE` fallback, taken when
   `db_index` lists no unique index) caught every exception from `SHOW CREATE TABLE`, logged a
