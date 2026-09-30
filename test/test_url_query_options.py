@@ -125,6 +125,8 @@ class TestTypeCoercion:
             "connect_timeout=inf",
             "connect_timeout=nan",
             "fetch_size=1.5",
+            "fetch_size=0",
+            "fetch_size=-5",
             "ssl=maybe",
         ],
     )

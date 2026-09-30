@@ -42,13 +42,20 @@ def _positive_float(value: str) -> float:
     return number
 
 
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number < 1:
+        raise ValueError(f"expected an integer >= 1, got {value!r}")
+    return number
+
+
 # pycubrid connect() options that a URL query string may set, each with the
 # conversion from the query string to the type pycubrid expects (#592).
 _QUERY_OPTION_TYPES: dict[str, Callable[[str], Any]] = {
     "charset": str,
     "connect_timeout": _positive_float,
     "read_timeout": _positive_float,
-    "fetch_size": int,
+    "fetch_size": _positive_int,
     "ssl": util.asbool,
     "decode_collections": util.asbool,
     "no_backslash_escapes": util.asbool,

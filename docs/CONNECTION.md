@@ -133,7 +133,7 @@ engine = create_engine(
 |--------|-------|-------------|
 | `connect_timeout` | positive number of seconds | Timeout for opening the broker connection |
 | `read_timeout` | positive number of seconds | Socket read timeout after connecting |
-| `fetch_size` | integer | Server-side fetch batch size (pycubrid default `100`) |
+| `fetch_size` | integer >= 1 | Server-side fetch batch size (pycubrid default `100`) |
 | `charset` | codec name | Python codec, or CUBRID `utf8` / `euckr` / `iso88591`; set it to the database charset. Requires a pycubrid release newer than 1.8.0 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)); with pycubrid 1.8.0, `create_engine()` raises `ArgumentError` naming the installed version |
 | `ssl` | boolean | `true` enables TLS with pycubrid's default context (TLS 1.2+); pass an `ssl.SSLContext` through `connect_args` for anything else |
 | `decode_collections` | boolean | Decode `SET` / `MULTISET` / `SEQUENCE` values into Python collections |

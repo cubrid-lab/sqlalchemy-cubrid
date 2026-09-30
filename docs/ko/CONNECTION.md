@@ -123,7 +123,7 @@ engine = create_engine(
 |------|----|------|
 | `connect_timeout` | 양수 초 | 브로커 연결을 여는 동안의 타임아웃 |
 | `read_timeout` | 양수 초 | 연결 후 소켓 읽기 타임아웃 |
-| `fetch_size` | 정수 | 서버 측 fetch 배치 크기 (pycubrid 기본값 `100`) |
+| `fetch_size` | 1 이상의 정수 | 서버 측 fetch 배치 크기 (pycubrid 기본값 `100`) |
 | `charset` | 코덱 이름 | Python 코덱 또는 CUBRID `utf8` / `euckr` / `iso88591`. 데이터베이스 문자셋으로 설정합니다. 1.8.0보다 새로운 pycubrid 릴리스가 필요합니다 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)). pycubrid 1.8.0에서는 `create_engine()`이 설치된 버전을 알려 주는 `ArgumentError`를 발생시킵니다 |
 | `ssl` | 불리언 | `true`이면 pycubrid 기본 컨텍스트(TLS 1.2+)로 TLS를 사용합니다. 그 밖의 설정은 `connect_args`로 `ssl.SSLContext`를 전달합니다 |
 | `decode_collections` | 불리언 | `SET` / `MULTISET` / `SEQUENCE` 값을 Python 컬렉션으로 디코딩 |
