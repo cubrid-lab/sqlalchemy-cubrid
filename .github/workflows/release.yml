@@ -33,7 +33,7 @@ name: Release
 
 on:
   push:
-    branches: [main, ci/automated-release]
+    branches: [main]
   workflow_dispatch:
     inputs:
       action:
