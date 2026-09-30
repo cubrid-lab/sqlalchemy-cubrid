@@ -1,191 +1,184 @@
 # Releasing sqlalchemy-cubrid
 
-This is the single, maintainer-only release procedure for `sqlalchemy-cubrid`. It is kept
-identical (except for package names) with the sibling cubrid-lab repositories.
-Contributors never tag or publish; they ship changes through normal PRs.
+Merging a reviewed release PR is the only normal way to release `sqlalchemy-cubrid`.
+Nobody pushes tags or runs a publish workflow by hand, and ordinary PR merges
+never deploy. This procedure is kept identical (except for package names and
+version files) with the sibling cubrid-lab repositories.
 
 Key invariants:
 
 - The version is single-sourced from `sqlalchemy_cubrid/__init__.py` (`__version__`).
-- `CHANGELOG.md` is the only source of release notes.
-- The `vX.Y.Z` tag is created **on the squash-merged commit on `main`**, never
-  on a local commit.
-- PyPI publishing is a **manual** `workflow_dispatch` of `publish-pypi.yml`.
-  Creating the GitHub Release does not publish anything.
+- `CHANGELOG.md` is hand-curated and the only source of release notes,
+  including the Upgrade notes. It is not generated.
+- A release is decided from git facts on `main`, never from a PR title.
+- The workflows never delete PyPI files, never move a tag and never create a
+  version that was not merged through a release PR.
 
-## 1. Release PR
+## Normal flow
 
-On a branch from up-to-date `main`:
-
-1. Bump `__version__` in `sqlalchemy_cubrid/__init__.py` to `X.Y.Z`.
-2. In `CHANGELOG.md`, move the `## [Unreleased]` entries under a new dated
-   heading directly below an empty `## [Unreleased]`:
-
-   ```markdown
-   ## [Unreleased]
-
-   ## [X.Y.Z] - YYYY-MM-DD
-
-   ### Upgrade notes
-   (optional: behavior changes users may notice)
-
-   ### Added
-   ...
-   ```
-
-3. Run the read-only local gate (it never commits or tags):
-
-   ```bash
-   make release-check VERSION=X.Y.Z
-   ```
-
-   It verifies that `__version__` (read via AST, no import) equals `X.Y.Z`,
-   runs `scripts/lint_changelog.py`, checks that
-   `scripts/extract_release_notes.py vX.Y.Z` finds a dated, non-empty section,
-   then rebuilds `dist/` with `python -m build` and runs `twine check`.
-   `build` and `twine` come from the `dev` extra (`pip install -e ".[dev]"`).
-
-4. Open the PR (`chore: release vX.Y.Z`), get CI green, and **squash-merge** it.
-
-## 2. Tag the merged commit
-
-```bash
-git fetch origin
-MERGED_SHA=$(gh pr view <release-PR-number> --json mergeCommit -q .mergeCommit.oid)
-git merge-base --is-ancestor "$MERGED_SHA" origin/main && git show --stat "$MERGED_SHA"
-git tag -a vX.Y.Z "$MERGED_SHA" -m "sqlalchemy-cubrid vX.Y.Z"
-git push origin refs/tags/vX.Y.Z
+```text
+prepare-release.yml  ->  release PR (review, edit notes)  ->  squash-merge  ->  release.yml
 ```
 
-Push only the tag. Never push `main` directly and never tag a local commit.
-
-## 3. Wait for tag-triggered workflows
-
-The tag push starts two workflows. Both must be green before publishing:
-
-- `integration-full.yml` runs the full Python × CUBRID compatibility matrix on
-  the tagged commit. `publish-pypi.yml` refuses to publish without a successful
-  tag-triggered run on that exact commit.
-- `create-release.yml` verifies the tag is on `main`, extracts the CHANGELOG
-  section, creates the GitHub Release `vX.Y.Z`, and attaches an SPDX SBOM.
+### 1. Prepare the release PR
 
 ```bash
-gh run list --workflow integration-full.yml --event push --limit 3
-gh run list --workflow create-release.yml --limit 3
+gh workflow run prepare-release.yml -f version=X.Y.Z
 ```
 
-## 4. Publish to PyPI (manual gate)
+The workflow (dispatch it from `main`) validates `X.Y.Z` (greater than the
+current `__version__`, no existing tag or `release/vX.Y.Z` branch), then
+`scripts/prepare_release.py`:
+
+- moves everything under `## [Unreleased]` into `## [X.Y.Z] - <UTC date>` and
+  leaves an empty `## [Unreleased]` above it;
+- sets `__version__ = "X.Y.Z"` in `sqlalchemy_cubrid/__init__.py`.
+
+It runs `make release-check VERSION=X.Y.Z` on the result and only then pushes
+`release/vX.Y.Z` and opens the PR **`chore: release vX.Y.Z`**.
+
+### 2. Review the release PR
+
+- Edit the CHANGELOG section as needed (Upgrade notes, wording) by pushing to
+  `release/vX.Y.Z`. You can also correct the date there; the release reads
+  whatever dated section is merged. (The PR checklist is shared with the
+  sibling repositories; this repository has no `RELEASE_POLICY.md`, so its
+  classification item does not apply.)
+- **Start CI.** The PR is created with `GITHUB_TOKEN`, and GitHub does not start
+  workflows for events caused by `GITHUB_TOKEN`, so CI does not run on it by
+  itself. Close and reopen the PR, or push any commit (including your edits, or
+  `git commit --allow-empty -m "ci: run checks"`) to the branch. No extra
+  secret is needed; a maintainer PAT is not required.
+- Local re-check if you edit by hand: `make release-check VERSION=X.Y.Z`.
+
+### 3. Squash-merge
+
+Keep the title `chore: release vX.Y.Z`. The merge commit starts `release.yml`.
+
+### 4. Automatic release (`release.yml`)
+
+Every push to `main` runs the cheap **detect** job
+(`scripts/release_detect.py`). It is a release only when all of these hold at
+the pushed commit:
+
+1. `__version__` differs from the first parent,
+2. the version is `MAJOR.MINOR.PATCH` and `CHANGELOG.md` has a dated
+   `## [X.Y.Z] - YYYY-MM-DD` section,
+3. tag `vX.Y.Z` does not exist, or already points at this commit (resume).
+
+Otherwise the run ends with **"no release"** (an ordinary merge shows
+`__version__ unchanged (…) compared with the first parent`). A version change
+without a dated section, or with a tag at another commit, also ends as "no
+release" and adds a warning annotation.
+
+For a release, the jobs run in one workflow run, pinned to the merge commit SHA
+and chained with explicit `needs:` (tags and Releases created with
+`GITHUB_TOKEN` start no other workflow):
+
+| Job | What it does |
+| --- | --- |
+| `consistency` | `make release-check VERSION=X.Y.Z` at the SHA: `__version__`, CHANGELOG lint and dated section, `build` + `twine check`. |
+| `matrix` | The full Python × CUBRID matrix, the `make integration` lanes for both drivers, the version-differential and the Hypothesis fuzz pass (mutation testing is reported but non-gating): `integration-full.yml` called through `workflow_call` at the SHA. |
+| `build` | Builds the wheel and sdist **once**, `twine check`, wheel/sdist install smoke tests, extracts the release notes, generates the SPDX SBOM and records SHA-256 hashes. Artifacts `release-dist` and `release-meta` are kept for 14 days. |
+| `publish` | In the `pypi` environment: re-checks the hashes, creates the annotated tag `vX.Y.Z` at the SHA (or accepts one already there), creates a **draft** GitHub Release with the notes and `sbom.spdx.json`, uploads the same artifact to PyPI through `scripts/pypi_duplicate_guard.py` and Trusted Publishing (OIDC), then publishes the Release. |
+| `verify-cookbook` | Dispatches the cookbook smoke test with `{package, ref: vX.Y.Z, request_id}` and waits (up to 45 minutes) for **that** run (`scripts/cookbook_wait.py`). |
+| `summary` | Always runs; one table with SHA, tag, version, artifact hashes, matrix result, PyPI and Release URLs, cookbook run and the final state. |
+
+Only `publish` has write access (`contents: write` for the tag and Release,
+`id-token: write` for PyPI); every other job reads.
+
+#### Cookbook verification
+
+`verify-cookbook` implements the release verification contract of
+[cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/CONTRIBUTING.md):
+it sends `repository_dispatch` `upstream-released` with
+`request_id = sqlalchemy-cubrid-vX.Y.Z-<run id>-<run attempt>`, finds the cookbook run
+whose name contains `[request_id=<id>]`, and requires the run conclusion
+`success` **and** the `release-verification-<id>` artifact reporting
+`status: success` with `installed_version == X.Y.Z`. A timeout is a failure.
+
+The dispatch needs the `COOKBOOK_DISPATCH_TOKEN` secret (a token that may send
+repository dispatches to the cookbook repository,
+cubrid-lab/cubrid-cookbook-python#37). Reading the cookbook runs uses the
+workflow's own `GITHUB_TOKEN`. **Without the secret the verification is
+"incomplete"**: nothing is dispatched, the job fails, and the summary says
+`published; post-release verification incomplete`. It is never reported as
+verified.
+
+#### Final states in the summary
+
+| Final state | Meaning |
+| --- | --- |
+| `no release: …` | Ordinary push; nothing ran after `detect`. |
+| `failed before publish in <job> …` | `consistency`, `matrix` or `build` failed. No tag, no Release, no upload. |
+| `publish failure; … may be partial` | Failed inside `publish`; see recovery below. |
+| `published and verified` | Done. |
+| `published; post-release verification failed` | On PyPI, but the cookbook run or its report failed. |
+| `published; post-release verification incomplete` | On PyPI; `COOKBOOK_DISPATCH_TOKEN` is missing. |
+| `dry run …` / `verification only …` | Recovery dispatch results (below). |
+
+## Failure and recovery
+
+| Situation | What happened | What to do |
+| --- | --- | --- |
+| `detect` says "no release" on a release merge | Version unchanged, CHANGELOG section not dated, or the tag exists at another commit (see the warning). | Fix through a new PR. If the tag is at another commit, that version is taken: prepare `X.Y.(Z+1)`. |
+| `consistency`, `matrix` or `build` failed | Nothing published; no tag, no Release. | Transient (flaky lane, runner error): `gh run rerun <run-id> --failed`. Real defect at that commit: `X.Y.Z` stays unpublished. Fix it in a normal PR (no version change, so no release), then prepare `X.Y.(Z+1)`; in that release PR fold the unpublished `## [X.Y.Z]` entries into the new section. A skipped version number on PyPI is harmless. |
+| `publish` failed (tag/Release/PyPI error, partial upload) | The tag and a draft Release may exist; PyPI may hold some files. | `gh run rerun <run-id> --failed` of the **same** run. It reuses the verified artifact, accepts the tag at the same SHA, reuses the draft Release, and the duplicate guard drops files PyPI already serves byte for byte. |
+| Same version rebuilt (new run instead of rerun) | The rebuild's bytes differ from files already on PyPI. | The guard fails on the hash mismatch, by design. Use `rerun --failed` within the 14-day artifact retention; otherwise treat it as a broken release. |
+| `verify-cookbook` failed or incomplete | **Published**; the verification failed or was not requested. | Fix the cause (for example add `COOKBOOK_DISPATCH_TOKEN`), then `gh run rerun <run-id> --failed` re-runs only the verification (a new `request_id` per attempt), or use the `verify-only` dispatch below. Never republish. |
+| Broken release on PyPI | Versions are immutable. | Yank it on PyPI (project settings → Releases → Yank) and release `X.Y.(Z+1)` through a new release PR. Never delete a version or move a tag. |
+
+The duplicate guard (`scripts/pypi_duplicate_guard.py`) reads
+`https://pypi.org/pypi/sqlalchemy-cubrid/X.Y.Z/json` and compares each file in the
+verified `dist/` with the file PyPI serves under the same name: not on PyPI
+(HTTP 404) → uploaded; same SHA-256 → skipped; different SHA-256, a PyPI file
+the build did not produce, or PyPI unreachable → the job fails and nothing is
+uploaded. Only an explicit "every file already on PyPI" skips the upload step.
+If PyPI's JSON API lags right after an upload and does not list a file yet,
+that file goes to the upload step, which is still safe: PyPI answers a
+byte-identical re-upload of an existing filename with success and rejects
+different bytes with `400 File already exists`. Before treating that rejection
+as a broken release, re-query `https://pypi.org/pypi/sqlalchemy-cubrid/X.Y.Z/json` and
+compare the published SHA-256 with the run's `SHA256SUMS` (artifact
+`release-meta`): a match means the file is fine and `gh run rerun --failed`
+completes the release; a mismatch is a broken release.
+
+### Recovery dispatch (the only manual entry point)
+
+`release.yml` has one `workflow_dispatch` with an `action` input. It never
+creates a new version, never moves a tag and never deletes anything.
+
+| `action` | Allowed when | Runs |
+| --- | --- | --- |
+| `resume` | Dispatched from `main`; tag `vX.Y.Z` exists; its commit is on `main`; `__version__` and a dated CHANGELOG section at that commit equal `X.Y.Z`. | consistency → matrix → build → publish → verify at the tag commit (the Hypothesis fuzz pass runs only when the tag commit is `main`'s head, because its shared workflow checks out the dispatched commit). For an interrupted release whose run can no longer be rerun (for example the artifacts expired before anything reached PyPI). A rebuilt file that differs from one already on PyPI fails the guard. |
+| `verify-only` | Same conditions as `resume`. | Only `verify-cookbook` (and `summary`) for the already-published version. Optional `request_id` waits for an existing cookbook request instead of dispatching one. |
+| `dry-run` | Any branch; `X.Y.Z` must equal `__version__` at the dispatched commit and have a dated CHANGELOG section. | consistency → matrix → build → verify-cookbook, **no** tag, Release or upload. The cookbook step verifies the already-published `X.Y.Z`. |
 
 ```bash
-gh workflow run publish-pypi.yml -f tag=vX.Y.Z
-# Identify the run you just dispatched (newest workflow_dispatch run, started
-# by you a moment ago) and watch that exact run ID, failing on failure:
-gh run list --workflow publish-pypi.yml --event workflow_dispatch --limit 5
-gh run watch <run-id> --exit-status
+gh workflow run release.yml -f action=resume -f version=X.Y.Z
+gh workflow run release.yml -f action=verify-only -f version=X.Y.Z
+gh workflow run release.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
+# wait for a cookbook run requested elsewhere (e.g. a manual smoke-test run):
+gh workflow run release.yml -f action=verify-only -f version=X.Y.Z -f request_id=<id>
 ```
 
-The workflow re-verifies tag == `__version__`, the dated CHANGELOG entry, that
-the tag is contained in `main`, the successful full matrix, and that the GitHub
-Release for the tag exists with its SBOM (so `create-release.yml` must have
-succeeded); it then builds,
-smoke-tests the wheel and sdist, and publishes via Trusted Publisher (OIDC)
-behind the `pypi` environment. The upload fails closed on duplicates: see the
-partial-upload recovery under **Recovery**.
-
-Verify the published package from a clean environment:
+If the dispatch token is unavailable, a maintainer can request the cookbook
+verification by hand and let `verify-only` wait for it:
 
 ```bash
-python -m venv /tmp/verify-sqlalchemy-cubrid && /tmp/verify-sqlalchemy-cubrid/bin/pip install "sqlalchemy-cubrid==X.Y.Z"
-/tmp/verify-sqlalchemy-cubrid/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
+gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python \
+  -f package=sqlalchemy-cubrid -f version=X.Y.Z -f request_id=sqlalchemy-cubrid-vX.Y.Z-manual-1
+gh workflow run release.yml -f action=verify-only -f version=X.Y.Z -f request_id=sqlalchemy-cubrid-vX.Y.Z-manual-1
 ```
 
-## 5. Cookbook smoke test
+## Repository settings this relies on
 
-After a successful publish, the `notify-cookbook` job in `publish-pypi.yml`
-sends an `upstream-released` repository dispatch to
-`cubrid-lab/cubrid-cookbook-python`. If the `COOKBOOK_DISPATCH_TOKEN` secret is
-not configured, the job emits a warning and skips; trigger the smoke test
-manually instead:
-
-```bash
-gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python -f package=sqlalchemy-cubrid -f version=X.Y.Z
-```
-
-## Recovery
-
-- **Failure before PyPI publish** (integration-full, create-release, or the
-  publish verify job failed): nothing is on PyPI yet, so the version can be
-  reused. Delete the Release and the tag, fix the problem through a PR, and
-  redo the release with the same version:
-
-  ```bash
-  gh release delete vX.Y.Z --yes
-  git push origin :refs/tags/vX.Y.Z
-  git tag -d vX.Y.Z
-  ```
-
-- **Broken release after PyPI publish**: PyPI versions are immutable. Yank the
-  broken version on PyPI (project settings → Releases → Yank) and ship a new
-  patch release `X.Y.(Z+1)` through this same procedure. Never re-tag or
-  delete a published version.
-
-- **`create-release.yml` failed transiently, or the Release body must be
-  refreshed from CHANGELOG**: re-run it via dispatch. Without
-  `update_existing` the run fails if the existing body differs, so pass
-  `-f update_existing=true` to refresh it:
-
-  ```bash
-  gh workflow run create-release.yml -f tag=vX.Y.Z                           # create a missing Release
-  gh workflow run create-release.yml -f tag=vX.Y.Z -f update_existing=true   # refresh a differing body
-  ```
-
-- **Publish job failed after the checks passed** (for example a transient PyPI
-  error, or an upload that stopped after the wheel but before the sdist): rerun
-  only the failed jobs of the **same** run. The rerun reuses that run's
-  verified build artifact and workflow commit instead of rebuilding:
-
-  ```bash
-  gh run list --workflow publish-pypi.yml --limit 5
-  gh run rerun <run-id> --failed
-  ```
-
-  The publish step does not use `skip-existing`. Before it,
-  `scripts/pypi_duplicate_guard.py` reads
-  `https://pypi.org/pypi/<project>/X.Y.Z/json` and compares the SHA-256 of each
-  file in the verified `dist/` with the file PyPI serves under the same name:
-
-  - not on PyPI (or no such release yet, HTTP 404): uploaded;
-  - on PyPI with the same SHA-256 (the earlier attempt uploaded it): removed
-    from the upload set and logged. When every file is already on PyPI the
-    upload step is skipped, and `notify-cookbook` still dispatches the smoke
-    test, because PyPI provably serves this run's verified build;
-  - on PyPI with a different SHA-256, PyPI serves a file for this version that
-    the verified build did not produce, or PyPI cannot be queried (network
-    error, an HTTP status other than 404, an unexpected response): the job
-    fails and nothing is uploaded.
-
-  The build is not bit-for-bit reproducible, so never dispatch a new
-  `publish-pypi.yml` run (or rerun all jobs) to finish a partial upload: the
-  rebuilt files differ from the ones already on PyPI and the guard fails on the
-  hash mismatch, by design. The verified artifact is kept for one day; once it
-  has expired, or if the guard reports a mismatch, the version cannot be
-  completed. Handle it as a broken release (above): yank it on PyPI if needed
-  and ship `X.Y.(Z+1)`. Transient PyPI errors during the check (HTTP 5xx,
-  connection errors, timeouts) are retried a few times before the guard fails;
-  only a real HTTP 404 counts as "not published". If PyPI's JSON API lags right
-  after an upload and does not list a file yet, that file goes to the upload
-  step, which is still safe: PyPI accepts a byte-identical re-upload of an
-  existing filename and rejects different bytes (`400 File already exists`).
-  So when the upload step fails after the guard passed, it is a real error,
-  not lag: a `File already exists` rejection means PyPI holds different bytes
-  for that filename (handle it as a broken release); for any other error, read
-  the log before rerunning `--failed`.
-
-- **`notify-cookbook` job failed** (for example `COOKBOOK_DISPATCH_TOKEN` is
-  missing or the dispatch errored): the package is already on PyPI, so never
-  re-dispatch `publish-pypi.yml`. Run the manual cookbook smoke test dispatch
-  from step 5 instead:
-
-  ```bash
-  gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python -f package=sqlalchemy-cubrid -f version=X.Y.Z
-  ```
+- Squash merge only; the PR title becomes the commit title.
+- Settings → Actions → General: "Allow GitHub Actions to create and approve
+  pull requests" (for `prepare-release.yml`).
+- Environment `pypi`: deployment branches limited to `main`; PyPI Trusted
+  Publisher for `cubrid-lab/sqlalchemy-cubrid`, workflow `release.yml`, environment
+  `pypi` (<https://pypi.org/manage/project/sqlalchemy-cubrid/settings/publishing/>).
+- Secret `COOKBOOK_DISPATCH_TOKEN` for the cookbook verification.
+- No tag protection rule that blocks `github-actions[bot]` from creating
+  `v*` tags.

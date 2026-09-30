@@ -169,12 +169,12 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 
 ## CI Matrix
 
-| Dimension | PR / push | Nightly + tag + dispatch |
+| Dimension | PR / push | Nightly + dispatch + release |
 |---|---|---|
 | Offline tests | Python 3.10, 3.11, 3.12, 3.13, 3.14 | Same |
 | Integration tests | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8 jobs | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
 
-The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on tagged releases, and on demand via `workflow_dispatch`.
+The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on demand via `workflow_dispatch`, and as the release gate that `release.yml` calls for every release.
 
 ### SQLAlchemy compliance lanes
 

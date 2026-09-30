@@ -210,7 +210,7 @@ jobs:
     # cubrid+pycubrid://. The steps of integration-tests run chosen files
     # separately and do not cover this session (capability probes, fuzz,
     # metamorphic, dogfood ORM, pool stress and UUID contract tests). The
-    # INTEGRATION_DRIVER=cubriddb variant runs nightly and on tags in
+    # INTEGRATION_DRIVER=cubriddb variant runs nightly and as the release gate in
     # integration-full.yml.
     name: make integration (pycubrid, CUBRID 11.4)
     runs-on: ubuntu-latest
@@ -239,7 +239,7 @@ jobs:
       fail-fast: false
       matrix:
         # Reduced PR matrix: newest (3.14 x 11.4) + oldest (3.10 x 10.2)
-        # supported combinations. The full 5x4 matrix runs nightly / on tags
+        # supported combinations. The full 5x4 matrix runs nightly / per release
         # via integration-full.yml.
         #
         # pycubrid-compliance-sqlalchemy: the pinned SQLAlchemy version of the
@@ -466,7 +466,7 @@ jobs:
           echo "### Compatibility Matrix" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "PR runs a reduced live matrix (newest 3.14×11.4 + oldest 3.10×10.2)." >> $GITHUB_STEP_SUMMARY
-          echo "The full 5×4 Python×CUBRID matrix runs nightly / on tags via integration-full.yml." >> $GITHUB_STEP_SUMMARY
+          echo "The full 5×4 Python×CUBRID matrix runs nightly, on dispatch and as the release gate via integration-full.yml." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Blocking SQLAlchemy compliance lanes (part of Integration Tests; lane versions are in each cell's summary):" >> $GITHUB_STEP_SUMMARY
           echo "- cubrid@sa2.0: CUBRIDdb, SQLAlchemy 2.0.53, CUBRID 11.4" >> $GITHUB_STEP_SUMMARY

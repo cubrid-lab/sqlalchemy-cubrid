@@ -251,15 +251,15 @@ The dialect translates automatically in `create_connect_args()`.
 | File | Trigger | Purpose |
 |---|---|---|
 | `.github/workflows/ci.yml` | Push to main, PRs | Lint + offline tests (Py 3.10–3.14) + regular integration matrix |
-| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), tag push, manual dispatch | Full Python × CUBRID compatibility matrix |
-| `.github/workflows/create-release.yml` | Tag push, manual dispatch | Create the GitHub Release from CHANGELOG + attach SBOM (does not publish) |
-| `.github/workflows/publish-pypi.yml` | Manual dispatch (`-f tag=vX.Y.Z`) after tag-triggered integration-full passes | Verify, build, publish to PyPI, then dispatch the cookbook smoke test |
+| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), manual dispatch, `workflow_call` from `release.yml` | Full Python × CUBRID compatibility matrix |
+| `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`) | Open the `chore: release vX.Y.Z` PR (dated CHANGELOG section + version bump) |
+| `.github/workflows/release.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
 
 ### CI Matrix
 
 - **Offline (every PR/push)**: Python 3.10, 3.11, 3.12, 3.13, 3.14
 - **Integration (every PR/push)**: Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 8 jobs
-- **Integration full (nightly + tag push + dispatch)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
+- **Integration full (nightly + dispatch + every release)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
 
 ## Documentation Map
 
@@ -409,11 +409,15 @@ Maintainers own release/tag/publication actions and repository credentials.
 Contributors provide the change and validation evidence through the normal PR path.
 
 Version is single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`
-(`pyproject.toml` reads it dynamically). The full maintainer procedure — release PR,
-`make release-check VERSION=x.y.z`, tagging the squash-merged commit, waiting for the
-tag-triggered `integration-full.yml` + `create-release.yml`, the manual
-`publish-pypi.yml` dispatch, cookbook smoke, and recovery — lives in
-[`RELEASING.md`](RELEASING.md). There is no `make release`; never tag a local commit.
+(`pyproject.toml` reads it dynamically). Merging a reviewed release PR is the only
+normal way to release: `prepare-release.yml` opens it (dated CHANGELOG section +
+version bump, checked by `make release-check VERSION=x.y.z`), and after the
+squash-merge `release.yml` detects the version change and runs consistency → full
+matrix → build → tag/Release/PyPI → cookbook verification → summary on its own.
+Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
+tags or publish by hand; the only manual entry point is the narrow recovery
+dispatch of `release.yml`. Procedure, failure matrix and recovery:
+[`RELEASING.md`](RELEASING.md).
 
 ## Project Context — Performance Loop System
 

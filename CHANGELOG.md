@@ -166,6 +166,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   same name: an identical file (a partial upload recovered with `gh run rerun --failed`)
   is dropped from the upload, and a different hash or an unreachable PyPI fails the job.
   `RELEASING.md` documents the bounded recovery; offline tests cover the guard.
+- **CI: releases happen automatically when a reviewed release PR is merged (#601)** —
+  `prepare-release.yml` opens the `chore: release vX.Y.Z` PR (moves `[Unreleased]` into a
+  dated section, bumps `__version__`, runs `make release-check`). On every push to `main`,
+  the new `release.yml` decides from git facts only (`scripts/release_detect.py`: version
+  changed against the first parent, dated CHANGELOG section, tag absent or at the same
+  commit) and then runs, pinned to the merge SHA: release check, the full
+  `integration-full.yml` matrix (now also a `workflow_call` workflow, no longer run on tag
+  pushes), one build with SHA-256 hashes, the annotated tag, a draft GitHub Release with
+  SBOM, the PyPI upload through the duplicate guard, and the cookbook verification of that
+  exact version (`scripts/cookbook_wait.py`; "incomplete" without
+  `COOKBOOK_DISPATCH_TOKEN`), with one run summary. `create-release.yml` and the manual
+  `publish-pypi.yml` are removed; a narrow recovery dispatch (`resume`, `verify-only`,
+  `dry-run`) remains. The CHANGELOG stays hand-curated. Ported from
+  cubrid-lab/pycubrid#540.
 
 ## [1.8.0] - 2026-09-29
 

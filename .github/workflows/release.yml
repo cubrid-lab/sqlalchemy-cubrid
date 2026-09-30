@@ -1,0 +1,463 @@
+# Release automatically when a reviewed release PR is merged (#601).
+#
+# Every push to main runs `detect`, which decides from git facts only (never a
+# PR title): __version__ changed compared with the first parent, CHANGELOG.md
+# has a dated `## [X.Y.Z] - YYYY-MM-DD` section, and tag vX.Y.Z is absent (or
+# already at this commit, which resumes). Anything else is "no release" and the
+# run ends after `detect` and `summary`.
+#
+# A release runs in this one workflow with explicit `needs:` (tags and Releases
+# created with GITHUB_TOKEN trigger no other workflow). Release content is
+# checked out at the detected SHA; the guard, wait and summary scripts come from
+# the workflow's own commit (the same SHA on a push):
+#   consistency  make release-check
+#   matrix       integration-full.yml through workflow_call
+#   build        wheel + sdist once, twine check, smoke installs, SHA-256 list,
+#                release notes and SBOM; artifacts kept 14 days for recovery
+#   publish      annotated tag at the SHA, draft GitHub Release + SBOM, PyPI
+#                upload of that artifact through the duplicate guard (OIDC,
+#                `pypi` environment), then the Release is published
+#   verify-cookbook  cubrid-cookbook-python smoke test for that exact version
+#   summary      one table; always runs
+#
+# Recovery dispatch (main only for resume/verify-only; see RELEASING.md):
+#   gh workflow run release.yml -f action=resume -f version=X.Y.Z
+#   gh workflow run release.yml -f action=verify-only -f version=X.Y.Z
+#   gh workflow run release.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
+# It never creates a new version, never moves a tag and never deletes PyPI files.
+#
+# Canonical cubrid-lab release workflow, kept identical across pycubrid,
+# sqlalchemy-cubrid and cubrid-mcp-server except for the `env:` block below and
+# the smoke-test steps of the build job.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Recovery action (see RELEASING.md)"
+        required: true
+        type: choice
+        options:
+          - dry-run
+          - verify-only
+          - resume
+      version:
+        description: "Version X.Y.Z (resume/verify-only: an existing tag on main; dry-run: __version__ of the ref)"
+        required: true
+        type: string
+      request_id:
+        description: "verify-only/dry-run: wait for this existing cookbook request instead of dispatching a new one"
+        required: false
+        default: ""
+        type: string
+
+env:
+  PACKAGE: sqlalchemy-cubrid
+  VERSION_FILE: sqlalchemy_cubrid/__init__.py
+
+# One run per pushed commit or per dispatched version; never cancelled. The
+# publish job additionally serializes on its tag across push and dispatch runs.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.sha }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  detect:
+    name: Detect release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      release: ${{ steps.detect.outputs.release }}
+      build: ${{ steps.detect.outputs.build }}
+      publish: ${{ steps.detect.outputs.publish }}
+      verify: ${{ steps.detect.outputs.verify }}
+      mode: ${{ steps.detect.outputs.mode }}
+      version: ${{ steps.detect.outputs.version }}
+      tag: ${{ steps.detect.outputs.tag }}
+      sha: ${{ steps.detect.outputs.sha }}
+      tag_state: ${{ steps.detect.outputs.tag_state }}
+      reason: ${{ steps.detect.outputs.reason }}
+    steps:
+      - name: Validate recovery inputs
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          ACTION: ${{ inputs.action }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$INPUT_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z"
+            exit 1
+          fi
+          if [ -n "$REQUEST_ID" ]; then
+            if [ "$ACTION" = "resume" ] || [[ ! "$REQUEST_ID" =~ ^[A-Za-z0-9._-]{8,80}$ ]]; then
+              echo "::error::request_id is only for verify-only/dry-run and must match ^[A-Za-z0-9._-]{8,80}$"
+              exit 1
+            fi
+          fi
+          if [ "$ACTION" != "dry-run" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::$ACTION must be dispatched from main (got $GITHUB_REF)"
+            exit 1
+          fi
+
+      - name: Check out the pushed or dispatched commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Decide
+        id: detect
+        env:
+          MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.action || 'push' }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          python3 scripts/release_detect.py --mode "$MODE" --sha "$GITHUB_SHA" \
+            --version "$INPUT_VERSION" --version-file "$VERSION_FILE"
+
+  consistency:
+    name: Release consistency (make release-check)
+    needs: [detect]
+    if: needs.detect.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.detect.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+
+      - name: Install release-check tools
+        run: python -m pip install --upgrade pip build twine packaging
+
+      - name: make release-check
+        env:
+          VERSION: ${{ needs.detect.outputs.version }}
+        run: make release-check VERSION="$VERSION"
+
+  matrix:
+    name: Full compatibility matrix
+    needs: [detect, consistency]
+    if: needs.detect.outputs.build == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/integration-full.yml
+    with:
+      sha: ${{ needs.detect.outputs.sha }}
+
+  build:
+    name: Build and verify the release artifact
+    needs: [detect, matrix]
+    if: needs.detect.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      sha256: ${{ steps.hashes.outputs.sha256 }}
+    env:
+      VERSION: ${{ needs.detect.outputs.version }}
+      TAG: ${{ needs.detect.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.detect.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          set -euo pipefail
+          python3 scripts/extract_release_notes.py "$TAG"
+          mkdir -p release-meta
+          mv RELEASE_NOTES.md release-meta/RELEASE_NOTES.md
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+        with:
+          format: spdx-json
+          output-file: release-meta/sbom.spdx.json
+          upload-artifact: false
+
+      - name: Build sdist and wheel
+        run: |
+          python -m pip install --upgrade pip build twine
+          python -m build
+
+      - name: Check distribution metadata
+        run: |
+          twine check dist/*
+          shopt -s nullglob
+          matches=(dist/"${PACKAGE//-/_}"-"$VERSION"*)
+          if [ ${#matches[@]} -eq 0 ]; then
+            echo "::error::Built artifacts do not carry version $VERSION"
+            ls -l dist/
+            exit 1
+          fi
+
+      # Repository-specific smoke assertions.
+      - name: Smoke-test wheel install
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install dist/*.whl
+          cd /tmp
+          /tmp/wheel-env/bin/python - <<'PY'
+          import os
+          import importlib.metadata as md
+          import sqlalchemy_cubrid
+          expected = os.environ["VERSION"]
+          assert sqlalchemy_cubrid.__version__ == expected, (sqlalchemy_cubrid.__version__, expected)
+          assert md.version("sqlalchemy-cubrid") == expected, (md.version("sqlalchemy-cubrid"), expected)
+          from sqlalchemy_cubrid import insert, merge, JSON, SET  # noqa: F401
+          eps = {ep.name: ep for ep in md.entry_points(group="sqlalchemy.dialects") if ep.name.startswith("cubrid")}
+          for name in ("cubrid", "cubrid.cubrid", "cubrid.pycubrid", "cubrid.aiopycubrid"):
+              assert name in eps, (name, sorted(eps))
+          # Alembic is not installed here: the dialect's optional CubridImpl
+          # registration (#504) must be skipped, not break dialect loading.
+          from sqlalchemy.dialects import registry
+          for name in ("cubrid", "cubrid.pycubrid", "cubrid.aiopycubrid"):
+              assert registry.load(name).name == "cubrid", name
+          import pathlib
+          pkg_dir = pathlib.Path(sqlalchemy_cubrid.__file__).parent
+          assert (pkg_dir / "py.typed").exists(), "py.typed marker missing"
+          print("wheel import + metadata + entry points + py.typed OK:", expected)
+          PY
+
+      - name: Smoke-test sdist install
+        run: |
+          python -m venv /tmp/sdist-env
+          /tmp/sdist-env/bin/pip install dist/*.tar.gz
+          cd /tmp
+          /tmp/sdist-env/bin/python -c "import sqlalchemy_cubrid; print('sdist import OK:', sqlalchemy_cubrid.__version__)"
+
+      - name: Record SHA-256 hashes
+        id: hashes
+        run: |
+          set -euo pipefail
+          (cd dist && sha256sum -- *) | tee release-meta/SHA256SUMS
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import hashlib, json, pathlib
+          hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(pathlib.Path("dist").iterdir())}
+          print("sha256=" + json.dumps(hashes, separators=(",", ":")))
+          PY
+
+      - name: Upload the verified distribution
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-dist
+          path: dist/
+          retention-days: 14
+          if-no-files-found: error
+
+      - name: Upload release notes, SBOM and hashes
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-meta
+          path: release-meta/
+          retention-days: 14
+          if-no-files-found: error
+
+  publish:
+    name: Tag, GitHub Release and PyPI
+    needs: [detect, consistency, matrix, build]
+    if: needs.detect.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/${{ env.PACKAGE }}/${{ needs.detect.outputs.version }}/
+    permissions:
+      contents: write # annotated tag and GitHub Release
+      id-token: write # PyPI Trusted Publishing
+    concurrency:
+      group: release-publish-${{ needs.detect.outputs.tag }}
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ needs.detect.outputs.sha }}
+      TAG: ${{ needs.detect.outputs.tag }}
+      VERSION: ${{ needs.detect.outputs.version }}
+    steps:
+      # Release tooling (guard, wait and summary scripts) comes from the
+      # workflow's own commit, so a resume or verify-only of an older tag uses
+      # the current scripts; on a push it is the release SHA itself.
+      - name: Check out the PyPI duplicate guard
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: scripts/pypi_duplicate_guard.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Download the verified distribution
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist/
+
+      - name: Download release notes, SBOM and hashes
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-meta
+          path: release-meta/
+
+      - name: Check the distribution against the recorded hashes
+        run: (cd dist && sha256sum --strict -c ../release-meta/SHA256SUMS)
+
+      # Creates the annotated tag at the release SHA, or accepts one that already
+      # points there (resume). A tag at any other commit fails; tags never move.
+      - name: Create the annotated tag
+        run: |
+          set -euo pipefail
+          ref=$(gh api "repos/$GH_REPO/git/matching-refs/tags/$TAG" \
+            --jq ".[] | select(.ref == \"refs/tags/$TAG\") | .object.type + \" \" + .object.sha")
+          if [ -n "$ref" ]; then
+            read -r type target <<<"$ref"
+            if [ "$type" = "tag" ]; then
+              target=$(gh api "repos/$GH_REPO/git/tags/$target" --jq .object.sha)
+            fi
+            if [ "$target" != "$SHA" ]; then
+              echo "::error::$TAG already points at $target, not $SHA; tags are never moved"
+              exit 1
+            fi
+            echo "$TAG already at $SHA; resuming"
+          else
+            object=$(gh api -X POST "repos/$GH_REPO/git/tags" -f tag="$TAG" -f type=commit \
+              -f object="$SHA" -f message="$PACKAGE $TAG" --jq .sha)
+            gh api -X POST "repos/$GH_REPO/git/refs" -f ref="refs/tags/$TAG" -f sha="$object" >/dev/null
+            echo "created annotated tag $TAG at $SHA"
+          fi
+
+      - name: Create the draft GitHub Release with the SBOM
+        run: |
+          set -euo pipefail
+          # List (drafts included) instead of `gh release view`, so an API error
+          # fails the step instead of reading as "no Release yet".
+          drafts=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+            --jq '.[] | select(.tag_name == env.TAG) | .draft')
+          case "$drafts" in
+            "")
+              gh release create "$TAG" --draft --verify-tag --title "$TAG" \
+                --notes-file release-meta/RELEASE_NOTES.md release-meta/sbom.spdx.json ;;
+            true)
+              gh release upload "$TAG" release-meta/sbom.spdx.json --clobber
+              echo "reusing draft Release $TAG" ;;
+            false)
+              echo "Release $TAG is already published; leaving it unchanged" ;;
+            *)
+              echo "::error::several Releases carry $TAG; resolve them by hand"
+              exit 1 ;;
+          esac
+
+      # Fails on a filename PyPI already serves with a different SHA-256, on a
+      # file PyPI serves for this version that the verified build did not
+      # produce, or when PyPI cannot be queried; drops files PyPI already serves
+      # byte for byte (partial-upload recovery with `gh run rerun --failed`).
+      - name: Compare dist/ with files already on PyPI
+        id: guard
+        run: python3 scripts/pypi_duplicate_guard.py --project "$PACKAGE" --version "$VERSION" --dist dist
+
+      # No skip-existing: PyPI rejects a filename that already holds different
+      # bytes. Only an explicit upload=false (every file already identical on
+      # PyPI) skips this step; a missing guard output still uploads.
+      - name: Publish to PyPI
+        if: steps.guard.outputs.upload != 'false'
+        uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
+        with:
+          attestations: true
+
+      - name: Publish the GitHub Release
+        run: gh release edit "$TAG" --draft=false
+
+  verify-cookbook:
+    name: Cookbook release verification
+    needs: [detect, build, publish]
+    # After a successful publish; or, without publishing, after a successful
+    # dry-run build or for verify-only.
+    if: >-
+      !cancelled() && needs.detect.outputs.verify == 'true' &&
+      (needs.publish.result == 'success' ||
+      (needs.detect.outputs.publish != 'true' &&
+      (needs.detect.outputs.mode == 'verify-only' || needs.build.result == 'success')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read # sparse checkout of the wait script
+      actions: read # cookbook runs/artifacts: public repo, readable with any authenticated token
+    outputs:
+      status: ${{ steps.wait.outputs.status }}
+      reason: ${{ steps.wait.outputs.reason }}
+      request_id: ${{ steps.wait.outputs.request_id }}
+      run_url: ${{ steps.wait.outputs.run_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: scripts/cookbook_wait.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      # Without COOKBOOK_DISPATCH_TOKEN the result is "incomplete" and the next
+      # step fails the job: a release is never reported as verified silently.
+      - name: Dispatch the cookbook smoke test and wait for that run
+        id: wait
+        continue-on-error: true
+        env:
+          COOKBOOK_DISPATCH_TOKEN: ${{ secrets.COOKBOOK_DISPATCH_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          EXISTING_REQUEST_ID: ${{ inputs.request_id }}
+        run: |
+          if [ -n "$EXISTING_REQUEST_ID" ]; then
+            python3 scripts/cookbook_wait.py --package "$PACKAGE" --version "$VERSION" \
+              --request-id "$EXISTING_REQUEST_ID" --no-dispatch
+          else
+            python3 scripts/cookbook_wait.py --package "$PACKAGE" --version "$VERSION" \
+              --request-id "$PACKAGE-v$VERSION-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          fi
+
+      - name: Require a verified release
+        env:
+          STATUS: ${{ steps.wait.outputs.status }}
+          REASON: ${{ steps.wait.outputs.reason }}
+        run: |
+          case "$STATUS" in
+            success) echo "Cookbook verification succeeded: $REASON" ;;
+            incomplete) echo "::error::Cookbook verification INCOMPLETE: $REASON"; exit 1 ;;
+            *) echo "::error::Cookbook verification failed: ${REASON:-no result}"; exit 1 ;;
+          esac
+
+  summary:
+    name: Release summary
+    needs: [detect, consistency, matrix, build, publish, verify-cookbook]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # sparse checkout of the summary script
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: scripts/release_summary.py
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Render the release summary
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: python3 scripts/release_summary.py

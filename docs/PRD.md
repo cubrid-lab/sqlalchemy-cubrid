@@ -297,7 +297,7 @@ stmt = (
 |---|---|---|---|
 | PR/push offline tests | 3.10, 3.11, 3.12, 3.13, 3.14 | N/A (offline) | `.github/workflows/ci.yml` |
 | PR/push integration tests | 3.10, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/ci.yml` |
-| Nightly / tagged / manual full integration matrix | 3.10, 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
+| Nightly / release-gate / manual full integration matrix | 3.10, 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
 
 ---
 
