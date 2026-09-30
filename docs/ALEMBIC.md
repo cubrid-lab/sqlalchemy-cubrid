@@ -543,6 +543,18 @@ revision, and the revisions before it stay committed and recorded in
 
 **Fix**: For genuinely lossy/unsupported conversions, use `batch_alter_table` — see [ALTER COLUMN TYPE (native)](#-alter-column-type-native).
 
+### `alembic revision --autogenerate` fails with a reflection error
+
+**Cause**: Foreign keys are read from `SHOW CREATE TABLE`. Since #589 a failure
+there (a dropped connection, an authorization error, a driver error) raises
+instead of being reported as "this table has no foreign keys", which made
+autogenerate propose `add_fk` for foreign keys that already exist.
+
+**Fix**: Fix the underlying error and run autogenerate again; set
+`pool_pre_ping=True` on the engine if the connection went stale. A `NoSuchTableError`
+for a table of another owner is expected since CUBRID 11.2, where an unqualified name
+resolves in the current user's schema; run autogenerate as the table owner.
+
 ---
 
 ## Migration Safety Checklist

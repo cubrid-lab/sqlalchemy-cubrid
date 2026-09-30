@@ -9,7 +9,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import ArgumentError, NoSuchTableError, SAWarning
+from sqlalchemy.exc import (
+    ArgumentError,
+    NoSuchTableError,
+    OperationalError,
+    ProgrammingError,
+    SAWarning,
+)
 from sqlalchemy.engine import url
 from sqlalchemy.sql.elements import quoted_name
 
@@ -1066,14 +1072,15 @@ class TestReflectionMethods:
         failed_conn = MagicMock()
         failed_conn.info_cache = {}
         failed_conn.dialect_options = {}
-        # Any SHOW CREATE TABLE failure other than a missing table keeps the
-        # graceful empty result.
+        # Any SHOW CREATE TABLE failure other than a missing table propagates
+        # instead of reporting "no foreign keys" (#589).
         failed_conn.execute.side_effect = [
             _class_type_result("CLASS"),
             RuntimeError("fk lookup failed"),
         ]
 
-        assert _invoke_reflection(dialect, "get_foreign_keys", failed_conn, "orders") == []
+        with pytest.raises(RuntimeError, match="fk lookup failed"):
+            _invoke_reflection(dialect, "get_foreign_keys", failed_conn, "orders")
 
     def test_get_table_names(self):
         dialect = CubridDialect()
@@ -1617,14 +1624,16 @@ class TestMissingObjectReflection:
             _invoke_reflection(CubridDialect(), "get_unique_constraints", connection, "missing")
 
     @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
-    def test_ddl_fallback_syntax_error_is_not_a_missing_table(self, method_name, caplog):
+    def test_ddl_fallback_syntax_error_is_not_a_missing_table(self, method_name):
+        from sqlalchemy.exc import ProgrammingError
+
         side_effect = [_class_type_result("CLASS")]
         if method_name == "get_unique_constraints":
             side_effect.append([])  # empty unique-index catalog
         connection = self._connection(*side_effect, self._syntax_error())
-        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
-            assert _invoke_reflection(CubridDialect(), method_name, connection, "t") == []
-        assert "SHOW CREATE TABLE failed" in caplog.text
+        with pytest.raises(ProgrammingError) as excinfo:
+            _invoke_reflection(CubridDialect(), method_name, connection, "t")
+        assert not isinstance(excinfo.value, NoSuchTableError)
 
     def test_table_comment_missing_table_raises(self):
         result = MagicMock()
@@ -1669,6 +1678,88 @@ class TestMissingObjectReflection:
         connection = self._connection(self._syntax_error())
         with pytest.raises(ProgrammingError):
             _invoke_reflection(CubridDialect(), "get_view_definition", connection, "v")
+
+
+class _DriverError(Exception):
+    pass
+
+
+_SHOW_CREATE_TABLE_ERRORS = [
+    OperationalError(
+        "SHOW CREATE TABLE",
+        {},
+        _DriverError("Cannot communicate with the broker"),
+        connection_invalidated=True,
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Syntax: select is not authorized on t.")
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Semantic: SELECT is not authorized on dba.t.")
+    ),
+    RuntimeError("boom"),
+]
+_SHOW_CREATE_TABLE_ERROR_IDS = ["disconnect", "not-authorized-493", "not-authorized-494", "runtime"]
+
+
+class TestShowCreateTableErrorsPropagate:
+    """#589: ``get_foreign_keys`` and ``get_unique_constraints`` read
+    ``SHOW CREATE TABLE``. A failure there must not be reported as "no
+    constraints", which Alembic autogenerate would turn into spurious
+    ``add_fk`` / ``add_constraint`` operations."""
+
+    METHODS = ["get_foreign_keys", "get_unique_constraints"]
+
+    @staticmethod
+    def _connection(method_name, show_create_table):
+        side_effect = [_class_type_result("CLASS")]
+        if method_name == "get_unique_constraints":
+            side_effect.append([])  # empty unique-index catalog: DDL fallback
+        side_effect.append(show_create_table)
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = side_effect
+        return connection
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    @pytest.mark.parametrize("error", _SHOW_CREATE_TABLE_ERRORS, ids=_SHOW_CREATE_TABLE_ERROR_IDS)
+    def test_show_create_table_failure_propagates(self, method_name, error, caplog):
+        connection = self._connection(method_name, error)
+        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
+            with pytest.raises(type(error)) as excinfo:
+                _invoke_reflection(CubridDialect(), method_name, connection, "t")
+        assert excinfo.value is error
+        assert not isinstance(excinfo.value, NoSuchTableError)
+        assert not caplog.records
+
+    def test_disconnect_keeps_connection_invalidated(self):
+        error = _SHOW_CREATE_TABLE_ERRORS[0]
+        connection = self._connection("get_foreign_keys", error)
+        with pytest.raises(type(error)) as excinfo:
+            _invoke_reflection(CubridDialect(), "get_foreign_keys", connection, "t")
+        assert excinfo.value.connection_invalidated
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    def test_no_show_create_table_row_raises_no_such_table(self, method_name):
+        """The class lookup found the table but SHOW CREATE TABLE returned no
+        row (e.g. it was dropped in between): the table is gone, not
+        constraint-free."""
+        result = MagicMock()
+        result.first.return_value = None
+        connection = self._connection(method_name, result)
+        with pytest.raises(NoSuchTableError, match="t"):
+            _invoke_reflection(CubridDialect(), method_name, connection, "t")
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    def test_successful_query_without_constraints_returns_empty(self, method_name):
+        result = MagicMock()
+        result.first.return_value = (
+            "t",
+            "CREATE TABLE [t] ([id] INTEGER NOT NULL, CONSTRAINT [pk_t_id] PRIMARY KEY ([id]))",
+        )
+        connection = self._connection(method_name, result)
+        assert _invoke_reflection(CubridDialect(), method_name, connection, "t") == []
 
 
 class TestDoReleaseSavepoint:

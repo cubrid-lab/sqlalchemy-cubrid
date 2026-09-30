@@ -648,12 +648,106 @@ class TestReflectionAsNonDba:
             assert insp.get_unique_constraints(name) == [
                 {"name": "u_r549_t_u", "column_names": ["u"], "duplicates_index": "u_r549_t_u"}
             ]
+            # SHOW CREATE TABLE works for a non-DBA owner too (#589).
+            fks = insp.get_foreign_keys(name)
+            assert [(fk["name"], fk["referred_table"]) for fk in fks] == [
+                ("fk_r549_t_p", "r549_parent")
+            ]
             assert insp.has_index(name, "ix_r549_t_v")
             assert insp.has_index(name, "pk_r549_t")
             assert not insp.has_index(name, "ix_r549_decoy_v")
             assert not insp.has_index(name, "no_such_index")
             comments = {c["name"]: c["comment"] for c in insp.get_columns(name)}
             assert comments == {"a": None, "b": None, "p": None, "u": None, "v": "v comment"}
+
+
+class TestShowCreateTableFailures:
+    """#589: ``get_foreign_keys`` (and the DDL fallback of
+    ``get_unique_constraints``) read ``SHOW CREATE TABLE``. A failure there
+    used to be logged and reported as "no constraints", so Alembic
+    autogenerate emitted an ``add_fk`` for a foreign key that already
+    exists."""
+
+    PARENT = "r589_parent"
+    CHILD = "r589_child"
+    PLAIN = "r589_plain"
+
+    @classmethod
+    def _metadata(cls):
+        meta = MetaData()
+        Table(cls.PARENT, meta, Column("id", Integer, primary_key=True))
+        Table(
+            cls.CHILD,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column(
+                "pid",
+                Integer,
+                # CUBRID reports the default actions as RESTRICT (#597); name them so
+                # the comparison is about the constraint, not its options.
+                ForeignKey(
+                    f"{cls.PARENT}.id",
+                    name="fk_r589_child_pid",
+                    ondelete="RESTRICT",
+                    onupdate="RESTRICT",
+                ),
+            ),
+        )
+        Table(cls.PLAIN, meta, Column("id", Integer, primary_key=True))
+        return meta
+
+    def _diffs(self, conn, meta):
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        tables = {self.PARENT, self.CHILD, self.PLAIN}
+        ctx = MigrationContext.configure(
+            connection=conn,
+            opts={"include_name": lambda name, type_, parent: type_ != "table" or name in tables},
+        )
+        return compare_metadata(ctx, meta)
+
+    @pytest.fixture
+    def meta(self, engine):
+        meta = self._metadata()
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            yield meta
+        finally:
+            meta.drop_all(engine)
+
+    @staticmethod
+    def _fail_show_create_table(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SHOW CREATE TABLE"):
+            raise RuntimeError("SHOW CREATE TABLE failed")
+
+    def test_autogenerate_has_no_fk_diff_when_reflection_works(self, engine, meta):
+        with engine.connect() as conn:
+            insp = inspect(conn)
+            assert [fk["name"] for fk in insp.get_foreign_keys(self.CHILD)] == ["fk_r589_child_pid"]
+            # A successful SHOW CREATE TABLE without constraints: empty lists.
+            assert insp.get_foreign_keys(self.PLAIN) == []
+            assert insp.get_unique_constraints(self.PLAIN) == []
+            assert self._diffs(conn, meta) == []
+
+    def test_autogenerate_raises_when_show_create_table_fails(self, engine, meta):
+        sa.event.listen(engine, "before_cursor_execute", self._fail_show_create_table)
+        try:
+            with engine.connect() as conn:
+                with pytest.raises(RuntimeError, match="SHOW CREATE TABLE failed"):
+                    inspect(conn).get_foreign_keys(self.CHILD)
+                conn.rollback()
+                with pytest.raises(RuntimeError, match="SHOW CREATE TABLE failed"):
+                    # The DDL fallback, taken because the table has no unique index.
+                    inspect(conn).get_unique_constraints(self.PLAIN)
+                conn.rollback()
+                # Before #589 this returned [("add_fk", ...)] for the
+                # existing foreign key.
+                with pytest.raises(RuntimeError, match="SHOW CREATE TABLE failed"):
+                    self._diffs(conn, meta)
+        finally:
+            sa.event.remove(engine, "before_cursor_execute", self._fail_show_create_table)
 
 
 class TestTransactions:

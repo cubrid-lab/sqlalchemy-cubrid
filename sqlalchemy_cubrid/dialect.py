@@ -733,6 +733,25 @@ class CubridDialect(default.DefaultDialect):
             return []
         return self._get_foreign_keys_from_ddl(connection, table_name, schema)
 
+    def _get_show_create_table_ddl(self, connection: Any, table_name: str) -> str:
+        """Return the ``SHOW CREATE TABLE`` DDL of *table_name*.
+
+        Raises :class:`NoSuchTableError` when the server reports the table
+        missing (``Unknown class``, #530) or returns no row for it. Any other
+        failure (a disconnect, a permission error, a driver bug) propagates:
+        callers must not report it as "no constraints" (#589).
+        """
+        quoted = self.identifier_preparer.quote_identifier(table_name)
+        try:
+            row = connection.execute(text(f"SHOW CREATE TABLE {quoted}")).first()
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
+        if row is None:
+            raise NoSuchTableError(table_name)
+        return str(row[1]) if len(row) > 1 else str(row[0])
+
     def _get_foreign_keys_from_ddl(
         self,
         connection: Any,
@@ -746,22 +765,7 @@ class CubridDialect(default.DefaultDialect):
         or column metadata for foreign keys.
         """
         foreign_keys: list[ReflectedForeignKeyConstraint] = []
-        try:
-            quoted = self.identifier_preparer.quote_identifier(table_name)
-            result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
-            row = result.first()
-        except Exception as error:  # nosec B110 — graceful fallback when DDL unavailable
-            if _is_unknown_class_error(error):
-                raise NoSuchTableError(table_name) from error
-            log.warning(
-                "SHOW CREATE TABLE failed for %s; foreign keys will be empty",
-                table_name,
-                exc_info=True,
-            )
-            return foreign_keys
-        if row is None:
-            return foreign_keys
-        ddl = str(row[1]) if len(row) > 1 else str(row[0])
+        ddl = self._get_show_create_table_ddl(connection, table_name)
         for fk_match in _RE_FOREIGN_KEY.finditer(ddl):
             constraint_name = fk_match.group("name")
             constrained_columns = [
@@ -1023,22 +1027,7 @@ class CubridDialect(default.DefaultDialect):
     ) -> list[ReflectedUniqueConstraint]:
         """Parse SHOW CREATE TABLE output for UNIQUE constraints (legacy fallback)."""
         unique_constraints: list[ReflectedUniqueConstraint] = []
-        try:
-            quoted = self.identifier_preparer.quote_identifier(table_name)
-            result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
-            row = result.first()
-        except Exception as error:  # nosec B110 — graceful fallback when DDL unavailable
-            if _is_unknown_class_error(error):
-                raise NoSuchTableError(table_name) from error
-            log.warning(
-                "SHOW CREATE TABLE failed for %s; unique constraints will be empty",
-                table_name,
-                exc_info=True,
-            )
-            return unique_constraints
-        if row is None:
-            return unique_constraints
-        ddl = str(row[1]) if len(row) > 1 else str(row[0])
+        ddl = self._get_show_create_table_ddl(connection, table_name)
         for uc_match in _RE_UNIQUE_KEY.finditer(ddl):
             constraint_name = uc_match.group("name")
             column_names = [
