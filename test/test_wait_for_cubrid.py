@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from scripts import wait_for_cubrid
+from scripts.integration_urls import PYCUBRID_TIMEOUTS
 
 
 class _FakeEngine:
@@ -99,10 +100,19 @@ def test_fails_at_once_for_an_unusable_driver(monkeypatch, capsys):
     assert "Cannot use CUBRID_TEST_URL" in capsys.readouterr().err
 
 
+def test_an_unparsable_url_is_not_echoed(monkeypatch, capsys):
+    # make_url()'s own error repeats the raw value, credentials included (#593).
+    monkeypatch.setenv("CUBRID_TEST_URL", "not a url with s3cret-password")
+    assert wait_for_cubrid.main(["--timeout", "60"]) == 1
+    err = capsys.readouterr().err
+    assert "Cannot use CUBRID_TEST_URL" in err
+    assert "s3cret" not in err
+
+
 @pytest.mark.parametrize(
     ("url", "expected"),
     [
-        ("cubrid+pycubrid://dba@localhost:33000/testdb", wait_for_cubrid._PYCUBRID_TIMEOUTS),
+        ("cubrid+pycubrid://dba@localhost:33000/testdb", PYCUBRID_TIMEOUTS),
         ("cubrid://dba@localhost:33000/testdb", {}),
     ],
 )

@@ -7,16 +7,18 @@
 
 """Integration tests against a live CUBRID instance.
 
-These tests require a running CUBRID database.  They are skipped
-automatically when no CUBRID connection is available.
-
-Set the environment variable ``CUBRID_TEST_URL`` to the connection
-URL, e.g.::
+These tests require a running CUBRID database.  Set the environment
+variable ``CUBRID_TEST_URL`` to the connection URL, e.g.::
 
     export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 
-Alternatively, the tests look for a CUBRID instance at the default
-``cubrid://dba@localhost:33000/testdb``.
+Without it they are skipped; with it, an unreachable server errors every
+test instead (the shared gate in ``test/conftest.py``, #593).
+
+Many tests here create tables and database users with fixed names (for
+example ``t583_fresh``, ``alter_it_modify``, ``u543``), so run the module
+against a dedicated database, one run at a time (``make integration`` starts
+a run-owned server).
 """
 
 from __future__ import annotations
@@ -61,29 +63,9 @@ def _cubrid_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
-def _can_connect() -> bool:
-    """Return True if a CUBRID instance is reachable."""
-    try:
-        engine = create_engine(_cubrid_url())
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        engine.dispose()
-        return True
-    except Exception:
-        return False
-
-
-# In CI, CUBRID is intentionally provisioned — connectivity failure
-# should be a hard test error, not a silent skip.
-_available = _can_connect()
-
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        not _available,
-        reason="CUBRID instance not available (set CUBRID_TEST_URL)",
-    ),
-]
+# The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
+# unset and errors them when its server is unreachable (#593).
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture(scope="module")

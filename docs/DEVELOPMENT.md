@@ -251,6 +251,54 @@ the driver-differential comparisons are intentionally skipped;
 that profile does not claim to test CUBRIDdb. Formal CI's native-driver
 `--dburi` route remains separate and unchanged.
 
+#### Skip or fail: `CUBRID_TEST_URL` is the switch
+
+Whether an `integration`-marked test runs is decided in one place, a
+`pytest_runtest_setup` gate in `test/conftest.py` (#593). No test module probes
+the server at import time any more.
+
+| `CUBRID_TEST_URL` | Server answers `SELECT 1` through the URL's driver | Integration tests |
+| --- | --- | --- |
+| unset or empty | (not probed) | skipped locally; with `CI=true` the run exits 1 before any test runs |
+| set | yes | run |
+| set | no (down, wrong port, driver not installed, not a CUBRID URL with a database) | **error**, every one, with the same message |
+
+The gate probes the server once per session through the helpers in
+`scripts/integration_urls.py` (shared with `scripts/wait_for_cubrid.py`), using
+the driver the URL selects: `cubrid+pycubrid://` needs pycubrid and `cubrid://`
+needs the CUBRIDdb C extension, also for `test/test_aio_integration.py`, which
+connects through `cubrid+aiopycubrid://`. `CUBRID_TEST_URL` must be a
+`cubrid://`, `cubrid+cubriddb://` or `cubrid+pycubrid://` URL with a database, so
+the destructive test fixtures can never run against another database. When
+`CUBRID_TEST_AURL` overrides the async route, the gate probes that endpoint too,
+through `cubrid+aiopycubrid://`. The error names the URL with its password
+masked, for example:
+
+```text
+CUBRID_TEST_URL is set, but CUBRID at cubrid+pycubrid://dba:***@127.0.0.1:33599/testdb
+does not answer SELECT 1 through the driver the URL selects: OperationalError: ...
+```
+
+So a lane that believes it has a server can no longer turn green by skipping.
+Before #593, 421 of the 447 tests in `pytest test/ -m integration` skipped
+against an unreachable URL, even with `CI=true`. Now all 447 error and pytest exits 1.
+Unset `CUBRID_TEST_URL` to skip them on purpose, or deselect them with
+`-m "not integration"` (the offline suite does). The gate does not apply to the
+`--dburi` compliance runs: with `--dburi`, SQLAlchemy's plugin connects at
+session start and fails the run itself when the server is unreachable.
+
+After the gate passes, a few modules still skip for reasons of their own: the
+driver-differential and transactional-DDL tests need both drivers, and the
+server-restart tests need `CUBRID_TEST_DOCKER_CONTAINER`. Their CI steps turn
+those skips into failures with `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`,
+`CUBRID_REQUIRE_TRANSACTIONAL_DDL=1` and `CUBRID_REQUIRE_SERVER_RESTART=1`
+(#486, #503, #565).
+
+`test/test_integration.py` creates tables and database users with fixed names
+(for example `t583_fresh`, `alter_it_modify`, `u543`), so two runs against the
+same database interfere with each other. Run it against a dedicated database,
+one run at a time. `make integration` starts a run-owned server for this.
+
 `test/test_server_restart.py` (#565) stops and starts `cub_server` with
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
 checks that the pool invalidates broken connections and recovers, through both
@@ -349,8 +397,10 @@ After `docker compose up -d`, the run waits until the new server answers
 `INTEGRATION_READY_TIMEOUT` seconds (default 180), and fails if it never does. A
 fresh container needs about 20 seconds to create its database and start the
 broker; a fixed 10-second sleep used before #575 let the suite start too early,
-so the first tests failed with CCI -20004 and the live test files that probe the
-server at import time skipped themselves.
+so the first tests failed with CCI -20004 and the live test files that probed the
+server at import time skipped themselves. Since #593 no file probes at import
+time; the conftest gate errors every integration test when the server does not
+answer, so a server that is not ready fails the run instead of skipping it.
 
 `make integration` runs in its own Compose project, named
 `sqlalchemy-cubrid-it-<timestamp>-<pid>` by default. Its container, network and
@@ -631,7 +681,8 @@ report success. Before the tests, `python -m scripts.report_driver_versions`
 writes the exact Python, SQLAlchemy, pycubrid, CUBRIDdb (package version and
 source tag) and CUBRID server versions to the job log and the GitHub step
 summary. Local runs without the variable keep skipping cleanly when a driver
-or the database is unavailable:
+is unavailable. An unreachable `CUBRID_TEST_URL` server errors instead, like
+every integration test (#593):
 
 ```bash
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"

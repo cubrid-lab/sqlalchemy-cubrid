@@ -34,7 +34,9 @@ jobs:
       - env:
           PYCUBRID_SHA: ${{ steps.pycubrid.outputs.sha }}
         run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@${PYCUBRID_SHA}"
-      - run: pytest test/ --ignore=test/test_integration.py --ignore=test/test_aio_integration.py --ignore=test/test_suite.py --ignore=test/test_regression.py -q
+      # Offline half: without CUBRID_TEST_URL, integration-marked tests would only
+      # skip, which conftest.py refuses under CI=true (#593); deselect them.
+      - run: pytest test/ -m "not integration" -q
       # Recorded even when an earlier step fails; with job-level
       # continue-on-error the report job cannot rely on needs.<job>.result.
       - name: Record job status
@@ -112,7 +114,10 @@ jobs:
         run: python -m pytest test/test_integration.py -v --tb=short
       - name: Run async integration tests
         env:
-          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          # The conftest gate probes CUBRID_TEST_URL through its own driver (#593),
+          # and this job installs pycubrid only; the async URL derived from it is
+          # the same cubrid+aiopycubrid:// either way.
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
         run: python -m pytest test/test_aio_integration.py -v --tb=short
       # Recorded even when an earlier step fails; with job-level
       # continue-on-error the report job cannot rely on needs.<job>.result.
