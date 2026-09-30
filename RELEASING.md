@@ -81,7 +81,8 @@ and chained with explicit `needs:` (tags and Releases created with
 | `matrix` | The full Python × CUBRID matrix, the `make integration` lanes for both drivers, the version-differential and the Hypothesis fuzz pass (mutation testing is reported but non-gating): `integration-full.yml` called through `workflow_call` at the SHA. |
 | `build` | Builds the wheel and sdist **once**, `twine check`, wheel/sdist install smoke tests, extracts the release notes, generates the SPDX SBOM and records SHA-256 hashes. Artifacts `release-dist` and `release-meta` are kept for 14 days. |
 | `publish` | In the `pypi` environment: re-checks the hashes, creates the annotated tag `vX.Y.Z` at the SHA (or accepts one already there), creates a **draft** GitHub Release with the notes and `sbom.spdx.json`, uploads the same artifact to PyPI through `scripts/pypi_duplicate_guard.py` and Trusted Publishing (OIDC), then publishes the Release. |
-| `verify-cookbook` | Dispatches the cookbook smoke test with `{package, ref: vX.Y.Z, request_id}` and waits (up to 45 minutes) for **that** run (`scripts/cookbook_wait.py`). |
+| `verify-cookbook` | Calls the cookbook smoke test (`smoke-test.yml` of cubrid-cookbook-python) as a **reusable workflow** with `package=sqlalchemy-cubrid`, `version=X.Y.Z` and a `request_id`; its jobs run inside this release run. |
+| `require-cookbook` | Fails unless the called workflow succeeded and its outputs report `status == success` with `installed_version == requested_version == X.Y.Z`. |
 | `summary` | Always runs; one table with SHA, tag, version, artifact hashes, matrix result, PyPI and Release URLs, cookbook run and the final state. |
 
 Only `publish` has write access (`contents: write` for the tag and Release,
@@ -89,21 +90,35 @@ Only `publish` has write access (`contents: write` for the tag and Release,
 
 #### Cookbook verification
 
-`verify-cookbook` implements the release verification contract of
-[cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/CONTRIBUTING.md):
-it sends `repository_dispatch` `upstream-released` with
-`request_id = sqlalchemy-cubrid-vX.Y.Z-<run id>-<run attempt>`, finds the cookbook run
-whose name contains `[request_id=<id>]`, and requires the run conclusion
-`success` **and** the `release-verification-<id>` artifact reporting
-`status: success` with `installed_version == X.Y.Z`. A timeout is a failure.
+`verify-cookbook` uses the release verification contract of
+[cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/CONTRIBUTING.md)
+("Calling the smoke test from a release workflow"):
 
-The dispatch needs the `COOKBOOK_DISPATCH_TOKEN` secret (a token that may send
-repository dispatches to the cookbook repository,
-cubrid-lab/cubrid-cookbook-python#37). Reading the cookbook runs uses the
-workflow's own `GITHUB_TOKEN`. **Without the secret the verification is
-"incomplete"**: nothing is dispatched, the job fails, and the summary says
-`published; post-release verification incomplete`. It is never reported as
-verified.
+```yaml
+uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@<40-hex cookbook main commit> # main
+with:
+  package: sqlalchemy-cubrid
+  version: X.Y.Z
+  request_id: sqlalchemy-cubrid-vX.Y.Z-<run id>-<run attempt>
+```
+
+The cookbook jobs (`Cookbook release verification / Smoke Tests (CUBRID 11.2)`,
+`… (CUBRID 11.4)` and `… / Release verification report`) run as jobs of the
+release run with its own `GITHUB_TOKEN`: the calling job grants only
+`contents: read`, and **no token, secret or polling** is involved. They install
+exactly `sqlalchemy-cubrid==X.Y.Z` from PyPI (with a bounded retry for publication
+delay, never a fallback to the latest release) and upload the report artifact
+`release-verification-<request_id>` to the release run. The called workflow's
+outputs `status`, `requested_version`, `installed_version` and `artifact` are
+checked by `require-cookbook` and shown in the summary. A failed or cancelled
+called workflow is a failed verification.
+
+The pin is a full commit SHA of the cookbook's `main` branch. Dependabot
+(`github-actions` ecosystem) updates it: the cookbook's version tags do not
+contain the pinned commit, so Dependabot proposes the newest `main` commit.
+To bump it by hand, replace the SHA with the current
+`gh api repos/cubrid-lab/cubrid-cookbook-python/commits/main --jq .sha` and keep
+the `# main` comment.
 
 #### Final states in the summary
 
@@ -113,8 +128,7 @@ verified.
 | `failed before publish in <job> …` | `consistency`, `matrix` or `build` failed. No tag, no Release, no upload. |
 | `publish failure; … may be partial` | Failed inside `publish`; see recovery below. |
 | `published and verified` | Done. |
-| `published; post-release verification failed` | On PyPI, but the cookbook run or its report failed. |
-| `published; post-release verification incomplete` | On PyPI; `COOKBOOK_DISPATCH_TOKEN` is missing. |
+| `published; post-release verification failed` | On PyPI, but the called cookbook workflow failed or was cancelled, or its outputs do not report `status == success` with `installed_version == X.Y.Z`. |
 | `dry run …` / `verification only …` | Recovery dispatch results (below). |
 
 ## Failure and recovery
@@ -125,7 +139,7 @@ verified.
 | `consistency`, `matrix` or `build` failed | Nothing published; no tag, no Release. | Transient (flaky lane, runner error): `gh run rerun <run-id> --failed`. Real defect at that commit: `X.Y.Z` stays unpublished. Fix it in a normal PR (no version change, so no release), then prepare `X.Y.(Z+1)`; in that release PR fold the unpublished `## [X.Y.Z]` entries into the new section. A skipped version number on PyPI is harmless. |
 | `publish` failed (tag/Release/PyPI error, partial upload) | The tag and a draft Release may exist; PyPI may hold some files. | `gh run rerun <run-id> --failed` of the **same** run. It reuses the verified artifact, accepts the tag at the same SHA, reuses the draft Release, and the duplicate guard drops files PyPI already serves byte for byte. |
 | Same version rebuilt (new run instead of rerun) | The rebuild's bytes differ from files already on PyPI. | The guard fails on the hash mismatch, by design. Use `rerun --failed` within the 14-day artifact retention; otherwise treat it as a broken release. |
-| `verify-cookbook` failed or incomplete | **Published**; the verification failed or was not requested. | Fix the cause (for example add `COOKBOOK_DISPATCH_TOKEN`), then `gh run rerun <run-id> --failed` re-runs only the verification (a new `request_id` per attempt), or use the `verify-only` dispatch below. Never republish. |
+| `verify-cookbook` or `require-cookbook` failed | **Published**; the cookbook verification failed, was cancelled or did not start. | Fix the cause. If the cookbook call itself (`verify-cookbook`) failed or was cancelled, `gh run rerun <run-id> --failed` re-runs it with a new `request_id` (a new run attempt). If the call succeeded but `require-cookbook` rejected its outputs, `--failed` only re-runs that gate against the same outputs; in that case, or if the call never started, use the `verify-only` dispatch below, which requests a new cookbook run. Never republish. |
 | Broken release on PyPI | Versions are immutable. | Yank it on PyPI (project settings → Releases → Yank) and release `X.Y.(Z+1)` through a new release PR. Never delete a version or move a tag. |
 
 The duplicate guard (`scripts/pypi_duplicate_guard.py`) reads
@@ -151,24 +165,13 @@ creates a new version, never moves a tag and never deletes anything.
 | `action` | Allowed when | Runs |
 | --- | --- | --- |
 | `resume` | Dispatched from `main`; tag `vX.Y.Z` exists; its commit is on `main`; `__version__` and a dated CHANGELOG section at that commit equal `X.Y.Z`. | consistency → matrix → build → publish → verify at the tag commit (the Hypothesis fuzz pass runs only when the tag commit is `main`'s head, because its shared workflow checks out the dispatched commit). For an interrupted release whose run can no longer be rerun (for example the artifacts expired before anything reached PyPI). A rebuilt file that differs from one already on PyPI fails the guard. |
-| `verify-only` | Same conditions as `resume`. | Only `verify-cookbook` (and `summary`) for the already-published version. Optional `request_id` waits for an existing cookbook request instead of dispatching one. |
-| `dry-run` | Any branch; `X.Y.Z` must equal `__version__` at the dispatched commit and have a dated CHANGELOG section. | consistency → matrix → build → verify-cookbook, **no** tag, Release or upload. The cookbook step verifies the already-published `X.Y.Z`. |
+| `verify-only` | Same conditions as `resume`. | Only `verify-cookbook`, `require-cookbook` and `summary` for the already-published version, through the same reusable cookbook workflow. |
+| `dry-run` | Any branch; `X.Y.Z` must equal `__version__` at the dispatched commit and have a dated CHANGELOG section. | consistency → matrix → build → verify-cookbook → require-cookbook, **no** tag, Release or upload. The cookbook jobs verify the already-published `X.Y.Z`. |
 
 ```bash
 gh workflow run release.yml -f action=resume -f version=X.Y.Z
 gh workflow run release.yml -f action=verify-only -f version=X.Y.Z
 gh workflow run release.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
-# wait for a cookbook run requested elsewhere (e.g. a manual smoke-test run):
-gh workflow run release.yml -f action=verify-only -f version=X.Y.Z -f request_id=<id>
-```
-
-If the dispatch token is unavailable, a maintainer can request the cookbook
-verification by hand and let `verify-only` wait for it:
-
-```bash
-gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python \
-  -f package=sqlalchemy-cubrid -f version=X.Y.Z -f request_id=sqlalchemy-cubrid-vX.Y.Z-manual-1
-gh workflow run release.yml -f action=verify-only -f version=X.Y.Z -f request_id=sqlalchemy-cubrid-vX.Y.Z-manual-1
 ```
 
 ## Repository settings this relies on
@@ -179,6 +182,7 @@ gh workflow run release.yml -f action=verify-only -f version=X.Y.Z -f request_id
 - Environment `pypi`: deployment branches limited to `main`; PyPI Trusted
   Publisher for `cubrid-lab/sqlalchemy-cubrid`, workflow `release.yml`, environment
   `pypi` (<https://pypi.org/manage/project/sqlalchemy-cubrid/settings/publishing/>).
-- Secret `COOKBOOK_DISPATCH_TOKEN` for the cookbook verification.
+- No secret for the cookbook verification: the smoke test runs as a reusable
+  workflow inside the release run.
 - No tag protection rule that blocks `github-actions[bot]` from creating
   `v*` tags.

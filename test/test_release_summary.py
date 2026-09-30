@@ -52,11 +52,12 @@ def needs(mode: str = "push", **results: Any) -> dict[str, Any]:
             "result": "success",
             "outputs": {
                 "status": "success",
-                "reason": "cookbook installed pycubrid==1.9.0 from PyPI",
-                "request_id": "pycubrid-v1.9.0-1-1",
-                "run_url": "https://github.com/cubrid-lab/cubrid-cookbook-python/actions/runs/9",
+                "requested_version": "1.9.0",
+                "installed_version": "1.9.0",
+                "artifact": "release-verification-pycubrid-v1.9.0-1-1",
             },
         },
+        "require-cookbook": {"result": "success", "outputs": {}},
     }
     for name, value in results.items():
         name = name.replace("_", "-")
@@ -67,8 +68,16 @@ def needs(mode: str = "push", **results: Any) -> dict[str, Any]:
     return data
 
 
-def verify(status: str, result: str = "failure", reason: str = "") -> dict[str, Any]:
-    return {"result": result, "outputs": {"status": status, "reason": reason, "run_url": ""}}
+def verify(
+    status: str, result: str = "failure", requested: str = "1.9.0", installed: str = ""
+) -> dict[str, Any]:
+    outputs = {
+        "status": status,
+        "requested_version": requested,
+        "installed_version": installed,
+        "artifact": "release-verification-pycubrid-v1.9.0-1-1",
+    }
+    return {"result": result, "outputs": outputs}
 
 
 def test_ordinary_merge_reports_no_release() -> None:
@@ -82,7 +91,14 @@ def test_ordinary_merge_reports_no_release() -> None:
         },
         **{
             name: {"result": "skipped", "outputs": {}}
-            for name in ("consistency", "matrix", "build", "publish", "verify-cookbook")
+            for name in (
+                "consistency",
+                "matrix",
+                "build",
+                "publish",
+                "verify-cookbook",
+                "require-cookbook",
+            )
         },
     }
     assert (
@@ -96,29 +112,85 @@ def test_published_and_verified() -> None:
 
 
 @pytest.mark.parametrize(
-    ("verify_job", "expected"),
+    "verify_job",
     [
-        (
-            verify("failure", reason="cookbook run concluded failure"),
-            "published; post-release verification failed",
+        pytest.param(verify("failure"), id="report-failure"),
+        pytest.param(verify("failure", installed="1.9.0"), id="status-failure"),
+        pytest.param(
+            verify("success", result="success", installed="1.8.0"), id="installed-differs"
         ),
-        (
-            verify("incomplete", reason="COOKBOOK_DISPATCH_TOKEN is not configured"),
-            "published; post-release verification incomplete",
+        pytest.param(verify("success", result="success", installed=""), id="installed-empty"),
+        pytest.param(
+            verify("success", result="success", requested="1.8.0", installed="1.8.0"),
+            id="requested-is-not-the-release",
         ),
-        ({"result": "failure", "outputs": {}}, "published; post-release verification failed"),
-        ({"result": "cancelled", "outputs": {}}, "published; post-release verification failed"),
+        pytest.param(verify("success", result="failure", installed="1.9.0"), id="call-failed"),
+        pytest.param({"result": "failure", "outputs": {}}, id="failed-without-outputs"),
+        pytest.param({"result": "cancelled", "outputs": {}}, id="cancelled"),
+        pytest.param({"result": "success", "outputs": {}}, id="success-without-outputs"),
     ],
 )
-def test_post_release_verification_is_never_silently_green(
-    verify_job: dict[str, Any], expected: str
-) -> None:
-    assert summary.final_state(needs(verify_cookbook=verify_job)) == expected
+def test_post_release_verification_is_never_silently_green(verify_job: dict[str, Any]) -> None:
+    data = needs(verify_cookbook=verify_job)
+    assert summary.final_state(data) == "published; post-release verification failed"
+    assert summary.verification(data)[0] == "failure"
+
+
+def test_failed_require_job_is_a_failed_verification() -> None:
+    data = needs(require_cookbook="failure")
+    assert summary.final_state(data) == "published; post-release verification failed"
+    assert "require-cookbook failure" in summary.verification(data)[1]
+
+
+def test_cancelled_call_reason_names_the_called_workflow() -> None:
+    data = needs(verify_cookbook={"result": "cancelled", "outputs": {}})
+    status, reason = summary.verification(data)
+    assert status == "failure"
+    assert "called workflow cancelled" in reason
+
+
+@pytest.mark.parametrize("result", ["skipped", "cancelled", "not run"])
+def test_missing_call_after_publish_is_a_failed_verification(result: str) -> None:
+    missing = {"result": result, "outputs": {}}
+    data = needs(verify_cookbook=missing, require_cookbook="skipped")
+    if result == "not run":
+        del data["verify-cookbook"], data["require-cookbook"]
+    assert summary.final_state(data) == "published; post-release verification failed"
+    status, reason = summary.verification(data)
+    assert status == "failure"
+    assert f"called workflow {result}" in reason
+
+
+def test_missing_call_in_dry_run_and_verify_only_is_a_failure() -> None:
+    skipped = {"verify_cookbook": "skipped", "require_cookbook": "skipped"}
+    assert (
+        summary.final_state(needs("dry-run", **skipped))
+        == "dry run passed; nothing published; cookbook verification failure"
+    )
+    data = needs("verify-only", consistency="skipped", matrix="skipped", build="skipped", **skipped)
+    assert summary.final_state(data) == "verification only of v1.9.0: failure"
+
+
+def test_verification_not_due_is_not_run() -> None:
+    skipped = {"verify_cookbook": "skipped", "require_cookbook": "skipped"}
+    data = needs(build="failure", publish="skipped", **skipped)
+    assert summary.verification(data) == ("not run", "")
+    data = needs(publish="failure", **skipped)
+    assert summary.verification(data) == ("not run", "")
+    data = needs("dry-run", matrix="failure", build="skipped", **skipped)
+    assert summary.verification(data) == ("not run", "")
 
 
 @pytest.mark.parametrize("job", ["consistency", "matrix", "build"])
 def test_failure_before_publish_says_nothing_was_published(job: str) -> None:
-    data = needs(**{job: "failure", "publish": "skipped", "verify_cookbook": "skipped"})
+    data = needs(
+        **{
+            job: "failure",
+            "publish": "skipped",
+            "verify_cookbook": "skipped",
+            "require_cookbook": "skipped",
+        }
+    )
     state = summary.final_state(data)
     assert (
         state
@@ -127,7 +199,7 @@ def test_failure_before_publish_says_nothing_was_published(job: str) -> None:
 
 
 def test_publish_failure_points_to_rerun_failed() -> None:
-    data = needs(publish="failure", verify_cookbook="skipped")
+    data = needs(publish="failure", verify_cookbook="skipped", require_cookbook="skipped")
     assert "gh run rerun <run-id> --failed" in summary.final_state(data)
 
 
@@ -136,16 +208,28 @@ def test_detect_failure() -> None:
 
 
 def test_dry_run_and_verify_only() -> None:
-    data = needs("dry-run", verify_cookbook=verify("incomplete"))
+    assert (
+        summary.final_state(needs("dry-run"))
+        == "dry run passed; nothing published; cookbook verification success"
+    )
+    data = needs("dry-run", verify_cookbook=verify("failure"))
     assert (
         summary.final_state(data)
-        == "dry run passed; nothing published; cookbook verification incomplete"
+        == "dry run passed; nothing published; cookbook verification failure"
     )
     assert summary.final_state(needs("dry-run", matrix="failure")).startswith(
         "dry run failed in matrix"
     )
     data = needs("verify-only", consistency="skipped", matrix="skipped", build="skipped")
     assert summary.final_state(data) == "verification only of v1.9.0: success"
+    data = needs(
+        "verify-only",
+        consistency="skipped",
+        matrix="skipped",
+        build="skipped",
+        verify_cookbook={"result": "cancelled", "outputs": {}},
+    )
+    assert summary.final_state(data) == "verification only of v1.9.0: failure"
 
 
 def test_table_lists_every_required_field() -> None:
@@ -163,7 +247,8 @@ def test_table_lists_every_required_field() -> None:
         f"`pycubrid-1.9.0-py3-none-any.whl` `{'1' * 64}`",
         "| PyPI | https://pypi.org/project/pycubrid/1.9.0/ |",
         "| GitHub Release | https://github.com/cubrid-lab/pycubrid/releases/tag/v1.9.0 |",
-        "success ([run](https://github.com/cubrid-lab/cubrid-cookbook-python/actions/runs/9))",
+        "| Cookbook verification | success: installed 1.9.0 == requested 1.9.0 "
+        "(report artifact `release-verification-pycubrid-v1.9.0-1-1`) |",
     ):
         assert expected in text, expected
 
@@ -175,8 +260,8 @@ def test_unpublished_runs_show_no_pypi_links() -> None:
 
 
 def test_table_cells_cannot_break_the_table() -> None:
-    data = needs(verify_cookbook=verify("failure", reason="a | b"))
-    assert "a / b" in summary.render(data, {})
+    data = needs(verify_cookbook=verify("failure", installed="a | b"))
+    assert "installed a / b" in summary.render(data, {})
 
 
 def test_main_writes_the_step_summary(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
