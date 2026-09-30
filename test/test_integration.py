@@ -1331,6 +1331,55 @@ class TestReplaceIntegration:
         assert row.name == "Replaced"
         assert row.email == "new@example.com"
 
+    def test_replace_with_prefix_and_insert_into_text(self, engine, metadata):
+        """REPLACE with a prefix still replaces rows and keeps "INSERT INTO" data (#591)."""
+        from sqlalchemy_cubrid import replace
+
+        users = metadata.tables["integration_users"]
+        with engine.begin() as conn:
+            conn.execute(users.insert().values(name="PrefixOld", email="old@example.com"))
+            row_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
+
+            stmt = (
+                replace(users)
+                .prefix_with("/* INSERT INTO audit */")
+                .values(id=row_id, name="INSERT INTO", email=sa.literal_column("'INSERT INTO'"))
+            )
+            assert str(stmt.compile(dialect=engine.dialect)).startswith(
+                "REPLACE /* INSERT INTO audit */ INTO"
+            )
+            conn.execute(stmt)
+
+        with engine.connect() as conn:
+            rows = conn.execute(users.select().where(users.c.id == row_id)).fetchall()
+        assert len(rows) == 1
+        assert rows[0].name == "INSERT INTO"
+        assert rows[0].email == "INSERT INTO"
+
+    def test_replace_executemany_with_prefix(self, engine, metadata):
+        """executemany REPLACE with a prefix replaces every conflicting row (#591)."""
+        from sqlalchemy_cubrid import replace
+
+        users = metadata.tables["integration_users"]
+        with engine.begin() as conn:
+            ids = []
+            for name in ("ManyOld1", "ManyOld2"):
+                conn.execute(users.insert().values(name=name, email="old@example.com"))
+                ids.append(conn.execute(text("SELECT LAST_INSERT_ID()")).scalar())
+
+            conn.execute(
+                replace(users).prefix_with("/* c */"),
+                [{"id": i, "name": "INSERT INTO", "email": f"new{i}@example.com"} for i in ids],
+            )
+
+        with engine.connect() as conn:
+            rows = conn.execute(
+                users.select().where(users.c.id.in_(ids)).order_by(users.c.id)
+            ).fetchall()
+        assert [(r.id, r.name, r.email) for r in rows] == [
+            (i, "INSERT INTO", f"new{i}@example.com") for i in ids
+        ]
+
 
 class TestRecursiveCTEIntegration:
     def test_recursive_cte(self, engine, metadata):
