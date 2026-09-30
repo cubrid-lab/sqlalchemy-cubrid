@@ -683,7 +683,7 @@ class TestShowCreateTableFailures:
             Column(
                 "pid",
                 Integer,
-                # CUBRID reports the default actions as RESTRICT; name them so
+                # CUBRID reports the default actions as RESTRICT (#597); name them so
                 # the comparison is about the constraint, not its options.
                 ForeignKey(
                     f"{cls.PARENT}.id",
