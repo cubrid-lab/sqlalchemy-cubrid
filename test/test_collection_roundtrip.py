@@ -26,7 +26,16 @@ from typing import Any
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
-from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
+from sqlalchemy import (
+    Column,
+    Integer,
+    MetaData,
+    String,
+    Table,
+    bindparam,
+    create_engine,
+    select,
+)
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
@@ -162,6 +171,36 @@ def _insert_params(row_id: int, bound: dict[str, Any]) -> dict[str, Any]:
     return {"id": row_id, **{name: bound.get(name) for name in _COLUMNS}}
 
 
+def _many_params() -> list[dict[str, Any]]:
+    params = [_insert_params(i, bound) for i, (bound, _) in enumerate(_ROWS.values())]
+    params.append(_insert_params(len(params), {}))
+    return params
+
+
+_MANY_EXPECTED = [_expected(read) for _, read in _ROWS.values()] + [dict.fromkeys(_COLUMNS)]
+
+# A list of parameter sets for a Core INSERT goes through SQLAlchemy's
+# insertmanyvalues (one multi-row INSERT, cursor.execute()) unless the engine
+# turns it off; then, like a multi-row UPDATE, it uses cursor.executemany().
+_INSERT_PATHS = [
+    pytest.param(True, id="insertmanyvalues"),
+    pytest.param(False, id="dbapi-executemany"),
+]
+
+
+def _spy_executemany(dialect: Any, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Record the number of parameter sets of every ``do_executemany`` call."""
+    calls: list[int] = []
+    original = dialect.do_executemany
+
+    def spy(cursor: Any, statement: Any, parameters: Any, context: Any = None) -> Any:
+        calls.append(len(parameters))
+        return original(cursor, statement, parameters, context)
+
+    monkeypatch.setattr(dialect, "do_executemany", spy)
+    return calls
+
+
 @pytest.fixture(scope="module")
 def engine() -> Iterator[Engine]:
     url = _sync_url()
@@ -211,18 +250,53 @@ class TestCoreRoundTrip:
             row = conn.execute(select(core_table)).one()
         assert _normalized(row) == dict.fromkeys(_COLUMNS)
 
-    def test_executemany(
-        self, request: pytest.FixtureRequest, engine: Engine, core_table: Table
+    @pytest.mark.parametrize("insertmanyvalues", _INSERT_PATHS)
+    def test_insert_many(
+        self,
+        request: pytest.FixtureRequest,
+        monkeypatch: pytest.MonkeyPatch,
+        core_table: Table,
+        insertmanyvalues: bool,
     ) -> None:
         _xfail_without_typed_collections(request)
-        params = [_insert_params(i, bound) for i, (bound, _) in enumerate(_ROWS.values())]
-        params.append(_insert_params(len(params), {}))
+        eng = create_engine(_decoding(_sync_url()), use_insertmanyvalues=insertmanyvalues)
+        try:
+            calls = _spy_executemany(eng.dialect, monkeypatch)
+            params = _many_params()
+            with eng.begin() as conn:
+                conn.execute(core_table.insert(), params)
+            with eng.connect() as conn:
+                rows = conn.execute(select(core_table).order_by(core_table.c.id)).all()
+        finally:
+            eng.dispose()
+        assert calls == ([] if insertmanyvalues else [len(params)])
+        assert [_normalized(row) for row in rows] == _MANY_EXPECTED
+
+    def test_update_executemany(
+        self,
+        request: pytest.FixtureRequest,
+        monkeypatch: pytest.MonkeyPatch,
+        engine: Engine,
+        core_table: Table,
+    ) -> None:
+        _xfail_without_typed_collections(request)
+        params = _many_params()
         with engine.begin() as conn:
-            conn.execute(core_table.insert(), params)
+            conn.execute(core_table.insert(), [{"id": p["id"]} for p in params])
+        calls = _spy_executemany(engine.dialect, monkeypatch)
+        update = (
+            core_table.update()
+            .where(core_table.c.id == bindparam("row_id"))
+            .values({name: bindparam(name) for name in _COLUMNS})
+        )
+        with engine.begin() as conn:
+            conn.execute(
+                update, [{"row_id": p["id"], **{n: p[n] for n in _COLUMNS}} for p in params]
+            )
         with engine.connect() as conn:
             rows = conn.execute(select(core_table).order_by(core_table.c.id)).all()
-        expected = [_expected(read) for _, read in _ROWS.values()] + [dict.fromkeys(_COLUMNS)]
-        assert [_normalized(row) for row in rows] == expected
+        assert calls == [len(params)]
+        assert [_normalized(row) for row in rows] == _MANY_EXPECTED
 
     def test_where_predicates(
         self, request: pytest.FixtureRequest, engine: Engine, core_table: Table
@@ -351,19 +425,28 @@ async def async_engine() -> AsyncIterator[AsyncEngine]:
 
 @pytest.mark.asyncio
 class TestAsyncRoundTrip:
-    async def test_core_executemany(
-        self, request: pytest.FixtureRequest, async_engine: AsyncEngine
+    @pytest.mark.parametrize("insertmanyvalues", _INSERT_PATHS)
+    async def test_core_execute_and_insert_many(
+        self,
+        request: pytest.FixtureRequest,
+        monkeypatch: pytest.MonkeyPatch,
+        async_engine: AsyncEngine,
+        insertmanyvalues: bool,
     ) -> None:
         _xfail_without_typed_collections(request)
-        params = [_insert_params(i, bound) for i, (bound, _) in enumerate(_ROWS.values())]
-        params.append(_insert_params(len(params), {}))
-        async with async_engine.begin() as conn:
-            await conn.execute(_core.insert(), params[0])
-            await conn.execute(_core.insert(), params[1:])
-        async with async_engine.connect() as conn:
-            rows = (await conn.execute(select(_core).order_by(_core.c.id))).all()
-        expected = [_expected(read) for _, read in _ROWS.values()] + [dict.fromkeys(_COLUMNS)]
-        assert [_normalized(row) for row in rows] == expected
+        eng = create_async_engine(_async_url(), use_insertmanyvalues=insertmanyvalues)
+        try:
+            calls = _spy_executemany(eng.sync_engine.dialect, monkeypatch)
+            params = _many_params()
+            async with eng.begin() as conn:
+                await conn.execute(_core.insert(), params[0])
+                await conn.execute(_core.insert(), params[1:])
+            async with eng.connect() as conn:
+                rows = (await conn.execute(select(_core).order_by(_core.c.id))).all()
+        finally:
+            await eng.dispose()
+        assert calls == ([] if insertmanyvalues else [len(params) - 1])
+        assert [_normalized(row) for row in rows] == _MANY_EXPECTED
 
     async def test_core_null_collections(self, async_engine: AsyncEngine) -> None:
         async with async_engine.begin() as conn:
