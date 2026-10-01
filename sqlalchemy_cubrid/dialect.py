@@ -951,8 +951,12 @@ class CubridDialect(default.DefaultDialect):
 
         Primary path: query the public ``db_index`` catalog view for unique
         indexes (excluding PK and FK auto-indexes), then resolve column
-        names via ``SHOW INDEXES``. When it finds none, parse ``SHOW CREATE
-        TABLE`` DDL output via regex. A failing catalog query raises (#549).
+        names via ``SHOW INDEXES``. ``db_index`` lists a table's indexes
+        whenever ``db_class`` lists the table, so when it lists some index of
+        the table but no unique one, the table has none and ``SHOW CREATE
+        TABLE`` is not read (#610). Only when it lists no index of the table
+        at all is ``SHOW CREATE TABLE`` DDL output parsed via regex. A failing
+        catalog query raises (#549).
 
         Raises :class:`NoSuchTableError` when *table_name* does not exist; a
         view has no unique constraints.
@@ -967,7 +971,7 @@ class CubridDialect(default.DefaultDialect):
 
         # Primary path: system catalog + SHOW INDEXES
         uqs = self._get_unique_constraints_from_catalog(connection, table_name, **kw)
-        if uqs:
+        if uqs is not None:
             return uqs
 
         # Fallback: DDL regex (legacy path)
@@ -978,26 +982,32 @@ class CubridDialect(default.DefaultDialect):
         connection: Any,
         table_name: str,
         **kw: Any,
-    ) -> list[ReflectedUniqueConstraint]:
+    ) -> list[ReflectedUniqueConstraint] | None:
         """Query db_index + SHOW INDEXES for UNIQUE constraints.
 
         Uses the same two-query pattern as ``get_indexes()``: first fetch
-        unique index names from ``db_index`` (filtering out PK and FK
-        auto-indexes), then resolve column names from ``SHOW INDEXES``.
+        the table's indexes from ``db_index`` and keep the unique ones that
+        are not PK or FK auto-indexes, then resolve column names from
+        ``SHOW INDEXES``. Returns ``None`` when ``db_index`` lists no index
+        of the table at all, so the caller can fall back to the DDL.
         """
         # Step 1: get unique index names (excluding PK and FK auto-indexes)
         unique_names: set[str] = set()
         class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
-        name_result = connection.execute(
+        flag_result = connection.execute(
             text(
-                "SELECT index_name FROM db_index WHERE "  # nosec B608 - constant clause
-                + class_filter
-                + " AND is_unique = 'YES' AND is_primary_key = 'NO' AND is_foreign_key = 'NO'"
+                "SELECT index_name, is_unique, is_primary_key, is_foreign_key "  # nosec B608 - constant clause
+                "FROM db_index WHERE " + class_filter
             ),
             filter_params,
         )
-        for row in name_result:
-            unique_names.add(row[0])
+        listed = False
+        for row in flag_result:
+            listed = True
+            if row[1] == "YES" and row[2] == "NO" and row[3] == "NO":
+                unique_names.add(row[0])
+        if not listed:
+            return None
         if not unique_names:
             return []
 
