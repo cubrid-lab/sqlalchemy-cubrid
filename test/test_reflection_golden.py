@@ -84,11 +84,17 @@ CREATE TABLE [users] (
             return _Result(self._show_indexes)
         if sql.startswith("SHOW CREATE TABLE"):
             return _Result(self._show_create)
-        # The UNIQUE-constraint catalog query filters is_unique = 'YES'.
-        # Dispatch it separately from the general db_index flag query
-        # used by get_indexes() so the mock returns pre-filtered results.
-        if "is_unique = 'YES'" in sql:
-            return _Result(self._db_unique_names)
+        # The UNIQUE-constraint catalog query reads is_unique as well as the
+        # PK / FK flags (#610). Dispatch it separately from the general
+        # db_index flag query used by get_indexes().
+        if "SELECT index_name, is_unique," in sql:
+            unique_names = {row[0] for row in self._db_unique_names}
+            return _Result(
+                [
+                    (name, "YES" if name in unique_names or pk == "YES" else "NO", pk, fk)
+                    for name, pk, fk in self._db_index
+                ]
+            )
         # The PK catalog query joins db_index_key and filters is_primary_key
         # = 'YES', returning (key_attr_name, index_name) rows in key order (#426).
         if "is_primary_key = 'YES'" in sql:
@@ -228,8 +234,15 @@ CREATE TABLE [items] (
             )
         if "is_primary_key = 'YES'" in sql:
             return _Result([("tenant_id", "pk_items"), ("item_id", "pk_items")])
-        if "is_unique = 'YES'" in sql:
-            return _Result([("uq_items_tenant_sku",)])
+        if "SELECT index_name, is_unique," in sql:
+            return _Result(
+                [
+                    ("pk_items", "YES", "YES", "NO"),
+                    ("uq_items_tenant_sku", "YES", "NO", "NO"),
+                    ("idx_items_category", "NO", "NO", "NO"),
+                    ("fk_items_tenant", "NO", "NO", "YES"),
+                ]
+            )
         if "FROM db_index" in sql:
             return _Result(
                 [

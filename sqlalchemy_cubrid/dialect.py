@@ -157,7 +157,9 @@ def _is_unknown_class_error(error: BaseException) -> bool:
 
 # Pre-compiled patterns for column type parsing in get_columns().
 # Avoids re-compilation on every reflection call.
-_RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
+# A parameter list of digits, with optional whitespace around each comma, so
+# ``NUMERIC(10, 2)`` is looked up as ``NUMERIC`` like ``NUMERIC(10,2)`` (#609).
+_RE_TYPE_PARAMS = re.compile(r"\(\d+(?:\s*,\s*\d+)*\)")
 _RE_ENUM = re.compile(r"^ENUM\s*\((.*)\)\s*$", re.IGNORECASE)
 
 
@@ -205,7 +207,7 @@ def _split_collection_members(inner: str) -> list[str]:
     return parts
 
 
-_RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:,\s*(\d+))?\)")
+_RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:\s*,\s*(\d+))?\)")
 
 # CUBRID's ``SHOW CREATE TABLE`` emits foreign-key clauses such as::
 #
@@ -955,8 +957,14 @@ class CubridDialect(default.DefaultDialect):
 
         Primary path: query the public ``db_index`` catalog view for unique
         indexes (excluding PK and FK auto-indexes), then resolve column
-        names via ``SHOW INDEXES``. When it finds none, parse ``SHOW CREATE
-        TABLE`` DDL output via regex. A failing catalog query raises (#549).
+        names via ``SHOW INDEXES``. ``db_index`` lists a table's indexes
+        whenever ``db_class`` lists the table, so when it lists some index of
+        the table but no unique one, the table has none and ``SHOW CREATE
+        TABLE`` is not read (#610). ``SHOW CREATE TABLE`` DDL output is parsed
+        via regex only when the catalog lists no index of the table at all, or
+        (CUBRID 11.2+) when the name resolves to another owner's class, which
+        keeps raising :class:`NoSuchTableError` there. A failing catalog query
+        raises (#549).
 
         Raises :class:`NoSuchTableError` when *table_name* does not exist; a
         view has no unique constraints.
@@ -971,7 +979,7 @@ class CubridDialect(default.DefaultDialect):
 
         # Primary path: system catalog + SHOW INDEXES
         uqs = self._get_unique_constraints_from_catalog(connection, table_name, **kw)
-        if uqs:
+        if uqs is not None:
             return uqs
 
         # Fallback: DDL regex (legacy path)
@@ -982,28 +990,42 @@ class CubridDialect(default.DefaultDialect):
         connection: Any,
         table_name: str,
         **kw: Any,
-    ) -> list[ReflectedUniqueConstraint]:
+    ) -> list[ReflectedUniqueConstraint] | None:
         """Query db_index + SHOW INDEXES for UNIQUE constraints.
 
         Uses the same two-query pattern as ``get_indexes()``: first fetch
-        unique index names from ``db_index`` (filtering out PK and FK
-        auto-indexes), then resolve column names from ``SHOW INDEXES``.
+        the table's indexes from ``db_index`` and keep the unique ones that
+        are not PK or FK auto-indexes, then resolve column names from
+        ``SHOW INDEXES``.
+
+        Returns ``None`` (the caller then parses the DDL) when it finds no
+        unique index and cannot vouch for the result: when ``db_index`` lists
+        no index of the table at all, or, since CUBRID 11.2, when the class
+        the name resolves to is another owner's. ``SHOW ...`` resolves an
+        unqualified name in the current user's schema, so for that class the
+        DDL path keeps raising :class:`NoSuchTableError` as before #610.
         """
         # Step 1: get unique index names (excluding PK and FK auto-indexes)
         unique_names: set[str] = set()
         class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
-        name_result = connection.execute(
+        # The filter names the owner only on 11.2+, where names are per owner.
+        owner = filter_params.get("owner")
+        flag_result = connection.execute(
             text(
-                "SELECT index_name FROM db_index WHERE "  # nosec B608 - constant clause
+                "SELECT index_name, is_unique, is_primary_key, is_foreign_key"  # nosec B608 - constant clause
+                + (", CURRENT_USER" if owner is not None else "")
+                + " FROM db_index WHERE "
                 + class_filter
-                + " AND is_unique = 'YES' AND is_primary_key = 'NO' AND is_foreign_key = 'NO'"
             ),
             filter_params,
         )
-        for row in name_result:
-            unique_names.add(row[0])
+        verified = False
+        for row in flag_result:
+            verified = owner is None or row[4] == owner
+            if row[1] == "YES" and row[2] == "NO" and row[3] == "NO":
+                unique_names.add(row[0])
         if not unique_names:
-            return []
+            return [] if verified else None
 
         # Step 2: resolve column names from SHOW INDEXES
         quoted = self.identifier_preparer.quote_identifier(table_name)

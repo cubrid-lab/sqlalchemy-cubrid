@@ -1429,11 +1429,13 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        # First execute: db_index returns unique index names (excluding PK/FK)
+        # First execute: db_index returns each index with its unique, PK and
+        # FK flags; only unique non-PK, non-FK ones are kept (#610).
         # Second execute: SHOW INDEXES returns column details
         unique_name_rows = [
-            ("uq_users_email",),
-            ("uq_users_name",),
+            ("pk_users", "YES", "YES", "NO"),
+            ("uq_users_email", "YES", "NO", "NO"),
+            ("uq_users_name", "YES", "NO", "NO"),
         ]
         show_indexes_rows = [
             (None, 0, "uq_users_email", 1, "email"),
@@ -1463,7 +1465,7 @@ class TestReflectionMethods:
         ]
 
     def test_get_unique_constraints_catalog_empty_falls_back_to_ddl(self):
-        """When db_index returns no unique indexes, fall back to DDL regex."""
+        """When db_index lists no index of the table, fall back to DDL regex."""
         dialect = CubridDialect()
 
         ddl = (
@@ -1477,7 +1479,7 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        # First execute: db_index returns empty list (no unique indexes found)
+        # First execute: db_index lists no index of the table at all
         # Second execute: SHOW CREATE TABLE for DDL fallback
         ddl_result = MagicMock()
         ddl_result.first.return_value = ("users", ddl)
@@ -1503,7 +1505,7 @@ class TestReflectionMethods:
         connection.dialect_options = {}
         connection.execute.side_effect = [
             _class_type_result("CLASS"),
-            [("uq_users_email",)],
+            [("uq_users_email", "YES", "NO", "NO")],
             Exception('Unknown class "dba.users"'),
         ]
 
@@ -1515,7 +1517,7 @@ class TestReflectionMethods:
         other_error.dialect_options = {}
         other_error.execute.side_effect = [
             _class_type_result("CLASS"),
-            [("uq_users_email",)],
+            [("uq_users_email", "YES", "NO", "NO")],
             RuntimeError("connection reset"),
         ]
         with pytest.raises(RuntimeError, match="connection reset"):

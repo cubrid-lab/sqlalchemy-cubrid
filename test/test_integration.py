@@ -15,10 +15,30 @@ variable ``CUBRID_TEST_URL`` to the connection URL, e.g.::
 Without it they are skipped; with it, an unreachable server errors every
 test instead (the shared gate in ``test/conftest.py``, #593).
 
-Many tests here create tables and database users with fixed names (for
-example ``t583_fresh``, ``alter_it_modify``, ``u543``), so run the module
-against a dedicated database, one run at a time (``make integration`` starts
-a run-owned server).
+The shared ``integration_users`` / ``integration_orders`` tables (#612) are
+created under a random per-process suffix (``_USERS_TABLE`` /
+``_ORDERS_TABLE`` below), so repeated runs and pytest-xdist workers against
+the *same* database never collide on CREATE TABLE or see each other's rows;
+the module-scoped ``metadata`` fixture drops only the tables it created,
+including on a failed ``create_all``. The autouse-everywhere row cleanup this
+module used to run before *every* test (even ones that never touch these
+tables) is gone: ``_clean_tables`` is opt-in via
+``@pytest.mark.usefixtures("_clean_tables")`` on the handful of classes that
+actually read/write ``integration_users`` / ``integration_orders`` across
+test boundaries within the same class.
+
+Many *other* tests here still create tables and database users with fixed
+names (for example ``t583_fresh``, ``alter_it_modify``, ``u543``, ``y_dup``,
+``r549_t``). Most are self-contained: a fixture creates them, the test runs,
+the same fixture drops them, and (per #607) idempotent ``cleanup()`` helpers
+drop any leftover of that exact name before creating it again, so *repeated*
+runs against the same database are safe. They are not necessarily safe to
+run *concurrently* against the same database -- two sessions racing to
+CREATE TABLE/CREATE USER under the same fixed name can still collide -- so
+run the module against a dedicated database one run at a time
+(``make integration`` starts a run-owned server) unless you have verified a
+specific parallel subset yourself (see the notes on ``TestIsDisconnect``
+below for one class that cannot be made parallel-safe at all).
 """
 
 from __future__ import annotations
@@ -141,6 +161,14 @@ def _drop_user_verified(engine, username: str, *, retries: int = 5, delay: float
 # unset and errors them when its server is unreachable (#593).
 pytestmark = pytest.mark.integration
 
+# Run/worker-scoped unique names for the shared users/orders tables (#612):
+# computed once per test *process* at import time, so a plain rerun and each
+# pytest-xdist worker (a separate process) get their own suffix and never
+# collide with another run's tables on the same database.
+_TABLE_SUFFIX = uuid.uuid4().hex[:8]
+_USERS_TABLE = f"integration_users_{_TABLE_SUFFIX}"
+_ORDERS_TABLE = f"integration_orders_{_TABLE_SUFFIX}"
+
 
 @pytest.fixture(scope="module")
 def engine():
@@ -154,7 +182,7 @@ def metadata(engine):
     meta = MetaData()
 
     Table(
-        "integration_users",
+        _USERS_TABLE,
         meta,
         Column("id", Integer, primary_key=True, autoincrement=True),
         Column("name", String(100), nullable=False),
@@ -162,29 +190,44 @@ def metadata(engine):
     )
 
     Table(
-        "integration_orders",
+        _ORDERS_TABLE,
         meta,
         Column("id", Integer, primary_key=True, autoincrement=True),
         Column(
             "user_id",
             Integer,
-            ForeignKey("integration_users.id", ondelete="CASCADE"),
+            ForeignKey(f"{_USERS_TABLE}.id", ondelete="CASCADE"),
             nullable=False,
         ),
         Column("amount", Integer, nullable=False),
     )
 
-    meta.create_all(engine)
+    try:
+        meta.create_all(engine)
+    except Exception:
+        # Own cleanup of a failed setup too (#612): don't leak a
+        # partially-created, run-owned table under a suffix no later run
+        # will ever reuse.
+        meta.drop_all(engine, checkfirst=True)
+        raise
     yield meta
     meta.drop_all(engine)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _clean_tables(engine, metadata):
-    """Truncate tables before each test."""
+    """Truncate the shared users/orders tables before each test.
+
+    Not autouse (#612): only the classes that actually read/write
+    ``integration_users`` / ``integration_orders`` across test boundaries
+    opt in, via ``@pytest.mark.usefixtures("_clean_tables")`` on the class.
+    Every other test in this module (reflection, isolation level, pool,
+    KILL QUERY, the per-class fixed-name fixtures, ...) never touches these
+    two tables and no longer pays for -- or is coupled to -- their cleanup.
+    """
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM integration_orders"))
-        conn.execute(text("DELETE FROM integration_users"))
+        conn.execute(text(f"DELETE FROM {_ORDERS_TABLE}"))
+        conn.execute(text(f"DELETE FROM {_USERS_TABLE}"))
     yield
 
 
@@ -330,10 +373,11 @@ class TestBooleanIsIntegration:
         assert ids == expected_ids
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestDDLAndDML:
     def test_insert_and_select(self, engine, metadata):
         """INSERT rows and SELECT them back."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Alice", email="alice@example.com"))
             conn.execute(users.insert().values(name="Bob", email="bob@example.com"))
@@ -346,7 +390,7 @@ class TestDDLAndDML:
 
     def test_auto_increment(self, engine, metadata):
         """AUTO_INCREMENT generates sequential IDs."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="User1"))
             conn.execute(users.insert().values(name="User2"))
@@ -363,7 +407,7 @@ class TestDDLAndDML:
 
     def test_update(self, engine, metadata):
         """UPDATE modifies rows."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Charlie", email="old@example.com"))
             conn.execute(
@@ -376,21 +420,21 @@ class TestDDLAndDML:
 
     def test_delete(self, engine, metadata):
         """DELETE removes rows."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Ephemeral"))
             conn.execute(users.delete().where(users.c.name == "Ephemeral"))
 
         with engine.connect() as conn:
             count = conn.execute(
-                text("SELECT COUNT(*) FROM integration_users WHERE name = 'Ephemeral'")
+                text(f"SELECT COUNT(*) FROM {_USERS_TABLE} WHERE name = 'Ephemeral'")
             ).scalar()
         assert count == 0
 
     def test_join(self, engine, metadata):
         """JOIN between two tables."""
-        users = metadata.tables["integration_users"]
-        orders = metadata.tables["integration_orders"]
+        users = metadata.tables[_USERS_TABLE]
+        orders = metadata.tables[_ORDERS_TABLE]
 
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Dave"))
@@ -412,7 +456,7 @@ class TestDDLAndDML:
 
     def test_limit_offset(self, engine, metadata):
         """LIMIT and OFFSET work correctly."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             for i in range(5):
                 conn.execute(users.insert().values(name=f"User{i}"))
@@ -426,7 +470,7 @@ class TestReflection:
     def test_has_table(self, engine, metadata):
         """has_table() returns correct results."""
         insp = inspect(engine)
-        assert insp.has_table("integration_users")
+        assert insp.has_table(_USERS_TABLE)
         assert not insp.has_table("nonexistent_table_xyz")
 
     def test_existence_checks_for_missing_objects_and_checkfirst(self, engine):
@@ -459,13 +503,13 @@ class TestReflection:
         """get_table_names() includes our test tables."""
         insp = inspect(engine)
         tables = insp.get_table_names()
-        assert "integration_users" in tables
-        assert "integration_orders" in tables
+        assert _USERS_TABLE in tables
+        assert _ORDERS_TABLE in tables
 
     def test_get_columns(self, engine, metadata):
         """get_columns() reflects column metadata."""
         insp = inspect(engine)
-        columns = insp.get_columns("integration_users")
+        columns = insp.get_columns(_USERS_TABLE)
         col_names = [c["name"] for c in columns]
         assert "id" in col_names
         assert "name" in col_names
@@ -474,20 +518,20 @@ class TestReflection:
     def test_get_pk_constraint(self, engine, metadata):
         """get_pk_constraint() reflects primary key."""
         insp = inspect(engine)
-        pk = insp.get_pk_constraint("integration_users")
+        pk = insp.get_pk_constraint(_USERS_TABLE)
         assert "id" in pk["constrained_columns"]
 
     def test_get_foreign_keys(self, engine, metadata):
         """get_foreign_keys() reflects FK from orders → users."""
         insp = inspect(engine)
-        fks = insp.get_foreign_keys("integration_orders")
+        fks = insp.get_foreign_keys(_ORDERS_TABLE)
         assert len(fks) >= 1, (
             "get_foreign_keys() returned empty — FK reflection is broken. "
             "This previously masked a real Alembic regression."
         )
         fk = fks[0]
         assert "user_id" in fk["constrained_columns"]
-        assert fk["referred_table"] == "integration_users"
+        assert fk["referred_table"] == _USERS_TABLE
 
     @pytest.mark.parametrize("method", ["get_columns", "get_indexes"])
     def test_syntax_error_is_not_no_such_table(self, engine, method):
@@ -875,7 +919,9 @@ class TestShowCreateTableFailures:
                 ForeignKey(f"{cls.PARENT}.id", name="fk_r589_child_pid"),
             ),
         )
-        Table(cls.PLAIN, meta, Column("id", Integer, primary_key=True))
+        # No primary key: with no index in db_index, get_unique_constraints
+        # still reads SHOW CREATE TABLE (with any index it would not, #610).
+        Table(cls.PLAIN, meta, Column("id", Integer))
         return meta
 
     def _diffs(self, conn, meta):
@@ -1017,10 +1063,11 @@ class TestAutogenerateForeignKeyDefaultActions:
         assert diffs[1][1].onupdate == model.get("onupdate")
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestTransactions:
     def test_savepoint(self, engine, metadata):
         """Savepoint support (CUBRID supports savepoints, not RELEASE SAVEPOINT)."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="BeforeSP"))
             savepoint = conn.begin_nested()
@@ -1035,7 +1082,7 @@ class TestTransactions:
 
     def test_rollback(self, engine, metadata):
         """Transaction rollback discards changes."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.connect() as conn:
             trans = conn.begin()
             conn.execute(users.insert().values(name="WillRollback"))
@@ -1043,15 +1090,16 @@ class TestTransactions:
 
         with engine.connect() as conn:
             count = conn.execute(
-                text("SELECT COUNT(*) FROM integration_users WHERE name = 'WillRollback'")
+                text(f"SELECT COUNT(*) FROM {_USERS_TABLE} WHERE name = 'WillRollback'")
             ).scalar()
         assert count == 0
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestLastRowId:
     def test_lastrowid_via_orm(self, engine, metadata):
         """Verify lastrowid works through SA ORM Session."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with Session(engine) as session:
             result = session.execute(users.insert().values(name="LastRowIdTest"))
             inserted_pk = result.inserted_primary_key[0]
@@ -1456,6 +1504,17 @@ _SLOW_QUERY = text(
 
 
 class TestIsDisconnect:
+    """Not parallelizable and not rerun-isolated by a unique name (#612): the
+    victim of ``_KILL_QUERY_SCRIPT`` is identified by *timing* ("the one new
+    query still running half a second after start"), because CUBRID exposes
+    no per-session tag ``SHOW TRANSACTION TABLES`` can match on (see the
+    comment above ``_KILL_QUERY_SCRIPT``, #578). A concurrent session running
+    its own slow query against the same CUBRID instance -- another worker, or
+    another ``make integration`` run sharing a server -- can make the helper
+    pick the wrong victim or find more than one candidate and fail outright.
+    Run this class alone against a given CUBRID instance.
+    """
+
     def test_interrupted_query_keeps_connection(self, engine):
         """A query interrupted by KILL QUERY fails with -4 but keeps the connection (#572).
 
@@ -1519,10 +1578,11 @@ class TestIsDisconnect:
         assert dialect.is_disconnect(exc, None, None) is False
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestPostfetchLastRowId:
     def test_lastrowid_consistency(self, engine, metadata):
         """Verify lastrowid returns consistent IDs across inserts."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         ids = []
         with Session(engine) as session:
             for i in range(3):
@@ -1563,12 +1623,13 @@ class TestConnectionPool:
             eng.dispose()
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestReplaceIntegration:
     def test_replace_insert(self, engine, metadata):
         """REPLACE INTO inserts a new row when no conflict."""
         from sqlalchemy_cubrid import replace
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             stmt = replace(users).values(name="ReplaceNew", email="replace@example.com")
             conn.execute(stmt)
@@ -1582,7 +1643,7 @@ class TestReplaceIntegration:
         """REPLACE INTO replaces existing row on duplicate key."""
         from sqlalchemy_cubrid import replace
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             # Insert initial row
             conn.execute(users.insert().values(name="ReplaceMe", email="old@example.com"))
@@ -1602,7 +1663,7 @@ class TestReplaceIntegration:
         """REPLACE with a prefix still replaces rows and keeps "INSERT INTO" data (#591)."""
         from sqlalchemy_cubrid import replace
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="PrefixOld", email="old@example.com"))
             row_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
@@ -1627,7 +1688,7 @@ class TestReplaceIntegration:
         """executemany REPLACE with a prefix replaces every conflicting row (#591)."""
         from sqlalchemy_cubrid import replace
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             ids = []
             for name in ("ManyOld1", "ManyOld2"):
@@ -1666,18 +1727,19 @@ class TestRecursiveCTEIntegration:
         assert values == [1, 2, 3, 4, 5]
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestTraceQueryIntegration:
     def test_trace_query_returns_output(self, engine, metadata):
         """trace_query() returns non-empty trace output."""
         from sqlalchemy_cubrid import trace_query
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         # Insert a row so the query has something to trace
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="TraceTest", email="trace@example.com"))
 
         with engine.connect() as conn:
-            traces = trace_query(conn, text("SELECT * FROM integration_users"))
+            traces = trace_query(conn, text(f"SELECT * FROM {_USERS_TABLE}"))
         # trace_query should return a list; on CUBRID it should have content
         assert isinstance(traces, list)
         # Trace may be empty in some CUBRID configurations, but should not error
@@ -1686,14 +1748,14 @@ class TestTraceQueryIntegration:
         """trace_query() works with parameterized statements."""
         from sqlalchemy_cubrid import trace_query
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="TraceParam", email="param@example.com"))
 
         with engine.connect() as conn:
             traces = trace_query(
                 conn,
-                text("SELECT * FROM integration_users WHERE name = :name"),
+                text(f"SELECT * FROM {_USERS_TABLE} WHERE name = :name"),
                 parameters={"name": "TraceParam"},
             )
         assert isinstance(traces, list)
@@ -1748,9 +1810,10 @@ class TestFetchShapeCompatibility:
         finally:
             raw_conn.close()
 
+    @pytest.mark.usefixtures("_clean_tables")
     def test_sqlalchemy_fetchall_with_orm(self, engine, metadata):
         """SQLAlchemy ORM layer works correctly with pycubrid's fetch results."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="FetchTest", email="fetch@example.com"))
 
@@ -1763,9 +1826,10 @@ class TestFetchShapeCompatibility:
             assert rows[0].name == "FetchTest"
             assert rows[0].email == "fetch@example.com"
 
+    @pytest.mark.usefixtures("_clean_tables")
     def test_sqlalchemy_fetchmany_with_text(self, engine, metadata):
         """SQLAlchemy text() query with fetchmany works correctly."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             for i in range(3):
                 conn.execute(
@@ -1774,7 +1838,7 @@ class TestFetchShapeCompatibility:
 
         with engine.connect() as conn:
             result = conn.execute(
-                text("SELECT name, email FROM integration_users WHERE name LIKE :pat"),
+                text(f"SELECT name, email FROM {_USERS_TABLE} WHERE name LIKE :pat"),
                 {"pat": "BatchFetch%"},
             )
             rows = result.fetchmany(2)
@@ -2472,6 +2536,7 @@ class TestExecutemanyNoneAndRowcount:
             meta.drop_all(engine)
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestBackslashLiteralRoundtrip:
     """Regression #313: backslashes must survive both param binding and
     literal_binds rendering on a default CUBRID (no_backslash_escapes=yes)."""
@@ -2486,7 +2551,7 @@ class TestBackslashLiteralRoundtrip:
         ],
     )
     def test_backslash_roundtrip(self, engine, metadata, value):
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name=value, email="bs@example.com"))
 
