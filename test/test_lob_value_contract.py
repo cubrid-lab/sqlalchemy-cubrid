@@ -193,7 +193,9 @@ class TestLobValueContractCore:
             conn.execute(lob_table.delete())
             conn.execute(lob_table.insert(), {"id": 1, kind: value})
         with engine.connect() as conn:
-            got = conn.execute(select(lob_table.c[kind]).where(lob_table.c.id == 1)).scalar_one()
+            got: object = conn.execute(
+                select(lob_table.c[kind]).where(lob_table.c.id == 1)
+            ).scalar_one()
         _assert_lob_value(got, kind, value)
 
     @pytest.mark.parametrize(
@@ -210,7 +212,9 @@ class TestLobValueContractCore:
             conn.execute(lob_table.delete())
             conn.execute(lob_table.insert(), {"id": 1, kind: value})
         with engine.connect() as conn:
-            got = conn.execute(select(convert(column)).where(lob_table.c.id == 1)).scalar_one()
+            got: object = conn.execute(
+                select(convert(column)).where(lob_table.c.id == 1)
+            ).scalar_one()
         _assert_lob_value(got, kind, value)
 
 
@@ -314,7 +318,7 @@ class TestAsyncLobValueContract:
             await conn.execute(table.insert(), {"id": 1, kind: value})
         async with async_engine.connect() as conn:
             result = await conn.execute(select(table.c[kind]).where(table.c.id == 1))
-            got = result.scalar_one()
+            got: object = result.scalar_one()
         _assert_lob_value(got, kind, value)
 
     @pytest.mark.parametrize(
@@ -330,8 +334,28 @@ class TestAsyncLobValueContract:
             await conn.execute(table.insert(), {"id": 1, kind: value})
         async with async_engine.connect() as conn:
             result = await conn.execute(select(convert(table.c[kind])).where(table.c.id == 1))
-            got = result.scalar_one()
+            got: object = result.scalar_one()
         _assert_lob_value(got, kind, value)
+
+    # #500: the async DB-API adapter lacked ``Binary``, so any LargeBinary/BLOB
+    # bind (even ``None``, even an unset ORM column) raised AttributeError.
+    @pytest.mark.parametrize("kind", ["large_binary", "blob"])
+    @pytest.mark.parametrize("value", [None, _LOB_SMALL_BYTES], ids=["none", "bytes"])
+    async def test_core_insert_binds_binary(
+        self, async_engine: AsyncEngine, kind: str, value: bytes | None
+    ) -> None:
+        table = cast(Table, _LobDocument.__table__)
+        async with async_engine.begin() as conn:
+            await conn.execute(sa.insert(table).values(id=1, **{kind: value}))
+        async with async_engine.connect() as conn:
+            result = await conn.execute(
+                select(table.c[kind].is_(None), sa.func.BLOB_TO_BIT(table.c[kind])).where(
+                    table.c.id == 1
+                )
+            )
+            is_null, stored = result.one()
+        assert bool(is_null) is (value is None)
+        _assert_lob_value(stored, kind, value)
 
     @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
     async def test_orm_roundtrip(
