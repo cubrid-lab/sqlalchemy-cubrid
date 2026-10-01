@@ -224,15 +224,13 @@ class TestScalarValueContractCore:
         assert [(r.id, r.n, r.s) for r in got] == [(r["id"], r["n"], r["s"]) for r in rows]
 
 
-def _spy_executemany(dialect: object, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+def _spy_executemany(dialect: Any, monkeypatch: pytest.MonkeyPatch) -> list[int]:
     """Record the number of parameter sets of every ``do_executemany`` call."""
     calls: list[int] = []
-    original = dialect.do_executemany  # type: ignore[attr-defined]
+    original = dialect.do_executemany
 
-    def spy(
-        cursor: object, statement: object, parameters: object, context: object = None
-    ) -> object:
-        calls.append(len(parameters))  # type: ignore[arg-type]
+    def spy(cursor: Any, statement: Any, parameters: Any, context: Any = None) -> Any:
+        calls.append(len(parameters))
         return original(cursor, statement, parameters, context)
 
     monkeypatch.setattr(dialect, "do_executemany", spy)
@@ -414,6 +412,32 @@ class TestAsyncScalarValueContract:
             result = await conn.execute(select(table.c[kind]).where(table.c.id == 1))
             got = result.scalar_one()
         _assert_scalar_value(got, kind, value)
+
+    async def test_update(self, async_engine: AsyncEngine) -> None:
+        table = self._table
+        async with async_engine.begin() as conn:
+            await conn.execute(table.delete())
+            await conn.execute(table.insert(), {"id": 1, "n": 1, "s": "before"})
+            await conn.execute(table.update().where(table.c.id == 1).values(n=2, s=_CJK_TEXT))
+        async with async_engine.connect() as conn:
+            result = await conn.execute(select(table.c.n, table.c.s))
+            row = result.one()
+        assert (row.n, row.s) == (2, _CJK_TEXT)
+
+    async def test_repeated_execution_binds_fresh_values(self, async_engine: AsyncEngine) -> None:
+        """The same compiled ``insert()`` construct, executed repeatedly, binds
+        each call's own parameters rather than any cached/stale value."""
+        table = self._table
+        insert_stmt = table.insert()
+        rows = [{"id": i, "n": i * 3, "s": f"row-{i}-{_CJK_TEXT}"} for i in range(1, 26)]
+        async with async_engine.begin() as conn:
+            await conn.execute(table.delete())
+            for row in rows:
+                await conn.execute(insert_stmt, row)
+        async with async_engine.connect() as conn:
+            result = await conn.execute(select(table).order_by(table.c.id))
+            got = result.all()
+        assert [(r.id, r.n, r.s) for r in got] == [(r["id"], r["n"], r["s"]) for r in rows]
 
     async def test_executemany(
         self, async_engine: AsyncEngine, monkeypatch: pytest.MonkeyPatch
