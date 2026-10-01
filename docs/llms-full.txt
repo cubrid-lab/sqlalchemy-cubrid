@@ -7402,6 +7402,21 @@ that need duplicates or order out of bound parameters: write the collection
 literal in SQL (`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`), or use
 `cubrid+pycubrid://`. See [Type Mapping, Collection values](TYPES.md#collection-values).
 
+### 12. Ordinary scalar execution never uses pycubrid's `compat.native` prepared core
+
+pycubrid 1.8.0 (the supported floor) added an additive, opt-in sync prepared/typed
+scalar-binding cursor under `pycubrid.compat.native` (INT32, UTF-8 `CHAR` and SQL
+`NULL` only; cubrid-lab/pycubrid#439). Neither `cubrid+pycubrid://` nor
+`cubrid+aiopycubrid://` import or call it: SQLAlchemy keeps using the ordinary
+PEP 249 `execute()` / `executemany()` path (FC41) for every scalar bind — integer,
+UTF-8/CJK string, `NULL`, repeated execution, `executemany`, Core and ORM — on
+every driver tested, with no behavior difference and no dialect change (#483;
+`test/test_scalar_execution_contract.py`, which also asserts the dialect source
+never references `pycubrid.compat` and that `pycubrid.compat.native.connect()` is
+never called by ordinary use). A SQLAlchemy/DB-API integration that uses typed
+prepared execution would be a separate, explicitly designed and released feature,
+not an automatic consequence of `compat.native` existing in the installed driver.
+
 ---
 
 ## Installation Notes

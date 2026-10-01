@@ -241,6 +241,10 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 
 방언은 CUBRIDdb의 동작을 바꾸지 않습니다. CUBRIDdb에서 중복이나 순서가 필요한 컬렉션은 바인드 파라미터로 보내지 말고 SQL에 컬렉션 리터럴을 쓰거나(`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`) `cubrid+pycubrid://`를 사용하세요. [타입 매핑, 컬렉션 값](TYPES.md#컬렉션-값)을 참고하세요.
 
+### 12. 일반 스칼라 실행은 pycubrid의 `compat.native` prepared 코어를 사용하지 않음
+
+pycubrid 1.8.0(지원 최저 버전)은 `pycubrid.compat.native` 아래에 추가적이고 선택적인 동기 prepared/typed 스칼라 바인딩 커서를 추가했습니다(INT32, UTF-8 `CHAR`, SQL `NULL`만 지원; cubrid-lab/pycubrid#439). `cubrid+pycubrid://`도 `cubrid+aiopycubrid://`도 이를 import하거나 호출하지 않습니다: SQLAlchemy는 모든 스칼라 바인딩(정수, UTF-8/CJK 문자열, `NULL`, 반복 실행, `executemany`, Core와 ORM)에 대해 테스트한 모든 드라이버에서 계속 일반 PEP 249 `execute()` / `executemany()` 경로(FC41)를 사용하며, 동작 차이나 방언 변경이 없습니다(#483; `test/test_scalar_execution_contract.py`는 방언 소스가 `pycubrid.compat`를 참조하지 않는지, 그리고 일반적인 사용에서 `pycubrid.compat.native.connect()`가 절대 호출되지 않는지도 검증합니다). typed prepared 실행을 사용하는 SQLAlchemy/DB-API 통합은 설치된 드라이버에 `compat.native`가 존재한다고 해서 자동으로 생기는 것이 아니라, 별도로 설계되고 릴리스되어야 하는 기능입니다.
+
 ---
 
 ## 설치 참고
