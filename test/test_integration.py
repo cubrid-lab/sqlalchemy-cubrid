@@ -65,36 +65,31 @@ def _cubrid_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
-# Fixed-name database users (u2, u549, u543 below) are given a fresh random
-# suffix on every fixture setup, not once per process, so a user left behind
-# by one setup -- interrupted, or whose teardown itself failed -- can never
-# collide with the very next setup's own user (#607). This does not remove
-# the need for a database dedicated to one `make integration` run at a time
-# (see the module docstring): the DBA-owned tables these fixtures create
-# (``y_dup``/``y_dup_parent``, ``r549_t``/``r549_parent``, ``"Own543"``)
-# still have fixed names, and making those unique too is #612.
+# Fixed-name database users (u2, u549, u543 below) are created idempotently:
+# cleanup() drops any existing user of that exact name (and what it owns)
+# before CREATE USER, so a user left behind by an interrupted prior run
+# against the *same* database does not make the next run's CREATE USER fail
+# with "already exists" (#607).
 #
-# A fresh name does not retire the fixtures' own idempotent cleanup-then-
-# create: a name can still collide with a leftover left behind under that
-# exact name by an earlier, interrupted run of the *same* cycle (as
-# TestReflectionAsNonDba.test_reflection_setup_reruns_against_same_database
-# demonstrates by forcing exactly that collision). What changes is how a
-# stuck DROP USER is handled: see _drop_user_verified() below -- it no
-# longer swallows a failure that leaves the user behind, which is what let
-# that leftover block the next setup in the first place (#607 review).
+# A per-setup random suffix was tried instead and reverted (#607 2nd
+# review): it also fixes the "already exists" failure, but a user left
+# behind by a killed run is then orphaned under a name no later run ever
+# reuses, so it is never cleaned up -- and it silently pollutes any catalog
+# query that is not scoped to a specific owner. Reproduced live:
+# TestHasIndexOwnerPreference's `SELECT owner_name FROM db_class WHERE
+# class_name = 'own543'` (run as DBA, which sees every owner) failed with an
+# extra row once a `u543_<random>` leftover existed. Fixed names do not have
+# this failure mode: there is only ever one non-DBA owner these tests can
+# see, the current run's own (whether freshly created or recovered from a
+# leftover under that same name).
 #
-# Known tradeoff: if a run is killed before a fixture's own `finally:
-# cleanup()` runs, its randomly-named user (and, if DROP USER itself
-# failed, its owned tables) is left in the database rather than colliding
-# with a later run. Nothing here sweeps those up; `SELECT name FROM
-# db_user WHERE name LIKE 'U2\\_%' ESCAPE '\\'` (and the `U543_`/`U549_`
-# equivalents) finds them for manual review.
-
-
-def _fresh_username(prefix: str) -> str:
-    """A fresh, per-fixture-setup-unique username: ``prefix`` plus random
-    hex, different on every call (not cached per process)."""
-    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+# A run genuinely killed so that DROP USER still cannot succeed -- it still
+# owns an object cleanup() does not know about (-837), or the CAS has not
+# yet reclaimed its session (-1188) -- is handled by _drop_user_verified()
+# below: a short retry clears a transient -1188, but it raises instead of
+# silently leaving the user behind for anything else, which is what let a
+# leftover block a later setup reusing the same name in the first place
+# (#607 review).
 
 
 def _user_exists(engine, username: str) -> bool:
@@ -114,10 +109,12 @@ def _drop_user_verified(engine, username: str, *, retries: int = 5, delay: float
     CUBRID can briefly refuse ``DROP USER`` with -1188 ("active user") right
     after the last connection as that user is disposed -- the broker has not
     yet reclaimed the session -- which a short retry clears. Any other
-    failure (most commonly -837, the user still owns a table), or the user
-    still appearing in ``db_user`` once retries are exhausted, re-raises the
-    original error instead of silently leaving the user behind to break the
-    next setup that happens to reuse this exact name.
+    failure (most commonly -837, the user still owns a table) is not
+    transient: retrying it cannot help, so it re-raises immediately instead
+    of wasting the retry budget. Once retries for -1188 are exhausted, or the
+    user still appears in ``db_user`` despite DROP USER reporting success,
+    the error propagates instead of being silently swallowed -- which is
+    what let a leftover user block the next setup that reused this name.
     """
     last_error: Exception | None = None
     for attempt in range(retries):
@@ -127,8 +124,10 @@ def _drop_user_verified(engine, username: str, *, retries: int = 5, delay: float
                 conn.commit()
                 last_error = None
             except Exception as error:
-                last_error = error
                 conn.rollback()
+                if "-1188" not in str(error):
+                    raise
+                last_error = error
         if not _user_exists(engine, username):
             return
         if attempt + 1 < retries:
@@ -588,7 +587,7 @@ class TestSameNameClassOfOtherOwner:
                             raise
                         conn.rollback()
 
-        username = _fresh_username("u2")
+        username = "u2"
         u2 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
@@ -643,23 +642,18 @@ class TestSameNameClassOfOtherOwner:
 
 
 @contextlib.contextmanager
-def _r549_user_cycle(engine, as_user, username=None):
+def _r549_user_cycle(engine, as_user, username="u549"):
     """Create user ``u549`` and the ``r549_t`` / ``r549_parent`` tables (plus,
     since CUBRID 11.2, a same-named decoy owned by the other side), yield the
     owning engine, then drop everything.
 
-    *username* defaults to a fresh, per-call-unique name (#607); pass an
-    explicit one (as the regression test below does) to force the exact
-    "leftover user under the name this call is about to use" scenario the
-    idempotent cleanup below exists to handle.
-
     Idempotent: ``cleanup()`` drops any state already present under
-    *username* -- a no-op in the common fresh-name case -- before the real
-    ``CREATE USER``. ``cleanup()`` only connects as *username* when it
-    actually exists (``_user_exists``), and drops the user itself through
+    *username* -- a no-op unless an earlier, interrupted call left it behind
+    (as the regression tests below force) -- before the real ``CREATE
+    USER``. ``cleanup()`` only connects as *username* when it actually
+    exists (``_user_exists``), and drops the user itself through
     ``_drop_user_verified``, which does not swallow a failure that would
-    leave it behind. Safe to call back to back against the same database
-    with the same *username*.
+    leave it behind. Safe to call back to back against the same database.
     """
 
     def run(eng, *statements, ignore_errors=False):
@@ -676,7 +670,6 @@ def _r549_user_cycle(engine, as_user, username=None):
                         raise
                     conn.rollback()
 
-    username = username or _fresh_username("u549")
     u549 = create_engine(engine.url.set(username=username, password=None))
     owner, other = (engine, u549) if as_user == "dba" else (u549, engine)
 
@@ -737,40 +730,35 @@ class TestReflectionAsNonDba:
         ``cleanup()``'s ``DROP USER`` had failed silently and the next
         ``CREATE USER u549`` then failed with "already exists".
 
-        Plant a user under the name the next cycle will use, with a table it
-        owns (so a plain ``DROP USER`` would fail), before running that
-        cycle: its own idempotent cleanup must remove both, and the user
-        must actually be gone from ``db_user`` afterward, not just appear to
-        be because a failure was swallowed."""
+        Plant the fixed-name ``u549`` user with a table it owns (so a plain
+        ``DROP USER`` would fail with -837), before running the cycle: its
+        own idempotent cleanup must remove both, and the user must actually
+        be gone from ``db_user`` afterward, not just appear to be because a
+        failure was swallowed."""
         if engine.url.username is None or engine.url.username.lower() != "dba":
             pytest.skip("needs a DBA connection to create a user")
 
-        username = _fresh_username("u549")
-        with _r549_user_cycle(engine, "u549", username=username) as owner:
-            with owner.connect() as conn:
-                insp = inspect(conn)
-                assert insp.get_pk_constraint("r549_t") == {
-                    "name": "pk_r549_t",
-                    "constrained_columns": ["a", "b"],
-                }
+        # Start from a known-clean state.
+        with _r549_user_cycle(engine, "u549"):
+            pass
 
-        # Simulate an interrupted prior run: the same-named user is left
-        # behind, still owning a table (so a plain DROP USER would fail with
-        # -837), exactly as if this cycle's own cleanup() had been killed
-        # mid-run.
+        # Simulate an interrupted prior run: u549 is left behind, still
+        # owning a table that cleanup() does know about (r549_parent), so a
+        # plain DROP USER would fail with -837 -- exactly as if this cycle's
+        # own cleanup() had been killed mid-run.
         with engine.connect() as conn:
-            conn.exec_driver_sql(f"CREATE USER {username}")
+            conn.exec_driver_sql("CREATE USER u549")
             conn.commit()
-        leftover = create_engine(engine.url.set(username=username, password=None))
+        leftover = create_engine(engine.url.set(username="u549", password=None))
         with leftover.connect() as conn:
             conn.exec_driver_sql("CREATE TABLE r549_parent (id INT PRIMARY KEY)")
             conn.commit()
         leftover.dispose()
-        assert _user_exists(engine, username)
+        assert _user_exists(engine, "u549")
 
         # Reusing that exact username must still succeed: setup's own
         # cleanup() must remove the leftover user and table first.
-        with _r549_user_cycle(engine, "u549", username=username) as owner:
+        with _r549_user_cycle(engine, "u549") as owner:
             with owner.connect() as conn:
                 insp = inspect(conn)
                 assert insp.get_pk_constraint("r549_t") == {
@@ -780,7 +768,60 @@ class TestReflectionAsNonDba:
 
         # And its own teardown must have actually removed the user, not
         # merely swallowed a failed DROP USER.
-        assert not _user_exists(engine, username)
+        assert not _user_exists(engine, "u549")
+
+    def test_reflection_setup_raises_instead_of_hiding_a_stuck_drop_user(self, engine):
+        """#607 2nd review: a DROP USER failure retries cannot clear must be
+        raised, not swallowed -- otherwise the setup silently continues with
+        the user still present, which is the original bug under another
+        name.
+
+        Leave u549 owning a table outside ``_r549_user_cycle``'s own known
+        set (``r549_t`` / ``r549_parent``), so ``cleanup()`` drops what it
+        knows about but ``DROP USER`` still fails with -837 every time:
+        unlike the recoverable-leftover case above, no amount of retrying
+        clears it. Entering the cycle must raise that error instead of
+        proceeding as if cleanup had succeeded."""
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
+
+        # Start from a known-clean state.
+        with _r549_user_cycle(engine, "u549"):
+            pass
+
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE USER u549")
+            conn.commit()
+        leftover = create_engine(engine.url.set(username="u549", password=None))
+        try:
+            with leftover.connect() as conn:
+                conn.exec_driver_sql("CREATE TABLE r549_unexpected (id INT PRIMARY KEY)")
+                conn.commit()
+        finally:
+            leftover.dispose()
+
+        try:
+            with pytest.raises(Exception, match="-837"):
+                with _r549_user_cycle(engine, "u549"):
+                    pass
+            # The user must still be there: the point is that setup did not
+            # silently drop it and move on.
+            assert _user_exists(engine, "u549")
+        finally:
+            # Clean up what this test deliberately left stuck: drop the
+            # untracked table as its owner (DBA is a different owner and
+            # cannot drop it unqualified, #529), then the user, as DBA.
+            cleanup_engine = create_engine(engine.url.set(username="u549", password=None))
+            try:
+                with cleanup_engine.connect() as conn:
+                    try:
+                        conn.exec_driver_sql("DROP TABLE r549_unexpected")
+                        conn.commit()
+                    except Exception:
+                        conn.rollback()
+            finally:
+                cleanup_engine.dispose()
+            _drop_user_verified(engine, "u549")
 
     @pytest.mark.parametrize("name", ["r549_t", "R549_T"])
     def test_reflection(self, reflecting_engine, name):
@@ -2042,7 +2083,7 @@ class TestHasIndexOwnerPreference:
                             raise
                         conn.rollback()
 
-        username = _fresh_username("u543")
+        username = "u543"
         u543 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
