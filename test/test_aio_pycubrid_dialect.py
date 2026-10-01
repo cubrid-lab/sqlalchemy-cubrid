@@ -102,6 +102,48 @@ class TestPyCubridAsyncDialectOnConnect:
         assert dialect._on_connect_isolation_level == "SERIALIZABLE"
 
 
+class TestPyCubridAsyncDialectInheritsDriverPolicy:
+    """The async dialect inherits the sync pycubrid driver policy (#596)."""
+
+    @pytest.mark.parametrize("name", ["on_connect", "do_ping", "do_executemany", "is_disconnect"])
+    def test_driver_hook_is_inherited(self, name):
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        assert name not in vars(PyCubridAsyncDialect)
+        assert getattr(PyCubridAsyncDialect, name) is getattr(PyCubridDialect, name)
+
+    def test_inherited_hooks_drive_the_async_driver_through_the_adapter(self):
+        """on_connect and do_ping reach pycubrid.aio through the AsyncAdapt connection."""
+        from sqlalchemy.util import greenlet_spawn
+
+        class FakeAioConnection:
+            def __init__(self) -> None:
+                self.autocommit = True
+                self.calls: list[tuple[str, bool]] = []
+
+            async def set_autocommit(self, value: bool) -> None:
+                self.calls.append(("set_autocommit", value))
+                self.autocommit = value
+
+            async def ping(self, reconnect: bool = True) -> bool:
+                self.calls.append(("ping", reconnect))
+                return True
+
+        dialect = PyCubridAsyncDialect()
+        raw = FakeAioConnection()
+
+        def run_hooks() -> bool:
+            adapted = AsyncAdapt_pycubrid_connection(MagicMock(), raw)
+            callback = dialect.on_connect()
+            assert callback is not None
+            callback(adapted)
+            return dialect.do_ping(adapted)
+
+        assert asyncio.run(greenlet_spawn(run_hooks)) is True
+        assert raw.calls == [("set_autocommit", False), ("ping", False)]
+        assert raw.autocommit is False
+
+
 class TestAsyncAdaptPycubridDbapi:
     def test_connect_calls_aio_connect(self):
         fake_aio = MagicMock()

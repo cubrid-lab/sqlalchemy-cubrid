@@ -178,10 +178,10 @@ Defines the public API boundary, exporting CUBRID-specific types and DML extensi
 Contains the base `CubridDialect` class, implementing core logic for schema reflection, connection management, and transaction isolation levels. Reflection (`get_columns`, `get_indexes`, `get_foreign_keys`, `get_pk_constraint`, `get_unique_constraints`) is implemented here. It defaults to the C-extension driver `CUBRIDdb`.
 
 #### `pycubrid_dialect.py`
-Implements the `PyCubridDialect` variant, which uses the pure Python `pycubrid` driver. It overrides connection argument parsing and connection-time initialization logic.
+Implements the `PyCubridDialect` variant, which uses the pure Python `pycubrid` driver. It overrides connection argument parsing and connection-time initialization logic, and holds the pycubrid-specific driver policy: isolation-level re-apply after commit/rollback, the driver's own `executemany`, the `ping(False)` health check, and the pycubrid part of disconnect detection (its `errno` codes and client-side messages). `CubridDialect` keeps only the CUBRIDdb error shapes (an `int` code in `args[0]`).
 
 #### `aio_pycubrid_dialect.py`
-Implements `PyCubridAsyncDialect`, the async dialect variant used by `cubrid+aiopycubrid://`. It adapts `pycubrid.aio` for SQLAlchemy's async engine and `AsyncSession` APIs.
+Implements `PyCubridAsyncDialect`, the async dialect variant used by `cubrid+aiopycubrid://`. It adapts `pycubrid.aio` for SQLAlchemy's async engine and `AsyncSession` APIs, and inherits all driver policy (including `on_connect()` and `do_ping()`) from `PyCubridDialect` through the adapter connection.
 
 #### `compiler.py`
 Houses the SQL, DDL, and Type compilers. It translates SQLAlchemy's abstract syntax trees into CUBRID-specific SQL dialects, handling nuances like LIMIT/OFFSET and FOR UPDATE clauses.
@@ -238,7 +238,7 @@ The dialect supports the legacy C-extension driver, the modern pure Python drive
 flowchart TD
     sa_default["sqlalchemy.engine.default<br/>DefaultDialect"]
     cubrid_base["CubridDialect<br/>dialect.py<br/>• reflection<br/>• isolation levels<br/>• type mapping<br/>• import_dbapi() → CUBRIDdb"]
-    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()"]
+    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()<br/>• is_disconnect(): errno, messages"]
     aio_variant["PyCubridAsyncDialect<br/>aio_pycubrid_dialect.py<br/>• is_async = True<br/>• import_dbapi() → pycubrid.aio adapter<br/>• async connection adaptation"]
     
     sa_default --> cubrid_base
