@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from sqlalchemy.engine import URL
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from sqlalchemy_cubrid import BLOB, CLOB, DOUBLE, MULTISET, SEQUENCE, SET
+from sqlalchemy_cubrid import DOUBLE, MULTISET, SEQUENCE, SET
 
 from scripts.integration_urls import async_url
 
@@ -371,92 +371,9 @@ class TestAsyncJSON:
 # ---------------------------------------------------------------------------
 # #485: SQLAlchemy-facing BLOB/CLOB value contract (async)
 # ---------------------------------------------------------------------------
-
-# Same payloads as test_integration.py; the large ones exceed the ~80 KB
-# LOB_READ chunk documented by ``pycubrid.lob.Lob.read``.
-_LOB_READ_CHUNK_BYTES = 80 * 1024
-_LOB_SMALL_BYTES = b"\x00\x01\x7f\x80\xfe\xff binary"
-_LOB_LARGE_BYTES = bytes(range(256)) * 1024
-_LOB_SMALL_TEXT = "plain clob text"
-_LOB_CJK_TEXT = "한국어 CLOB 日本語 中文 ✓ — ümlaut"
-_LOB_LARGE_TEXT = (_LOB_CJK_TEXT + " / ") * 8000
-
-_LOB_VALUE_TYPES: dict[str, type] = {
-    "large_binary": bytes,
-    "blob": bytes,
-    "clob": str,
-    "text": str,
-}
-
-_LOB_CASES = [
-    pytest.param("large_binary", _LOB_SMALL_BYTES, id="large_binary-small"),
-    pytest.param("large_binary", _LOB_LARGE_BYTES, id="large_binary-large"),
-    pytest.param("large_binary", None, id="large_binary-null"),
-    pytest.param("blob", _LOB_SMALL_BYTES, id="blob-small"),
-    pytest.param("blob", _LOB_LARGE_BYTES, id="blob-large"),
-    pytest.param("blob", None, id="blob-null"),
-    pytest.param("clob", _LOB_SMALL_TEXT, id="clob-small"),
-    pytest.param("clob", _LOB_CJK_TEXT, id="clob-cjk"),
-    pytest.param("clob", _LOB_LARGE_TEXT, id="clob-large"),
-    pytest.param("clob", None, id="clob-null"),
-    pytest.param("text", _LOB_SMALL_TEXT, id="text-small"),
-    pytest.param("text", _LOB_CJK_TEXT, id="text-cjk"),
-    pytest.param("text", _LOB_LARGE_TEXT, id="text-large"),
-    pytest.param("text", None, id="text-null"),
-]
-
-
-def _xfail_async_lob(request: pytest.FixtureRequest, kind: str, value: object) -> None:
-    # Binding works since #500; only the non-NULL LOB *read* still returns the
-    # driver's LOB-handle dict instead of bytes/str (pycubrid#441, #485).
-    if kind in ("large_binary", "blob", "clob") and value is not None:
-        request.applymarker(
-            pytest.mark.xfail(
-                strict=True,
-                raises=(AssertionError, TypeError),
-                reason=(
-                    "released pycubrid fetches BLOB/CLOB columns as a raw LOB-handle dict "
-                    "instead of bytes/str; official LOB fetch is cubrid-lab/pycubrid#441"
-                ),
-            )
-        )
-
-
-def _assert_lob_value(got: object, kind: str, expected: bytes | str | None) -> None:
-    if expected is None:
-        assert got is None
-        return
-    value_type = _LOB_VALUE_TYPES[kind]
-    assert type(got) is value_type, f"expected {value_type.__name__}, got {type(got)!r}"
-    assert got == expected
-
-
-class _AsyncLobBase(DeclarativeBase):
-    pass
-
-
-# Binary and character LOB columns live in separate tables: an ORM INSERT binds
-# every mapped column, so a LargeBinary column would break unrelated cases.
-class _AsyncBinaryLobDocument(_AsyncLobBase):
-    __tablename__ = "aio_test_lob485_binary"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
-    large_binary: Mapped[bytes | None] = mapped_column(sa.LargeBinary)
-    blob: Mapped[bytes | None] = mapped_column(BLOB)
-
-
-class _AsyncCharLobDocument(_AsyncLobBase):
-    __tablename__ = "aio_test_lob485_char"
-
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
-    clob: Mapped[str | None] = mapped_column(CLOB)
-    text: Mapped[str | None] = mapped_column(sa.Text)
-
-
-def _async_lob_model(kind: str) -> type[_AsyncLobBase]:
-    if kind in ("large_binary", "blob"):
-        return _AsyncBinaryLobDocument
-    return _AsyncCharLobDocument
+# Moved to the dedicated test/test_lob_value_contract.py (sync and async,
+# Core and ORM, in one module) instead of growing this already very large
+# file further.
 
 
 # PEP 249 module-level names; kept in sync with the offline copy in
@@ -498,103 +415,6 @@ def test_adapter_exposes_every_pycubrid_pep249_name(engine: AsyncEngine, name: s
         pytest.skip(f"pycubrid {pycubrid.__version__} does not define {name}")
     dbapi = cast(object, engine.dialect.dbapi)
     assert getattr(dbapi, name) is getattr(pycubrid, name)
-
-
-class TestAsyncLobValueContract:
-    @pytest_asyncio.fixture(autouse=True)
-    async def _lob_table(self, engine: AsyncEngine) -> AsyncIterator[None]:
-        async with engine.begin() as conn:
-            await conn.run_sync(_AsyncLobBase.metadata.drop_all)
-            await conn.run_sync(_AsyncLobBase.metadata.create_all)
-        yield
-        async with engine.begin() as conn:
-            await conn.run_sync(_AsyncLobBase.metadata.drop_all)
-
-    def test_large_payloads_exceed_driver_lob_read_chunk(self):
-        assert len(_LOB_LARGE_BYTES) > _LOB_READ_CHUNK_BYTES
-        assert len(_LOB_LARGE_TEXT.encode("utf-8")) > _LOB_READ_CHUNK_BYTES
-
-    @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
-    async def test_core_roundtrip(
-        self,
-        request: pytest.FixtureRequest,
-        engine: AsyncEngine,
-        kind: str,
-        value: bytes | str | None,
-    ):
-        _xfail_async_lob(request, kind, value)
-        table = cast(Table, _async_lob_model(kind).__table__)
-        async with engine.begin() as conn:
-            _ = await conn.execute(table.insert(), {"id": 1, kind: value})
-        async with engine.connect() as conn:
-            result = await conn.execute(select(table.c[kind]).where(table.c.id == 1))
-            got = result.scalar_one()
-        _assert_lob_value(got, kind, value)
-
-    @pytest.mark.parametrize(
-        ("kind", "value"),
-        [p for p in _LOB_CASES if p.values[0] in ("large_binary", "blob", "clob") and p.values[1]],
-    )
-    async def test_write_stores_full_value(
-        self, engine: AsyncEngine, kind: str, value: bytes | str | None
-    ):
-        """Bound bytes/str reach the LOB intact; read back via server-side conversion."""
-        table = cast(Table, _async_lob_model(kind).__table__)
-        convert = sa.func.CLOB_TO_CHAR if kind == "clob" else sa.func.BLOB_TO_BIT
-        async with engine.begin() as conn:
-            _ = await conn.execute(table.insert(), {"id": 1, kind: value})
-        async with engine.connect() as conn:
-            result = await conn.execute(select(convert(table.c[kind])).where(table.c.id == 1))
-            got = result.scalar_one()
-        _assert_lob_value(got, kind, value)
-
-    # #500: the async DB-API adapter lacked ``Binary``, so any LargeBinary/BLOB
-    # bind (even ``None``, even an unset ORM column) raised AttributeError.
-    @pytest.mark.parametrize("kind", ["large_binary", "blob"])
-    @pytest.mark.parametrize("value", [None, _LOB_SMALL_BYTES], ids=["none", "bytes"])
-    async def test_core_insert_binds_binary(
-        self, engine: AsyncEngine, kind: str, value: bytes | None
-    ):
-        table = cast(Table, _AsyncBinaryLobDocument.__table__)
-        async with engine.begin() as conn:
-            _ = await conn.execute(sa.insert(table).values(id=1, **{kind: value}))
-        async with engine.connect() as conn:
-            result = await conn.execute(
-                select(table.c[kind].is_(None), sa.func.BLOB_TO_BIT(table.c[kind])).where(
-                    table.c.id == 1
-                )
-            )
-            is_null, stored = result.one()
-        assert bool(is_null) is (value is None)
-        _assert_lob_value(stored, kind, value)
-
-    async def test_orm_insert_with_unset_large_binary(self, engine: AsyncEngine):
-        async with AsyncSession(engine) as session:
-            session.add(_AsyncBinaryLobDocument(id=3))
-            await session.commit()
-        async with AsyncSession(engine) as session:
-            doc = await session.get(_AsyncBinaryLobDocument, 3)
-            assert doc is not None
-            assert doc.large_binary is None
-            assert doc.blob is None
-
-    @pytest.mark.parametrize(("kind", "value"), _LOB_CASES)
-    async def test_orm_roundtrip(
-        self,
-        request: pytest.FixtureRequest,
-        engine: AsyncEngine,
-        kind: str,
-        value: bytes | str | None,
-    ):
-        _xfail_async_lob(request, kind, value)
-        model = _async_lob_model(kind)
-        async with AsyncSession(engine) as session, session.begin():
-            session.add(model(id=1, **{kind: value}))
-        async with AsyncSession(engine) as session:
-            doc = await session.get(model, 1)
-            assert doc is not None
-            got = getattr(doc, kind)
-        _assert_lob_value(got, kind, value)
 
 
 # ---------------------------------------------------------------------------
