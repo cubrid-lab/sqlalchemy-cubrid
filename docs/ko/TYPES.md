@@ -203,6 +203,49 @@ CREATE TABLE tagged_items (
 
 > **`LIST`는 `SEQUENCE`의 동의어입니다.** CUBRID는 DDL에서 `LIST(type)`을 받지만 파싱 시점에 `SEQUENCE`로 정규화합니다 — `LIST(INTEGER)` 컬럼은 `SEQUENCE OF INTEGER`로 저장·리플렉트됩니다 (CUBRID 11.2에서 검증). 따라서 방언은 정규 타입인 `SEQUENCE`만 노출합니다. 모델에서 `SEQUENCE(...)`를 선언하면 리플렉션이 깨끗하게 왕복합니다. `LIST(...)`로 컴파일되는 타입을 만들면 리플렉트된 `SEQUENCE(...)`와의 사이에서 가짜 Alembic autogenerate diff가 생기므로, 별도의 `LIST` 타입은 의도적으로 없습니다.
 
+#### 컬렉션 값
+
+`SET`이나 `MULTISET` 컬럼의 값은 Python `list`, `tuple`, `set`, `frozenset`으로 바인딩합니다. `SEQUENCE`는 순서가 있으므로 `list`나 `tuple`로 바인딩하세요. pycubrid 드라이버에서 `SEQUENCE` 컬럼에 `set`이나 `frozenset`을 넘기면 pycubrid 버전과 관계없이 `TypeError`("SEQUENCE is ordered; pass a list or tuple", SQLAlchemy의 `StatementError`로 감싸짐)가 발생하며, 방언이 대신 정렬하지 않습니다. 그다음 동작은 드라이버에 따라 다릅니다.
+
+| | 타입 지정 컬렉션 파라미터가 있는 `cubrid+pycubrid://`, `cubrid+aiopycubrid://` (pycubrid main) | 릴리스된 pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
+|---|---|---|---|
+| `list`/`tuple` (`SET`/`MULTISET`은 `set`/`frozenset`도) 바인딩 | 컬럼 타입에 맞는 `pycubrid.types.Set`, `Multiset`, `Sequence`로 감싸 `SET{...}`, `MULTISET{...}`, `SEQUENCE{...}` 리터럴로 전송 | `ProgrammingError` (pycubrid가 컬렉션 파라미터를 거부) | CUBRIDdb가 직접, 항상 SET으로 바인딩: MULTISET은 중복을, SEQUENCE는 순서를 잃음 ([드라이버 호환성, 알려진 문제 11](DRIVER_COMPAT.md#11-컬렉션-파라미터-set-multiset-sequence)) |
+| `SET` 조회 | `?decode_collections=true`이면 `frozenset`, 없으면 원시 `bytes` | 같음 | `str`의 `set` |
+| `MULTISET` / `SEQUENCE` 조회 | `?decode_collections=true`이면 `list`, 없으면 원시 `bytes` | 같음 | `str`의 `list` |
+
+```python
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
+from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET
+
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/demodb?decode_collections=true")
+items = Table(
+    "items", MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("tags", SET(String(20))),
+    Column("scores", MULTISET(Integer())),
+    Column("history", SEQUENCE(Integer())),
+)
+
+with engine.begin() as conn:
+    conn.execute(items.insert(), {"id": 1, "tags": {"a", "b"}, "scores": [2, 2, 1], "history": [3, 1, 3]})
+    row = conn.execute(select(items)).one()
+    # row.tags == frozenset({"a", "b"}); sorted(row.scores) == [1, 2, 2]; row.history == [3, 1, 3]
+    conn.execute(select(items.c.id).where(items.c.history == [3, 1, 3]))  # SEQUENCE{3, 1, 3}
+```
+
+pycubrid에서는:
+
+- 타입 지정 파라미터(cubrid-lab/pycubrid#567)는 pycubrid main에 있으며 아직 pycubrid 릴리스에는 없습니다. 방언은 이를(`pycubrid.types.Set`, `Multiset`, `Sequence`) 감지하며, 이전 pycubrid에서는 값을 드라이버에 그대로 넘기므로 컬렉션 파라미터는 이전처럼 실패합니다.
+- 각 원소는 pycubrid가 단독으로 바인딩할 수 있는 값이어야 합니다: `None`, `bool`, `int`, `float`, `Decimal`, `str`, `bytes`, `bytearray`, `date`, `time`, `datetime`. 중첩 컬렉션은 거부됩니다.
+- 이미 `pycubrid.types.Set`, `Multiset`, `Sequence`인 값, `None`, 그 밖의 값(예: `str`)은 드라이버에 그대로 전달됩니다.
+- 컬렉션 의미는 서버가 유지하며 방언은 바꾸지 않습니다. `SET`은 중복을 제거하고, `MULTISET`은 중복은 유지하지만 순서는 유지하지 않으며(`sorted(...)`로 비교하세요), `SEQUENCE`는 둘 다 유지합니다. 빈 컬렉션은 `frozenset()` 또는 `[]`로, `NULL` 컬럼은 `None`으로, `NULL` 원소는 컬렉션 안의 `None`으로 조회됩니다.
+- 방언은 조회한 값을 변환하지 않습니다. 값은 pycubrid가 디코딩한 그대로입니다. `decode_collections=true`가 없으면 pycubrid는 원시 컬렉션 바이트를 반환합니다.
+- `SEQUENCE` 컬럼에 바인딩한 `set`/`frozenset`은 모든 pycubrid 버전에서 `TypeError`를 발생시킵니다(위 참고).
+- 컬렉션 값은 인라인으로 렌더링할 수 없습니다. `literal_binds`와 `literal_execute`는 `NULL`이 아닌 컬렉션 값에 `CompileError`를 발생시킵니다(`NULL`은 `NULL`로 렌더링). 컬렉션은 파라미터로 바인딩하세요.
+- ORM에서는 컬럼을 바꿀 때 새 컬렉션을 대입하세요(`obj.history = [*obj.history, 4]`). SQLAlchemy는 `list`나 `set` 속성의 제자리 변경을 추적하지 않습니다.
+
+이 왕복은 CUBRID 10.2와 11.4에서 pycubrid main으로 라이브 테스트됩니다(Core와 ORM, 동기와 비동기, `test/test_collection_roundtrip.py`).
+
 ### JSON 타입
 
 CUBRID 10.2+는 네이티브 JSON(RFC 7159)을 지원합니다. 방언은 완전한 JSON 타입 지원을 제공합니다:
@@ -417,9 +460,9 @@ for col in users.columns:
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | 매우 큰 `VARCHAR`와 동등. |
 | `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (문서상) | 문자 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
 | `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (문서상) | 바이너리 LOB. 현재 드라이버는 조회 시 LOB 로케이터를 반환합니다. 아래 경고를 참고하세요. |
-| `SET(...)` | `sqlalchemy_cubrid.SET` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 유일한 순서 없는 원소. |
-| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 중복 허용. |
-| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | 드라이버 의존 컬렉션 페이로드 | CUBRID 전용 컬렉션. 중복을 허용하는 순서 있음. |
+| `SET(...)` | `sqlalchemy_cubrid.SET` | 드라이버 의존. pycubrid에서 `decode_collections=true`이면 `frozenset` | CUBRID 전용 컬렉션. 유일한 순서 없는 원소. [컬렉션 값](#컬렉션-값) 참고. |
+| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | 드라이버 의존. pycubrid에서 `decode_collections=true`이면 `list` | CUBRID 전용 컬렉션. 중복 허용. [컬렉션 값](#컬렉션-값) 참고. |
+| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | 드라이버 의존. pycubrid에서 `decode_collections=true`이면 `list` | CUBRID 전용 컬렉션. 중복을 허용하는 순서 있음. [컬렉션 값](#컬렉션-값) 참고. |
 | `OBJECT` | `sqlalchemy_cubrid.OBJECT` | 드라이버 의존 객체 참조 | OID 참조 타입. 데이터베이스 전용. 선언/컴파일 전용. 자동 리플렉트 안 됨. |
 | `BOOLEAN` (에뮬레이트) | `sqlalchemy.Boolean` -> `SMALLINT` | `bool` | `1` / `0`으로 저장; `supports_native_boolean=False`. |
 

@@ -7,27 +7,25 @@ repos:
         language: system
         pass_filenames: false
         always_run: true
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.16.9
-    hooks:
+
       - id: ruff-format
+        name: ruff-format
+        entry: python3 -m ruff format
+        language: system
         types_or: [python, pyi]
       - id: ruff
+        name: ruff
+        entry: python3 -m ruff check --fix
+        language: system
         types_or: [python, pyi]
-        args: ["--fix"]
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v2.3.1
-    hooks:
       - id: mypy
-        language: python
-        files: "^sqlalchemy_cubrid/"
+        name: mypy
+        entry: python3 -m mypy
+        language: system
+        files: "^(sqlalchemy_cubrid/|_sqlalchemy_cubrid_alembic\\.py$)"
         pass_filenames: false
-        args: ["sqlalchemy_cubrid/", "--config-file=pyproject.toml"]
-        additional_dependencies:
-          - "SQLAlchemy[asyncio]==2.0.53; python_version < '3.11'"
-          - "SQLAlchemy[asyncio]==2.1.1; python_version >= '3.11'"
-          - alembic>=1.7.2,<2.0
+        args: ["sqlalchemy_cubrid/", "_sqlalchemy_cubrid_alembic.py", "--config-file=pyproject.toml"]
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.9.4
@@ -35,4 +33,4 @@ repos:
       - id: bandit
         args: ["-c", "pyproject.toml"]
         additional_dependencies: ["bandit[toml]"]
-        files: "^sqlalchemy_cubrid/"
+        files: "^(sqlalchemy_cubrid/|_sqlalchemy_cubrid_alembic\\.py$)"

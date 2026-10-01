@@ -10,8 +10,10 @@
 This module provides the Alembic ``DefaultImpl`` subclass that enables
 Alembic migrations against a CUBRID database.  Alembic keys its
 implementations by dialect name, and ``DefaultImpl`` subclasses register
-themselves on import via ``__dialect__``; ``sqlalchemy_cubrid.dialect``
-imports this module whenever Alembic is installed, so every CUBRID URL
+themselves on import via ``__dialect__``.  Alembic 1.18+ imports this module
+through the ``alembic.plugins`` entry point
+(:mod:`_sqlalchemy_cubrid_alembic`); with Alembic 1.7.2-1.17
+``sqlalchemy_cubrid.dialect`` imports it.  Either way every CUBRID URL
 (``cubrid://``, ``cubrid+pycubrid://``, ``cubrid+aiopycubrid://``) finds it.
 
 Usage::
@@ -20,8 +22,8 @@ Usage::
     [alembic]
     sqlalchemy.url = cubrid://dba:password@localhost:33000/demodb
 
-    # That's it — loading the CUBRID dialect registers the CUBRID
-    # implementation; the default env.py needs no extra import.
+    # That's it — the CUBRID implementation is registered automatically;
+    # the default env.py needs no extra import.
 
 CUBRID-specific notes
 ---------------------
@@ -389,6 +391,65 @@ class CubridImpl(DefaultImpl):
             name=name,
             type_=type_,
             **kw,
+        )
+
+    def correct_for_autogen_foreignkeys(
+        self,
+        conn_fks: set[sa.ForeignKeyConstraint],
+        metadata_fks: set[sa.ForeignKeyConstraint],
+    ) -> None:
+        """Treat a reflected ``RESTRICT`` as the default referential action (#597).
+
+        CUBRID's default for ``ON DELETE`` / ``ON UPDATE`` is ``RESTRICT``
+        and ``SHOW CREATE TABLE`` always prints it, so a foreign key created
+        without actions reflects as ``ondelete="RESTRICT"`` /
+        ``onupdate="RESTRICT"``. Where the matching model foreign key has no
+        action, clear the reflected ``RESTRICT`` so autogenerate does not
+        drop and re-create an unchanged constraint. Reflection itself stays
+        truthful; other actions (including ``NO ACTION``, which CUBRID
+        prints as such) still compare as they are.
+        """
+        metadata_by_name: dict[str, sa.ForeignKeyConstraint] = {}
+        metadata_by_key: dict[tuple[Any, ...], list[sa.ForeignKeyConstraint]] = {}
+        for fk in metadata_fks:
+            if isinstance(fk.name, str):
+                metadata_by_name[fk.name] = fk
+            metadata_by_key.setdefault(self._fk_match_key(fk), []).append(fk)
+        for conn_fk in conn_fks:
+            # Match by name when both sides are named; otherwise every model
+            # FK on the same columns and target is a candidate, and RESTRICT
+            # is cleared only if none of them names an action.
+            named = metadata_by_name.get(conn_fk.name) if isinstance(conn_fk.name, str) else None
+            candidates = (
+                [named]
+                if named is not None
+                else metadata_by_key.get(self._fk_match_key(conn_fk), [])
+            )
+            if not candidates:
+                continue
+            for option in ("ondelete", "onupdate"):
+                conn_action = getattr(conn_fk, option)
+                if (
+                    conn_action is not None
+                    and conn_action.upper() == "RESTRICT"
+                    and all(getattr(fk, option) is None for fk in candidates)
+                ):
+                    # The rebuilt FK (e.g. in a downgrade) then omits
+                    # RESTRICT, which is the same action on CUBRID.
+                    setattr(conn_fk, option, None)
+
+    @staticmethod
+    def _fk_match_key(fk: sa.ForeignKeyConstraint) -> tuple[Any, ...]:
+        """Identify a foreign key by its columns, ignoring name and actions.
+
+        The target schema is left out: CUBRID is single-schema and
+        ``get_foreign_keys()`` sets ``referred_schema`` to the schema it was
+        called with (``None`` by default), while a model may name the owner
+        explicitly, so including it would only cause mismatches.
+        """
+        return (
+            tuple(fk.columns[key].name for key in fk.column_keys),
+            tuple((element.column.table.name, element.column.name) for element in fk.elements),
         )
 
     @classmethod

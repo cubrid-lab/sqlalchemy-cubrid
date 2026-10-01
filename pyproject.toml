@@ -36,6 +36,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Deprecated (#585): PyPI only has CUBRID-Python 9.3.x, which this dialect does
+# not test or support. Kept so existing installs keep resolving; the supported
+# CUBRIDdb is built from cubrid-python v11.3.0.51+ (docs/DRIVER_COMPAT.md), and
+# CubridDialect warns at first connect when it finds an older CUBRIDdb.
 cubrid = [
     "CUBRID-Python",
 ]
@@ -54,6 +58,8 @@ dev = [
     "bandit[toml]==1.9.4",
     "pre-commit",
     "tox",
+    "build",
+    "twine",
     "alembic>=1.7.2,<2.0",
 ]
 alembic = [
@@ -78,9 +84,16 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
 
+# Alembic 1.18+ loads this group on ``import alembic``; the plugin registers
+# CubridImpl so the dialect does not have to import Alembic itself (#595).
+[project.entry-points."alembic.plugins"]
+sqlalchemy_cubrid = "_sqlalchemy_cubrid_alembic"
 
 [tool.setuptools]
 packages = ["sqlalchemy_cubrid"]
+# Alembic plugin shim (#595): top-level and stdlib-only, so loading the
+# alembic.plugins entry point never imports the sqlalchemy_cubrid package.
+py-modules = ["_sqlalchemy_cubrid_alembic"]
 include-package-data = true
 
 [tool.setuptools.dynamic]
@@ -125,4 +138,5 @@ addopts = "--tb native -v -r fxX --maxfail=25 -p no:warnings"
 python_files = "test/*test_*.py"
 markers = [
     "integration: test requires a live CUBRID instance (deselected by the offline suite via -m 'not integration')",
+    "repo: repository-tooling test (Makefile, signal handling, repo scripts); applied by test/conftest.py REPO_TOOLING_MODULES, skipped by `make test`, run by `make test-repo` and the required repo-tests CI job",
 ]

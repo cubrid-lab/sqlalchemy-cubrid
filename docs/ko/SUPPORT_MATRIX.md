@@ -52,7 +52,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
 | 드라이버 | 설치 | URL 스킴 | 상태 |
 |---|---|---|---|
-| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` 또는 `[cubriddb]` | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원 (레거시 C 확장) |
+| CUBRIDdb (CCI) | cubrid-python v11.3.0.51+에서 빌드 ([방법](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)). `[cubrid]` / `[cubriddb]` extra는 폐기 예정이며 테스트되지 않은 PyPI 9.3.x를 설치 | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원 (레거시 C 확장, v11.3.0.51+만) |
 | pycubrid (순수 Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ 지원 |
 | pycubrid 비동기 | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ 지원 |
 
@@ -168,12 +168,12 @@ CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)
 
 ## CI 매트릭스
 
-| 차원 | PR / push | 나이틀리 + 태그 + dispatch |
+| 차원 | PR / push | 나이틀리 + dispatch + 릴리스 |
 |---|---|---|
 | 오프라인 테스트 | Python 3.10, 3.11, 3.12, 3.13, 3.14 | 동일 |
 | 통합 테스트 | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8잡 | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20잡 |
 
-5 × 4 전체 통합 매트릭스는 `.github/workflows/integration-full.yml`이 나이틀리 일정, 태그 릴리스, `workflow_dispatch` 요청 시 실행합니다.
+5 × 4 전체 통합 매트릭스는 `.github/workflows/integration-full.yml`이 나이틀리 일정, `workflow_dispatch` 요청 시, 그리고 모든 릴리스에서 `release.yml`이 호출하는 릴리스 게이트로 실행합니다.
 
 ### SQLAlchemy 컴플라이언스 레인
 

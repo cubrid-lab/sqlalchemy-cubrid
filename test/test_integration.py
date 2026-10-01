@@ -7,23 +7,50 @@
 
 """Integration tests against a live CUBRID instance.
 
-These tests require a running CUBRID database.  They are skipped
-automatically when no CUBRID connection is available.
-
-Set the environment variable ``CUBRID_TEST_URL`` to the connection
-URL, e.g.::
+These tests require a running CUBRID database.  Set the environment
+variable ``CUBRID_TEST_URL`` to the connection URL, e.g.::
 
     export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 
-Alternatively, the tests look for a CUBRID instance at the default
-``cubrid://dba@localhost:33000/testdb``.
+Without it they are skipped; with it, an unreachable server errors every
+test instead (the shared gate in ``test/conftest.py``, #593).
+
+The shared ``integration_users`` / ``integration_orders`` tables (#612) are
+created under a random per-process suffix (``_USERS_TABLE`` /
+``_ORDERS_TABLE`` below), so repeated runs and pytest-xdist workers against
+the *same* database never collide on CREATE TABLE or see each other's rows;
+the module-scoped ``metadata`` fixture drops only the tables it created,
+including on a failed ``create_all``. The autouse-everywhere row cleanup this
+module used to run before *every* test (even ones that never touch these
+tables) is gone: ``_clean_tables`` is opt-in via
+``@pytest.mark.usefixtures("_clean_tables")`` on the handful of classes that
+actually read/write ``integration_users`` / ``integration_orders`` across
+test boundaries within the same class.
+
+Many *other* tests here still create tables and database users with fixed
+names (for example ``t583_fresh``, ``alter_it_modify``, ``u543``, ``y_dup``,
+``r549_t``). Most are self-contained: a fixture creates them, the test runs,
+the same fixture drops them, and (per #607) idempotent ``cleanup()`` helpers
+drop any leftover of that exact name before creating it again, so *repeated*
+runs against the same database are safe. They are not necessarily safe to
+run *concurrently* against the same database -- two sessions racing to
+CREATE TABLE/CREATE USER under the same fixed name can still collide -- so
+run the module against a dedicated database one run at a time
+(``make integration`` starts a run-owned server) unless you have verified a
+specific parallel subset yourself (see the notes on ``TestIsDisconnect``
+below for one class that cannot be made parallel-safe at all).
 """
 
 from __future__ import annotations
 
+import contextlib
 import datetime
 from inspect import signature
 import os
+import select as io_select
+import subprocess
+import sys
+import time
 import uuid
 from decimal import Decimal
 
@@ -58,29 +85,89 @@ def _cubrid_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
-def _can_connect() -> bool:
-    """Return True if a CUBRID instance is reachable."""
-    try:
-        engine = create_engine(_cubrid_url())
+# Fixed-name database users (u2, u549, u543 below) are created idempotently:
+# cleanup() drops any existing user of that exact name (and what it owns)
+# before CREATE USER, so a user left behind by an interrupted prior run
+# against the *same* database does not make the next run's CREATE USER fail
+# with "already exists" (#607).
+#
+# A per-setup random suffix was tried instead and reverted (#607 2nd
+# review): it also fixes the "already exists" failure, but a user left
+# behind by a killed run is then orphaned under a name no later run ever
+# reuses, so it is never cleaned up -- and it silently pollutes any catalog
+# query that is not scoped to a specific owner. Reproduced live:
+# TestHasIndexOwnerPreference's `SELECT owner_name FROM db_class WHERE
+# class_name = 'own543'` (run as DBA, which sees every owner) failed with an
+# extra row once a `u543_<random>` leftover existed. Fixed names do not have
+# this failure mode: there is only ever one non-DBA owner these tests can
+# see, the current run's own (whether freshly created or recovered from a
+# leftover under that same name).
+#
+# A run genuinely killed so that DROP USER still cannot succeed -- it still
+# owns an object cleanup() does not know about (-837), or the CAS has not
+# yet reclaimed its session (-1188) -- is handled by _drop_user_verified()
+# below: a short retry clears a transient -1188, but it raises instead of
+# silently leaving the user behind for anything else, which is what let a
+# leftover block a later setup reusing the same name in the first place
+# (#607 review).
+
+
+def _user_exists(engine, username: str) -> bool:
+    """Whether *username* is currently in ``db_user``."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT 1 FROM db_user WHERE UPPER(name) = UPPER(:name)"),
+            {"name": username},
+        ).first()
+    return row is not None
+
+
+def _drop_user_verified(engine, username: str, *, retries: int = 5, delay: float = 0.2) -> None:
+    """Drop *username*, verifying it is actually gone instead of trusting a
+    swallowed exception (#607 review).
+
+    CUBRID can briefly refuse ``DROP USER`` with -1188 ("active user") right
+    after the last connection as that user is disposed -- the broker has not
+    yet reclaimed the session -- which a short retry clears. Any other
+    failure (most commonly -837, the user still owns a table) is not
+    transient: retrying it cannot help, so it re-raises immediately instead
+    of wasting the retry budget. Once retries for -1188 are exhausted, or the
+    user still appears in ``db_user`` despite DROP USER reporting success,
+    the error propagates instead of being silently swallowed -- which is
+    what let a leftover user block the next setup that reused this name.
+    """
+    last_error: Exception | None = None
+    for attempt in range(retries):
         with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        engine.dispose()
-        return True
-    except Exception:
-        return False
+            try:
+                conn.exec_driver_sql(f"DROP USER {username}")
+                conn.commit()
+                last_error = None
+            except Exception as error:
+                conn.rollback()
+                if "-1188" not in str(error):
+                    raise
+                last_error = error
+        if not _user_exists(engine, username):
+            return
+        if attempt + 1 < retries:
+            time.sleep(delay)
+    if last_error is not None:
+        raise last_error
+    raise AssertionError(f"DROP USER {username} reported success but it is still in db_user")
 
 
-# In CI, CUBRID is intentionally provisioned — connectivity failure
-# should be a hard test error, not a silent skip.
-_available = _can_connect()
+# The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
+# unset and errors them when its server is unreachable (#593).
+pytestmark = pytest.mark.integration
 
-pytestmark = [
-    pytest.mark.integration,
-    pytest.mark.skipif(
-        not _available,
-        reason="CUBRID instance not available (set CUBRID_TEST_URL)",
-    ),
-]
+# Run/worker-scoped unique names for the shared users/orders tables (#612):
+# computed once per test *process* at import time, so a plain rerun and each
+# pytest-xdist worker (a separate process) get their own suffix and never
+# collide with another run's tables on the same database.
+_TABLE_SUFFIX = uuid.uuid4().hex[:8]
+_USERS_TABLE = f"integration_users_{_TABLE_SUFFIX}"
+_ORDERS_TABLE = f"integration_orders_{_TABLE_SUFFIX}"
 
 
 @pytest.fixture(scope="module")
@@ -95,7 +182,7 @@ def metadata(engine):
     meta = MetaData()
 
     Table(
-        "integration_users",
+        _USERS_TABLE,
         meta,
         Column("id", Integer, primary_key=True, autoincrement=True),
         Column("name", String(100), nullable=False),
@@ -103,29 +190,44 @@ def metadata(engine):
     )
 
     Table(
-        "integration_orders",
+        _ORDERS_TABLE,
         meta,
         Column("id", Integer, primary_key=True, autoincrement=True),
         Column(
             "user_id",
             Integer,
-            ForeignKey("integration_users.id", ondelete="CASCADE"),
+            ForeignKey(f"{_USERS_TABLE}.id", ondelete="CASCADE"),
             nullable=False,
         ),
         Column("amount", Integer, nullable=False),
     )
 
-    meta.create_all(engine)
+    try:
+        meta.create_all(engine)
+    except Exception:
+        # Own cleanup of a failed setup too (#612): don't leak a
+        # partially-created, run-owned table under a suffix no later run
+        # will ever reuse.
+        meta.drop_all(engine, checkfirst=True)
+        raise
     yield meta
     meta.drop_all(engine)
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def _clean_tables(engine, metadata):
-    """Truncate tables before each test."""
+    """Truncate the shared users/orders tables before each test.
+
+    Not autouse (#612): only the classes that actually read/write
+    ``integration_users`` / ``integration_orders`` across test boundaries
+    opt in, via ``@pytest.mark.usefixtures("_clean_tables")`` on the class.
+    Every other test in this module (reflection, isolation level, pool,
+    KILL QUERY, the per-class fixed-name fixtures, ...) never touches these
+    two tables and no longer pays for -- or is coupled to -- their cleanup.
+    """
     with engine.begin() as conn:
-        conn.execute(text("DELETE FROM integration_orders"))
-        conn.execute(text("DELETE FROM integration_users"))
+        conn.execute(text(f"DELETE FROM {_ORDERS_TABLE}"))
+        conn.execute(text(f"DELETE FROM {_USERS_TABLE}"))
     yield
 
 
@@ -271,10 +373,11 @@ class TestBooleanIsIntegration:
         assert ids == expected_ids
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestDDLAndDML:
     def test_insert_and_select(self, engine, metadata):
         """INSERT rows and SELECT them back."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Alice", email="alice@example.com"))
             conn.execute(users.insert().values(name="Bob", email="bob@example.com"))
@@ -287,7 +390,7 @@ class TestDDLAndDML:
 
     def test_auto_increment(self, engine, metadata):
         """AUTO_INCREMENT generates sequential IDs."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="User1"))
             conn.execute(users.insert().values(name="User2"))
@@ -304,7 +407,7 @@ class TestDDLAndDML:
 
     def test_update(self, engine, metadata):
         """UPDATE modifies rows."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Charlie", email="old@example.com"))
             conn.execute(
@@ -317,21 +420,21 @@ class TestDDLAndDML:
 
     def test_delete(self, engine, metadata):
         """DELETE removes rows."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Ephemeral"))
             conn.execute(users.delete().where(users.c.name == "Ephemeral"))
 
         with engine.connect() as conn:
             count = conn.execute(
-                text("SELECT COUNT(*) FROM integration_users WHERE name = 'Ephemeral'")
+                text(f"SELECT COUNT(*) FROM {_USERS_TABLE} WHERE name = 'Ephemeral'")
             ).scalar()
         assert count == 0
 
     def test_join(self, engine, metadata):
         """JOIN between two tables."""
-        users = metadata.tables["integration_users"]
-        orders = metadata.tables["integration_orders"]
+        users = metadata.tables[_USERS_TABLE]
+        orders = metadata.tables[_ORDERS_TABLE]
 
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="Dave"))
@@ -353,7 +456,7 @@ class TestDDLAndDML:
 
     def test_limit_offset(self, engine, metadata):
         """LIMIT and OFFSET work correctly."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             for i in range(5):
                 conn.execute(users.insert().values(name=f"User{i}"))
@@ -367,20 +470,46 @@ class TestReflection:
     def test_has_table(self, engine, metadata):
         """has_table() returns correct results."""
         insp = inspect(engine)
-        assert insp.has_table("integration_users")
+        assert insp.has_table(_USERS_TABLE)
         assert not insp.has_table("nonexistent_table_xyz")
+
+    def test_existence_checks_for_missing_objects_and_checkfirst(self, engine):
+        """A missing table or index is not reported as existing (#583).
+
+        COUNT(*) is BIGINT, which the PyPI CUBRID-Python 9.3 driver fetches as
+        str; has_table() / has_index() must not treat ``'0'`` as true.
+        """
+        meta = MetaData()
+        t = Table("t583_fresh", meta, Column("id", Integer, primary_key=True), Column("v", Integer))
+        sa.Index("ix_t583_fresh_v", t.c.v)
+        meta.drop_all(engine, checkfirst=True)
+        try:
+            with engine.connect() as conn:
+                assert engine.dialect.has_table(conn, "t583_fresh") is False
+                assert engine.dialect.has_index(conn, "t583_fresh", "ix_t583_fresh_v") is False
+            meta.create_all(engine, checkfirst=True)
+            # checkfirst must not skip the CREATE of a table that does not exist.
+            insp = inspect(engine)
+            assert insp.has_table("t583_fresh")
+            assert insp.has_index("t583_fresh", "ix_t583_fresh_v")
+            assert not insp.has_index("t583_fresh", "ix_t583_missing")
+            meta.create_all(engine, checkfirst=True)
+        finally:
+            meta.drop_all(engine, checkfirst=True)
+        with engine.connect() as conn:
+            assert engine.dialect.has_table(conn, "t583_fresh") is False
 
     def test_get_table_names(self, engine, metadata):
         """get_table_names() includes our test tables."""
         insp = inspect(engine)
         tables = insp.get_table_names()
-        assert "integration_users" in tables
-        assert "integration_orders" in tables
+        assert _USERS_TABLE in tables
+        assert _ORDERS_TABLE in tables
 
     def test_get_columns(self, engine, metadata):
         """get_columns() reflects column metadata."""
         insp = inspect(engine)
-        columns = insp.get_columns("integration_users")
+        columns = insp.get_columns(_USERS_TABLE)
         col_names = [c["name"] for c in columns]
         assert "id" in col_names
         assert "name" in col_names
@@ -389,20 +518,20 @@ class TestReflection:
     def test_get_pk_constraint(self, engine, metadata):
         """get_pk_constraint() reflects primary key."""
         insp = inspect(engine)
-        pk = insp.get_pk_constraint("integration_users")
+        pk = insp.get_pk_constraint(_USERS_TABLE)
         assert "id" in pk["constrained_columns"]
 
     def test_get_foreign_keys(self, engine, metadata):
         """get_foreign_keys() reflects FK from orders → users."""
         insp = inspect(engine)
-        fks = insp.get_foreign_keys("integration_orders")
+        fks = insp.get_foreign_keys(_ORDERS_TABLE)
         assert len(fks) >= 1, (
             "get_foreign_keys() returned empty — FK reflection is broken. "
             "This previously masked a real Alembic regression."
         )
         fk = fks[0]
         assert "user_id" in fk["constrained_columns"]
-        assert fk["referred_table"] == "integration_users"
+        assert fk["referred_table"] == _USERS_TABLE
 
     @pytest.mark.parametrize("method", ["get_columns", "get_indexes"])
     def test_syntax_error_is_not_no_such_table(self, engine, method):
@@ -489,26 +618,38 @@ class TestSameNameClassOfOtherOwner:
             pytest.skip("CUBRID < 11.2 has one global namespace for class names")
 
         def run(eng, *statements, ignore_errors=False):
+            # One transaction per statement: DDL is transactional, so a
+            # rollback after a failed statement must not undo an earlier
+            # successful one (#607).
             with eng.connect() as conn:
                 for statement in statements:
                     try:
                         conn.exec_driver_sql(statement)
+                        conn.commit()
                     except Exception:
                         if not ignore_errors:
                             raise
                         conn.rollback()
-                conn.commit()
 
-        u2 = create_engine(engine.url.set(username="u2", password=None))
+        username = "u2"
+        u2 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
-            run(u2, "DROP TABLE y_dup", "DROP TABLE y_dup_parent", ignore_errors=True)
-            u2.dispose()
-            run(engine, "DROP VIEW y_dup", "DROP USER u2", ignore_errors=True)
+            # DBA-owned, so always safe regardless of whether `username`
+            # currently exists.
+            run(engine, "DROP VIEW y_dup", ignore_errors=True)
+            if _user_exists(engine, username):
+                run(u2, "DROP TABLE y_dup", "DROP TABLE y_dup_parent", ignore_errors=True)
+                u2.dispose()
+                _drop_user_verified(engine, username)
+            else:
+                u2.dispose()
 
-        run(engine, "CREATE USER u2", ignore_errors=True)
+        # Idempotent: drop any state left by an earlier setup that happened
+        # to use this exact (fresh, random) username before creating it for
+        # real -- a no-op in the common case where it never existed (#607).
         cleanup()
-        run(engine, "CREATE USER u2")
+        run(engine, f"CREATE USER {username}")
         try:
             run(
                 engine,
@@ -530,7 +671,10 @@ class TestSameNameClassOfOtherOwner:
             owners = conn.execute(
                 text("SELECT owner_name, class_type FROM db_class WHERE class_name = 'y_dup'")
             ).fetchall()
-            assert sorted(owners) == [("DBA", "VCLASS"), ("U2", "CLASS")]
+            assert sorted(owners) == [
+                ("DBA", "VCLASS"),
+                (u2_engine.url.username.upper(), "CLASS"),
+            ]
 
             insp = inspect(conn)
             assert "u_y_dup_u" in {index["name"] for index in insp.get_indexes("y_dup")}
@@ -539,6 +683,73 @@ class TestSameNameClassOfOtherOwner:
             assert [(fk["name"], fk["referred_table"]) for fk in fks] == [
                 ("fk_y_dup_p", "y_dup_parent")
             ]
+
+
+@contextlib.contextmanager
+def _r549_user_cycle(engine, as_user, username="u549"):
+    """Create user ``u549`` and the ``r549_t`` / ``r549_parent`` tables (plus,
+    since CUBRID 11.2, a same-named decoy owned by the other side), yield the
+    owning engine, then drop everything.
+
+    Idempotent: ``cleanup()`` drops any state already present under
+    *username* -- a no-op unless an earlier, interrupted call left it behind
+    (as the regression tests below force) -- before the real ``CREATE
+    USER``. ``cleanup()`` only connects as *username* when it actually
+    exists (``_user_exists``), and drops the user itself through
+    ``_drop_user_verified``, which does not swallow a failure that would
+    leave it behind. Safe to call back to back against the same database.
+    """
+
+    def run(eng, *statements, ignore_errors=False):
+        # One transaction per statement: DDL is transactional, so a
+        # rollback after a failed statement must not undo an earlier
+        # successful one (#607).
+        with eng.connect() as conn:
+            for statement in statements:
+                try:
+                    conn.exec_driver_sql(statement)
+                    conn.commit()
+                except Exception:
+                    if not ignore_errors:
+                        raise
+                    conn.rollback()
+
+    u549 = create_engine(engine.url.set(username=username, password=None))
+    owner, other = (engine, u549) if as_user == "dba" else (u549, engine)
+
+    def cleanup():
+        # DBA-owned, so always safe regardless of whether `username`
+        # currently exists.
+        run(engine, "DROP TABLE r549_t", "DROP TABLE r549_parent", ignore_errors=True)
+        if _user_exists(engine, username):
+            run(u549, "DROP TABLE r549_t", "DROP TABLE r549_parent", ignore_errors=True)
+            u549.dispose()
+            _drop_user_verified(engine, username)
+        else:
+            u549.dispose()
+
+    cleanup()
+    run(engine, f"CREATE USER {username}")
+    try:
+        run(
+            owner,
+            "CREATE TABLE r549_parent (id INT PRIMARY KEY)",
+            "CREATE TABLE r549_t (a INT, b INT, p INT, u INT UNIQUE, "
+            "v INT COMMENT 'v comment', "
+            "CONSTRAINT pk_r549_t PRIMARY KEY (a, b), "
+            "CONSTRAINT fk_r549_t_p FOREIGN KEY (p) REFERENCES r549_parent (id))",
+            "CREATE INDEX ix_r549_t_v ON r549_t (v)",
+        )
+        if _server_at_least(engine, (11, 2)):
+            run(
+                other,
+                "CREATE TABLE r549_t (id INT PRIMARY KEY, v INT COMMENT 'decoy', w INT UNIQUE)",
+                "CREATE INDEX ix_r549_decoy_v ON r549_t (v)",
+                "GRANT SELECT ON r549_t TO PUBLIC",
+            )
+        yield owner
+    finally:
+        cleanup()
 
 
 class TestReflectionAsNonDba:
@@ -554,56 +765,107 @@ class TestReflectionAsNonDba:
         if engine.url.username is None or engine.url.username.lower() != "dba":
             pytest.skip("needs a DBA connection to create a user")
 
-        def run(eng, *statements, ignore_errors=False):
-            # One transaction per statement: DDL is transactional, so a
-            # rollback after a failed DROP must not undo the previous one.
-            with eng.connect() as conn:
-                for statement in statements:
+        with _r549_user_cycle(engine, request.param) as owner:
+            yield owner
+
+    def test_reflection_setup_reruns_against_same_database(self, engine):
+        """#607 regression: reproduce a setup left behind by an interrupted
+        prior run -- the exact failure from the linked CI run, where
+        ``cleanup()``'s ``DROP USER`` had failed silently and the next
+        ``CREATE USER u549`` then failed with "already exists".
+
+        Plant the fixed-name ``u549`` user with a table it owns (so a plain
+        ``DROP USER`` would fail with -837), before running the cycle: its
+        own idempotent cleanup must remove both, and the user must actually
+        be gone from ``db_user`` afterward, not just appear to be because a
+        failure was swallowed."""
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
+
+        # Start from a known-clean state.
+        with _r549_user_cycle(engine, "u549"):
+            pass
+
+        # Simulate an interrupted prior run: u549 is left behind, still
+        # owning a table that cleanup() does know about (r549_parent), so a
+        # plain DROP USER would fail with -837 -- exactly as if this cycle's
+        # own cleanup() had been killed mid-run.
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE USER u549")
+            conn.commit()
+        leftover = create_engine(engine.url.set(username="u549", password=None))
+        with leftover.connect() as conn:
+            conn.exec_driver_sql("CREATE TABLE r549_parent (id INT PRIMARY KEY)")
+            conn.commit()
+        leftover.dispose()
+        assert _user_exists(engine, "u549")
+
+        # Reusing that exact username must still succeed: setup's own
+        # cleanup() must remove the leftover user and table first.
+        with _r549_user_cycle(engine, "u549") as owner:
+            with owner.connect() as conn:
+                insp = inspect(conn)
+                assert insp.get_pk_constraint("r549_t") == {
+                    "name": "pk_r549_t",
+                    "constrained_columns": ["a", "b"],
+                }
+
+        # And its own teardown must have actually removed the user, not
+        # merely swallowed a failed DROP USER.
+        assert not _user_exists(engine, "u549")
+
+    def test_reflection_setup_raises_instead_of_hiding_a_stuck_drop_user(self, engine):
+        """#607 2nd review: a DROP USER failure retries cannot clear must be
+        raised, not swallowed -- otherwise the setup silently continues with
+        the user still present, which is the original bug under another
+        name.
+
+        Leave u549 owning a table outside ``_r549_user_cycle``'s own known
+        set (``r549_t`` / ``r549_parent``), so ``cleanup()`` drops what it
+        knows about but ``DROP USER`` still fails with -837 every time:
+        unlike the recoverable-leftover case above, no amount of retrying
+        clears it. Entering the cycle must raise that error instead of
+        proceeding as if cleanup had succeeded."""
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
+
+        # Start from a known-clean state.
+        with _r549_user_cycle(engine, "u549"):
+            pass
+
+        with engine.connect() as conn:
+            conn.exec_driver_sql("CREATE USER u549")
+            conn.commit()
+        leftover = create_engine(engine.url.set(username="u549", password=None))
+        try:
+            with leftover.connect() as conn:
+                conn.exec_driver_sql("CREATE TABLE r549_unexpected (id INT PRIMARY KEY)")
+                conn.commit()
+        finally:
+            leftover.dispose()
+
+        try:
+            with pytest.raises(Exception, match="-837"):
+                with _r549_user_cycle(engine, "u549"):
+                    pass
+            # The user must still be there: the point is that setup did not
+            # silently drop it and move on.
+            assert _user_exists(engine, "u549")
+        finally:
+            # Clean up what this test deliberately left stuck: drop the
+            # untracked table as its owner (DBA is a different owner and
+            # cannot drop it unqualified, #529), then the user, as DBA.
+            cleanup_engine = create_engine(engine.url.set(username="u549", password=None))
+            try:
+                with cleanup_engine.connect() as conn:
                     try:
-                        conn.exec_driver_sql(statement)
+                        conn.exec_driver_sql("DROP TABLE r549_unexpected")
                         conn.commit()
                     except Exception:
-                        if not ignore_errors:
-                            raise
                         conn.rollback()
-
-        u549 = create_engine(engine.url.set(username="u549", password=None))
-        owner, other = (engine, u549) if request.param == "dba" else (u549, engine)
-
-        def cleanup():
-            for eng in (u549, engine):
-                run(
-                    eng,
-                    "DROP TABLE r549_t",
-                    "DROP TABLE r549_parent",
-                    ignore_errors=True,
-                )
-            u549.dispose()
-            run(engine, "DROP USER u549", ignore_errors=True)
-
-        run(engine, "CREATE USER u549", ignore_errors=True)
-        cleanup()
-        run(engine, "CREATE USER u549")
-        try:
-            run(
-                owner,
-                "CREATE TABLE r549_parent (id INT PRIMARY KEY)",
-                "CREATE TABLE r549_t (a INT, b INT, p INT, u INT UNIQUE, "
-                "v INT COMMENT 'v comment', "
-                "CONSTRAINT pk_r549_t PRIMARY KEY (a, b), "
-                "CONSTRAINT fk_r549_t_p FOREIGN KEY (p) REFERENCES r549_parent (id))",
-                "CREATE INDEX ix_r549_t_v ON r549_t (v)",
-            )
-            if _server_at_least(engine, (11, 2)):
-                run(
-                    other,
-                    "CREATE TABLE r549_t (id INT PRIMARY KEY, v INT COMMENT 'decoy', w INT UNIQUE)",
-                    "CREATE INDEX ix_r549_decoy_v ON r549_t (v)",
-                    "GRANT SELECT ON r549_t TO PUBLIC",
-                )
-            yield owner
-        finally:
-            cleanup()
+            finally:
+                cleanup_engine.dispose()
+            _drop_user_verified(engine, "u549")
 
     @pytest.mark.parametrize("name", ["r549_t", "R549_T"])
     def test_reflection(self, reflecting_engine, name):
@@ -619,6 +881,11 @@ class TestReflectionAsNonDba:
             assert insp.get_unique_constraints(name) == [
                 {"name": "u_r549_t_u", "column_names": ["u"], "duplicates_index": "u_r549_t_u"}
             ]
+            # SHOW CREATE TABLE works for a non-DBA owner too (#589).
+            fks = insp.get_foreign_keys(name)
+            assert [(fk["name"], fk["referred_table"]) for fk in fks] == [
+                ("fk_r549_t_p", "r549_parent")
+            ]
             assert insp.has_index(name, "ix_r549_t_v")
             assert insp.has_index(name, "pk_r549_t")
             assert not insp.has_index(name, "ix_r549_decoy_v")
@@ -627,10 +894,178 @@ class TestReflectionAsNonDba:
             assert comments == {"a": None, "b": None, "p": None, "u": None, "v": "v comment"}
 
 
+class TestShowCreateTableFailures:
+    """#589: ``get_foreign_keys`` (and the DDL fallback of
+    ``get_unique_constraints``) read ``SHOW CREATE TABLE``. A failure there
+    used to be logged and reported as "no constraints", so Alembic
+    autogenerate emitted an ``add_fk`` for a foreign key that already
+    exists."""
+
+    PARENT = "r589_parent"
+    CHILD = "r589_child"
+    PLAIN = "r589_plain"
+
+    @classmethod
+    def _metadata(cls):
+        meta = MetaData()
+        Table(cls.PARENT, meta, Column("id", Integer, primary_key=True))
+        Table(
+            cls.CHILD,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column(
+                "pid",
+                Integer,
+                ForeignKey(f"{cls.PARENT}.id", name="fk_r589_child_pid"),
+            ),
+        )
+        Table(cls.PLAIN, meta, Column("id", Integer, primary_key=True))
+        return meta
+
+    def _diffs(self, conn, meta):
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        tables = {self.PARENT, self.CHILD, self.PLAIN}
+        ctx = MigrationContext.configure(
+            connection=conn,
+            opts={"include_name": lambda name, type_, parent: type_ != "table" or name in tables},
+        )
+        return compare_metadata(ctx, meta)
+
+    @pytest.fixture
+    def meta(self, engine):
+        meta = self._metadata()
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            yield meta
+        finally:
+            meta.drop_all(engine)
+
+    @staticmethod
+    def _fail_show_create_table(conn, cursor, statement, parameters, context, executemany):
+        if statement.lstrip().upper().startswith("SHOW CREATE TABLE"):
+            raise RuntimeError("SHOW CREATE TABLE failed")
+
+    def test_autogenerate_has_no_fk_diff_when_reflection_works(self, engine, meta):
+        with engine.connect() as conn:
+            insp = inspect(conn)
+            assert [fk["name"] for fk in insp.get_foreign_keys(self.CHILD)] == ["fk_r589_child_pid"]
+            # A successful SHOW CREATE TABLE without constraints: empty lists.
+            assert insp.get_foreign_keys(self.PLAIN) == []
+            assert insp.get_unique_constraints(self.PLAIN) == []
+            assert self._diffs(conn, meta) == []
+
+    def test_autogenerate_raises_when_show_create_table_fails(self, engine, meta):
+        sa.event.listen(engine, "before_cursor_execute", self._fail_show_create_table)
+        try:
+            with engine.connect() as conn:
+                with pytest.raises(RuntimeError, match="SHOW CREATE TABLE failed"):
+                    inspect(conn).get_foreign_keys(self.CHILD)
+                conn.rollback()
+                with pytest.raises(RuntimeError, match="SHOW CREATE TABLE failed"):
+                    # The DDL fallback, taken because the table has no unique index.
+                    inspect(conn).get_unique_constraints(self.PLAIN)
+                conn.rollback()
+                # Before #589 this returned [("add_fk", ...)] for the
+                # existing foreign key.
+                with pytest.raises(RuntimeError, match="SHOW CREATE TABLE failed"):
+                    self._diffs(conn, meta)
+        finally:
+            sa.event.remove(engine, "before_cursor_execute", self._fail_show_create_table)
+
+
+class TestAutogenerateForeignKeyDefaultActions:
+    """#597: CUBRID prints its default referential action, RESTRICT, in
+    ``SHOW CREATE TABLE``, so a foreign key declared without ``ondelete`` /
+    ``onupdate`` reflects as RESTRICT. Autogenerate must not drop and
+    re-create it, but must still see a real change of action."""
+
+    PARENT = "r597_parent"
+    CHILD = "r597_child"
+
+    @classmethod
+    def _metadata(cls, **actions):
+        meta = MetaData()
+        Table(cls.PARENT, meta, Column("id", Integer, primary_key=True))
+        Table(
+            cls.CHILD,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("pid", Integer, ForeignKey(f"{cls.PARENT}.id", name="fk_r597", **actions)),
+        )
+        return meta
+
+    def _diffs(self, conn, meta):
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        tables = {self.PARENT, self.CHILD}
+        ctx = MigrationContext.configure(
+            connection=conn,
+            opts={"include_name": lambda name, type_, parent: type_ != "table" or name in tables},
+        )
+        return compare_metadata(ctx, meta)
+
+    @pytest.fixture()
+    def create(self, engine):
+        created = []
+
+        def _create(**actions):
+            meta = self._metadata(**actions)
+            meta.drop_all(engine)
+            meta.create_all(engine)
+            created.append(meta)
+
+        yield _create
+        for meta in created:
+            meta.drop_all(engine)
+
+    @pytest.mark.parametrize(
+        "actions",
+        [
+            {},
+            {"ondelete": "RESTRICT", "onupdate": "RESTRICT"},
+            {"ondelete": "CASCADE"},
+            {"ondelete": "SET NULL", "onupdate": "RESTRICT"},
+            {"ondelete": "NO ACTION", "onupdate": "NO ACTION"},
+        ],
+    )
+    def test_unchanged_foreign_key_has_no_diff(self, engine, create, actions):
+        create(**actions)
+        with engine.connect() as conn:
+            assert self._diffs(conn, self._metadata(**actions)) == []
+
+    def test_reflection_still_reports_restrict(self, engine, create):
+        create()
+        with engine.connect() as conn:
+            [fk] = inspect(conn).get_foreign_keys(self.CHILD)
+        assert fk["options"] == {"ondelete": "RESTRICT", "onupdate": "RESTRICT"}
+
+    @pytest.mark.parametrize(
+        ("created", "model"),
+        [
+            ({}, {"ondelete": "CASCADE"}),  # adding an action
+            ({}, {"onupdate": "SET NULL"}),  # CUBRID has no ON UPDATE CASCADE
+            ({"ondelete": "CASCADE"}, {}),  # removing it again
+            ({"ondelete": "SET NULL"}, {"ondelete": "CASCADE"}),
+        ],
+    )
+    def test_changed_action_is_detected(self, engine, create, created, model):
+        create(**created)
+        with engine.connect() as conn:
+            diffs = self._diffs(conn, self._metadata(**model))
+        assert [d[0] for d in diffs] == ["remove_fk", "add_fk"]
+        assert diffs[1][1].ondelete == model.get("ondelete")
+        assert diffs[1][1].onupdate == model.get("onupdate")
+
+
+@pytest.mark.usefixtures("_clean_tables")
 class TestTransactions:
     def test_savepoint(self, engine, metadata):
         """Savepoint support (CUBRID supports savepoints, not RELEASE SAVEPOINT)."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="BeforeSP"))
             savepoint = conn.begin_nested()
@@ -645,7 +1080,7 @@ class TestTransactions:
 
     def test_rollback(self, engine, metadata):
         """Transaction rollback discards changes."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.connect() as conn:
             trans = conn.begin()
             conn.execute(users.insert().values(name="WillRollback"))
@@ -653,15 +1088,16 @@ class TestTransactions:
 
         with engine.connect() as conn:
             count = conn.execute(
-                text("SELECT COUNT(*) FROM integration_users WHERE name = 'WillRollback'")
+                text(f"SELECT COUNT(*) FROM {_USERS_TABLE} WHERE name = 'WillRollback'")
             ).scalar()
         assert count == 0
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestLastRowId:
     def test_lastrowid_via_orm(self, engine, metadata):
         """Verify lastrowid works through SA ORM Session."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with Session(engine) as session:
             result = session.execute(users.insert().values(name="LastRowIdTest"))
             inserted_pk = result.inserted_primary_key[0]
@@ -1000,7 +1436,128 @@ class TestDoPing:
             eng.dispose()
 
 
+# Run in a separate process: CUBRIDdb holds the GIL while a statement runs
+# (and select() on a pipe, used to hear "ready" from it, is POSIX-only). It
+# records the transactions already running a query (its own included),
+# prints "ready", then sends KILL QUERY to the one new query that is still
+# running half a second later: the victim.
+#
+# This still identifies the victim by timing rather than by its SQL text.
+# CUBRID gives no way to do the latter: neither ``SHOW TRANSACTION TABLES``
+# nor ``SHOW THREADS`` exposes the running statement's text or any field an
+# application can tag (``Client_info``/``Client_program``/``Client_pid`` are
+# the CAS's own identity, not the driver's; verified live on 11.4). The slow
+# query below is still tagged with a unique comment, so a run can be found in
+# a broker SQL log by eye, but the helper itself cannot match on it. That
+# makes this test reliable only when it is the sole session running a slow
+# query against the target CUBRID instance at the time, e.g. one `make
+# integration` run at a time against a given container/database (#578).
+_KILL_QUERY_SCRIPT = """
+import sys, time
+import sqlalchemy as sa
+
+def running(cur):
+    cur.execute("SHOW TRANSACTION TABLES")
+    cols = [d[0].lower() for d in cur.description]
+    index, started = cols.index("tran_index"), cols.index("query_start_time")
+    return {row[index] for row in cur.fetchall() if row[started] is not None}
+
+engine = sa.create_engine(sys.argv[1], poolclass=sa.pool.NullPool)
+raw = engine.raw_connection()
+try:
+    cur = raw.cursor()
+    before = running(cur)
+    print("ready", flush=True)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        new = running(cur) - before
+        if new:
+            time.sleep(0.5)
+            # Only a query still running after the pause: a short one, such as
+            # the service health check, must not be mistaken for the victim.
+            victims = new & running(cur)
+            if len(victims) == 1:
+                # KILL takes no bind parameter; tran_index is an int from the server.
+                cur.execute("KILL QUERY " + str(int(victims.pop())))
+                print("killed", flush=True)
+                break
+        time.sleep(0.1)
+    else:
+        sys.exit("no running query to kill")
+finally:
+    raw.close()
+"""
+
+# Long enough to be killed mid-run. Its runtime is bounded by the catalog size
+# (under a minute on CUBRID 11.4) if the kill fails: the helper then exits
+# non-zero and the test fails instead of hanging. The comment is a unique tag
+# for finding this run's query by eye in a broker SQL log; CUBRID does not
+# expose it back through SHOW TRANSACTION TABLES, so the helper above still
+# matches by timing, not by this text (see the comment on _KILL_QUERY_SCRIPT).
+_SLOW_QUERY = text(
+    f"SELECT /* kill-query-victim:{uuid.uuid4().hex} */ COUNT(*)"
+    " FROM db_attribute a, db_attribute b, db_attribute c,"
+    " (SELECT attr_name FROM db_attribute LIMIT 10) d"
+)
+
+
 class TestIsDisconnect:
+    """Not parallelizable and not rerun-isolated by a unique name (#612): the
+    victim of ``_KILL_QUERY_SCRIPT`` is identified by *timing* ("the one new
+    query still running half a second after start"), because CUBRID exposes
+    no per-session tag ``SHOW TRANSACTION TABLES`` can match on (see the
+    comment above ``_KILL_QUERY_SCRIPT``, #578). A concurrent session running
+    its own slow query against the same CUBRID instance -- another worker, or
+    another ``make integration`` run sharing a server -- can make the helper
+    pick the wrong victim or find more than one candidate and fail outright.
+    Run this class alone against a given CUBRID instance.
+    """
+
+    def test_interrupted_query_keeps_connection(self, engine):
+        """A query interrupted by KILL QUERY fails with -4 but keeps the connection (#572).
+
+        -4 is the server's ER_INTERRUPTED. CUBRIDdb reports it in ``args[0]``
+        and pycubrid in ``errno``; neither is a disconnect.
+
+        Relies on ``_KILL_QUERY_SCRIPT``, which identifies its victim by
+        timing and waits on it through a pipe with ``select()`` (POSIX-only);
+        see the comment above that script for why (#578).
+        """
+        url = engine.url.render_as_string(hide_password=False)
+        killer = subprocess.Popen(  # noqa: S603 - runs this interpreter on a fixed script
+            [sys.executable, "-c", _KILL_QUERY_SCRIPT, url],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        try:
+            assert killer.stdout is not None
+            # Bounded wait: the helper may stall connecting to a busy broker.
+            readable, _, _ = io_select.select([killer.stdout], [], [], 60)
+            if not readable or killer.stdout.readline().strip() != "ready":
+                killer.kill()
+                killer.wait(timeout=60)
+                pytest.fail(f"KILL QUERY helper failed: {killer.stderr.read()}")
+            with engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+                dbapi_conn = conn.connection.dbapi_connection
+                with pytest.raises(sa.exc.DBAPIError) as info:
+                    conn.execute(_SLOW_QUERY)
+                orig = info.value.orig
+                code = getattr(orig, "errno", None)  # pycubrid
+                if code is None:
+                    code = orig.args[0]  # CUBRIDdb
+                assert code == -4
+                assert info.value.connection_invalidated is False
+                conn.rollback()
+                assert conn.execute(text("SELECT 1")).scalar() == 1
+                assert conn.connection.dbapi_connection is dbapi_conn
+            assert killer.wait(timeout=60) == 0, killer.stderr.read()
+        finally:
+            if killer.poll() is None:
+                killer.kill()
+                killer.wait()
+
     def test_is_disconnect_with_non_disconnect_error(self, engine):
         """is_disconnect() returns False for normal database errors."""
         dialect = engine.dialect
@@ -1019,10 +1576,11 @@ class TestIsDisconnect:
         assert dialect.is_disconnect(exc, None, None) is False
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestPostfetchLastRowId:
     def test_lastrowid_consistency(self, engine, metadata):
         """Verify lastrowid returns consistent IDs across inserts."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         ids = []
         with Session(engine) as session:
             for i in range(3):
@@ -1063,12 +1621,13 @@ class TestConnectionPool:
             eng.dispose()
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestReplaceIntegration:
     def test_replace_insert(self, engine, metadata):
         """REPLACE INTO inserts a new row when no conflict."""
         from sqlalchemy_cubrid import replace
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             stmt = replace(users).values(name="ReplaceNew", email="replace@example.com")
             conn.execute(stmt)
@@ -1082,7 +1641,7 @@ class TestReplaceIntegration:
         """REPLACE INTO replaces existing row on duplicate key."""
         from sqlalchemy_cubrid import replace
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             # Insert initial row
             conn.execute(users.insert().values(name="ReplaceMe", email="old@example.com"))
@@ -1097,6 +1656,55 @@ class TestReplaceIntegration:
         assert row is not None
         assert row.name == "Replaced"
         assert row.email == "new@example.com"
+
+    def test_replace_with_prefix_and_insert_into_text(self, engine, metadata):
+        """REPLACE with a prefix still replaces rows and keeps "INSERT INTO" data (#591)."""
+        from sqlalchemy_cubrid import replace
+
+        users = metadata.tables[_USERS_TABLE]
+        with engine.begin() as conn:
+            conn.execute(users.insert().values(name="PrefixOld", email="old@example.com"))
+            row_id = conn.execute(text("SELECT LAST_INSERT_ID()")).scalar()
+
+            stmt = (
+                replace(users)
+                .prefix_with("/* INSERT INTO audit */")
+                .values(id=row_id, name="INSERT INTO", email=sa.literal_column("'INSERT INTO'"))
+            )
+            assert str(stmt.compile(dialect=engine.dialect)).startswith(
+                "REPLACE /* INSERT INTO audit */ INTO"
+            )
+            conn.execute(stmt)
+
+        with engine.connect() as conn:
+            rows = conn.execute(users.select().where(users.c.id == row_id)).fetchall()
+        assert len(rows) == 1
+        assert rows[0].name == "INSERT INTO"
+        assert rows[0].email == "INSERT INTO"
+
+    def test_replace_executemany_with_prefix(self, engine, metadata):
+        """executemany REPLACE with a prefix replaces every conflicting row (#591)."""
+        from sqlalchemy_cubrid import replace
+
+        users = metadata.tables[_USERS_TABLE]
+        with engine.begin() as conn:
+            ids = []
+            for name in ("ManyOld1", "ManyOld2"):
+                conn.execute(users.insert().values(name=name, email="old@example.com"))
+                ids.append(conn.execute(text("SELECT LAST_INSERT_ID()")).scalar())
+
+            conn.execute(
+                replace(users).prefix_with("/* c */"),
+                [{"id": i, "name": "INSERT INTO", "email": f"new{i}@example.com"} for i in ids],
+            )
+
+        with engine.connect() as conn:
+            rows = conn.execute(
+                users.select().where(users.c.id.in_(ids)).order_by(users.c.id)
+            ).fetchall()
+        assert [(r.id, r.name, r.email) for r in rows] == [
+            (i, "INSERT INTO", f"new{i}@example.com") for i in ids
+        ]
 
 
 class TestRecursiveCTEIntegration:
@@ -1117,18 +1725,19 @@ class TestRecursiveCTEIntegration:
         assert values == [1, 2, 3, 4, 5]
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestTraceQueryIntegration:
     def test_trace_query_returns_output(self, engine, metadata):
         """trace_query() returns non-empty trace output."""
         from sqlalchemy_cubrid import trace_query
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         # Insert a row so the query has something to trace
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="TraceTest", email="trace@example.com"))
 
         with engine.connect() as conn:
-            traces = trace_query(conn, text("SELECT * FROM integration_users"))
+            traces = trace_query(conn, text(f"SELECT * FROM {_USERS_TABLE}"))
         # trace_query should return a list; on CUBRID it should have content
         assert isinstance(traces, list)
         # Trace may be empty in some CUBRID configurations, but should not error
@@ -1137,14 +1746,14 @@ class TestTraceQueryIntegration:
         """trace_query() works with parameterized statements."""
         from sqlalchemy_cubrid import trace_query
 
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="TraceParam", email="param@example.com"))
 
         with engine.connect() as conn:
             traces = trace_query(
                 conn,
-                text("SELECT * FROM integration_users WHERE name = :name"),
+                text(f"SELECT * FROM {_USERS_TABLE} WHERE name = :name"),
                 parameters={"name": "TraceParam"},
             )
         assert isinstance(traces, list)
@@ -1199,9 +1808,10 @@ class TestFetchShapeCompatibility:
         finally:
             raw_conn.close()
 
+    @pytest.mark.usefixtures("_clean_tables")
     def test_sqlalchemy_fetchall_with_orm(self, engine, metadata):
         """SQLAlchemy ORM layer works correctly with pycubrid's fetch results."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name="FetchTest", email="fetch@example.com"))
 
@@ -1214,9 +1824,10 @@ class TestFetchShapeCompatibility:
             assert rows[0].name == "FetchTest"
             assert rows[0].email == "fetch@example.com"
 
+    @pytest.mark.usefixtures("_clean_tables")
     def test_sqlalchemy_fetchmany_with_text(self, engine, metadata):
         """SQLAlchemy text() query with fetchmany works correctly."""
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             for i in range(3):
                 conn.execute(
@@ -1225,7 +1836,7 @@ class TestFetchShapeCompatibility:
 
         with engine.connect() as conn:
             result = conn.execute(
-                text("SELECT name, email FROM integration_users WHERE name LIKE :pat"),
+                text(f"SELECT name, email FROM {_USERS_TABLE} WHERE name LIKE :pat"),
                 {"pat": "BatchFetch%"},
             )
             rows = result.fetchmany(2)
@@ -1599,26 +2210,38 @@ class TestHasIndexOwnerPreference:
             pytest.skip("CUBRID < 11.2 has one global namespace for class names")
 
         def run(eng, *statements, ignore_errors=False):
+            # One transaction per statement: DDL is transactional, so a
+            # rollback after a failed statement must not undo an earlier
+            # successful one (#607).
             with eng.connect() as conn:
                 for statement in statements:
                     try:
                         conn.exec_driver_sql(statement)
+                        conn.commit()
                     except Exception:
                         if not ignore_errors:
                             raise
                         conn.rollback()
-                conn.commit()
 
-        u543 = create_engine(engine.url.set(username="u543", password=None))
+        username = "u543"
+        u543 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
-            run(u543, 'DROP TABLE "Own543"', ignore_errors=True)
-            u543.dispose()
-            run(engine, 'DROP TABLE "Own543"', "DROP USER u543", ignore_errors=True)
+            # DBA-owned, so always safe regardless of whether `username`
+            # currently exists.
+            run(engine, 'DROP TABLE "Own543"', ignore_errors=True)
+            if _user_exists(engine, username):
+                run(u543, 'DROP TABLE "Own543"', ignore_errors=True)
+                u543.dispose()
+                _drop_user_verified(engine, username)
+            else:
+                u543.dispose()
 
-        run(engine, "CREATE USER u543", ignore_errors=True)
+        # Idempotent: drop any state left by an earlier setup that happened
+        # to use this exact (fresh, random) username before creating it for
+        # real -- a no-op in the common case where it never existed (#607).
         cleanup()
-        run(engine, "CREATE USER u543")
+        run(engine, f"CREATE USER {username}")
         try:
             run(engine, 'CREATE TABLE "Own543" (id INT PRIMARY KEY, v INT)')
             run(
@@ -1635,7 +2258,7 @@ class TestHasIndexOwnerPreference:
             owners = conn.execute(
                 text("SELECT owner_name FROM db_class WHERE class_name = 'own543'")
             ).fetchall()
-            assert sorted(owners) == [("DBA",), ("U543",)]
+            assert sorted(owners) == [("DBA",), (u543_engine.url.username.upper(),)]
 
             # Only the other owner's same-named class has the index.
             assert inspect(conn).has_table("Own543")
@@ -1911,6 +2534,7 @@ class TestExecutemanyNoneAndRowcount:
             meta.drop_all(engine)
 
 
+@pytest.mark.usefixtures("_clean_tables")
 class TestBackslashLiteralRoundtrip:
     """Regression #313: backslashes must survive both param binding and
     literal_binds rendering on a default CUBRID (no_backslash_escapes=yes)."""
@@ -1925,7 +2549,7 @@ class TestBackslashLiteralRoundtrip:
         ],
     )
     def test_backslash_roundtrip(self, engine, metadata, value):
-        users = metadata.tables["integration_users"]
+        users = metadata.tables[_USERS_TABLE]
         with engine.begin() as conn:
             conn.execute(users.insert().values(name=value, email="bs@example.com"))
 

@@ -1,8 +1,14 @@
 name: Bug Report
 description: Report a bug in sqlalchemy-cubrid
-title: "[Bug]: "
+title: "fix: "
 labels: ["bug"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep the `fix:` title prefix. You do not need to apply labels;
+        maintainers assign priority and size after triage.
+
   - type: textarea
     id: description
     attributes:

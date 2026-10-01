@@ -20,14 +20,19 @@ Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
 
 from __future__ import annotations
 
+import importlib
+import importlib.metadata
 import importlib.util
 import logging
+import os
 import re
+import sys
 import warnings
 
 from typing import Any, Callable, Optional, Sequence, cast
 
 from sqlalchemy import types as sqltypes
+from sqlalchemy import util
 from sqlalchemy.exc import ArgumentError, NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
@@ -97,6 +102,44 @@ from sqlalchemy.types import (
 log = logging.getLogger(__name__)
 
 
+def _count_is_positive(count: Any) -> bool:
+    """True if a catalog ``COUNT(*)`` result is greater than zero.
+
+    ``COUNT(*)`` is ``BIGINT`` in CUBRID, and the ``CUBRID-Python`` releases
+    on PyPI (9.3.x) fetch ``BIGINT`` as ``str``, so ``bool('0')`` would be
+    ``True``. Coerce first, so ``int``, ``str``, ``Decimal`` and ``None`` all
+    work (#583).
+    """
+    return int(count or 0) > 0
+
+
+# Oldest CUBRIDdb release line the dialect is tested with: CI builds
+# cubrid-python v11.3.0.51 from source. PyPI only has CUBRID-Python 9.3.x and
+# older, which fetches BIGINT as str and fails parts of the integration suite
+# (#583, #585). Only (major, minor) is compared: a source build's fourth
+# component is a git commit count, not the release tag.
+_MIN_TESTED_CUBRIDDB = (11, 3)
+
+
+def _cubriddb_version(dbapi: Any) -> tuple[str, tuple[int, int]] | None:
+    """Return the loaded CUBRIDdb C extension's version string and (major, minor).
+
+    ``CUBRIDdb`` imports its ``_cubrid`` extension module, whose ``__version__``
+    is the compiled-in driver version (``b'9.3.0.0001'`` from PyPI,
+    ``b'11.3.0.0001'`` from a v11.3.0.51 source build). ``None`` if it is
+    missing or unparseable.
+    """
+    raw = getattr(getattr(dbapi, "_cubrid", None), "__version__", None)
+    if isinstance(raw, bytes):
+        raw = raw.decode("ascii", "replace")
+    if not isinstance(raw, str):
+        return None
+    m = re.match(r"(\d+)\.(\d+)", raw)
+    if m is None:
+        return None
+    return raw, (int(m.group(1)), int(m.group(2)))
+
+
 def _is_unknown_class_error(error: BaseException) -> bool:
     """True only for CUBRID's ``Unknown class "<owner>.<name>"`` error.
 
@@ -114,7 +157,9 @@ def _is_unknown_class_error(error: BaseException) -> bool:
 
 # Pre-compiled patterns for column type parsing in get_columns().
 # Avoids re-compilation on every reflection call.
-_RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
+# A parameter list of digits, with optional whitespace around each comma, so
+# ``NUMERIC(10, 2)`` is looked up as ``NUMERIC`` like ``NUMERIC(10,2)`` (#609).
+_RE_TYPE_PARAMS = re.compile(r"\(\d+(?:\s*,\s*\d+)*\)")
 _RE_ENUM = re.compile(r"^ENUM\s*\((.*)\)\s*$", re.IGNORECASE)
 
 
@@ -162,7 +207,7 @@ def _split_collection_members(inner: str) -> list[str]:
     return parts
 
 
-_RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:,\s*(\d+))?\)")
+_RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:\s*,\s*(\d+))?\)")
 
 # CUBRID's ``SHOW CREATE TABLE`` emits foreign-key clauses such as::
 #
@@ -378,10 +423,11 @@ class CubridDialect(default.DefaultDialect):
         except ImportError as e:
             raise ImportError(
                 "Could not import CUBRIDdb. The bare cubrid:// URL uses the "
-                "legacy CUBRID-Python C-extension driver. Either install it "
-                "(pip install CUBRID-Python), or switch to the maintained "
+                "legacy CUBRIDdb C-extension driver. Switch to the maintained "
                 "pure-Python driver with a cubrid+pycubrid:// URL "
-                '(pip install "sqlalchemy-cubrid[pycubrid]").'
+                '(pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb '
+                "from cubrid-python v11.3.0.51 or later (the CUBRID-Python "
+                "9.3.x releases on PyPI are untested)."
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
 
@@ -439,9 +485,38 @@ class CubridDialect(default.DefaultDialect):
 
     def initialize(self, connection: Any) -> None:
         super().initialize(connection)
+        self._warn_if_untested_cubriddb()
         log.debug(
             "CUBRID dialect initialized: server_version=%s",
             self.server_version_info,
+        )
+
+    def _warn_if_untested_cubriddb(self) -> None:
+        """Warn once per engine when CUBRIDdb is older than the tested line (#585).
+
+        A warning rather than ``NotSupportedError``: the ``[cubrid]`` /
+        ``[cubriddb]`` extras have always installed the PyPI 9.3.x release, so
+        refusing to connect would break existing deployments in a minor
+        release. The pycubrid variants inherit :meth:`initialize` and skip this.
+        """
+        if self.driver != "cubrid":
+            return
+        found = _cubriddb_version(self.dbapi)
+        if found is None:
+            log.debug("CUBRIDdb version could not be determined; skipping version check")
+            return
+        raw, major_minor = found
+        if major_minor >= _MIN_TESTED_CUBRIDDB:
+            return
+        util.warn(
+            f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "
+            "sqlalchemy-cubrid is tested with. The CUBRID-Python releases on "
+            "PyPI (9.3.x, installed by the [cubrid] and [cubriddb] extras) are "
+            "untested: they return BIGINT as str and fail parts of the "
+            "integration suite. Use the recommended cubrid+pycubrid:// URL "
+            '(pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb '
+            "from cubrid-python v11.3.0.51 or later; see "
+            "https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/"
         )
 
     # ----- Reflection methods -----
@@ -664,6 +739,25 @@ class CubridDialect(default.DefaultDialect):
             return []
         return self._get_foreign_keys_from_ddl(connection, table_name, schema)
 
+    def _get_show_create_table_ddl(self, connection: Any, table_name: str) -> str:
+        """Return the ``SHOW CREATE TABLE`` DDL of *table_name*.
+
+        Raises :class:`NoSuchTableError` when the server reports the table
+        missing (``Unknown class``, #530) or returns no row for it. Any other
+        failure (a disconnect, a permission error, a driver bug) propagates:
+        callers must not report it as "no constraints" (#589).
+        """
+        quoted = self.identifier_preparer.quote_identifier(table_name)
+        try:
+            row = connection.execute(text(f"SHOW CREATE TABLE {quoted}")).first()
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
+        if row is None:
+            raise NoSuchTableError(table_name)
+        return str(row[1]) if len(row) > 1 else str(row[0])
+
     def _get_foreign_keys_from_ddl(
         self,
         connection: Any,
@@ -677,22 +771,7 @@ class CubridDialect(default.DefaultDialect):
         or column metadata for foreign keys.
         """
         foreign_keys: list[ReflectedForeignKeyConstraint] = []
-        try:
-            quoted = self.identifier_preparer.quote_identifier(table_name)
-            result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
-            row = result.first()
-        except Exception as error:  # nosec B110 — graceful fallback when DDL unavailable
-            if _is_unknown_class_error(error):
-                raise NoSuchTableError(table_name) from error
-            log.warning(
-                "SHOW CREATE TABLE failed for %s; foreign keys will be empty",
-                table_name,
-                exc_info=True,
-            )
-            return foreign_keys
-        if row is None:
-            return foreign_keys
-        ddl = str(row[1]) if len(row) > 1 else str(row[0])
+        ddl = self._get_show_create_table_ddl(connection, table_name)
         for fk_match in _RE_FOREIGN_KEY.finditer(ddl):
             constraint_name = fk_match.group("name")
             constrained_columns = [
@@ -954,22 +1033,7 @@ class CubridDialect(default.DefaultDialect):
     ) -> list[ReflectedUniqueConstraint]:
         """Parse SHOW CREATE TABLE output for UNIQUE constraints (legacy fallback)."""
         unique_constraints: list[ReflectedUniqueConstraint] = []
-        try:
-            quoted = self.identifier_preparer.quote_identifier(table_name)
-            result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
-            row = result.first()
-        except Exception as error:  # nosec B110 — graceful fallback when DDL unavailable
-            if _is_unknown_class_error(error):
-                raise NoSuchTableError(table_name) from error
-            log.warning(
-                "SHOW CREATE TABLE failed for %s; unique constraints will be empty",
-                table_name,
-                exc_info=True,
-            )
-            return unique_constraints
-        if row is None:
-            return unique_constraints
-        ddl = str(row[1]) if len(row) > 1 else str(row[0])
+        ddl = self._get_show_create_table_ddl(connection, table_name)
         for uc_match in _RE_UNIQUE_KEY.finditer(ddl):
             constraint_name = uc_match.group("name")
             column_names = [
@@ -1188,7 +1252,7 @@ class CubridDialect(default.DefaultDialect):
             ),
             {"name": table_name},
         )
-        return bool(result.scalar())
+        return _count_is_positive(result.scalar())
 
     @reflection.cache
     def has_index(
@@ -1222,7 +1286,7 @@ class CubridDialect(default.DefaultDialect):
             ),
             {**filter_params, "name": index_name},
         )
-        return bool(result.scalar())
+        return _count_is_positive(result.scalar())
 
     def has_sequence(
         self,
@@ -1415,17 +1479,69 @@ class CubridDialect(default.DefaultDialect):
         "connection refused",
         "connection was killed",
         "failed to connect",
+        # pycubrid closes the connection when its CHECK_CAS reconnect fails
+        # ("CAS did not answer CHECK_CAS out of transaction and reconnecting
+        # failed"), e.g. an idle connection while cub_server is down (#565).
+        "reconnecting failed",
     )
 
-    # Numeric disconnect error codes (driver-independent, wording-agnostic).
-    # These stay stable even when the driver's error *messages* change.
+    # Client-side error codes that CUBRIDdb puts in ``args[0]`` for a dead or
+    # unusable connection. CUBRIDdb's ``args[0]`` holds a CCI code (-20xxx,
+    # CUBRID ``cas_cci.h``) or a CAS code (-10xxx, ``cas_error.h``) when the
+    # call failed before or instead of a server error, and the server's own
+    # code (``error_code.h``) otherwise, so server codes such as -4
+    # (``ER_INTERRUPTED``, an interrupted query) must not appear here (#572).
+    # pycubrid doesn't negotiate CUBRID's renewed CAS/CCI error-code protocol
+    # (the -10xxx/-20xxx numbering below), so the CAS answers it with the
+    # legacy, unprefixed codes instead -- e.g. -4 for ``ER_INTERRUPTED``, the
+    # same code CUBRID's server uses internally (``error_code.h``). pycubrid
+    # keeps that legacy code in ``errno``, not in ``args[0]``. This applies
+    # to server codes (``error_code.h``, e.g. -4); a *CAS* code (``cas_error.h``,
+    # sent with ``CAS_ERROR_INDICATOR``) is instead legacy-renumbered by the
+    # CAS itself, from -10xxx to -1xxx: CUBRID's ``CAS_CONV_ERROR_TO_OLD``
+    # (``src/broker/cas_protocol.h``) adds 9000, so e.g. CAS_ER_COMMUNICATION
+    # reaches pycubrid as -1003, not -10003. See ``_pycubrid_legacy_cas_codes``
+    # below for the one such code this dialect currently matches.
+    #
+    # -10002 (CAS_ER_NO_MORE_MEMORY) is included below because cas.c's
+    # process_request() sends it when the CAS's read-buffer allocation fails,
+    # then returns FN_CLOSE_CONN, closing the connection (CUBRID v11.4.6
+    # src/broker/cas.c).
     _disconnect_error_codes = frozenset(
         {
-            -4,  # pycubrid ER_COMMUNICATION / SQLSTATE 08S01
-            -21003,  # CAS_ER_COMMUNICATION
-            -21005,  # CAS_ER_COMMUNICATION (alternate)
-            -10005,  # ER_NET_CANT_CONNECT
-            -10007,  # ER_NET_SERVER_COMM_ERROR
+            -10002,  # CAS_ER_NO_MORE_MEMORY: CAS out of memory (see above)
+            -10003,  # CAS_ER_COMMUNICATION (CCI's IS_ER_COMMUNICATION, with -20004)
+            -20002,  # CCI_ER_CON_HANDLE: the connection handle is closed or invalid
+            -20004,  # CCI_ER_COMMUNICATION: "Cannot communicate with server"
+            -20016,  # CCI_ER_CONNECT: "Cannot connect to CUBRID CAS"
+        }
+    )
+
+    # Server error codes for which the CUBRID broker marks the CAS for reset
+    # (``reset_flag`` in CUBRID's src/broker/cas_error.c): the CAS's session
+    # with cub_server is gone. The CAS reconnects only after the client ends
+    # its transaction, so until then every statement fails, e.g. -111 and
+    # then -224 even after cub_server restarts (#565). Matched for both
+    # drivers: CUBRIDdb puts the code in ``args[0]``, pycubrid in ``errno``.
+    _server_session_lost_codes = frozenset(
+        {
+            -111,  # ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
+            -199,  # ER_NET_SERVER_CRASHED
+            -224,  # ER_OBJ_NO_CONNECT ("A database has not been restarted")
+            -677,  # ER_BO_CONNECT_FAILED
+        }
+    )
+
+    # CAS codes (``cas_error.h``) as pycubrid actually receives them: pycubrid
+    # never advertises understanding CUBRID's renewed error-code protocol (no
+    # ``driver_info`` flags in its handshake), so the CAS legacy-renumbers
+    # them with ``CAS_CONV_ERROR_TO_OLD`` (``src/broker/cas_protocol.h``:
+    # ``V + 9000``) before sending them. -1002 is legacy CAS_ER_NO_MORE_MEMORY
+    # (-10002 + 9000); see ``_disconnect_error_codes`` above for what it means
+    # and why it disconnects (#578).
+    _pycubrid_legacy_cas_codes = frozenset(
+        {
+            -1002,  # legacy CAS_ER_NO_MORE_MEMORY
         }
     )
 
@@ -1445,6 +1561,19 @@ class CubridDialect(default.DefaultDialect):
         wording), and finally fall back to string matching for driver
         errors that carry neither a code nor an ``OSError`` cause (e.g.
         pycubrid's client-side "connection lost during receive").
+
+        Codes come only from where each driver structurally puts them:
+        an ``int`` ``args[0]`` (CUBRIDdb) and, for pycubrid, its ``errno``
+        attribute; ``errno`` is matched against the server-session codes
+        (``_server_session_lost_codes``, #565) and the legacy-renumbered
+        CAS codes pycubrid receives (``_pycubrid_legacy_cas_codes``, #578).
+        No code is ever parsed out of message text: a message that starts
+        with a number (e.g. server text echoing application data) is just
+        text (#608).
+
+        The message fallback reads the driver's own message (``args[0]``
+        when it is a string), not pycubrid's ``str()`` with its code
+        description.
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1458,7 +1587,24 @@ class CubridDialect(default.DefaultDialect):
 
         # 1. Stable numeric error codes (wording-independent).
         error_code = self._extract_error_code(e)
-        if error_code is not None and error_code in self._disconnect_error_codes:
+        if error_code is not None and (
+            error_code in self._disconnect_error_codes
+            or error_code in self._server_session_lost_codes
+        ):
+            return True
+        # pycubrid keeps the server code in ``errno`` (its ``args`` hold only
+        # the message). An ``errno`` of -4 is the server's ER_INTERRUPTED (an
+        # interrupted query), not a disconnect. The CCI codes in
+        # ``_disconnect_error_codes`` above are CUBRIDdb's; the CAS codes
+        # there reach pycubrid legacy-renumbered instead, in
+        # ``_pycubrid_legacy_cas_codes`` (#578).
+        pycubrid_errno = getattr(e, "errno", None)
+        if not isinstance(pycubrid_errno, int) or isinstance(pycubrid_errno, bool):
+            pycubrid_errno = None
+        if (
+            pycubrid_errno in self._server_session_lost_codes
+            or pycubrid_errno in self._pycubrid_legacy_cas_codes
+        ):
             return True
 
         # 2. An OSError in the explicit cause chain means a transport-level
@@ -1466,9 +1612,20 @@ class CubridDialect(default.DefaultDialect):
         if self._has_oserror_cause(e):
             return True
 
-        # 3. Message fallback for string-only driver errors that carry
-        #    neither a numeric code nor an OSError cause.
-        msg = str(e).lower()
+        # 3. Message fallback for driver errors that carry neither a
+        #    disconnect code nor an OSError cause, e.g. pycubrid's code-less
+        #    "connection lost during receive", or server errors such as -190 /
+        #    -191 ("Failed to connect to database server") that are not in the
+        #    code tables. Match the driver's own message: pycubrid's
+        #    ``str()`` appends a description looked up from ``errno`` (-4 and
+        #    -671 read "Communication error"), which must not decide the
+        #    outcome. For any exception that does not
+        #    override ``__str__`` a single string arg *is* ``str(e)``, and
+        #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
+        if len(e.args) == 1 and isinstance(e.args[0], str):
+            msg = e.args[0].lower()
+        else:
+            msg = str(e).lower()
         return any(pattern in msg for pattern in self._disconnect_messages)
 
     @staticmethod
@@ -1494,23 +1651,16 @@ class CubridDialect(default.DefaultDialect):
 
     @staticmethod
     def _extract_error_code(exception: Exception) -> Optional[int]:
-        """Extract a numeric error code from a CUBRID DBAPI exception.
+        """Return the CUBRIDdb error code in ``exception.args[0]``, or ``None``.
 
-        CUBRIDdb stores the error code in ``exception.args[0]``.
-        Returns ``None`` if no numeric code can be extracted.
+        CUBRIDdb raises ``(code, message)`` with an ``int`` code. A string
+        ``args[0]`` (pycubrid's message, or any other driver text) never
+        carries a code, even when it starts with a number (#608).
         """
         if exception.args:
             first_arg = exception.args[0]
-            if isinstance(first_arg, int):
+            if isinstance(first_arg, int) and not isinstance(first_arg, bool):
                 return first_arg
-            # Some errors embed the code at the start: "-21003 ..."
-            if isinstance(first_arg, str):
-                parts = first_arg.split(None, 1)
-                if parts:
-                    try:
-                        return int(parts[0])
-                    except (ValueError, IndexError):
-                        pass
         return None
 
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:
@@ -1530,33 +1680,72 @@ class CubridDialect(default.DefaultDialect):
 dialect = CubridDialect
 
 
+def _alembic_loads_cubrid_plugin() -> bool:
+    """Return True when Alembic registers ``CubridImpl`` through its plugin.
+
+    Alembic 1.18 and later load the ``alembic.plugins`` entry point group on
+    ``import alembic``, and sqlalchemy-cubrid publishes
+    :mod:`_sqlalchemy_cubrid_alembic` there (#595).  This checks
+    installed metadata only, so it never imports Alembic.  Any doubt (Alembic
+    already imported, an unparsable version, metadata that does not belong to
+    the importable ``alembic`` package, sqlalchemy-cubrid imported from
+    a tree without the entry point) returns False, and the caller imports
+    ``alembic_impl`` directly as before.
+    """
+    if "alembic" in sys.modules:
+        return False
+    try:
+        alembic_dist = importlib.metadata.distribution("alembic")
+        major, minor = alembic_dist.version.split(".")[:2]
+        if (int(major), int(minor)) < (1, 18):
+            return False
+        # The metadata must describe the Alembic that ``import alembic`` will
+        # load; an older copy earlier on sys.path would never read the plugin.
+        spec = importlib.util.find_spec("alembic")
+        if spec is None or spec.origin is None:
+            return False
+        if os.path.realpath(spec.origin) != os.path.realpath(
+            str(alembic_dist.locate_file("alembic/__init__.py"))
+        ):
+            return False
+        return any(
+            ep.group == "alembic.plugins" and ep.value == "_sqlalchemy_cubrid_alembic"
+            for ep in importlib.metadata.distribution("sqlalchemy-cubrid").entry_points
+        )
+    except Exception:
+        return False
+
+
 # Register ``CubridImpl`` with Alembic whenever Alembic is installed.
 # Alembic resolves its migration implementation from ``_impls[dialect.name]``,
-# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``; it
-# never reads a package entry point for this.  Every CUBRID dialect variant
-# (``cubrid``, ``cubrid+cubriddb``, ``cubrid+pycubrid``,
-# ``cubrid+aiopycubrid``) imports this module and has ``name = "cubrid"``, so
-# importing ``alembic_impl`` here makes a default ``env.py`` work with no
-# extra import.  Alembic stays optional: without it the import is skipped
-# silently.  A broken Alembic install (for example 1.7.0/1.7.1, which raise
-# ``NameError`` on SQLAlchemy 2.x) must never stop the dialect from loading,
-# so any other failure only disables the integration with a warning.
-try:
-    from sqlalchemy_cubrid import alembic_impl as _alembic_impl  # noqa: F401
-except Exception as _exc:
+# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``.
+# Every CUBRID dialect variant (``cubrid``, ``cubrid+cubriddb``,
+# ``cubrid+pycubrid``, ``cubrid+aiopycubrid``) imports this module and has
+# ``name = "cubrid"``, so a default ``env.py`` works with no extra import.
+# Alembic 1.18+ imports ``alembic_impl`` itself through the ``alembic.plugins``
+# entry point, so the dialect skips Alembic's import cost and log lines
+# (#561, #595).  Alembic 1.7.2-1.17 have no such hook, so the dialect imports
+# ``alembic_impl`` here.  Alembic stays optional: without it the import is
+# skipped silently.  A broken Alembic install (for example 1.7.0/1.7.1, which
+# raise ``NameError`` on SQLAlchemy 2.x) must never stop the dialect from
+# loading, so any other failure only disables the integration with a warning.
+if not _alembic_loads_cubrid_plugin():
     try:
-        _alembic_absent = importlib.util.find_spec("alembic") is None
-    except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
-        _alembic_absent = False
-    if not (isinstance(_exc, ImportError) and _alembic_absent):
-        _alembic_msg = (
-            "sqlalchemy-cubrid: Alembic integration is disabled because the "
-            f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
-            'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
-        )
-        # A warning filter set to "error" (``-W error``) turns warn() into a
-        # raise; fall back to the logger so the dialect still loads.
+        importlib.import_module("sqlalchemy_cubrid.alembic_impl")
+    except Exception as _exc:
         try:
-            warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
-        except Exception:
-            log.warning(_alembic_msg)
+            _alembic_absent = importlib.util.find_spec("alembic") is None
+        except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
+            _alembic_absent = False
+        if not (isinstance(_exc, ImportError) and _alembic_absent):
+            _alembic_msg = (
+                "sqlalchemy-cubrid: Alembic integration is disabled because the "
+                f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
+                'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
+            )
+            # A warning filter set to "error" (``-W error``) turns warn() into a
+            # raise; fall back to the logger so the dialect still loads.
+            try:
+                warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
+            except Exception:
+                log.warning(_alembic_msg)

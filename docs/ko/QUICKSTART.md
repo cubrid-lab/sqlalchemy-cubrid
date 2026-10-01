@@ -30,13 +30,12 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### 대안: C 확장 드라이버
 
-CUBRID-Python C 확장 드라이버가 필요한 경우 다음과 같이 설치하세요:
+CUBRIDdb가 꼭 필요한 경우 [DRIVER_COMPAT](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)에
+설명된 지원 대상 CUBRID-Python 11.3.0.51 이상을 소스에서 빌드하세요. 더 이상 지원되지
+않는 `[cubriddb]` extra / PyPI CUBRID-Python 9.3.x 설치 경로는 사용하지 마세요.
 
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
-
-그런 다음 `cubrid+cubriddb://`를 사용하세요. 기본 `cubrid://` URL도 같은 C 확장 드라이버를 선택합니다.
+그런 다음 `cubrid+cubriddb://`를 사용하세요. 기본 `cubrid://` URL도 같은 C 확장
+드라이버를 선택합니다.
 
 ---
 
@@ -45,9 +44,10 @@ pip install "sqlalchemy-cubrid[cubriddb]"
 지원되는 URL 형식 중 하나를 사용하세요:
 
 ```text
-cubrid://user:password@host:port/database
 cubrid+pycubrid://user:password@host:port/database
 cubrid+aiopycubrid://user:password@host:port/database
+cubrid+cubriddb://user:password@host:port/database
+cubrid://user:password@host:port/database
 ```
 
 예:

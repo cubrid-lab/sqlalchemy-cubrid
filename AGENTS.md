@@ -60,7 +60,7 @@ graph TD
 | `base.py` | Execution context (`get_lastrowid`), identifier preparer (lowercase folding, 254-char max, reserved words). |
 | `trace.py` | `trace_query()` helper that enables CUBRID tracing around a statement and returns trace output. |
 | `requirements.py` | Test requirement flags — marks what CUBRID does/doesn't support for SA's test suite. |
-| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = True` (CUBRID DDL rolls back with the transaction); `emit_begin()` emits nothing because CUBRID has no `BEGIN`. Registered with Alembic when `dialect.py` imports it (only if Alembic is installed); Alembic has no entry-point lookup for dialect impls. |
+| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = True` (CUBRID DDL rolls back with the transaction); `emit_begin()` emits nothing because CUBRID has no `BEGIN`. Registered by the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic.py`) on Alembic 1.18+, or by `dialect.py` importing it on Alembic 1.7.2-1.17 (#595). |
 | `_compat.py` | Internal compatibility helpers that wrap SQLAlchemy private APIs used by the dialect/compiler. |
 
 ### Entry Points (pyproject.toml)
@@ -86,19 +86,24 @@ make install          # pip install -e ".[dev]" + pytest-cov + pre-commit + tox
 ### Key Commands
 
 ```bash
-make test             # Offline tests with 95% coverage threshold
+make test             # Fast offline tests with 95% coverage threshold (-m "not integration and not repo")
+make test-repo        # Repository-tooling tests (Makefile, signal handling, repo scripts; -m repo)
+make test-offline     # Every offline test (fast + repo) with coverage
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
-make integration      # Docker → integration tests → cleanup
+make integration      # Run-owned Docker project → integration tests → cleanup
 make test-all         # tox across Python 3.10–3.14
 ```
 
 ### Test Commands (manual)
 
 ```bash
-# Offline (no DB needed) — this is the primary test command
-pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py \
+# Offline (no DB needed) — this is the primary test command (same as `make test`)
+pytest test/ -v -m "not integration and not repo" \
   --cov=sqlalchemy_cubrid --cov-report=term-missing --cov-fail-under=95
+
+# Repository-tooling tests (Makefile, signal handling, repo scripts; same as `make test-repo`)
+pytest test/ -v -m repo
 
 # Integration (requires Docker)
 docker compose up -d
@@ -251,14 +256,15 @@ The dialect translates automatically in `create_connect_args()`.
 | File | Trigger | Purpose |
 |---|---|---|
 | `.github/workflows/ci.yml` | Push to main, PRs | Lint + offline tests (Py 3.10–3.14) + regular integration matrix |
-| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), tag push, manual dispatch | Full Python × CUBRID compatibility matrix |
-| `.github/workflows/publish-pypi.yml` | GitHub Release | Build and publish to PyPI |
+| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), manual dispatch, `workflow_call` from `release.yml` | Full Python × CUBRID compatibility matrix |
+| `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`) | Open the `chore: release vX.Y.Z` PR (dated CHANGELOG section + version bump) |
+| `.github/workflows/release.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
 
 ### CI Matrix
 
 - **Offline (every PR/push)**: Python 3.10, 3.11, 3.12, 3.13, 3.14
 - **Integration (every PR/push)**: Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 8 jobs
-- **Integration full (nightly + tag push + dispatch)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
+- **Integration full (nightly + dispatch + every release)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
 
 ## Documentation Map
 
@@ -292,6 +298,14 @@ Maintainers or triagers assign/create the canonical GitHub labels. Outside
 reporters can describe urgency and effort without label permissions; those
 descriptions help triage but do not themselves assign a label.
 
+Issue titles use the same `type(scope): description` format as pull request
+titles (see [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-and-commit-titles)).
+`.github/workflows/issue-triage.yml` flags incomplete human-submitted issue
+titles or labels as `status: needs triage` without posting a comment or
+guessing priority/size. Maintainers remove that label once triage is complete.
+Agents and workflows creating issues through CLI/API must supply canonical
+metadata at creation; `GITHUB_TOKEN`-created issues do not retrigger this guard.
+
 Use the following exact names, with **one space after the colon**:
 
 - Priority: `priority: critical`, `priority: high`, `priority: medium`, `priority: low`.
@@ -317,10 +331,10 @@ helps contributors pick appropriately scoped work.
 Rules:
 
 1. **Size reflects effort, not importance** — a one-line fix for a critical bug is still `size: XS`.
-2. **Assign both `priority:` and `size:` when filing the issue.** If scope or impact
+2. **Maintainers and agents assign both `priority:` and `size:` when filing.** If scope or impact
    is uncertain, use a provisional estimate, explain the uncertainty in the body,
-   and add `status: needs triage` (or the repo's equivalent). Refine the estimates
-   during triage rather than omitting either required label.
+   and add `status: needs triage`. External reports may start with that label;
+   refine estimates during maintainer triage.
 3. **`good first issue` should be `size: XS` or `size: S`.** If a good-first-issue grows
    past `size: S`, re-scope it or drop the `good first issue` label.
 4. **`size: XL` is a signal to split**, not a green light to start a sprawling change.
@@ -349,6 +363,15 @@ Do not mark work complete until code, tests, and documentation are consistent.
 
 ## Commit Convention
 
+Issue titles, pull request titles and commit subjects follow
+[CONTRIBUTING.md - Pull request and commit titles](CONTRIBUTING.md#pull-request-and-commit-titles):
+`type(scope)!: description` with types `feat`, `fix`, `docs`, `test`, `perf`,
+`refactor`, `ci`, `build`, `chore`, `style`, `revert`; English, lowercase start
+unless the first word is an API name, acronym, or proper noun; no trailing
+period, no issue numbers in pull request titles (use `Closes #N` /
+`Refs #N` in the body). Pull requests are squash-merged and the pull request
+title becomes the commit title. The `PR title` check enforces it.
+
 ### Format
 
 ```
@@ -366,19 +389,6 @@ Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 The tool-attribution example applies only to work produced with that tool.
 Preserve actual contributor authorship and real coauthors; outside contributions
 do not require a named agent, tool credit or a blanket coauthor trailer.
-
-### Types
-
-| Type | When to use |
-|------|-------------|
-| `feat` | New user-facing capability (new DML construct, new type, new dialect flag) |
-| `fix` | Bug fix — corrects wrong behavior |
-| `refactor` | Internal restructuring with no behavior change |
-| `test` | Add/update tests only |
-| `docs` | Documentation only |
-| `chore` | Tooling, deps, CI config, version bumps |
-| `ci` | CI workflow changes |
-| `perf` | Performance improvement with measurable impact |
 
 ### Rules (MANDATORY)
 
@@ -404,30 +414,17 @@ do not require a named agent, tool credit or a blanket coauthor trailer.
 Maintainers own release/tag/publication actions and repository credentials.
 Contributors provide the change and validation evidence through the normal PR path.
 
-1. Bump the version in `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`.
-   `pyproject.toml` derives it dynamically (`dynamic = ["version"]` +
-   `version = {attr = "sqlalchemy_cubrid.__version__"}`), so it is the single source of truth.
-2. Add a dated changelog entry in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`)
-3. Open a PR and merge to `main` (direct pushes are not allowed)
-4. Push the tag `v{major}.{minor}.{patch}` on the merged commit:
-   `git tag vx.y.z <merged-sha> && git push origin vx.y.z` (tag pushes are allowed; only
-   direct branch pushes to `main` are forbidden).
-5. The tag push triggers `.github/workflows/integration-full.yml`, which runs the **full
-   5×4 Python × CUBRID compatibility matrix** on the release commit. PR CI only runs a
-   reduced 2-cell matrix, so this tag run is the authoritative full-compatibility check.
-6. The tag push also triggers `.github/workflows/create-release.yml`, which extracts the
-   `## [x.y.z] - YYYY-MM-DD` section from `CHANGELOG.md` (fail-closed — no fallback) and
-   creates the GitHub Release titled `vx.y.z` with that body, after verifying the tag is
-   an ancestor of `origin/main`.
-7. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
-   which rebuilds, verifies (tag == version, dated CHANGELOG, tag on main, smoke tests,
-   **and that a successful `integration-full.yml` run exists for the release commit** —
-   PyPI publish is blocked until the full matrix passes), and publishes to PyPI via
-   Trusted Publisher (OIDC).
-
-Release notes are never hand-written: `CHANGELOG.md` is the single source of truth and
-`scripts/extract_release_notes.py` renders the Release body. To re-create a release body,
-re-run `create-release.yml` via `workflow_dispatch` with `update_existing: true`.
+Version is single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`
+(`pyproject.toml` reads it dynamically). Merging a reviewed release PR is the only
+normal way to release: `prepare-release.yml` opens it (dated CHANGELOG section +
+version bump, checked by `make release-check VERSION=x.y.z`), and after the
+squash-merge `release.yml` detects the version change and runs consistency → full
+matrix → build → tag/Release/PyPI → cookbook verification (the cookbook smoke test
+called as a pinned reusable workflow, no token) → summary on its own.
+Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
+tags or publish by hand; the only manual entry point is the narrow recovery
+dispatch of `release.yml`. Procedure, failure matrix and recovery:
+[`RELEASING.md`](RELEASING.md).
 
 ## Project Context — Performance Loop System
 

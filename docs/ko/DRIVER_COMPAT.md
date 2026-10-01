@@ -21,7 +21,8 @@
 
 | 속성 | 값 |
 |---|---|
-| PyPI 패키지 | `CUBRID-Python` |
+| 지원하는 설치 방법 | [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상을 소스에서 빌드 ([방법](#소스에서-cubriddb-빌드)) |
+| PyPI 패키지 | `CUBRID-Python`, 최신 릴리스 9.3.x(2015년): **테스트되지 않음, 지원하지 않음** ([상세](#pypi-cubrid-python-93x는-지원하지-않음)) |
 | 임포트 이름 | `CUBRIDdb` |
 | 타입 | C 확장 (CPython 전용) |
 | DBAPI 수준 | DB-API 2.0 (PEP 249) |
@@ -43,6 +44,7 @@
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ CI에서 테스트 |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ CI에서 테스트 |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ 테스트됨 |
+| 전체 | PyPI `CUBRID-Python` 9.3.x | 전체 | 전체 | ❌ 테스트되지 않음, 지원하지 않음 ([상세](#pypi-cubrid-python-93x는-지원하지-않음)) |
 
 ### CUBRID 서버 버전 지원
 
@@ -118,10 +120,12 @@ SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위�
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int 또는 str
+    code = e.args[0]  # int
 ```
 
-방언의 `_extract_error_code()`는 정수 코드와 문자열에 박힌 코드(예: `"-21003 Cannot communicate with broker"`) 모두 처리합니다.
+방언의 `_extract_error_code()`는 정수 `args[0]`만 읽습니다. 문자열 `args[0]`은 숫자로 시작하더라도(예: 애플리케이션 데이터를 인용한 `"-20004 rows rejected ..."`) 코드를 담지 않습니다. 1.8.0까지의 릴리스는 이런 앞쪽 숫자를 코드로 해석해 멀쩡한 연결을 무효화할 수 있었습니다(#608).
+
+pycubrid는 `args`에 메시지만 담고 서버 오류 코드는 `errno`(및 `code`)에 담습니다. `is_disconnect()`는 [알려진 문제 1](#1-연결-해제-감지에-operationalerror를-사용하지-않음)에 나열된 서버 코드에 대해 `errno`를 읽습니다. pycubrid의 `str()`은 `errno`의 설명(예: -4와 -671의 `Communication error`)도 덧붙이므로, 메시지 패턴은 드라이버 자체 메시지인 `args[0]`과 비교합니다.
 
 ---
 
@@ -130,14 +134,16 @@ except CUBRIDdb.DatabaseError as e:
 ### 1. 연결 해제 감지에 `OperationalError`를 사용하지 않음
 
 CUBRIDdb 11.3.0.51은 `OperationalError`를 정의하지만([예외 계층](#예외-계층) 참고), 방언의 `is_disconnect()`는 예외 클래스로 연결 해제를 분류하지 않습니다. 대신:
-- 알려진 연결 해제 메시지 15종에 대한 문자열 패턴 매칭
-- CCI 통신 오류에 대한 숫자 오류 코드 매칭
+- 알려진 연결 해제 메시지 16종에 대한 문자열 패턴 매칭
+- 끊겼거나 쓸 수 없는 연결의 CCI·CAS 코드에 대한 `args[0]`(CUBRIDdb 전용) 숫자 오류 코드 매칭: -20004(`CCI_ER_COMMUNICATION`), -10003(`CAS_ER_COMMUNICATION`, CCI는 두 코드를 통신 오류로 취급), -20002(`CCI_ER_CON_HANDLE`), -20016(`CCI_ER_CONNECT`), -10002(`CAS_ER_NO_MORE_MEMORY`; CAS가 이 코드를 보낸 뒤 연결을 닫음). 1.8.0까지의 릴리스는 대신 -4, -10005, -10007, -21003, -21005를 나열했습니다(#572). -4는 서버의 `ER_INTERRUPTED`(`KILL QUERY`로 중단된 쿼리)여서 CUBRIDdb는 멀쩡한 연결을 무효화했고, -10005와 -10007은 `CAS_ER_TRAN_TYPE`과 `CAS_ER_NUM_BIND`, -21003과 -21005는 어느 Python 드라이버도 내지 않는 CUBRID JDBC 코드입니다. CUBRIDdb가 트랜잭션 중 CAS가 죽었을 때 내는 -20004와 -10002는 빠져 있었습니다(#578).
+- CAS의 `cub_server` 세션이 사라져 브로커가 CAS를 리셋하는 서버 오류에 대한 숫자 오류 코드 매칭(두 드라이버 모두): -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). `cub_server`가 중지되거나 비정상 종료되면 트랜잭션 중인 연결은 -111을 받고, 이후 트랜잭션이 끝날 때까지 서버가 다시 올라와도 모든 문장에서 -224를 받습니다(#565). -671(`ER_CSS_RECV_OR_SEND`)은 브로커가 CAS를 리셋하지 않으므로 포함하지 않습니다. [문제 해결](TROUBLESHOOTING.md#cub_server-재시작-또는-장애-후-오류) 참고.
+- pycubrid의 `errno`에 대해서만 하는 숫자 오류 코드 매칭으로, pycubrid가 실제로 받는 형태의 CAS 코드를 검사: pycubrid처럼 갱신된 오류 코드 프로토콜을 이해한다고 알리지 않는 드라이버에게 CUBRID의 CAS는 `cas_error.h` 코드에 9000을 더해 레거시 번호로 보냅니다. -1002(레거시 `CAS_ER_NO_MORE_MEMORY`, 즉 -10002 + 9000)가 이렇게 매칭됩니다(#578).
 
 ### 2. CCI 라이브러리 의존성
 
 드라이버는 CCI 라이브러리를 소스에서 컴파일해야 합니다. CI에서는 다음으로 처리:
 ```bash
-git clone --branch v11.3.0.51 --depth 1 https://github.com/CUBRID/cubrid-python.git
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules https://github.com/CUBRID/cubrid-python.git
 cd cubrid-python/cci-src && mkdir build_x86_64_release && cd build_x86_64_release
 cmake ../ && make -j$(nproc)
 ```
@@ -223,6 +229,18 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 
 **pycubrid의 `AUTOCOMMIT`.** pycubrid 1.8.0은 오토커밋 모드에서도 세션을 유지하므로, `CUBRIDdb`와 마찬가지로 문장은 적용 중이던 서버 수준을 유지하고 세션 변수도 문장 사이에 유지됩니다. 연결을 `AUTOCOMMIT`으로 바꾸면 방언은 격리 수준 다시 적용을 멈춥니다.
 
+### 11. 컬렉션 파라미터 (SET, MULTISET, SEQUENCE)
+
+컬렉션 컬럼에 Python `list`, `tuple`, `set`을 바인딩하는 방식은 드라이버마다 다릅니다(#484, CUBRID 10.2와 11.4에서 검증).
+
+| 드라이버 | `list` / `tuple` / `set` 바인딩 | 컬렉션 조회 |
+|---|---|---|
+| pycubrid main (타입 지정 컬렉션 파라미터, cubrid-lab/pycubrid#567) | 방언이 값을 컬럼 타입에 맞는 `pycubrid.types.Set`, `Multiset`, `Sequence`로 감쌉니다. `SET`, `MULTISET`, `SEQUENCE`의 의미가 유지됩니다. `SEQUENCE`는 `list`나 `tuple`만 받으며, `set`/`frozenset`은 `TypeError`("SEQUENCE is ordered; pass a list or tuple")를 발생시킵니다. | `?decode_collections=true`이면 `frozenset`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`), 없으면 원시 `bytes` |
+| pycubrid 1.8.0 (릴리스) | `ProgrammingError`: pycubrid가 컬렉션 파라미터를 거부합니다. `SEQUENCE`에 넘긴 `set`/`frozenset`은 방언이 위와 같은 `TypeError`를 발생시킵니다. | 위와 같음 |
+| CUBRIDdb 11.3.0.51 | CUBRIDdb가 값을 직접, 항상 SET 호스트 변수로 바인딩합니다. MULTISET은 중복을, SEQUENCE는 순서를 잃습니다(`[3, 1, 2, 1]`은 `{1, 2, 3}`으로 저장됨). `None` 원소는 지원되지 않습니다. `[None]`은 드라이버 안에서 `UnboundLocalError`로, `[1, None]`은 `-494 Cannot coerce host var to type sequence`로 실패합니다. | 원소 타입과 관계없이 `str` 원소로 된 `set`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`) |
+
+방언은 CUBRIDdb의 동작을 바꾸지 않습니다. CUBRIDdb에서 중복이나 순서가 필요한 컬렉션은 바인드 파라미터로 보내지 말고 SQL에 컬렉션 리터럴을 쓰거나(`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`) `cubrid+pycubrid://`를 사용하세요. [타입 매핑, 컬렉션 값](TYPES.md#컬렉션-값)을 참고하세요.
+
 ---
 
 ## 설치 참고
@@ -235,28 +253,52 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 유지됩니다. pycubrid 드라이버 자체는 순수 Python이지만, 호환 wheel이 없으면
 `greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 
-### 소스에서 설치 (CI에 필요)
+### PyPI `CUBRID-Python` 9.3.x는 지원하지 않음
+
+PyPI의 최신 `CUBRID-Python` 릴리스는 9.3.0.2입니다(sdist만 있으며 2015년 업로드). PyPI에는
+11.x 릴리스가 없습니다. `[cubrid]`와 `[cubriddb]` extra는 버전 제한 없이 `CUBRID-Python`에
+의존하므로 9.3.x를 설치합니다. 이 드라이버는 이 방언과 함께 테스트되지 않았습니다. CUBRID
+11.4에서 `BIGINT` 값(`COUNT(*)` 포함)을 `str`로 반환하고(#583), 통합 테스트 일부가
+실패합니다: autocommit, 대용량 객체 왕복, fetch 결과 형태, ping, 재귀 CTE(#585).
+
+- **`[cubrid]`와 `[cubriddb]` extra는 폐기 예정(deprecated)입니다.** 기존 설치가 계속
+  해석되도록 유지하지만, 지원되는 드라이버를 설치할 수는 없습니다.
+- `cubrid://` 또는 `cubrid+cubriddb://` 엔진은 첫 연결 시 로드된 드라이버의 버전
+  (`_cubrid.__version__`)을 읽고, 11.3보다 오래되었으면 `sqlalchemy.exc.SAWarning`을 냅니다.
+  기존 배포가 계속 동작하도록 연결을 거부하지 않고 경고만 합니다. 즉시 실패하게 하려면 경고를
+  오류로 바꾸세요:
+  `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
+- 지원되는 방법: 권장 순수 Python 드라이버(`pip install "sqlalchemy-cubrid[pycubrid]"`,
+  `cubrid+pycubrid://`)를 사용하거나, 아래처럼 CUBRIDdb를 소스에서 빌드하세요.
+
+### 소스에서 CUBRIDdb 빌드
+
+CI가 사용하는 절차입니다:
 
 ```bash
-# 드라이버 클론
-git clone --branch v11.3.0.51 --depth 1 \
+# CCI 서브모듈과 함께 드라이버 클론
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
   https://github.com/CUBRID/cubrid-python.git
+cd cubrid-python
 
 # CCI 라이브러리 빌드
-cd cubrid-python/cci-src
-mkdir -p build_x86_64_release && cd build_x86_64_release
+mkdir -p cci-src/build_x86_64_release && cd cci-src/build_x86_64_release
 cmake ../ && make -j$(nproc)
+cd ../..
 
-# 설치
-cd /path/to/cubrid-python
+# setup.py의 CCI 재빌드를 건너뛰고 설치
+printf '#!/bin/bash\nexit 0\n' > build_cci.sh
 pip install .
 ```
+
+소스 빌드는 `cubrid_python` 배포판을 설치합니다. 버전의 네 번째 자리는 릴리스 태그가 아니라 git
+커밋 수이므로, v11.3.0.51의 얕은 클론은 `11.3.0.0001`로 표시됩니다.
 
 ### 설치 확인
 
 ```python
 import CUBRIDdb
-print(CUBRIDdb.__version__)  # 버전 문자열이 출력되어야 함
+print(CUBRIDdb._cubrid.__version__)  # v11.3.0.51 빌드는 b'11.3.0.0001', PyPI 릴리스는 b'9.3.0.0001'
 ```
 
 ---

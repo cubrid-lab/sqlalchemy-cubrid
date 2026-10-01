@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import sys
 import types
+import warnings
+from decimal import Decimal
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import ArgumentError, NoSuchTableError
+from sqlalchemy.exc import (
+    ArgumentError,
+    NoSuchTableError,
+    OperationalError,
+    ProgrammingError,
+    SAWarning,
+)
 from sqlalchemy.engine import url
 from sqlalchemy.sql.elements import quoted_name
 
@@ -231,6 +239,89 @@ class TestDialectBasics:
             dialect.initialize(connection)
 
         init_super.assert_called_once_with(connection)
+
+
+def _fake_cubriddb(version: object) -> types.ModuleType:
+    """A stand-in CUBRIDdb module whose ``_cubrid.__version__`` is *version*."""
+    ext = types.ModuleType("_cubrid")
+    if version is not None:
+        ext.__version__ = version  # type: ignore[attr-defined]
+    module = types.ModuleType("CUBRIDdb")
+    module._cubrid = ext  # type: ignore[attr-defined]
+    return module
+
+
+class TestCubriddbVersionGuard:
+    """Warn at first connect when CUBRIDdb is older than the tested 11.3 line (#585)."""
+
+    @pytest.mark.parametrize(
+        "version",
+        [
+            b"9.3.0.0001",  # PyPI CUBRID-Python 9.3.0.1
+            b"9.3.0.0002",  # PyPI CUBRID-Python 9.3.0.2
+            "8.4.3.0004",
+            b"11.2.0.0100",
+            "10.2.0.0001",
+        ],
+    )
+    def test_older_driver_warns(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+        raw = version.decode() if isinstance(version, bytes) else version
+
+        with pytest.warns(SAWarning, match=r"CUBRIDdb .* is older than the CUBRIDdb 11\.3") as rec:
+            dialect._warn_if_untested_cubriddb()
+
+        message = str(rec[0].message)
+        assert raw in message
+        assert "cubrid+pycubrid://" in message
+        assert "v11.3.0.51" in message
+
+    @pytest.mark.parametrize(
+        "version", [b"11.3.0.0001", "11.3.0.0051", b"11.4.0.0001", "12.0.0.0001"]
+    )
+    def test_tested_or_newer_driver_does_not_warn(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    @pytest.mark.parametrize("version", [None, b"unknown", "", 11])
+    def test_unknown_version_does_not_warn(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_module_without_extension_does_not_warn(self) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = types.ModuleType("CUBRIDdb")  # type: ignore[assignment]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_pycubrid_dialect_skips_check(self) -> None:
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        dialect = PyCubridDialect()
+        dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_initialize_runs_the_check(self) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
+
+        with patch("sqlalchemy.engine.default.DefaultDialect.initialize"):
+            with pytest.warns(SAWarning, match="CUBRIDdb 9.3.0.0001 is older"):
+                dialect.initialize(MagicMock())
 
 
 class TestIsolationLevelMethods:
@@ -481,6 +572,28 @@ class TestExistenceChecks:
 
         connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_table(connection, "users") is False
+
+    @pytest.mark.parametrize(
+        ("count", "expected"),
+        [
+            (0, False),
+            (1, True),
+            ("0", False),
+            ("1", True),
+            ("2", True),
+            (Decimal("0"), False),
+            (Decimal("1"), True),
+            (None, False),
+        ],
+    )
+    def test_has_table_and_has_index_coerce_count_type(self, count, expected):
+        """PyPI CUBRID-Python 9.3 fetches the BIGINT COUNT(*) as str (#583)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.execute.return_value.scalar.return_value = count
+
+        assert dialect.has_table(connection, "users") is expected
+        assert dialect.has_index(connection, "users", "ix_users_name") is expected
 
     def test_has_table_honors_inspector_info_cache(self):
         """Inspector.has_table() is cached until clear_cache() (SA HasTableTest)."""
@@ -959,14 +1072,15 @@ class TestReflectionMethods:
         failed_conn = MagicMock()
         failed_conn.info_cache = {}
         failed_conn.dialect_options = {}
-        # Any SHOW CREATE TABLE failure other than a missing table keeps the
-        # graceful empty result.
+        # Any SHOW CREATE TABLE failure other than a missing table propagates
+        # instead of reporting "no foreign keys" (#589).
         failed_conn.execute.side_effect = [
             _class_type_result("CLASS"),
             RuntimeError("fk lookup failed"),
         ]
 
-        assert _invoke_reflection(dialect, "get_foreign_keys", failed_conn, "orders") == []
+        with pytest.raises(RuntimeError, match="fk lookup failed"):
+            _invoke_reflection(dialect, "get_foreign_keys", failed_conn, "orders")
 
     def test_get_table_names(self):
         dialect = CubridDialect()
@@ -1510,14 +1624,16 @@ class TestMissingObjectReflection:
             _invoke_reflection(CubridDialect(), "get_unique_constraints", connection, "missing")
 
     @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
-    def test_ddl_fallback_syntax_error_is_not_a_missing_table(self, method_name, caplog):
+    def test_ddl_fallback_syntax_error_is_not_a_missing_table(self, method_name):
+        from sqlalchemy.exc import ProgrammingError
+
         side_effect = [_class_type_result("CLASS")]
         if method_name == "get_unique_constraints":
             side_effect.append([])  # empty unique-index catalog
         connection = self._connection(*side_effect, self._syntax_error())
-        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
-            assert _invoke_reflection(CubridDialect(), method_name, connection, "t") == []
-        assert "SHOW CREATE TABLE failed" in caplog.text
+        with pytest.raises(ProgrammingError) as excinfo:
+            _invoke_reflection(CubridDialect(), method_name, connection, "t")
+        assert not isinstance(excinfo.value, NoSuchTableError)
 
     def test_table_comment_missing_table_raises(self):
         result = MagicMock()
@@ -1562,6 +1678,88 @@ class TestMissingObjectReflection:
         connection = self._connection(self._syntax_error())
         with pytest.raises(ProgrammingError):
             _invoke_reflection(CubridDialect(), "get_view_definition", connection, "v")
+
+
+class _DriverError(Exception):
+    pass
+
+
+_SHOW_CREATE_TABLE_ERRORS = [
+    OperationalError(
+        "SHOW CREATE TABLE",
+        {},
+        _DriverError("Cannot communicate with the broker"),
+        connection_invalidated=True,
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Syntax: select is not authorized on t.")
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Semantic: SELECT is not authorized on dba.t.")
+    ),
+    RuntimeError("boom"),
+]
+_SHOW_CREATE_TABLE_ERROR_IDS = ["disconnect", "not-authorized-493", "not-authorized-494", "runtime"]
+
+
+class TestShowCreateTableErrorsPropagate:
+    """#589: ``get_foreign_keys`` and ``get_unique_constraints`` read
+    ``SHOW CREATE TABLE``. A failure there must not be reported as "no
+    constraints", which Alembic autogenerate would turn into spurious
+    ``add_fk`` / ``add_constraint`` operations."""
+
+    METHODS = ["get_foreign_keys", "get_unique_constraints"]
+
+    @staticmethod
+    def _connection(method_name, show_create_table):
+        side_effect = [_class_type_result("CLASS")]
+        if method_name == "get_unique_constraints":
+            side_effect.append([])  # empty unique-index catalog: DDL fallback
+        side_effect.append(show_create_table)
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = side_effect
+        return connection
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    @pytest.mark.parametrize("error", _SHOW_CREATE_TABLE_ERRORS, ids=_SHOW_CREATE_TABLE_ERROR_IDS)
+    def test_show_create_table_failure_propagates(self, method_name, error, caplog):
+        connection = self._connection(method_name, error)
+        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
+            with pytest.raises(type(error)) as excinfo:
+                _invoke_reflection(CubridDialect(), method_name, connection, "t")
+        assert excinfo.value is error
+        assert not isinstance(excinfo.value, NoSuchTableError)
+        assert not caplog.records
+
+    def test_disconnect_keeps_connection_invalidated(self):
+        error = _SHOW_CREATE_TABLE_ERRORS[0]
+        connection = self._connection("get_foreign_keys", error)
+        with pytest.raises(type(error)) as excinfo:
+            _invoke_reflection(CubridDialect(), "get_foreign_keys", connection, "t")
+        assert excinfo.value.connection_invalidated
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    def test_no_show_create_table_row_raises_no_such_table(self, method_name):
+        """The class lookup found the table but SHOW CREATE TABLE returned no
+        row (e.g. it was dropped in between): the table is gone, not
+        constraint-free."""
+        result = MagicMock()
+        result.first.return_value = None
+        connection = self._connection(method_name, result)
+        with pytest.raises(NoSuchTableError, match="t"):
+            _invoke_reflection(CubridDialect(), method_name, connection, "t")
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    def test_successful_query_without_constraints_returns_empty(self, method_name):
+        result = MagicMock()
+        result.first.return_value = (
+            "t",
+            "CREATE TABLE [t] ([id] INTEGER NOT NULL, CONSTRAINT [pk_t_id] PRIMARY KEY ([id]))",
+        )
+        connection = self._connection(method_name, result)
+        assert _invoke_reflection(CubridDialect(), method_name, connection, "t") == []
 
 
 class TestDoReleaseSavepoint:
@@ -1706,20 +1904,48 @@ class TestIsDisconnect:
         exc = dbapi.DatabaseError(message)
         assert dialect.is_disconnect(exc, None, None) is False
 
-    @pytest.mark.parametrize(
-        "error_code",
-        [
-            -21003,  # CAS_ER_COMMUNICATION
-            -21005,  # CAS_ER_COMMUNICATION (alternate)
-            -10005,  # ER_NET_CANT_CONNECT
-            -10007,  # ER_NET_SERVER_COMM_ERROR
-        ],
-    )
-    def test_disconnect_by_error_code(self, dialect_with_dbapi, error_code):
-        """is_disconnect() returns True for known disconnect error codes."""
+    # CUBRIDdb client-side codes for a dead or unusable connection (#572, #578).
+    _CUBRIDDB_DISCONNECT = [
+        (-10002, "ERROR: CAS, -10002, No more memory"),
+        (-10003, "ERROR: CAS, -10003, Cannot receive data from client"),
+        (-20002, "ERROR: CCI, -20002, Invalid connection handle"),
+        (-20004, "ERROR: CCI, -20004, Cannot communicate with server"),
+        (-20016, "ERROR: CCI, -20016, Cannot connect to CUBRID CAS"),
+    ]
+
+    # Codes the old table listed that are not disconnects (#572).
+    _NOT_DISCONNECT = [
+        -4,  # ER_INTERRUPTED: an interrupted query (e.g. KILL QUERY)
+        -10005,  # CAS_ER_TRAN_TYPE
+        -10007,  # CAS_ER_NUM_BIND
+        -21003,  # CUBRID JDBC's ER_COMMUNICATION; no Python driver raises it
+        -21005,  # CUBRID JDBC's ER_TYPE_CONVERSION
+    ]
+
+    @pytest.mark.parametrize(("error_code", "message"), _CUBRIDDB_DISCONNECT)
+    def test_disconnect_by_error_code(self, dialect_with_dbapi, error_code, message):
+        """CUBRIDdb ``(code, message)`` errors with a disconnect code disconnect."""
         dialect, dbapi = dialect_with_dbapi
-        exc = dbapi.DatabaseError(error_code)
+        exc = dbapi.InterfaceError(error_code, message)
         assert dialect.is_disconnect(exc, None, None) is True
+        # Wording-independent: the code alone decides.
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code), None, None) is True
+
+    @pytest.mark.parametrize("error_code", _NOT_DISCONNECT)
+    def test_removed_codes_are_not_disconnect_cubriddb(self, dialect_with_dbapi, error_code):
+        """CUBRIDdb errors carrying a code the old table wrongly listed do not disconnect."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(error_code, f"ERROR: DBMS, {error_code}, opaque message")
+        assert dialect.is_disconnect(exc, None, None) is False
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code), None, None) is False
+
+    def test_interrupted_query_is_not_disconnect_cubriddb(self, dialect_with_dbapi):
+        """CUBRIDdb's error for a query interrupted by KILL QUERY keeps the connection."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(
+            -4, "ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44]."
+        )
+        assert dialect.is_disconnect(exc, None, None) is False
 
     def test_disconnect_with_interface_error(self, dialect_with_dbapi):
         """is_disconnect() works with InterfaceError subclass."""
@@ -1733,11 +1959,64 @@ class TestIsDisconnect:
         exc = RuntimeError("connection is closed")
         assert dialect.is_disconnect(exc, None, None) is False
 
-    def test_disconnect_error_code_in_string_arg(self, dialect_with_dbapi):
-        """is_disconnect() extracts numeric code from string like '-21003 msg'."""
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-20002 opaque",
+            "-10003 opaque",
+            "-111 opaque",
+            "-224 opaque",
+            "-1002 opaque",
+            "-4 opaque",
+        ],
+    )
+    def test_numeric_message_prefix_is_not_a_code(self, dialect_with_dbapi, message):
+        """A leading number in a message is text, not an error code (#608).
+
+        Neither driver puts a code at the start of its message: CUBRIDdb
+        passes the code as an ``int`` ``args[0]`` and pycubrid in ``errno``.
+        """
         dialect, dbapi = dialect_with_dbapi
-        exc = dbapi.DatabaseError("-21003 Cannot communicate with the broker")
+        assert dialect.is_disconnect(dbapi.DatabaseError(message), None, None) is False
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-224 rejected",
+        ],
+    )
+    def test_numeric_server_text_does_not_override_cubriddb_code(self, dialect_with_dbapi, message):
+        """A number at the start of CUBRIDdb's server text is not a code (#608)."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(-495, f"ERROR: DBMS, -495, {message}")
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_server_connect_failure_keeps_message_fallback_cubriddb(self, dialect_with_dbapi):
+        """-191 "Failed to connect to database server" (cub_server down) disconnects.
+
+        The code is not in the tables; the message fallback decides, as on a
+        live cub_server stop (test_server_restart.py).
+        """
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(
+            -191,
+            "ERROR: DBMS, -191, Failed to connect to database server, 'testdb', "
+            "on the following host(s): localhost[CAS INFO-127.0.0.1:33000,1,426].",
+        )
         assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_cci_code_outside_table_keeps_message_fallback(self, dialect_with_dbapi):
+        """CCI/CAS messages are fixed driver text, so they still match patterns."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.InterfaceError(-20038, "ERROR: CCI, -20038, Connection timed out")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_bool_arg_is_not_a_code(self, dialect_with_dbapi):
+        """``True``/``False`` in ``args[0]`` are not error codes."""
+        dialect, dbapi = dialect_with_dbapi
+        assert dialect.is_disconnect(dbapi.DatabaseError(True), None, None) is False
 
     def test_disconnect_with_empty_args(self, dialect_with_dbapi):
         """is_disconnect() handles exception with no args gracefully."""
@@ -1773,11 +2052,12 @@ class TestIsDisconnect:
         dialect.dbapi = dbapi
         return dialect, dbapi
 
-    def test_disconnect_by_communication_code_minus_four(self, pycubrid_dialect):
-        """is_disconnect() returns True for pycubrid ER_COMMUNICATION (-4)."""
+    def test_interrupted_query_is_not_disconnect_pycubrid(self, pycubrid_dialect):
+        """pycubrid's errno -4 is the server's ER_INTERRUPTED, not a lost connection (#572)."""
         dialect, dbapi = pycubrid_dialect
-        exc = dbapi.OperationalError(-4, "communication error")
-        assert dialect.is_disconnect(exc, None, None) is True
+        exc = dbapi.OperationalError("Has been interrupted.")
+        exc.code = exc.errno = -4
+        assert dialect.is_disconnect(exc, None, None) is False
 
     def test_operational_error_without_code_or_cause_is_not_disconnect(self, pycubrid_dialect):
         """OperationalError with a non-disconnect message is not a disconnect."""
@@ -1830,19 +2110,206 @@ class TestIsDisconnect:
         exc = dbapi.InterfaceError("Cursor is closed")
         assert dialect.is_disconnect(exc, None, None) is False
 
+    # ----- cub_server crash / stop: broker CAS-reset codes (#565) -----
+
+    _SERVER_SESSION_LOST = [
+        -111,  # ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
+        -199,  # ER_NET_SERVER_CRASHED
+        -224,  # ER_OBJ_NO_CONNECT
+        -677,  # ER_BO_CONNECT_FAILED
+    ]
+
+    @pytest.mark.parametrize("error_code", _SERVER_SESSION_LOST)
+    def test_server_session_lost_code_cubriddb(self, dialect_with_dbapi, error_code):
+        """CUBRIDdb ``(code, message)`` errors for a lost server session disconnect."""
+        dialect, dbapi = dialect_with_dbapi
+        # Wording-independent: the code alone decides.
+        exc = dbapi.DatabaseError(error_code, "opaque server message")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @staticmethod
+    def _pycubrid_error(dbapi, message: str, errno: int | None):
+        """Mimic pycubrid: ``args`` hold only the message, the code is in ``errno``."""
+        exc = dbapi.DatabaseError(message)
+        exc.errno = errno
+        return exc
+
+    @pytest.mark.parametrize("error_code", _SERVER_SESSION_LOST)
+    def test_server_session_lost_code_pycubrid(self, pycubrid_dialect, error_code):
+        """pycubrid errors carrying a lost-server-session ``errno`` disconnect."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", error_code)
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    # CAS codes (cas_error.h) as pycubrid actually receives them: legacy-
+    # renumbered by CAS_CONV_ERROR_TO_OLD (+9000), since pycubrid never
+    # advertises understanding the renewed error-code protocol (#578).
+    _PYCUBRID_LEGACY_CAS = [
+        -1002,  # legacy CAS_ER_NO_MORE_MEMORY (-10002 + 9000)
+    ]
+
+    @pytest.mark.parametrize("error_code", _PYCUBRID_LEGACY_CAS)
+    def test_pycubrid_legacy_cas_code_is_disconnect(self, pycubrid_dialect, error_code):
+        """pycubrid errors carrying a legacy-renumbered CAS disconnect code disconnect (#578)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", error_code)
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @pytest.mark.parametrize(
+        "errno",
+        [
+            *_NOT_DISCONNECT,
+            -493,  # ER_PT_SYNTAX
+            -671,  # ER_CSS_RECV_OR_SEND: evaluated and not added (#564)
+            None,
+        ],
+    )
+    def test_other_pycubrid_errno_is_not_disconnect(self, pycubrid_dialect, errno):
+        """Only the server-session codes are matched against pycubrid ``errno``."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", errno)
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_decorated_str_does_not_decide_message_match(self, pycubrid_dialect):
+        """Only the driver's own message is matched, not a decorated ``str()``.
+
+        pycubrid's ``str()`` appends a description looked up from ``errno``
+        (``Communication error`` for -4 and -671).
+        """
+        dialect, dbapi = pycubrid_dialect
+
+        class DecoratedError(dbapi.OperationalError):
+            def __str__(self) -> str:
+                return f"{self.args[0]} (errno=-4, description='Communication error')"
+
+        assert dialect.is_disconnect(DecoratedError("opaque"), None, None) is False
+        assert dialect.is_disconnect(DecoratedError("connection is closed"), None, None) is True
+
+    @pytest.mark.parametrize(
+        ("errno", "expected"),
+        [
+            *((code, False) for code in _NOT_DISCONNECT),
+            (-671, False),
+            (-493, False),
+            *((code, True) for code in _SERVER_SESSION_LOST),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_errors(self, variant, errno, expected):
+        """Real pycubrid exceptions through both pycubrid dialects."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = pycubrid.OperationalError("opaque server message", code=errno, errno=errno)
+        assert dialect.is_disconnect(exc, None, None) is expected
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-111 opaque",
+            "-1002 opaque",
+        ],
+    )
+    def test_numeric_server_text_does_not_override_pycubrid_errno(self, pycubrid_dialect, message):
+        """A number at the start of pycubrid's message is not a code (#608)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, message, -495)
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    @pytest.mark.parametrize(
+        ("exc_name", "message", "errno", "expected"),
+        [
+            # Issue #608's reproduction: structured errno, numeric-prefixed text.
+            ("DataError", "-20004 rows rejected by application validation", -495, False),
+            ("OperationalError", "-224 opaque", -495, False),
+            # Real disconnects keep being detected, including a server code
+            # outside the tables whose message matches (cub_server down).
+            (
+                "DatabaseError",
+                "Failed to connect to database server, 'testdb', on the following host(s): h",
+                -191,
+                True,
+            ),
+            ("OperationalError", "opaque server message", -224, True),
+            ("OperationalError", "connection lost during receive", None, True),
+            ("InterfaceError", "connection is closed", None, True),
+            (
+                "OperationalError",
+                "CAS did not answer CHECK_CAS out of transaction and reconnecting failed",
+                None,
+                True,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_message_classification(
+        self, variant, exc_name, message, errno, expected
+    ):
+        """Real pycubrid exceptions: a numeric message prefix is never a code (#608)."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc_cls = getattr(pycubrid, exc_name)
+        if errno is None:
+            exc = exc_cls(message)
+        else:
+            exc = exc_cls(message, code=errno, errno=errno)
+        assert dialect.is_disconnect(exc, None, None) is expected
+
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_oserror_cause_is_disconnect(self, variant):
+        """A real pycubrid error raised from a socket error disconnects."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = pycubrid.OperationalError("-20004 opaque")
+        exc.__cause__ = ConnectionResetError(104, "reset")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_pycubrid_failed_reconnect_is_disconnect(self, pycubrid_dialect):
+        """pycubrid's failed CHECK_CAS reconnect leaves the connection closed."""
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.OperationalError(
+            "CAS did not answer CHECK_CAS out of transaction and reconnecting failed"
+        )
+        assert dialect.is_disconnect(exc, None, None) is True
+
 
 class TestExtractErrorCode:
     """Tests for CubridDialect._extract_error_code()."""
 
     def test_integer_arg(self):
         """Extracts integer error code from args[0]."""
-        exc = Exception(-21003)
-        assert CubridDialect._extract_error_code(exc) == -21003
+        exc = Exception(-20004)
+        assert CubridDialect._extract_error_code(exc) == -20004
 
-    def test_string_with_embedded_code(self):
-        """Extracts error code from string like '-21003 message'."""
-        exc = Exception("-21003 Cannot communicate")
-        assert CubridDialect._extract_error_code(exc) == -21003
+    def test_string_with_leading_number_is_not_a_code(self):
+        """A message that starts with a number carries no code (#608)."""
+        exc = Exception("-20004 Cannot communicate")
+        assert CubridDialect._extract_error_code(exc) is None
+
+    def test_bool_arg_is_not_a_code(self):
+        """``bool`` is an ``int`` subclass but never an error code."""
+        assert CubridDialect._extract_error_code(Exception(True)) is None
 
     def test_string_without_code(self):
         """Returns None for string without leading number."""

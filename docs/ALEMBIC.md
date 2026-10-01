@@ -233,26 +233,41 @@ leave partial schema and a bumped `alembic_version`.
 
 Alembic picks its migration implementation from a registry keyed by
 `dialect.name`; a `DefaultImpl` subclass adds itself to that registry when its
-module is imported (`CubridImpl.__dialect__ = "cubrid"`). Alembic does not load
-dialect implementations from package entry points.
+module is imported (`CubridImpl.__dialect__ = "cubrid"`). Every CUBRID URL —
+`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://` and
+`cubrid+aiopycubrid://` — has `dialect.name == "cubrid"`. sqlalchemy-cubrid
+imports `sqlalchemy_cubrid.alembic_impl` before Alembic looks the name up, in
+one of two ways depending on the installed Alembic:
 
-`sqlalchemy_cubrid/dialect.py` therefore imports `sqlalchemy_cubrid.alembic_impl`
-when Alembic is installed (and skips it silently when it is not). Every CUBRID
-URL — `cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://` and
-`cubrid+aiopycubrid://` — loads that module and has `dialect.name == "cubrid"`,
-so building the engine (or, in offline `--sql` mode, the dialect from the URL)
-registers `CubridImpl` before Alembic looks it up. No imports or configuration
-are required in `env.py` or your migration files.
+| Alembic | Who imports `alembic_impl` | When |
+|---|---|---|
+| 1.18 and later | Alembic, through the `alembic.plugins` entry point that sqlalchemy-cubrid publishes (`_sqlalchemy_cubrid_alembic`) | during `import alembic` |
+| 1.7.2 – 1.17.x | `sqlalchemy_cubrid/dialect.py` | when the CUBRID dialect is loaded (engine creation, or the dialect built from the URL in offline `--sql` mode) |
 
-Because of this, loading the CUBRID dialect imports Alembic whenever Alembic is
-installed, even in applications that never run a migration. That import takes
-roughly 0.1 s, and Alembic 1.18 and later log seven `INFO` lines from the
-`alembic.runtime.plugins` logger while importing (`setup plugin
-alembic.autogenerate.schemas`, ..., `setup plugin
-alembic.ext.checkconstraint_byname`). They are Alembic's own messages and appear
-on the first CUBRID engine or dialect only when the application routes `INFO`
-records to a handler, for example with `logging.basicConfig(level=logging.INFO)`.
-The dialect leaves the `alembic` logger alone, since its level is the
+Either way no imports or configuration are required in `env.py` or your
+migration files. Without Alembic, nothing is registered and nothing is
+logged.
+
+With Alembic 1.18 and later, loading the CUBRID dialect does not import
+Alembic, so applications that never run a migration no longer pay its import
+cost (with Alembic 1.20.0, SQLAlchemy 2.0.54 and Python 3.10, the first
+`create_engine("cubrid+pycubrid://...")` in a fresh process takes about 18 ms
+instead of about 80 ms). The dialect checks the installed package metadata for this, not
+Alembic itself. If Alembic has already been imported, the metadata cannot be
+read, or it does not belong to the `alembic` package that would be imported
+(for example an older copy earlier on `sys.path`), it falls back to the direct
+import, which is harmless.
+
+Importing Alembic 1.18 and later logs `INFO` lines from the
+`alembic.runtime.plugins` logger (`setup plugin alembic.autogenerate.schemas`,
+..., `setup plugin alembic.ext.checkconstraint_byname`), and with
+sqlalchemy-cubrid installed also `setup plugin sqlalchemy_cubrid`. They are
+Alembic's own messages. Since the dialect no longer imports Alembic on these
+versions, they appear only in processes that use Alembic, and only when the
+application routes `INFO` records to a handler, for example with
+`logging.basicConfig(level=logging.INFO)`. With Alembic 1.7.2 – 1.17.x the
+dialect still imports Alembic (about 0.1 s), but those releases log no such
+lines. The dialect leaves the `alembic` logger alone, since its level is the
 application's choice. To hide the lines, raise that logger's level in the
 application's logging setup:
 
@@ -262,10 +277,26 @@ import logging
 logging.getLogger("alembic").setLevel(logging.WARNING)
 ```
 
-Alembic offers no supported way to defer the registration until a migration
-runs: `DefaultImpl.get_by_dialect()` is a plain lookup in the registry, and the
-`alembic.plugins` entry points (Alembic 1.18+) load on every `import alembic`
-and do not exist on the older supported versions.
+Alembic 1.18.0 itself logs these lines from a logger literally named
+`__name__` (`logging.getLogger("__name__")`, fixed in 1.18.1), so the setting
+above does not hide them on that release. Upgrade to 1.18.1 or later, or also
+raise `logging.getLogger("__name__")` to `WARNING`.
+
+Alembic 1.18 – 1.20 load an `alembic.plugins` entry point with
+`for mod in entrypoint.load()`, while the Alembic documentation describes the
+entry point value as the plugin module itself; a plain module is not
+iterable, so the documented form fails every `import alembic` with
+`TypeError`. `_sqlalchemy_cubrid_alembic` works with both: it is a
+module that iterates to itself. Alembic does not guard the entry point load,
+so the plugin is a top-level module that imports only the standard library;
+loading it never imports the `sqlalchemy_cubrid` package, whose import can
+fail (for example after an unsupported SQLAlchemy is installed over it). Its
+`setup()` imports `sqlalchemy_cubrid.alembic_impl` and turns any failure into a
+`RuntimeWarning` (or, under `-W error`, a log record from the
+`sqlalchemy_cubrid.alembic_plugin` logger) instead of raising, so it cannot
+break `import alembic` for other projects in the same environment. If the
+registration still fails, Alembic reports `KeyError: 'cubrid'`; importing
+`sqlalchemy_cubrid.alembic_impl` in `env.py` registers `CubridImpl` directly.
 
 If Alembic is installed but fails to import (for example Alembic 1.7.0/1.7.1,
 which raise `NameError` on SQLAlchemy 2.x), the dialect still loads and emits a
@@ -373,6 +404,23 @@ lock until the transaction commits. Be aware:
 - Use `transaction_per_migration=True` for long migrations or large tables
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
+
+### Foreign key referential actions in autogenerate
+
+CUBRID's default `ON DELETE` / `ON UPDATE` action is `RESTRICT`, and
+`SHOW CREATE TABLE` always prints it, so `inspect(...).get_foreign_keys()`
+reports a foreign key created without actions as
+`{"ondelete": "RESTRICT", "onupdate": "RESTRICT"}`. Reflection keeps reporting
+what the server says. For autogenerate, `CubridImpl` treats that reflected
+`RESTRICT` as equal to a model `ForeignKey` with no `ondelete` / `onupdate`
+(#597), so an unchanged foreign key produces no `drop_constraint` /
+`create_foreign_key` pair, whether the model leaves the action out or names
+`RESTRICT`. Adding `ondelete="CASCADE"` or `SET NULL`, removing it again, or
+switching between them is still detected. `NO ACTION` is different: CUBRID
+prints it as `NO ACTION`, but Alembic itself treats `NO ACTION` and no action
+as equal in both directions, so switching between them is not detected. CUBRID
+rejects `ON UPDATE CASCADE`; use `SET NULL`, `RESTRICT` or `NO ACTION` for
+`onupdate`.
 
 ### `alter_column()` behavior
 
@@ -499,11 +547,14 @@ def downgrade():
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-### `INFO` log lines `setup plugin alembic...` when using the dialect
+### `INFO` log lines `setup plugin ...`
 
-Alembic 1.18+ logs these while it is imported, and the CUBRID dialect imports
-Alembic when it is installed. Set `logging.getLogger("alembic").setLevel(logging.WARNING)`
-in the application; see [Auto-Registration](#auto-registration).
+Alembic 1.18+ logs these while it is imported. Loading the CUBRID dialect no
+longer imports Alembic on those versions, so they only appear in processes
+that use Alembic. Set `logging.getLogger("alembic").setLevel(logging.WARNING)`
+in the application (on Alembic 1.18.0, which logs them from a logger named
+`__name__`, upgrade or quiet that logger too); see
+[Auto-Registration](#auto-registration).
 
 ### "Alembic is required for migration support"
 
@@ -542,6 +593,18 @@ revision, and the revisions before it stay committed and recorded in
 `alter_table_change_type_strict` system parameter is `yes`.
 
 **Fix**: For genuinely lossy/unsupported conversions, use `batch_alter_table` — see [ALTER COLUMN TYPE (native)](#-alter-column-type-native).
+
+### `alembic revision --autogenerate` fails with a reflection error
+
+**Cause**: Foreign keys are read from `SHOW CREATE TABLE`. Since #589 a failure
+there (a dropped connection, an authorization error, a driver error) raises
+instead of being reported as "this table has no foreign keys", which made
+autogenerate propose `add_fk` for foreign keys that already exist.
+
+**Fix**: Fix the underlying error and run autogenerate again; set
+`pool_pre_ping=True` on the engine if the connection went stale. A `NoSuchTableError`
+for a table of another owner is expected since CUBRID 11.2, where an unqualified name
+resolves in the current user's schema; run autogenerate as the table owner.
 
 ---
 
@@ -591,7 +654,10 @@ Before running migrations in production:
 
 Add the following script to list revisions with several DDL operations. This is advisory
 (warning-only) and does not block CI. Such revisions still roll back as a whole on failure,
-but they hold schema locks longer:
+but they hold schema locks longer. The script counts calls to Alembic DDL operations, including
+constraint creation (`create_unique_constraint`, `create_foreign_key`, `create_check_constraint`,
+`create_primary_key`), in each `upgrade()` and `downgrade()` separately; bare references such as
+`op.drop_table` without a call are not counted. It is a heuristic, not a control-flow analysis:
 
 ```python
 #!/usr/bin/env python3
@@ -602,6 +668,12 @@ whole. Every DDL statement holds a schema lock on its table until the
 transaction commits, though, so this lists revisions with several DDL
 calls: they keep tables locked longer and are candidates for running with
 ``transaction_per_migration=True`` or for splitting.
+
+Only calls such as ``op.create_table(...)`` or ``batch_op.add_column(...)``
+count; a bare reference like ``op.drop_table`` is not a DDL operation. This is
+a heuristic AST scan, not control-flow analysis: a call in a loop or branch
+counts once, as written, and DDL issued from helpers defined outside
+``upgrade()``/``downgrade()`` is not seen.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
@@ -616,6 +688,8 @@ DDL_CALLS = {
     "create_table", "drop_table", "add_column", "drop_column",
     "create_index", "drop_index", "alter_column",
     "add_constraint", "drop_constraint",
+    "create_unique_constraint", "create_foreign_key",
+    "create_check_constraint", "create_primary_key",
 }
 
 
@@ -627,7 +701,9 @@ def check_revision(path: Path) -> list[str]:
             continue
         ddl_count = sum(
             1 for node in ast.walk(func)
-            if isinstance(node, ast.Attribute) and node.attr in DDL_CALLS
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in DDL_CALLS
         )
         if ddl_count > 1:
             warnings.append(
@@ -658,7 +734,7 @@ def main() -> None:
             "large-table migrations."
         )
     else:
-        print("✓ All revisions have single DDL operations per function.")
+        print("✓ No revision has more than one DDL call per function.")
 
 
 if __name__ == "__main__":

@@ -19,7 +19,7 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         with:
@@ -30,6 +30,8 @@ jobs:
               - 'pyproject.toml'
               - 'setup.cfg'
               - 'docker-compose.yml'
+              - 'Makefile'
+              - 'scripts/wait_for_cubrid.py'
               - '.github/workflows/**'
 
   doc-lint:
@@ -45,20 +47,25 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install pinned ruff from pyproject.toml
         run: pip install -e ".[dev]"
       - name: Lint maintained Python sources
         run: make lint
-      - name: llms-full.txt is in sync with source docs
+      - name: Lint CHANGELOG structure
+        run: python scripts/lint_changelog.py
+      - name: llms-full.txt and root llms.txt are in sync with source docs
         run: |
           python scripts/generate_llms_full.py
-          if ! git diff --quiet -- docs/llms-full.txt; then
-            echo "::error::docs/llms-full.txt is stale. Run 'python scripts/generate_llms_full.py' and commit the result."
-            git diff -- docs/llms-full.txt
+          # --porcelain also reports a generated file that was deleted from the
+          # commit and recreated untracked, which `git diff` would miss.
+          if [ -n "$(git status --porcelain -- docs/llms-full.txt llms.txt)" ]; then
+            echo "::error::docs/llms-full.txt or llms.txt is stale or missing. Edit docs/llms.txt (the canonical index), run 'python scripts/generate_llms_full.py' and commit the result."
+            git status --short -- docs/llms-full.txt llms.txt
+            git diff -- docs/llms-full.txt llms.txt
             exit 1
           fi
 
@@ -73,12 +80,12 @@ jobs:
           - python-version: "3.13"
             sqlalchemy-version: "2.1.1"
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install type-check dependencies
-        run: pip install -e ".[alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}" "mypy==2.3.1"
+        run: pip install -e ".[dev,alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
       - name: Check strict typing and report dependency versions
         run: make typecheck
 
@@ -92,8 +99,8 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -105,24 +112,76 @@ jobs:
         run: |
           python -m pytest \
             test/ \
-            -m "not integration" \
+            -m "not integration and not repo" \
             -v --tb=short \
             --cov=sqlalchemy_cubrid \
             --cov-report=term-missing \
             --cov-fail-under=95
       - name: Upload coverage
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: .coverage
+
+  # Repository-tooling tests (#594): the Makefile `integration` recipe with its
+  # sh/bash signal handling, and the repo scripts, all through subprocesses.
+  # They are kept out of the fast offline lane (`make test`) but stay required
+  # here on every PR and push, on every supported Python (matrix-result fails
+  # unless this job succeeds). Same selection as `make test-repo`.
+  repo-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run repository-tooling tests
+        run: python -m pytest test/ -m repo -v --tb=short
+
+  # CubridImpl reaches Alembic through the alembic.plugins entry point on
+  # Alembic 1.18+ and through the dialect's eager import on 1.7.2-1.17 (#595).
+  # Offline tests pin one release per path; "latest" catches a loader change
+  # in a new Alembic release that could break ``import alembic``.
+  alembic-compat:
+    name: alembic-compat (${{ matrix.alembic }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        alembic: ["1.7.2", "1.17.2", "1.18.0", "latest"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        env:
+          ALEMBIC: ${{ matrix.alembic }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ "$ALEMBIC" = latest ]; then spec="alembic<2.0"; else spec="alembic==$ALEMBIC"; fi
+          pip install -e ".[dev,pycubrid]" tomli "$spec"
+          python -c "import alembic; print('alembic', alembic.__version__)"
+      - name: Run Alembic registration tests
+        run: |
+          python -m pytest test/test_alembic_plugin.py test/test_alembic_registration.py \
+            test/test_alembic.py test/test_packaging.py -m "not integration" -v --tb=short -rs
 
   sqlalchemy-21-canary:
     runs-on: ubuntu-latest
     continue-on-error: true  # Canary: warn, don't gate. SA pre-releases may break.
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies with SQLAlchemy pre-release
@@ -134,7 +193,7 @@ jobs:
         run: |
           python -m pytest \
             test/ \
-            -m "not integration" \
+            -m "not integration and not repo" \
             -v --tb=short
 
   packaging-smoke-test:
@@ -145,8 +204,8 @@ jobs:
       matrix:
         sqlalchemy-version: ["2.0.53", "2.1.1"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install build tool
@@ -196,6 +255,31 @@ jobs:
         python -m pytest test/test_integration.py test/test_regression.py
         -v --tb=short
 
+  make-integration:
+    # `make integration` exactly as a contributor runs it with the default,
+    # recommended driver (#575): a run-owned Compose project, the readiness
+    # wait and every `integration`-marked test in one pytest session through
+    # cubrid+pycubrid://. The steps of integration-tests run chosen files
+    # separately and do not cover this session (capability probes, fuzz,
+    # metamorphic, dogfood ORM, pool stress and UUID contract tests). The
+    # INTEGRATION_DRIVER=cubriddb variant runs nightly and as the release gate in
+    # integration-full.yml.
+    name: make integration (pycubrid, CUBRID 11.4)
+    runs-on: ubuntu-latest
+    needs: [detect-changes, lint, offline-tests]
+    if: needs.detect-changes.outputs.code == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: pip install -e ".[dev,pycubrid]"
+      - name: Run make integration
+        env:
+          CUBRID_VERSION: "11.4"
+        run: make integration INTEGRATION_DRIVER=pycubrid
+
   integration-tests:
     # Explicit name: the pycubrid-compliance-sqlalchemy matrix value is only the
     # pycubrid compliance lane's pin, not the SQLAlchemy version of the job.
@@ -207,7 +291,7 @@ jobs:
       fail-fast: false
       matrix:
         # Reduced PR matrix: newest (3.14 x 11.4) + oldest (3.10 x 10.2)
-        # supported combinations. The full 5x4 matrix runs nightly / on tags
+        # supported combinations. The full 5x4 matrix runs nightly / per release
         # via integration-full.yml.
         #
         # pycubrid-compliance-sqlalchemy: the pinned SQLAlchemy version of the
@@ -236,8 +320,8 @@ jobs:
           --health-retries 10
           --health-start-period 30s
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -325,7 +409,8 @@ jobs:
           e.dispose()
           print('pycubrid sync: connected')
           "
-          python -m pytest test/test_integration.py test/test_alembic_registration.py -v --tb=short
+          python -m pytest test/test_integration.py test/test_alembic_registration.py \
+            test/test_show_create_table_server_output.py -v --tb=short
 
       - name: Run driver-differential comparison (required)
         env:
@@ -401,10 +486,21 @@ jobs:
             --dburi="$CUBRID_TEST_URL" \
             -v --tb=short
 
+      - name: Run cub_server stop/start pool recovery tests (#565)
+        # Last step: it stops and restarts cub_server in the service container.
+        if: ${{ !cancelled() }}
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          CUBRID_TEST_DOCKER_CONTAINER: ${{ job.services.cubrid.id }}
+          # Fail instead of skip when a driver or the container is unavailable.
+          CUBRID_REQUIRE_SERVER_RESTART: "1"
+        run: |
+          python -m pytest test/test_server_restart.py -v --tb=short -rs
+
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
-    needs: [detect-changes, lint, typecheck, offline-tests, packaging-smoke-test, integration-tests, live-smoke]
+    needs: [detect-changes, lint, typecheck, offline-tests, repo-tests, alembic-compat, packaging-smoke-test, integration-tests, live-smoke, make-integration]
     steps:
       - name: Check results
         run: |
@@ -415,14 +511,17 @@ jobs:
           echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Strict Type Check | ${{ needs.typecheck.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Offline Tests | ${{ needs.offline-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Alembic Compatibility | ${{ needs.alembic-compat.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Repository-Tooling Tests | ${{ needs.repo-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Packaging Smoke Test | ${{ needs.packaging-smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Live Smoke | ${{ needs.live-smoke.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| make integration (pycubrid) | ${{ needs.make-integration.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Compatibility Matrix" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "PR runs a reduced live matrix (newest 3.14×11.4 + oldest 3.10×10.2)." >> $GITHUB_STEP_SUMMARY
-          echo "The full 5×4 Python×CUBRID matrix runs nightly / on tags via integration-full.yml." >> $GITHUB_STEP_SUMMARY
+          echo "The full 5×4 Python×CUBRID matrix runs nightly, on dispatch and as the release gate via integration-full.yml." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Blocking SQLAlchemy compliance lanes (part of Integration Tests; lane versions are in each cell's summary):" >> $GITHUB_STEP_SUMMARY
           echo "- cubrid@sa2.0: CUBRIDdb, SQLAlchemy 2.0.53, CUBRID 11.4" >> $GITHUB_STEP_SUMMARY
@@ -433,7 +532,10 @@ jobs:
           needs.lint.result == 'failure' ||
           needs.typecheck.result != 'success' ||
           needs.offline-tests.result == 'failure' ||
+          needs.alembic-compat.result != 'success' ||
+          needs.repo-tests.result != 'success' ||
           needs.packaging-smoke-test.result == 'failure' ||
           needs.integration-tests.result == 'failure' ||
-          needs.live-smoke.result == 'failure'
+          needs.live-smoke.result == 'failure' ||
+          needs.make-integration.result == 'failure'
         run: exit 1

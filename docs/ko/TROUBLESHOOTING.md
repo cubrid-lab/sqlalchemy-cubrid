@@ -16,6 +16,8 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [포트 33000 연결 거부](#포트-33000-연결-거부)
   - [인증 실패](#인증-실패)
   - [끊어진 연결 / 연결 해제](#끊어진-연결--연결-해제)
+  - [cub_server 재시작 또는 장애 후 오류](#cub_server-재시작-또는-장애-후-오류)
+  - [중단된 쿼리 (-4)](#중단된-쿼리--4)
   - [커넥션 풀 고갈](#커넥션-풀-고갈)
   - [잘못된 URL 형식](#잘못된-url-형식)
 - [SQL 컴파일 문제](#sql-컴파일-문제)
@@ -83,13 +85,11 @@ ImportError: No module named 'CUBRIDdb'
 
 **원인:** CUBRID C 확장 Python 드라이버가 설치되지 않음.
 
-**해결 — 옵션 A: C 확장 드라이버 설치:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **참고:** CUBRID CCI 라이브러리와 C 컴파일러가 필요합니다. 플랫폼별 지침은 [CUBRID Python 드라이버 문서](https://www.cubrid.org/manual/en/11.0/api/python.html)를 참고하세요.
+**해결 — 옵션 A: C 확장 드라이버를 소스에서 빌드:** cubrid-python v11.3.0.51 이상에서
+CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를
+참고하세요. CMake와 C 컴파일러가 필요합니다. `pip install CUBRID-Python`은 사용하지 마세요.
+PyPI에는 테스트되지 않은 9.3.x 릴리스만 있습니다.
+[PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
 
 **해결 — 옵션 B: 순수 Python 드라이버 사용 (권장):**
 
@@ -129,7 +129,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C 확장 빌드 실패
 
-**증상:** `pip install CUBRID-Python`이 컴파일 오류로 실패.
+**증상:** CUBRIDdb(cubrid-python) 빌드가 컴파일 오류로 실패.
 
 **흔한 원인:**
 - C 컴파일러 누락 (`gcc` / `cl.exe`)
@@ -221,6 +221,43 @@ engine = create_engine(
 `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`의 경우 `pool_pre_ping=True`는 이제 `SELECT 1`을 발행하는 대신 pycubrid의 네이티브 `CHECK_CAS` 핑을 사용합니다.
 
 자세한 권장사항은 [연결 가이드 — 풀 튜닝](CONNECTION.md#커넥션-풀-튜닝)을 참고하세요.
+
+---
+
+### cub_server 재시작 또는 장애 후 오류
+
+**증상:** `cub_server`가 중지, 재시작되거나 비정상 종료된 뒤 열린 트랜잭션의 문장이 실패합니다:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**원인:** 브로커의 CAS가 `cub_server`와의 세션을 잃었습니다. CAS는 클라이언트가 트랜잭션을 끝낸 뒤에만 다시 연결하므로, 그 전까지는 `cub_server`가 다시 올라와도 같은 연결의 모든 문장이 -224로 실패합니다. `pool_pre_ping`으로는 잡을 수 없습니다. 연결은 이미 체크아웃되어 있고, CAS는 여전히 핑에 응답하기 때문입니다.
+
+**동작:** 방언은 브로커가 CAS를 리셋하는 코드를 두 드라이버 모두에서 연결 끊김으로 취급합니다: -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). SQLAlchemy는 연결을 무효화하고(`exc.connection_invalidated`가 `True`) 풀은 새 연결을 엽니다. `cub_server`가 내려가 있는 동안 재연결에 실패한 pycubrid 연결(`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`)도 연결 끊김입니다. 1.8.0까지의 릴리스는 이 오류들을 분류하지 않아 망가진 연결이 풀에 남았습니다.
+
+**해결:** 설정할 것은 없습니다. 롤백하고(`with engine.connect()`나 `Session` 블록을 벗어나면 롤백됩니다) `cub_server`가 다시 연결을 받으면 트랜잭션을 재시도하세요.
+
+---
+
+### 중단된 쿼리 (-4)
+
+**증상:** 실행 중인 문장이 실패합니다. 정확한 문자열은 드라이버마다 다릅니다:
+
+```
+# CUBRIDdb
+DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
+
+# pycubrid
+OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
+```
+
+**원인:** 다른 세션이 이 문장에 `KILL QUERY <tran_index>`를 실행했습니다. -4는 서버의 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. pycubrid의 `str()`은 -4를 `Communication error`로 설명하지만, 이는 pycubrid의 라벨일 뿐 서버 코드의 의미가 아닙니다.
+
+**동작:** 이 오류는 연결 끊김이 아닙니다. SQLAlchemy는 연결을 유지합니다(`exc.connection_invalidated`가 `False`). 1.8.0까지의 릴리스는 CUBRIDdb의 -4를 연결 끊김으로 취급해 연결을 교체했습니다(#572).
+
+**해결:** 문장을 끝까지 실행해야 한다면 롤백하고 재시도하세요.
 
 ---
 
@@ -657,7 +694,9 @@ NoSuchTableError: table_name
 
 3. **잘못된 데이터베이스** — 연결 URL이 올바른 데이터베이스를 가리키는지 확인
 
-> **참고:** 리플렉션은 서버가 `Unknown class "<owner>.<name>"`을 보고할 때만 `NoSuchTableError`를 발생시킵니다. 구문 오류나 그 밖의 리플렉션 쿼리 실패는 원래 예외(예: `sqlalchemy.exc.ProgrammingError`)로 그대로 전파됩니다. CUBRID는 두 경우 모두 네이티브 오류 -493을 사용하며, 1.8.0 이전 pycubrid는 모든 -493 오류에 SQLSTATE `42S02`(`Table not found`)를 보고합니다 (#454).
+> **참고:** 리플렉션은 객체가 없을 때만 `NoSuchTableError`를 발생시킵니다: `db_class` 조회에서 해당 테이블이나 뷰를 찾지 못하거나, 서버가 `Unknown class "<owner>.<name>"`을 보고하거나, 존재하는 객체라면 항상 행을 반환하는 쿼리(`SHOW CREATE TABLE`, `SHOW CREATE VIEW`)가 행을 반환하지 않는 경우입니다 (#589). 구문 오류나 그 밖의 리플렉션 쿼리 실패는 원래 예외(예: `sqlalchemy.exc.ProgrammingError`)로 그대로 전파됩니다. CUBRID는 두 경우 모두 네이티브 오류 -493을 사용하며, 1.8.0 이전 pycubrid는 모든 -493 오류에 SQLSTATE `42S02`(`Table not found`)를 보고합니다 (#454).
+
+> **참고:** `get_foreign_keys()`와 `get_unique_constraints()`는 더 이상 실패한 `SHOW CREATE TABLE`을 빈 리스트로 바꾸지 않습니다 (#589). 리플렉션 중 연결 끊김, 권한 오류, 드라이버 오류가 발생하면 예외가 전파되므로, Alembic autogenerate는 이미 존재하는 외래 키에 대해 `add_fk`를 제안하는 대신 그 오류로 중단됩니다. 새 연결로 다시 시도하십시오(`pool_pre_ping=True`는 오래된 풀 연결을 교체합니다).
 
 ---
 

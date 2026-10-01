@@ -28,11 +28,9 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### Alternative: C-extension driver
 
-If you specifically need CUBRID-Python, install it with:
-
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
+If you specifically need CUBRIDdb, use the supported CUBRID-Python 11.3.0.51+ source build
+described in [DRIVER_COMPAT](DRIVER_COMPAT.md#building-cubriddb-from-source). Do not use the
+deprecated `[cubriddb]` extra / PyPI CUBRID-Python 9.3.x path.
 
 Then use `cubrid+cubriddb://`; the bare `cubrid://` URL selects the same C-extension driver.
 
@@ -43,9 +41,10 @@ Then use `cubrid+cubriddb://`; the bare `cubrid://` URL selects the same C-exten
 Use one of the supported URL formats:
 
 ```text
-cubrid://user:password@host:port/database
 cubrid+pycubrid://user:password@host:port/database
 cubrid+aiopycubrid://user:password@host:port/database
+cubrid+cubriddb://user:password@host:port/database
+cubrid://user:password@host:port/database
 ```
 
 Example:

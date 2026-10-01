@@ -1,0 +1,118 @@
+# Open the release PR for vX.Y.Z (#601). Merging that reviewed PR is the only
+# normal way to release: release.yml detects the version change on main and
+# releases automatically.
+#
+#   gh workflow run prepare-release.yml -f version=X.Y.Z
+#
+# The PR moves the `## [Unreleased]` entries under `## [X.Y.Z] - <UTC date>`
+# (leaving an empty Unreleased), bumps __version__ in the version file(s), and
+# passes `make release-check VERSION=X.Y.Z` before it is opened.
+#
+# The PR is created with GITHUB_TOKEN, and events caused by GITHUB_TOKEN do not
+# start other workflows, so CI does not run on it by itself. Before merging, the
+# maintainer closes and reopens the PR (or pushes a commit to the branch) to
+# start CI; see RELEASING.md. No extra secret is required.
+#
+# Canonical cubrid-lab workflow, kept identical across pycubrid,
+# sqlalchemy-cubrid and cubrid-mcp-server except for the `env:` block.
+name: Prepare release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "New version X.Y.Z (greater than the current __version__)"
+        required: true
+        type: string
+
+env:
+  PACKAGE: sqlalchemy-cubrid
+  # Space-separated; the first file holds the canonical __version__.
+  VERSION_FILES: sqlalchemy_cubrid/__init__.py
+
+concurrency:
+  group: prepare-release
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  prepare:
+    name: Open the release PR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push the release/vX.Y.Z branch
+      pull-requests: write # open the PR
+    env:
+      VERSION: ${{ inputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate the request
+        run: |
+          set -euo pipefail
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be X.Y.Z"
+            exit 1
+          fi
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::dispatch prepare-release from main (got $GITHUB_REF)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.12"
+
+      - name: Refuse an existing tag or release branch
+        run: |
+          set -euo pipefail
+          if [ -n "$(git ls-remote origin "refs/tags/v$VERSION" "refs/heads/release/v$VERSION")" ]; then
+            echo "::error::tag v$VERSION or branch release/v$VERSION already exists"
+            exit 1
+          fi
+
+      - name: Date the CHANGELOG section and bump the version
+        run: |
+          set -euo pipefail
+          args=()
+          for file in $VERSION_FILES; do args+=(--version-file "$file"); done
+          python3 scripts/prepare_release.py --version "$VERSION" "${args[@]}"
+          git diff --stat
+
+      - name: make release-check
+        run: |
+          python -m pip install --upgrade pip build twine packaging
+          make release-check VERSION="$VERSION"
+          rm -rf dist build ./*.egg-info
+
+      - name: Push release/vX.Y.Z and open the PR
+        run: |
+          set -euo pipefail
+          branch="release/v$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          # shellcheck disable=SC2086
+          git add CHANGELOG.md $VERSION_FILES
+          git commit -m "chore: release v$VERSION"
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push origin "refs/heads/$branch"
+          cat > pr-body.md <<EOF
+          Release v$VERSION of $PACKAGE, opened by \`prepare-release.yml\` (run $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID).
+
+          - \`## [Unreleased]\` moved to \`## [$VERSION] - $(date -u +%Y-%m-%d)\`; \`__version__\` bumped.
+          - \`make release-check VERSION=$VERSION\` passed before this PR was opened.
+
+          Before merging:
+
+          - [ ] Review the CHANGELOG section; edit the Upgrade notes and the RELEASE_POLICY classification as needed (push to this branch).
+          - [ ] Start CI: this PR was created with GITHUB_TOKEN, so CI does not start by itself. Close and reopen the PR, or push a commit to this branch.
+          - [ ] Squash-merge with the title \`chore: release v$VERSION\`. The merge starts \`release.yml\`, which tags, publishes to PyPI and verifies the cookbook automatically (see RELEASING.md).
+          EOF
+          gh pr create --base main --head "$branch" --title "chore: release v$VERSION" --body-file pr-body.md

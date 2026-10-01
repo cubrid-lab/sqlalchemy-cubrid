@@ -31,7 +31,8 @@ def _run_differential(require: bool) -> subprocess.CompletedProcess[str]:
     env = {
         k: v
         for k, v in os.environ.items()
-        if k not in ("CUBRID_TEST_URL", _FLAG) and not k.startswith("COV_CORE_")
+        # CI=true would make conftest.py refuse the unconfigured integration run (#593).
+        if k not in ("CI", "CUBRID_TEST_URL", _FLAG) and not k.startswith("COV_CORE_")
     }
     if require:
         env[_FLAG] = "1"

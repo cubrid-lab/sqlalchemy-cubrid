@@ -143,6 +143,7 @@ VALUES (1, 'alice', 'alice@example.com')
 
 - `REPLACE INTO` uses all standard INSERT value patterns (`values`, `from_select`, etc.)
 - On duplicate key conflicts, CUBRID replaces the existing row with the new row
+- `prefix_with()` text is rendered between the verb and `INTO` (`replace(users).prefix_with("/* audit */")` renders `REPLACE /* audit */ INTO users ...`), exactly as for `insert()`; prefixes, comments, literals and identifiers are never rewritten, even when they contain the text `INSERT INTO`
 - `REPLACE INTO` does not support `ON DUPLICATE KEY UPDATE`; use `insert(...).on_duplicate_key_update(...)` for in-place updates
 
 ---

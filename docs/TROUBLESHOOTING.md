@@ -14,6 +14,8 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Authentication Failed](#authentication-failed)
   - [Stale Connections / Disconnections](#stale-connections--disconnections)
+  - [Errors After a cub_server Restart or Crash](#errors-after-a-cub_server-restart-or-crash)
+  - [Interrupted Query (-4)](#interrupted-query--4)
   - [Connection Pool Exhaustion](#connection-pool-exhaustion)
   - [Wrong URL Format](#wrong-url-format)
 - [SQL Compilation Issues](#sql-compilation-issues)
@@ -81,13 +83,12 @@ ImportError: No module named 'CUBRIDdb'
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Install the C-extension driver:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **Note:** This requires the CUBRID CCI library and a C compiler. See the [CUBRID Python driver docs](https://www.cubrid.org/manual/en/11.0/api/python.html) for platform-specific instructions.
+**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
+cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
+CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
+9.3.x release, see
+[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
@@ -127,7 +128,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C Extension Build Failure
 
-**Symptom:** `pip install CUBRID-Python` fails with compilation errors.
+**Symptom:** building CUBRIDdb (cubrid-python) fails with compilation errors.
 
 **Common causes:**
 - Missing C compiler (`gcc` / `cl.exe`)
@@ -219,6 +220,43 @@ engine = create_engine(
 For `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, `pool_pre_ping=True` now uses pycubrid's native `CHECK_CAS` ping instead of issuing `SELECT 1`.
 
 See [Connection Guide — Pool Tuning](CONNECTION.md#connection-pool-tuning) for detailed recommendations.
+
+---
+
+### Errors After a cub_server Restart or Crash
+
+**Symptom:** A statement in an open transaction fails after `cub_server` was stopped, restarted or crashed:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**Cause:** The broker's CAS lost its session with `cub_server`. It reconnects only after the client ends the transaction, so until then the same connection fails every statement with -224, even after `cub_server` is back. `pool_pre_ping` cannot catch this: the connection is already checked out, and the CAS still answers the ping.
+
+**Behavior:** The dialect treats the codes for which the broker resets the CAS as disconnects on both drivers: -111 (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224 (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). SQLAlchemy invalidates the connection (`exc.connection_invalidated` is `True`) and the pool opens a new one. A pycubrid connection that fails to reconnect while `cub_server` is down (`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`) is also a disconnect. Releases up to 1.8.0 did not classify these errors, so the broken connection stayed in the pool.
+
+**Fix:** Nothing to configure. Roll back (leaving a `with engine.connect()` or `Session` block does this) and retry the transaction once `cub_server` accepts connections again.
+
+---
+
+### Interrupted Query (-4)
+
+**Symptom:** A running statement fails. The exact text is driver-specific:
+
+```
+# CUBRIDdb
+DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
+
+# pycubrid
+OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
+```
+
+**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid's `str()` describes -4 as `Communication error`, which is a pycubrid label, not the meaning of the server code.
+
+**Behavior:** The error is not a disconnect: SQLAlchemy keeps the connection (`exc.connection_invalidated` is `False`). Releases up to 1.8.0 treated -4 from CUBRIDdb as a disconnect and replaced the connection (#572).
+
+**Fix:** Roll back and retry the statement if it should run to completion.
 
 ---
 
@@ -655,7 +693,9 @@ NoSuchTableError: table_name
 
 3. **Wrong database** — ensure your connection URL points to the correct database
 
-> **Note:** Reflection raises `NoSuchTableError` only when the server reports `Unknown class "<owner>.<name>"`. A syntax error or any other failure of a reflection query propagates as the original exception (for example `sqlalchemy.exc.ProgrammingError`), even though CUBRID uses native error -493 for both (and pycubrid before 1.8.0 reports SQLSTATE `42S02`, `Table not found`, for every -493 error) (#454).
+> **Note:** Reflection raises `NoSuchTableError` only for a missing object: the `db_class` lookup finds no such table or view, the server reports `Unknown class "<owner>.<name>"`, or a query that returns a row for every existing object (`SHOW CREATE TABLE`, `SHOW CREATE VIEW`) returns none (#589). A syntax error or any other failure of a reflection query propagates as the original exception (for example `sqlalchemy.exc.ProgrammingError`), even though CUBRID uses native error -493 for both (and pycubrid before 1.8.0 reports SQLSTATE `42S02`, `Table not found`, for every -493 error) (#454).
+
+> **Note:** `get_foreign_keys()` and `get_unique_constraints()` no longer turn a failed `SHOW CREATE TABLE` into an empty list (#589). A disconnect, an authorization error or a driver error during reflection now raises, so Alembic autogenerate stops with that error instead of proposing `add_fk` for foreign keys that already exist. Retry on a fresh connection (`pool_pre_ping=True` replaces stale pooled connections).
 
 ---
 

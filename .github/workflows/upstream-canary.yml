@@ -19,8 +19,8 @@ jobs:
       status: ${{ steps.status.outputs.status }}
       pycubrid_sha: ${{ steps.pycubrid.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - run: pip install -e ".[dev]"
@@ -34,7 +34,9 @@ jobs:
       - env:
           PYCUBRID_SHA: ${{ steps.pycubrid.outputs.sha }}
         run: pip install --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@${PYCUBRID_SHA}"
-      - run: pytest test/ --ignore=test/test_integration.py --ignore=test/test_aio_integration.py --ignore=test/test_suite.py --ignore=test/test_regression.py -q
+      # Offline half: without CUBRID_TEST_URL, integration-marked tests would only
+      # skip, which conftest.py refuses under CI=true (#593); deselect them.
+      - run: pytest test/ -m "not integration" -q
       # Recorded even when an earlier step fails; with job-level
       # continue-on-error the report job cannot rely on needs.<job>.result.
       - name: Record job status
@@ -69,8 +71,8 @@ jobs:
           --health-retries 10
           --health-start-period 30s
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install project
@@ -112,8 +114,24 @@ jobs:
         run: python -m pytest test/test_integration.py -v --tb=short
       - name: Run async integration tests
         env:
-          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          # The conftest gate probes CUBRID_TEST_URL through its own driver (#593),
+          # and this job installs pycubrid only; the async URL derived from it is
+          # the same cubrid+aiopycubrid:// either way.
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
         run: python -m pytest test/test_aio_integration.py -v --tb=short
+      - name: Run collection round-trip tests (#484)
+        # Run even when an earlier integration step failed, so its result is
+        # still reported.
+        if: ${{ !cancelled() }}
+        env:
+          # SET/MULTISET/SEQUENCE parameters need pycubrid.types.Set/Multiset/
+          # Sequence (cubrid-lab/pycubrid#567), which no pycubrid release has
+          # yet: this is the lane where these cases pass instead of xfailing,
+          # and CUBRID_REQUIRE_TYPED_COLLECTIONS turns a missing feature into a
+          # failure.
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+          CUBRID_REQUIRE_TYPED_COLLECTIONS: "1"
+        run: python -m pytest test/test_collection_roundtrip.py -v --tb=short -rxs
       # Recorded even when an earlier step fails; with job-level
       # continue-on-error the report job cannot rely on needs.<job>.result.
       - name: Record job status
@@ -149,7 +167,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-          ISSUE_TITLE: "Upstream canary failing against pycubrid@main"
+          ISSUE_TITLE: "ci: upstream canary failing against pycubrid@main"
+          # Title used before the title rule; still matched so an issue that is
+          # already open keeps being updated and closed instead of duplicated.
+          LEGACY_ISSUE_TITLE: "Upstream canary failing against pycubrid@main"
           SA_REF: ${{ github.ref_name }}
           SA_SHA: ${{ github.sha }}
           OFFLINE_STATUS: ${{ needs.upstream-canary.outputs.status }}
@@ -187,12 +208,13 @@ jobs:
           table="| Job | Outcome | pycubrid commit tested |"$'\n'"|---|---|---|"$'\n'"${rows}"
           tested="sqlalchemy-cubrid: \`${SA_REF}\` at [\`${SA_SHA:0:12}\`](https://github.com/${GH_REPO}/commit/${SA_SHA})"
 
-          # Existing open tracking issue: exact title match among open issues
-          # labelled "ci" (REST listing, so a just-created issue is found).
+          # Existing open tracking issue: exact title match (current or legacy
+          # title) among open issues labelled "ci" (REST listing, so a
+          # just-created issue is found).
           # jq runs once per page, so keep the first line in bash instead of
           # piping to head (which could SIGPIPE gh under pipefail).
           issue="$(gh api --paginate "repos/${GH_REPO}/issues?state=open&labels=ci&per_page=100" \
-            --jq 'first(.[] | select(.pull_request == null and .title == env.ISSUE_TITLE) | .number) // empty')"
+            --jq 'first(.[] | select(.pull_request == null and (.title == env.ISSUE_TITLE or .title == env.LEGACY_ISSUE_TITLE)) | .number) // empty')"
           issue="${issue%%$'\n'*}"
 
           if [ "$failed" -gt 0 ]; then

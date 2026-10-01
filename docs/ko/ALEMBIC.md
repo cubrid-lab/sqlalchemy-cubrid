@@ -181,11 +181,18 @@ csql -u dba demodb --no-auto-commit --no-single-line -i upgrade.sql
 
 ### 자동 등록
 
-Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이션 구현을 고르며, `DefaultImpl` 하위 클래스는 모듈이 임포트될 때 이 레지스트리에 스스로 추가됩니다(`CubridImpl.__dialect__ = "cubrid"`). Alembic은 패키지 엔트리 포인트에서 방언 구현을 로드하지 않습니다.
+Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이션 구현을 고르며, `DefaultImpl` 하위 클래스는 모듈이 임포트될 때 이 레지스트리에 스스로 추가됩니다(`CubridImpl.__dialect__ = "cubrid"`). 모든 CUBRID URL(`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`)은 `dialect.name == "cubrid"`입니다. sqlalchemy-cubrid는 Alembic이 이 이름을 조회하기 전에, 설치된 Alembic에 따라 다음 두 가지 방법 중 하나로 `sqlalchemy_cubrid.alembic_impl`을 임포트합니다.
 
-그래서 `sqlalchemy_cubrid/dialect.py`는 Alembic이 설치되어 있으면 `sqlalchemy_cubrid.alembic_impl`을 임포트하고, 없으면 조용히 건너뜁니다. 모든 CUBRID URL(`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`)이 이 모듈을 로드하고 `dialect.name == "cubrid"`이므로, 엔진을 만들 때(오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) Alembic이 조회하기 전에 `CubridImpl`이 등록됩니다. `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다.
+| Alembic | `alembic_impl`을 임포트하는 주체 | 시점 |
+|---|---|---|
+| 1.18 이상 | sqlalchemy-cubrid가 게시하는 `alembic.plugins` 엔트리 포인트(`_sqlalchemy_cubrid_alembic`)를 통해 Alembic이 | `import alembic` 중 |
+| 1.7.2 – 1.17.x | `sqlalchemy_cubrid/dialect.py` | CUBRID 방언을 로드할 때(엔진 생성 시, 오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) |
 
-이 때문에 Alembic이 설치되어 있으면, 마이그레이션을 전혀 실행하지 않는 애플리케이션에서도 CUBRID 방언을 로드할 때 Alembic을 임포트합니다. 이 임포트에는 약 0.1초가 걸리며, Alembic 1.18 이상은 임포트 중에 `alembic.runtime.plugins` 로거로 `INFO` 줄 일곱 개(`setup plugin alembic.autogenerate.schemas`, ..., `setup plugin alembic.ext.checkconstraint_byname`)를 남깁니다. 이는 Alembic 자체의 메시지이며, 애플리케이션이 `INFO` 레코드를 핸들러로 보낼 때(예: `logging.basicConfig(level=logging.INFO)`)에만 첫 CUBRID 엔진이나 방언에서 나타납니다. 로거 레벨은 애플리케이션이 정할 일이므로 방언은 `alembic` 로거를 건드리지 않습니다. 이 줄을 숨기려면 애플리케이션의 로깅 설정에서 해당 로거의 레벨을 올리세요.
+어느 경우든 `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다. Alembic이 없으면 아무것도 등록하거나 기록하지 않습니다.
+
+Alembic 1.18 이상에서는 CUBRID 방언을 로드해도 Alembic을 임포트하지 않으므로, 마이그레이션을 실행하지 않는 애플리케이션은 더 이상 그 임포트 비용을 치르지 않습니다(Alembic 1.20.0, SQLAlchemy 2.0.54, Python 3.10에서 새 프로세스의 첫 `create_engine("cubrid+pycubrid://...")`가 약 80 ms 대신 약 18 ms). 방언은 이를 Alembic 자체가 아니라 설치된 패키지 메타데이터로 판단합니다. Alembic이 이미 임포트되었거나, 메타데이터를 읽을 수 없거나, 메타데이터가 실제로 임포트될 `alembic` 패키지의 것이 아니면(예: `sys.path` 앞쪽의 이전 사본) 직접 임포트로 돌아가며, 이는 무해합니다.
+
+Alembic 1.18 이상은 임포트될 때 `alembic.runtime.plugins` 로거로 `INFO` 줄(`setup plugin alembic.autogenerate.schemas`, ..., `setup plugin alembic.ext.checkconstraint_byname`)을 남기며, sqlalchemy-cubrid가 설치되어 있으면 `setup plugin sqlalchemy_cubrid`도 남깁니다. 이는 Alembic 자체의 메시지입니다. 이 버전들에서는 방언이 더 이상 Alembic을 임포트하지 않으므로, 이 줄은 Alembic을 사용하는 프로세스에서만, 그리고 애플리케이션이 `INFO` 레코드를 핸들러로 보낼 때(예: `logging.basicConfig(level=logging.INFO)`)에만 나타납니다. Alembic 1.7.2 – 1.17.x에서는 방언이 여전히 Alembic을 임포트하지만(약 0.1초), 이 릴리스들은 이런 줄을 남기지 않습니다. 로거 레벨은 애플리케이션이 정할 일이므로 방언은 `alembic` 로거를 건드리지 않습니다. 이 줄을 숨기려면 애플리케이션의 로깅 설정에서 해당 로거의 레벨을 올리세요.
 
 ```python
 import logging
@@ -193,7 +200,9 @@ import logging
 logging.getLogger("alembic").setLevel(logging.WARNING)
 ```
 
-Alembic은 마이그레이션이 실행될 때까지 등록을 미루는 지원 방법을 제공하지 않습니다. `DefaultImpl.get_by_dialect()`는 레지스트리를 그대로 조회할 뿐이고, `alembic.plugins` 엔트리 포인트(Alembic 1.18+)는 `import alembic`마다 로드되며 지원하는 이전 버전에는 없습니다.
+Alembic 1.18.0은 이 줄을 이름이 문자 그대로 `__name__`인 로거(`logging.getLogger("__name__")`, 1.18.1에서 수정)로 남기므로, 위 설정으로는 그 릴리스에서 숨겨지지 않습니다. 1.18.1 이상으로 업그레이드하거나 `logging.getLogger("__name__")`의 레벨도 `WARNING`으로 올리세요.
+
+Alembic 1.18 – 1.20은 `alembic.plugins` 엔트리 포인트를 `for mod in entrypoint.load()`로 로드하지만, Alembic 문서는 엔트리 포인트 값을 플러그인 모듈 자체로 설명합니다. 일반 모듈은 반복할 수 없으므로 문서의 형태는 모든 `import alembic`을 `TypeError`로 실패시킵니다. `_sqlalchemy_cubrid_alembic`은 자기 자신을 내놓는 반복 가능한 모듈이라 두 방식 모두에서 동작합니다. Alembic은 엔트리 포인트 로드를 보호하지 않으므로, 플러그인은 표준 라이브러리만 임포트하는 최상위 모듈입니다. 이를 로드해도 `sqlalchemy_cubrid` 패키지는 임포트되지 않으며, 그 패키지의 임포트는 실패할 수 있습니다(예: 지원하지 않는 SQLAlchemy를 그 위에 설치한 경우). 그 `setup()`은 `sqlalchemy_cubrid.alembic_impl`을 임포트하며 어떤 실패도 예외 대신 `RuntimeWarning`(`-W error`에서는 `sqlalchemy_cubrid.alembic_plugin` 로거의 로그 레코드)으로 바꾸므로, 같은 환경의 다른 프로젝트에서 `import alembic`을 깨뜨릴 수 없습니다. 그래도 등록에 실패하면 Alembic은 `KeyError: 'cubrid'`를 보고하며, `env.py`에서 `sqlalchemy_cubrid.alembic_impl`을 임포트하면 `CubridImpl`이 직접 등록됩니다.
 
 Alembic이 설치되어 있지만 임포트에 실패하면(예: SQLAlchemy 2.x에서 `NameError`를 내는 Alembic 1.7.0/1.7.1) 방언은 그대로 로드되고, Alembic 통합이 비활성화되었다는 `RuntimeWarning`을 원래 예외와 함께 한 번 냅니다. 경고 필터가 이 경고를 오류로 바꾸면(`-W error`) 대신 `sqlalchemy_cubrid.dialect` 로거로 기록하므로 방언은 그대로 로드됩니다. `alembic>=1.7.2,<2.0`으로 업그레이드하면 해결됩니다.
 
@@ -276,6 +285,21 @@ DDL은 트랜잭션으로 처리되므로([트랜잭션 DDL](#트랜잭션-ddl) 
 - 오래 걸리는 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True` 사용
 - 프로덕션 전 스테이징 데이터베이스에서 마이그레이션 테스트
 - 마이그레이션 실행 전 데이터베이스 백업 유지
+
+### autogenerate의 외래 키 참조 동작
+
+CUBRID의 기본 `ON DELETE` / `ON UPDATE` 동작은 `RESTRICT`이며
+`SHOW CREATE TABLE`은 이를 항상 출력합니다. 따라서 동작 없이 만든 외래 키는
+`inspect(...).get_foreign_keys()`에서 `{"ondelete": "RESTRICT", "onupdate": "RESTRICT"}`로
+보고됩니다. 리플렉션은 서버가 보고한 값을 그대로 유지합니다. autogenerate에서는
+`CubridImpl`이 리플렉션된 `RESTRICT`를 `ondelete` / `onupdate`가 없는 모델
+`ForeignKey`와 같은 것으로 취급하므로(#597), 모델이 동작을 생략하든 `RESTRICT`를
+명시하든 변경되지 않은 외래 키에 대해 `drop_constraint` / `create_foreign_key` 쌍이
+생성되지 않습니다. `ondelete="CASCADE"`나 `SET NULL`의 추가, 다시 제거, 둘 사이의
+전환은 여전히 감지됩니다. `NO ACTION`은 다릅니다. CUBRID는 이를 `NO ACTION`으로
+출력하지만 Alembic 자체가 `NO ACTION`과 동작 없음을 양방향으로 같은 것으로 취급하므로,
+둘 사이의 전환은 감지되지 않습니다. CUBRID는 `ON UPDATE CASCADE`를 거부하므로
+`onupdate`에는 `SET NULL`, `RESTRICT` 또는 `NO ACTION`을 사용하세요.
 
 ### `alter_column()` 동작
 
@@ -391,9 +415,9 @@ def downgrade():
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-### 방언 사용 시 `setup plugin alembic...` `INFO` 로그 줄
+### `setup plugin ...` `INFO` 로그 줄
 
-Alembic 1.18+는 임포트될 때 이 줄을 남기며, CUBRID 방언은 Alembic이 설치되어 있으면 이를 임포트합니다. 애플리케이션에서 `logging.getLogger("alembic").setLevel(logging.WARNING)`을 설정하세요. [자동 등록](#자동-등록)을 참고하세요.
+Alembic 1.18+는 임포트될 때 이 줄을 남깁니다. 이 버전들에서는 CUBRID 방언을 로드해도 더 이상 Alembic을 임포트하지 않으므로, 이 줄은 Alembic을 사용하는 프로세스에서만 나타납니다. 애플리케이션에서 `logging.getLogger("alembic").setLevel(logging.WARNING)`을 설정하세요(이 줄을 `__name__` 로거로 남기는 Alembic 1.18.0에서는 업그레이드하거나 그 로거도 조용히 하세요). [자동 등록](#자동-등록)을 참고하세요.
 
 ### "Alembic is required for migration support"
 
@@ -423,6 +447,18 @@ pip install "alembic>=1.7.2,<2.0"
 **원인**: `alter_table_change_type_strict` 시스템 파라미터가 `yes`일 때 손실 있거나 호환 불가한 타입 변환.
 
 **해결**: 진짜 손실/미지원 변환에는 `batch_alter_table` 사용 — [ALTER COLUMN TYPE (네이티브)](#️-alter-column-type-네이티브) 참고.
+
+### `alembic revision --autogenerate`가 리플렉션 오류로 실패함
+
+**원인**: 외래 키는 `SHOW CREATE TABLE`에서 읽습니다. #589 이후 여기서 발생한 실패(끊긴
+연결, 권한 오류, 드라이버 오류)는 "이 테이블에는 외래 키가 없음"으로 보고되지 않고 예외를
+발생시킵니다. 이전 동작 때문에 autogenerate가 이미 존재하는 외래 키에 대해 `add_fk`를
+제안했습니다.
+
+**해결**: 원인이 된 오류를 해결한 뒤 autogenerate를 다시 실행하세요. 연결이 오래되었다면
+엔진에 `pool_pre_ping=True`를 설정하세요. CUBRID 11.2부터는 소유자를 붙이지 않은 이름을
+현재 사용자의 스키마에서 찾으므로 다른 소유자의 테이블은 `NoSuchTableError`가 됩니다.
+autogenerate는 테이블 소유자로 실행하세요.
 
 ---
 
@@ -465,7 +501,7 @@ pip install "alembic>=1.7.2,<2.0"
 
 ### 자문 CI 안전 검사
 
-DDL 연산이 여러 개인 리비전을 나열하려면 다음 스크립트를 추가하세요. 자문 용도(경고만)이며 CI를 차단하지 않습니다. 그런 리비전도 실패하면 통째로 롤백되지만, 스키마 잠금을 더 오래 유지합니다:
+DDL 연산이 여러 개인 리비전을 나열하려면 다음 스크립트를 추가하세요. 자문 용도(경고만)이며 CI를 차단하지 않습니다. 그런 리비전도 실패하면 통째로 롤백되지만, 스키마 잠금을 더 오래 유지합니다. 스크립트는 `upgrade()`와 `downgrade()`마다 따로, 제약 조건 생성(`create_unique_constraint`, `create_foreign_key`, `create_check_constraint`, `create_primary_key`)을 포함한 Alembic DDL 연산의 호출 횟수를 셉니다. `op.drop_table`처럼 호출하지 않는 단순 참조는 세지 않습니다. 제어 흐름 분석이 아닌 휴리스틱입니다:
 
 ```python
 #!/usr/bin/env python3
@@ -476,6 +512,12 @@ whole. Every DDL statement holds a schema lock on its table until the
 transaction commits, though, so this lists revisions with several DDL
 calls: they keep tables locked longer and are candidates for running with
 ``transaction_per_migration=True`` or for splitting.
+
+Only calls such as ``op.create_table(...)`` or ``batch_op.add_column(...)``
+count; a bare reference like ``op.drop_table`` is not a DDL operation. This is
+a heuristic AST scan, not control-flow analysis: a call in a loop or branch
+counts once, as written, and DDL issued from helpers defined outside
+``upgrade()``/``downgrade()`` is not seen.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
@@ -490,6 +532,8 @@ DDL_CALLS = {
     "create_table", "drop_table", "add_column", "drop_column",
     "create_index", "drop_index", "alter_column",
     "add_constraint", "drop_constraint",
+    "create_unique_constraint", "create_foreign_key",
+    "create_check_constraint", "create_primary_key",
 }
 
 
@@ -501,7 +545,9 @@ def check_revision(path: Path) -> list[str]:
             continue
         ddl_count = sum(
             1 for node in ast.walk(func)
-            if isinstance(node, ast.Attribute) and node.attr in DDL_CALLS
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in DDL_CALLS
         )
         if ddl_count > 1:
             warnings.append(
@@ -532,7 +578,7 @@ def main() -> None:
             "large-table migrations."
         )
     else:
-        print("✓ All revisions have single DDL operations per function.")
+        print("✓ No revision has more than one DDL call per function.")
 
 
 if __name__ == "__main__":

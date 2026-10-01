@@ -138,9 +138,11 @@ make lint          # Run ruff linter + format checks
 make check-tool-versions # Verify local/CI tool pins and type-check cells agree
 make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
-make test          # Run offline tests with coverage (95% threshold)
+make test          # Run the fast offline tests with coverage (95% threshold)
+make test-repo     # Run the repository-tooling tests (Makefile, signal handling, repo scripts)
+make test-offline  # Run every offline test (fast + repository-tooling) with coverage
 make test-all      # Run tox across all Python versions
-make integration   # Start Docker → run integration tests → stop Docker
+make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
 make docker-down   # Stop and remove CUBRID Docker container
 make clean         # Remove build artifacts and caches
@@ -251,6 +253,70 @@ the driver-differential comparisons are intentionally skipped;
 that profile does not claim to test CUBRIDdb. Formal CI's native-driver
 `--dburi` route remains separate and unchanged.
 
+#### Skip or fail: `CUBRID_TEST_URL` is the switch
+
+Whether an `integration`-marked test runs is decided in one place, a
+`pytest_runtest_setup` gate in `test/conftest.py` (#593). No test module probes
+the server at import time any more.
+
+| `CUBRID_TEST_URL` | Server answers `SELECT 1` through the URL's driver | Integration tests |
+| --- | --- | --- |
+| unset or empty | (not probed) | skipped locally; with `CI=true` the run exits 1 before any test runs |
+| set | yes | run |
+| set | no (down, wrong port, driver not installed, not a CUBRID URL with a database) | **error**, every one, with the same message |
+
+The gate probes the server once per session through the helpers in
+`scripts/integration_urls.py` (shared with `scripts/wait_for_cubrid.py`), using
+the driver the URL selects: `cubrid+pycubrid://` needs pycubrid and `cubrid://`
+needs the CUBRIDdb C extension, also for `test/test_aio_integration.py`, which
+connects through `cubrid+aiopycubrid://`. `CUBRID_TEST_URL` must be a
+`cubrid://`, `cubrid+cubriddb://` or `cubrid+pycubrid://` URL with a database, so
+the destructive test fixtures can never run against another database. When
+`CUBRID_TEST_AURL` overrides the async route, the gate probes that endpoint too,
+through `cubrid+aiopycubrid://`. The error names the URL with its password
+masked, for example:
+
+```text
+CUBRID_TEST_URL is set, but CUBRID at cubrid+pycubrid://dba:***@127.0.0.1:33599/testdb
+does not answer SELECT 1 through the driver the URL selects: OperationalError: ...
+```
+
+So a lane that believes it has a server can no longer turn green by skipping.
+Before #593, 421 of the 447 tests in `pytest test/ -m integration` skipped
+against an unreachable URL, even with `CI=true`. Now all 447 error and pytest exits 1.
+Unset `CUBRID_TEST_URL` to skip them on purpose, or deselect them with
+`-m "not integration"` (the offline suite does). The gate does not apply to the
+`--dburi` compliance runs: with `--dburi`, SQLAlchemy's plugin connects at
+session start and fails the run itself when the server is unreachable.
+
+After the gate passes, a few modules still skip for reasons of their own: the
+driver-differential and transactional-DDL tests need both drivers, and the
+server-restart tests need `CUBRID_TEST_DOCKER_CONTAINER`. Their CI steps turn
+those skips into failures with `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`,
+`CUBRID_REQUIRE_TRANSACTIONAL_DDL=1` and `CUBRID_REQUIRE_SERVER_RESTART=1`
+(#486, #503, #565).
+
+`test/test_integration.py` creates tables and database users with fixed names
+(for example `t583_fresh`, `alter_it_modify`, `u543`), so two runs against the
+same database interfere with each other. Run it against a dedicated database,
+one run at a time. `make integration` starts a run-owned server for this.
+
+`test/test_server_restart.py` (#565) stops and starts `cub_server` with
+`docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
+checks that the pool invalidates broken connections and recovers, through both
+drivers, with and without `pool_pre_ping`. It skips unless
+`CUBRID_TEST_DOCKER_CONTAINER` names the container that serves `CUBRID_TEST_URL`;
+point it at a disposable container, since the tests take the database down:
+
+```bash
+CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+  pytest test/test_server_restart.py -v -rs
+```
+
+CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
+which turns every skip into a failure.
+
 ### Full SA Test Suite
 
 ```bash
@@ -310,9 +376,90 @@ CUBRID_VERSION=10.2 docker compose up -d
 ### Quick Integration Workflow
 
 ```bash
-# One-command: start, test, stop
+# One-command: start, test, stop (pycubrid, the recommended driver)
 make integration
+
+# The same suite through the CUBRIDdb C extension (must be installed)
+make integration INTEGRATION_DRIVER=cubriddb
 ```
+
+`make integration` runs every `integration`-marked test in one pytest session.
+`INTEGRATION_DRIVER` selects the driver of `CUBRID_TEST_URL`: `pycubrid` (the
+default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
+CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
+"Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
+command. Several test files open connections through both drivers whichever one
+the URL selects, so install `.[dev,pycubrid]` for either driver. PR CI runs
+`make integration` with the default driver on CUBRID 11.4; the nightly and release-gate
+`integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
+11.4.
+
+After `docker compose up -d`, the run waits until the new server answers
+`SELECT 1` through the selected driver (`scripts/wait_for_cubrid.py`), for up to
+`INTEGRATION_READY_TIMEOUT` seconds (default 180), and fails if it never does. A
+fresh container needs about 20 seconds to create its database and start the
+broker; a fixed 10-second sleep used before #575 let the suite start too early,
+so the first tests failed with CCI -20004 and the live test files that probed the
+server at import time skipped themselves. Since #593 no file probes at import
+time; the conftest gate errors every integration test when the server does not
+answer, so a server that is not ready fails the run instead of skipping it.
+
+`make integration` runs in its own Compose project, named
+`sqlalchemy-cubrid-it-<timestamp>-<pid>` by default. Its container, network and
+`cubrid-data` volume are therefore separate from every other run and from a stack
+started with `docker compose up -d` or `make docker-up`, whose project Compose
+names after the checkout directory (or `COMPOSE_PROJECT_NAME`).
+
+Before starting, it checks that the project has no containers, volumes or
+networks and that no volume named exactly `<project>_cubrid-data` exists. If
+anything is found, it refuses to run and neither starts nor removes anything. If
+the check itself fails (for example, the Docker daemon is unreachable), it prints
+`Ownership check ... failed; nothing was started` and stops. Only after the check
+passes does it register cleanup, so `docker compose -p <project> down -v` only
+removes resources that this run created.
+
+Cleanup runs on shell exit, including after failed startup, readiness waiting or
+tests, and when the run receives `SIGINT` (Ctrl-C), `SIGTERM` (for example from
+`timeout` or `kill`) or `SIGHUP` (a closed terminal):
+
+- If the signal arrives while `docker compose up -d` runs, cleanup first lets it
+  finish, for up to `INTEGRATION_STOP_GRACE` seconds (default 10). The Docker
+  daemon completes a container create even after the client is killed, so
+  stopping `up -d` halfway could leave a container, and a re-created volume, that
+  `down -v` had already missed. `up -d` runs in its own process group, so a
+  terminal Ctrl-C does not reach it. If it is still running after the grace period,
+  its group, including the Compose plugin process, is sent `SIGTERM`, and cleanup
+  waits for the whole group to exit.
+- Any other running step (the readiness wait or pytest) is sent `SIGTERM` at once
+  and killed if it is still running `INTEGRATION_STOP_GRACE` seconds later.
+- Cleanup runs once, and the command exits with 128 + the signal number (130, 143
+  or 129).
+- Further `SIGINT`, `SIGTERM` or `SIGHUP` signals are ignored until
+  `docker compose down -v` finishes, and `down -v` runs in its own session.
+  Neither a second Ctrl-C nor a signal sent to the whole process group (as GNU
+  `timeout` does) interrupts or repeats it. If `down -v` itself hangs, `SIGQUIT`
+  (`Ctrl-\`) stops `make` without waiting for it.
+- A signal that was already ignored when `make` started, such as `SIGINT` for a
+  background job of a non-interactive shell, cannot be handled.
+
+The original failure is preserved if cleanup also fails; cleanup failure after
+passing tests also makes the command fail. Cleanup errors are reported
+explicitly. Cleanup is not guaranteed after an untrappable termination such as
+`SIGKILL` or a host shutdown. Remove such a leftover project with
+`docker compose -p <project> down -v` after checking its name with
+`docker compose ls -a`.
+
+The container publishes CUBRID on host port 33000. If that port is already in
+use, pick another one with `make integration CUBRID_PORT=33999`; the test URL
+follows it. `INTEGRATION_PROJECT=<name>` fixes the project name. It must match
+`^[a-z0-9][a-z0-9_-]*$` (otherwise the command exits with status 2 before running
+any Docker command), and the same pre-existence check applies. Two concurrent
+runs with the same fixed `INTEGRATION_PROJECT` are not supported. pytest keeps the
+terminal's standard input, so `make integration PYTEST="python3 -m pytest --pdb"`
+can stop in the debugger; Ctrl-C there ends the run and cleans up.
+
+For an already-running server, set `CUBRID_TEST_URL` and use `make integration-local`.
+That target never starts or stops Docker and leaves the external server running.
 
 ---
 
@@ -324,7 +471,9 @@ The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinne
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
 run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
 the existing pycubrid/Alembic extras and development test dependencies. Offline
-selection is `-m "not integration"`; the integration environment selects
+selection in the `py3xx` environments is `-m "not integration and not repo"`, and
+the `repo` environment runs the repository-tooling tests with `-m repo` (#594);
+the integration environment selects
 `-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
 compliance suite requires the testing plugin enabled by `--dburi`; existing CI
 runs it separately with that argument and its known-failure baseline. Regular
@@ -332,7 +481,7 @@ tox integration does not run the formal suite. The offline threshold remains 95%
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
@@ -362,10 +511,20 @@ The CI pipeline tests the following matrix:
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **CUBRID 11.4** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.2** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.0** | ✅ | — | — | — | ✅ |
 | **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+
+`make test` deselects the `repo` marker, which `test/conftest.py` applies to the
+modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
+`test_docs_reason.py`, `test_release_detect.py`). These tests drive the Makefile
+`integration` recipe and its sh/bash signal handling and the repository scripts
+through subprocesses; on a 1,677-test offline run they took about 85 of 103
+seconds (#594). They stay required: the `repo-tests` CI job runs `-m repo` on
+every supported Python, and `matrix-result` fails unless it succeeds. `tox`
+runs them in its `repo` environment.
 
 ---
 
@@ -438,15 +597,16 @@ make format
 
 Pre-commit hooks run lint and format checks automatically on `git commit`.
 
-Ruff/mypy versions are single-sourced from the dev pins in `pyproject.toml`.
-The isolated mypy hook follows interpreter compatibility: Python 3.10 installs
-SQLAlchemy 2.0.53, and Python 3.11+ installs SQLAlchemy 2.1.1 (which requires
-Python 3.11+), using exact conditional dependencies for the async extra. It also
-installs the existing Alembic supported range, then checks `sqlalchemy_cubrid/`
-with the project's strict configuration. It does not install stubs automatically or
-suppress missing imports. Ruff's explicit `include = ["*.py", "*.pyi"]` and
-the matching hook types keep CLI, CI and hooks on Python sources rather than
-rewriting documentation snippets.
+Ruff and Mypy versions are single-sourced from the dev pins in `pyproject.toml`.
+The Ruff and Mypy pre-commit hooks are `repo: local` / `language: system` hooks
+that invoke `python3 -m ruff`/`python3 -m mypy` against the active `.[dev]`
+environment, so there is no separate hook revision to keep in sync: the pin in
+`pyproject.toml` is authoritative everywhere. The mypy hook checks
+`sqlalchemy_cubrid/` with the project's strict configuration using whatever
+SQLAlchemy/Alembic the active `.[dev,alembic]` environment already provides. It
+does not install stubs automatically or suppress missing imports. Ruff's
+explicit `include = ["*.py", "*.pyi"]` and the matching hook types keep CLI, CI
+and hooks on Python sources rather than rewriting documentation snippets.
 
 The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
 demos, samples and `docs/source` Python configuration. CI and tox invoke
@@ -454,19 +614,34 @@ demos, samples and `docs/source` Python configuration. CI and tox invoke
 checker rejects omitted maintained directories or a runner that bypasses this
 shared target.
 
-When updating a tool pin, update its pre-commit revision and tox pin in the same
-change; update the CI mypy pin when applicable. SQLAlchemy type-check pairs are
-read from CI by `scripts/check_tool_versions.py`. Run `make check-tool-versions`,
-`pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21` after
-the update. The consistency check runs through CI lint, tox lint and a local
-pre-commit hook, so a dependency-only update cannot silently leave old pins.
+Only `pyproject.toml`'s dev pin needs updating when bumping Ruff or Mypy
+(Dependabot's `pip` ecosystem does exactly this): the pre-commit hooks and the
+`tox -e lint`/`typecheck-sa20`/`typecheck-sa21` environments install the
+project's own `dev` extra, so they always run whatever that pin resolves to.
+`tox -e typecheck-sa20`/`typecheck-sa21` additionally pin an exact SQLAlchemy
+release per Python version (2.0.53 on 3.10, 2.1.1 on 3.13) to match CI's
+type-check matrix; those pairs are read from CI by
+`scripts/check_tool_versions.py`. Run `make check-tool-versions`,
+`pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21`
+after a change. The consistency check runs through CI lint, tox lint and a
+local pre-commit hook, so a dependency-only update cannot silently leave old
+pins.
 
 ### Setup
 
+The Ruff and Mypy hooks run via `language: system`, invoking `python3 -m
+ruff`/`python3 -m mypy` from whatever environment is active when Git runs the
+hook. Install the project's `dev` extra (which pins Ruff and Mypy) into that
+same environment first, then install the hooks:
+
 ```bash
-pip install pre-commit
+pip install -e ".[dev]"
 pre-commit install
 ```
+
+Activate that environment (or a venv where it's installed) whenever a commit
+should run the hooks; otherwise Ruff/Mypy are missing or a stale/global
+version silently runs instead of the pinned one.
 
 ### Manual Run
 
@@ -484,14 +659,17 @@ pre-commit run --all-files
 | Workflow | File | Trigger |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | Push to main, PRs |
-| Publish | `.github/workflows/publish-pypi.yml` | GitHub Release |
+| Integration Full | `.github/workflows/integration-full.yml` | Nightly, manual dispatch, called by `release.yml` |
+| Prepare Release | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`); opens the `chore: release vX.Y.Z` PR |
+| Release | `.github/workflows/release.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
 3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
-4. **Coverage** — Enforces ≥ 95% threshold
+4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and in the release gate in `integration-full.yml`)
+5. **Coverage** — Enforces ≥ 95% threshold
 
 ### Driver-differential lane
 
@@ -517,7 +695,8 @@ report success. Before the tests, `python -m scripts.report_driver_versions`
 writes the exact Python, SQLAlchemy, pycubrid, CUBRIDdb (package version and
 source tag) and CUBRID server versions to the job log and the GitHub step
 summary. Local runs without the variable keep skipping cleanly when a driver
-or the database is unavailable:
+is unavailable. An unreachable `CUBRID_TEST_URL` server errors instead, like
+every integration test (#593):
 
 ```bash
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
@@ -638,9 +817,13 @@ Translation help requests do not authorize a bypass: maintainers explicitly
 approve the existing `translations-deferred` label and record follow-up. The
 Korean-required and other-language advisory translation checks are unchanged.
 
-### Publish Pipeline
+### Release Pipeline
 
-Triggered on GitHub Release creation. Builds and publishes the package to PyPI.
+Releases are maintainer-only and follow [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md):
+`prepare-release.yml` opens a release PR (version bump + dated CHANGELOG section, checked
+with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `release.yml`
+runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
+automatically. Nobody pushes tags or publishes by hand.
 
 ---
 

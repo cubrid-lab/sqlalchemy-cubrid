@@ -25,7 +25,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRID-Python (legacy) |
+| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (legacy) |
 
 ---
 
@@ -60,26 +60,25 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 > The `[pycubrid]` extra also installs `greenlet`, which may need build tools.
 > See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 
-### Legacy: C-extension Driver (CUBRID-Python)
+### Legacy: C-extension Driver (CUBRIDdb)
 
-The legacy [CUBRID-Python](https://github.com/CUBRID/cubrid-python) C-extension driver
-is the driver bound to the bare `cubrid://` URL. Install it via the `[cubriddb]` extra
-and select it explicitly with the `cubrid+cubriddb://` URL scheme:
-
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
-
-Or install the driver directly:
+The legacy CUBRIDdb C-extension driver from
+[cubrid-python](https://github.com/CUBRID/cubrid-python) is the driver bound to the bare
+`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. The
+supported way to install it is to build cubrid-python v11.3.0.51 or later from source,
+see [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
+then install the dialect on its own:
 
 ```bash
-pip install sqlalchemy-cubrid CUBRID-Python
+pip install sqlalchemy-cubrid
 ```
 
-> **Note**: `CUBRID-Python` is a C-extension driver. On some platforms you may need
-> the CUBRID CCI library installed. See the
-> [CUBRID Python driver documentation](https://www.cubrid.org/manual/en/11.0/api/python.html)
-> for platform-specific instructions.
+> **Warning**: do not install the driver from PyPI (`pip install CUBRID-Python`, or the
+> deprecated `[cubrid]` / `[cubriddb]` extras). PyPI only has `CUBRID-Python` 9.3.x, which
+> is untested with this dialect: it returns `BIGINT` as `str` and fails parts of the
+> integration suite. A `cubrid://` engine emits a `SAWarning` at its first connection
+> when the loaded CUBRIDdb is older than 11.3. See
+> [PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 ---
 
 ## Connection String Format
@@ -118,6 +117,42 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `port`     | `33000`     | CUBRID broker port                     |
 | `database` | *(required)* | Database name                         |
 
+### URL Query Options
+
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward these URL query options to
+`pycubrid.connect()` / `pycubrid.aio.connect()`, converted from the query string to
+the type pycubrid expects:
+
+```python
+engine = create_engine(
+    "cubrid+pycubrid://dba@localhost:33000/demodb?connect_timeout=5&read_timeout=30"
+)
+```
+
+| Option | Value | Description |
+|--------|-------|-------------|
+| `connect_timeout` | positive number of seconds | Timeout for opening the broker connection |
+| `read_timeout` | positive number of seconds | Socket read timeout after connecting |
+| `fetch_size` | integer >= 1 | Server-side fetch batch size (pycubrid default `100`) |
+| `charset` | codec name | Python codec, or CUBRID `utf8` / `euckr` / `iso88591`; set it to the database charset. Requires a pycubrid release newer than 1.8.0 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)); with pycubrid 1.8.0, `create_engine()` raises `ArgumentError` naming the installed version |
+| `ssl` | boolean | `true` enables TLS with pycubrid's default context (TLS 1.2+); pass an `ssl.SSLContext` through `connect_args` for anything else |
+| `decode_collections` | boolean | Decode `SET` / `MULTISET` / `SEQUENCE` values into Python collections |
+| `no_backslash_escapes` | boolean | pycubrid's own string-escape mode (auto-detected when omitted). This is not the `create_engine(no_backslash_escapes=...)` dialect option described [below](#backslash-escaping-no_backslash_escapes), which controls `literal_binds` rendering |
+| `enable_timing` | boolean | pycubrid timing statistics |
+
+Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`. An invalid value,
+a repeated option, `host` / `port` / `database` / `user` / `password` (set them in the
+URL itself), `autocommit` (use `isolation_level="AUTOCOMMIT"`) and `json_deserializer`
+(pass it through `connect_args`) raise `sqlalchemy.exc.ArgumentError` from
+`create_engine()`. Any other key is ignored with pycubrid's
+`UnknownConnectionOptionWarning`, which suggests the closest supported option;
+`warnings.simplefilter("error", pycubrid.UnknownConnectionOptionWarning)` makes it an
+error. `connect_args` values override URL query options.
+
+The `cubrid://` / `cubrid+cubriddb://` (CUBRIDdb) dialect does not read the URL query
+string: CUBRIDdb's `connect(url, user, password)` takes no keyword options, and any
+query options are ignored.
+
 ---
 
 ## Entry Points
@@ -132,7 +167,7 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver; to select it explicitly use `cubrid+cubriddb://` with the `[cubriddb]` install extra.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
 ---
 
 ## Async Connection
@@ -217,6 +252,8 @@ The pycubrid dialect passes keyword arguments directly:
 kwargs = {"host": host, "port": port, "database": database, "user": user, "password": password}
 # → pycubrid.connect(host="myhost", port=33000, database="mydb", user="dba", password="password")
 ```
+
+[URL query options](#url-query-options) are added to these keyword arguments.
 
 ---
 
@@ -319,11 +356,16 @@ The result (e.g., `11.2.0.0374`) is parsed into a tuple `(11, 2, 0, 374)` for in
 
 #### `ImportError: No module named 'CUBRIDdb'`
 
-The CUBRID Python driver is not installed:
+The CUBRIDdb C-extension driver that the `cubrid://` URL uses is not installed. Switch
+to the recommended pure-Python driver:
 
 ```bash
-pip install CUBRID-Python
+pip install "sqlalchemy-cubrid[pycubrid]"   # then use cubrid+pycubrid://
 ```
+
+or build CUBRIDdb from cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The
+`CUBRID-Python` 9.3.x release on PyPI is untested with this dialect.
 
 #### `Connection refused` on port 33000
 
@@ -443,9 +485,9 @@ engine = create_engine(
 
 The dialect implements `is_disconnect()` which detects connection failures using a layered strategy that is resilient to driver error-message wording changes:
 
-1. **Numeric error code matching (primary)** — checks stable CUBRID/CCI codes such as `ER_COMMUNICATION` (-4, pycubrid), `CAS_ER_COMMUNICATION` (-21003/-21005), `ER_NET_CANT_CONNECT` (-10005), and `ER_NET_SERVER_COMM_ERROR` (-10007).
+1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Codes are read only from these structured fields, never from message text: a message that starts with a number, such as a server error quoting application data (`-20004 rows rejected ...`), carries no code (#608). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
-3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive") that carry neither a code nor an `OSError` cause.
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", or "reconnecting failed" when pycubrid cannot replace a lost CAS session) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671.
 
 Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 

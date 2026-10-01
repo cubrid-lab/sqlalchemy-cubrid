@@ -20,7 +20,8 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 | Property | Value |
 |---|---|
-| PyPI package | `CUBRID-Python` |
+| Supported install | Built from source, [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later ([how](#building-cubriddb-from-source)) |
+| PyPI package | `CUBRID-Python`, newest release 9.3.x (2015): **untested, not supported** ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 | Import name | `CUBRIDdb` |
 | Type | C extension (CPython only) |
 | DBAPI level | DB-API 2.0 (PEP 249) |
@@ -43,6 +44,7 @@ Python driver and requires compilation against the CCI headers.
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ Tested |
+| any | PyPI `CUBRID-Python` 9.3.x | any | any | ❌ Not tested, not supported ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 
 ### CUBRID Server Version Support
 
@@ -124,11 +126,21 @@ The dialect relies on these driver-specific APIs:
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int or str
+    code = e.args[0]  # int
 ```
 
-The dialect's `_extract_error_code()` handles both integer codes and string-embedded
-codes (e.g., `"-21003 Cannot communicate with broker"`).
+The dialect's `_extract_error_code()` reads only an integer `args[0]`. A string
+`args[0]` never carries a code, even when it starts with a number (e.g.
+`"-20004 rows rejected ..."` quoted from application data); releases up to 1.8.0
+parsed such a leading number as a code and could invalidate a working connection
+(#608).
+
+pycubrid keeps only the message in `args` and the server error code in `errno`
+(and `code`). `is_disconnect()` reads `errno` for the server codes listed in
+[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror). pycubrid's
+`str()` also appends a description of `errno` (for example `Communication error`
+for -4 and -671), so the message patterns are matched against `args[0]`, the
+driver's own message, instead.
 
 ---
 
@@ -139,14 +151,37 @@ codes (e.g., `"-21003 Cannot communicate with broker"`).
 CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 [Exception Hierarchy](#exception-hierarchy)), but the dialect's
 `is_disconnect()` does not classify disconnects by exception class. Instead, it uses:
-- String pattern matching against 15 known disconnect messages
-- Numeric error code matching for CCI communication errors
+- String pattern matching against 16 known disconnect messages
+- Numeric error code matching, on `args[0]` (CUBRIDdb only), for the CCI and CAS
+  codes of a dead or unusable connection: -20004 (`CCI_ER_COMMUNICATION`), -10003
+  (`CAS_ER_COMMUNICATION`; CCI treats both as communication errors), -20002
+  (`CCI_ER_CON_HANDLE`), -20016 (`CCI_ER_CONNECT`) and -10002
+  (`CAS_ER_NO_MORE_MEMORY`; the CAS closes the connection after sending it). Releases
+  up to 1.8.0 listed -4, -10005, -10007, -21003 and -21005 instead (#572): -4 is the
+  server's `ER_INTERRUPTED` (a query interrupted by `KILL QUERY`), so CUBRIDdb
+  invalidated a working connection; -10005 and -10007 are `CAS_ER_TRAN_TYPE` and
+  `CAS_ER_NUM_BIND`; -21003 and -21005 are CUBRID JDBC codes that neither Python
+  driver raises. -20004, which CUBRIDdb raises when its CAS dies mid-transaction, and
+  -10002 were missing (#578).
+- Numeric error code matching, on both drivers, for the server errors that make the
+  broker reset the CAS because its session with `cub_server` is gone: -111
+  (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224
+  (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). After `cub_server` stops or
+  crashes, a connection in a transaction gets -111 and then -224 on every statement
+  until the transaction ends, even after the server is back (#565). -671
+  (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
+  See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
+- Numeric error code matching, on pycubrid's `errno` only, for CAS codes as pycubrid
+  actually receives them: CUBRID's CAS legacy-renumbers `cas_error.h` codes (adds 9000)
+  for a driver, like pycubrid, that never advertises understanding the renewed
+  error-code protocol. -1002 (legacy `CAS_ER_NO_MORE_MEMORY`, i.e. -10002 + 9000) is
+  matched this way (#578).
 
 ### 2. CCI Library Dependency
 
 The driver requires the CCI library to be compiled from source. In CI, this is handled by:
 ```bash
-git clone --branch v11.3.0.51 --depth 1 https://github.com/CUBRID/cubrid-python.git
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules https://github.com/CUBRID/cubrid-python.git
 cd cubrid-python/cci-src && mkdir build_x86_64_release && cd build_x86_64_release
 cmake ../ && make -j$(nproc)
 ```
@@ -332,6 +367,22 @@ mode, so statements keep the server level that was in effect and session
 variables survive between statements, as on `CUBRIDdb`. The dialect stops
 re-applying a level once a connection is switched to `AUTOCOMMIT`.
 
+### 11. Collection parameters (SET, MULTISET, SEQUENCE)
+
+The drivers bind a Python `list`, `tuple` or `set` for a collection column
+differently (#484; verified on CUBRID 10.2 and 11.4):
+
+| Driver | Binding a `list` / `tuple` / `set` | Reading a collection |
+|---|---|---|
+| pycubrid main (typed collection parameters, cubrid-lab/pycubrid#567) | The dialect wraps the value in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type. `SET`, `MULTISET` and `SEQUENCE` semantics are kept. A `SEQUENCE` takes only a `list` or `tuple`: a `set`/`frozenset` raises `TypeError` ("SEQUENCE is ordered; pass a list or tuple"). | `frozenset` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) with `?decode_collections=true`; raw `bytes` without it |
+| pycubrid 1.8.0 (released) | `ProgrammingError`: pycubrid rejects collection parameters. A `set`/`frozenset` for a `SEQUENCE` raises the same `TypeError` as above, from the dialect. | Same as above |
+| CUBRIDdb 11.3.0.51 | CUBRIDdb binds the value itself, always as a SET host variable. A MULTISET loses its duplicates and a SEQUENCE its order (`[3, 1, 2, 1]` is stored as `{1, 2, 3}`). `None` elements are not supported: `[None]` fails inside the driver with an `UnboundLocalError`, and `[1, None]` with `-494 Cannot coerce host var to type sequence`. | `set` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) of `str` elements, whatever the element type |
+
+The dialect does not change what CUBRIDdb does. On CUBRIDdb, keep collections
+that need duplicates or order out of bound parameters: write the collection
+literal in SQL (`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`), or use
+`cubrid+pycubrid://`. See [Type Mapping, Collection values](TYPES.md#collection-values).
+
 ---
 
 ## Installation Notes
@@ -344,28 +395,55 @@ The `[pycubrid]` extra supports both sync and async connections. It includes
 keeps its existing SQLAlchemy dependency. The pycubrid driver remains pure Python,
 but `greenlet` may require build tools when no compatible wheel is available.
 
-### From Source (Required for CI)
+### PyPI `CUBRID-Python` 9.3.x is not supported
+
+The newest `CUBRID-Python` release on PyPI is 9.3.0.2 (sdist only, uploaded in 2015).
+There is no 11.x release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on
+`CUBRID-Python` without a version bound, so they install 9.3.x. That driver is not
+tested with this dialect. On CUBRID 11.4 it returns `BIGINT` values (including
+`COUNT(*)`) as `str` (#583) and fails parts of the integration suite: autocommit,
+large-object round-trips, fetch shapes, ping and recursive CTEs (#585).
+
+- **The `[cubrid]` and `[cubriddb]` extras are deprecated.** They are kept so that
+  existing installs keep resolving, but they cannot install a supported driver.
+- At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
+  driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
+  older than 11.3. It warns rather than refusing to connect, so existing deployments
+  keep working. To fail fast instead, turn the warning into an error:
+  `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
+- Supported paths: use the recommended pure-Python driver
+  (`pip install "sqlalchemy-cubrid[pycubrid]"`, `cubrid+pycubrid://`), or build CUBRIDdb
+  from source as shown below.
+
+### Building CUBRIDdb from Source
+
+This is the recipe CI uses:
 
 ```bash
-# Clone the driver
-git clone --branch v11.3.0.51 --depth 1 \
+# Clone the driver with its CCI submodule
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
   https://github.com/CUBRID/cubrid-python.git
+cd cubrid-python
 
-# Build CCI library
-cd cubrid-python/cci-src
-mkdir -p build_x86_64_release && cd build_x86_64_release
+# Build the CCI library
+mkdir -p cci-src/build_x86_64_release && cd cci-src/build_x86_64_release
 cmake ../ && make -j$(nproc)
+cd ../..
 
-# Install
-cd /path/to/cubrid-python
+# Skip setup.py's own CCI rebuild, then install
+printf '#!/bin/bash\nexit 0\n' > build_cci.sh
 pip install .
 ```
+
+A build from source installs the `cubrid_python` distribution. Its fourth version
+component is a git commit count, not the release tag, so a shallow clone of v11.3.0.51
+reports `11.3.0.0001`.
 
 ### Verify Installation
 
 ```python
 import CUBRIDdb
-print(CUBRIDdb.__version__)  # Should print version string
+print(CUBRIDdb._cubrid.__version__)  # b'11.3.0.0001' for a v11.3.0.51 build; b'9.3.0.0001' is the PyPI release
 ```
 
 ---

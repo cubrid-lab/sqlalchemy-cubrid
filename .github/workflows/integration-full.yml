@@ -3,19 +3,25 @@ name: Integration Full Matrix
 # Full Python x CUBRID compatibility validation.
 # Regular CI runs {3.10, 3.14} x all CUBRID versions on every PR/push.
 # This workflow runs the full 5x4 matrix on a nightly schedule, on demand
-# (workflow_dispatch), and before tagged releases.
+# (workflow_dispatch), and as the release gate: release.yml calls it through
+# workflow_call with the release commit SHA.
 
 on:
   schedule:
     - cron: "0 3 * * *"
   workflow_dispatch:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      sha:
+        description: "Full commit SHA to test (release.yml passes the release commit)"
+        required: true
+        type: string
 
+# A release call gets its own group per SHA and is never cancelled; a nightly
+# or manual run keeps the per-ref group that replaces an older pending run.
 concurrency:
-  group: integration-full-${{ github.ref }}
-  cancel-in-progress: true
+  group: integration-full-${{ inputs.sha && format('release-{0}', inputs.sha) || github.ref }}
+  cancel-in-progress: ${{ !inputs.sha }}
 
 jobs:
   integration-full:
@@ -39,8 +45,11 @@ jobs:
           --health-retries 10
           --health-start-period 30s
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -135,6 +144,16 @@ jobs:
         run: |
           python -m pytest test/test_transactional_ddl.py -v --tb=short -rs
 
+      # Recorded SHOW CREATE TABLE output per supported CUBRID version (#611):
+      # one Python lane is enough to compare every version's recording with
+      # its live server (PR CI covers only 10.2 and 11.4).
+      - name: Check recorded SHOW CREATE TABLE output
+        if: matrix.python-version == '3.12'
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+        run: |
+          python -m pytest test/test_show_create_table_server_output.py -m integration -v --tb=short
+
       # Snapshot generation is gated to a single Python (3.12) so the 5x4
       # Python x CUBRID matrix yields exactly one artifact per CUBRID version,
       # which the version-differential job below compares.
@@ -150,22 +169,94 @@ jobs:
 
       - name: Upload version-differential snapshot
         if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: vdiff-snapshot-${{ matrix.cubrid-version }}
           path: snapshot-${{ matrix.cubrid-version }}.json
           retention-days: 7
 
+      - name: Run cub_server stop/start pool recovery tests (#565)
+        # Last step: it stops and restarts cub_server in the service container.
+        if: ${{ !cancelled() }}
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          CUBRID_TEST_DOCKER_CONTAINER: ${{ job.services.cubrid.id }}
+          # Fail instead of skip when a driver or the container is unavailable.
+          CUBRID_REQUIRE_SERVER_RESTART: "1"
+        run: |
+          python -m pytest test/test_server_restart.py -v --tb=short -rs
+
+  make-integration:
+    # `make integration` for both drivers on the CUBRID versions CI gates
+    # (#575): the whole `integration`-marked suite in one pytest session, as
+    # contributors run it locally. PR CI runs only the default pycubrid cell
+    # (ci.yml); the CUBRIDdb session takes a C-extension build and another
+    # full-suite run, so it runs here, nightly and as the release gate.
+    name: make integration (${{ matrix.driver }}, CUBRID ${{ matrix.cubrid-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        driver: ["pycubrid", "cubriddb"]
+        cubrid-version: ["10.2", "11.4"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+
+      - name: Install system dependencies
+        if: matrix.driver == 'cubriddb'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Build and install CUBRID Python driver
+        if: matrix.driver == 'cubriddb'
+        run: |
+          git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
+            https://github.com/CUBRID/cubrid-python.git /tmp/cubrid-python
+          cd /tmp/cubrid-python
+
+          mkdir -p cci-src/build_x86_64_release
+          cd cci-src/build_x86_64_release
+          cmake ../
+          make -j$(nproc)
+          cd /tmp/cubrid-python
+
+          echo '#!/bin/bash' > build_cci.sh
+          echo 'exit 0' >> build_cci.sh
+          chmod +x build_cci.sh
+
+          pip install .
+
+      - name: Install project
+        # pycubrid is installed in both cells: several integration files compare
+        # or exercise both drivers whichever one CUBRID_TEST_URL selects.
+        run: pip install -e ".[dev,pycubrid]"
+
+      - name: Run make integration
+        env:
+          CUBRID_VERSION: ${{ matrix.cubrid-version }}
+        run: make integration INTEGRATION_DRIVER=${{ matrix.driver }}
+
   full-matrix-result:
     name: Full compatibility matrix result
     runs-on: ubuntu-latest
-    needs: [integration-full]
+    needs: [integration-full, make-integration]
     if: always()
     steps:
       - name: Require all matrix cells to pass
         run: |
           if [ "${{ needs.integration-full.result }}" != "success" ]; then
             echo "::error::Full compatibility matrix failed: ${{ needs.integration-full.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.make-integration.result }}" != "success" ]; then
+            echo "::error::make integration matrix failed: ${{ needs.make-integration.result }}"
             exit 1
           fi
           echo "Full compatibility matrix passed."
@@ -176,13 +267,16 @@ jobs:
     needs: [integration-full]
     if: always()
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
 
       - name: Download all version snapshots
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: vdiff-snapshot-*
           merge-multiple: true
@@ -201,9 +295,13 @@ jobs:
   # and metamorphic suites with the extended "nightly" profile (2000
   # examples/test) against a live CUBRID. PR CI already runs these files with
   # the fast "dev" profile, so this job is the deep, expensive pass that only
-  # runs on the nightly schedule and on demand.
+  # runs on the nightly schedule, on demand and in the release gate.
+  # live-smoke.yml checks out github.sha (it has no ref input); that is the
+  # release SHA on a release push or dry run, so the job is skipped only when a
+  # recovery run tests an older release commit.
   fuzz-bug-hunt:
     name: Hypothesis fuzz bug hunt (nightly)
+    if: ${{ !inputs.sha || inputs.sha == github.sha }}
     uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
     with:
       cubrid-version: "11.4"
@@ -229,8 +327,11 @@ jobs:
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install project
