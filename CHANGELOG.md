@@ -38,6 +38,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning to `"error"` to fail fast. pycubrid engines and a driver whose version
   cannot be read are not affected. The `ImportError` for a missing CUBRIDdb no longer
   suggests `pip install CUBRID-Python`.
+- **`test_show_create_table.py`'s golden cases now run through the real dialect
+  parser instead of a mirror (#590)** — the FK and UNIQUE golden fixtures are
+  parsed by calling `CubridDialect._get_foreign_keys_from_ddl` /
+  `_get_unique_constraints_from_ddl` (the same entry points `get_foreign_keys`
+  / `get_unique_constraints` use, post-#598's `_get_show_create_table_ddl`)
+  through a stub connection, instead of a hand-maintained copy of the parsing
+  logic that had already drifted: it omitted the real parser's
+  `referred_schema` / `duplicates_index` fields and, for a table with more
+  than one foreign key, the real parser's sort-by-name ordering (#531) — the
+  `mixed_pk_fk_unique` fixture is corrected to that sorted order. Test-suite
+  only; no dialect behavior changed.
 
 ### Deprecated
 - **The `[cubrid]` and `[cubriddb]` extras (#585)** — both depend on an unbounded
