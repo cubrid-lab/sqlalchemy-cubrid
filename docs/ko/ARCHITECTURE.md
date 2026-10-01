@@ -179,10 +179,10 @@ flowchart TD
 기본 `CubridDialect` 클래스를 포함하며, 스키마 리플렉션, 연결 관리, 트랜잭션 격리 수준의 핵심 로직을 구현합니다. 리플렉션(`get_columns`, `get_indexes`, `get_foreign_keys`, `get_pk_constraint`, `get_unique_constraints`)이 여기 구현됩니다. 기본적으로 C 확장 드라이버 `CUBRIDdb`를 사용합니다.
 
 #### `pycubrid_dialect.py`
-순수 Python `pycubrid` 드라이버를 사용하는 `PyCubridDialect` 변형을 구현합니다. 연결 인자 파싱과 연결 시점 초기화 로직을 오버라이드합니다.
+순수 Python `pycubrid` 드라이버를 사용하는 `PyCubridDialect` 변형을 구현합니다. 연결 인자 파싱과 연결 시점 초기화 로직을 오버라이드하며, pycubrid 전용 드라이버 정책을 담습니다: commit/rollback 후 격리 수준 재적용, 드라이버 자체 `executemany`, `ping(False)` 상태 확인, 그리고 연결 끊김 감지 중 pycubrid 부분(`errno` 코드와 클라이언트 측 메시지). `CubridDialect`는 CUBRIDdb의 오류 형태(`args[0]`의 `int` 코드)만 다룹니다.
 
 #### `aio_pycubrid_dialect.py`
-`cubrid+aiopycubrid://`가 사용하는 비동기 방언 변형 `PyCubridAsyncDialect`를 구현합니다. SQLAlchemy의 비동기 엔진과 `AsyncSession` API에 `pycubrid.aio`를 적용합니다.
+`cubrid+aiopycubrid://`가 사용하는 비동기 방언 변형 `PyCubridAsyncDialect`를 구현합니다. SQLAlchemy의 비동기 엔진과 `AsyncSession` API에 `pycubrid.aio`를 적용하며, `on_connect()`와 `do_ping()`을 포함한 모든 드라이버 정책을 어댑터 연결을 통해 `PyCubridDialect`에서 상속합니다.
 
 #### `compiler.py`
 SQL, DDL, 타입 컴파일러를 담습니다. SQLAlchemy의 추상 구문 트리를 CUBRID 전용 SQL 방언으로 번역하며, LIMIT/OFFSET과 FOR UPDATE 절 같은 미묘함을 처리합니다.
@@ -241,7 +241,7 @@ flowchart TD
 flowchart TD
     sa_default["sqlalchemy.engine.default<br/>DefaultDialect"]
     cubrid_base["CubridDialect<br/>dialect.py<br/>• reflection<br/>• isolation levels<br/>• type mapping<br/>• import_dbapi() → CUBRIDdb"]
-    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()"]
+    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()<br/>• is_disconnect(): errno, messages"]
     aio_variant["PyCubridAsyncDialect<br/>aio_pycubrid_dialect.py<br/>• is_async = True<br/>• import_dbapi() → pycubrid.aio adapter<br/>• async connection adaptation"]
 
     sa_default --> cubrid_base

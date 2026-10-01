@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from importlib import import_module
-from typing import Any, Callable, cast
+from typing import Any, cast
 
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,
@@ -105,6 +105,16 @@ class AsyncAdapt_pycubrid_dbapi(AsyncAdapt_dbapi_module):
 
 
 class PyCubridAsyncDialect(PyCubridDialect):
+    """Async variant of :class:`PyCubridDialect` over ``pycubrid.aio``.
+
+    Only the async plumbing lives here: the DB-API adapter, the pool class
+    and :meth:`get_driver_connection`. Every driver policy (``on_connect``,
+    ``do_ping``, ``do_executemany``, isolation re-apply, disconnect
+    classification) is inherited from the sync dialect and reaches
+    ``pycubrid.aio`` through :class:`AsyncAdapt_pycubrid_connection`, whose
+    ``autocommit`` setter and ``ping()`` await the async driver.
+    """
+
     driver = "aiopycubrid"
     is_async = True
     supports_statement_cache = True
@@ -119,15 +129,6 @@ class PyCubridAsyncDialect(PyCubridDialect):
         aio_module = import_module("pycubrid.aio")
 
         return cast(DBAPIModule, AsyncAdapt_pycubrid_dbapi(aio_module))
-
-    def on_connect(self) -> Callable[[Any], None] | None:
-        def connect(conn: Any) -> None:
-            conn.autocommit = False
-
-        return connect
-
-    def do_ping(self, dbapi_connection: Any) -> bool:
-        return bool(dbapi_connection.ping(False))
 
     def get_driver_connection(self, connection: Any) -> Any:
         # ``connection`` is the AsyncAdapt adapter; return the ``pycubrid.aio``

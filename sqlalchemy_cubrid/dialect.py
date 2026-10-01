@@ -1310,20 +1310,22 @@ class CubridDialect(default.DefaultDialect):
             info = self._get_class_info(connection, table_name, **kw)
             if info is None:
                 raise NoSuchTableError(table_name)
-            class_clause = "c.unique_name = :class_name"
             class_name = f"{info[1].lower()}.{str(table_name).lower()}"
+            query = text(
+                "SELECT a.attr_name, e.*, ROWNUM "
+                "FROM _db_class c, _db_attribute a, _db_domain d, "
+                "TABLE(d.enumeration) e WHERE c.unique_name = :class_name "
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name"
+            )
         else:
-            class_clause = "c.class_name IN (:class_name, LOWER(:class_name))"
             class_name = str(table_name)
-
-        query = text(
-            "SELECT a.attr_name, e.*, ROWNUM "
-            "FROM _db_class c, _db_attribute a, _db_domain d, "
-            "TABLE(d.enumeration) e WHERE "
-            + class_clause
-            + " AND a.class_of = c AND d.object_of = a "
-            "AND a.attr_name = :attr_name"
-        )
+            query = text(
+                "SELECT a.attr_name, e.*, ROWNUM "
+                "FROM _db_class c, _db_attribute a, _db_domain d, "
+                "TABLE(d.enumeration) e WHERE "
+                "c.class_name IN (:class_name, LOWER(:class_name)) "
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name"
+            )
         values: dict[str, list[str]] = {}
         for attr_name in enum_columns:
             try:
@@ -1336,9 +1338,11 @@ class CubridDialect(default.DefaultDialect):
                 code = getattr(original, "errno", None)
                 if code is None and original.args and isinstance(original.args[0], int):
                     code = original.args[0]
-                if (
-                    code == -494
-                    and "select is not authorized on _db_domain" in str(original).lower()
+                denied_catalogs = ("_db_class", "_db_attribute", "_db_domain")
+                message = str(original).lower()
+                if code == -494 and any(
+                    f"select is not authorized on {catalog}" in message
+                    for catalog in denied_catalogs
                 ):
                     return None
                 raise
@@ -1668,11 +1672,11 @@ class CubridDialect(default.DefaultDialect):
     # Disconnect message patterns (lowercase) for is_disconnect().
     # Modeled after psycopg2's string-based approach since CUBRIDdb has
     # only Error, InterfaceError, DatabaseError, and NotSupportedError.
-    _disconnect_messages = (
+    # PyCubridDialect extends this with pycubrid's own client-side messages.
+    _disconnect_messages: tuple[str, ...] = (
         "connection is closed",
         "closed connection",
         "lost connection",
-        "connection lost",  # pycubrid: "connection lost during receive" (#322)
         "server has gone away",
         "connection reset",
         "broken pipe",
@@ -1684,10 +1688,6 @@ class CubridDialect(default.DefaultDialect):
         "connection refused",
         "connection was killed",
         "failed to connect",
-        # pycubrid closes the connection when its CHECK_CAS reconnect fails
-        # ("CAS did not answer CHECK_CAS out of transaction and reconnecting
-        # failed"), e.g. an idle connection while cub_server is down (#565).
-        "reconnecting failed",
     )
 
     # Client-side error codes that CUBRIDdb puts in ``args[0]`` for a dead or
@@ -1696,17 +1696,8 @@ class CubridDialect(default.DefaultDialect):
     # call failed before or instead of a server error, and the server's own
     # code (``error_code.h``) otherwise, so server codes such as -4
     # (``ER_INTERRUPTED``, an interrupted query) must not appear here (#572).
-    # pycubrid doesn't negotiate CUBRID's renewed CAS/CCI error-code protocol
-    # (the -10xxx/-20xxx numbering below), so the CAS answers it with the
-    # legacy, unprefixed codes instead -- e.g. -4 for ``ER_INTERRUPTED``, the
-    # same code CUBRID's server uses internally (``error_code.h``). pycubrid
-    # keeps that legacy code in ``errno``, not in ``args[0]``. This applies
-    # to server codes (``error_code.h``, e.g. -4); a *CAS* code (``cas_error.h``,
-    # sent with ``CAS_ERROR_INDICATOR``) is instead legacy-renumbered by the
-    # CAS itself, from -10xxx to -1xxx: CUBRID's ``CAS_CONV_ERROR_TO_OLD``
-    # (``src/broker/cas_protocol.h``) adds 9000, so e.g. CAS_ER_COMMUNICATION
-    # reaches pycubrid as -1003, not -10003. See ``_pycubrid_legacy_cas_codes``
-    # below for the one such code this dialect currently matches.
+    # pycubrid never receives this renewed -10xxx/-20xxx numbering; see
+    # ``PyCubridDialect._pycubrid_legacy_cas_codes`` for its CAS codes.
     #
     # -10002 (CAS_ER_NO_MORE_MEMORY) is included below because cas.c's
     # process_request() sends it when the CAS's read-buffer allocation fails,
@@ -1727,7 +1718,8 @@ class CubridDialect(default.DefaultDialect):
     # with cub_server is gone. The CAS reconnects only after the client ends
     # its transaction, so until then every statement fails, e.g. -111 and
     # then -224 even after cub_server restarts (#565). Matched for both
-    # drivers: CUBRIDdb puts the code in ``args[0]``, pycubrid in ``errno``.
+    # drivers: CUBRIDdb puts the code in ``args[0]`` (checked here),
+    # pycubrid in ``errno`` (checked by ``PyCubridDialect``).
     _server_session_lost_codes = frozenset(
         {
             -111,  # ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
@@ -1737,26 +1729,12 @@ class CubridDialect(default.DefaultDialect):
         }
     )
 
-    # CAS codes (``cas_error.h``) as pycubrid actually receives them: pycubrid
-    # never advertises understanding CUBRID's renewed error-code protocol (no
-    # ``driver_info`` flags in its handshake), so the CAS legacy-renumbers
-    # them with ``CAS_CONV_ERROR_TO_OLD`` (``src/broker/cas_protocol.h``:
-    # ``V + 9000``) before sending them. -1002 is legacy CAS_ER_NO_MORE_MEMORY
-    # (-10002 + 9000); see ``_disconnect_error_codes`` above for what it means
-    # and why it disconnects (#578).
-    _pycubrid_legacy_cas_codes = frozenset(
-        {
-            -1002,  # legacy CAS_ER_NO_MORE_MEMORY
-        }
-    )
-
     def is_disconnect(self, e: Exception, connection: Any, cursor: Any) -> bool:
         """Return True if *e* indicates a dropped connection.
 
-        This dialect supports multiple drivers. Both CUBRIDdb 11.3 and
-        pycubrid define the PEP 249 exception classes (CUBRIDdb has no
-        ``Warning``), but the dialect does not classify disconnects by
-        exception class.
+        Both CUBRIDdb 11.3 and pycubrid define the PEP 249 exception
+        classes (CUBRIDdb has no ``Warning``), but the dialect does not
+        classify disconnects by exception class.
 
         To stay robust across drivers *and* resilient to error-message
         wording drift, detection is layered: we anchor first on stable
@@ -1767,14 +1745,12 @@ class CubridDialect(default.DefaultDialect):
         errors that carry neither a code nor an ``OSError`` cause (e.g.
         pycubrid's client-side "connection lost during receive").
 
-        Codes come only from where each driver structurally puts them:
-        an ``int`` ``args[0]`` (CUBRIDdb) and, for pycubrid, its ``errno``
-        attribute; ``errno`` is matched against the server-session codes
-        (``_server_session_lost_codes``, #565) and the legacy-renumbered
-        CAS codes pycubrid receives (``_pycubrid_legacy_cas_codes``, #578).
-        No code is ever parsed out of message text: a message that starts
-        with a number (e.g. server text echoing application data) is just
-        text (#608).
+        Codes come only from where the driver structurally puts them
+        (:meth:`_has_disconnect_code`): here an ``int`` ``args[0]``
+        (CUBRIDdb); :class:`PyCubridDialect` adds pycubrid's ``errno``
+        attribute and its own messages. No code is ever parsed out of
+        message text: a message that starts with a number (e.g. server text
+        echoing application data) is just text (#608).
 
         The message fallback reads the driver's own message (``args[0]``
         when it is a string), not pycubrid's ``str()`` with its code
@@ -1791,25 +1767,7 @@ class CubridDialect(default.DefaultDialect):
             return False
 
         # 1. Stable numeric error codes (wording-independent).
-        error_code = self._extract_error_code(e)
-        if error_code is not None and (
-            error_code in self._disconnect_error_codes
-            or error_code in self._server_session_lost_codes
-        ):
-            return True
-        # pycubrid keeps the server code in ``errno`` (its ``args`` hold only
-        # the message). An ``errno`` of -4 is the server's ER_INTERRUPTED (an
-        # interrupted query), not a disconnect. The CCI codes in
-        # ``_disconnect_error_codes`` above are CUBRIDdb's; the CAS codes
-        # there reach pycubrid legacy-renumbered instead, in
-        # ``_pycubrid_legacy_cas_codes`` (#578).
-        pycubrid_errno = getattr(e, "errno", None)
-        if not isinstance(pycubrid_errno, int) or isinstance(pycubrid_errno, bool):
-            pycubrid_errno = None
-        if (
-            pycubrid_errno in self._server_session_lost_codes
-            or pycubrid_errno in self._pycubrid_legacy_cas_codes
-        ):
+        if self._has_disconnect_code(e):
             return True
 
         # 2. An OSError in the explicit cause chain means a transport-level
@@ -1832,6 +1790,20 @@ class CubridDialect(default.DefaultDialect):
         else:
             msg = str(e).lower()
         return any(pattern in msg for pattern in self._disconnect_messages)
+
+    def _has_disconnect_code(self, e: Exception) -> bool:
+        """Return True if *e* carries a disconnect code where CUBRIDdb puts it.
+
+        CUBRIDdb raises ``(code, message)``; its ``int`` code is matched
+        against the CCI/CAS client codes (``_disconnect_error_codes``) and the
+        server-session codes (``_server_session_lost_codes``, #565).
+        :class:`PyCubridDialect` extends this with pycubrid's ``errno``.
+        """
+        error_code = self._extract_error_code(e)
+        return error_code is not None and (
+            error_code in self._disconnect_error_codes
+            or error_code in self._server_session_lost_codes
+        )
 
     @staticmethod
     def _has_oserror_cause(exception: BaseException) -> bool:

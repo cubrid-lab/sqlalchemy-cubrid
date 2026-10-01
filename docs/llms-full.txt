@@ -2409,7 +2409,7 @@ The following dialect types are **declared/compiled** but **not auto-reflected**
 
 **ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
 
-`SHOW COLUMNS` prints collections as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member modifiers and sometimes in a different order. The public `db_attr_setdomain_elm` view supplies each member's precision, scale and object-domain class. The dialect uses those rows only when they account for every reported member family; missing or inconsistent rows warn and yield `NullType` instead of silently changing the DDL. An OBJECT member without its target class and an unknown catalog type fail explicitly. An untyped collection takes its kind from `db_attribute` and reflects as `SET()` / `MULTISET()` / `SEQUENCE()`. With authorized ENUM metadata and complete collection-domain rows, `metadata.reflect()` followed by `create_all()` reproduces the tested DDL on CUBRID 10.2–11.4; this is not a claim of full ENUM reflection for non-DBA users.
+`SHOW COLUMNS` prints collections as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member modifiers and sometimes in a different order. The public `db_attr_setdomain_elm` view supplies each member's precision, scale and object-domain class. The dialect uses those rows only when they account for every reported member family; missing or inconsistent rows warn and yield `NullType` instead of silently changing the DDL. An OBJECT member without its target class and an unknown catalog type fail explicitly. An untyped collection takes its kind from `db_attribute` and reflects as `SET()` / `MULTISET()` / `SEQUENCE()`. With authorized ENUM metadata and complete collection-domain rows, `metadata.reflect()` followed by `create_all()` reproduced the tested DDL on CUBRID 10.2, 11.2 and 11.4; 11.0 remains in the nightly matrix. This is not a claim of full ENUM reflection for non-DBA users.
 
 ---
 
@@ -4491,10 +4491,10 @@ Defines the public API boundary, exporting CUBRID-specific types and DML extensi
 Contains the base `CubridDialect` class, implementing core logic for schema reflection, connection management, and transaction isolation levels. Reflection (`get_columns`, `get_indexes`, `get_foreign_keys`, `get_pk_constraint`, `get_unique_constraints`) is implemented here. It defaults to the C-extension driver `CUBRIDdb`.
 
 #### `pycubrid_dialect.py`
-Implements the `PyCubridDialect` variant, which uses the pure Python `pycubrid` driver. It overrides connection argument parsing and connection-time initialization logic.
+Implements the `PyCubridDialect` variant, which uses the pure Python `pycubrid` driver. It overrides connection argument parsing and connection-time initialization logic, and holds the pycubrid-specific driver policy: isolation-level re-apply after commit/rollback, the driver's own `executemany`, the `ping(False)` health check, and the pycubrid part of disconnect detection (its `errno` codes and client-side messages). `CubridDialect` keeps only the CUBRIDdb error shapes (an `int` code in `args[0]`).
 
 #### `aio_pycubrid_dialect.py`
-Implements `PyCubridAsyncDialect`, the async dialect variant used by `cubrid+aiopycubrid://`. It adapts `pycubrid.aio` for SQLAlchemy's async engine and `AsyncSession` APIs.
+Implements `PyCubridAsyncDialect`, the async dialect variant used by `cubrid+aiopycubrid://`. It adapts `pycubrid.aio` for SQLAlchemy's async engine and `AsyncSession` APIs, and inherits all driver policy (including `on_connect()` and `do_ping()`) from `PyCubridDialect` through the adapter connection.
 
 #### `compiler.py`
 Houses the SQL, DDL, and Type compilers. It translates SQLAlchemy's abstract syntax trees into CUBRID-specific SQL dialects, handling nuances like LIMIT/OFFSET and FOR UPDATE clauses.
@@ -4551,7 +4551,7 @@ The dialect supports the legacy C-extension driver, the modern pure Python drive
 flowchart TD
     sa_default["sqlalchemy.engine.default<br/>DefaultDialect"]
     cubrid_base["CubridDialect<br/>dialect.py<br/>• reflection<br/>• isolation levels<br/>• type mapping<br/>• import_dbapi() → CUBRIDdb"]
-    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()"]
+    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()<br/>• is_disconnect(): errno, messages"]
     aio_variant["PyCubridAsyncDialect<br/>aio_pycubrid_dialect.py<br/>• is_async = True<br/>• import_dbapi() → pycubrid.aio adapter<br/>• async connection adaptation"]
     
     sa_default --> cubrid_base

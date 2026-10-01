@@ -193,14 +193,15 @@ def test_ambiguous_enum_output_uses_exact_catalog_values(
 
 
 @pytest.mark.parametrize("cubriddb_shape", [False, True])
-def test_enum_catalog_permission_denial_fails_closed(cubriddb_shape: bool) -> None:
+@pytest.mark.parametrize("catalog", ["_db_class", "_db_attribute", "_db_domain"])
+def test_enum_catalog_permission_denial_fails_closed(cubriddb_shape: bool, catalog: str) -> None:
     class CatalogPermissionError(RuntimeError):
         errno = -494
 
     denied = (
-        RuntimeError(-494, "SELECT is not authorized on _db_domain")
+        RuntimeError(-494, f"SELECT is not authorized on {catalog}")
         if cubriddb_shape
-        else CatalogPermissionError("SELECT is not authorized on _db_domain (-494)")
+        else CatalogPermissionError(f"SELECT is not authorized on {catalog} (-494)")
     )
     with pytest.warns(sa_exc.SAWarning, match="ENUM"):
         coltype = _reflect_catalog_type("ENUM('a', 'b')", enum_rows=denied)
@@ -210,6 +211,16 @@ def test_enum_catalog_permission_denial_fails_closed(cubriddb_shape: bool) -> No
 def test_unrelated_enum_catalog_failure_propagates() -> None:
     with pytest.raises(RuntimeError, match="catalog unavailable"):
         _reflect_catalog_type("ENUM('a', 'b')", enum_rows=RuntimeError("catalog unavailable"))
+
+
+def test_unrelated_semantic_494_propagates() -> None:
+    class CatalogSemanticError(RuntimeError):
+        errno = -494
+
+    with pytest.raises(CatalogSemanticError, match="Unknown class"):
+        _reflect_catalog_type(
+            "ENUM('a', 'b')", enum_rows=CatalogSemanticError("Unknown class (-494)")
+        )
 
 
 @pytest.mark.parametrize(
