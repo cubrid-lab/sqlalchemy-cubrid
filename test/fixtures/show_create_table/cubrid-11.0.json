@@ -1,0 +1,236 @@
+{
+  "cubrid_version": "11.0.16.0419",
+  "captured_with": "python -m test.test_show_create_table_server_output <url>",
+  "setup_sql": [
+    "CREATE TABLE sct_parent ( id INT NOT NULL, tenant_id INT NOT NULL, code VARCHAR(10), CONSTRAINT pk_sct_parent PRIMARY KEY (id, tenant_id), CONSTRAINT uq_sct_parent_code UNIQUE (code))",
+    "CREATE UNIQUE INDEX ux_sct_parent_tenant_code ON sct_parent (tenant_id, code DESC)",
+    "CREATE TABLE \"sct ref, (x)\" ( id INT PRIMARY KEY, \"odd col, (y)\" INT, CONSTRAINT \"uq sct odd, (name)\" UNIQUE (\"odd col, (y)\"))",
+    "CREATE TABLE sct_child ( id INT PRIMARY KEY, parent_id INT, tenant_id INT, p2 INT, p3 INT, \"odd, col (x)\" INT, self_id INT, CONSTRAINT fk_sct_child_default FOREIGN KEY (parent_id, tenant_id) REFERENCES sct_parent (id, tenant_id), CONSTRAINT fk_sct_child_cascade FOREIGN KEY (p2, tenant_id) REFERENCES sct_parent (id, tenant_id) ON DELETE CASCADE ON UPDATE RESTRICT, CONSTRAINT fk_sct_child_set_null FOREIGN KEY (p3, tenant_id) REFERENCES sct_parent (id, tenant_id) ON DELETE SET NULL ON UPDATE SET NULL, CONSTRAINT \"fk sct odd, (name)\" FOREIGN KEY (\"odd, col (x)\") REFERENCES \"sct ref, (x)\" (id) ON DELETE NO ACTION ON UPDATE NO ACTION, CONSTRAINT fk_sct_child_self FOREIGN KEY (self_id) REFERENCES sct_child (id) ON DELETE RESTRICT)"
+  ],
+  "tables": {
+    "sct_child": {
+      "show_create_table": [
+        "sct_child",
+        "CREATE TABLE [sct_child] ([id] INTEGER NOT NULL, [parent_id] INTEGER, [tenant_id] INTEGER, [p2] INTEGER, [p3] INTEGER, [odd, col (x)] INTEGER, [self_id] INTEGER,  CONSTRAINT [pk_sct_child_id] PRIMARY KEY  ([id]),  CONSTRAINT [fk_sct_child_default] FOREIGN KEY  ([parent_id], [tenant_id]) REFERENCES [sct_parent] ([id], [tenant_id]) ON DELETE RESTRICT ON UPDATE RESTRICT,  CONSTRAINT [fk_sct_child_cascade] FOREIGN KEY  ([p2], [tenant_id]) REFERENCES [sct_parent] ([id], [tenant_id]) ON DELETE CASCADE ON UPDATE RESTRICT,  CONSTRAINT [fk_sct_child_set_null] FOREIGN KEY  ([p3], [tenant_id]) REFERENCES [sct_parent] ([id], [tenant_id]) ON DELETE SET NULL ON UPDATE SET NULL,  CONSTRAINT [fk sct odd, (name)] FOREIGN KEY  ([odd, col (x)]) REFERENCES [sct ref, (x)] ([id]) ON DELETE NO ACTION ON UPDATE NO ACTION,  CONSTRAINT [fk_sct_child_self] FOREIGN KEY  ([self_id]) REFERENCES [sct_child] ([id]) ON DELETE RESTRICT ON UPDATE RESTRICT) REUSE_OID, COLLATE iso88591_bin"
+      ],
+      "db_index": [
+        [
+          "fk sct odd, (name)",
+          "NO",
+          "NO",
+          "YES"
+        ],
+        [
+          "fk_sct_child_cascade",
+          "NO",
+          "NO",
+          "YES"
+        ],
+        [
+          "fk_sct_child_default",
+          "NO",
+          "NO",
+          "YES"
+        ],
+        [
+          "fk_sct_child_self",
+          "NO",
+          "NO",
+          "YES"
+        ],
+        [
+          "fk_sct_child_set_null",
+          "NO",
+          "NO",
+          "YES"
+        ],
+        [
+          "pk_sct_child_id",
+          "YES",
+          "YES",
+          "NO"
+        ]
+      ],
+      "show_indexes": [
+        [
+          "sct_child",
+          0,
+          "pk_sct_child_id",
+          1,
+          "id",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk sct odd, (name)",
+          1,
+          "odd, col (x)",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk_sct_child_cascade",
+          1,
+          "p2",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk_sct_child_cascade",
+          2,
+          "tenant_id",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk_sct_child_default",
+          1,
+          "parent_id",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk_sct_child_default",
+          2,
+          "tenant_id",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk_sct_child_self",
+          1,
+          "self_id",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk_sct_child_set_null",
+          1,
+          "p3",
+          "A"
+        ],
+        [
+          "sct_child",
+          1,
+          "fk_sct_child_set_null",
+          2,
+          "tenant_id",
+          "A"
+        ]
+      ]
+    },
+    "sct ref, (x)": {
+      "show_create_table": [
+        "sct ref, (x)",
+        "CREATE TABLE [sct ref, (x)] ([id] INTEGER NOT NULL, [odd col, (y)] INTEGER,  CONSTRAINT [pk_sct ref, (x)_id] PRIMARY KEY  ([id]),  CONSTRAINT [uq sct odd, (name)] UNIQUE KEY  ([odd col, (y)])) REUSE_OID, COLLATE iso88591_bin"
+      ],
+      "db_index": [
+        [
+          "pk_sct ref, (x)_id",
+          "YES",
+          "YES",
+          "NO"
+        ],
+        [
+          "uq sct odd, (name)",
+          "YES",
+          "NO",
+          "NO"
+        ]
+      ],
+      "show_indexes": [
+        [
+          "sct ref, (x)",
+          0,
+          "pk_sct ref, (x)_id",
+          1,
+          "id",
+          "A"
+        ],
+        [
+          "sct ref, (x)",
+          0,
+          "uq sct odd, (name)",
+          1,
+          "odd col, (y)",
+          "A"
+        ]
+      ]
+    },
+    "sct_parent": {
+      "show_create_table": [
+        "sct_parent",
+        "CREATE TABLE [sct_parent] ([id] INTEGER NOT NULL, [tenant_id] INTEGER NOT NULL, [code] CHARACTER VARYING(10),  CONSTRAINT [pk_sct_parent] PRIMARY KEY  ([id], [tenant_id]),  CONSTRAINT [uq_sct_parent_code] UNIQUE KEY  ([code]),  CONSTRAINT [ux_sct_parent_tenant_code] UNIQUE KEY  ([tenant_id], [code] DESC)) REUSE_OID, COLLATE iso88591_bin"
+      ],
+      "db_index": [
+        [
+          "pk_sct_parent",
+          "YES",
+          "YES",
+          "NO"
+        ],
+        [
+          "uq_sct_parent_code",
+          "YES",
+          "NO",
+          "NO"
+        ],
+        [
+          "ux_sct_parent_tenant_code",
+          "YES",
+          "NO",
+          "NO"
+        ]
+      ],
+      "show_indexes": [
+        [
+          "sct_parent",
+          0,
+          "pk_sct_parent",
+          1,
+          "id",
+          "A"
+        ],
+        [
+          "sct_parent",
+          0,
+          "pk_sct_parent",
+          2,
+          "tenant_id",
+          "A"
+        ],
+        [
+          "sct_parent",
+          0,
+          "uq_sct_parent_code",
+          1,
+          "code",
+          "A"
+        ],
+        [
+          "sct_parent",
+          0,
+          "ux_sct_parent_tenant_code",
+          1,
+          "tenant_id",
+          "A"
+        ],
+        [
+          "sct_parent",
+          0,
+          "ux_sct_parent_tenant_code",
+          2,
+          "code",
+          "D"
+        ]
+      ]
+    }
+  }
+}
