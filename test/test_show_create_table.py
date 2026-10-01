@@ -47,12 +47,21 @@ from sqlalchemy_cubrid.dialect import (
 class _ShowCreateTableStub:
     """A connection stub that answers ``SHOW CREATE TABLE`` with a fixed DDL
     string, in the two-column ``(name, ddl)`` shape
-    ``_get_show_create_table_ddl`` reads (``row[1]``)."""
+    ``_get_show_create_table_ddl`` reads (``row[1]``).
+
+    Enforces its documented ``SHOW CREATE TABLE``-only contract (like
+    ``test_reflection_golden.py``'s ``_MockConnection``): any other
+    statement raises, so a regression that made ``_get_show_create_table_ddl``
+    issue the wrong query would fail these tests instead of silently passing.
+    """
 
     def __init__(self, ddl: str) -> None:
         self._ddl = ddl
 
-    def execute(self, _statement: Any) -> "_ShowCreateTableStub":
+    def execute(self, statement: Any) -> "_ShowCreateTableStub":
+        sql = str(statement)
+        if not sql.startswith("SHOW CREATE TABLE"):
+            raise AssertionError(f"Unexpected SQL: {sql!r}")
         return self
 
     def first(self) -> tuple[str, str]:
