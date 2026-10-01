@@ -412,3 +412,175 @@ def test_live_object_domain_member_round_trip(live_engine: sa.Engine) -> None:
         assert _normalize_ddl(recreated) == _normalize_ddl(original)
     finally:
         drop()
+
+
+def test_enum_member_of_collection_fails_closed() -> None:
+    """``SET(ENUM('x','y'))`` is printed as ``SET OF ENUM`` and listed by the
+    view as ``('s', 'ENUM', 0, 0, NULL)`` on 10.2 and 11.4: the values are not
+    there, and ``SET(ENUM())`` is not valid DDL."""
+    with pytest.warns(sa_exc.SAWarning, match="collection"):
+        coltype = _reflect_catalog_type("SET OF ENUM", member_rows=[("c", "ENUM", 0, 0, None)])
+    assert isinstance(coltype, NullType)
+
+
+@pytest.mark.parametrize(
+    ("domain_owner", "table_owner", "expected"),
+    [
+        ("RA", "RB", "ra.tref2"),
+        ("RB", "RB", "tref2"),
+        ("Rb", "RB", "tref2"),
+        (None, "RB", "tref2"),
+        ("RA", None, "tref2"),
+    ],
+)
+def test_object_member_of_another_owner_is_qualified(
+    domain_owner: str | None, table_owner: str | None, expected: str
+) -> None:
+    """``rb.tx (o SET(ra.tref2))`` must not reflect as ``SET(tref2)``, which
+    ``create_all()`` would resolve in ``rb``'s schema."""
+    member = CubridDialect()._collection_member_type(
+        "OBJECT", 0, 0, "tref2", domain_owner, table_owner
+    )
+    assert member == expected
+
+
+def test_member_owner_is_read_on_11_2() -> None:
+    """From 11.2 the member query also selects ``domain_owner_name`` and the
+    table owner comes from the class lookup."""
+    dialect = CubridDialect()
+    dialect.server_version_info = (11, 4, 0)
+    statements: list[str] = []
+
+    def execute(statement: Any, params: Any = None) -> Any:
+        sql = " ".join(str(statement).split())
+        statements.append(sql)
+        if sql.startswith("SHOW COLUMNS IN"):
+            return [("o", "SET OF OBJECT", "YES", "", None, "")]
+        if "FROM db_class" in sql:
+            result = MagicMock()
+            result.first.return_value = ("CLASS", "RB")
+            return result
+        if "db_attr_setdomain_elm" in sql:
+            return [("o", "OBJECT", 0, 0, "tref2", "RA")]
+        return []
+
+    connection = MagicMock()
+    connection.execute.side_effect = execute
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", sa_exc.SAWarning)
+        (column,) = dialect.get_columns(connection, "tx")
+    assert dialect.type_compiler.process(column["type"]) == "SET(ra.tref2)"
+    assert any("domain_owner_name" in sql for sql in statements)
+
+
+# ---------------------------------------------------------------------------
+# Live: non-DBA users, other owners and ENUM members
+# ---------------------------------------------------------------------------
+
+LIVE_USER = "u631"
+
+
+def _run(engine: sa.Engine, *statements: str, ignore_errors: bool = False) -> None:
+    for statement in statements:
+        try:
+            with engine.begin() as connection:
+                connection.exec_driver_sql(statement)
+        except sa_exc.DBAPIError:
+            if not ignore_errors:
+                raise
+
+
+def _live_version(engine: sa.Engine) -> tuple[int, ...]:
+    with engine.connect() as connection:
+        return tuple(connection.dialect.server_version_info or (0,))
+
+
+@pytest.fixture
+def user_engine(live_engine: sa.Engine):  # noqa: ANN201
+    """A non-DBA user ``u631``, created for the test and dropped with its tables."""
+    user = sa.create_engine(live_engine.url.set(username=LIVE_USER, password=None))
+    tables = ("sct_enum_u", "sct_obj_uref")
+
+    def cleanup() -> None:
+        with live_engine.connect() as connection:
+            exists = connection.execute(
+                sa.text("SELECT COUNT(*) FROM db_user WHERE name = :name"),
+                {"name": LIVE_USER.upper()},
+            ).scalar()
+        if exists:
+            _run(user, *(f"DROP TABLE IF EXISTS {t}" for t in tables), ignore_errors=True)
+            user.dispose()
+            _run(live_engine, f"DROP USER {LIVE_USER}")
+
+    cleanup()
+    _run(live_engine, f"CREATE USER {LIVE_USER}")
+    try:
+        yield user
+    finally:
+        user.dispose()
+        cleanup()
+
+
+@pytest.mark.integration
+def test_live_enum_as_non_dba_user_fails_closed(user_engine: sa.Engine) -> None:
+    """A non-DBA user is denied ``_db_*`` (-494): every ENUM column warns and
+    reflects as NullType, and the transaction stays usable."""
+    _run(
+        user_engine,
+        "CREATE TABLE sct_enum_u (id INT, e_plain ENUM('x', 'y'), e_sep ENUM('a'', ''b', 'other'))",
+    )
+    with user_engine.begin() as connection:
+        with pytest.warns(sa_exc.SAWarning, match="Could not safely reflect ENUM"):
+            columns = sa.inspect(connection).get_columns("sct_enum_u")
+        assert connection.exec_driver_sql("SELECT COUNT(*) FROM sct_enum_u").scalar() == 0
+    types = {column["name"]: column["type"] for column in columns}
+    assert isinstance(types["e_plain"], NullType)
+    assert isinstance(types["e_sep"], NullType)
+    assert not isinstance(types["id"], NullType)
+
+
+@pytest.mark.integration
+def test_live_enum_member_of_collection_fails_closed(live_engine: sa.Engine) -> None:
+    _run(
+        live_engine,
+        "DROP TABLE IF EXISTS sct_set_enum",
+        "CREATE TABLE sct_set_enum (s SET(ENUM('x', 'y')))",
+    )
+    try:
+        with pytest.warns(sa_exc.SAWarning, match="collection type of column 's'"):
+            (column,) = sa.inspect(live_engine).get_columns("sct_set_enum")
+        assert isinstance(column["type"], NullType)
+    finally:
+        _run(live_engine, "DROP TABLE IF EXISTS sct_set_enum")
+
+
+@pytest.mark.integration
+def test_live_object_member_of_another_owner_round_trip(
+    live_engine: sa.Engine, user_engine: sa.Engine
+) -> None:
+    """From 11.2 a member class of another owner reflects as ``owner.class``,
+    so ``create_all()`` recreates the column instead of failing."""
+    if _live_version(live_engine) < (11, 2):
+        pytest.skip("class names are global before CUBRID 11.2")
+    _run(user_engine, "CREATE TABLE sct_obj_uref (id INT) DONT_REUSE_OID")
+    _run(live_engine, "DROP TABLE IF EXISTS sct_obj_x")
+    try:
+        _run(live_engine, f"CREATE TABLE sct_obj_x (o SET({LIVE_USER}.sct_obj_uref), p INT)")
+        with live_engine.connect() as connection:
+            original = connection.exec_driver_sql("SHOW CREATE TABLE sct_obj_x").one()[1]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", sa_exc.SAWarning)
+            columns = sa.inspect(live_engine).get_columns("sct_obj_x")
+            metadata = sa.MetaData()
+            metadata.reflect(live_engine, only=["sct_obj_x"])
+        assert _compiled(live_engine.dialect, columns) == {
+            "o": f"SET({LIVE_USER}.sct_obj_uref)",
+            "p": "INTEGER",
+        }
+        _run(live_engine, "DROP TABLE sct_obj_x")
+        metadata.create_all(live_engine)
+        with live_engine.connect() as connection:
+            recreated = connection.exec_driver_sql("SHOW CREATE TABLE sct_obj_x").one()[1]
+        assert _normalize_ddl(recreated) == _normalize_ddl(original)
+    finally:
+        _run(live_engine, "DROP TABLE IF EXISTS sct_obj_x")

@@ -356,6 +356,12 @@ class _CatalogStub:
             "SELECT attr_name, data_type, prec, scale, domain_class_name FROM db_attr_setdomain_elm "
         ):
             rows = [tuple(row) for row in self._recorded["set_domains"]]
+        elif sql.startswith(
+            "SELECT attr_name, data_type, prec, scale, domain_class_name, domain_owner_name "
+            "FROM db_attr_setdomain_elm "
+        ):
+            # 11.2+ query; the recorded tables have no object-domain member.
+            rows = [(*row, None) for row in self._recorded["set_domains"]]
         else:
             raise AssertionError(f"Unexpected SQL: {sql!r}")
         return _Rows(rows)

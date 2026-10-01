@@ -590,7 +590,9 @@ class CubridDialect(default.DefaultDialect):
                     for member in _split_collection_members(collection_match.group(3))
                 )
                 catalog = Counter(member_families.get(colname, []))
-                if catalog and catalog == shown:
+                # An ENUM member is listed without its values, and ENUM() is
+                # not valid DDL, so it cannot be reflected either (#631).
+                if catalog and catalog == shown and "ENUM" not in catalog:
                     coltype = self.ischema_names[collection_match.group(1).upper()](
                         *member_types[colname]
                     )
@@ -1369,6 +1371,14 @@ class CubridDialect(default.DefaultDialect):
         each untyped collection from ``db_attribute``. The reported families
         let get_columns reject missing or inconsistent member-domain rows
         instead of guessing from SHOW COLUMNS' lossy text.
+
+        Members are kept in the order the view returns them, which is the
+        declaration order on 10.2, 11.0, 11.2 and 11.4 (the view scans the
+        column's domain list; the recorded fixtures and the live round trip in
+        ``test/test_reflection_enum_collection.py`` pin it). A member's
+        collation is not in the view and is not reflected. From 11.2 the
+        view also gives an object-domain member's owner; a class of another
+        owner than the table is reflected as ``owner.class``.
         """
         member_types: dict[str, list[Any]] = {}
         member_families: dict[str, list[str]] = {}
@@ -1379,16 +1389,29 @@ class CubridDialect(default.DefaultDialect):
             return member_types, member_families, kinds
         class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
         if has_of_form:
+            version = self.server_version_info
+            owner_aware = version is not None and version >= (11, 2)
             result = connection.execute(
                 text(
-                    "SELECT attr_name, data_type, prec, scale, domain_class_name "  # nosec B608
-                    "FROM db_attr_setdomain_elm WHERE " + class_filter
+                    "SELECT attr_name, data_type, prec, scale, domain_class_name"  # nosec B608
+                    + (", domain_owner_name" if owner_aware else "")
+                    + " FROM db_attr_setdomain_elm WHERE "
+                    + class_filter
                 ),
                 filter_params,
             )
-            for name, data_type, precision, scale, domain_class in result:
+            catalog_rows = [tuple(row) for row in result]
+            table_owner = None
+            if owner_aware and any(row[5] for row in catalog_rows):
+                info = self._get_class_info(connection, table_name, **kw)
+                table_owner = info[1] if info else None
+            for row in catalog_rows:
+                name, data_type, precision, scale, domain_class = row[:5]
+                domain_owner = row[5] if len(row) > 5 else None
                 member_types.setdefault(name, []).append(
-                    self._collection_member_type(data_type, precision, scale, domain_class)
+                    self._collection_member_type(
+                        data_type, precision, scale, domain_class, domain_owner, table_owner
+                    )
                 )
                 member_families.setdefault(name, []).append(
                     _CATALOG_SHOW_MEMBER_NAMES.get(data_type, data_type)
@@ -1405,7 +1428,13 @@ class CubridDialect(default.DefaultDialect):
         return member_types, member_families, kinds
 
     def _collection_member_type(
-        self, data_type: str, precision: Any, scale: Any, domain_class: str | None = None
+        self,
+        data_type: str,
+        precision: Any,
+        scale: Any,
+        domain_class: str | None = None,
+        domain_owner: str | None = None,
+        table_owner: str | None = None,
     ) -> Any:
         """Return the type of a ``db_attr_setdomain_elm`` member row.
 
@@ -1414,11 +1443,17 @@ class CubridDialect(default.DefaultDialect):
         ``domain_class_name``) is kept as the quoted class name, which the
         collection DDL emits verbatim (``SET(t_ref)``). An incomplete object
         domain or unknown type raises rather than silently changing its DDL.
+        From 11.2 a class whose owner (*domain_owner*) differs from the
+        table's (*table_owner*) is qualified as ``owner.class``, so the DDL
+        does not resolve it in the table owner's schema.
         """
         if data_type == "OBJECT":
             if not domain_class:
                 raise ValueError("OBJECT collection member has no domain class")
-            return self.identifier_preparer.quote(domain_class)
+            quoted = self.identifier_preparer.quote(domain_class)
+            if domain_owner and table_owner and domain_owner.upper() != table_owner.upper():
+                return self.identifier_preparer.quote(domain_owner.lower()) + "." + quoted
+            return quoted
         name = _CATALOG_MEMBER_TYPE_NAMES.get(data_type, data_type)
         string_types: dict[str, type[sqltypes.String]] = {
             "CHAR": CHAR,
