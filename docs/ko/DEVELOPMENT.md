@@ -139,7 +139,9 @@ make lint          # ruff 린터 + 포맷 검사 실행
 make check-tool-versions # 로컬/CI 도구 핀과 타입 검사 셀 일치 확인
 make typecheck     # 의존성 버전 출력 및 strict mypy 검사
 make format        # 린트 문제 자동 수정 및 코드 포맷
-make test          # 커버리지와 함께 오프라인 테스트 실행 (95% 임계값)
+make test          # 커버리지와 함께 빠른 오프라인 테스트 실행 (95% 임계값)
+make test-repo     # 저장소 도구 테스트 실행 (Makefile, 시그널 처리, 저장소 스크립트)
+make test-offline  # 모든 오프라인 테스트(빠른 테스트 + 저장소 도구 테스트)를 커버리지와 함께 실행
 make test-all      # 모든 Python 버전에서 tox 실행
 make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 (pycubrid) → 삭제
 make docker-up     # CUBRID Docker 컨테이너 시작
@@ -453,7 +455,8 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 `tox.ini`는 Python 3.10–3.14의 로컬 오프라인 환경, 고정된 Ruff 린트 환경,
 CI와 같은 Makefile 타깃 및 SQLAlchemy/Python 조합을 쓰는 `typecheck-sa20` /
 `typecheck-sa21` 환경을 정의합니다. 기존 pycubrid/Alembic extra와 개발 테스트
-의존성을 사용합니다. 오프라인 선택은 `-m "not integration"`이며 통합 환경은
+의존성을 사용합니다. `py3xx` 환경의 오프라인 선택은 `-m "not integration and not repo"`이고,
+`repo` 환경은 저장소 도구 테스트를 `-m repo`로 실행합니다(#594). 통합 환경은
 `-m integration`과 `--ignore=test/test_suite.py`를 사용합니다. 공식 SQLAlchemy
 컴플라이언스 스위트는 `--dburi`로 활성화되는 테스트 플러그인이 필요하며 기존 CI가
 해당 인자와 알려진 실패 기준을 사용해 별도로 실행합니다. 일반 tox 통합 실행에는
@@ -461,7 +464,7 @@ CI와 같은 Makefile 타깃 및 SQLAlchemy/Python 조합을 쓰는 `typecheck-s
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
@@ -491,10 +494,20 @@ CI 파이프라인은 다음 매트릭스를 테스트합니다:
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **오프라인 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **저장소 도구 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **CUBRID 11.4** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.2** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.0** | ✅ | — | — | — | ✅ |
 | **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+
+`make test`는 `repo` 마커를 제외합니다. 이 마커는 `test/conftest.py`가
+`REPO_TOOLING_MODULES`에 나열된 모듈(`test_make_integration.py`,
+`test_docs_reason.py`, `test_release_detect.py`)에 붙입니다. 이 테스트들은
+Makefile `integration` 레시피와 그 sh/bash 시그널 처리, 저장소 스크립트를
+서브프로세스로 실행하며, 1,677개 오프라인 테스트 실행 103초 중 약 85초를
+차지했습니다(#594). 여전히 필수입니다. `repo-tests` CI 잡이 지원하는 모든
+Python에서 `-m repo`를 실행하고, 이 잡이 성공하지 않으면 `matrix-result`가
+실패합니다. `tox`는 `repo` 환경에서 실행합니다.
 
 ---
 

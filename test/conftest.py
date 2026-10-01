@@ -46,6 +46,39 @@ _UNCONFIGURED_REASON = (
 # "" = reachable, otherwise the error every integration test reports.
 _probe_error: str | None = None
 
+#: Repository-tooling test modules (#594): they exercise the Makefile, its
+#: signal handling and repository scripts through subprocesses, not the
+#: dialect, and dominate the offline run's wall-clock time. Every test they
+#: collect gets the ``repo`` marker, so ``make test`` (``-m "not integration
+#: and not repo"``) skips them and ``make test-repo`` (``-m repo``) and the
+#: required ``repo-tests`` CI job run them. The list lives here rather than in
+#: a ``pytestmark`` because ``test_release_detect.py`` is kept identical
+#: across repositories.
+REPO_TOOLING_MODULES = frozenset(
+    {
+        "test_make_integration.py",
+        "test_docs_reason.py",
+        "test_release_detect.py",
+    }
+)
+_missing_repo_modules = sorted(
+    name for name in REPO_TOOLING_MODULES if not Path(__file__).with_name(name).is_file()
+)
+if _missing_repo_modules:
+    raise RuntimeError(f"REPO_TOOLING_MODULES lists missing test modules: {_missing_repo_modules}")
+
+
+def pytest_itemcollected(item):  # noqa: ANN001
+    """Mark every test of a ``REPO_TOOLING_MODULES`` module ``repo`` (#594).
+
+    Runs before ``-m`` deselection, so ``-m repo`` and ``-m "not repo"`` see
+    the marker for pytest-style and ``unittest`` tests alike.
+    """
+    if item.path.name in REPO_TOOLING_MODULES:
+        import pytest
+
+        item.add_marker(pytest.mark.repo)
+
 
 def _endpoint_error() -> str:
     """Probe the ``CUBRID_TEST_URL`` server once per session; "" when it answers."""

@@ -55,8 +55,14 @@ pre-commit install
 Most tests run without a CUBRID instance:
 
 ```bash
-# Run all offline tests
+# Run the fast offline tests (what you want while iterating)
 make test
+
+# Run the repository-tooling tests (Makefile recipes, signal handling, repo scripts)
+make test-repo
+
+# Run every offline test (both of the above)
+make test-offline
 
 # Run shared lint, strict typing and security checks
 make check-all
@@ -67,6 +73,16 @@ pytest test/test_compiler.py -v
 # Run a specific test
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
+
+`make test` selects `-m "not integration and not repo"`. The `repo` marker is
+applied by `test/conftest.py` to every test in the modules listed in
+`REPO_TOOLING_MODULES` (`test_make_integration.py`, `test_docs_reason.py`,
+`test_release_detect.py`): they run the Makefile and repository scripts through
+subprocesses and took most of the offline run's time (#594). They are still
+required: CI runs them in the `repo-tests` job on every pull request. Run
+`make test-repo` before pushing a change to the `Makefile`, `scripts/` or those
+tests. A new module that tests repository tooling rather than the dialect
+belongs in `REPO_TOOLING_MODULES`.
 
 ### Integration Tests (Requires CUBRID)
 
@@ -184,9 +200,10 @@ pre-commit run --all-files
 
 2. **Write tests** for any new functionality. We require ≥ 95% coverage.
 
-3. **Run the full test suite** and ensure all tests pass:
+3. **Run the offline test suite** and ensure all tests pass:
    ```bash
    make test
+   make test-repo   # when you touched the Makefile, scripts/ or their tests
    ```
 
 4. **Run the shared lint, type and security checks**:

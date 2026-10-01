@@ -718,7 +718,7 @@ engine = create_engine(
 
 The dialect implements `is_disconnect()` which detects connection failures using a layered strategy that is resilient to driver error-message wording changes:
 
-1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
+1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Codes are read only from these structured fields, never from message text: a message that starts with a number, such as a server error quoting application data (`-20004 rows rejected ...`), carries no code (#608). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
 3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", or "reconnecting failed" when pycubrid cannot replace a lost CAS session) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671.
 
@@ -6252,7 +6252,9 @@ make lint          # Run ruff linter + format checks
 make check-tool-versions # Verify local/CI tool pins and type-check cells agree
 make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
-make test          # Run offline tests with coverage (95% threshold)
+make test          # Run the fast offline tests with coverage (95% threshold)
+make test-repo     # Run the repository-tooling tests (Makefile, signal handling, repo scripts)
+make test-offline  # Run every offline test (fast + repository-tooling) with coverage
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
@@ -6583,7 +6585,9 @@ The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinne
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
 run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
 the existing pycubrid/Alembic extras and development test dependencies. Offline
-selection is `-m "not integration"`; the integration environment selects
+selection in the `py3xx` environments is `-m "not integration and not repo"`, and
+the `repo` environment runs the repository-tooling tests with `-m repo` (#594);
+the integration environment selects
 `-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
 compliance suite requires the testing plugin enabled by `--dburi`; existing CI
 runs it separately with that argument and its known-failure baseline. Regular
@@ -6591,7 +6595,7 @@ tox integration does not run the formal suite. The offline threshold remains 95%
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
@@ -6621,10 +6625,20 @@ The CI pipeline tests the following matrix:
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **CUBRID 11.4** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.2** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.0** | ✅ | — | — | — | ✅ |
 | **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+
+`make test` deselects the `repo` marker, which `test/conftest.py` applies to the
+modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
+`test_docs_reason.py`, `test_release_detect.py`). These tests drive the Makefile
+`integration` recipe and its sh/bash signal handling and the repository scripts
+through subprocesses; on a 1,677-test offline run they took about 85 of 103
+seconds (#594). They stay required: the `repo-tests` CI job runs `-m repo` on
+every supported Python, and `matrix-result` fails unless it succeeds. `tox`
+runs them in its `repo` environment.
 
 ---
 
@@ -7059,11 +7073,14 @@ The dialect relies on these driver-specific APIs:
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int or str
+    code = e.args[0]  # int
 ```
 
-The dialect's `_extract_error_code()` handles both integer codes and string-embedded
-codes (e.g., `"-20004 Cannot communicate with server"`).
+The dialect's `_extract_error_code()` reads only an integer `args[0]`. A string
+`args[0]` never carries a code, even when it starts with a number (e.g.
+`"-20004 rows rejected ..."` quoted from application data); releases up to 1.8.0
+parsed such a leading number as a code and could invalidate a working connection
+(#608).
 
 pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in
