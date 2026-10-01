@@ -1567,10 +1567,7 @@ class CubridDialect(default.DefaultDialect):
 
         The message fallback reads the driver's own message (``args[0]``
         when it is a string), not pycubrid's ``str()`` with its code
-        description. It is skipped for errors the server reported with a
-        code (a pycubrid ``errno``, or a CUBRIDdb server-range ``args[0]``):
-        their text is the server's message, which can quote application
-        data, so the code alone decides (#608).
+        description.
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1611,19 +1608,14 @@ class CubridDialect(default.DefaultDialect):
 
         # 3. Message fallback for driver errors that carry neither a
         #    disconnect code nor an OSError cause, e.g. pycubrid's code-less
-        #    "connection lost during receive". A server-reported error is
-        #    classified by its code alone: its text is the server's message,
-        #    which can quote application data (#608). pycubrid sets ``errno``
-        #    only for errors the CAS/server sent; CUBRIDdb's server codes are
-        #    above the CAS (-10xxx) and CCI (-20xxx) ranges, whose messages
-        #    are fixed driver text and stay matchable. Match the driver's
-        #    own message: pycubrid's ``str()`` appends a description looked
-        #    up from ``errno`` (-4 and -671 read "Communication error"), which
-        #    must not decide the outcome. For any exception that does not
+        #    "connection lost during receive", or server errors such as -190 /
+        #    -191 ("Failed to connect to database server") that are not in the
+        #    code tables. Match the driver's own message: pycubrid's
+        #    ``str()`` appends a description looked up from ``errno`` (-4 and
+        #    -671 read "Communication error"), which must not decide the
+        #    outcome. For any exception that does not
         #    override ``__str__`` a single string arg *is* ``str(e)``, and
         #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
-        if pycubrid_errno is not None or (error_code is not None and -10000 < error_code < 0):
-            return False
         if len(e.args) == 1 and isinstance(e.args[0], str):
             msg = e.args[0].lower()
         else:

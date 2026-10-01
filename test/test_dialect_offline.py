@@ -1984,21 +1984,28 @@ class TestIsDisconnect:
         "message",
         [
             "-20004 rows rejected by application validation",
-            "value 'connection refused' violates check constraint",
-            "row 'broken pipe' rejected",
+            "-224 rejected",
         ],
     )
-    def test_server_error_message_does_not_override_cubriddb_code(
-        self, dialect_with_dbapi, message
-    ):
-        """A CUBRIDdb server (DBMS) error is classified by its code, not its text (#608).
-
-        The text after ``ERROR: DBMS, <code>,`` is the server's message, which
-        can echo application data.
-        """
+    def test_numeric_server_text_does_not_override_cubriddb_code(self, dialect_with_dbapi, message):
+        """A number at the start of CUBRIDdb's server text is not a code (#608)."""
         dialect, dbapi = dialect_with_dbapi
         exc = dbapi.DatabaseError(-495, f"ERROR: DBMS, -495, {message}")
         assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_server_connect_failure_keeps_message_fallback_cubriddb(self, dialect_with_dbapi):
+        """-191 "Failed to connect to database server" (cub_server down) disconnects.
+
+        The code is not in the tables; the message fallback decides, as on a
+        live cub_server stop (test_server_restart.py).
+        """
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(
+            -191,
+            "ERROR: DBMS, -191, Failed to connect to database server, 'testdb', "
+            "on the following host(s): localhost[CAS INFO-127.0.0.1:33000,1,426].",
+        )
+        assert dialect.is_disconnect(exc, None, None) is True
 
     def test_cci_code_outside_table_keeps_message_fallback(self, dialect_with_dbapi):
         """CCI/CAS messages are fixed driver text, so they still match patterns."""
@@ -2208,12 +2215,10 @@ class TestIsDisconnect:
             "-20004 rows rejected by application validation",
             "-111 opaque",
             "-1002 opaque",
-            "value 'connection refused' violates check constraint",
-            "row 'broken pipe' rejected",
         ],
     )
-    def test_server_error_message_does_not_override_pycubrid_errno(self, pycubrid_dialect, message):
-        """A pycubrid server error is classified by ``errno``, not its text (#608)."""
+    def test_numeric_server_text_does_not_override_pycubrid_errno(self, pycubrid_dialect, message):
+        """A number at the start of pycubrid's message is not a code (#608)."""
         dialect, dbapi = pycubrid_dialect
         exc = self._pycubrid_error(dbapi, message, -495)
         assert dialect.is_disconnect(exc, None, None) is False
@@ -2224,8 +2229,14 @@ class TestIsDisconnect:
             # Issue #608's reproduction: structured errno, numeric-prefixed text.
             ("DataError", "-20004 rows rejected by application validation", -495, False),
             ("OperationalError", "-224 opaque", -495, False),
-            ("OperationalError", "Broken pipe in user data", -495, False),
-            # Real disconnects keep being detected.
+            # Real disconnects keep being detected, including a server code
+            # outside the tables whose message matches (cub_server down).
+            (
+                "DatabaseError",
+                "Failed to connect to database server, 'testdb', on the following host(s): h",
+                -191,
+                True,
+            ),
             ("OperationalError", "opaque server message", -224, True),
             ("OperationalError", "connection lost during receive", None, True),
             ("InterfaceError", "connection is closed", None, True),
@@ -2241,7 +2252,7 @@ class TestIsDisconnect:
     def test_real_pycubrid_message_classification(
         self, variant, exc_name, message, errno, expected
     ):
-        """Real pycubrid exceptions: text never overrides a structured ``errno`` (#608)."""
+        """Real pycubrid exceptions: a numeric message prefix is never a code (#608)."""
         pycubrid = pytest.importorskip("pycubrid")
         if variant == "sync":
             from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
