@@ -3050,6 +3050,11 @@ import logging
 logging.getLogger("alembic").setLevel(logging.WARNING)
 ```
 
+Alembic 1.18.0 itself logs these lines from a logger literally named
+`__name__` (`logging.getLogger("__name__")`, fixed in 1.18.1), so the setting
+above does not hide them on that release. Upgrade to 1.18.1 or later, or also
+raise `logging.getLogger("__name__")` to `WARNING`.
+
 Alembic 1.18 – 1.20 load an `alembic.plugins` entry point with
 `for mod in entrypoint.load()`, while the Alembic documentation describes the
 entry point value as the plugin module itself; a plain module is not
@@ -3299,7 +3304,9 @@ pip install sqlalchemy-cubrid[alembic]
 Alembic 1.18+ logs these while it is imported. Loading the CUBRID dialect no
 longer imports Alembic on those versions, so they only appear in processes
 that use Alembic. Set `logging.getLogger("alembic").setLevel(logging.WARNING)`
-in the application; see [Auto-Registration](#auto-registration).
+in the application (on Alembic 1.18.0, which logs them from a logger named
+`__name__`, upgrade or quiet that logger too); see
+[Auto-Registration](#auto-registration).
 
 ### "Alembic is required for migration support"
 

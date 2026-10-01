@@ -20,6 +20,7 @@ Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
 
 from __future__ import annotations
 
+import importlib
 import importlib.metadata
 import importlib.util
 import logging
@@ -1725,7 +1726,7 @@ def _alembic_loads_cubrid_plugin() -> bool:
 # loading, so any other failure only disables the integration with a warning.
 if not _alembic_loads_cubrid_plugin():
     try:
-        from sqlalchemy_cubrid import alembic_impl as _alembic_impl  # noqa: F401
+        importlib.import_module("sqlalchemy_cubrid.alembic_impl")
     except Exception as _exc:
         try:
             _alembic_absent = importlib.util.find_spec("alembic") is None

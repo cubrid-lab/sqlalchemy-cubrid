@@ -252,15 +252,12 @@ def test_working_alembic_registers_without_warning() -> None:
     # point when it is imported; older Alembic is imported by the dialect
     # (#595).  Either way Alembic finds it once it is in use.
     loaded = _load_dialects("")
+    script = (
+        "from sqlalchemy.dialects import registry; registry.load('cubrid.pycubrid'); "
+        "from alembic.ddl.impl import _impls; print(_impls['cubrid'].__module__)"
+    )
     result = subprocess.run(
-        [
-            sys.executable,
-            "-W",
-            "error",
-            "-c",
-            "from sqlalchemy.dialects import registry; registry.load('cubrid.pycubrid'); "
-            "from alembic.ddl.impl import _impls; print(_impls['cubrid'].__module__)",
-        ],
+        [sys.executable, "-W", "error", "-c", script],
         env={k: v for k, v in os.environ.items() if not k.startswith("PYTHON")},
         capture_output=True,
         text=True,

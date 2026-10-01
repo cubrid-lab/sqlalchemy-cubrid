@@ -200,6 +200,8 @@ import logging
 logging.getLogger("alembic").setLevel(logging.WARNING)
 ```
 
+Alembic 1.18.0은 이 줄을 이름이 문자 그대로 `__name__`인 로거(`logging.getLogger("__name__")`, 1.18.1에서 수정)로 남기므로, 위 설정으로는 그 릴리스에서 숨겨지지 않습니다. 1.18.1 이상으로 업그레이드하거나 `logging.getLogger("__name__")`의 레벨도 `WARNING`으로 올리세요.
+
 Alembic 1.18 – 1.20은 `alembic.plugins` 엔트리 포인트를 `for mod in entrypoint.load()`로 로드하지만, Alembic 문서는 엔트리 포인트 값을 플러그인 모듈 자체로 설명합니다. 일반 모듈은 반복할 수 없으므로 문서의 형태는 모든 `import alembic`을 `TypeError`로 실패시킵니다. `sqlalchemy_cubrid.alembic_plugin`은 자기 자신을 내놓는 반복 가능한 모듈이라 두 방식 모두에서 동작합니다. 그 `setup()`은 어떤 실패도 예외 대신 `RuntimeWarning`(`-W error`에서는 `sqlalchemy_cubrid.alembic_plugin` 로거의 로그 레코드)으로 바꾸므로, 같은 환경의 다른 프로젝트에서 `import alembic`을 깨뜨릴 수 없습니다. 그래도 등록에 실패하면 Alembic은 `KeyError: 'cubrid'`를 보고하며, `env.py`에서 `sqlalchemy_cubrid.alembic_impl`을 임포트하면 `CubridImpl`이 직접 등록됩니다.
 
 Alembic이 설치되어 있지만 임포트에 실패하면(예: SQLAlchemy 2.x에서 `NameError`를 내는 Alembic 1.7.0/1.7.1) 방언은 그대로 로드되고, Alembic 통합이 비활성화되었다는 `RuntimeWarning`을 원래 예외와 함께 한 번 냅니다. 경고 필터가 이 경고를 오류로 바꾸면(`-W error`) 대신 `sqlalchemy_cubrid.dialect` 로거로 기록하므로 방언은 그대로 로드됩니다. `alembic>=1.7.2,<2.0`으로 업그레이드하면 해결됩니다.
@@ -400,7 +402,7 @@ pip install sqlalchemy-cubrid[alembic]
 
 ### `setup plugin ...` `INFO` 로그 줄
 
-Alembic 1.18+는 임포트될 때 이 줄을 남깁니다. 이 버전들에서는 CUBRID 방언을 로드해도 더 이상 Alembic을 임포트하지 않으므로, 이 줄은 Alembic을 사용하는 프로세스에서만 나타납니다. 애플리케이션에서 `logging.getLogger("alembic").setLevel(logging.WARNING)`을 설정하세요. [자동 등록](#자동-등록)을 참고하세요.
+Alembic 1.18+는 임포트될 때 이 줄을 남깁니다. 이 버전들에서는 CUBRID 방언을 로드해도 더 이상 Alembic을 임포트하지 않으므로, 이 줄은 Alembic을 사용하는 프로세스에서만 나타납니다. 애플리케이션에서 `logging.getLogger("alembic").setLevel(logging.WARNING)`을 설정하세요(이 줄을 `__name__` 로거로 남기는 Alembic 1.18.0에서는 업그레이드하거나 그 로거도 조용히 하세요). [자동 등록](#자동-등록)을 참고하세요.
 
 ### "Alembic is required for migration support"
 
