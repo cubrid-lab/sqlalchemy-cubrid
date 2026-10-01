@@ -165,6 +165,12 @@ class _BrokenFinder(importlib.abc.MetaPathFinder):
         return None
 
 sys.meta_path.insert(0, _BrokenFinder())
+
+# Report the broken versions, so the dialect takes the eager-import path it
+# uses for Alembic < 1.18 (#595).
+import importlib.metadata
+_version = importlib.metadata.version
+importlib.metadata.version = lambda name: "1.7.1" if name == "alembic" else _version(name)
 """
 
 # ``None`` in sys.modules makes ``import alembic`` raise ModuleNotFoundError,
@@ -242,11 +248,26 @@ def test_missing_alembic_is_silent() -> None:
 
 
 def test_working_alembic_registers_without_warning() -> None:
+    # Alembic 1.18+ registers CubridImpl through the alembic.plugins entry
+    # point when it is imported; older Alembic is imported by the dialect
+    # (#595).  Either way Alembic finds it once it is in use.
     loaded = _load_dialects("")
+    script = (
+        "from sqlalchemy.dialects import registry; registry.load('cubrid.pycubrid'); "
+        "from alembic.ddl.impl import _impls; print(_impls['cubrid'].__module__)"
+    )
+    result = subprocess.run(
+        [sys.executable, "-W", "error", "-c", script],
+        env={k: v for k, v in os.environ.items() if not k.startswith("PYTHON")},
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
 
     assert loaded["names"] == ["cubrid", "cubrid", "cubrid"]
-    assert loaded["impl_loaded"] is True
     assert loaded["warnings"] == []
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "sqlalchemy_cubrid.alembic_impl"
 
 
 # Collection only looks at the environment variable, so the offline suite never

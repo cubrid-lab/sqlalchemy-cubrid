@@ -1514,6 +1514,46 @@ class TestOnDuplicateKeyUpdateCompilation:
         assert "ON DUPLICATE KEY UPDATE" in sql
         assert "'prefix_' || name" in sql
 
+    def test_on_duplicate_key_update_basic_nonliteral_binding_order(self):
+        """#613: INSERT binds precede the ODKU update bind, in column order."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="test", email="test@example.com")
+        stmt = stmt.on_duplicate_key_update(email="updated@example.com")
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup[:3] == ["id", "name", "email"]
+        assert len(compiled.positiontup) == 4
+        update_bind = compiled.positiontup[3]
+        assert compiled.params["id"] == 1
+        assert compiled.params["name"] == "test"
+        assert compiled.params["email"] == "test@example.com"
+        assert compiled.params[update_bind] == "updated@example.com"
+
+    def test_on_duplicate_key_update_dict_arg_nonliteral_binding_order(self):
+        """#613: dict-arg ODKU binds in the dict's iteration order."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="test", email="test@example.com")
+        stmt = stmt.on_duplicate_key_update({"name": "updated", "email": "new@example.com"})
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup[:3] == ["id", "name", "email"]
+        update_binds = compiled.positiontup[3:]
+        assert len(update_binds) == 2
+        assert [compiled.params[b] for b in update_binds] == ["updated", "new@example.com"]
+
+    def test_on_duplicate_key_update_ordered_list_nonliteral_binding_order(self):
+        """#613: ordered-list ODKU binds in the given list order."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="test", email="test@example.com")
+        stmt = stmt.on_duplicate_key_update([("email", "new@example.com"), ("name", "updated")])
+        compiled = stmt.compile(dialect=CubridDialect())
+        update_binds = compiled.positiontup[3:]
+        assert len(update_binds) == 2
+        # The list gave email before name; the bind order must follow it,
+        # not alphabetical or declared-column order.
+        assert [compiled.params[b] for b in update_binds] == ["new@example.com", "updated"]
+
 
 class TestReplaceCompilation:
     def test_replace_basic(self):
@@ -1665,6 +1705,33 @@ class TestReplaceKeywordIsStructural:
             "WITH c AS (SELECT src.id AS id, 'INSERT INTO' AS s FROM src) "
             "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c"
         )
+
+    def test_cte_from_select_with_bound_values_and_prefix(self):
+        """A REPLACE CTE keeps SELECT binds in their emitted placeholder order."""
+        from sqlalchemy_cubrid import replace
+
+        cte = (
+            select(self.source.c.id, self.source.c.s)
+            .where(self.source.c.id > sa.bindparam("low", 2))
+            .cte("c")
+        )
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .from_select(
+                ["id", "s"],
+                select(cte.c.id, cte.c.s).where(cte.c.id < sa.bindparam("high", 9)),
+            )
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+
+        assert _norm(compiled.string) == _norm(
+            "WITH c AS (SELECT src.id AS id, src.s AS s FROM src WHERE src.id > ?) "
+            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c WHERE c.id < ?"
+        )
+        assert compiled.string.count("?") == 2
+        assert compiled.positiontup == ["low", "high"]
+        assert [compiled.params[name] for name in compiled.positiontup] == [2, 9]
 
     def test_cte_without_prefix(self):
         from sqlalchemy_cubrid import replace
@@ -2155,6 +2222,62 @@ class TestMergeCompilation:
         sql = _compile(stmt)
         assert "db_col" in sql
         assert "py_attr" not in sql
+
+    def test_merge_when_matched_literal_value_binding(self):
+        """#613: a literal UPDATE SET value binds; a column reference does not."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_matched_then_update({"name": "fixed_name", "email": self.source.c.email})
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["param_1"]
+        assert compiled.params["param_1"] == "fixed_name"
+        assert "source_data.email" in compiled.string
+
+    def test_merge_when_not_matched_literal_value_binding(self):
+        """#613: same rule for WHEN NOT MATCHED THEN INSERT values."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_not_matched_then_insert(
+            {"id": self.source.c.id, "name": "default_name", "email": self.source.c.email}
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["param_1"]
+        assert compiled.params["param_1"] == "default_name"
+
+    def test_merge_both_clauses_binding_order(self):
+        """#613: the matched-update bind precedes the not-matched-insert bind,
+        matching the WHEN MATCHED ... WHEN NOT MATCHED clause order in the SQL."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_matched_then_update({"name": "matched_name"})
+        stmt = stmt.when_not_matched_then_insert(
+            {"id": self.source.c.id, "name": "inserted_name", "email": self.source.c.email}
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert len(compiled.positiontup) == 2
+        matched_bind, insert_bind = compiled.positiontup
+        assert compiled.params[matched_bind] == "matched_name"
+        assert compiled.params[insert_bind] == "inserted_name"
+        assert compiled.string.index("WHEN MATCHED") < compiled.string.index("WHEN NOT MATCHED")
+
+    def test_merge_when_matched_where_binding_order(self):
+        """#613: the UPDATE SET bind precedes the WHERE predicate's bind,
+        matching their order in the rendered SQL."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_matched_then_update(
+            {"name": "fixed"}, where=self.source.c.name == sa.bindparam("wpred", "alice")
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert len(compiled.positiontup) == 2
+        set_bind, where_bind = compiled.positiontup
+        assert compiled.params[set_bind] == "fixed"
+        assert where_bind == "wpred"
+        assert compiled.params["wpred"] == "alice"
 
 
 class TestCoverageEdgeCases:
@@ -2944,3 +3067,162 @@ class TestNumericBindCast386:
         stmt = select(sa.literal(1)).where(sa.bindparam("a", 1) == sa.bindparam("b", 1))
         sql = stmt.compile(dialect=CubridDialect()).string
         assert "FROM db_root" in sql
+
+
+class TestPositionalBindOrderAcrossConstructs:
+    """#613: assert the emitted ``?`` placeholder order and the ordered values
+    (``[compiled.params[name] for name in compiled.positiontup]``) for
+    constructs not already covered by ``TestReplaceKeywordIsStructural`` --
+    CTEs, correlated subqueries, INSERT ... SELECT, multi-row VALUES and
+    LIMIT/OFFSET -- plus a metamorphic invariant: reordering selected columns
+    must not change the bind order of WHERE predicates.
+
+    Deliberately does not assert ``len(params) == len(positiontup)``: a
+    repeated name (ODKU's VALUES() re-use, REPLACE's multi-row ``_mN``
+    suffixes) makes ``params`` the smaller, deduplicated mapping while
+    ``positiontup`` lists every placeholder occurrence.
+    """
+
+    def _ordered_values(self, compiled):
+        return [compiled.params[name] for name in compiled.positiontup]
+
+    def test_cte_binding_order(self):
+        """A bind inside the CTE body precedes a bind in the outer query."""
+        cte = select(users.c.id, users.c.name).where(users.c.name == sa.bindparam("n1", "alice"))
+        cte = cte.cte("c")
+        stmt = select(cte.c.id).where(cte.c.id > sa.bindparam("minid", 10))
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["n1", "minid"]
+        assert self._ordered_values(compiled) == ["alice", 10]
+        assert compiled.string.count("?") == 2
+
+    def test_recursive_cte_binding_order(self):
+        """Anchor bind precedes the recursive term's increment and limit binds."""
+        anchor = select(sa.bindparam("start", 1).label("n"))
+        cte = anchor.cte(name="counter", recursive=True)
+        cte_alias = cte.alias()
+        cte = cte.union_all(
+            select((cte_alias.c.n + sa.bindparam("step", 1)).label("n")).where(
+                cte_alias.c.n < sa.bindparam("stop", 5)
+            )
+        )
+        stmt = select(cte)
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["start", "step", "stop"]
+        assert self._ordered_values(compiled) == [1, 1, 5]
+
+    def test_correlated_subquery_binding_order(self):
+        """A bind inside a scalar subquery precedes a bind in the outer WHERE."""
+        subq = (
+            select(sa.func.max(users.c.id))
+            .where(users.c.name == sa.bindparam("n2", "bob"))
+            .scalar_subquery()
+        )
+        stmt = (
+            select(users.c.id)
+            .where(users.c.id == subq)
+            .where(users.c.email == sa.bindparam("e2", "x@y"))
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["n2", "e2"]
+        assert self._ordered_values(compiled) == ["bob", "x@y"]
+
+    def test_insert_select_binding_order(self):
+        """INSERT ... SELECT binds only the binds inside the SELECT, in order."""
+        src = Table("src_613", metadata, Column("id", Integer), Column("name", String(50)))
+        stmt = sa.insert(users).from_select(
+            ["id", "name"],
+            select(src.c.id, src.c.name).where(src.c.name == sa.bindparam("srcname", "c")),
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["srcname"]
+        assert self._ordered_values(compiled) == ["c"]
+        assert "VALUES" not in compiled.string
+
+    def test_multirow_insert_binding_order(self):
+        """Plain multi-row INSERT VALUES binds row-major, left to right (#613).
+
+        Mirrors ``TestReplaceKeywordIsStructural.test_multi_values_with_prefix``
+        for ordinary ``INSERT`` (REPLACE already covers this combination).
+        """
+        stmt = sa.insert(users).values([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}])
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == "INSERT INTO users (id, name) VALUES (?, ?), (?, ?)"
+        assert compiled.positiontup == ["id_m0", "name_m0", "id_m1", "name_m1"]
+        assert self._ordered_values(compiled) == [1, "a", 2, "b"]
+
+    def test_limit_offset_binding_order(self):
+        """CUBRID's ``LIMIT <offset>, <count>`` binds offset before count.
+
+        Regression guard: the dialect's ``limit_clause`` processes the offset
+        clause before the limit clause (matching the rendered operand order);
+        swapping that order would silently bind the row count where the
+        offset belongs (and vice versa) without changing the SQL text shape.
+        """
+        stmt = select(users.c.id).where(users.c.name == sa.bindparam("n3", "z")).limit(5).offset(2)
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert _norm(compiled.string).endswith("LIMIT ?, ?")
+        assert compiled.positiontup[0] == "n3"
+        offset_name, count_name = compiled.positiontup[1], compiled.positiontup[2]
+        assert compiled.params[offset_name] == 2
+        assert compiled.params[count_name] == 5
+
+    def test_postcompile_expansion_binding_order(self):
+        """#613: an expanding ``IN`` bind renders one ``?`` per element, in
+        list order, and the following bind still comes after all of them.
+
+        Unexpanded (``render_postcompile=False``, the default -- what a
+        ``CompileState``-cached statement looks like before execution), the
+        bind stays a single ``__[POSTCOMPILE_names]`` placeholder in
+        ``positiontup``, with its whole list as the one value; the real
+        per-element names and values only appear once
+        ``render_postcompile=True`` processes it (what the DBAPI driver
+        actually receives at execution time).
+        """
+        stmt = select(users.c.id).where(
+            users.c.name.in_(sa.bindparam("names", value=["a", "b", "c"], expanding=True))
+        )
+        stmt = stmt.where(users.c.email == sa.bindparam("e", "z@example.com"))
+
+        unexpanded = stmt.compile(dialect=CubridDialect())
+        assert "__[POSTCOMPILE_names]" in unexpanded.string
+        assert unexpanded.positiontup == ["names", "e"]
+        assert unexpanded.params["names"] == ["a", "b", "c"]
+
+        expanded = stmt.compile(
+            dialect=CubridDialect(), compile_kwargs={"render_postcompile": True}
+        )
+        assert _norm(expanded.string) == _norm(
+            "SELECT users.id FROM users WHERE users.name IN (?, ?, ?) AND users.email = ?"
+        )
+        assert expanded.positiontup == ["names_1", "names_2", "names_3", "e"]
+        assert self._ordered_values(expanded) == ["a", "b", "c", "z@example.com"]
+
+    def test_postcompile_expansion_after_a_preceding_bind(self):
+        """#613: a bind before an expanding ``IN`` keeps its position; the
+        expanded elements are inserted in place, not appended at the end."""
+        stmt = select(users.c.id).where(users.c.email == sa.bindparam("e", "z@example.com"))
+        stmt = stmt.where(users.c.name.in_(sa.bindparam("names", value=["a", "b"], expanding=True)))
+
+        expanded = stmt.compile(
+            dialect=CubridDialect(), compile_kwargs={"render_postcompile": True}
+        )
+        assert expanded.positiontup == ["e", "names_1", "names_2"]
+        assert self._ordered_values(expanded) == ["z@example.com", "a", "b"]
+
+    def test_metamorphic_select_column_order_does_not_reorder_where_binds(self):
+        """Reordering the SELECT list leaves WHERE bind order unchanged."""
+        stmt_a = (
+            select(users.c.id, users.c.name)
+            .where(users.c.email == sa.bindparam("e", "x"))
+            .where(users.c.id > sa.bindparam("minid", 1))
+        )
+        stmt_b = (
+            select(users.c.name, users.c.id)
+            .where(users.c.email == sa.bindparam("e", "x"))
+            .where(users.c.id > sa.bindparam("minid", 1))
+        )
+        c_a = stmt_a.compile(dialect=CubridDialect())
+        c_b = stmt_b.compile(dialect=CubridDialect())
+        assert c_a.positiontup == c_b.positiontup == ["e", "minid"]
+        assert self._ordered_values(c_a) == self._ordered_values(c_b) == ["x", 1]

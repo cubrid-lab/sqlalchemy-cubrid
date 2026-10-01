@@ -37,16 +37,57 @@ from sqlalchemy import (
     Numeric,
     String,
     Table,
+    and_,
     bindparam,
     literal,
     select,
 )
 
+from sqlalchemy_cubrid.dialect import CubridDialect
+
+_users = Table(
+    "metamorphic_smoke_users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(100)),
+    Column("email", String(200)),
+)
+
 
 def test_metamorphic_smoke() -> None:
-    """Deterministic offline sanity check so the module has one PR-suite test."""
-    stmt_bind = select(literal(1))
-    assert stmt_bind is not None
+    """Deterministic offline metamorphic invariant (#613): two equivalent ways
+    of expressing the same conjunction -- ``.where(a).where(b)`` and
+    ``.where(and_(a, b))`` -- must compile to identical SQL and the same
+    placeholder order and bound values. A compiler bug that reorders or drops
+    a bind while flattening chained ``.where()`` calls into ``AND`` (or vice
+    versa) would break this equivalence; ``stmt_bind is not None`` could not
+    have caught it.
+    """
+    chained = (
+        select(_users.c.id)
+        .where(_users.c.name == bindparam("n", "alice"))
+        .where(_users.c.email == bindparam("e", "a@example.com"))
+    )
+    combined = select(_users.c.id).where(
+        and_(
+            _users.c.name == bindparam("n", "alice"),
+            _users.c.email == bindparam("e", "a@example.com"),
+        )
+    )
+    dialect = CubridDialect()
+    compiled_chained = chained.compile(dialect=dialect)
+    compiled_combined = combined.compile(dialect=dialect)
+
+    assert compiled_chained.string == compiled_combined.string
+    assert compiled_chained.positiontup == compiled_combined.positiontup == ["n", "e"]
+    assert (
+        compiled_chained.params
+        == compiled_combined.params
+        == {
+            "n": "alice",
+            "e": "a@example.com",
+        }
+    )
 
 
 @pytest.fixture(scope="module")

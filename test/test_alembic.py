@@ -325,22 +325,24 @@ class TestCubridImpl:
     def test_no_alembic_ddl_entry_point(self):
         """Alembic never reads an ``alembic.ddl`` entry-point group (#504).
 
-        Registration happens when the dialect module imports ``alembic_impl``,
-        so a dead entry point must not come back and suggest otherwise.
+        Registration happens through the ``alembic.plugins`` entry point or
+        the dialect module, so a dead entry point must not come back.
         """
         config = _load_pyproject()
 
         assert "alembic.ddl" not in config["project"]["entry-points"]
 
     def test_dialect_module_registers_impl(self):
-        """Importing the dialect alone registers CubridImpl for 'cubrid' (#504)."""
-        from alembic.ddl.impl import DefaultImpl
+        """Alembic finds CubridImpl for the CUBRID dialect (#504).
 
-        import sqlalchemy_cubrid.dialect as dialect_module
+        The dialect module or, on Alembic 1.18+, the ``alembic.plugins``
+        entry point registers it (#595); test_alembic_registration.py and
+        test_alembic_plugin.py check each path in a fresh interpreter.
+        """
+        from alembic.ddl.impl import DefaultImpl
 
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
-        assert dialect_module._alembic_impl.CubridImpl is CubridImpl
         assert DefaultImpl.get_by_dialect(CubridDialect()) is CubridImpl
 
     def test_optional_dependency_declared(self):
