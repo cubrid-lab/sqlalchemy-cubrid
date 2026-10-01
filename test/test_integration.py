@@ -64,6 +64,13 @@ def _cubrid_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
+# Fixed-name database users (below) are suffixed with this per-process token so
+# that an interrupted prior run, or a concurrent job against the same shared
+# database, cannot collide with -- or get silently masked by -- a leftover or
+# simultaneously-running user of the same name (#607).
+_USER_SUFFIX = f"{os.getpid()}{uuid.uuid4().hex[:6]}"
+
+
 # The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
 # unset and errors them when its server is unreachable (#593).
 pytestmark = pytest.mark.integration
@@ -514,17 +521,23 @@ class TestSameNameClassOfOtherOwner:
                             raise
                         conn.rollback()
 
-        u2 = create_engine(engine.url.set(username="u2", password=None))
+        username = f"u2_{_USER_SUFFIX}"
+        u2 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
             run(u2, "DROP TABLE y_dup", "DROP TABLE y_dup_parent", ignore_errors=True)
             u2.dispose()
-            run(engine, "DROP VIEW y_dup", "DROP USER u2", ignore_errors=True)
+            run(engine, "DROP VIEW y_dup", f"DROP USER {username}", ignore_errors=True)
 
-        # Idempotent: drop any state left by an interrupted prior run before
-        # creating, so reruns don't fail with "already exists" (#607).
+        # Idempotent: ensure the user exists (so cleanup() below can connect
+        # as it) before dropping it and any state it owns, then (re)create it
+        # for real. Combined with the per-process-unique username, an
+        # interrupted prior run or a concurrent job against the same shared
+        # database can no longer make this CREATE USER fail with
+        # "already exists" (#607).
+        run(engine, f"CREATE USER {username}", ignore_errors=True)
         cleanup()
-        run(engine, "CREATE USER u2")
+        run(engine, f"CREATE USER {username}")
         try:
             run(
                 engine,
@@ -546,7 +559,10 @@ class TestSameNameClassOfOtherOwner:
             owners = conn.execute(
                 text("SELECT owner_name, class_type FROM db_class WHERE class_name = 'y_dup'")
             ).fetchall()
-            assert sorted(owners) == [("DBA", "VCLASS"), ("U2", "CLASS")]
+            assert sorted(owners) == [
+                ("DBA", "VCLASS"),
+                (u2_engine.url.username.upper(), "CLASS"),
+            ]
 
             insp = inspect(conn)
             assert "u_y_dup_u" in {index["name"] for index in insp.get_indexes("y_dup")}
@@ -563,11 +579,12 @@ def _r549_user_cycle(engine, as_user):
     since CUBRID 11.2, a same-named decoy owned by the other side), yield the
     owning engine, then drop everything.
 
-    Idempotent: ``cleanup()`` runs before the (unignored) ``CREATE USER`` so
-    state left behind by an interrupted prior run -- or an earlier call in
-    the same test -- is removed first instead of racing a plain ``CREATE``
-    into an "already exists" failure. Safe to call back to back against the
-    same database (#607).
+    Idempotent: the user is (re-)created before ``cleanup()`` drops it and
+    any state it owns, then (re)created for real. Combined with the
+    per-process-unique username, an interrupted prior run -- or a
+    concurrent job against the same shared database -- can no longer make
+    the real ``CREATE USER`` fail with "already exists" (#607). Safe to call
+    back to back against the same database.
     """
 
     def run(eng, *statements, ignore_errors=False):
@@ -584,7 +601,8 @@ def _r549_user_cycle(engine, as_user):
                         raise
                     conn.rollback()
 
-    u549 = create_engine(engine.url.set(username="u549", password=None))
+    username = f"u549_{_USER_SUFFIX}"
+    u549 = create_engine(engine.url.set(username=username, password=None))
     owner, other = (engine, u549) if as_user == "dba" else (u549, engine)
 
     def cleanup():
@@ -596,10 +614,11 @@ def _r549_user_cycle(engine, as_user):
                 ignore_errors=True,
             )
         u549.dispose()
-        run(engine, "DROP USER u549", ignore_errors=True)
+        run(engine, f"DROP USER {username}", ignore_errors=True)
 
+    run(engine, f"CREATE USER {username}", ignore_errors=True)
     cleanup()
-    run(engine, "CREATE USER u549")
+    run(engine, f"CREATE USER {username}")
     try:
         run(
             owner,
@@ -1915,17 +1934,23 @@ class TestHasIndexOwnerPreference:
                             raise
                         conn.rollback()
 
-        u543 = create_engine(engine.url.set(username="u543", password=None))
+        username = f"u543_{_USER_SUFFIX}"
+        u543 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
             run(u543, 'DROP TABLE "Own543"', ignore_errors=True)
             u543.dispose()
-            run(engine, 'DROP TABLE "Own543"', "DROP USER u543", ignore_errors=True)
+            run(engine, 'DROP TABLE "Own543"', f"DROP USER {username}", ignore_errors=True)
 
-        # Idempotent: drop any state left by an interrupted prior run before
-        # creating, so reruns don't fail with "already exists" (#607).
+        # Idempotent: ensure the user exists (so cleanup() below can connect
+        # as it) before dropping it and any state it owns, then (re)create it
+        # for real. Combined with the per-process-unique username, an
+        # interrupted prior run or a concurrent job against the same shared
+        # database can no longer make this CREATE USER fail with
+        # "already exists" (#607).
+        run(engine, f"CREATE USER {username}", ignore_errors=True)
         cleanup()
-        run(engine, "CREATE USER u543")
+        run(engine, f"CREATE USER {username}")
         try:
             run(engine, 'CREATE TABLE "Own543" (id INT PRIMARY KEY, v INT)')
             run(
@@ -1942,7 +1967,7 @@ class TestHasIndexOwnerPreference:
             owners = conn.execute(
                 text("SELECT owner_name FROM db_class WHERE class_name = 'own543'")
             ).fetchall()
-            assert sorted(owners) == [("DBA",), ("U543",)]
+            assert sorted(owners) == [("DBA",), (u543_engine.url.username.upper(),)]
 
             # Only the other owner's same-named class has the index.
             assert inspect(conn).has_table("Own543")
