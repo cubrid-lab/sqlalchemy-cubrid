@@ -290,6 +290,20 @@ pytest는 종료 코드 1로 끝납니다. 의도적으로 건너뛰려면 `CUBR
 실행은 서로 간섭합니다. 전용 데이터베이스에서 한 번에 하나씩 실행하세요.
 `make integration`은 이를 위해 실행 전용 서버를 시작합니다.
 
+`TestIsDisconnect`의 KILL QUERY 사례(#634)도 직렬 실행을 유지합니다. KILL은
+서버 전체에 작용하며 사용자 조건 없이 숫자 트랜잭션 인덱스만 받으므로
+원자적인 사용자 확인과 종료는 할 수 없습니다. 테스트는 새로운
+`kq634_<16자리 16진수>` 데이터베이스 계정을 하나 만들고, 피해 연결을 먼저
+열어 준비한 뒤 별도 종료 프로세스를 시작합니다(CUBRIDdb가 쿼리 중 GIL을
+점유하므로 필요). 종료 프로세스가 끝나거나 중지될 때까지 피해 연결을
+유지합니다. 종료 프로세스는 `SHOW TRANSACTION TABLES`에서 정확히 그
+`Client_db_user`이고 `Query_start_time`이 NULL이 아닌 활성 쿼리만 고릅니다.
+열이 없거나 해당 활성 쿼리가 여러 개면 KILL을 보내지 않고 실패합니다.
+새로 나타난 DBA나 다른 사용자의 쿼리를 시간으로 추측하지 않습니다. 정리 시
+피해 엔진을 폐기하고 확인 절차를 거쳐 이 실행이 만든 계정만 삭제합니다.
+버려도 되는 DBA 테스트 데이터베이스를 사용하세요. 다른 세션이 그 전용
+계정을 공유하면 테스트는 안전하게 실패합니다.
+
 `test/test_server_restart.py`(#565)는
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"`로
 `cub_server`를 중지·시작하고, 두 드라이버 모두에서 `pool_pre_ping` 사용 여부와
