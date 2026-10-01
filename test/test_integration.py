@@ -665,14 +665,7 @@ class TestShowCreateTableFailures:
             Column(
                 "pid",
                 Integer,
-                # CUBRID reports the default actions as RESTRICT (#597); name them so
-                # the comparison is about the constraint, not its options.
-                ForeignKey(
-                    f"{cls.PARENT}.id",
-                    name="fk_r589_child_pid",
-                    ondelete="RESTRICT",
-                    onupdate="RESTRICT",
-                ),
+                ForeignKey(f"{cls.PARENT}.id", name="fk_r589_child_pid"),
             ),
         )
         Table(cls.PLAIN, meta, Column("id", Integer, primary_key=True))
@@ -730,6 +723,91 @@ class TestShowCreateTableFailures:
                     self._diffs(conn, meta)
         finally:
             sa.event.remove(engine, "before_cursor_execute", self._fail_show_create_table)
+
+
+class TestAutogenerateForeignKeyDefaultActions:
+    """#597: CUBRID prints its default referential action, RESTRICT, in
+    ``SHOW CREATE TABLE``, so a foreign key declared without ``ondelete`` /
+    ``onupdate`` reflects as RESTRICT. Autogenerate must not drop and
+    re-create it, but must still see a real change of action."""
+
+    PARENT = "r597_parent"
+    CHILD = "r597_child"
+
+    @classmethod
+    def _metadata(cls, **actions):
+        meta = MetaData()
+        Table(cls.PARENT, meta, Column("id", Integer, primary_key=True))
+        Table(
+            cls.CHILD,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("pid", Integer, ForeignKey(f"{cls.PARENT}.id", name="fk_r597", **actions)),
+        )
+        return meta
+
+    def _diffs(self, conn, meta):
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        tables = {self.PARENT, self.CHILD}
+        ctx = MigrationContext.configure(
+            connection=conn,
+            opts={"include_name": lambda name, type_, parent: type_ != "table" or name in tables},
+        )
+        return compare_metadata(ctx, meta)
+
+    @pytest.fixture()
+    def create(self, engine):
+        created = []
+
+        def _create(**actions):
+            meta = self._metadata(**actions)
+            meta.drop_all(engine)
+            meta.create_all(engine)
+            created.append(meta)
+
+        yield _create
+        for meta in created:
+            meta.drop_all(engine)
+
+    @pytest.mark.parametrize(
+        "actions",
+        [
+            {},
+            {"ondelete": "RESTRICT", "onupdate": "RESTRICT"},
+            {"ondelete": "CASCADE"},
+            {"ondelete": "SET NULL", "onupdate": "RESTRICT"},
+            {"ondelete": "NO ACTION", "onupdate": "NO ACTION"},
+        ],
+    )
+    def test_unchanged_foreign_key_has_no_diff(self, engine, create, actions):
+        create(**actions)
+        with engine.connect() as conn:
+            assert self._diffs(conn, self._metadata(**actions)) == []
+
+    def test_reflection_still_reports_restrict(self, engine, create):
+        create()
+        with engine.connect() as conn:
+            [fk] = inspect(conn).get_foreign_keys(self.CHILD)
+        assert fk["options"] == {"ondelete": "RESTRICT", "onupdate": "RESTRICT"}
+
+    @pytest.mark.parametrize(
+        ("created", "model"),
+        [
+            ({}, {"ondelete": "CASCADE"}),  # adding an action
+            ({}, {"onupdate": "SET NULL"}),  # CUBRID has no ON UPDATE CASCADE
+            ({"ondelete": "CASCADE"}, {}),  # removing it again
+            ({"ondelete": "SET NULL"}, {"ondelete": "CASCADE"}),
+        ],
+    )
+    def test_changed_action_is_detected(self, engine, create, created, model):
+        create(**created)
+        with engine.connect() as conn:
+            diffs = self._diffs(conn, self._metadata(**model))
+        assert [d[0] for d in diffs] == ["remove_fk", "add_fk"]
+        assert diffs[1][1].ondelete == model.get("ondelete")
+        assert diffs[1][1].onupdate == model.get("onupdate")
 
 
 class TestTransactions:

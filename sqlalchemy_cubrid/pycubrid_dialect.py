@@ -192,6 +192,10 @@ class PyCubridDialect(CubridDialect):
     # pycubrid uses qmark paramstyle natively
     default_paramstyle = "qmark"
 
+    # Read by the SET/MULTISET/SEQUENCE bind processors (sqlalchemy_cubrid.types,
+    # #484): this DB-API (sync, and async via the subclass) is pycubrid.
+    _cubrid_pycubrid_dbapi = True
+
     def __init__(self, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         # Isolation level last applied to each DBAPI connection, re-applied

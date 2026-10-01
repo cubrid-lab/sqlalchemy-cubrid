@@ -120,10 +120,10 @@ SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위�
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int 또는 str
+    code = e.args[0]  # int
 ```
 
-방언의 `_extract_error_code()`는 정수 코드와 문자열에 박힌 코드(예: `"-20004 Cannot communicate with server"`) 모두 처리합니다.
+방언의 `_extract_error_code()`는 정수 `args[0]`만 읽습니다. 문자열 `args[0]`은 숫자로 시작하더라도(예: 애플리케이션 데이터를 인용한 `"-20004 rows rejected ..."`) 코드를 담지 않습니다. 1.8.0까지의 릴리스는 이런 앞쪽 숫자를 코드로 해석해 멀쩡한 연결을 무효화할 수 있었습니다(#608).
 
 pycubrid는 `args`에 메시지만 담고 서버 오류 코드는 `errno`(및 `code`)에 담습니다. `is_disconnect()`는 [알려진 문제 1](#1-연결-해제-감지에-operationalerror를-사용하지-않음)에 나열된 서버 코드에 대해 `errno`를 읽습니다. pycubrid의 `str()`은 `errno`의 설명(예: -4와 -671의 `Communication error`)도 덧붙이므로, 메시지 패턴은 드라이버 자체 메시지인 `args[0]`과 비교합니다.
 
@@ -228,6 +228,18 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 **수준을 설정한 유휴 연결.** 다시 적용의 SQL `COMMIT`은 CAS를 트랜잭션 중으로 표시해 두므로, 브로커는 풀링된 연결이 유휴 상태인 동안에도 그 CAS를 연결에 묶어 둡니다(`cubrid broker status`에서 `CLIENT_WAIT`, 수준 설정이 없으면 `CLOSE_WAIT`). 풀 크기에 맞게 브로커의 `MAX_NUM_APPL_SERVER`를 잡으세요. 또한 이런 연결의 CAS가 유휴 중에 종료되면 pycubrid가 스스로 재연결하지 않습니다. 다음 문장은 `OperationalError`를 발생시키고, 방언은 이를 연결 끊김으로 보고하므로 SQLAlchemy는 서버 기본 수준으로 조용히 실행하는 대신 그 연결을 버립니다. `create_engine(..., pool_pre_ping=True)`를 사용하면 풀이 체크아웃 시 연결을 교체하고, 새 연결은 엔진 수준을 받습니다.
 
 **pycubrid의 `AUTOCOMMIT`.** pycubrid 1.8.0은 오토커밋 모드에서도 세션을 유지하므로, `CUBRIDdb`와 마찬가지로 문장은 적용 중이던 서버 수준을 유지하고 세션 변수도 문장 사이에 유지됩니다. 연결을 `AUTOCOMMIT`으로 바꾸면 방언은 격리 수준 다시 적용을 멈춥니다.
+
+### 11. 컬렉션 파라미터 (SET, MULTISET, SEQUENCE)
+
+컬렉션 컬럼에 Python `list`, `tuple`, `set`을 바인딩하는 방식은 드라이버마다 다릅니다(#484, CUBRID 10.2와 11.4에서 검증).
+
+| 드라이버 | `list` / `tuple` / `set` 바인딩 | 컬렉션 조회 |
+|---|---|---|
+| pycubrid main (타입 지정 컬렉션 파라미터, cubrid-lab/pycubrid#567) | 방언이 값을 컬럼 타입에 맞는 `pycubrid.types.Set`, `Multiset`, `Sequence`로 감쌉니다. `SET`, `MULTISET`, `SEQUENCE`의 의미가 유지됩니다. `SEQUENCE`는 `list`나 `tuple`만 받으며, `set`/`frozenset`은 `TypeError`("SEQUENCE is ordered; pass a list or tuple")를 발생시킵니다. | `?decode_collections=true`이면 `frozenset`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`), 없으면 원시 `bytes` |
+| pycubrid 1.8.0 (릴리스) | `ProgrammingError`: pycubrid가 컬렉션 파라미터를 거부합니다. `SEQUENCE`에 넘긴 `set`/`frozenset`은 방언이 위와 같은 `TypeError`를 발생시킵니다. | 위와 같음 |
+| CUBRIDdb 11.3.0.51 | CUBRIDdb가 값을 직접, 항상 SET 호스트 변수로 바인딩합니다. MULTISET은 중복을, SEQUENCE는 순서를 잃습니다(`[3, 1, 2, 1]`은 `{1, 2, 3}`으로 저장됨). `None` 원소는 지원되지 않습니다. `[None]`은 드라이버 안에서 `UnboundLocalError`로, `[1, None]`은 `-494 Cannot coerce host var to type sequence`로 실패합니다. | 원소 타입과 관계없이 `str` 원소로 된 `set`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`) |
+
+방언은 CUBRIDdb의 동작을 바꾸지 않습니다. CUBRIDdb에서 중복이나 순서가 필요한 컬렉션은 바인드 파라미터로 보내지 말고 SQL에 컬렉션 리터럴을 쓰거나(`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`) `cubrid+pycubrid://`를 사용하세요. [타입 매핑, 컬렉션 값](TYPES.md#컬렉션-값)을 참고하세요.
 
 ---
 

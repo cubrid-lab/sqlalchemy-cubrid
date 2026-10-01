@@ -126,11 +126,14 @@ The dialect relies on these driver-specific APIs:
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int or str
+    code = e.args[0]  # int
 ```
 
-The dialect's `_extract_error_code()` handles both integer codes and string-embedded
-codes (e.g., `"-20004 Cannot communicate with server"`).
+The dialect's `_extract_error_code()` reads only an integer `args[0]`. A string
+`args[0]` never carries a code, even when it starts with a number (e.g.
+`"-20004 rows rejected ..."` quoted from application data); releases up to 1.8.0
+parsed such a leading number as a code and could invalidate a working connection
+(#608).
 
 pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in
@@ -363,6 +366,22 @@ it at checkout, and the new connection gets the engine level.
 mode, so statements keep the server level that was in effect and session
 variables survive between statements, as on `CUBRIDdb`. The dialect stops
 re-applying a level once a connection is switched to `AUTOCOMMIT`.
+
+### 11. Collection parameters (SET, MULTISET, SEQUENCE)
+
+The drivers bind a Python `list`, `tuple` or `set` for a collection column
+differently (#484; verified on CUBRID 10.2 and 11.4):
+
+| Driver | Binding a `list` / `tuple` / `set` | Reading a collection |
+|---|---|---|
+| pycubrid main (typed collection parameters, cubrid-lab/pycubrid#567) | The dialect wraps the value in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type. `SET`, `MULTISET` and `SEQUENCE` semantics are kept. A `SEQUENCE` takes only a `list` or `tuple`: a `set`/`frozenset` raises `TypeError` ("SEQUENCE is ordered; pass a list or tuple"). | `frozenset` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) with `?decode_collections=true`; raw `bytes` without it |
+| pycubrid 1.8.0 (released) | `ProgrammingError`: pycubrid rejects collection parameters. A `set`/`frozenset` for a `SEQUENCE` raises the same `TypeError` as above, from the dialect. | Same as above |
+| CUBRIDdb 11.3.0.51 | CUBRIDdb binds the value itself, always as a SET host variable. A MULTISET loses its duplicates and a SEQUENCE its order (`[3, 1, 2, 1]` is stored as `{1, 2, 3}`). `None` elements are not supported: `[None]` fails inside the driver with an `UnboundLocalError`, and `[1, None]` with `-494 Cannot coerce host var to type sequence`. | `set` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) of `str` elements, whatever the element type |
+
+The dialect does not change what CUBRIDdb does. On CUBRIDdb, keep collections
+that need duplicates or order out of bound parameters: write the collection
+literal in SQL (`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`), or use
+`cubrid+pycubrid://`. See [Type Mapping, Collection values](TYPES.md#collection-values).
 
 ---
 

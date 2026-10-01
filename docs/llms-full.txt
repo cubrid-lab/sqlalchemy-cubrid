@@ -718,7 +718,7 @@ engine = create_engine(
 
 The dialect implements `is_disconnect()` which detects connection failures using a layered strategy that is resilient to driver error-message wording changes:
 
-1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
+1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Codes are read only from these structured fields, never from message text: a message that starts with a number, such as a server error quoting application data (`-20004 rows rejected ...`), carries no code (#608). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
 3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", or "reconnecting failed" when pycubrid cannot replace a lost CAS session) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671.
 
@@ -2259,6 +2259,74 @@ CREATE TABLE tagged_items (
 > no separate `LIST` type, since a type compiling to `LIST(...)` would produce
 > spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`.
 
+#### Collection values
+
+Bind a `SET` or `MULTISET` column's value as a Python `list`, `tuple`, `set`
+or `frozenset`. A `SEQUENCE` is ordered, so bind it as a `list` or `tuple`: on
+the pycubrid drivers a `set` or `frozenset` for a `SEQUENCE` column raises
+`TypeError` ("SEQUENCE is ordered; pass a list or tuple", wrapped in
+SQLAlchemy's `StatementError`) whatever the pycubrid version, and the dialect
+never sorts it for you. What happens next depends on the driver:
+
+| | `cubrid+pycubrid://`, `cubrid+aiopycubrid://` with typed collection parameters (pycubrid main) | Released pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
+|---|---|---|---|
+| Binding a `list`/`tuple` (and a `set`/`frozenset` for `SET`/`MULTISET`) | Wrapped in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type and sent as a `SET{...}`, `MULTISET{...}` or `SEQUENCE{...}` literal | `ProgrammingError` (pycubrid rejects collection parameters) | Bound by CUBRIDdb itself, always as a SET: a MULTISET loses duplicates and a SEQUENCE loses its order ([Driver Compatibility, Known Issue 11](DRIVER_COMPAT.md#11-collection-parameters-set-multiset-sequence)) |
+| Reading `SET` | `frozenset` with `?decode_collections=true`, raw `bytes` without it | Same | `set` of `str` |
+| Reading `MULTISET` / `SEQUENCE` | `list` with `?decode_collections=true`, raw `bytes` without it | Same | `list` of `str` |
+
+```python
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
+from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET
+
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/demodb?decode_collections=true")
+items = Table(
+    "items", MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("tags", SET(String(20))),
+    Column("scores", MULTISET(Integer())),
+    Column("history", SEQUENCE(Integer())),
+)
+
+with engine.begin() as conn:
+    conn.execute(items.insert(), {"id": 1, "tags": {"a", "b"}, "scores": [2, 2, 1], "history": [3, 1, 3]})
+    row = conn.execute(select(items)).one()
+    # row.tags == frozenset({"a", "b"}); sorted(row.scores) == [1, 2, 2]; row.history == [3, 1, 3]
+    conn.execute(select(items.c.id).where(items.c.history == [3, 1, 3]))  # SEQUENCE{3, 1, 3}
+```
+
+On pycubrid:
+
+- The typed parameters (cubrid-lab/pycubrid#567) are on pycubrid main and are
+  not in a pycubrid release yet. The dialect detects them
+  (`pycubrid.types.Set`, `Multiset` and `Sequence`); with an older pycubrid it
+  passes values to the driver unchanged, so a collection parameter fails as
+  before.
+- Each element must be a value pycubrid can bind on its own: `None`, `bool`,
+  `int`, `float`, `Decimal`, `str`, `bytes`, `bytearray`, `date`, `time` or
+  `datetime`. Nested collections are rejected.
+- A value that is already a `pycubrid.types.Set`, `Multiset` or `Sequence`,
+  `None` and any other value (for example a `str`) are passed to the driver
+  unchanged.
+- The server keeps the collection semantics, and the dialect does not change
+  them: a `SET` drops duplicates, a `MULTISET` keeps duplicates but not their
+  order (compare `sorted(...)`), and a `SEQUENCE` keeps both. An empty
+  collection reads back as `frozenset()` or `[]`, a `NULL` column as `None`,
+  and a `NULL` element as `None` inside the collection.
+- The dialect does not convert values read back: they are what pycubrid
+  decodes. Without `decode_collections=true` pycubrid returns the raw
+  collection bytes.
+- A `set`/`frozenset` bound to a `SEQUENCE` column raises `TypeError` (see
+  above), with every pycubrid version.
+- Collection values cannot be rendered inline: `literal_binds` and
+  `literal_execute` raise `CompileError` for a non-`NULL` collection value
+  (a `NULL` renders as `NULL`). Bind collections as parameters.
+- In the ORM, assign a new collection to change a column
+  (`obj.history = [*obj.history, 4]`). SQLAlchemy does not track in-place
+  changes to a `list` or `set` attribute.
+
+The round trips are tested live on CUBRID 10.2 and 11.4 with pycubrid main
+(Core and ORM, sync and async; `test/test_collection_roundtrip.py`).
+
 ### JSON Type
 
 CUBRID 10.2+ supports native JSON (RFC 7159). The dialect provides full JSON type support:
@@ -2473,9 +2541,9 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | Equivalent to very large `VARCHAR`. |
 | `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
 | `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (documented) | Binary LOB. Current drivers return a LOB locator on read; see the warning below. |
-| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent collection payload | CUBRID-specific collection; unique unordered members. |
-| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent collection payload | CUBRID-specific collection; duplicates allowed. |
-| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent collection payload | CUBRID-specific collection; ordered with duplicates. |
+| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent; `frozenset` on pycubrid with `decode_collections=true` | CUBRID-specific collection; unique unordered members. See [Collection values](#collection-values). |
+| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; duplicates allowed. See [Collection values](#collection-values). |
+| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; ordered with duplicates. See [Collection values](#collection-values). |
 | `OBJECT` | `sqlalchemy_cubrid.OBJECT` | Driver-dependent object reference | OID reference type; database-specific. Declared/compiled only; not auto-reflected. |
 | `BOOLEAN` (emulated) | `sqlalchemy.Boolean` -> `SMALLINT` | `bool` | Stored as `1` / `0`; `supports_native_boolean=False`. |
 
@@ -3177,6 +3245,23 @@ lock until the transaction commits. Be aware:
 - Use `transaction_per_migration=True` for long migrations or large tables
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
+
+### Foreign key referential actions in autogenerate
+
+CUBRID's default `ON DELETE` / `ON UPDATE` action is `RESTRICT`, and
+`SHOW CREATE TABLE` always prints it, so `inspect(...).get_foreign_keys()`
+reports a foreign key created without actions as
+`{"ondelete": "RESTRICT", "onupdate": "RESTRICT"}`. Reflection keeps reporting
+what the server says. For autogenerate, `CubridImpl` treats that reflected
+`RESTRICT` as equal to a model `ForeignKey` with no `ondelete` / `onupdate`
+(#597), so an unchanged foreign key produces no `drop_constraint` /
+`create_foreign_key` pair, whether the model leaves the action out or names
+`RESTRICT`. Adding `ondelete="CASCADE"` or `SET NULL`, removing it again, or
+switching between them is still detected. `NO ACTION` is different: CUBRID
+prints it as `NO ACTION`, but Alembic itself treats `NO ACTION` and no action
+as equal in both directions, so switching between them is not detected. CUBRID
+rejects `ON UPDATE CASCADE`; use `SET NULL`, `RESTRICT` or `NO ACTION` for
+`onupdate`.
 
 ### `alter_column()` behavior
 
@@ -6218,7 +6303,9 @@ make lint          # Run ruff linter + format checks
 make check-tool-versions # Verify local/CI tool pins and type-check cells agree
 make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
-make test          # Run offline tests with coverage (95% threshold)
+make test          # Run the fast offline tests with coverage (95% threshold)
+make test-repo     # Run the repository-tooling tests (Makefile, signal handling, repo scripts)
+make test-offline  # Run every offline test (fast + repository-tooling) with coverage
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
@@ -6549,7 +6636,9 @@ The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinne
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
 run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
 the existing pycubrid/Alembic extras and development test dependencies. Offline
-selection is `-m "not integration"`; the integration environment selects
+selection in the `py3xx` environments is `-m "not integration and not repo"`, and
+the `repo` environment runs the repository-tooling tests with `-m repo` (#594);
+the integration environment selects
 `-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
 compliance suite requires the testing plugin enabled by `--dburi`; existing CI
 runs it separately with that argument and its known-failure baseline. Regular
@@ -6557,7 +6646,7 @@ tox integration does not run the formal suite. The offline threshold remains 95%
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
@@ -6587,10 +6676,20 @@ The CI pipeline tests the following matrix:
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **CUBRID 11.4** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.2** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.0** | ✅ | — | — | — | ✅ |
 | **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+
+`make test` deselects the `repo` marker, which `test/conftest.py` applies to the
+modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
+`test_docs_reason.py`, `test_release_detect.py`). These tests drive the Makefile
+`integration` recipe and its sh/bash signal handling and the repository scripts
+through subprocesses; on a 1,677-test offline run they took about 85 of 103
+seconds (#594). They stay required: the `repo-tests` CI job runs `-m repo` on
+every supported Python, and `matrix-result` fails unless it succeeds. `tox`
+runs them in its `repo` environment.
 
 ---
 
@@ -7025,11 +7124,14 @@ The dialect relies on these driver-specific APIs:
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int or str
+    code = e.args[0]  # int
 ```
 
-The dialect's `_extract_error_code()` handles both integer codes and string-embedded
-codes (e.g., `"-20004 Cannot communicate with server"`).
+The dialect's `_extract_error_code()` reads only an integer `args[0]`. A string
+`args[0]` never carries a code, even when it starts with a number (e.g.
+`"-20004 rows rejected ..."` quoted from application data); releases up to 1.8.0
+parsed such a leading number as a code and could invalidate a working connection
+(#608).
 
 pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in
@@ -7262,6 +7364,22 @@ it at checkout, and the new connection gets the engine level.
 mode, so statements keep the server level that was in effect and session
 variables survive between statements, as on `CUBRIDdb`. The dialect stops
 re-applying a level once a connection is switched to `AUTOCOMMIT`.
+
+### 11. Collection parameters (SET, MULTISET, SEQUENCE)
+
+The drivers bind a Python `list`, `tuple` or `set` for a collection column
+differently (#484; verified on CUBRID 10.2 and 11.4):
+
+| Driver | Binding a `list` / `tuple` / `set` | Reading a collection |
+|---|---|---|
+| pycubrid main (typed collection parameters, cubrid-lab/pycubrid#567) | The dialect wraps the value in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type. `SET`, `MULTISET` and `SEQUENCE` semantics are kept. A `SEQUENCE` takes only a `list` or `tuple`: a `set`/`frozenset` raises `TypeError` ("SEQUENCE is ordered; pass a list or tuple"). | `frozenset` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) with `?decode_collections=true`; raw `bytes` without it |
+| pycubrid 1.8.0 (released) | `ProgrammingError`: pycubrid rejects collection parameters. A `set`/`frozenset` for a `SEQUENCE` raises the same `TypeError` as above, from the dialect. | Same as above |
+| CUBRIDdb 11.3.0.51 | CUBRIDdb binds the value itself, always as a SET host variable. A MULTISET loses its duplicates and a SEQUENCE its order (`[3, 1, 2, 1]` is stored as `{1, 2, 3}`). `None` elements are not supported: `[None]` fails inside the driver with an `UnboundLocalError`, and `[1, None]` with `-494 Cannot coerce host var to type sequence`. | `set` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) of `str` elements, whatever the element type |
+
+The dialect does not change what CUBRIDdb does. On CUBRIDdb, keep collections
+that need duplicates or order out of bound parameters: write the collection
+literal in SQL (`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`), or use
+`cubrid+pycubrid://`. See [Type Mapping, Collection values](TYPES.md#collection-values).
 
 ---
 

@@ -138,4 +138,5 @@ addopts = "--tb native -v -r fxX --maxfail=25 -p no:warnings"
 python_files = "test/*test_*.py"
 markers = [
     "integration: test requires a live CUBRID instance (deselected by the offline suite via -m 'not integration')",
+    "repo: repository-tooling test (Makefile, signal handling, repo scripts); applied by test/conftest.py REPO_TOOLING_MODULES, skipped by `make test`, run by `make test-repo` and the required repo-tests CI job",
 ]
