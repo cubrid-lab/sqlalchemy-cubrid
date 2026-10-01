@@ -86,7 +86,9 @@ make install          # pip install -e ".[dev]" + pytest-cov + pre-commit + tox
 ### Key Commands
 
 ```bash
-make test             # Offline tests with 95% coverage threshold
+make test             # Fast offline tests with 95% coverage threshold (-m "not integration and not repo")
+make test-repo        # Repository-tooling tests (Makefile, signal handling, repo scripts; -m repo)
+make test-offline     # Every offline test (fast + repo) with coverage
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
 make integration      # Run-owned Docker project → integration tests → cleanup
@@ -96,9 +98,12 @@ make test-all         # tox across Python 3.10–3.14
 ### Test Commands (manual)
 
 ```bash
-# Offline (no DB needed) — this is the primary test command
-pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py \
+# Offline (no DB needed) — this is the primary test command (same as `make test`)
+pytest test/ -v -m "not integration and not repo" \
   --cov=sqlalchemy_cubrid --cov-report=term-missing --cov-fail-under=95
+
+# Repository-tooling tests (Makefile, signal handling, repo scripts; same as `make test-repo`)
+pytest test/ -v -m repo
 
 # Integration (requires Docker)
 docker compose up -d
@@ -361,8 +366,9 @@ Do not mark work complete until code, tests, and documentation are consistent.
 Issue titles, pull request titles and commit subjects follow
 [CONTRIBUTING.md - Pull request and commit titles](CONTRIBUTING.md#pull-request-and-commit-titles):
 `type(scope)!: description` with types `feat`, `fix`, `docs`, `test`, `perf`,
-`refactor`, `ci`, `build`, `chore`, `style`, `revert`; English, lowercase start,
-no trailing period, no issue numbers in pull request titles (use `Closes #N` /
+`refactor`, `ci`, `build`, `chore`, `style`, `revert`; English, lowercase start
+unless the first word is an API name, acronym, or proper noun; no trailing
+period, no issue numbers in pull request titles (use `Closes #N` /
 `Refs #N` in the body). Pull requests are squash-merged and the pull request
 title becomes the commit title. The `PR title` check enforces it.
 

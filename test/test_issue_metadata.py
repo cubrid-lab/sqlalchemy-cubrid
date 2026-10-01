@@ -19,6 +19,11 @@ _VALID = ("bug", "priority: high", "size: M", "area: protocol")
         ("fix(protocol): preserve cursor state", _VALID, ()),
         ("[Bug]: preserve cursor state", _VALID, ("title",)),
         ("fix: ", _VALID, ("title",)),
+        ("fix: resolve #12", _VALID, ("title",)),
+        ("fix: preserve state.", _VALID, ("title",)),
+        ("fix: WIP preserve state", _VALID, ("title",)),
+        ("fix: preserve state ", _VALID, ("title",)),
+        ("fix: preserve state\n", _VALID, ("title",)),
         ("fix: preserve cursor state", ("priority: high", "size: M"), ("type",)),
         (
             "fix: fail closed when the integration service is unavailable",
