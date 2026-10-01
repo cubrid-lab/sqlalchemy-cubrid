@@ -1556,13 +1556,21 @@ class CubridDialect(default.DefaultDialect):
         errors that carry neither a code nor an ``OSError`` cause (e.g.
         pycubrid's client-side "connection lost during receive").
 
-        Codes come from ``args[0]`` (CUBRIDdb) and, for pycubrid, from its
-        ``errno`` attribute; ``errno`` is matched against the server-session
-        codes (``_server_session_lost_codes``, #565) and the legacy-renumbered
+        Codes come only from where each driver structurally puts them:
+        an ``int`` ``args[0]`` (CUBRIDdb) and, for pycubrid, its ``errno``
+        attribute; ``errno`` is matched against the server-session codes
+        (``_server_session_lost_codes``, #565) and the legacy-renumbered
         CAS codes pycubrid receives (``_pycubrid_legacy_cas_codes``, #578).
+        No code is ever parsed out of message text: a message that starts
+        with a number (e.g. server text echoing application data) is just
+        text (#608).
+
         The message fallback reads the driver's own message (``args[0]``
         when it is a string), not pycubrid's ``str()`` with its code
-        description.
+        description. It is skipped for errors the server reported with a
+        code (a pycubrid ``errno``, or a CUBRIDdb server-range ``args[0]``):
+        their text is the server's message, which can quote application
+        data, so the code alone decides (#608).
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1588,6 +1596,8 @@ class CubridDialect(default.DefaultDialect):
         # there reach pycubrid legacy-renumbered instead, in
         # ``_pycubrid_legacy_cas_codes`` (#578).
         pycubrid_errno = getattr(e, "errno", None)
+        if not isinstance(pycubrid_errno, int) or isinstance(pycubrid_errno, bool):
+            pycubrid_errno = None
         if (
             pycubrid_errno in self._server_session_lost_codes
             or pycubrid_errno in self._pycubrid_legacy_cas_codes
@@ -1599,13 +1609,21 @@ class CubridDialect(default.DefaultDialect):
         if self._has_oserror_cause(e):
             return True
 
-        # 3. Message fallback for string-only driver errors that carry
-        #    neither a numeric code nor an OSError cause. Match the driver's
+        # 3. Message fallback for driver errors that carry neither a
+        #    disconnect code nor an OSError cause, e.g. pycubrid's code-less
+        #    "connection lost during receive". A server-reported error is
+        #    classified by its code alone: its text is the server's message,
+        #    which can quote application data (#608). pycubrid sets ``errno``
+        #    only for errors the CAS/server sent; CUBRIDdb's server codes are
+        #    above the CAS (-10xxx) and CCI (-20xxx) ranges, whose messages
+        #    are fixed driver text and stay matchable. Match the driver's
         #    own message: pycubrid's ``str()`` appends a description looked
         #    up from ``errno`` (-4 and -671 read "Communication error"), which
         #    must not decide the outcome. For any exception that does not
         #    override ``__str__`` a single string arg *is* ``str(e)``, and
         #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
+        if pycubrid_errno is not None or (error_code is not None and -10000 < error_code < 0):
+            return False
         if len(e.args) == 1 and isinstance(e.args[0], str):
             msg = e.args[0].lower()
         else:
@@ -1635,23 +1653,16 @@ class CubridDialect(default.DefaultDialect):
 
     @staticmethod
     def _extract_error_code(exception: Exception) -> Optional[int]:
-        """Extract a numeric error code from a CUBRID DBAPI exception.
+        """Return the CUBRIDdb error code in ``exception.args[0]``, or ``None``.
 
-        CUBRIDdb stores the error code in ``exception.args[0]``.
-        Returns ``None`` if no numeric code can be extracted.
+        CUBRIDdb raises ``(code, message)`` with an ``int`` code. A string
+        ``args[0]`` (pycubrid's message, or any other driver text) never
+        carries a code, even when it starts with a number (#608).
         """
         if exception.args:
             first_arg = exception.args[0]
-            if isinstance(first_arg, int):
+            if isinstance(first_arg, int) and not isinstance(first_arg, bool):
                 return first_arg
-            # Some errors embed the code at the start: "-20004 ..."
-            if isinstance(first_arg, str):
-                parts = first_arg.split(None, 1)
-                if parts:
-                    try:
-                        return int(parts[0])
-                    except (ValueError, IndexError):
-                        pass
         return None
 
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:

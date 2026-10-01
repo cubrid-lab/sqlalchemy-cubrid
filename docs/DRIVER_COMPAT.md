@@ -126,11 +126,14 @@ The dialect relies on these driver-specific APIs:
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int or str
+    code = e.args[0]  # int
 ```
 
-The dialect's `_extract_error_code()` handles both integer codes and string-embedded
-codes (e.g., `"-20004 Cannot communicate with server"`).
+The dialect's `_extract_error_code()` reads only an integer `args[0]`. A string
+`args[0]` never carries a code, even when it starts with a number (e.g.
+`"-20004 rows rejected ..."` quoted from application data); releases up to 1.8.0
+parsed such a leading number as a code and could invalidate a working connection
+(#608).
 
 pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in

@@ -1959,11 +1959,57 @@ class TestIsDisconnect:
         exc = RuntimeError("connection is closed")
         assert dialect.is_disconnect(exc, None, None) is False
 
-    def test_disconnect_error_code_in_string_arg(self, dialect_with_dbapi):
-        """is_disconnect() extracts numeric code from string like '-20004 msg'."""
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-20002 opaque",
+            "-10003 opaque",
+            "-111 opaque",
+            "-224 opaque",
+            "-1002 opaque",
+            "-4 opaque",
+        ],
+    )
+    def test_numeric_message_prefix_is_not_a_code(self, dialect_with_dbapi, message):
+        """A leading number in a message is text, not an error code (#608).
+
+        Neither driver puts a code at the start of its message: CUBRIDdb
+        passes the code as an ``int`` ``args[0]`` and pycubrid in ``errno``.
+        """
         dialect, dbapi = dialect_with_dbapi
-        assert dialect.is_disconnect(dbapi.DatabaseError("-20004 opaque"), None, None) is True
-        assert dialect.is_disconnect(dbapi.DatabaseError("-4 opaque"), None, None) is False
+        assert dialect.is_disconnect(dbapi.DatabaseError(message), None, None) is False
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "value 'connection refused' violates check constraint",
+            "row 'broken pipe' rejected",
+        ],
+    )
+    def test_server_error_message_does_not_override_cubriddb_code(
+        self, dialect_with_dbapi, message
+    ):
+        """A CUBRIDdb server (DBMS) error is classified by its code, not its text (#608).
+
+        The text after ``ERROR: DBMS, <code>,`` is the server's message, which
+        can echo application data.
+        """
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(-495, f"ERROR: DBMS, -495, {message}")
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_cci_code_outside_table_keeps_message_fallback(self, dialect_with_dbapi):
+        """CCI/CAS messages are fixed driver text, so they still match patterns."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.InterfaceError(-20038, "ERROR: CCI, -20038, Connection timed out")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_bool_arg_is_not_a_code(self, dialect_with_dbapi):
+        """``True``/``False`` in ``args[0]`` are not error codes."""
+        dialect, dbapi = dialect_with_dbapi
+        assert dialect.is_disconnect(dbapi.DatabaseError(True), None, None) is False
 
     def test_disconnect_with_empty_args(self, dialect_with_dbapi):
         """is_disconnect() handles exception with no args gracefully."""
@@ -2156,6 +2202,78 @@ class TestIsDisconnect:
         exc = pycubrid.OperationalError("opaque server message", code=errno, errno=errno)
         assert dialect.is_disconnect(exc, None, None) is expected
 
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-111 opaque",
+            "-1002 opaque",
+            "value 'connection refused' violates check constraint",
+            "row 'broken pipe' rejected",
+        ],
+    )
+    def test_server_error_message_does_not_override_pycubrid_errno(self, pycubrid_dialect, message):
+        """A pycubrid server error is classified by ``errno``, not its text (#608)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, message, -495)
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    @pytest.mark.parametrize(
+        ("exc_name", "message", "errno", "expected"),
+        [
+            # Issue #608's reproduction: structured errno, numeric-prefixed text.
+            ("DataError", "-20004 rows rejected by application validation", -495, False),
+            ("OperationalError", "-224 opaque", -495, False),
+            ("OperationalError", "Broken pipe in user data", -495, False),
+            # Real disconnects keep being detected.
+            ("OperationalError", "opaque server message", -224, True),
+            ("OperationalError", "connection lost during receive", None, True),
+            ("InterfaceError", "connection is closed", None, True),
+            (
+                "OperationalError",
+                "CAS did not answer CHECK_CAS out of transaction and reconnecting failed",
+                None,
+                True,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_message_classification(
+        self, variant, exc_name, message, errno, expected
+    ):
+        """Real pycubrid exceptions: text never overrides a structured ``errno`` (#608)."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc_cls = getattr(pycubrid, exc_name)
+        if errno is None:
+            exc = exc_cls(message)
+        else:
+            exc = exc_cls(message, code=errno, errno=errno)
+        assert dialect.is_disconnect(exc, None, None) is expected
+
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_oserror_cause_is_disconnect(self, variant):
+        """A real pycubrid error raised from a socket error disconnects."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = pycubrid.OperationalError("-20004 opaque")
+        exc.__cause__ = ConnectionResetError(104, "reset")
+        assert dialect.is_disconnect(exc, None, None) is True
+
     def test_pycubrid_failed_reconnect_is_disconnect(self, pycubrid_dialect):
         """pycubrid's failed CHECK_CAS reconnect leaves the connection closed."""
         dialect, dbapi = pycubrid_dialect
@@ -2173,10 +2291,14 @@ class TestExtractErrorCode:
         exc = Exception(-20004)
         assert CubridDialect._extract_error_code(exc) == -20004
 
-    def test_string_with_embedded_code(self):
-        """Extracts error code from string like '-20004 message'."""
+    def test_string_with_leading_number_is_not_a_code(self):
+        """A message that starts with a number carries no code (#608)."""
         exc = Exception("-20004 Cannot communicate")
-        assert CubridDialect._extract_error_code(exc) == -20004
+        assert CubridDialect._extract_error_code(exc) is None
+
+    def test_bool_arg_is_not_a_code(self):
+        """``bool`` is an ``int`` subclass but never an error code."""
+        assert CubridDialect._extract_error_code(Exception(True)) is None
 
     def test_string_without_code(self):
         """Returns None for string without leading number."""
