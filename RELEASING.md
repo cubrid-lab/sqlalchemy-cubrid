@@ -207,21 +207,25 @@ PyPI or in this repository's tags/Releases), `verify-cookbook` success,
 `summary` success with final state `dry run passed; nothing published;
 cookbook verification success`.
 
-Build artifact SHA-256 (built fresh by this run, not uploaded anywhere;
-recorded here only as dry-run evidence, 14-day run-artifact retention):
+Build artifact SHA-256 (built fresh by this run and uploaded only as the
+14-day `release-dist` run artifact, never to PyPI; recorded here as
+dry-run evidence):
 
 ```
 ed8fd12ef6b8b1f4d2ad833eeca2d794bb29b6cb7a3232fd1669bbcdeb1fe74c  sqlalchemy_cubrid-1.8.0-py3-none-any.whl
 09c065db710ab93720e65d329b6c38efa8a7b01977b9ae25d89ce1279632c9be  sqlalchemy_cubrid-1.8.0.tar.gz
 ```
 
-**Limit:** `verify-cookbook` on a `dry-run` installs the already-published
-`sqlalchemy-cubrid==1.8.0` from PyPI (the cookbook's release verification
-contract only ever installs from PyPI), never the wheel this dry run just
-built. A passing dry run shows that `consistency`, the full matrix, `build`
-and the cookbook-call plumbing still work at this commit; it does not prove
-that an unpublished, not-yet-released wheel installs cleanly — only
-`publish` followed by its own `verify-cookbook` does that.
+**Limit:** the `build` job's own smoke tests do install the freshly built
+wheel and sdist into clean virtual environments and check their imports,
+metadata, entry points and the `py.typed` marker, so a passing dry run
+proves the fresh artifacts install cleanly. What it does not prove is that
+those fresh artifacts pass the cookbook suite: `verify-cookbook` on a
+`dry-run` installs the already-published `sqlalchemy-cubrid==1.8.0` from
+PyPI (the cookbook's release verification contract only ever installs from
+PyPI), never the wheel this dry run just built. Only `publish` followed by
+its own `verify-cookbook` verifies the newly built artifact through the
+cookbook.
 
 ## Repository settings this relies on
 
