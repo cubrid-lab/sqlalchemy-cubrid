@@ -23,6 +23,7 @@ server does, so the tests describe the requests and results, not the SQL text.
 from __future__ import annotations
 
 import os
+import time
 from typing import Any
 
 import pytest
@@ -45,7 +46,14 @@ class _Rows(list[Any]):
 
 class _Connection:
     """Answers the reflection queries for one table from index flags
-    ``(index_name, is_unique, is_primary_key, is_foreign_key)``."""
+    ``(index_name, is_unique, is_primary_key, is_foreign_key)``.
+
+    *owner* is the owner of the class ``db_class`` returns for the name, and
+    *current_user* the connected user. Like CUBRID 11.2+, an unqualified
+    ``SHOW ...`` resolves in the current user's schema, so when the two differ
+    it fails with ``Unknown class``; ``schema_scoped=False`` models the global
+    class names of 10.2 / 11.0.
+    """
 
     def __init__(
         self,
@@ -55,31 +63,55 @@ class _Connection:
         ddl: str = "CREATE TABLE [t] ([id] INTEGER)",
         show_indexes: tuple[tuple[Any, ...], ...] = (),
         fail_catalog: bool = False,
+        fail_show_create: bool = False,
+        owner: str = "DBA",
+        current_user: str = "DBA",
+        schema_scoped: bool = True,
     ) -> None:
         self.indexes = indexes
         self.class_type = class_type
         self.ddl = ddl
         self.show_indexes = show_indexes
         self.fail_catalog = fail_catalog
+        self.fail_show_create = fail_show_create
+        self.owner = owner
+        self.current_user = current_user
+        self.schema_scoped = schema_scoped
         self.statements: list[str] = []
+
+    def _check_show(self) -> None:
+        if self.schema_scoped and self.owner != self.current_user:
+            raise Exception(f'Unknown class "{self.current_user.lower()}.t".')
 
     def execute(self, statement: Any, params: Any = None) -> _Rows:
         sql = " ".join(str(statement).split())
         self.statements.append(sql)
         if "FROM db_class" in sql:
-            return _Rows([] if self.class_type is None else [(self.class_type, "DBA")])
+            return _Rows([] if self.class_type is None else [(self.class_type, self.owner)])
         if "FROM db_index" in sql:
             if self.fail_catalog:
                 raise RuntimeError("db_index query failed")
+            if params and params.get("owner", self.owner) != self.owner:
+                return _Rows([])
+            select = sql.split(" FROM ", 1)[0]
+            extra = (self.current_user,) if "CURRENT_USER" in select else ()
             if "is_unique = 'YES'" in sql:
                 # A query that filters unique, non-PK, non-FK indexes itself.
                 return _Rows(
-                    [(name,) for name, *flags in self.indexes if flags == ["YES", "NO", "NO"]]
+                    [
+                        (name, *extra)
+                        for name, *flags in self.indexes
+                        if flags == ["YES", "NO", "NO"]
+                    ]
                 )
-            return _Rows([index for index in self.indexes])
+            return _Rows([(*index, *extra) for index in self.indexes])
         if sql.startswith("SHOW INDEXES IN"):
+            self._check_show()
             return _Rows(self.show_indexes)
         if sql.startswith("SHOW CREATE TABLE"):
+            self._check_show()
+            if self.fail_show_create:
+                raise RuntimeError("SHOW CREATE TABLE failed")
             return _Rows([("t", self.ddl)])
         raise AssertionError(f"Unexpected SQL: {sql!r}")
 
@@ -90,6 +122,12 @@ class _Connection:
 @pytest.fixture
 def dialect() -> CubridDialect:
     return CubridDialect()
+
+
+def _dialect(version: tuple[int, ...]) -> CubridDialect:
+    dialect = CubridDialect()
+    dialect.server_version_info = version
+    return dialect
 
 
 @pytest.mark.parametrize(
@@ -237,3 +275,134 @@ def test_live_missing_table(live_engine: Any) -> None:
     with live_engine.connect() as connection:
         with pytest.raises(NoSuchTableError):
             sa.inspect(connection).get_unique_constraints("ucf_missing")
+
+
+@pytest.mark.parametrize("version", [(11, 2, 9), (11, 4, 6)])
+@pytest.mark.parametrize("indexes", [(PK,), ()], ids=["pk", "no_index"])
+def test_other_owners_class_still_raises_on_11_2(
+    version: tuple[int, ...], indexes: tuple[tuple[str, str, str, str], ...]
+) -> None:
+    """11.2+: ``db_class`` may resolve the name to another owner's class (a
+    granted table, or one the current user does not own). The catalog lists
+    its indexes, but ``SHOW ...`` resolves the unqualified name in the current
+    user's schema, so the DDL path still raises ``NoSuchTableError`` as before
+    #610 instead of the catalog reporting ``[]``."""
+    connection = _Connection(indexes, owner="DBA", current_user="RVU629")
+    with pytest.raises(NoSuchTableError):
+        _dialect(version).get_unique_constraints(connection, "t")
+    assert connection.count("SHOW CREATE TABLE") == 1
+
+
+@pytest.mark.parametrize("version", [(11, 2, 9), (11, 4, 6)])
+def test_own_class_skips_ddl_on_11_2(version: tuple[int, ...]) -> None:
+    connection = _Connection((PK,), owner="RVU629", current_user="RVU629")
+    assert _dialect(version).get_unique_constraints(connection, "t") == []
+    assert connection.count("SHOW CREATE TABLE") == 0
+
+
+@pytest.mark.parametrize("version", [(10, 2, 18), (11, 0, 16)])
+def test_granted_class_skips_ddl_before_11_2(version: tuple[int, ...]) -> None:
+    """Before 11.2 class names are global, so a granted table's catalog
+    entry is the table ``SHOW ...`` reads: the verified-empty skip applies."""
+    connection = _Connection((PK,), owner="DBA", current_user="RVU629", schema_scoped=False)
+    assert _dialect(version).get_unique_constraints(connection, "t") == []
+    assert connection.count("SHOW CREATE TABLE") == 0
+
+
+def test_pk_table_with_failing_show_create_table_gets_empty_list(
+    dialect: CubridDialect,
+) -> None:
+    """A verified-empty catalog does not depend on ``SHOW CREATE TABLE``: a
+    PK-only table still reflects ``[]`` when that statement would fail."""
+    connection = _Connection((PK,), fail_show_create=True)
+    assert dialect.get_unique_constraints(connection, "t") == []
+
+
+# A fixed-name user (#607): leftovers of an interrupted run are dropped first.
+_USER = "ucf610"
+
+
+def _drop_user(dba: sa.Engine, qualified_table: str) -> None:
+    for attempt in range(5):
+        with dba.begin() as connection:
+            exists = connection.execute(
+                sa.text("SELECT 1 FROM db_user WHERE name = :name"), {"name": _USER.upper()}
+            ).first()
+            if exists is None:
+                return
+            connection.exec_driver_sql(f"DROP TABLE IF EXISTS {qualified_table}")
+        try:
+            with dba.begin() as connection:
+                connection.exec_driver_sql(f"DROP USER {_USER}")
+            return
+        except Exception as error:
+            # The broker may not have released the user's session yet (-1188).
+            if "-1188" not in str(error) or attempt == 4:
+                raise
+            time.sleep(0.2)
+
+
+@pytest.fixture
+def live_users(live_engine: sa.Engine):  # noqa: ANN201
+    """``ucf_pk`` (DBA's, PK only) granted to user ``ucf610``, who owns the
+    PK-only table ``ucf_own_pk``. Yields ``(user_engine, schema_scoped)``;
+    *schema_scoped* is whether names are per owner (CUBRID 11.2+)."""
+    with live_engine.connect() as connection:
+        version = connection.dialect.server_version_info
+    schema_scoped = version is not None and version >= (11, 2)
+    own_table = f"{_USER}.ucf_own_pk" if schema_scoped else "ucf_own_pk"
+    _drop_user(live_engine, own_table)
+    with live_engine.begin() as connection:
+        connection.exec_driver_sql(f"CREATE USER {_USER} PASSWORD 'ucf610pw'")
+        connection.exec_driver_sql(f"GRANT SELECT ON ucf_pk TO {_USER}")
+    url = sa.engine.make_url(os.environ["CUBRID_TEST_URL"]).set(username=_USER, password="ucf610pw")
+    user_engine = sa.create_engine(url)
+    try:
+        with user_engine.begin() as connection:
+            connection.exec_driver_sql("CREATE TABLE ucf_own_pk (id INT PRIMARY KEY)")
+        yield user_engine, schema_scoped
+    finally:
+        user_engine.dispose()
+        _drop_user(live_engine, own_table)
+
+
+def _reflect_unique(engine: sa.Engine, table: str) -> tuple[Any, list[str]]:
+    """Return ``get_unique_constraints(table)`` (or the exception class it
+    raised) and the statements it issued."""
+    statements: list[str] = []
+
+    def record(conn, cursor, statement, parameters, context, executemany):  # noqa: ANN001, ANN202
+        statements.append(statement)
+
+    with engine.connect() as connection:
+        sa.event.listen(connection, "before_cursor_execute", record)
+        try:
+            result: Any = sa.inspect(connection).get_unique_constraints(table)
+        except NoSuchTableError:
+            result = NoSuchTableError
+    return result, statements
+
+
+@pytest.mark.integration
+def test_live_other_owner_classes(live_engine: sa.Engine, live_users: Any) -> None:
+    """On 11.2+ a name that resolves to another owner's class (a granted
+    table, or for DBA a table only another user owns) still raises
+    ``NoSuchTableError`` through the DDL path, as before #610; before 11.2
+    names are global and both reflect ``[]`` from the catalog."""
+    user_engine, schema_scoped = live_users
+    expected = NoSuchTableError if schema_scoped else []
+    for engine, table in ((user_engine, "ucf_pk"), (live_engine, "ucf_own_pk")):
+        result, statements = _reflect_unique(engine, table)
+        assert result == expected, (table, statements)
+        assert any(s.startswith("SHOW CREATE TABLE") for s in statements) is schema_scoped
+    with user_engine.connect() as connection:
+        reflected = sa.inspect(connection).get_multi_unique_constraints()
+    assert ((None, "ucf_pk") in reflected) is not schema_scoped
+
+
+@pytest.mark.integration
+def test_live_own_table_as_non_dba(live_engine: sa.Engine, live_users: Any) -> None:
+    user_engine, _ = live_users
+    result, statements = _reflect_unique(user_engine, "ucf_own_pk")
+    assert result == []
+    assert len(statements) == 2, statements
