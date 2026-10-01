@@ -3147,6 +3147,20 @@ lock until the transaction commits. Be aware:
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
 
+### Foreign key referential actions in autogenerate
+
+CUBRID's default `ON DELETE` / `ON UPDATE` action is `RESTRICT`, and
+`SHOW CREATE TABLE` always prints it, so `inspect(...).get_foreign_keys()`
+reports a foreign key created without actions as
+`{"ondelete": "RESTRICT", "onupdate": "RESTRICT"}`. Reflection keeps reporting
+what the server says. For autogenerate, `CubridImpl` treats that reflected
+`RESTRICT` as equal to a model `ForeignKey` with no `ondelete` / `onupdate`
+(#597), so an unchanged foreign key produces no `drop_constraint` /
+`create_foreign_key` pair, whether the model leaves the action out or names
+`RESTRICT`. Any other change is still detected: adding `ondelete="CASCADE"`,
+removing it again, or switching to `SET NULL`. CUBRID prints `NO ACTION`
+as `NO ACTION`; Alembic itself treats it as equal to no action.
+
 ### `alter_column()` behavior
 
 The CUBRID Alembic implementation maps `alter_column()` to native CUBRID DDL:

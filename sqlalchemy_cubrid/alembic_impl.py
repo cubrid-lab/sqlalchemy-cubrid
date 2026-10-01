@@ -391,6 +391,44 @@ class CubridImpl(DefaultImpl):
             **kw,
         )
 
+    def correct_for_autogen_foreignkeys(
+        self,
+        conn_fks: set[sa.ForeignKeyConstraint],
+        metadata_fks: set[sa.ForeignKeyConstraint],
+    ) -> None:
+        """Treat a reflected ``RESTRICT`` as the default referential action (#597).
+
+        CUBRID's default for ``ON DELETE`` / ``ON UPDATE`` is ``RESTRICT``
+        and ``SHOW CREATE TABLE`` always prints it, so a foreign key created
+        without actions reflects as ``ondelete="RESTRICT"`` /
+        ``onupdate="RESTRICT"``. Where the matching model foreign key has no
+        action, clear the reflected ``RESTRICT`` so autogenerate does not
+        drop and re-create an unchanged constraint. Reflection itself stays
+        truthful; other actions (including ``NO ACTION``, which CUBRID
+        prints as such) still compare as they are.
+        """
+        metadata_by_key = {self._fk_match_key(fk): fk for fk in metadata_fks}
+        for conn_fk in conn_fks:
+            metadata_fk = metadata_by_key.get(self._fk_match_key(conn_fk))
+            if metadata_fk is None:
+                continue
+            for option in ("ondelete", "onupdate"):
+                conn_action = getattr(conn_fk, option)
+                if (
+                    getattr(metadata_fk, option) is None
+                    and conn_action is not None
+                    and conn_action.upper() == "RESTRICT"
+                ):
+                    setattr(conn_fk, option, None)
+
+    @staticmethod
+    def _fk_match_key(fk: sa.ForeignKeyConstraint) -> tuple[Any, ...]:
+        """Identify a foreign key by its columns, ignoring name and actions."""
+        return (
+            tuple(fk.columns[key].name for key in fk.column_keys),
+            tuple((element.column.table.name, element.column.name) for element in fk.elements),
+        )
+
     @classmethod
     def _is_unbounded_string_match(
         cls, inspector_type: TypeEngine[Any], metadata_type: TypeEngine[Any]
