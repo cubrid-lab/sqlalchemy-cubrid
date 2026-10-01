@@ -1830,6 +1830,12 @@ class TestDoExecutemany:
         assert CubridDialect.supports_sane_multi_rowcount is True
 
 
+def _with_errno(exc: Exception, errno: int) -> Exception:
+    """Attach a pycubrid-style ``errno`` to *exc*."""
+    setattr(exc, "errno", errno)
+    return exc
+
+
 class TestIsDisconnect:
     """Tests for CubridDialect.is_disconnect() error detection."""
 
@@ -1879,7 +1885,6 @@ class TestIsDisconnect:
             "Connection refused on port 33000",
             "connection was killed by admin",
             "Failed to connect to host",
-            "connection lost during receive",  # pycubrid sync clean-EOF (#322)
         ],
     )
     def test_disconnect_message_patterns(self, dialect_with_dbapi, message):
@@ -2028,8 +2033,10 @@ class TestIsDisconnect:
 
     @pytest.fixture()
     def pycubrid_dialect(self):
-        """Dialect with a pycubrid-style dbapi (full PEP 249 hierarchy)."""
-        dialect = CubridDialect()
+        """pycubrid dialect with a pycubrid-style dbapi (full PEP 249 hierarchy)."""
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        dialect = PyCubridDialect()
         dbapi = MagicMock()
 
         class Error(Exception):
@@ -2051,6 +2058,51 @@ class TestIsDisconnect:
 
         dialect.dbapi = dbapi
         return dialect, dbapi
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "connection lost during receive",  # pycubrid sync clean-EOF (#322)
+            "CAS did not answer CHECK_CAS out of transaction and reconnecting failed",  # #565
+        ],
+    )
+    def test_pycubrid_message_patterns(self, pycubrid_dialect, message):
+        """pycubrid's own client-side messages disconnect on the pycubrid dialects."""
+        dialect, dbapi = pycubrid_dialect
+        assert dialect.is_disconnect(dbapi.OperationalError(message), None, None) is True
+
+    @pytest.mark.parametrize(
+        "make_error",
+        [
+            pytest.param(
+                lambda dbapi: _with_errno(dbapi.DatabaseError("opaque"), -224), id="errno"
+            ),
+            pytest.param(
+                lambda dbapi: _with_errno(dbapi.DatabaseError("opaque"), -1002), id="legacy-cas"
+            ),
+            pytest.param(
+                lambda dbapi: dbapi.DatabaseError("connection lost during receive"),
+                id="connection-lost",
+            ),
+            pytest.param(
+                lambda dbapi: dbapi.DatabaseError("reconnecting failed"), id="reconnecting-failed"
+            ),
+        ],
+    )
+    def test_pycubrid_policy_stays_out_of_cubriddb_dialect(self, dialect_with_dbapi, make_error):
+        """The CUBRIDdb dialect reads only CUBRIDdb's error shapes (#596).
+
+        pycubrid's ``errno`` and client-side messages are pycubrid policy;
+        CUBRIDdb's exceptions carry neither (its code is ``args[0]``).
+        """
+        dialect, dbapi = dialect_with_dbapi
+        assert dialect.is_disconnect(make_error(dbapi), None, None) is False
+
+    @pytest.mark.parametrize("error_code", [-20004, -10002, -224])
+    def test_pycubrid_dialect_keeps_args_code_matching(self, pycubrid_dialect, error_code):
+        """The pycubrid dialects still match an ``int`` ``args[0]`` code, as before #596."""
+        dialect, dbapi = pycubrid_dialect
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code, "opaque"), None, None) is True
 
     def test_interrupted_query_is_not_disconnect_pycubrid(self, pycubrid_dialect):
         """pycubrid's errno -4 is the server's ER_INTERRUPTED, not a lost connection (#572)."""

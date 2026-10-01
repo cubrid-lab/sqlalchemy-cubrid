@@ -180,9 +180,12 @@ class PyCubridDialect(CubridDialect):
     Connection URL: ``cubrid+pycubrid://user:password@host:port/dbname``
 
     This dialect subclasses :class:`CubridDialect` and overrides only
-    the driver-specific methods: ``import_dbapi``, ``create_connect_args``,
-    ``on_connect``, ``do_executemany``, and ``do_ping``.  All SQL
-    compilation, type mapping, and schema reflection is inherited unchanged.
+    the driver-specific policy: ``import_dbapi``, ``create_connect_args``,
+    ``on_connect``, transaction isolation re-apply, ``do_executemany``,
+    ``do_ping``, and the pycubrid part of disconnect classification
+    (``errno`` codes and client-side messages).  All SQL compilation, type
+    mapping, and schema reflection is inherited unchanged.  The async
+    ``aiopycubrid`` dialect inherits all of it.
     """
 
     driver = "pycubrid"
@@ -369,6 +372,55 @@ class PyCubridDialect(CubridDialect):
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:
         """Ping using native pycubrid CHECK_CAS (FC=32). Requires pycubrid>=1.3.2."""
         return bool(dbapi_connection.ping(False))
+
+    # ----- Disconnect classification (pycubrid part; see CubridDialect.is_disconnect) -----
+
+    # pycubrid's client-side messages for a connection it has given up on,
+    # matched in addition to the shared patterns.
+    _disconnect_messages = CubridDialect._disconnect_messages + (
+        "connection lost",  # "connection lost during receive" (#322)
+        # pycubrid closes the connection when its CHECK_CAS reconnect fails
+        # ("CAS did not answer CHECK_CAS out of transaction and reconnecting
+        # failed"), e.g. an idle connection while cub_server is down (#565).
+        "reconnecting failed",
+    )
+
+    # pycubrid doesn't negotiate CUBRID's renewed CAS/CCI error-code protocol
+    # (the -10xxx/-20xxx numbering in ``CubridDialect._disconnect_error_codes``),
+    # so the CAS answers it with the legacy, unprefixed codes instead -- e.g.
+    # -4 for ``ER_INTERRUPTED``, the same code CUBRID's server uses internally
+    # (``error_code.h``). pycubrid keeps that legacy code in ``errno``, not in
+    # ``args[0]``. This applies to server codes (``error_code.h``, e.g. -4); a
+    # *CAS* code (``cas_error.h``, sent with ``CAS_ERROR_INDICATOR``) is
+    # instead legacy-renumbered by the CAS itself, from -10xxx to -1xxx:
+    # CUBRID's ``CAS_CONV_ERROR_TO_OLD`` (``src/broker/cas_protocol.h``) adds
+    # 9000, so e.g. CAS_ER_COMMUNICATION reaches pycubrid as -1003, not
+    # -10003. pycubrid never advertises understanding the renewed protocol
+    # (no ``driver_info`` flags in its handshake). -1002 is legacy
+    # CAS_ER_NO_MORE_MEMORY (-10002 + 9000); see
+    # ``CubridDialect._disconnect_error_codes`` for what it means and why it
+    # disconnects (#578).
+    _pycubrid_legacy_cas_codes = frozenset(
+        {
+            -1002,  # legacy CAS_ER_NO_MORE_MEMORY
+        }
+    )
+
+    def _has_disconnect_code(self, e: Exception) -> bool:
+        """Also match pycubrid's ``errno`` (its ``args`` hold only the message).
+
+        ``errno`` is matched against the server-session codes
+        (``_server_session_lost_codes``, #565) and the legacy-renumbered CAS
+        codes pycubrid receives (``_pycubrid_legacy_cas_codes``, #578). An
+        ``errno`` of -4 is the server's ER_INTERRUPTED (an interrupted query),
+        not a disconnect.
+        """
+        if super()._has_disconnect_code(e):
+            return True
+        errno = getattr(e, "errno", None)
+        if not isinstance(errno, int) or isinstance(errno, bool):
+            return False
+        return errno in self._server_session_lost_codes or errno in self._pycubrid_legacy_cas_codes
 
 
 dialect = PyCubridDialect
