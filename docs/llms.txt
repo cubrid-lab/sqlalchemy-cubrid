@@ -16,7 +16,7 @@ Key facts:
 - No sequences (`AUTO_INCREMENT` instead); `Boolean` is stored as `SMALLINT`; collection types `SET`, `MULTISET`, `SEQUENCE` instead of arrays
 - Single-schema reflection: only the connection's default schema is recognised; other `schema=` values reflect as missing
 - DDL is transactional: `ROLLBACK` undoes it and it never commits earlier DML; only client autocommit (off by default in the dialect) commits it early. Alembic runs a whole upgrade in one transaction (`transactional_ddl = True`); use `transaction_per_migration=True` for long or large-table migrations
-- Alembic finds the CUBRID implementation with an unmodified `env.py`: Alembic 1.18+ loads it through the `alembic.plugins` entry point (`sqlalchemy_cubrid.alembic_plugin`), so the dialect does not import Alembic; with Alembic 1.7.2–1.17 the dialect imports it when loaded
+- Alembic finds the CUBRID implementation with an unmodified `env.py`: Alembic 1.18+ loads it through the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic`), so the dialect does not import Alembic; with Alembic 1.7.2–1.17 the dialect imports it when loaded
 - Unquoted identifiers fold to lowercase (not uppercase like the SQL standard)
 - CUBRID does not enforce `CHECK` constraints; reflection returns none
 - Tested against CUBRID 10.2, 11.0, 11.2 and 11.4

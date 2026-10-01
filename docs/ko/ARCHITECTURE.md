@@ -206,7 +206,7 @@ CUBRID 전용 타입 시스템을 구현하며, SQLAlchemy의 일반 타입을 `
 SQLAlchemy 테스트 스위트가 CUBRID 백엔드에서 어떤 동작 테스트를 실행할지 결정하는 기능 플래그를 정의합니다.
 
 #### `alembic_impl.py`
-Alembic용 `CubridImpl` 클래스를 제공해 DDL 마이그레이션 지원을 가능하게 하고, CUBRID의 DDL이 트랜잭션으로 처리됨을 선언합니다(`transactional_ddl = True`). Alembic 1.18+는 `alembic.plugins` 엔트리 포인트(`alembic_plugin.py`)를 통해 이를 임포트하고, 이전 Alembic에서는 `dialect.py`가 임포트합니다.
+Alembic용 `CubridImpl` 클래스를 제공해 DDL 마이그레이션 지원을 가능하게 하고, CUBRID의 DDL이 트랜잭션으로 처리됨을 선언합니다(`transactional_ddl = True`). Alembic 1.18+는 `alembic.plugins` 엔트리 포인트(`_sqlalchemy_cubrid_alembic.py`)를 통해 이를 임포트하고, 이전 Alembic에서는 `dialect.py`가 임포트합니다.
 
 ## 방언 발견
 

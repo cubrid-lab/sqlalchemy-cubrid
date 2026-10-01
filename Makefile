@@ -7,7 +7,7 @@ MYPY = $(PYTHON) -m mypy
 BANDIT = bandit
 SRC = sqlalchemy_cubrid
 TESTS = test
-LINT_PATHS = $(SRC) $(TESTS) scripts demos samples docs/source
+LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples docs/source
 # make integration: the driver the suite connects with (pycubrid, the recommended
 # pure-Python driver, via cubrid+pycubrid://; or cubriddb, the CUBRIDdb C extension,
 # via cubrid://), host port for the run-owned CUBRID container, an optional fixed
@@ -61,10 +61,10 @@ format: ## Auto-fix lint issues and format code
 
 typecheck: ## Run mypy type checking
 	$(PYTHON) -c 'import platform; from importlib.metadata import version; print("Python:", platform.python_version()); [print(name + ":", version(name)) for name in ("SQLAlchemy", "alembic", "mypy")]'
-	$(MYPY) $(SRC)/ --config-file=pyproject.toml
+	$(MYPY) $(SRC)/ _sqlalchemy_cubrid_alembic.py --config-file=pyproject.toml
 
 security: ## Run security scans (bandit)
-	$(BANDIT) -r $(SRC)/ -c pyproject.toml
+	$(BANDIT) -r $(SRC)/ _sqlalchemy_cubrid_alembic.py -c pyproject.toml
 
 check: lint typecheck ## Run lint + typecheck
 

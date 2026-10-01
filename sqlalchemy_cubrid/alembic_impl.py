@@ -12,7 +12,7 @@ Alembic migrations against a CUBRID database.  Alembic keys its
 implementations by dialect name, and ``DefaultImpl`` subclasses register
 themselves on import via ``__dialect__``.  Alembic 1.18+ imports this module
 through the ``alembic.plugins`` entry point
-(:mod:`sqlalchemy_cubrid.alembic_plugin`); with Alembic 1.7.2-1.17
+(:mod:`_sqlalchemy_cubrid_alembic`); with Alembic 1.7.2-1.17
 ``sqlalchemy_cubrid.dialect`` imports it.  Either way every CUBRID URL
 (``cubrid://``, ``cubrid+pycubrid://``, ``cubrid+aiopycubrid://``) finds it.
 

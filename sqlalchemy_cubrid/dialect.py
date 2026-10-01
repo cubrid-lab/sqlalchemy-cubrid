@@ -1680,7 +1680,7 @@ def _alembic_loads_cubrid_plugin() -> bool:
 
     Alembic 1.18 and later load the ``alembic.plugins`` entry point group on
     ``import alembic``, and sqlalchemy-cubrid publishes
-    :mod:`sqlalchemy_cubrid.alembic_plugin` there (#595).  This checks
+    :mod:`_sqlalchemy_cubrid_alembic` there (#595).  This checks
     installed metadata only, so it never imports Alembic.  Any doubt (Alembic
     already imported, an unparsable version, metadata that does not belong to
     the importable ``alembic`` package, sqlalchemy-cubrid imported from
@@ -1704,7 +1704,7 @@ def _alembic_loads_cubrid_plugin() -> bool:
         ):
             return False
         return any(
-            ep.group == "alembic.plugins" and ep.value == "sqlalchemy_cubrid.alembic_plugin"
+            ep.group == "alembic.plugins" and ep.value == "_sqlalchemy_cubrid_alembic"
             for ep in importlib.metadata.distribution("sqlalchemy-cubrid").entry_points
         )
     except Exception:

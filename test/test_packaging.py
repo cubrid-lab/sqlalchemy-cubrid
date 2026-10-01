@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import importlib.resources
+import sys
 from pathlib import Path
 from typing import cast
 
@@ -51,7 +52,6 @@ class TestModuleImports:
             "sqlalchemy_cubrid.pycubrid_dialect",
             "sqlalchemy_cubrid.aio_pycubrid_dialect",
             "sqlalchemy_cubrid.alembic_impl",
-            "sqlalchemy_cubrid.alembic_plugin",
             "sqlalchemy_cubrid.trace",
             "sqlalchemy_cubrid.requirements",
         ],
@@ -109,7 +109,26 @@ class TestEntryPoints:
         pyproject_text = _read_pyproject()
 
         assert '[project.entry-points."alembic.plugins"]' in pyproject_text
-        assert 'sqlalchemy_cubrid = "sqlalchemy_cubrid.alembic_plugin"' in pyproject_text
+        assert 'sqlalchemy_cubrid = "_sqlalchemy_cubrid_alembic"' in pyproject_text
+        assert 'py-modules = ["_sqlalchemy_cubrid_alembic"]' in pyproject_text
+
+    def test_alembic_plugin_shim_imports_only_the_standard_library(self):
+        # Alembic does not guard the entry point load (#595): the shim must
+        # load even when the sqlalchemy_cubrid package cannot be imported.
+        import ast
+
+        tree = ast.parse((PROJECT_ROOT / "_sqlalchemy_cubrid_alembic.py").read_text())
+        imported = {
+            alias.name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            node.module.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module
+        }
+        assert imported <= set(sys.stdlib_module_names) | {"__future__"}
 
     @pytest.mark.parametrize(
         ("entry_name", "expected_module", "expected_class_name"),

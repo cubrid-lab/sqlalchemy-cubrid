@@ -185,7 +185,7 @@ Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이
 
 | Alembic | `alembic_impl`을 임포트하는 주체 | 시점 |
 |---|---|---|
-| 1.18 이상 | sqlalchemy-cubrid가 게시하는 `alembic.plugins` 엔트리 포인트(`sqlalchemy_cubrid.alembic_plugin`)를 통해 Alembic이 | `import alembic` 중 |
+| 1.18 이상 | sqlalchemy-cubrid가 게시하는 `alembic.plugins` 엔트리 포인트(`_sqlalchemy_cubrid_alembic`)를 통해 Alembic이 | `import alembic` 중 |
 | 1.7.2 – 1.17.x | `sqlalchemy_cubrid/dialect.py` | CUBRID 방언을 로드할 때(엔진 생성 시, 오프라인 `--sql` 모드에서는 URL로 방언을 만들 때) |
 
 어느 경우든 `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다. Alembic이 없으면 아무것도 등록하거나 기록하지 않습니다.
@@ -202,7 +202,7 @@ logging.getLogger("alembic").setLevel(logging.WARNING)
 
 Alembic 1.18.0은 이 줄을 이름이 문자 그대로 `__name__`인 로거(`logging.getLogger("__name__")`, 1.18.1에서 수정)로 남기므로, 위 설정으로는 그 릴리스에서 숨겨지지 않습니다. 1.18.1 이상으로 업그레이드하거나 `logging.getLogger("__name__")`의 레벨도 `WARNING`으로 올리세요.
 
-Alembic 1.18 – 1.20은 `alembic.plugins` 엔트리 포인트를 `for mod in entrypoint.load()`로 로드하지만, Alembic 문서는 엔트리 포인트 값을 플러그인 모듈 자체로 설명합니다. 일반 모듈은 반복할 수 없으므로 문서의 형태는 모든 `import alembic`을 `TypeError`로 실패시킵니다. `sqlalchemy_cubrid.alembic_plugin`은 자기 자신을 내놓는 반복 가능한 모듈이라 두 방식 모두에서 동작합니다. 그 `setup()`은 어떤 실패도 예외 대신 `RuntimeWarning`(`-W error`에서는 `sqlalchemy_cubrid.alembic_plugin` 로거의 로그 레코드)으로 바꾸므로, 같은 환경의 다른 프로젝트에서 `import alembic`을 깨뜨릴 수 없습니다. 그래도 등록에 실패하면 Alembic은 `KeyError: 'cubrid'`를 보고하며, `env.py`에서 `sqlalchemy_cubrid.alembic_impl`을 임포트하면 `CubridImpl`이 직접 등록됩니다.
+Alembic 1.18 – 1.20은 `alembic.plugins` 엔트리 포인트를 `for mod in entrypoint.load()`로 로드하지만, Alembic 문서는 엔트리 포인트 값을 플러그인 모듈 자체로 설명합니다. 일반 모듈은 반복할 수 없으므로 문서의 형태는 모든 `import alembic`을 `TypeError`로 실패시킵니다. `_sqlalchemy_cubrid_alembic`은 자기 자신을 내놓는 반복 가능한 모듈이라 두 방식 모두에서 동작합니다. Alembic은 엔트리 포인트 로드를 보호하지 않으므로, 플러그인은 표준 라이브러리만 임포트하는 최상위 모듈입니다. 이를 로드해도 `sqlalchemy_cubrid` 패키지는 임포트되지 않으며, 그 패키지의 임포트는 실패할 수 있습니다(예: 지원하지 않는 SQLAlchemy를 그 위에 설치한 경우). 그 `setup()`은 `sqlalchemy_cubrid.alembic_impl`을 임포트하며 어떤 실패도 예외 대신 `RuntimeWarning`(`-W error`에서는 `_sqlalchemy_cubrid_alembic` 로거의 로그 레코드)으로 바꾸므로, 같은 환경의 다른 프로젝트에서 `import alembic`을 깨뜨릴 수 없습니다. 그래도 등록에 실패하면 Alembic은 `KeyError: 'cubrid'`를 보고하며, `env.py`에서 `sqlalchemy_cubrid.alembic_impl`을 임포트하면 `CubridImpl`이 직접 등록됩니다.
 
 Alembic이 설치되어 있지만 임포트에 실패하면(예: SQLAlchemy 2.x에서 `NameError`를 내는 Alembic 1.7.0/1.7.1) 방언은 그대로 로드되고, Alembic 통합이 비활성화되었다는 `RuntimeWarning`을 원래 예외와 함께 한 번 냅니다. 경고 필터가 이 경고를 오류로 바꾸면(`-W error`) 대신 `sqlalchemy_cubrid.dialect` 로거로 기록하므로 방언은 그대로 로드됩니다. `alembic>=1.7.2,<2.0`으로 업그레이드하면 해결됩니다.
 

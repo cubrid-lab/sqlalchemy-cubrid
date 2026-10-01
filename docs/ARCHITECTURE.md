@@ -205,7 +205,7 @@ Provides the `trace_query()` utility for enabling CUBRID query tracing around a 
 Defines feature flags used by the SQLAlchemy test suite to determine which behavioral tests should be executed against a CUBRID backend.
 
 #### `alembic_impl.py`
-Provides the `CubridImpl` class for Alembic, enabling DDL migration support and declaring CUBRID's DDL transactional (`transactional_ddl = True`). Alembic 1.18+ imports it through the `alembic.plugins` entry point (`alembic_plugin.py`); with older Alembic, `dialect.py` imports it.
+Provides the `CubridImpl` class for Alembic, enabling DDL migration support and declaring CUBRID's DDL transactional (`transactional_ddl = True`). Alembic 1.18+ imports it through the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic.py`); with older Alembic, `dialect.py` imports it.
 
 ## Dialect Discovery
 SQLAlchemy uses entry points to discover and load the appropriate dialect class based on the provided connection URL.

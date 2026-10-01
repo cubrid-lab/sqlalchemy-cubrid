@@ -3014,7 +3014,7 @@ one of two ways depending on the installed Alembic:
 
 | Alembic | Who imports `alembic_impl` | When |
 |---|---|---|
-| 1.18 and later | Alembic, through the `alembic.plugins` entry point that sqlalchemy-cubrid publishes (`sqlalchemy_cubrid.alembic_plugin`) | during `import alembic` |
+| 1.18 and later | Alembic, through the `alembic.plugins` entry point that sqlalchemy-cubrid publishes (`_sqlalchemy_cubrid_alembic`) | during `import alembic` |
 | 1.7.2 – 1.17.x | `sqlalchemy_cubrid/dialect.py` | when the CUBRID dialect is loaded (engine creation, or the dialect built from the URL in offline `--sql` mode) |
 
 Either way no imports or configuration are required in `env.py` or your
@@ -3059,8 +3059,12 @@ Alembic 1.18 – 1.20 load an `alembic.plugins` entry point with
 `for mod in entrypoint.load()`, while the Alembic documentation describes the
 entry point value as the plugin module itself; a plain module is not
 iterable, so the documented form fails every `import alembic` with
-`TypeError`. `sqlalchemy_cubrid.alembic_plugin` works with both: it is a
-module that iterates to itself. Its `setup()` turns any failure into a
+`TypeError`. `_sqlalchemy_cubrid_alembic` works with both: it is a
+module that iterates to itself. Alembic does not guard the entry point load,
+so the plugin is a top-level module that imports only the standard library;
+loading it never imports the `sqlalchemy_cubrid` package, whose import can
+fail (for example after an unsupported SQLAlchemy is installed over it). Its
+`setup()` imports `sqlalchemy_cubrid.alembic_impl` and turns any failure into a
 `RuntimeWarning` (or, under `-W error`, a log record from the
 `sqlalchemy_cubrid.alembic_plugin` logger) instead of raising, so it cannot
 break `import alembic` for other projects in the same environment. If the
@@ -4423,7 +4427,7 @@ Provides the `trace_query()` utility for enabling CUBRID query tracing around a 
 Defines feature flags used by the SQLAlchemy test suite to determine which behavioral tests should be executed against a CUBRID backend.
 
 #### `alembic_impl.py`
-Provides the `CubridImpl` class for Alembic, enabling DDL migration support and declaring CUBRID's DDL transactional (`transactional_ddl = True`). Alembic 1.18+ imports it through the `alembic.plugins` entry point (`alembic_plugin.py`); with older Alembic, `dialect.py` imports it.
+Provides the `CubridImpl` class for Alembic, enabling DDL migration support and declaring CUBRID's DDL transactional (`transactional_ddl = True`). Alembic 1.18+ imports it through the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic.py`); with older Alembic, `dialect.py` imports it.
 
 ## Dialect Discovery
 SQLAlchemy uses entry points to discover and load the appropriate dialect class based on the provided connection URL.

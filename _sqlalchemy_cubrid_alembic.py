@@ -1,4 +1,4 @@
-# sqlalchemy_cubrid/alembic_plugin.py
+# _sqlalchemy_cubrid_alembic.py
 # Copyright (C) 2021-2026 by sqlalchemy-cubrid authors and contributors
 # <see AUTHORS file>
 #
@@ -11,34 +11,37 @@
 point group.  Alembic 1.18 and later load that group while ``import alembic``
 runs, before any ``env.py`` can look up an implementation, so the dialect
 module no longer has to import Alembic itself on those versions.
-``setup()`` only imports :mod:`sqlalchemy_cubrid.alembic_impl`, whose
+``setup()`` imports :mod:`sqlalchemy_cubrid.alembic_impl`, whose
 ``CubridImpl`` registers itself under ``"cubrid"``.  Older Alembic releases
 never read the group; :mod:`sqlalchemy_cubrid.dialect` imports
 ``alembic_impl`` for them.
 
 Everything here runs inside ``import alembic`` for every Alembic user who has
-sqlalchemy-cubrid installed, so it must not raise:
+sqlalchemy-cubrid installed, and Alembic does not guard the entry point load,
+so this module must not raise:
 
+* It is a top-level module that imports only the standard library.  Loading
+  it never imports the ``sqlalchemy_cubrid`` package, whose import can fail
+  (for example after an unsupported SQLAlchemy is installed over it).
+* ``setup()`` imports ``sqlalchemy_cubrid.alembic_impl`` inside a ``try``
+  and turns any failure into a warning instead of an exception.
 * Alembic documents the entry point value as the plugin module, but Alembic
   1.18 through 1.20 run ``for mod in entrypoint.load()``, which fails with
   ``TypeError: 'module' object is not iterable`` for a plain module.  This
   module is therefore made iterable, yielding itself.  It keeps working if
   Alembic calls ``setup()`` on the loaded object directly, as documented.
-* ``setup()`` turns any failure into a warning instead of an exception.
-* Loading this module only imports the ``sqlalchemy_cubrid`` package, which
-  needs nothing beyond SQLAlchemy (which Alembic imports first) and the
-  standard library.
 """
 
 from __future__ import annotations
 
+import importlib
 import logging
 import sys
 import types
 import warnings
 from typing import Any, Iterator
 
-log = logging.getLogger(__name__)
+log = logging.getLogger("sqlalchemy_cubrid.alembic_plugin")
 
 
 def setup(plugin: Any = None) -> None:
@@ -48,7 +51,7 @@ def setup(plugin: Any = None) -> None:
     CUBRID implementation registers no autogenerate comparators.
     """
     try:
-        from sqlalchemy_cubrid import alembic_impl  # noqa: F401
+        importlib.import_module("sqlalchemy_cubrid.alembic_impl")
     except Exception as exc:
         msg = (
             "sqlalchemy-cubrid: could not register the CUBRID implementation "

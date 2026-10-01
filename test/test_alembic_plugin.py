@@ -31,10 +31,10 @@ from typing import Any
 
 import pytest
 
-import sqlalchemy_cubrid.alembic_plugin as alembic_plugin
+import _sqlalchemy_cubrid_alembic as alembic_plugin
 from sqlalchemy_cubrid import dialect as cubrid_dialect
 
-_PLUGIN_VALUE = "sqlalchemy_cubrid.alembic_plugin"
+_PLUGIN_VALUE = "_sqlalchemy_cubrid_alembic"
 
 
 def _installed_entry_point() -> importlib.metadata.EntryPoint | None:
@@ -161,6 +161,38 @@ class TestEntryPoint:
 
         assert result.returncode == 0, result.stderr
         assert result.stdout.split() == ["sqlalchemy_cubrid.alembic_impl", "True", "False"]
+
+    @_needs_install
+    @pytest.mark.skipif(not _HAS_PLUGINS, reason="alembic.plugins needs Alembic 1.18+")
+    @pytest.mark.parametrize(
+        "breakage",
+        [
+            # The whole package cannot be imported.
+            'sys.modules["sqlalchemy_cubrid"] = None',
+            # A submodule fails, as dml.py's private ``sqlalchemy.sql._typing``
+            # import does after SQLAlchemy 1.4 is installed over this package.
+            'sys.modules["sqlalchemy_cubrid.types"] = None',
+        ],
+        ids=["package", "submodule"],
+    )
+    @pytest.mark.parametrize("flags", [(), ("-W", "error")], ids=["default", "W-error"])
+    def test_broken_package_cannot_break_import_alembic(
+        self, breakage: str, flags: tuple[str, ...]
+    ) -> None:
+        # Alembic does not guard the entry point load, so the plugin module
+        # must load without importing sqlalchemy_cubrid; registration is then
+        # skipped with a warning (or a log record under -W error).
+        result = _run(
+            f"import sys\n{breakage}\n"
+            "import alembic\n"
+            "from alembic.ddl.impl import _impls\n"
+            "print('cubrid' in _impls)\n",
+            *flags,
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.split() == ["False"]
+        assert "could not register the CUBRID implementation" in result.stderr
 
 
 class TestDialectFallback:
