@@ -346,6 +346,7 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `CHAR VARYING`      | `VARCHAR`          |
 | `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
+| `ENUM('a', ...)`    | `ENUM('a', ...)`   |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
 | `SET`               | `SET`              |
@@ -353,6 +354,8 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**ENUM and collection columns** (#631). `SHOW COLUMNS` prints a native `ENUM` with its elements unescaped (`ENUM('it''s', 'b')` as `ENUM('it's', 'b')`); the dialect splits the list on the `', '` separator, so every element is recovered except one that itself contains `', '`. It prints a collection as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member lengths or precision, and prints no type for a collection declared without member types. For those columns the dialect reads the member types with their precision and scale, in declaration order, from the public `db_attr_setdomain_elm` catalog view, and the collection kind from `db_attribute`, so `SET(NUMERIC(10,2), VARCHAR(20))` reflects as `SET(NUMERIC(10, 2), VARCHAR(20))` and `SET` as `SET()`. `metadata.reflect()` followed by `create_all()` recreates the same `SHOW CREATE TABLE` output on CUBRID 10.2, 11.0, 11.2 and 11.4. A member type the dialect does not map (an object domain) is kept as its bare type name.
 
 ---
 

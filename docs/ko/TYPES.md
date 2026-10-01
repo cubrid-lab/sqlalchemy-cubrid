@@ -317,6 +317,7 @@ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 | `CHAR VARYING`      | `VARCHAR`          |
 | `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
+| `ENUM('a', ...)`    | `ENUM('a', ...)`   |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
 | `SET`               | `SET`              |
@@ -324,6 +325,8 @@ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 | `SEQUENCE`          | `SEQUENCE`         |
 
 다음 방언 타입은 `dialect.ischema_names`에 없기 때문에 **선언/컴파일은 되지만 자동 리플렉트되지 않습니다**: `REAL`, `MONETARY`, `OBJECT`.
+
+**ENUM 및 컬렉션 컬럼** (#631). `SHOW COLUMNS`는 네이티브 `ENUM`의 요소를 이스케이프하지 않고 출력합니다(`ENUM('it''s', 'b')`를 `ENUM('it's', 'b')`로). 방언은 목록을 `', '` 구분자로 나누므로, 요소 자체에 `', '`가 들어 있는 경우를 제외하고 모든 요소를 복원합니다. 컬렉션은 멤버의 길이·정밀도 없이 `SET OF NUMERIC,VARCHAR`(그리고 `MULTISET OF ...`, `SEQUENCE OF ...`. `LIST`는 `SEQUENCE`로 출력)로 출력하고, 멤버 타입 없이 선언한 컬렉션은 타입을 출력하지 않습니다. 이런 컬럼에 대해 방언은 공개 카탈로그 뷰 `db_attr_setdomain_elm`에서 멤버 타입을 정밀도·스케일과 함께 선언 순서대로 읽고, 컬렉션 종류는 `db_attribute`에서 읽습니다. 따라서 `SET(NUMERIC(10,2), VARCHAR(20))`는 `SET(NUMERIC(10, 2), VARCHAR(20))`로, `SET`은 `SET()`으로 리플렉트됩니다. CUBRID 10.2, 11.0, 11.2, 11.4에서 `metadata.reflect()` 후 `create_all()`을 실행하면 같은 `SHOW CREATE TABLE` 출력이 다시 만들어집니다. 방언이 매핑하지 않는 멤버 타입(객체 도메인)은 타입 이름 그대로 유지됩니다.
 
 ---
 

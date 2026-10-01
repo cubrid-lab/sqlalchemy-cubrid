@@ -5,9 +5,300 @@
     "CREATE TABLE sct_parent ( id INT NOT NULL, tenant_id INT NOT NULL, code VARCHAR(10), CONSTRAINT pk_sct_parent PRIMARY KEY (id, tenant_id), CONSTRAINT uq_sct_parent_code UNIQUE (code))",
     "CREATE UNIQUE INDEX ux_sct_parent_tenant_code ON sct_parent (tenant_id, code DESC)",
     "CREATE TABLE \"sct ref, (x)\" ( id INT PRIMARY KEY, \"odd col, (y)\" INT, CONSTRAINT \"uq sct odd, (name)\" UNIQUE (\"odd col, (y)\"))",
-    "CREATE TABLE sct_child ( id INT PRIMARY KEY, parent_id INT, tenant_id INT, p2 INT, p3 INT, \"odd, col (x)\" INT, self_id INT, CONSTRAINT fk_sct_child_default FOREIGN KEY (parent_id, tenant_id) REFERENCES sct_parent (id, tenant_id), CONSTRAINT fk_sct_child_cascade FOREIGN KEY (p2, tenant_id) REFERENCES sct_parent (id, tenant_id) ON DELETE CASCADE ON UPDATE RESTRICT, CONSTRAINT fk_sct_child_set_null FOREIGN KEY (p3, tenant_id) REFERENCES sct_parent (id, tenant_id) ON DELETE SET NULL ON UPDATE SET NULL, CONSTRAINT \"fk sct odd, (name)\" FOREIGN KEY (\"odd, col (x)\") REFERENCES \"sct ref, (x)\" (id) ON DELETE NO ACTION ON UPDATE NO ACTION, CONSTRAINT fk_sct_child_self FOREIGN KEY (self_id) REFERENCES sct_child (id) ON DELETE RESTRICT)"
+    "CREATE TABLE sct_child ( id INT PRIMARY KEY, parent_id INT, tenant_id INT, p2 INT, p3 INT, \"odd, col (x)\" INT, self_id INT, CONSTRAINT fk_sct_child_default FOREIGN KEY (parent_id, tenant_id) REFERENCES sct_parent (id, tenant_id), CONSTRAINT fk_sct_child_cascade FOREIGN KEY (p2, tenant_id) REFERENCES sct_parent (id, tenant_id) ON DELETE CASCADE ON UPDATE RESTRICT, CONSTRAINT fk_sct_child_set_null FOREIGN KEY (p3, tenant_id) REFERENCES sct_parent (id, tenant_id) ON DELETE SET NULL ON UPDATE SET NULL, CONSTRAINT \"fk sct odd, (name)\" FOREIGN KEY (\"odd, col (x)\") REFERENCES \"sct ref, (x)\" (id) ON DELETE NO ACTION ON UPDATE NO ACTION, CONSTRAINT fk_sct_child_self FOREIGN KEY (self_id) REFERENCES sct_child (id) ON DELETE RESTRICT)",
+    "CREATE TABLE sct_types ( id INT PRIMARY KEY, e_plain ENUM('x', 'y', 'z'), e_punct ENUM('it''s', 'a, b', 'c (d)'), s_one SET(INT), s_many SET(NUMERIC(10,2), VARCHAR(20)), s_of SET OF CHAR(3), m_many MULTISET(INT, DOUBLE), m_str MULTISET(VARCHAR(50)), q_seq SEQUENCE(DATE, SMALLINT), q_list LIST(NUMERIC, NCHAR VARYING(5)), q_bits SEQUENCE(BIT(8), BIT VARYING(16)), s_empty SET, m_empty MULTISET, q_empty LIST)"
   ],
   "tables": {
+    "sct_types": {
+      "show_create_table": [
+        "dba.sct_types",
+        "CREATE TABLE [sct_types] ([id] INTEGER NOT NULL, [e_plain] ENUM('x', 'y', 'z'), [e_punct] ENUM('it's', 'a, b', 'c (d)'), [s_one] SET OF INTEGER, [s_many] SET OF (NUMERIC(10,2), CHARACTER VARYING(20)), [s_of] SET OF CHARACTER(3), [m_many] MULTISET OF (INTEGER, DOUBLE), [m_str] MULTISET OF CHARACTER VARYING(50), [q_seq] SEQUENCE OF (DATE, SMALLINT), [q_list] SEQUENCE OF (NUMERIC(15,0), NATIONAL CHARACTER VARYING(5)), [q_bits] SEQUENCE OF (BIT(8), BIT VARYING(16)), [s_empty] SET OF , [m_empty] MULTISET OF , [q_empty] SEQUENCE OF ,  CONSTRAINT [pk_sct_types_id] PRIMARY KEY  ([id])) REUSE_OID, COLLATE iso88591_bin"
+      ],
+      "db_index": [
+        [
+          "pk_sct_types_id",
+          "YES",
+          "YES",
+          "NO"
+        ]
+      ],
+      "show_indexes": [
+        [
+          "dba.sct_types",
+          0,
+          "pk_sct_types_id",
+          1,
+          "id",
+          "A"
+        ]
+      ],
+      "show_columns": [
+        [
+          "id",
+          "INTEGER",
+          "NO",
+          "PRI",
+          null,
+          ""
+        ],
+        [
+          "e_plain",
+          "ENUM('x', 'y', 'z')",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "e_punct",
+          "ENUM('it's', 'a, b', 'c (d)')",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "s_one",
+          "SET OF INTEGER",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "s_many",
+          "SET OF NUMERIC,VARCHAR",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "s_of",
+          "SET OF CHAR",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "m_many",
+          "MULTISET OF DOUBLE,INTEGER",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "m_str",
+          "MULTISET OF VARCHAR",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "q_seq",
+          "SEQUENCE OF DATE,SHORT",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "q_list",
+          "SEQUENCE OF NCHAR VARYING,NUMERIC",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "q_bits",
+          "SEQUENCE OF BIT,BIT VARYING",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "s_empty",
+          null,
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "m_empty",
+          null,
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "q_empty",
+          null,
+          "YES",
+          "",
+          null,
+          ""
+        ]
+      ],
+      "db_attribute": [
+        [
+          "id",
+          "INTEGER",
+          null
+        ],
+        [
+          "e_plain",
+          "ENUM",
+          null
+        ],
+        [
+          "e_punct",
+          "ENUM",
+          null
+        ],
+        [
+          "s_one",
+          "SET",
+          null
+        ],
+        [
+          "s_many",
+          "SET",
+          null
+        ],
+        [
+          "s_of",
+          "SET",
+          null
+        ],
+        [
+          "m_many",
+          "MULTISET",
+          null
+        ],
+        [
+          "m_str",
+          "MULTISET",
+          null
+        ],
+        [
+          "q_seq",
+          "SEQUENCE",
+          null
+        ],
+        [
+          "q_list",
+          "SEQUENCE",
+          null
+        ],
+        [
+          "q_bits",
+          "SEQUENCE",
+          null
+        ],
+        [
+          "s_empty",
+          "SET",
+          null
+        ],
+        [
+          "m_empty",
+          "MULTISET",
+          null
+        ],
+        [
+          "q_empty",
+          "SEQUENCE",
+          null
+        ]
+      ],
+      "set_domains": [
+        [
+          "m_many",
+          "INTEGER",
+          10,
+          0
+        ],
+        [
+          "m_many",
+          "DOUBLE",
+          15,
+          0
+        ],
+        [
+          "m_str",
+          "STRING",
+          50,
+          0
+        ],
+        [
+          "q_bits",
+          "BIT",
+          8,
+          0
+        ],
+        [
+          "q_bits",
+          "VARBIT",
+          16,
+          0
+        ],
+        [
+          "q_list",
+          "NUMERIC",
+          15,
+          0
+        ],
+        [
+          "q_list",
+          "VARNCHAR",
+          5,
+          0
+        ],
+        [
+          "q_seq",
+          "DATE",
+          10,
+          0
+        ],
+        [
+          "q_seq",
+          "SHORT",
+          5,
+          0
+        ],
+        [
+          "s_many",
+          "NUMERIC",
+          10,
+          2
+        ],
+        [
+          "s_many",
+          "STRING",
+          20,
+          0
+        ],
+        [
+          "s_of",
+          "CHAR",
+          3,
+          0
+        ],
+        [
+          "s_one",
+          "INTEGER",
+          10,
+          0
+        ]
+      ]
+    },
     "sct_child": {
       "show_create_table": [
         "dba.sct_child",
@@ -124,7 +415,103 @@
           "tenant_id",
           "A"
         ]
-      ]
+      ],
+      "show_columns": [
+        [
+          "id",
+          "INTEGER",
+          "NO",
+          "PRI",
+          null,
+          ""
+        ],
+        [
+          "parent_id",
+          "INTEGER",
+          "YES",
+          "MUL",
+          null,
+          ""
+        ],
+        [
+          "tenant_id",
+          "INTEGER",
+          "YES",
+          "",
+          null,
+          ""
+        ],
+        [
+          "p2",
+          "INTEGER",
+          "YES",
+          "MUL",
+          null,
+          ""
+        ],
+        [
+          "p3",
+          "INTEGER",
+          "YES",
+          "MUL",
+          null,
+          ""
+        ],
+        [
+          "odd, col (x)",
+          "INTEGER",
+          "YES",
+          "MUL",
+          null,
+          ""
+        ],
+        [
+          "self_id",
+          "INTEGER",
+          "YES",
+          "MUL",
+          null,
+          ""
+        ]
+      ],
+      "db_attribute": [
+        [
+          "id",
+          "INTEGER",
+          null
+        ],
+        [
+          "parent_id",
+          "INTEGER",
+          null
+        ],
+        [
+          "tenant_id",
+          "INTEGER",
+          null
+        ],
+        [
+          "p2",
+          "INTEGER",
+          null
+        ],
+        [
+          "p3",
+          "INTEGER",
+          null
+        ],
+        [
+          "odd, col (x)",
+          "INTEGER",
+          null
+        ],
+        [
+          "self_id",
+          "INTEGER",
+          null
+        ]
+      ],
+      "set_domains": []
     },
     "sct ref, (x)": {
       "show_create_table": [
@@ -162,7 +549,38 @@
           "odd col, (y)",
           "A"
         ]
-      ]
+      ],
+      "show_columns": [
+        [
+          "id",
+          "INTEGER",
+          "NO",
+          "PRI",
+          null,
+          ""
+        ],
+        [
+          "odd col, (y)",
+          "INTEGER",
+          "YES",
+          "UNI",
+          null,
+          ""
+        ]
+      ],
+      "db_attribute": [
+        [
+          "id",
+          "INTEGER",
+          null
+        ],
+        [
+          "odd col, (y)",
+          "INTEGER",
+          null
+        ]
+      ],
+      "set_domains": []
     },
     "sct_parent": {
       "show_create_table": [
@@ -230,7 +648,51 @@
           "code",
           "D"
         ]
-      ]
+      ],
+      "show_columns": [
+        [
+          "id",
+          "INTEGER",
+          "NO",
+          "PRI",
+          null,
+          ""
+        ],
+        [
+          "tenant_id",
+          "INTEGER",
+          "NO",
+          "UNI",
+          null,
+          ""
+        ],
+        [
+          "code",
+          "VARCHAR(10)",
+          "YES",
+          "UNI",
+          null,
+          ""
+        ]
+      ],
+      "db_attribute": [
+        [
+          "id",
+          "INTEGER",
+          null
+        ],
+        [
+          "tenant_id",
+          "INTEGER",
+          null
+        ],
+        [
+          "code",
+          "STRING",
+          null
+        ]
+      ],
+      "set_domains": []
     }
   }
 }

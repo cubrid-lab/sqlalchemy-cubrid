@@ -161,18 +161,34 @@ def _is_unknown_class_error(error: BaseException) -> bool:
 # ``NUMERIC(10, 2)`` is looked up as ``NUMERIC`` like ``NUMERIC(10,2)`` (#609).
 _RE_TYPE_PARAMS = re.compile(r"\(\d+(?:\s*,\s*\d+)*\)")
 _RE_ENUM = re.compile(r"^ENUM\s*\((.*)\)\s*$", re.IGNORECASE)
+_RE_ENUM_SEPARATOR = re.compile(r"'\s*,\s*'")
 
 
 def _parse_enum_elements(raw: str) -> list[str]:
-    """Extract quoted element strings from an ENUM(...) type string.
+    """Extract the element strings from the inside of an ENUM(...) type string.
 
-    Handles doubled single-quote escaping inside elements
-    (e.g. ENUM('it''s', 'b') -> ["it's", "b"]).
+    ``SHOW COLUMNS`` prints the elements unescaped and separated by ``', '``
+    (``ENUM('it''s', 'b')`` is printed as ``ENUM('it's', 'b')``, #631), so the
+    list is split on that separator, not on quotes. A doubled single quote is
+    still read as an escaped one (``'it''s'`` -> ``it's``). An element that
+    itself contains ``', '`` cannot be told apart from two elements.
     """
-    return [m.replace("''", "'") for m in re.findall(r"'((?:[^']|'')*)'", raw)]
+    raw = raw.strip()
+    if len(raw) < 2 or not (raw.startswith("'") and raw.endswith("'")):
+        return []
+    return [element.replace("''", "'") for element in _RE_ENUM_SEPARATOR.split(raw[1:-1])]
 
 
-_RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*\((.+)\)$", re.IGNORECASE)
+# ``SET(INT)`` or the form the servers print, ``SET OF INTEGER,VARCHAR`` (#631).
+_RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*(?:\((.+)\)|\s+OF\s+(.+))$", re.IGNORECASE)
+_RE_COLLECTION_OF = re.compile(r"^(?:SET|MULTISET|SEQUENCE)\s+OF\s", re.IGNORECASE)
+#: ``db_attr_setdomain_elm`` type names that differ from the DDL names.
+_CATALOG_MEMBER_TYPE_NAMES = {
+    "STRING": "VARCHAR",
+    "VARNCHAR": "NCHAR VARYING",
+    "VARBIT": "BIT VARYING",
+    "SHORT": "SMALLINT",
+}
 _RE_LENGTH = re.compile(r"\((\d+)\)")
 
 
@@ -543,7 +559,11 @@ class CubridDialect(default.DefaultDialect):
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
             raise
-        for row in result:
+        rows = list(result)
+        member_types, collection_kinds = self._collection_catalog(
+            connection, table_name, rows, **kw
+        )
+        for row in rows:
             colname = row[0]
             coltype_raw = row[1]
             nullable = row[2] == "YES"
@@ -551,20 +571,27 @@ class CubridDialect(default.DefaultDialect):
             autoincrement = "auto_increment" in row[5] if row[5] else False
 
             # Strip length/precision from type string for lookup
-            coltype_key = _RE_TYPE_PARAMS.sub("", coltype_raw).strip()
+            coltype_key = _RE_TYPE_PARAMS.sub("", coltype_raw or "").strip()
 
             coltype: Any  # noqa: F842 — type varies per branch below
 
             # ENUM('a', 'b', ...) — native enum with its element list
-            enum_match = _RE_ENUM.match(coltype_raw.strip())
-            if enum_match:
-                coltype = ENUM(*_parse_enum_elements(enum_match.group(1)))
+            enum_match = _RE_ENUM.match(coltype_raw.strip()) if coltype_raw else None
+            # Collection types: SET(VARCHAR(100)), SET OF NUMERIC,VARCHAR, etc.
+            collection_match = _RE_COLLECTION.match(coltype_raw) if coltype_raw else None
 
-            # Collection types: SET(VARCHAR(100)), MULTISET(INT), etc.
-            collection_match = None if enum_match else _RE_COLLECTION.match(coltype_raw)
-            if collection_match:
+            if coltype_raw is None and colname in collection_kinds:
+                # A collection declared without member types (#631).
+                coltype = self.ischema_names[collection_kinds[colname]]()
+            elif enum_match:
+                coltype = ENUM(*_parse_enum_elements(enum_match.group(1)))
+            elif collection_match and colname in member_types:
+                coltype = self.ischema_names[collection_match.group(1).upper()](
+                    *member_types[colname]
+                )
+            elif collection_match:
                 coll_name = collection_match.group(1).upper()
-                inner_raw = collection_match.group(2)
+                inner_raw = collection_match.group(2) or collection_match.group(3)
                 coll_cls = self.ischema_names[coll_name]
                 members: list[Any] = []
                 for member_str in _split_collection_members(inner_raw):
@@ -584,6 +611,14 @@ class CubridDialect(default.DefaultDialect):
                             )  # pyright: ignore[reportCallIssue]
                         else:
                             members.append(self.ischema_names[member_key]())
+                    elif member_key in ("BIT", "BIT VARYING"):
+                        length_match = _RE_LENGTH.search(member_str)
+                        members.append(
+                            BIT(
+                                length=int(length_match.group(1)) if length_match else None,
+                                varying=member_key == "BIT VARYING",
+                            )
+                        )
                     elif member_key in self.ischema_names:
                         cls = self.ischema_names[member_key]
                         members.append(cls() if callable(cls) else cls)
@@ -1246,6 +1281,74 @@ class CubridDialect(default.DefaultDialect):
             return condition, params
         condition += "".join(f" AND {prefix}owner_name = :owner" for prefix in (first, *others))
         return condition, {**params, "owner": info[1]}
+
+    def _collection_catalog(
+        self, connection: Any, table_name: str, rows: list[Any], **kw: Any
+    ) -> tuple[dict[str, list[Any]], dict[str, str]]:
+        """Return the member types and kinds of *table_name*'s collections.
+
+        ``SHOW COLUMNS`` prints a collection as ``SET OF NUMERIC,VARCHAR``,
+        without the member lengths or precision and in its own member order,
+        and prints no type at all for a collection declared without member
+        types (#631). For such *rows* (``SHOW COLUMNS`` rows) this reads the
+        public ``db_attr_setdomain_elm`` view, which lists each member type
+        with its precision and scale in declaration order, and the kind of
+        each untyped collection from ``db_attribute``. Returns ``({column:
+        [member type, ...]}, {column: "SET" | "MULTISET" | "SEQUENCE"})``.
+        """
+        member_types: dict[str, list[Any]] = {}
+        kinds: dict[str, str] = {}
+        has_of_form = any(row[1] and _RE_COLLECTION_OF.match(row[1]) for row in rows)
+        has_untyped = any(row[1] is None for row in rows)
+        if not (has_of_form or has_untyped):
+            return member_types, kinds
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        if has_of_form:
+            result = connection.execute(
+                text(
+                    "SELECT attr_name, data_type, prec, scale "  # nosec B608 - constant clause
+                    "FROM db_attr_setdomain_elm WHERE " + class_filter
+                ),
+                filter_params,
+            )
+            for name, data_type, precision, scale in result:
+                member_types.setdefault(name, []).append(
+                    self._collection_member_type(data_type, precision, scale)
+                )
+        if has_untyped:
+            result = connection.execute(
+                text(
+                    "SELECT attr_name, data_type FROM db_attribute "  # nosec B608 - constant clause
+                    "WHERE " + class_filter + " AND data_type IN ('SET', 'MULTISET', 'SEQUENCE')"
+                ),
+                filter_params,
+            )
+            kinds = {name: data_type for name, data_type in result}
+        return member_types, kinds
+
+    def _collection_member_type(self, data_type: str, precision: Any, scale: Any) -> Any:
+        """Return the type of a ``db_attr_setdomain_elm`` member row.
+
+        The view uses the internal type names (``STRING``, ``VARNCHAR``,
+        ``VARBIT``, ``SHORT``); an unknown one (an object domain) is kept as
+        the bare name, as for a member type ``SHOW COLUMNS`` cannot map.
+        """
+        name = _CATALOG_MEMBER_TYPE_NAMES.get(data_type, data_type)
+        string_types: dict[str, type[sqltypes.String]] = {
+            "CHAR": CHAR,
+            "VARCHAR": VARCHAR,
+            "NCHAR": NCHAR,
+            "NCHAR VARYING": NVARCHAR,
+        }
+        if name in string_types:
+            return string_types[name](length=int(precision))
+        if name in ("BIT", "BIT VARYING"):
+            return BIT(length=int(precision), varying=name == "BIT VARYING")
+        if name == "NUMERIC":
+            return NUMERIC(precision=int(precision), scale=int(scale))
+        if name in self.ischema_names:
+            return self.ischema_names[name]()
+        return data_type
 
     @reflection.cache
     def has_table(
