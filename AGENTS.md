@@ -86,7 +86,9 @@ make install          # pip install -e ".[dev]" + pytest-cov + pre-commit + tox
 ### Key Commands
 
 ```bash
-make test             # Offline tests with 95% coverage threshold
+make test             # Fast offline tests with 95% coverage threshold (-m "not integration and not repo")
+make test-repo        # Repository-tooling tests (Makefile, signal handling, repo scripts; -m repo)
+make test-offline     # Every offline test (fast + repo) with coverage
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
 make integration      # Run-owned Docker project → integration tests → cleanup
