@@ -382,7 +382,7 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          python -m pytest test/test_integration.py -v --tb=short
+          python -m pytest test/test_integration.py test/test_scalar_execution_contract.py -v --tb=short
 
       - name: Run async integration tests
         env:
@@ -394,7 +394,7 @@ jobs:
           # extra installed above). Testing against pycubrid@main (HEAD) is
           # handled separately by upstream-canary.yml.
           pip install -e ".[pycubrid]"
-          python -m pytest test/test_aio_integration.py -v --tb=short
+          python -m pytest test/test_aio_integration.py test/test_scalar_execution_contract.py -v --tb=short
 
       - name: Run pycubrid sync integration tests
         env:
@@ -411,7 +411,7 @@ jobs:
           "
           python -m pytest test/test_integration.py test/test_alembic_registration.py \
             test/test_show_create_table_server_output.py \
-            test/test_unique_constraint_fallback.py -v --tb=short
+            test/test_unique_constraint_fallback.py test/test_scalar_execution_contract.py -v --tb=short
 
       - name: Run driver-differential comparison (required)
         env:
