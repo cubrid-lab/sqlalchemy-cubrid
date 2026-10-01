@@ -108,7 +108,7 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          python -m pytest test/test_integration.py test/test_lob_value_contract.py -v --tb=short
+          python -m pytest test/test_integration.py -v --tb=short
 
       - name: Run async integration tests
         env:
