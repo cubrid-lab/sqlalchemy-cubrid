@@ -223,79 +223,92 @@
           "m_many",
           "INTEGER",
           10,
-          0
+          0,
+          null
         ],
         [
           "m_many",
           "DOUBLE",
           15,
-          0
+          0,
+          null
         ],
         [
           "m_str",
           "STRING",
           50,
-          0
+          0,
+          null
         ],
         [
           "q_bits",
           "BIT",
           8,
-          0
+          0,
+          null
         ],
         [
           "q_bits",
           "VARBIT",
           16,
-          0
+          0,
+          null
         ],
         [
           "q_list",
           "NUMERIC",
           15,
-          0
+          0,
+          null
         ],
         [
           "q_list",
           "VARNCHAR",
           5,
-          0
+          0,
+          null
         ],
         [
           "q_seq",
           "DATE",
           10,
-          0
+          0,
+          null
         ],
         [
           "q_seq",
           "SHORT",
           5,
-          0
+          0,
+          null
         ],
         [
           "s_many",
           "NUMERIC",
           10,
-          2
+          2,
+          null
         ],
         [
           "s_many",
           "STRING",
           20,
-          0
+          0,
+          null
         ],
         [
           "s_of",
           "CHAR",
           3,
-          0
+          0,
+          null
         ],
         [
           "s_one",
           "INTEGER",
           10,
-          0
+          0,
+          null
         ]
       ]
     },

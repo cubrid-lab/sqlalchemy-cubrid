@@ -1306,14 +1306,14 @@ class CubridDialect(default.DefaultDialect):
         if has_of_form:
             result = connection.execute(
                 text(
-                    "SELECT attr_name, data_type, prec, scale "  # nosec B608 - constant clause
+                    "SELECT attr_name, data_type, prec, scale, domain_class_name "  # nosec B608
                     "FROM db_attr_setdomain_elm WHERE " + class_filter
                 ),
                 filter_params,
             )
-            for name, data_type, precision, scale in result:
+            for name, data_type, precision, scale, domain_class in result:
                 member_types.setdefault(name, []).append(
-                    self._collection_member_type(data_type, precision, scale)
+                    self._collection_member_type(data_type, precision, scale, domain_class)
                 )
         if has_untyped:
             result = connection.execute(
@@ -1326,13 +1326,20 @@ class CubridDialect(default.DefaultDialect):
             kinds = {name: data_type for name, data_type in result}
         return member_types, kinds
 
-    def _collection_member_type(self, data_type: str, precision: Any, scale: Any) -> Any:
+    def _collection_member_type(
+        self, data_type: str, precision: Any, scale: Any, domain_class: str | None = None
+    ) -> Any:
         """Return the type of a ``db_attr_setdomain_elm`` member row.
 
         The view uses the internal type names (``STRING``, ``VARNCHAR``,
-        ``VARBIT``, ``SHORT``); an unknown one (an object domain) is kept as
-        the bare name, as for a member type ``SHOW COLUMNS`` cannot map.
+        ``VARBIT``, ``SHORT``). An object domain (``OBJECT`` with its
+        ``domain_class_name``) is kept as the quoted class name, which the
+        collection DDL emits verbatim (``SET(t_ref)``); any other unknown name
+        is kept as the bare name, as for a member type ``SHOW COLUMNS`` cannot
+        map.
         """
+        if data_type == "OBJECT" and domain_class:
+            return self.identifier_preparer.quote(domain_class)
         name = _CATALOG_MEMBER_TYPE_NAMES.get(data_type, data_type)
         string_types: dict[str, type[sqltypes.String]] = {
             "CHAR": CHAR,

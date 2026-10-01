@@ -203,7 +203,8 @@ def _capture(connection: sa.Connection) -> dict[str, dict[str, list[Any]]]:
     Key_name, Seq_in_index, Column_name, Collation; sorted), and the column
     sources of ``get_columns`` (#631): the ``SHOW COLUMNS`` rows, the
     ``db_attribute`` name / type / comment (by ``def_order``) and the
-    ``db_attr_setdomain_elm`` collection member types (in server order)."""
+    ``db_attr_setdomain_elm`` collection member types and object domains (in
+    server order)."""
     captured: dict[str, dict[str, list[Any]]] = {}
     for table in TABLES:
         quoted = _quote(connection, table)
@@ -226,8 +227,8 @@ def _capture(connection: sa.Connection) -> dict[str, dict[str, list[Any]]]:
         ).all()
         set_domains = connection.execute(
             sa.text(
-                "SELECT attr_name, data_type, prec, scale FROM db_attr_setdomain_elm "
-                "WHERE class_name = :name"
+                "SELECT attr_name, data_type, prec, scale, domain_class_name "
+                "FROM db_attr_setdomain_elm WHERE class_name = :name"
             ),
             {"name": table},
         ).all()
@@ -342,7 +343,9 @@ class _CatalogStub:
                 for row in self._recorded["db_attribute"]
                 if row[1] in ("SET", "MULTISET", "SEQUENCE")
             ]
-        elif sql.startswith("SELECT attr_name, data_type, prec, scale FROM db_attr_setdomain_elm "):
+        elif sql.startswith(
+            "SELECT attr_name, data_type, prec, scale, domain_class_name FROM db_attr_setdomain_elm "
+        ):
             rows = [tuple(row) for row in self._recorded["set_domains"]]
         else:
             raise AssertionError(f"Unexpected SQL: {sql!r}")

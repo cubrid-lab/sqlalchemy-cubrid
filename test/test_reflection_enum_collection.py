@@ -158,15 +158,23 @@ def test_collection_of_form_without_catalog_members(
     assert [dialect.type_compiler.process(m) for m in coltype._ddl_values] == members
 
 
-def test_object_domain_member_is_kept_as_its_name() -> None:
-    """A member type neither ``SHOW COLUMNS`` nor the catalog maps (an object
-    domain) is kept as its bare name, as before."""
+def test_object_domain_member_keeps_its_class() -> None:
+    """An object-domain member is printed by ``SHOW COLUMNS`` as ``OBJECT``
+    and listed by ``db_attr_setdomain_elm`` as ``OBJECT`` with its
+    ``domain_class_name`` (CUBRID 10.2 and 11.4: ``SET(t_ref)`` ->
+    ``SET OF OBJECT`` / ``('a', 'OBJECT', 0, 0, 't_ref')``); the reflected
+    member is the class name. An unknown catalog name without a class, and an
+    unknown ``SHOW COLUMNS`` member, are kept as their bare names."""
+    rows = [("c", "SEQUENCE OF INTEGER,OBJECT", "YES", "", None, "")]
+    (from_catalog,) = _reflect_rows(
+        rows, [("c", "OBJECT", 0, 0, "t_ref"), ("c", "INTEGER", 10, 0, None)], []
+    )
+    dialect = CubridDialect()
+    assert dialect.type_compiler.process(from_catalog) == "SEQUENCE(t_ref,INTEGER)"
+    (no_class,) = _reflect_rows(rows, [("c", "OBJECT", 0, 0, None)], [])
+    assert no_class._ddl_values == ("OBJECT",)
     (from_show_columns,) = _reflect_rows([("c", "SET OF t_ref", "YES", "", None, "")], [], [])
     assert from_show_columns._ddl_values == ("t_ref",)
-    (from_catalog,) = _reflect_rows(
-        [("c", "SET OF t_ref", "YES", "", None, "")], [("c", "OBJECT", 0, 0)], []
-    )
-    assert from_catalog._ddl_values == ("OBJECT",)
 
 
 def test_collection_without_member_type_and_unknown_kind() -> None:
@@ -185,7 +193,7 @@ def test_reflected_collection_keeps_bind_processor() -> None:
     processor applies to it like to a declared one."""
     (coltype,) = _reflect_rows(
         [("c", "SEQUENCE OF DATE,SHORT", "YES", "", None, "")],
-        [("c", "DATE", 10, 0), ("c", "SHORT", 5, 0)],
+        [("c", "DATE", 10, 0, None), ("c", "SHORT", 5, 0, None)],
         [],
     )
     dialect = MagicMock(_cubrid_pycubrid_dbapi=True)
@@ -224,8 +232,8 @@ def _table_state(connection: sa.Connection) -> tuple[str, list[Any], list[Any]]:
     show_columns = [tuple(row) for row in connection.exec_driver_sql(f"SHOW COLUMNS IN {TABLE}")]
     domains = connection.execute(
         sa.text(
-            "SELECT attr_name, data_type, prec, scale FROM db_attr_setdomain_elm "
-            "WHERE class_name = :name"
+            "SELECT attr_name, data_type, prec, scale, domain_class_name "
+            "FROM db_attr_setdomain_elm WHERE class_name = :name"
         ),
         {"name": TABLE},
     ).all()
@@ -255,3 +263,44 @@ def test_live_reflect_then_create_all_recreates_ddl(live_engine: sa.Engine) -> N
     metadata.create_all(live_engine)
     with live_engine.connect() as connection:
         assert _table_state(connection) == original
+
+
+@pytest.mark.integration
+def test_live_object_domain_member_round_trip(live_engine: sa.Engine) -> None:
+    """A collection of a class reflects with the class name and recreates the
+    same DDL (11.x needs the referenced class to be ``DONT_REUSE_OID``)."""
+    with live_engine.connect() as connection:
+        version = connection.dialect.server_version_info or (0,)
+    options = " DONT_REUSE_OID" if version >= (11, 0) else ""
+    statements = (
+        f"CREATE TABLE sct_obj_ref (id INT){options}",
+        "CREATE TABLE sct_obj (a SET(sct_obj_ref), b SEQUENCE(sct_obj_ref, INT))",
+    )
+
+    def drop() -> None:
+        with live_engine.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE IF EXISTS sct_obj")
+            connection.exec_driver_sql("DROP TABLE IF EXISTS sct_obj_ref")
+
+    drop()
+    try:
+        with live_engine.begin() as connection:
+            for statement in statements:
+                connection.exec_driver_sql(statement)
+        with live_engine.connect() as connection:
+            original = connection.exec_driver_sql("SHOW CREATE TABLE sct_obj").one()[1]
+        columns = sa.inspect(live_engine).get_columns("sct_obj")
+        assert _compiled(live_engine.dialect, columns) == {
+            "a": "SET(sct_obj_ref)",
+            "b": "SEQUENCE(sct_obj_ref,INTEGER)",
+        }
+        metadata = sa.MetaData()
+        metadata.reflect(live_engine, only=["sct_obj"])
+        with live_engine.begin() as connection:
+            connection.exec_driver_sql("DROP TABLE sct_obj")
+        metadata.create_all(live_engine)
+        with live_engine.connect() as connection:
+            recreated = connection.exec_driver_sql("SHOW CREATE TABLE sct_obj").one()[1]
+        assert _normalize_ddl(recreated) == _normalize_ddl(original)
+    finally:
+        drop()
