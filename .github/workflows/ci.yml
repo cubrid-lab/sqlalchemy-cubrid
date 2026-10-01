@@ -147,6 +147,35 @@ jobs:
       - name: Run repository-tooling tests
         run: python -m pytest test/ -m repo -v --tb=short
 
+  # CubridImpl reaches Alembic through the alembic.plugins entry point on
+  # Alembic 1.18+ and through the dialect's eager import on 1.7.2-1.17 (#595).
+  # Offline tests pin one release per path; "latest" catches a loader change
+  # in a new Alembic release that could break ``import alembic``.
+  alembic-compat:
+    name: alembic-compat (${{ matrix.alembic }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        alembic: ["1.7.2", "1.17.2", "1.18.0", "latest"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        env:
+          ALEMBIC: ${{ matrix.alembic }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ "$ALEMBIC" = latest ]; then spec="alembic<2.0"; else spec="alembic==$ALEMBIC"; fi
+          pip install -e ".[dev,pycubrid]" tomli "$spec"
+          python -c "import alembic; print('alembic', alembic.__version__)"
+      - name: Run Alembic registration tests
+        run: |
+          python -m pytest test/test_alembic_plugin.py test/test_alembic_registration.py \
+            test/test_alembic.py test/test_packaging.py -m "not integration" -v --tb=short -rs
+
   sqlalchemy-21-canary:
     runs-on: ubuntu-latest
     continue-on-error: true  # Canary: warn, don't gate. SA pre-releases may break.
@@ -470,7 +499,7 @@ jobs:
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
-    needs: [detect-changes, lint, typecheck, offline-tests, repo-tests, packaging-smoke-test, integration-tests, live-smoke, make-integration]
+    needs: [detect-changes, lint, typecheck, offline-tests, repo-tests, alembic-compat, packaging-smoke-test, integration-tests, live-smoke, make-integration]
     steps:
       - name: Check results
         run: |
@@ -481,6 +510,7 @@ jobs:
           echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Strict Type Check | ${{ needs.typecheck.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Offline Tests | ${{ needs.offline-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Alembic Compatibility | ${{ needs.alembic-compat.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Repository-Tooling Tests | ${{ needs.repo-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Packaging Smoke Test | ${{ needs.packaging-smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
@@ -501,6 +531,7 @@ jobs:
           needs.lint.result == 'failure' ||
           needs.typecheck.result != 'success' ||
           needs.offline-tests.result == 'failure' ||
+          needs.alembic-compat.result != 'success' ||
           needs.repo-tests.result != 'success' ||
           needs.packaging-smoke-test.result == 'failure' ||
           needs.integration-tests.result == 'failure' ||

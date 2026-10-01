@@ -20,9 +20,13 @@ Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
 
 from __future__ import annotations
 
+import importlib
+import importlib.metadata
 import importlib.util
 import logging
+import os
 import re
+import sys
 import warnings
 
 from typing import Any, Callable, Optional, Sequence, cast
@@ -1674,33 +1678,72 @@ class CubridDialect(default.DefaultDialect):
 dialect = CubridDialect
 
 
+def _alembic_loads_cubrid_plugin() -> bool:
+    """Return True when Alembic registers ``CubridImpl`` through its plugin.
+
+    Alembic 1.18 and later load the ``alembic.plugins`` entry point group on
+    ``import alembic``, and sqlalchemy-cubrid publishes
+    :mod:`_sqlalchemy_cubrid_alembic` there (#595).  This checks
+    installed metadata only, so it never imports Alembic.  Any doubt (Alembic
+    already imported, an unparsable version, metadata that does not belong to
+    the importable ``alembic`` package, sqlalchemy-cubrid imported from
+    a tree without the entry point) returns False, and the caller imports
+    ``alembic_impl`` directly as before.
+    """
+    if "alembic" in sys.modules:
+        return False
+    try:
+        alembic_dist = importlib.metadata.distribution("alembic")
+        major, minor = alembic_dist.version.split(".")[:2]
+        if (int(major), int(minor)) < (1, 18):
+            return False
+        # The metadata must describe the Alembic that ``import alembic`` will
+        # load; an older copy earlier on sys.path would never read the plugin.
+        spec = importlib.util.find_spec("alembic")
+        if spec is None or spec.origin is None:
+            return False
+        if os.path.realpath(spec.origin) != os.path.realpath(
+            str(alembic_dist.locate_file("alembic/__init__.py"))
+        ):
+            return False
+        return any(
+            ep.group == "alembic.plugins" and ep.value == "_sqlalchemy_cubrid_alembic"
+            for ep in importlib.metadata.distribution("sqlalchemy-cubrid").entry_points
+        )
+    except Exception:
+        return False
+
+
 # Register ``CubridImpl`` with Alembic whenever Alembic is installed.
 # Alembic resolves its migration implementation from ``_impls[dialect.name]``,
-# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``; it
-# never reads a package entry point for this.  Every CUBRID dialect variant
-# (``cubrid``, ``cubrid+cubriddb``, ``cubrid+pycubrid``,
-# ``cubrid+aiopycubrid``) imports this module and has ``name = "cubrid"``, so
-# importing ``alembic_impl`` here makes a default ``env.py`` work with no
-# extra import.  Alembic stays optional: without it the import is skipped
-# silently.  A broken Alembic install (for example 1.7.0/1.7.1, which raise
-# ``NameError`` on SQLAlchemy 2.x) must never stop the dialect from loading,
-# so any other failure only disables the integration with a warning.
-try:
-    from sqlalchemy_cubrid import alembic_impl as _alembic_impl  # noqa: F401
-except Exception as _exc:
+# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``.
+# Every CUBRID dialect variant (``cubrid``, ``cubrid+cubriddb``,
+# ``cubrid+pycubrid``, ``cubrid+aiopycubrid``) imports this module and has
+# ``name = "cubrid"``, so a default ``env.py`` works with no extra import.
+# Alembic 1.18+ imports ``alembic_impl`` itself through the ``alembic.plugins``
+# entry point, so the dialect skips Alembic's import cost and log lines
+# (#561, #595).  Alembic 1.7.2-1.17 have no such hook, so the dialect imports
+# ``alembic_impl`` here.  Alembic stays optional: without it the import is
+# skipped silently.  A broken Alembic install (for example 1.7.0/1.7.1, which
+# raise ``NameError`` on SQLAlchemy 2.x) must never stop the dialect from
+# loading, so any other failure only disables the integration with a warning.
+if not _alembic_loads_cubrid_plugin():
     try:
-        _alembic_absent = importlib.util.find_spec("alembic") is None
-    except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
-        _alembic_absent = False
-    if not (isinstance(_exc, ImportError) and _alembic_absent):
-        _alembic_msg = (
-            "sqlalchemy-cubrid: Alembic integration is disabled because the "
-            f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
-            'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
-        )
-        # A warning filter set to "error" (``-W error``) turns warn() into a
-        # raise; fall back to the logger so the dialect still loads.
+        importlib.import_module("sqlalchemy_cubrid.alembic_impl")
+    except Exception as _exc:
         try:
-            warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
-        except Exception:
-            log.warning(_alembic_msg)
+            _alembic_absent = importlib.util.find_spec("alembic") is None
+        except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
+            _alembic_absent = False
+        if not (isinstance(_exc, ImportError) and _alembic_absent):
+            _alembic_msg = (
+                "sqlalchemy-cubrid: Alembic integration is disabled because the "
+                f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
+                'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
+            )
+            # A warning filter set to "error" (``-W error``) turns warn() into a
+            # raise; fall back to the logger so the dialect still loads.
+            try:
+                warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
+            except Exception:
+                log.warning(_alembic_msg)
