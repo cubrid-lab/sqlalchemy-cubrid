@@ -30,6 +30,7 @@ import os
 import select as io_select
 import subprocess
 import sys
+import time
 import uuid
 from decimal import Decimal
 
@@ -64,11 +65,77 @@ def _cubrid_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
-# Fixed-name database users (below) are suffixed with this per-process token so
-# that an interrupted prior run, or a concurrent job against the same shared
-# database, cannot collide with -- or get silently masked by -- a leftover or
-# simultaneously-running user of the same name (#607).
-_USER_SUFFIX = f"{os.getpid()}{uuid.uuid4().hex[:6]}"
+# Fixed-name database users (u2, u549, u543 below) are given a fresh random
+# suffix on every fixture setup, not once per process, so a user left behind
+# by one setup -- interrupted, or whose teardown itself failed -- can never
+# collide with the very next setup's own user (#607). This does not remove
+# the need for a database dedicated to one `make integration` run at a time
+# (see the module docstring): the DBA-owned tables these fixtures create
+# (``y_dup``/``y_dup_parent``, ``r549_t``/``r549_parent``, ``"Own543"``)
+# still have fixed names, and making those unique too is #612.
+#
+# A fresh name does not retire the fixtures' own idempotent cleanup-then-
+# create: a name can still collide with a leftover left behind under that
+# exact name by an earlier, interrupted run of the *same* cycle (as
+# TestReflectionAsNonDba.test_reflection_setup_reruns_against_same_database
+# demonstrates by forcing exactly that collision). What changes is how a
+# stuck DROP USER is handled: see _drop_user_verified() below -- it no
+# longer swallows a failure that leaves the user behind, which is what let
+# that leftover block the next setup in the first place (#607 review).
+#
+# Known tradeoff: if a run is killed before a fixture's own `finally:
+# cleanup()` runs, its randomly-named user (and, if DROP USER itself
+# failed, its owned tables) is left in the database rather than colliding
+# with a later run. Nothing here sweeps those up; `SELECT name FROM
+# db_user WHERE name LIKE 'U2\\_%' ESCAPE '\\'` (and the `U543_`/`U549_`
+# equivalents) finds them for manual review.
+
+
+def _fresh_username(prefix: str) -> str:
+    """A fresh, per-fixture-setup-unique username: ``prefix`` plus random
+    hex, different on every call (not cached per process)."""
+    return f"{prefix}_{uuid.uuid4().hex[:10]}"
+
+
+def _user_exists(engine, username: str) -> bool:
+    """Whether *username* is currently in ``db_user``."""
+    with engine.connect() as conn:
+        row = conn.execute(
+            text("SELECT 1 FROM db_user WHERE UPPER(name) = UPPER(:name)"),
+            {"name": username},
+        ).first()
+    return row is not None
+
+
+def _drop_user_verified(engine, username: str, *, retries: int = 5, delay: float = 0.2) -> None:
+    """Drop *username*, verifying it is actually gone instead of trusting a
+    swallowed exception (#607 review).
+
+    CUBRID can briefly refuse ``DROP USER`` with -1188 ("active user") right
+    after the last connection as that user is disposed -- the broker has not
+    yet reclaimed the session -- which a short retry clears. Any other
+    failure (most commonly -837, the user still owns a table), or the user
+    still appearing in ``db_user`` once retries are exhausted, re-raises the
+    original error instead of silently leaving the user behind to break the
+    next setup that happens to reuse this exact name.
+    """
+    last_error: Exception | None = None
+    for attempt in range(retries):
+        with engine.connect() as conn:
+            try:
+                conn.exec_driver_sql(f"DROP USER {username}")
+                conn.commit()
+                last_error = None
+            except Exception as error:
+                last_error = error
+                conn.rollback()
+        if not _user_exists(engine, username):
+            return
+        if attempt + 1 < retries:
+            time.sleep(delay)
+    if last_error is not None:
+        raise last_error
+    raise AssertionError(f"DROP USER {username} reported success but it is still in db_user")
 
 
 # The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
@@ -521,21 +588,23 @@ class TestSameNameClassOfOtherOwner:
                             raise
                         conn.rollback()
 
-        username = f"u2_{_USER_SUFFIX}"
+        username = _fresh_username("u2")
         u2 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
-            run(u2, "DROP TABLE y_dup", "DROP TABLE y_dup_parent", ignore_errors=True)
-            u2.dispose()
-            run(engine, "DROP VIEW y_dup", f"DROP USER {username}", ignore_errors=True)
+            # DBA-owned, so always safe regardless of whether `username`
+            # currently exists.
+            run(engine, "DROP VIEW y_dup", ignore_errors=True)
+            if _user_exists(engine, username):
+                run(u2, "DROP TABLE y_dup", "DROP TABLE y_dup_parent", ignore_errors=True)
+                u2.dispose()
+                _drop_user_verified(engine, username)
+            else:
+                u2.dispose()
 
-        # Idempotent: ensure the user exists (so cleanup() below can connect
-        # as it) before dropping it and any state it owns, then (re)create it
-        # for real. Combined with the per-process-unique username, an
-        # interrupted prior run or a concurrent job against the same shared
-        # database can no longer make this CREATE USER fail with
-        # "already exists" (#607).
-        run(engine, f"CREATE USER {username}", ignore_errors=True)
+        # Idempotent: drop any state left by an earlier setup that happened
+        # to use this exact (fresh, random) username before creating it for
+        # real -- a no-op in the common case where it never existed (#607).
         cleanup()
         run(engine, f"CREATE USER {username}")
         try:
@@ -574,17 +643,23 @@ class TestSameNameClassOfOtherOwner:
 
 
 @contextlib.contextmanager
-def _r549_user_cycle(engine, as_user):
+def _r549_user_cycle(engine, as_user, username=None):
     """Create user ``u549`` and the ``r549_t`` / ``r549_parent`` tables (plus,
     since CUBRID 11.2, a same-named decoy owned by the other side), yield the
     owning engine, then drop everything.
 
-    Idempotent: the user is (re-)created before ``cleanup()`` drops it and
-    any state it owns, then (re)created for real. Combined with the
-    per-process-unique username, an interrupted prior run -- or a
-    concurrent job against the same shared database -- can no longer make
-    the real ``CREATE USER`` fail with "already exists" (#607). Safe to call
-    back to back against the same database.
+    *username* defaults to a fresh, per-call-unique name (#607); pass an
+    explicit one (as the regression test below does) to force the exact
+    "leftover user under the name this call is about to use" scenario the
+    idempotent cleanup below exists to handle.
+
+    Idempotent: ``cleanup()`` drops any state already present under
+    *username* -- a no-op in the common fresh-name case -- before the real
+    ``CREATE USER``. ``cleanup()`` only connects as *username* when it
+    actually exists (``_user_exists``), and drops the user itself through
+    ``_drop_user_verified``, which does not swallow a failure that would
+    leave it behind. Safe to call back to back against the same database
+    with the same *username*.
     """
 
     def run(eng, *statements, ignore_errors=False):
@@ -601,22 +676,21 @@ def _r549_user_cycle(engine, as_user):
                         raise
                     conn.rollback()
 
-    username = f"u549_{_USER_SUFFIX}"
+    username = username or _fresh_username("u549")
     u549 = create_engine(engine.url.set(username=username, password=None))
     owner, other = (engine, u549) if as_user == "dba" else (u549, engine)
 
     def cleanup():
-        for eng in (u549, engine):
-            run(
-                eng,
-                "DROP TABLE r549_t",
-                "DROP TABLE r549_parent",
-                ignore_errors=True,
-            )
-        u549.dispose()
-        run(engine, f"DROP USER {username}", ignore_errors=True)
+        # DBA-owned, so always safe regardless of whether `username`
+        # currently exists.
+        run(engine, "DROP TABLE r549_t", "DROP TABLE r549_parent", ignore_errors=True)
+        if _user_exists(engine, username):
+            run(u549, "DROP TABLE r549_t", "DROP TABLE r549_parent", ignore_errors=True)
+            u549.dispose()
+            _drop_user_verified(engine, username)
+        else:
+            u549.dispose()
 
-    run(engine, f"CREATE USER {username}", ignore_errors=True)
     cleanup()
     run(engine, f"CREATE USER {username}")
     try:
@@ -658,21 +732,55 @@ class TestReflectionAsNonDba:
             yield owner
 
     def test_reflection_setup_reruns_against_same_database(self, engine):
-        """#607 regression: run the non-DBA (``u549``) reflection setup/
-        teardown cycle twice in a row against the same database. A stale
-        user or table left behind by the first cycle must not make the
-        second cycle's ``CREATE USER`` fail with "already exists"."""
+        """#607 regression: reproduce a setup left behind by an interrupted
+        prior run -- the exact failure from the linked CI run, where
+        ``cleanup()``'s ``DROP USER`` had failed silently and the next
+        ``CREATE USER u549`` then failed with "already exists".
+
+        Plant a user under the name the next cycle will use, with a table it
+        owns (so a plain ``DROP USER`` would fail), before running that
+        cycle: its own idempotent cleanup must remove both, and the user
+        must actually be gone from ``db_user`` afterward, not just appear to
+        be because a failure was swallowed."""
         if engine.url.username is None or engine.url.username.lower() != "dba":
             pytest.skip("needs a DBA connection to create a user")
 
-        for _ in range(2):
-            with _r549_user_cycle(engine, "u549") as owner:
-                with owner.connect() as conn:
-                    insp = inspect(conn)
-                    assert insp.get_pk_constraint("r549_t") == {
-                        "name": "pk_r549_t",
-                        "constrained_columns": ["a", "b"],
-                    }
+        username = _fresh_username("u549")
+        with _r549_user_cycle(engine, "u549", username=username) as owner:
+            with owner.connect() as conn:
+                insp = inspect(conn)
+                assert insp.get_pk_constraint("r549_t") == {
+                    "name": "pk_r549_t",
+                    "constrained_columns": ["a", "b"],
+                }
+
+        # Simulate an interrupted prior run: the same-named user is left
+        # behind, still owning a table (so a plain DROP USER would fail with
+        # -837), exactly as if this cycle's own cleanup() had been killed
+        # mid-run.
+        with engine.connect() as conn:
+            conn.exec_driver_sql(f"CREATE USER {username}")
+            conn.commit()
+        leftover = create_engine(engine.url.set(username=username, password=None))
+        with leftover.connect() as conn:
+            conn.exec_driver_sql("CREATE TABLE r549_parent (id INT PRIMARY KEY)")
+            conn.commit()
+        leftover.dispose()
+        assert _user_exists(engine, username)
+
+        # Reusing that exact username must still succeed: setup's own
+        # cleanup() must remove the leftover user and table first.
+        with _r549_user_cycle(engine, "u549", username=username) as owner:
+            with owner.connect() as conn:
+                insp = inspect(conn)
+                assert insp.get_pk_constraint("r549_t") == {
+                    "name": "pk_r549_t",
+                    "constrained_columns": ["a", "b"],
+                }
+
+        # And its own teardown must have actually removed the user, not
+        # merely swallowed a failed DROP USER.
+        assert not _user_exists(engine, username)
 
     @pytest.mark.parametrize("name", ["r549_t", "R549_T"])
     def test_reflection(self, reflecting_engine, name):
@@ -1934,21 +2042,23 @@ class TestHasIndexOwnerPreference:
                             raise
                         conn.rollback()
 
-        username = f"u543_{_USER_SUFFIX}"
+        username = _fresh_username("u543")
         u543 = create_engine(engine.url.set(username=username, password=None))
 
         def cleanup():
-            run(u543, 'DROP TABLE "Own543"', ignore_errors=True)
-            u543.dispose()
-            run(engine, 'DROP TABLE "Own543"', f"DROP USER {username}", ignore_errors=True)
+            # DBA-owned, so always safe regardless of whether `username`
+            # currently exists.
+            run(engine, 'DROP TABLE "Own543"', ignore_errors=True)
+            if _user_exists(engine, username):
+                run(u543, 'DROP TABLE "Own543"', ignore_errors=True)
+                u543.dispose()
+                _drop_user_verified(engine, username)
+            else:
+                u543.dispose()
 
-        # Idempotent: ensure the user exists (so cleanup() below can connect
-        # as it) before dropping it and any state it owns, then (re)create it
-        # for real. Combined with the per-process-unique username, an
-        # interrupted prior run or a concurrent job against the same shared
-        # database can no longer make this CREATE USER fail with
-        # "already exists" (#607).
-        run(engine, f"CREATE USER {username}", ignore_errors=True)
+        # Idempotent: drop any state left by an earlier setup that happened
+        # to use this exact (fresh, random) username before creating it for
+        # real -- a no-op in the common case where it never existed (#607).
         cleanup()
         run(engine, f"CREATE USER {username}")
         try:
