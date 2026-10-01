@@ -919,7 +919,9 @@ class TestShowCreateTableFailures:
                 ForeignKey(f"{cls.PARENT}.id", name="fk_r589_child_pid"),
             ),
         )
-        Table(cls.PLAIN, meta, Column("id", Integer, primary_key=True))
+        # No primary key: with no index in db_index, get_unique_constraints
+        # still reads SHOW CREATE TABLE (with any index it would not, #610).
+        Table(cls.PLAIN, meta, Column("id", Integer))
         return meta
 
     def _diffs(self, conn, meta):

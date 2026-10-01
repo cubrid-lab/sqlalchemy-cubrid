@@ -410,7 +410,8 @@ jobs:
           print('pycubrid sync: connected')
           "
           python -m pytest test/test_integration.py test/test_alembic_registration.py \
-            test/test_show_create_table_server_output.py -v --tb=short
+            test/test_show_create_table_server_output.py \
+            test/test_unique_constraint_fallback.py -v --tb=short
 
       - name: Run driver-differential comparison (required)
         env:

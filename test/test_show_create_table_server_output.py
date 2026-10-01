@@ -269,10 +269,9 @@ class _Rows(list[Any]):
 class _CatalogStub:
     """Serves one recorded table to ``get_unique_constraints`` / ``get_indexes``.
 
-    Answers the ``db_class`` lookup, the two ``db_index`` queries (applying
-    their ``is_unique`` / PK / FK conditions to the recorded flags, as the
-    server does) and ``SHOW INDEXES`` / ``SHOW CREATE TABLE`` from the
-    recording; any other statement fails the test.
+    Answers the ``db_class`` lookup and the two ``db_index`` projections
+    used by unique-constraint and index reflection from the recorded flags,
+    plus ``SHOW INDEXES`` / ``SHOW CREATE TABLE``. Any other statement fails.
     """
 
     def __init__(self, recorded: dict[str, list[Any]]) -> None:
@@ -280,14 +279,18 @@ class _CatalogStub:
         self.statements: list[str] = []
 
     def execute(self, statement: Any, params: Any = None) -> _Rows:
-        sql = str(statement)
+        sql = " ".join(str(statement).split())
         self.statements.append(sql)
         flags = self._recorded["db_index"]
         if "FROM db_class" in sql:
             rows: list[Any] = [("CLASS", "DBA")]
-        elif "is_unique = 'YES'" in sql:
-            rows = [(f[0],) for f in flags if f[1:] == ["YES", "NO", "NO"]]
-        elif "FROM db_index" in sql:
+        elif sql.startswith(
+            "SELECT index_name, is_unique, is_primary_key, is_foreign_key FROM db_index WHERE "
+        ):
+            rows = [tuple(f) for f in flags]
+        elif sql.startswith(
+            "SELECT index_name, is_primary_key, is_foreign_key FROM db_index WHERE "
+        ):
             rows = [(f[0], f[2], f[3]) for f in flags]
         elif sql.startswith("SHOW INDEXES IN"):
             rows = [tuple(row) for row in self._recorded["show_indexes"]]
