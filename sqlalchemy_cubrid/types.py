@@ -347,11 +347,12 @@ def _pycubrid_collection_class(name: str) -> Any | None:
 
 
 def _is_pycubrid_dialect(dialect: Dialect) -> bool:
-    """True for ``cubrid+pycubrid://`` and ``cubrid+aiopycubrid://``."""
-    # Imported here: the dialect modules import this one.
-    from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+    """True for ``cubrid+pycubrid://`` and ``cubrid+aiopycubrid://``.
 
-    return isinstance(dialect, PyCubridDialect)
+    ``PyCubridDialect`` sets the marker (the async dialect inherits it); a
+    class attribute avoids importing the dialect module, which imports this one.
+    """
+    return getattr(dialect, "_cubrid_pycubrid_dbapi", False) is True
 
 
 class _CollectionType(_StringType):
