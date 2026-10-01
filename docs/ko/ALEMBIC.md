@@ -190,7 +190,7 @@ Alembic은 `dialect.name`을 키로 하는 레지스트리에서 마이그레이
 
 어느 경우든 `env.py`나 마이그레이션 파일에 임포트나 구성이 필요 없습니다. Alembic이 없으면 아무것도 등록하거나 기록하지 않습니다.
 
-Alembic 1.18 이상에서는 CUBRID 방언을 로드해도 Alembic을 임포트하지 않으므로, 마이그레이션을 실행하지 않는 애플리케이션은 더 이상 그 임포트 비용을 치르지 않습니다(Alembic 1.20.0, SQLAlchemy 2.0.54, Python 3.10에서 새 프로세스의 첫 `create_engine("cubrid+pycubrid://...")`가 약 80 ms 대신 약 18 ms). 방언은 이를 Alembic 자체가 아니라 설치된 패키지 메타데이터로 판단합니다. Alembic이 이미 임포트되었거나 메타데이터를 읽을 수 없으면 직접 임포트로 돌아가며, 이는 무해합니다.
+Alembic 1.18 이상에서는 CUBRID 방언을 로드해도 Alembic을 임포트하지 않으므로, 마이그레이션을 실행하지 않는 애플리케이션은 더 이상 그 임포트 비용을 치르지 않습니다(Alembic 1.20.0, SQLAlchemy 2.0.54, Python 3.10에서 새 프로세스의 첫 `create_engine("cubrid+pycubrid://...")`가 약 80 ms 대신 약 18 ms). 방언은 이를 Alembic 자체가 아니라 설치된 패키지 메타데이터로 판단합니다. Alembic이 이미 임포트되었거나, 메타데이터를 읽을 수 없거나, 메타데이터가 실제로 임포트될 `alembic` 패키지의 것이 아니면(예: `sys.path` 앞쪽의 이전 사본) 직접 임포트로 돌아가며, 이는 무해합니다.
 
 Alembic 1.18 이상은 임포트될 때 `alembic.runtime.plugins` 로거로 `INFO` 줄(`setup plugin alembic.autogenerate.schemas`, ..., `setup plugin alembic.ext.checkconstraint_byname`)을 남기며, sqlalchemy-cubrid가 설치되어 있으면 `setup plugin sqlalchemy_cubrid`도 남깁니다. 이는 Alembic 자체의 메시지입니다. 이 버전들에서는 방언이 더 이상 Alembic을 임포트하지 않으므로, 이 줄은 Alembic을 사용하는 프로세스에서만, 그리고 애플리케이션이 `INFO` 레코드를 핸들러로 보낼 때(예: `logging.basicConfig(level=logging.INFO)`)에만 나타납니다. Alembic 1.7.2 – 1.17.x에서는 방언이 여전히 Alembic을 임포트하지만(약 0.1초), 이 릴리스들은 이런 줄을 남기지 않습니다. 로거 레벨은 애플리케이션이 정할 일이므로 방언은 `alembic` 로거를 건드리지 않습니다. 이 줄을 숨기려면 애플리케이션의 로깅 설정에서 해당 로거의 레벨을 올리세요.
 

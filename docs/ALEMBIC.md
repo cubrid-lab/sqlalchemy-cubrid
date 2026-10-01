@@ -253,8 +253,10 @@ Alembic, so applications that never run a migration no longer pay its import
 cost (with Alembic 1.20.0, SQLAlchemy 2.0.54 and Python 3.10, the first
 `create_engine("cubrid+pycubrid://...")` in a fresh process takes about 18 ms
 instead of about 80 ms). The dialect checks the installed package metadata for this, not
-Alembic itself. If Alembic has already been imported, or the metadata cannot
-be read, it falls back to the direct import, which is harmless.
+Alembic itself. If Alembic has already been imported, the metadata cannot be
+read, or it does not belong to the `alembic` package that would be imported
+(for example an older copy earlier on `sys.path`), it falls back to the direct
+import, which is harmless.
 
 Importing Alembic 1.18 and later logs `INFO` lines from the
 `alembic.runtime.plugins` logger (`setup plugin alembic.autogenerate.schemas`,

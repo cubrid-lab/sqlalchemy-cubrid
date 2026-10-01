@@ -17,7 +17,7 @@ never read the group; :mod:`sqlalchemy_cubrid.dialect` imports
 ``alembic_impl`` for them.
 
 Everything here runs inside ``import alembic`` for every Alembic user who has
-sqlalchemy-cubrid installed, so it must never raise:
+sqlalchemy-cubrid installed, so it must not raise:
 
 * Alembic documents the entry point value as the plugin module, but Alembic
   1.18 through 1.20 run ``for mod in entrypoint.load()``, which fails with
@@ -25,6 +25,9 @@ sqlalchemy-cubrid installed, so it must never raise:
   module is therefore made iterable, yielding itself.  It keeps working if
   Alembic calls ``setup()`` on the loaded object directly, as documented.
 * ``setup()`` turns any failure into a warning instead of an exception.
+* Loading this module only imports the ``sqlalchemy_cubrid`` package, which
+  needs nothing beyond SQLAlchemy (which Alembic imports first) and the
+  standard library.
 """
 
 from __future__ import annotations
@@ -38,7 +41,7 @@ from typing import Any, Iterator
 log = logging.getLogger(__name__)
 
 
-def setup(plugin: Any) -> None:
+def setup(plugin: Any = None) -> None:
     """Register ``CubridImpl`` with Alembic.
 
     Called by Alembic with its ``Plugin`` object, which is not used: the

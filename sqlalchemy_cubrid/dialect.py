@@ -23,6 +23,7 @@ from __future__ import annotations
 import importlib.metadata
 import importlib.util
 import logging
+import os
 import re
 import sys
 import warnings
@@ -1680,15 +1681,26 @@ def _alembic_loads_cubrid_plugin() -> bool:
     ``import alembic``, and sqlalchemy-cubrid publishes
     :mod:`sqlalchemy_cubrid.alembic_plugin` there (#595).  This checks
     installed metadata only, so it never imports Alembic.  Any doubt (Alembic
-    already imported, an unparsable version, sqlalchemy-cubrid imported from
+    already imported, an unparsable version, metadata that does not belong to
+    the importable ``alembic`` package, sqlalchemy-cubrid imported from
     a tree without the entry point) returns False, and the caller imports
     ``alembic_impl`` directly as before.
     """
     if "alembic" in sys.modules:
         return False
     try:
-        major, minor = importlib.metadata.version("alembic").split(".")[:2]
+        alembic_dist = importlib.metadata.distribution("alembic")
+        major, minor = alembic_dist.version.split(".")[:2]
         if (int(major), int(minor)) < (1, 18):
+            return False
+        # The metadata must describe the Alembic that ``import alembic`` will
+        # load; an older copy earlier on sys.path would never read the plugin.
+        spec = importlib.util.find_spec("alembic")
+        if spec is None or spec.origin is None:
+            return False
+        if os.path.realpath(spec.origin) != os.path.realpath(
+            str(alembic_dist.locate_file("alembic/__init__.py"))
+        ):
             return False
         return any(
             ep.group == "alembic.plugins" and ep.value == "sqlalchemy_cubrid.alembic_plugin"

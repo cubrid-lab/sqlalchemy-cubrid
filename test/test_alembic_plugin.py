@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.metadata
+import importlib.util
 import logging
 import os
 import subprocess
@@ -84,6 +85,7 @@ class TestPluginModule:
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
         alembic_plugin.setup(object())
+        alembic_plugin.setup()  # a loader that passes no Plugin must not fail
 
         assert _impls["cubrid"] is CubridImpl
 
@@ -134,6 +136,9 @@ class TestEntryPoint:
                     Plugin.setup_plugin_from_module(mod, name)
             else:
                 Plugin.setup_plugin_from_module(ep.load(), name)
+            from alembic.runtime import plugins
+
+            assert name in plugins._all_plugins
         finally:
             from alembic.runtime import plugins
 
@@ -188,36 +193,80 @@ class TestDialectFallback:
 
         assert cubrid_dialect._alembic_loads_cubrid_plugin() is False
 
-    @pytest.mark.parametrize("version", ["1.7.2", "1.17.2", "not-a-version"])
-    def test_old_or_unknown_alembic_uses_eager_import(self, monkeypatch: Any, version: str) -> None:
+    @staticmethod
+    def _fake_metadata(
+        monkeypatch: Any,
+        tmp_path: Any,
+        version: str = "1.18.0",
+        plugin_value: str | None = _PLUGIN_VALUE,
+        spec_origin: str | None = "same",
+    ) -> None:
+        """Fake installed metadata for Alembic and sqlalchemy-cubrid.
+
+        ``spec_origin`` is where ``import alembic`` would load from: ``"same"``
+        is the file the Alembic metadata describes, ``None`` means no spec.
+        """
+        init = tmp_path / "alembic" / "__init__.py"
+        init.parent.mkdir()
+        init.write_text("")
+        alembic_dist = types.SimpleNamespace(
+            version=version, locate_file=lambda rel: tmp_path / rel
+        )
+        eps = (
+            []
+            if plugin_value is None
+            else [importlib.metadata.EntryPoint("x", plugin_value, "alembic.plugins")]
+        )
+        cubrid_dist = types.SimpleNamespace(entry_points=eps)
+        dists = {"alembic": alembic_dist, "sqlalchemy-cubrid": cubrid_dist}
+        if spec_origin == "same":
+            spec_origin = str(init)
+        spec = None if spec_origin is None else types.SimpleNamespace(origin=spec_origin)
+
         monkeypatch.delitem(sys.modules, "alembic", raising=False)
-        monkeypatch.setattr(importlib.metadata, "version", lambda name: version)
+        monkeypatch.setattr(importlib.metadata, "distribution", lambda name: dists[name])
+        monkeypatch.setattr(importlib.util, "find_spec", lambda name: spec)
+
+    def test_new_alembic_with_declared_plugin_skips_eager_import(
+        self, monkeypatch: Any, tmp_path: Any
+    ) -> None:
+        self._fake_metadata(monkeypatch, tmp_path)
+
+        assert cubrid_dialect._alembic_loads_cubrid_plugin() is True
+
+    @pytest.mark.parametrize(
+        "overrides",
+        [
+            {"version": "1.7.2"},
+            {"version": "1.17.2"},
+            {"version": "not-a-version"},
+            {"plugin_value": "other.module"},
+            {"plugin_value": None},
+            {"spec_origin": None},
+            {"spec_origin": "/elsewhere/alembic/__init__.py"},
+        ],
+        ids=[
+            "alembic-1.7.2",
+            "alembic-1.17.2",
+            "unparsable-version",
+            "other-entry-point",
+            "no-entry-point",
+            "alembic-not-importable",
+            "metadata-for-another-copy",
+        ],
+    )
+    def test_any_doubt_uses_eager_import(
+        self, monkeypatch: Any, tmp_path: Any, overrides: dict[str, Any]
+    ) -> None:
+        self._fake_metadata(monkeypatch, tmp_path, **overrides)
 
         assert cubrid_dialect._alembic_loads_cubrid_plugin() is False
 
     def test_missing_alembic_uses_eager_import(self, monkeypatch: Any) -> None:
-        def missing(name: str) -> str:
+        def missing(name: str) -> Any:
             raise importlib.metadata.PackageNotFoundError(name)
 
         monkeypatch.delitem(sys.modules, "alembic", raising=False)
-        monkeypatch.setattr(importlib.metadata, "version", missing)
+        monkeypatch.setattr(importlib.metadata, "distribution", missing)
 
         assert cubrid_dialect._alembic_loads_cubrid_plugin() is False
-
-    @pytest.mark.parametrize(
-        ("value", "expected"),
-        [(_PLUGIN_VALUE, True), ("other.module", False), (None, False)],
-        ids=["declared", "other-value", "not-installed"],
-    )
-    def test_new_alembic_uses_plugin_only_when_declared(
-        self, monkeypatch: Any, value: str | None, expected: bool
-    ) -> None:
-        eps = (
-            [] if value is None else [importlib.metadata.EntryPoint("x", value, "alembic.plugins")]
-        )
-        dist = types.SimpleNamespace(entry_points=eps)
-        monkeypatch.delitem(sys.modules, "alembic", raising=False)
-        monkeypatch.setattr(importlib.metadata, "version", lambda name: "1.18.0")
-        monkeypatch.setattr(importlib.metadata, "distribution", lambda name: dist)
-
-        assert cubrid_dialect._alembic_loads_cubrid_plugin() is expected
