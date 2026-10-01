@@ -144,6 +144,16 @@ jobs:
         run: |
           python -m pytest test/test_transactional_ddl.py -v --tb=short -rs
 
+      # Recorded SHOW CREATE TABLE output per supported CUBRID version (#611):
+      # one Python lane is enough to compare every version's recording with
+      # its live server (PR CI covers only 10.2 and 11.4).
+      - name: Check recorded SHOW CREATE TABLE output
+        if: matrix.python-version == '3.12'
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+        run: |
+          python -m pytest test/test_show_create_table_server_output.py -m integration -v --tb=short
+
       # Snapshot generation is gated to a single Python (3.12) so the 5x4
       # Python x CUBRID matrix yields exactly one artifact per CUBRID version,
       # which the version-differential job below compares.
