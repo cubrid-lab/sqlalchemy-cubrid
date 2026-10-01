@@ -796,7 +796,7 @@ class TestAutogenerateForeignKeyDefaultActions:
         ("created", "model"),
         [
             ({}, {"ondelete": "CASCADE"}),  # adding an action
-            ({}, {"onupdate": "CASCADE"}),
+            ({}, {"onupdate": "SET NULL"}),  # CUBRID has no ON UPDATE CASCADE
             ({"ondelete": "CASCADE"}, {}),  # removing it again
             ({"ondelete": "SET NULL"}, {"ondelete": "CASCADE"}),
         ],

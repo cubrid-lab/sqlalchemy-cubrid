@@ -3157,9 +3157,12 @@ what the server says. For autogenerate, `CubridImpl` treats that reflected
 `RESTRICT` as equal to a model `ForeignKey` with no `ondelete` / `onupdate`
 (#597), so an unchanged foreign key produces no `drop_constraint` /
 `create_foreign_key` pair, whether the model leaves the action out or names
-`RESTRICT`. Any other change is still detected: adding `ondelete="CASCADE"`,
-removing it again, or switching to `SET NULL`. CUBRID prints `NO ACTION`
-as `NO ACTION`; Alembic itself treats it as equal to no action.
+`RESTRICT`. Adding `ondelete="CASCADE"` or `SET NULL`, removing it again, or
+switching between them is still detected. `NO ACTION` is different: CUBRID
+prints it as `NO ACTION`, but Alembic itself treats `NO ACTION` and no action
+as equal in both directions, so switching between them is not detected. CUBRID
+rejects `ON UPDATE CASCADE`; use `SET NULL`, `RESTRICT` or `NO ACTION` for
+`onupdate`.
 
 ### `alter_column()` behavior
 

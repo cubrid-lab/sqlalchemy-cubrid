@@ -286,9 +286,11 @@ CUBRID의 기본 `ON DELETE` / `ON UPDATE` 동작은 `RESTRICT`이며
 `CubridImpl`이 리플렉션된 `RESTRICT`를 `ondelete` / `onupdate`가 없는 모델
 `ForeignKey`와 같은 것으로 취급하므로(#597), 모델이 동작을 생략하든 `RESTRICT`를
 명시하든 변경되지 않은 외래 키에 대해 `drop_constraint` / `create_foreign_key` 쌍이
-생성되지 않습니다. 그 밖의 변경, 즉 `ondelete="CASCADE"` 추가, 다시 제거,
-`SET NULL`로 전환은 여전히 감지됩니다. CUBRID는 `NO ACTION`을 `NO ACTION`으로
-출력하며, Alembic은 이를 동작 없음과 같은 것으로 취급합니다.
+생성되지 않습니다. `ondelete="CASCADE"`나 `SET NULL`의 추가, 다시 제거, 둘 사이의
+전환은 여전히 감지됩니다. `NO ACTION`은 다릅니다. CUBRID는 이를 `NO ACTION`으로
+출력하지만 Alembic 자체가 `NO ACTION`과 동작 없음을 양방향으로 같은 것으로 취급하므로,
+둘 사이의 전환은 감지되지 않습니다. CUBRID는 `ON UPDATE CASCADE`를 거부하므로
+`onupdate`에는 `SET NULL`, `RESTRICT` 또는 `NO ACTION`을 사용하세요.
 
 ### `alter_column()` 동작
 

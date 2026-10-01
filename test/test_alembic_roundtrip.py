@@ -388,11 +388,11 @@ def test_fk_default_restrict_is_not_a_diff(model_ondelete, model_onupdate) -> No
     [
         # Adding an action to an FK that has the default.
         ("CASCADE", None, _CUBRID_DEFAULT_ACTIONS),
-        (None, "CASCADE", _CUBRID_DEFAULT_ACTIONS),
+        (None, "SET NULL", _CUBRID_DEFAULT_ACTIONS),
         ("SET NULL", None, _CUBRID_DEFAULT_ACTIONS),
         # Removing an action: the model goes back to the default.
         (None, None, {"ondelete": "CASCADE", "onupdate": "RESTRICT"}),
-        (None, None, {"ondelete": "RESTRICT", "onupdate": "CASCADE"}),
+        (None, None, {"ondelete": "RESTRICT", "onupdate": "SET NULL"}),
         (None, None, {"ondelete": "SET NULL", "onupdate": "RESTRICT"}),
         # Changing one non-default action to another.
         ("CASCADE", None, {"ondelete": "SET NULL", "onupdate": "RESTRICT"}),
@@ -427,11 +427,65 @@ def test_correct_for_autogen_foreignkeys_only_clears_default_restrict() -> None:
         return fk, unmatched
 
     conn_fk, conn_unmatched = _fk(sa.MetaData(), "RESTRICT", "Restrict")
-    metadata_fk, _ = _fk(sa.MetaData(), None, "CASCADE")
+    metadata_fk, _ = _fk(sa.MetaData(), None, "SET NULL")
 
     impl = CubridImpl(CubridDialect(), None, False, False, None, {})
     impl.correct_for_autogen_foreignkeys({conn_fk, conn_unmatched}, {metadata_fk})
 
     assert conn_fk.ondelete is None  # model has no ON DELETE: RESTRICT is the default
-    assert conn_fk.onupdate == "Restrict"  # model has CASCADE: a real difference
+    assert conn_fk.onupdate == "Restrict"  # model has SET NULL: a real difference
     assert conn_unmatched.ondelete == "RESTRICT"  # no model FK to compare against
+
+
+def _child_fks(metadata, *fks):
+    """Attach *fks* to a ``child(pid)`` table referencing ``parent(id)``."""
+    sa.Table("parent", metadata, sa.Column("id", sa.Integer, primary_key=True))
+    child = sa.Table(
+        "child",
+        metadata,
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("pid", sa.Integer),
+    )
+    for fk in fks:
+        child.append_constraint(fk)
+    return fks
+
+
+def test_correct_for_autogen_foreignkeys_same_columns_needs_every_candidate_default() -> None:
+    """Two unnamed model FKs on the same columns: RESTRICT is cleared only if
+    neither names an action, whatever order the sets iterate in."""
+    from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+    impl = CubridImpl(CubridDialect(), None, False, False, None, {})
+    for _ in range(20):
+        (conn_fk,) = _child_fks(
+            sa.MetaData(),
+            sa.ForeignKeyConstraint(["pid"], ["parent.id"], ondelete="RESTRICT"),
+        )
+        plain, cascade = _child_fks(
+            sa.MetaData(),
+            sa.ForeignKeyConstraint(["pid"], ["parent.id"]),
+            sa.ForeignKeyConstraint(["pid"], ["parent.id"], ondelete="CASCADE"),
+        )
+        impl.correct_for_autogen_foreignkeys({conn_fk}, {plain, cascade})
+        assert conn_fk.ondelete == "RESTRICT"
+
+
+def test_correct_for_autogen_foreignkeys_matches_by_name_first() -> None:
+    """A named reflected FK is compared with the model FK of the same name."""
+    from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+    impl = CubridImpl(CubridDialect(), None, False, False, None, {})
+    conn_plain, conn_cascade = _child_fks(
+        sa.MetaData(),
+        sa.ForeignKeyConstraint(["pid"], ["parent.id"], name="fk_plain", ondelete="RESTRICT"),
+        sa.ForeignKeyConstraint(["pid"], ["parent.id"], name="fk_cascade", ondelete="RESTRICT"),
+    )
+    md_plain, md_cascade = _child_fks(
+        sa.MetaData(),
+        sa.ForeignKeyConstraint(["pid"], ["parent.id"], name="fk_plain"),
+        sa.ForeignKeyConstraint(["pid"], ["parent.id"], name="fk_cascade", ondelete="CASCADE"),
+    )
+    impl.correct_for_autogen_foreignkeys({conn_plain, conn_cascade}, {md_plain, md_cascade})
+    assert conn_plain.ondelete is None
+    assert conn_cascade.ondelete == "RESTRICT"
