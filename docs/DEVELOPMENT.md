@@ -138,7 +138,9 @@ make lint          # Run ruff linter + format checks
 make check-tool-versions # Verify local/CI tool pins and type-check cells agree
 make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
-make test          # Run offline tests with coverage (95% threshold)
+make test          # Run the fast offline tests with coverage (95% threshold)
+make test-repo     # Run the repository-tooling tests (Makefile, signal handling, repo scripts)
+make test-offline  # Run every offline test (fast + repository-tooling) with coverage
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
@@ -469,7 +471,9 @@ The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinne
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
 run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
 the existing pycubrid/Alembic extras and development test dependencies. Offline
-selection is `-m "not integration"`; the integration environment selects
+selection in the `py3xx` environments is `-m "not integration and not repo"`, and
+the `repo` environment runs the repository-tooling tests with `-m repo` (#594);
+the integration environment selects
 `-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
 compliance suite requires the testing plugin enabled by `--dburi`; existing CI
 runs it separately with that argument and its known-failure baseline. Regular
@@ -477,7 +481,7 @@ tox integration does not run the formal suite. The offline threshold remains 95%
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
@@ -507,10 +511,20 @@ The CI pipeline tests the following matrix:
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **CUBRID 11.4** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.2** | ✅ | — | — | — | ✅ |
 | **CUBRID 11.0** | ✅ | — | — | — | ✅ |
 | **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+
+`make test` deselects the `repo` marker, which `test/conftest.py` applies to the
+modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
+`test_docs_reason.py`, `test_release_detect.py`). These tests drive the Makefile
+`integration` recipe and its sh/bash signal handling and the repository scripts
+through subprocesses; on a 1,677-test offline run they took about 85 of 103
+seconds (#594). They stay required: the `repo-tests` CI job runs `-m repo` on
+every supported Python, and `matrix-result` fails unless it succeeds. `tox`
+runs them in its `repo` environment.
 
 ---
 

@@ -1,4 +1,4 @@
-.PHONY: help install lint format check-tool-versions check-docs-reason typecheck security check check-all test test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release-check
+.PHONY: help install lint format check-tool-versions check-docs-reason typecheck security check check-all test test-repo test-offline test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release-check
 
 PYTEST = python3 -m pytest
 PYTHON = python3
@@ -74,7 +74,20 @@ check-docs-reason: ## Check docs reasons and real event/workflow regressions
 
 check-all: check security check-docs-reason ## Run lint + typecheck + security + docs gate tests
 
-test: ## Run offline tests with coverage (no DB required)
+# Offline test lanes (#594). `repo` marks repository-tooling tests (Makefile
+# recipes, signal handling, repo scripts; see REPO_TOOLING_MODULES in
+# test/conftest.py). CI runs both lanes as required jobs.
+test: ## Run the fast offline tests with coverage (no DB, no repo-tooling tests)
+	$(PYTEST) $(TESTS)/ -v \
+		-m "not integration and not repo" \
+		--cov=$(SRC) \
+		--cov-report=term-missing \
+		--cov-fail-under=95
+
+test-repo: ## Run the repository-tooling tests (Makefile, signal handling, repo scripts)
+	$(PYTEST) $(TESTS)/ -v -m repo
+
+test-offline: ## Run every offline test (fast + repo-tooling) with coverage
 	$(PYTEST) $(TESTS)/ -v \
 		-m "not integration" \
 		--cov=$(SRC) \
