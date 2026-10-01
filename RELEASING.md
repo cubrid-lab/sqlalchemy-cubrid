@@ -174,6 +174,55 @@ gh workflow run release.yml -f action=verify-only -f version=X.Y.Z
 gh workflow run release.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
 ```
 
+### Dry-run evidence
+
+Before dispatching, audit `gh run list -R cubrid-lab/sqlalchemy-cubrid --workflow=release.yml`
+for an existing `dry-run`/`resume`/`verify-only` run at the current
+`release.yml` revision (including `scripts/release_detect.py`,
+`scripts/release_summary.py` and the other scripts the jobs check out from
+the workflow's own commit): a run against an older revision of those scripts
+does not cover code paths changed since. An ordinary push whose `detect`
+finds "no release" proves detection only, not the full dry-run path below.
+
+Last full dry run: [run 36862681247](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/36862681247),
+dispatched `-f action=dry-run -f version=1.8.0` from `main` at commit
+[`ae80955`](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ae80955999da710bb9f62e68dd2394b7daeb5383)
+(workflow file and scripts unchanged since
+[`d27b414`](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d27b414755f7b7247492225524a00288824255df),
+#606). An earlier full dry run,
+[run 36721019106](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/36721019106),
+had passed at commit `5f1e07e`, but `scripts/release_summary.py` changed in
+`d27b414` (#606) after that run, so it no longer covered the summary job's
+current code; this run re-exercises the full path at the current revision.
+
+Job conclusions for 36862681247: `detect` success (mode `dry-run`, tag
+`v1.8.0` reported `different` — it already exists at the published commit,
+untouched by this dry run), `consistency` success, `matrix` (full
+compatibility matrix) success — the nightly, non-gating "Mutation testing"
+lane failed as it also did on the prior evidence run, and does not affect
+the matrix's own gating result, which succeeded — `build` success, `publish`
+**skipped** (no tag, Release or PyPI upload — verified: nothing changed on
+PyPI or in this repository's tags/Releases), `verify-cookbook` success,
+`require-cookbook` success (installed `1.8.0` == requested `1.8.0`),
+`summary` success with final state `dry run passed; nothing published;
+cookbook verification success`.
+
+Build artifact SHA-256 (built fresh by this run, not uploaded anywhere;
+recorded here only as dry-run evidence, 14-day run-artifact retention):
+
+```
+ed8fd12ef6b8b1f4d2ad833eeca2d794bb29b6cb7a3232fd1669bbcdeb1fe74c  sqlalchemy_cubrid-1.8.0-py3-none-any.whl
+09c065db710ab93720e65d329b6c38efa8a7b01977b9ae25d89ce1279632c9be  sqlalchemy_cubrid-1.8.0.tar.gz
+```
+
+**Limit:** `verify-cookbook` on a `dry-run` installs the already-published
+`sqlalchemy-cubrid==1.8.0` from PyPI (the cookbook's release verification
+contract only ever installs from PyPI), never the wheel this dry run just
+built. A passing dry run shows that `consistency`, the full matrix, `build`
+and the cookbook-call plumbing still work at this commit; it does not prove
+that an unpublished, not-yet-released wheel installs cleanly — only
+`publish` followed by its own `verify-cookbook` does that.
+
 ## Repository settings this relies on
 
 - Squash merge only; the PR title becomes the commit title.
