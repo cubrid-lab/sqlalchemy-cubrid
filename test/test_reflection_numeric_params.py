@@ -94,12 +94,15 @@ def test_other_parameterized_types_unchanged() -> None:
     assert isinstance(bit_varying, BIT) and (bit_varying.length, bit_varying.varying) == (64, True)
 
 
-def test_unsupported_parameter_grammar_still_unrecognized() -> None:
-    """Only digit lists are stripped: a non-numeric parameter list is not
-    silently accepted as a known type."""
+@pytest.mark.parametrize("coltype", ["NUMERIC(p, s)", "NUMERIC(10,)", "NUMERIC(,)", "NUMERIC(, 2)"])
+def test_unsupported_parameter_grammar_unrecognized(coltype: str) -> None:
+    """Only lists of digits separated by commas are stripped: a non-numeric
+    list, or a degenerate one with an empty element (which the previous
+    ``\\([\\d,]+\\)`` pattern stripped), is not silently accepted as a known
+    type."""
     dialect = CubridDialect()
     connection = MagicMock()
-    connection.execute.side_effect = [[("c0", "NUMERIC(p, s)", "YES", "", None, "")], []]
+    connection.execute.side_effect = [[("c0", coltype, "YES", "", None, "")], []]
     with pytest.warns(sa_exc.SAWarning, match="Did not recognize type"):
         (column,) = dialect.get_columns(connection, "t")
     assert isinstance(column["type"], NullType)
