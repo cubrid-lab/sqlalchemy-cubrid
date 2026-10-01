@@ -1438,64 +1438,14 @@ class TestDoPing:
             eng.dispose()
 
 
-# Run in a separate process: CUBRIDdb holds the GIL while a statement runs
-# (and select() on a pipe, used to hear "ready" from it, is POSIX-only). It
-# records the transactions already running a query (its own included),
-# prints "ready", then sends KILL QUERY to the one new query that is still
-# running half a second later: the victim.
-#
-# This still identifies the victim by timing rather than by its SQL text.
-# CUBRID gives no way to do the latter: neither ``SHOW TRANSACTION TABLES``
-# nor ``SHOW THREADS`` exposes the running statement's text or any field an
-# application can tag (``Client_info``/``Client_program``/``Client_pid`` are
-# the CAS's own identity, not the driver's; verified live on 11.4). The slow
-# query below is still tagged with a unique comment, so a run can be found in
-# a broker SQL log by eye, but the helper itself cannot match on it. That
-# makes this test reliable only when it is the sole session running a slow
-# query against the target CUBRID instance at the time, e.g. one `make
-# integration` run at a time against a given container/database (#578).
-_KILL_QUERY_SCRIPT = """
-import sys, time
-import sqlalchemy as sa
-
-def running(cur):
-    cur.execute("SHOW TRANSACTION TABLES")
-    cols = [d[0].lower() for d in cur.description]
-    index, started = cols.index("tran_index"), cols.index("query_start_time")
-    return {row[index] for row in cur.fetchall() if row[started] is not None}
-
-engine = sa.create_engine(sys.argv[1], poolclass=sa.pool.NullPool)
-raw = engine.raw_connection()
-try:
-    cur = raw.cursor()
-    before = running(cur)
-    print("ready", flush=True)
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        new = running(cur) - before
-        if new:
-            time.sleep(0.5)
-            # Only a query still running after the pause: a short one, such as
-            # the service health check, must not be mistaken for the victim.
-            victims = new & running(cur)
-            if len(victims) == 1:
-                # KILL takes no bind parameter; tran_index is an int from the server.
-                cur.execute("KILL QUERY " + str(int(victims.pop())))
-                print("killed", flush=True)
-                break
-        time.sleep(0.1)
-    else:
-        sys.exit("no running query to kill")
-finally:
-    raw.close()
-"""
-
-# Long enough to be killed mid-run. Its runtime is bounded by the catalog size
-# (under a minute on CUBRID 11.4) if the kill fails: the helper then exits
-# non-zero and the test fails instead of hanging. The comment is a unique tag
-# for finding this run's query by eye in a broker SQL log; CUBRID does not
-# expose it back through SHOW TRANSACTION TABLES, so the helper above still
-# matches by timing, not by this text (see the comment on _KILL_QUERY_SCRIPT).
+# The helper runs in another process because CUBRIDdb holds the GIL during a
+# statement (and select() on its "ready" pipe is POSIX-only). It reads the
+# authenticated Client_db_user from SHOW TRANSACTION TABLES and only targets
+# a running query of this test's freshly created account (#634). The query
+# comment remains useful in broker logs, but is not used for selection.
+# This is not an atomic server-side compare-and-kill: keep the disruptive
+# class serialized against a given CUBRID server.
+# The catalog-size query lasts under a minute on CUBRID 11.4 if no kill occurs.
 _SLOW_QUERY = text(
     f"SELECT /* kill-query-victim:{uuid.uuid4().hex} */ COUNT(*)"
     " FROM db_attribute a, db_attribute b, db_attribute c,"
@@ -1504,15 +1454,12 @@ _SLOW_QUERY = text(
 
 
 class TestIsDisconnect:
-    """Not parallelizable and not rerun-isolated by a unique name (#612): the
-    victim of ``_KILL_QUERY_SCRIPT`` is identified by *timing* ("the one new
-    query still running half a second after start"), because CUBRID exposes
-    no per-session tag ``SHOW TRANSACTION TABLES`` can match on (see the
-    comment above ``_KILL_QUERY_SCRIPT``, #578). A concurrent session running
-    its own slow query against the same CUBRID instance -- another worker, or
-    another ``make integration`` run sharing a server -- can make the helper
-    pick the wrong victim or find more than one candidate and fail outright.
-    Run this class alone against a given CUBRID instance.
+    """Serialized disruptive cases: KILL QUERY is server-wide (#612, #634).
+
+    The victim uses a generated database account that no other test uses,
+    and the helper fails closed unless its one active query is identifiable.
+    KILL QUERY itself has no atomic user predicate, so this class remains
+    serialized against a given CUBRID server.
     """
 
     def test_interrupted_query_keeps_connection(self, engine):
@@ -1521,44 +1468,84 @@ class TestIsDisconnect:
         -4 is the server's ER_INTERRUPTED. CUBRIDdb reports it in ``args[0]``
         and pycubrid in ``errno``; neither is a disconnect.
 
-        Relies on ``_KILL_QUERY_SCRIPT``, which identifies its victim by
-        timing and waits on it through a pipe with ``select()`` (POSIX-only);
-        see the comment above that script for why (#578).
+        The subprocess helper reads Client_db_user and Query_start_time; it
+        never selects by the appearance time of another server query. The
+        ready pipe uses POSIX select() because CUBRIDdb holds the GIL.
         """
-        url = engine.url.render_as_string(hide_password=False)
-        killer = subprocess.Popen(  # noqa: S603 - runs this interpreter on a fixed script
-            [sys.executable, "-c", _KILL_QUERY_SCRIPT, url],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-        )
+        if engine.url.username is None or engine.url.username.casefold() != "dba":
+            pytest.fail("KILL QUERY integration test requires a DBA CUBRID_TEST_URL")
+
+        username = f"kq634_{uuid.uuid4().hex[:16]}"
+        assert not _user_exists(engine, username), "refusing to reuse an existing database user"
+        created = False
+        victim_engine = None
         try:
-            assert killer.stdout is not None
-            # Bounded wait: the helper may stall connecting to a busy broker.
-            readable, _, _ = io_select.select([killer.stdout], [], [], 60)
-            if not readable or killer.stdout.readline().strip() != "ready":
-                killer.kill()
-                killer.wait(timeout=60)
-                pytest.fail(f"KILL QUERY helper failed: {killer.stderr.read()}")
-            with engine.connect() as conn:
+            with engine.connect() as admin:
+                admin.exec_driver_sql(f"CREATE USER {username}")
+                created = True
+                admin.commit()
+
+            victim_engine = create_engine(
+                engine.url.set(username=username, password=None),
+                poolclass=sa.pool.NullPool,
+            )
+            with victim_engine.connect() as conn:
+                # Open and warm this physical session before the helper says
+                # ready, so its account is already visible to the broker.
                 conn.execute(text("SELECT 1"))
                 dbapi_conn = conn.connection.dbapi_connection
-                with pytest.raises(sa.exc.DBAPIError) as info:
-                    conn.execute(_SLOW_QUERY)
-                orig = info.value.orig
-                code = getattr(orig, "errno", None)  # pycubrid
-                if code is None:
-                    code = orig.args[0]  # CUBRIDdb
-                assert code == -4
-                assert info.value.connection_invalidated is False
-                conn.rollback()
-                assert conn.execute(text("SELECT 1")).scalar() == 1
-                assert conn.connection.dbapi_connection is dbapi_conn
-            assert killer.wait(timeout=60) == 0, killer.stderr.read()
+                killer = None
+                try:
+                    killer = subprocess.Popen(  # noqa: S603 - fixed local module/interpreter
+                        [
+                            sys.executable,
+                            "-m",
+                            "test._kill_query",
+                            engine.url.render_as_string(hide_password=False),
+                            username,
+                        ],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        text=True,
+                    )
+                    assert killer.stdout is not None
+                    # Bound helper startup without assuming a timing-based
+                    # identity; zero active victim queries is expected here.
+                    readable, _, _ = io_select.select([killer.stdout], [], [], 60)
+                    if not readable or killer.stdout.readline().strip() != "ready":
+                        if killer.poll() is None:
+                            killer.kill()
+                        killer.wait(timeout=60)
+                        assert killer.stderr is not None
+                        raise AssertionError(
+                            f"KILL QUERY helper did not become ready: {killer.stderr.read()}"
+                        )
+                    with pytest.raises(sa.exc.DBAPIError) as info:
+                        conn.execute(_SLOW_QUERY)
+                    orig = info.value.orig
+                    code = getattr(orig, "errno", None)  # pycubrid
+                    if code is None:
+                        code = orig.args[0]  # CUBRIDdb
+                    assert code == -4
+                    assert info.value.connection_invalidated is False
+                    conn.rollback()
+                    assert conn.execute(text("SELECT 1")).scalar() == 1
+                    assert conn.connection.dbapi_connection is dbapi_conn
+                    assert killer.wait(timeout=60) == 0, killer.stderr.read()
+                finally:
+                    # Reap the child while the victim connection is still
+                    # open, even after a failed assertion or broker error.
+                    if killer is not None:
+                        if killer.poll() is None:
+                            killer.kill()
+                        killer.wait(timeout=60)
         finally:
-            if killer.poll() is None:
-                killer.kill()
-                killer.wait()
+            try:
+                if victim_engine is not None:
+                    victim_engine.dispose()
+            finally:
+                if created:
+                    _drop_user_verified(engine, username)
 
     def test_is_disconnect_with_non_disconnect_error(self, engine):
         """is_disconnect() returns False for normal database errors."""
