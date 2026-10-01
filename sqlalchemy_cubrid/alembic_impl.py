@@ -391,6 +391,65 @@ class CubridImpl(DefaultImpl):
             **kw,
         )
 
+    def correct_for_autogen_foreignkeys(
+        self,
+        conn_fks: set[sa.ForeignKeyConstraint],
+        metadata_fks: set[sa.ForeignKeyConstraint],
+    ) -> None:
+        """Treat a reflected ``RESTRICT`` as the default referential action (#597).
+
+        CUBRID's default for ``ON DELETE`` / ``ON UPDATE`` is ``RESTRICT``
+        and ``SHOW CREATE TABLE`` always prints it, so a foreign key created
+        without actions reflects as ``ondelete="RESTRICT"`` /
+        ``onupdate="RESTRICT"``. Where the matching model foreign key has no
+        action, clear the reflected ``RESTRICT`` so autogenerate does not
+        drop and re-create an unchanged constraint. Reflection itself stays
+        truthful; other actions (including ``NO ACTION``, which CUBRID
+        prints as such) still compare as they are.
+        """
+        metadata_by_name: dict[str, sa.ForeignKeyConstraint] = {}
+        metadata_by_key: dict[tuple[Any, ...], list[sa.ForeignKeyConstraint]] = {}
+        for fk in metadata_fks:
+            if isinstance(fk.name, str):
+                metadata_by_name[fk.name] = fk
+            metadata_by_key.setdefault(self._fk_match_key(fk), []).append(fk)
+        for conn_fk in conn_fks:
+            # Match by name when both sides are named; otherwise every model
+            # FK on the same columns and target is a candidate, and RESTRICT
+            # is cleared only if none of them names an action.
+            named = metadata_by_name.get(conn_fk.name) if isinstance(conn_fk.name, str) else None
+            candidates = (
+                [named]
+                if named is not None
+                else metadata_by_key.get(self._fk_match_key(conn_fk), [])
+            )
+            if not candidates:
+                continue
+            for option in ("ondelete", "onupdate"):
+                conn_action = getattr(conn_fk, option)
+                if (
+                    conn_action is not None
+                    and conn_action.upper() == "RESTRICT"
+                    and all(getattr(fk, option) is None for fk in candidates)
+                ):
+                    # The rebuilt FK (e.g. in a downgrade) then omits
+                    # RESTRICT, which is the same action on CUBRID.
+                    setattr(conn_fk, option, None)
+
+    @staticmethod
+    def _fk_match_key(fk: sa.ForeignKeyConstraint) -> tuple[Any, ...]:
+        """Identify a foreign key by its columns, ignoring name and actions.
+
+        The target schema is left out: CUBRID is single-schema and
+        ``get_foreign_keys()`` sets ``referred_schema`` to the schema it was
+        called with (``None`` by default), while a model may name the owner
+        explicitly, so including it would only cause mismatches.
+        """
+        return (
+            tuple(fk.columns[key].name for key in fk.column_keys),
+            tuple((element.column.table.name, element.column.name) for element in fk.elements),
+        )
+
     @classmethod
     def _is_unbounded_string_match(
         cls, inspector_type: TypeEngine[Any], metadata_type: TypeEngine[Any]

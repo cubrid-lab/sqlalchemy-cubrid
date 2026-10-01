@@ -277,6 +277,21 @@ DDL은 트랜잭션으로 처리되므로([트랜잭션 DDL](#트랜잭션-ddl) 
 - 프로덕션 전 스테이징 데이터베이스에서 마이그레이션 테스트
 - 마이그레이션 실행 전 데이터베이스 백업 유지
 
+### autogenerate의 외래 키 참조 동작
+
+CUBRID의 기본 `ON DELETE` / `ON UPDATE` 동작은 `RESTRICT`이며
+`SHOW CREATE TABLE`은 이를 항상 출력합니다. 따라서 동작 없이 만든 외래 키는
+`inspect(...).get_foreign_keys()`에서 `{"ondelete": "RESTRICT", "onupdate": "RESTRICT"}`로
+보고됩니다. 리플렉션은 서버가 보고한 값을 그대로 유지합니다. autogenerate에서는
+`CubridImpl`이 리플렉션된 `RESTRICT`를 `ondelete` / `onupdate`가 없는 모델
+`ForeignKey`와 같은 것으로 취급하므로(#597), 모델이 동작을 생략하든 `RESTRICT`를
+명시하든 변경되지 않은 외래 키에 대해 `drop_constraint` / `create_foreign_key` 쌍이
+생성되지 않습니다. `ondelete="CASCADE"`나 `SET NULL`의 추가, 다시 제거, 둘 사이의
+전환은 여전히 감지됩니다. `NO ACTION`은 다릅니다. CUBRID는 이를 `NO ACTION`으로
+출력하지만 Alembic 자체가 `NO ACTION`과 동작 없음을 양방향으로 같은 것으로 취급하므로,
+둘 사이의 전환은 감지되지 않습니다. CUBRID는 `ON UPDATE CASCADE`를 거부하므로
+`onupdate`에는 `SET NULL`, `RESTRICT` 또는 `NO ACTION`을 사용하세요.
+
 ### `alter_column()` 동작
 
 CUBRID Alembic 구현은 `alter_column()`을 네이티브 CUBRID DDL로 매핑합니다:
