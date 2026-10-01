@@ -3140,28 +3140,48 @@ class TestPositionalBindOrderAcrossConstructs:
         assert compiled.params[offset_name] == 2
         assert compiled.params[count_name] == 5
 
-    def test_metamorphic_chained_where_vs_and_same_bind_order(self):
-        """Two equivalent ways of expressing a conjunction bind identically.
+    def test_postcompile_expansion_binding_order(self):
+        """#613: an expanding ``IN`` bind renders one ``?`` per element, in
+        list order, and the following bind still comes after all of them.
 
-        ``.where(a).where(b)`` and ``.where(and_(a, b))`` describe the same
-        predicate; a correct compiler must emit the same placeholder order
-        and values for both (and the same SQL text)."""
-        chained = (
-            select(users.c.id)
-            .where(users.c.name == sa.bindparam("n", "a"))
-            .where(users.c.email == sa.bindparam("e", "b"))
+        Unexpanded (``render_postcompile=False``, the default -- what a
+        ``CompileState``-cached statement looks like before execution), the
+        bind stays a single ``__[POSTCOMPILE_names]`` placeholder in
+        ``positiontup``, with its whole list as the one value; the real
+        per-element names and values only appear once
+        ``render_postcompile=True`` processes it (what the DBAPI driver
+        actually receives at execution time).
+        """
+        stmt = select(users.c.id).where(
+            users.c.name.in_(sa.bindparam("names", value=["a", "b", "c"], expanding=True))
         )
-        combined = select(users.c.id).where(
-            sa.and_(
-                users.c.name == sa.bindparam("n", "a"),
-                users.c.email == sa.bindparam("e", "b"),
-            )
+        stmt = stmt.where(users.c.email == sa.bindparam("e", "z@example.com"))
+
+        unexpanded = stmt.compile(dialect=CubridDialect())
+        assert "__[POSTCOMPILE_names]" in unexpanded.string
+        assert unexpanded.positiontup == ["names", "e"]
+        assert unexpanded.params["names"] == ["a", "b", "c"]
+
+        expanded = stmt.compile(
+            dialect=CubridDialect(), compile_kwargs={"render_postcompile": True}
         )
-        c1 = chained.compile(dialect=CubridDialect())
-        c2 = combined.compile(dialect=CubridDialect())
-        assert c1.string == c2.string
-        assert c1.positiontup == c2.positiontup == ["n", "e"]
-        assert self._ordered_values(c1) == self._ordered_values(c2) == ["a", "b"]
+        assert _norm(expanded.string) == _norm(
+            "SELECT users.id FROM users WHERE users.name IN (?, ?, ?) AND users.email = ?"
+        )
+        assert expanded.positiontup == ["names_1", "names_2", "names_3", "e"]
+        assert self._ordered_values(expanded) == ["a", "b", "c", "z@example.com"]
+
+    def test_postcompile_expansion_after_a_preceding_bind(self):
+        """#613: a bind before an expanding ``IN`` keeps its position; the
+        expanded elements are inserted in place, not appended at the end."""
+        stmt = select(users.c.id).where(users.c.email == sa.bindparam("e", "z@example.com"))
+        stmt = stmt.where(users.c.name.in_(sa.bindparam("names", value=["a", "b"], expanding=True)))
+
+        expanded = stmt.compile(
+            dialect=CubridDialect(), compile_kwargs={"render_postcompile": True}
+        )
+        assert expanded.positiontup == ["e", "names_1", "names_2"]
+        assert self._ordered_values(expanded) == ["z@example.com", "a", "b"]
 
     def test_metamorphic_select_column_order_does_not_reorder_where_binds(self):
         """Reordering the SELECT list leaves WHERE bind order unchanged."""
