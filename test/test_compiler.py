@@ -2743,18 +2743,8 @@ class TestEnumCompilation:
         assert "t_enum4.e" in sql
 
 
-class TestEnumReflectionParse:
-    """Unit tests for the ENUM(...) type-string parser (no DB needed)."""
-
-    def test_parse_simple(self):
-        from sqlalchemy_cubrid.dialect import _parse_enum_elements
-
-        assert _parse_enum_elements("'a', 'b', 'c'") == ["a", "b", "c"]
-
-    def test_parse_escaped_quote(self):
-        from sqlalchemy_cubrid.dialect import _parse_enum_elements
-
-        assert _parse_enum_elements("'it''s', 'b'") == ["it's", "b"]
+class TestEnumTypeDetection:
+    """ENUM type detection stays separate from exact catalog label reading."""
 
     def test_regex_matches_show_columns_form(self):
         from sqlalchemy_cubrid.dialect import _RE_ENUM

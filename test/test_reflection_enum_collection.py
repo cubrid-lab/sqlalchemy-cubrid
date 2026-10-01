@@ -36,9 +36,9 @@ from unittest.mock import MagicMock
 import pytest
 import sqlalchemy as sa
 from sqlalchemy import exc as sa_exc
+from sqlalchemy.types import NullType
 
 from sqlalchemy_cubrid.dialect import CubridDialect
-from sqlalchemy_cubrid.types import MULTISET, SEQUENCE, SET
 from test.test_show_create_table_server_output import (
     SETUP_SQL,
     SUPPORTED_VERSIONS,
@@ -67,6 +67,10 @@ EXPECTED_TYPES: dict[str, str] = {
     "m_empty": "MULTISET()",
     "q_empty": "SEQUENCE()",
 }
+EXPECTED_ENUM_VALUES = {
+    "e_plain": ["x", "y", "z"],
+    "e_punct": ["it's", "a, b", "c (d)"],
+}
 
 
 def _compiled(dialect: Any, columns: list[Any]) -> dict[str, str]:
@@ -78,10 +82,38 @@ def _reflect_rows(rows: list[tuple[Any, ...]], *catalog: list[Any]) -> list[Any]
     the *catalog* results, failing on any warning."""
     dialect = CubridDialect()
     connection = MagicMock()
-    connection.execute.side_effect = [rows, *catalog]
+    connection.execute.side_effect = [rows, *catalog, []]
     with warnings.catch_warnings():
         warnings.simplefilter("error", sa_exc.SAWarning)
         return [column["type"] for column in dialect.get_columns(connection, "t")]
+
+
+def _reflect_catalog_type(
+    raw: str,
+    *,
+    enum_rows: list[Any] | Exception | None = None,
+    member_rows: list[Any] | None = None,
+) -> Any:
+    """Reflect one recorded SHOW COLUMNS type with explicit catalog replies."""
+    dialect = CubridDialect()
+    connection = MagicMock()
+
+    def execute(statement: Any, params: Any = None) -> list[Any]:
+        sql = str(statement)
+        if sql.startswith("SHOW COLUMNS IN"):
+            return [("c", raw, "YES", "", None, "")]
+        if "_db_domain" in sql:
+            if isinstance(enum_rows, Exception):
+                raise enum_rows
+            return enum_rows or []
+        if "db_attr_setdomain_elm" in sql:
+            return member_rows or []
+        if "db_attribute" in sql:
+            return []
+        raise AssertionError(f"unexpected reflection query: {sql}")
+
+    connection.execute.side_effect = execute
+    return dialect.get_columns(connection, "t")[0]["type"]
 
 
 # ---------------------------------------------------------------------------
@@ -92,19 +124,41 @@ def _reflect_rows(rows: list[tuple[Any, ...]], *catalog: list[Any]) -> list[Any]
 @pytest.mark.parametrize("version", SUPPORTED_VERSIONS)
 def test_recorded_column_types(version: str) -> None:
     dialect = CubridDialect()
-    stub = _CatalogStub(_load(version)["tables"][TABLE])
+    stub = _CatalogStub(_load(version)["tables"][TABLE], EXPECTED_ENUM_VALUES)
     with warnings.catch_warnings():
         warnings.simplefilter("error", sa_exc.SAWarning)
         columns = dialect.get_columns(stub, TABLE)
     assert _compiled(dialect, columns) == EXPECTED_TYPES
     enums = {c["name"]: list(c["type"].enums) for c in columns if c["name"].startswith("e_")}
-    assert enums == {"e_plain": ["x", "y", "z"], "e_punct": ["it's", "a, b", "c (d)"]}
+    assert enums == EXPECTED_ENUM_VALUES
+
+
+def test_enum_catalog_query_binds_owner_and_attribute_on_11_4(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dialect = CubridDialect()
+    dialect.server_version_info = (11, 4, 6)
+    stub = _CatalogStub(_load("11.4")["tables"][TABLE], EXPECTED_ENUM_VALUES)
+    original_execute = stub.execute
+    calls: list[tuple[str, Any]] = []
+
+    def record_execute(statement: Any, params: Any = None) -> Any:
+        calls.append((str(statement), params))
+        return original_execute(statement, params)
+
+    monkeypatch.setattr(stub, "execute", record_execute)
+    dialect.get_columns(stub, TABLE)
+    enum_calls = [(sql, params) for sql, params in calls if "FROM _db_class c" in sql]
+    assert len(enum_calls) == 2
+    assert {params["attr_name"] for _, params in enum_calls} == set(EXPECTED_ENUM_VALUES)
+    assert all("c.unique_name = :class_name" in sql for sql, _ in enum_calls)
+    assert all(params["class_name"] == "dba.sct_types" for _, params in enum_calls)
 
 
 @pytest.mark.parametrize("version", SUPPORTED_VERSIONS)
 def test_recorded_catalog_queries_only_when_needed(version: str) -> None:
     """The member-type and collection-kind lookups run once each."""
-    stub = _CatalogStub(_load(version)["tables"][TABLE])
+    stub = _CatalogStub(_load(version)["tables"][TABLE], EXPECTED_ENUM_VALUES)
     CubridDialect().get_columns(stub, TABLE)
     assert sum("db_attr_setdomain_elm" in sql for sql in stub.statements) == 1
     assert sum("SELECT attr_name, data_type FROM" in sql for sql in stub.statements) == 1
@@ -115,47 +169,64 @@ def test_recorded_catalog_queries_only_when_needed(version: str) -> None:
 
 def test_enum_is_not_overwritten() -> None:
     """The ENUM built from the element list is the reflected type."""
-    (coltype,) = _reflect_rows([("c", "ENUM('x', 'y')", "YES", "", None, "")], [])
+    (coltype,) = _reflect_rows(
+        [("c", "ENUM('x', 'y')", "YES", "", None, "")],
+        [("c", "x", 1), ("c", "y", 2)],
+    )
     assert type(coltype).__name__ == "ENUM"
     assert list(coltype.enums) == ["x", "y"]
 
 
 @pytest.mark.parametrize(
-    ("raw", "expected"),
+    ("catalog_rows", "expected"),
     [
-        ("'it's', 'b'", ["it's", "b"]),
-        ("'a, b', 'c (d)'", ["a, b", "c (d)"]),
-        ("'it''s', 'b'", ["it's", "b"]),
-        ("'x'", ["x"]),
-        ("''", [""]),
-        ("", []),
+        ([("c", "a', 'b", 1), ("c", "other", 2)], ["a', 'b", "other"]),
+        ([("c", "a", 1), ("c", "b", 2), ("c", "other", 3)], ["a", "b", "other"]),
     ],
 )
-def test_parse_enum_elements_server_form(raw: str, expected: list[str]) -> None:
-    from sqlalchemy_cubrid.dialect import _parse_enum_elements
+def test_ambiguous_enum_output_uses_exact_catalog_values(
+    catalog_rows: list[Any], expected: list[str]
+) -> None:
+    """Two legal definitions print the same SHOW text; only catalog rows distinguish them."""
+    coltype = _reflect_catalog_type("ENUM('a', 'b', 'other')", enum_rows=catalog_rows)
+    assert list(coltype.enums) == expected
 
-    assert _parse_enum_elements(raw) == expected
+
+@pytest.mark.parametrize("cubriddb_shape", [False, True])
+def test_enum_catalog_permission_denial_fails_closed(cubriddb_shape: bool) -> None:
+    class CatalogPermissionError(RuntimeError):
+        errno = -494
+
+    denied = (
+        RuntimeError(-494, "SELECT is not authorized on _db_domain")
+        if cubriddb_shape
+        else CatalogPermissionError("SELECT is not authorized on _db_domain (-494)")
+    )
+    with pytest.warns(sa_exc.SAWarning, match="ENUM"):
+        coltype = _reflect_catalog_type("ENUM('a', 'b')", enum_rows=denied)
+    assert isinstance(coltype, NullType)
+
+
+def test_unrelated_enum_catalog_failure_propagates() -> None:
+    with pytest.raises(RuntimeError, match="catalog unavailable"):
+        _reflect_catalog_type("ENUM('a', 'b')", enum_rows=RuntimeError("catalog unavailable"))
 
 
 @pytest.mark.parametrize(
-    ("raw", "cls", "members"),
+    "raw",
     [
-        ("SET OF NUMERIC,VARCHAR", SET, ["NUMERIC", "VARCHAR(4096)"]),
-        ("MULTISET OF DOUBLE,INTEGER", MULTISET, ["DOUBLE", "INTEGER"]),
-        ("SEQUENCE OF DATE,SHORT", SEQUENCE, ["DATE", "SMALLINT"]),
-        ("SEQUENCE OF BIT,BIT VARYING", SEQUENCE, ["BIT(1)", "BIT VARYING"]),
-        ("SEQUENCE OF NCHAR VARYING,NUMERIC", SEQUENCE, ["NCHAR VARYING(4096)", "NUMERIC"]),
+        "SET OF NUMERIC,VARCHAR",
+        "MULTISET OF DOUBLE,INTEGER",
+        "SEQUENCE OF DATE,SHORT",
+        "SEQUENCE OF BIT,BIT VARYING",
+        "SEQUENCE OF NCHAR VARYING,NUMERIC",
     ],
 )
-def test_collection_of_form_without_catalog_members(
-    raw: str, cls: type, members: list[str]
-) -> None:
-    """Without catalog member rows the ``SHOW COLUMNS`` member names are used,
-    split by the #626 member splitter (no parameters to strip)."""
-    (coltype,) = _reflect_rows([("c", raw, "YES", "", None, "")], [], [])
-    assert type(coltype) is cls
-    dialect = CubridDialect()
-    assert [dialect.type_compiler.process(m) for m in coltype._ddl_values] == members
+def test_collection_of_form_without_catalog_members_fails_closed(raw: str) -> None:
+    """SHOW COLUMNS omits modifiers; absent member-domain rows are not enough."""
+    with pytest.warns(sa_exc.SAWarning, match="collection"):
+        coltype = _reflect_catalog_type(raw)
+    assert isinstance(coltype, NullType)
 
 
 def test_object_domain_member_keeps_its_class() -> None:
@@ -163,18 +234,44 @@ def test_object_domain_member_keeps_its_class() -> None:
     and listed by ``db_attr_setdomain_elm`` as ``OBJECT`` with its
     ``domain_class_name`` (CUBRID 10.2 and 11.4: ``SET(t_ref)`` ->
     ``SET OF OBJECT`` / ``('a', 'OBJECT', 0, 0, 't_ref')``); the reflected
-    member is the class name. An unknown catalog name without a class, and an
-    unknown ``SHOW COLUMNS`` member, are kept as their bare names."""
+    member is the class name. A missing target class or missing catalog rows
+    must fail closed instead of compiling a different object domain."""
     rows = [("c", "SEQUENCE OF INTEGER,OBJECT", "YES", "", None, "")]
     (from_catalog,) = _reflect_rows(
         rows, [("c", "OBJECT", 0, 0, "t_ref"), ("c", "INTEGER", 10, 0, None)], []
     )
     dialect = CubridDialect()
     assert dialect.type_compiler.process(from_catalog) == "SEQUENCE(t_ref,INTEGER)"
-    (no_class,) = _reflect_rows(rows, [("c", "OBJECT", 0, 0, None)], [])
-    assert no_class._ddl_values == ("OBJECT",)
-    (from_show_columns,) = _reflect_rows([("c", "SET OF t_ref", "YES", "", None, "")], [], [])
-    assert from_show_columns._ddl_values == ("t_ref",)
+    with pytest.raises(ValueError, match="no domain class"):
+        _reflect_rows(rows, [("c", "OBJECT", 0, 0, None)], [])
+    with pytest.warns(sa_exc.SAWarning, match="collection"):
+        from_show_columns = _reflect_catalog_type("SET OF t_ref")
+    assert isinstance(from_show_columns, NullType)
+
+
+@pytest.mark.parametrize(
+    "member_rows",
+    [
+        [],
+        [("c", "NUMERIC", 10, 2, None)],
+        [("c", "NUMERIC", 10, 2, None), ("c", "NUMERIC", 8, 0, None)],
+    ],
+)
+def test_incomplete_or_inconsistent_typed_catalog_fails_closed(member_rows: list[Any]) -> None:
+    """SHOW COLUMNS erased member modifiers, so missing rows cannot be guessed."""
+    with pytest.warns(sa_exc.SAWarning, match="collection"):
+        coltype = _reflect_catalog_type("SET OF NUMERIC,VARCHAR", member_rows=member_rows)
+    assert isinstance(coltype, NullType)
+
+
+def test_object_member_preserves_target_class() -> None:
+    coltype = _reflect_catalog_type(
+        "SET OF OBJECT",
+        member_rows=[("c", "OBJECT", 0, 0, "target_ref")],
+    )
+    compiled = CubridDialect().type_compiler.process(coltype)
+    assert "target_ref" in compiled
+    assert compiled != "SET(OBJECT)"
 
 
 def test_collection_without_member_type_and_unknown_kind() -> None:

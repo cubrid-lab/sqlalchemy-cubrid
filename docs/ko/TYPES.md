@@ -326,7 +326,9 @@ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 
 다음 방언 타입은 `dialect.ischema_names`에 없기 때문에 **선언/컴파일은 되지만 자동 리플렉트되지 않습니다**: `REAL`, `MONETARY`, `OBJECT`.
 
-**ENUM 및 컬렉션 컬럼** (#631). `SHOW COLUMNS`는 네이티브 `ENUM`의 요소를 이스케이프하지 않고 출력합니다(`ENUM('it''s', 'b')`를 `ENUM('it's', 'b')`로). 방언은 목록을 `', '` 구분자로 나누므로, 요소 자체에 `', '`가 들어 있는 경우를 제외하고 모든 요소를 복원합니다. 컬렉션은 멤버의 길이·정밀도 없이 `SET OF NUMERIC,VARCHAR`(그리고 `MULTISET OF ...`, `SEQUENCE OF ...`. `LIST`는 `SEQUENCE`로 출력)로 출력하고, 멤버 타입 없이 선언한 컬렉션은 타입을 출력하지 않습니다. 이런 컬럼에 대해 방언은 공개 카탈로그 뷰 `db_attr_setdomain_elm`에서 멤버 타입을 정밀도·스케일과 함께 선언 순서대로 읽고, 컬렉션 종류는 `db_attribute`에서 읽습니다. 따라서 `SET(NUMERIC(10,2), VARCHAR(20))`는 `SET(NUMERIC(10, 2), VARCHAR(20))`로, `SET`은 `SET()`으로 리플렉트됩니다. CUBRID 10.2, 11.0, 11.2, 11.4에서 `metadata.reflect()` 후 `create_all()`을 실행하면 같은 `SHOW CREATE TABLE` 출력이 다시 만들어집니다. 객체 도메인 멤버(`SET(t_ref)`, `SET OF OBJECT`로 출력)는 클래스 이름 `SET(t_ref)`로 리플렉트되고, 방언이 매핑하지 않는 멤버 타입은 타입 이름 그대로 유지됩니다.
+**ENUM 및 컬렉션 컬럼** (#631). `SHOW COLUMNS`는 네이티브 ENUM 값을 이스케이프하지 않아, 값 하나에 `', '`가 들어 있으면 별도 값 두 개와 출력이 같을 수 있습니다. `_db_domain`을 읽을 권한이 있는 사용자(일반적으로 DBA)에 대해서는 이 모호한 문자열을 나누지 않고 도메인 카탈로그에서 정확한 순서의 값을 읽습니다. DBA가 아닌 사용자의 특정 `-494` 권한 거부는 경고와 `NullType`으로 처리하며, 다른 카탈로그 오류는 그대로 전파합니다. 공개된 권한 있는 메타데이터 경로가 마련되기 전까지는 해당 사용자가 모델에 ENUM 타입을 직접 선언해야 합니다.
+
+`SHOW COLUMNS`는 컬렉션을 `SET OF NUMERIC,VARCHAR`(`MULTISET OF ...`, `SEQUENCE OF ...`도 동일하며 `LIST`는 `SEQUENCE`로 출력) 형태로 출력하고 멤버의 길이·정밀도를 생략하거나 순서를 바꿀 수 있습니다. 공개 뷰 `db_attr_setdomain_elm`은 멤버의 정밀도·스케일·객체 도메인 클래스를 제공합니다. 방언은 이 행들이 출력된 모든 멤버 타입 계열을 설명할 때만 사용합니다. 행이 누락되거나 모순되면 잘못된 DDL을 만드는 대신 경고와 `NullType`을 반환합니다. 대상 클래스가 없는 OBJECT 멤버나 알 수 없는 카탈로그 타입은 명시적으로 실패합니다. 멤버 타입 없이 선언된 컬렉션은 `db_attribute`에서 종류를 읽어 `SET()` / `MULTISET()` / `SEQUENCE()`로 리플렉트합니다. ENUM 카탈로그 접근 권한과 완전한 컬렉션 도메인 정보가 있을 때 `metadata.reflect()` 후 `create_all()`로 CUBRID 10.2–11.4에서 검증한 DDL을 재생성할 수 있으며, 이는 DBA가 아닌 사용자의 ENUM 전체 리플렉션을 보장한다는 뜻은 아닙니다.
 
 ---
 

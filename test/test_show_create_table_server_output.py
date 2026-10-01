@@ -311,8 +311,11 @@ class _CatalogStub:
     plus ``SHOW INDEXES`` / ``SHOW CREATE TABLE``. Any other statement fails.
     """
 
-    def __init__(self, recorded: dict[str, list[Any]]) -> None:
+    def __init__(
+        self, recorded: dict[str, list[Any]], enum_values: dict[str, list[str]] | None = None
+    ) -> None:
         self._recorded = recorded
+        self._enum_values = enum_values or {}
         self.statements: list[str] = []
 
     def execute(self, statement: Any, params: Any = None) -> _Rows:
@@ -335,6 +338,12 @@ class _CatalogStub:
             rows = [tuple(self._recorded["show_create_table"])]
         elif sql.startswith("SHOW COLUMNS IN"):
             rows = [tuple(row) for row in self._recorded["show_columns"]]
+        elif sql.startswith("SELECT a.attr_name, e.*, ROWNUM FROM _db_class "):
+            attr_name = params["attr_name"]
+            rows = [
+                (attr_name, value, position)
+                for position, value in enumerate(self._enum_values.get(attr_name, []), 1)
+            ]
         elif sql.startswith("SELECT attr_name, comment FROM db_attribute WHERE "):
             rows = [(row[0], row[2]) for row in self._recorded["db_attribute"]]
         elif sql.startswith("SELECT attr_name, data_type FROM db_attribute WHERE "):
