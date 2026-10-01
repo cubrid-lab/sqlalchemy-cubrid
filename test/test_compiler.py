@@ -1706,6 +1706,33 @@ class TestReplaceKeywordIsStructural:
             "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c"
         )
 
+    def test_cte_from_select_with_bound_values_and_prefix(self):
+        """A REPLACE CTE keeps SELECT binds in their emitted placeholder order."""
+        from sqlalchemy_cubrid import replace
+
+        cte = (
+            select(self.source.c.id, self.source.c.s)
+            .where(self.source.c.id > sa.bindparam("low", 2))
+            .cte("c")
+        )
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .from_select(
+                ["id", "s"],
+                select(cte.c.id, cte.c.s).where(cte.c.id < sa.bindparam("high", 9)),
+            )
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+
+        assert _norm(compiled.string) == _norm(
+            "WITH c AS (SELECT src.id AS id, src.s AS s FROM src WHERE src.id > ?) "
+            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c WHERE c.id < ?"
+        )
+        assert compiled.string.count("?") == 2
+        assert compiled.positiontup == ["low", "high"]
+        assert [compiled.params[name] for name in compiled.positiontup] == [2, 9]
+
     def test_cte_without_prefix(self):
         from sqlalchemy_cubrid import replace
 
@@ -3047,8 +3074,8 @@ class TestPositionalBindOrderAcrossConstructs:
     (``[compiled.params[name] for name in compiled.positiontup]``) for
     constructs not already covered by ``TestReplaceKeywordIsStructural`` --
     CTEs, correlated subqueries, INSERT ... SELECT, multi-row VALUES and
-    LIMIT/OFFSET -- plus two metamorphic invariants: equivalent predicate
-    forms and column orderings must compile to the same bind order.
+    LIMIT/OFFSET -- plus a metamorphic invariant: reordering selected columns
+    must not change the bind order of WHERE predicates.
 
     Deliberately does not assert ``len(params) == len(positiontup)``: a
     repeated name (ODKU's VALUES() re-use, REPLACE's multi-row ``_mN``
