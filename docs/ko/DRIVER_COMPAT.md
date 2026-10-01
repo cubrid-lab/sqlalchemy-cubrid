@@ -167,15 +167,15 @@ CUBRID 12는 아직 출시되지 않았습니다. 출시되면 드라이버와 �
 
 ### 6. `BLOB` / `CLOB` 조회는 LOB 로케이터를 반환
 
-CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#485). 모든 릴리스된 드라이버에서 `BLOB` / `CLOB` 컬럼에 `bytes` / `str`을 바인딩하면 전체 값이 저장되고 `NULL`은 `None`으로 왕복됩니다. 그러나 NULL이 아닌 `BLOB` / `CLOB` 컬럼을 조회하면 `bytes` / `str` 대신 드라이버의 LOB 로케이터가 반환됩니다:
+CUBRID 10.2 및 11.4에서 Core/ORM, 동기/비동기 전 조합을 pycubrid 1.8.0(지원 최저 버전)과 pycubrid main 양쪽으로 실제 검증했습니다(#485; `test/test_lob_value_contract.py`, 재검증 시 다시 실행). 모든 릴리스된 드라이버에서 `BLOB` / `CLOB` 컬럼에 `bytes` / `str`을 바인딩하면 전체 값이 저장되고 `NULL`은 `None`으로 왕복됩니다. 그러나 NULL이 아닌 `BLOB` / `CLOB` 컬럼을 조회하면 `bytes` / `str` 대신 드라이버의 LOB 로케이터가 반환됩니다:
 
 | 드라이버 URL | NULL이 아닌 `BLOB` / `CLOB` 조회 결과 |
 |---|---|
 | `cubrid://` (`CUBRIDdb` 11.3) | 서버 파일 로케이터 `str` (`'file:...'`) |
-| `cubrid+pycubrid://` (pycubrid 1.3.2 ~ 1.7.1) | LOB 핸들 `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
-| `cubrid+aiopycubrid://` (pycubrid 1.7.1) | LOB 핸들 `dict` (`None`을 포함한 `LargeBinary` / `BLOB` 값 바인딩은 #500부터 정상 동작) |
+| `cubrid+pycubrid://` (pycubrid 1.8.0 및 main) | LOB 핸들 `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
+| `cubrid+aiopycubrid://` (pycubrid 1.8.0 및 main) | `file_locator` 문자열 (`None`을 포함한 `LargeBinary` / `BLOB` 값 바인딩은 #500부터 정상 동작) |
 
-`LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다. [타입](TYPES.md)도 참고하세요.
+`LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441/#442에서 추적하며, pycubrid main에도 아직 구현되어 있지 않아 `test_lob_value_contract.py`는 릴리스된 드라이버와 pycubrid main 양쪽에서 동일하게 strict xfail 처리합니다 — 향후 pycubrid가 이를 해결하면 xfail이 실패하는 XPASS로 바뀌어 조용히 통과하지 않습니다. [타입](TYPES.md)도 참고하세요.
 
 ### 7. `executemany`가 `None`에 이전 행의 값을 재사용 (방언 가드)
 
@@ -240,6 +240,10 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 | CUBRIDdb 11.3.0.51 | CUBRIDdb가 값을 직접, 항상 SET 호스트 변수로 바인딩합니다. MULTISET은 중복을, SEQUENCE는 순서를 잃습니다(`[3, 1, 2, 1]`은 `{1, 2, 3}`으로 저장됨). `None` 원소는 지원되지 않습니다. `[None]`은 드라이버 안에서 `UnboundLocalError`로, `[1, None]`은 `-494 Cannot coerce host var to type sequence`로 실패합니다. | 원소 타입과 관계없이 `str` 원소로 된 `set`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`) |
 
 방언은 CUBRIDdb의 동작을 바꾸지 않습니다. CUBRIDdb에서 중복이나 순서가 필요한 컬렉션은 바인드 파라미터로 보내지 말고 SQL에 컬렉션 리터럴을 쓰거나(`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`) `cubrid+pycubrid://`를 사용하세요. [타입 매핑, 컬렉션 값](TYPES.md#컬렉션-값)을 참고하세요.
+
+### 12. 일반 스칼라 실행은 pycubrid의 `compat.native` prepared 코어를 사용하지 않음
+
+pycubrid 1.8.0(지원 최저 버전)은 `pycubrid.compat.native` 아래에 추가적이고 선택적인 동기 prepared/typed 스칼라 바인딩 커서를 추가했습니다(INT32, UTF-8 `CHAR`, SQL `NULL`만 지원; cubrid-lab/pycubrid#439). `cubrid+pycubrid://`도 `cubrid+aiopycubrid://`도 이를 import하거나 호출하지 않습니다: SQLAlchemy는 모든 스칼라 바인딩(정수, UTF-8/CJK 문자열, `NULL`, 반복 실행, `executemany`, Core와 ORM)에 대해 테스트한 모든 드라이버에서 계속 일반 PEP 249 `execute()` / `executemany()` 경로(FC41)를 사용하며, 동작 차이나 방언 변경이 없습니다(#483; `test/test_scalar_execution_contract.py`는 방언 소스가 `pycubrid.compat`를 참조하지 않는지, 그리고 일반적인 사용에서 `pycubrid.compat.native.connect()`가 절대 호출되지 않는지도 검증합니다). typed prepared 실행을 사용하는 SQLAlchemy/DB-API 통합은 설치된 드라이버에 `compat.native`가 존재한다고 해서 자동으로 생기는 것이 아니라, 별도로 설계되고 릴리스되어야 하는 기능입니다.
 
 ---
 
