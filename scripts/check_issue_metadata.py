@@ -10,7 +10,7 @@ from pathlib import Path
 
 _TITLE = re.compile(
     r"^(?:feat|fix|docs|test|perf|refactor|ci|build|chore|style|revert)"
-    r"(?:\([a-z0-9][a-z0-9_-]*\))?!?: (?P<desc>.*)$"
+    r"(?:\([a-z0-9][a-z0-9_-]*\))?!?: (?P<desc>.*)"
 )
 _TYPE_LABELS = frozenset(
     {"bug", "enhancement", "documentation", "chore", "ci", "testing", "refactor", "performance"}
@@ -28,7 +28,7 @@ def _title_is_valid(title: str) -> bool:
     feeds the `title` gap below, which never blocks or comments on an issue,
     only adds `status: needs triage` for a maintainer to review.
     """
-    match = _TITLE.match(title)
+    match = _TITLE.fullmatch(title)
     if match is None:
         return False
     desc = match["desc"]
