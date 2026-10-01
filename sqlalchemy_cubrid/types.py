@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import inspect
 from importlib import import_module
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
+from sqlalchemy import exc
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.sql import sqltypes
 
 
@@ -321,13 +323,13 @@ class CLOB(sqltypes.Text):
 # ---------------------------------------------------------------------------
 
 
-#: Dialect drivers whose DB-API is pycubrid (sync and async).
-_PYCUBRID_DRIVERS = frozenset({"pycubrid", "aiopycubrid"})
-
 #: Python values the collection bind processors wrap in a pycubrid typed
 #: collection. Anything else (``None``, an already typed value, a string, ...)
 #: goes to the driver unchanged.
 _PLAIN_COLLECTIONS = (list, tuple, set, frozenset)
+
+#: Unordered Python collections, which a SEQUENCE (ordered) column rejects.
+_UNORDERED_COLLECTIONS = (set, frozenset)
 
 
 def _pycubrid_collection_class(name: str) -> Any | None:
@@ -344,34 +346,71 @@ def _pycubrid_collection_class(name: str) -> Any | None:
     return getattr(module, name, None)
 
 
+def _is_pycubrid_dialect(dialect: Dialect) -> bool:
+    """True for ``cubrid+pycubrid://`` and ``cubrid+aiopycubrid://``."""
+    # Imported here: the dialect modules import this one.
+    from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+    return isinstance(dialect, PyCubridDialect)
+
+
 class _CollectionType(_StringType):
     """Base for the CUBRID collection types.
 
     On the pycubrid drivers, when the installed pycubrid provides typed
-    collection parameters, a ``list``/``tuple``/``set``/``frozenset`` value is
-    bound as the matching typed collection (``SET{...}``, ``MULTISET{...}``,
-    ``SEQUENCE{...}``). Values are returned as the driver decodes them; see
-    docs/TYPES.md ("Collection values").
+    collection parameters, a ``list``/``tuple`` value (and, except for
+    ``SEQUENCE``, a ``set``/``frozenset``) is bound as the matching typed
+    collection (``SET{...}``, ``MULTISET{...}``, ``SEQUENCE{...}``). Values are
+    returned as the driver decodes them; see docs/TYPES.md ("Collection
+    values").
     """
 
     #: Name of the matching class in ``pycubrid.types``.
     _pycubrid_name: str
 
+    #: Whether the collection keeps its elements' order (only ``SEQUENCE``).
+    _ordered: bool = False
+
     def __init__(self, *values: Any, **kw: Any) -> None:
+        """Construct the type; *values* are the element types for the DDL."""
         self._ddl_values = values
         super().__init__(**kw)
 
-    def bind_processor(self, dialect: Any) -> Any:
-        if dialect.driver not in _PYCUBRID_DRIVERS:
+    def bind_processor(self, dialect: Dialect) -> Callable[[Any], Any] | None:
+        """Wrap plain collections in the pycubrid typed collection.
+
+        A ``set``/``frozenset`` bound to a ``SEQUENCE`` raises ``TypeError`` on
+        the pycubrid drivers whatever the pycubrid version: it has no order.
+        """
+        if not _is_pycubrid_dialect(dialect):
             return None
         typed = _pycubrid_collection_class(self._pycubrid_name)
-        if typed is None:
+        if typed is None and not self._ordered:
             return None
+        visit_name = self.__visit_name__
 
         def process(value: Any) -> Any:
-            if isinstance(value, _PLAIN_COLLECTIONS):
+            if self._ordered and isinstance(value, _UNORDERED_COLLECTIONS):
+                raise TypeError(
+                    f"{visit_name} is ordered; pass a list or tuple, not a {type(value).__name__}"
+                )
+            if typed is not None and isinstance(value, _PLAIN_COLLECTIONS):
                 return typed(value)
             return value
+
+        return process
+
+    def literal_processor(self, dialect: Dialect) -> Callable[[Any], str]:
+        """Render ``NULL``; reject collection values as inline literals."""
+        visit_name = self.__visit_name__
+
+        def process(value: Any) -> str:
+            if value is None:
+                return "NULL"
+            raise exc.CompileError(
+                f"{visit_name} values cannot be rendered as inline literals "
+                "(literal_binds / literal_execute); bind them as parameters"
+            )
 
         return process
 
@@ -395,6 +434,7 @@ class SEQUENCE(_CollectionType):
 
     __visit_name__ = "SEQUENCE"
     _pycubrid_name = "Sequence"
+    _ordered = True
 
 
 # ---------------------------------------------------------------------------

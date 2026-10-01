@@ -209,12 +209,16 @@ CREATE TABLE tagged_items (
 
 #### Collection values
 
-Bind a collection column's value as a Python `list`, `tuple`, `set` or
-`frozenset`. What happens next depends on the driver:
+Bind a `SET` or `MULTISET` column's value as a Python `list`, `tuple`, `set`
+or `frozenset`. A `SEQUENCE` is ordered, so bind it as a `list` or `tuple`: on
+the pycubrid drivers a `set` or `frozenset` for a `SEQUENCE` column raises
+`TypeError` ("SEQUENCE is ordered; pass a list or tuple", wrapped in
+SQLAlchemy's `StatementError`) whatever the pycubrid version, and the dialect
+never sorts it for you. What happens next depends on the driver:
 
 | | `cubrid+pycubrid://`, `cubrid+aiopycubrid://` with typed collection parameters (pycubrid main) | Released pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
 |---|---|---|---|
-| Binding a `list`/`tuple`/`set`/`frozenset` | Wrapped in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type and sent as a `SET{...}`, `MULTISET{...}` or `SEQUENCE{...}` literal | `ProgrammingError` (pycubrid rejects collection parameters) | Bound by CUBRIDdb itself, always as a SET: a MULTISET loses duplicates and a SEQUENCE loses its order ([Driver Compatibility, Known Issue 11](DRIVER_COMPAT.md#11-collection-parameters-set-multiset-sequence)) |
+| Binding a `list`/`tuple` (and a `set`/`frozenset` for `SET`/`MULTISET`) | Wrapped in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type and sent as a `SET{...}`, `MULTISET{...}` or `SEQUENCE{...}` literal | `ProgrammingError` (pycubrid rejects collection parameters) | Bound by CUBRIDdb itself, always as a SET: a MULTISET loses duplicates and a SEQUENCE loses its order ([Driver Compatibility, Known Issue 11](DRIVER_COMPAT.md#11-collection-parameters-set-multiset-sequence)) |
 | Reading `SET` | `frozenset` with `?decode_collections=true`, raw `bytes` without it | Same | `set` of `str` |
 | Reading `MULTISET` / `SEQUENCE` | `list` with `?decode_collections=true`, raw `bytes` without it | Same | `list` of `str` |
 
@@ -259,6 +263,11 @@ On pycubrid:
 - The dialect does not convert values read back: they are what pycubrid
   decodes. Without `decode_collections=true` pycubrid returns the raw
   collection bytes.
+- A `set`/`frozenset` bound to a `SEQUENCE` column raises `TypeError` (see
+  above), with every pycubrid version.
+- Collection values cannot be rendered inline: `literal_binds` and
+  `literal_execute` raise `CompileError` for a non-`NULL` collection value
+  (a `NULL` renders as `NULL`). Bind collections as parameters.
 - In the ORM, assign a new collection to change a column
   (`obj.history = [*obj.history, 4]`). SQLAlchemy does not track in-place
   changes to a `list` or `set` attribute.

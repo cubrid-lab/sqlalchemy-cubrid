@@ -11,7 +11,7 @@ import types
 from typing import Any
 
 import pytest
-from sqlalchemy import Integer, column, select
+from sqlalchemy import Integer, column, exc, select
 from sqlalchemy.sql import sqltypes
 
 from sqlalchemy_cubrid import types as cubrid_types
@@ -241,10 +241,20 @@ class _Typed:
         return type(other) is type(self) and self.elements == getattr(other, "elements", None)
 
 
+class _TypedSequence(_Typed):
+    """Like ``pycubrid.types.Sequence`` after cubrid-lab/pycubrid#580."""
+
+    def __init__(self, elements: Any = ()) -> None:
+        if isinstance(elements, (set, frozenset)):
+            raise TypeError("Sequence() does not accept a set")
+        super().__init__(elements)
+
+
 def _fake_pycubrid_types(*names: str) -> types.ModuleType:
     module = types.ModuleType("pycubrid.types")
     for name in names:
-        setattr(module, name, type(name, (_Typed,), {}))
+        base = _TypedSequence if name == "Sequence" else _Typed
+        setattr(module, name, type(name, (base,), {}))
     return module
 
 
@@ -278,10 +288,32 @@ class TestCollectionBindProcessor:
         typed = getattr(module, name)
         process = type_cls(Integer()).bind_processor(dialect_cls())
         assert process is not None
-        for value in ([3, 1, 1], (3, 1, 1), {1, 3}, frozenset({1, 3}), []):
+        values: list[Any] = [[3, 1, 1], (3, 1, 1), []]
+        if type_cls is not SEQUENCE:
+            values += [{1, 3}, frozenset({1, 3})]
+        for value in values:
             got = process(value)
             assert type(got) is typed
             assert got.elements == tuple(value)
+
+    @pytest.mark.parametrize("feature", [True, False], ids=["typed", "pycubrid-1.8.0"])
+    @pytest.mark.parametrize("dialect_cls", [PyCubridDialect, PyCubridAsyncDialect])
+    @pytest.mark.parametrize("value", [{2, 1}, frozenset({2, 1}), set()])
+    def test_sequence_rejects_unordered(self, pycubrid_types, dialect_cls, feature, value):
+        # A set has no order, so it cannot be a SEQUENCE; never sorted for you.
+        pycubrid_types(*(("Set", "Multiset", "Sequence") if feature else ()))
+        process = SEQUENCE(Integer()).bind_processor(dialect_cls())
+        assert process is not None
+        with pytest.raises(TypeError, match="SEQUENCE is ordered; pass a list or tuple"):
+            process(value)
+
+    def test_sequence_without_typed_collections_passes_lists_through(self, pycubrid_types):
+        pycubrid_types()
+        process = SEQUENCE(Integer()).bind_processor(PyCubridDialect())
+        assert process is not None
+        value = [2, 1]
+        assert process(value) is value
+        assert process(None) is None
 
     @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
     def test_passes_other_values_through(self, pycubrid_types, type_cls, name):
@@ -296,8 +328,8 @@ class TestCollectionBindProcessor:
         assert process(text) is text
         assert process(mapping) is mapping
 
-    @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
-    def test_no_processor_without_typed_collections(self, pycubrid_types, type_cls, name):
+    @pytest.mark.parametrize("type_cls", [SET, MULTISET])
+    def test_no_processor_without_typed_collections(self, pycubrid_types, type_cls):
         # Released pycubrid 1.8.0: no typed classes, so values reach the driver
         # unchanged (and pycubrid rejects a plain collection parameter).
         pycubrid_types()
@@ -329,14 +361,41 @@ class TestCollectionBindProcessor:
         (process,) = compiled._bind_processors.values()
         assert process([2, 1]) == module.Sequence([2, 1])
 
-    def test_installed_pycubrid_feature_detection(self):
+    def test_installed_pycubrid(self):
         typed = pytest.importorskip("pycubrid.types")
-        process = SEQUENCE(Integer()).bind_processor(PyCubridDialect())
+        dialect = PyCubridDialect()
+        sequence = SEQUENCE(Integer()).bind_processor(dialect)
+        set_ = SET(Integer()).bind_processor(dialect)
+        multiset = MULTISET(Integer()).bind_processor(dialect)
+        assert sequence is not None
+        with pytest.raises(TypeError, match="SEQUENCE is ordered"):
+            sequence({1, 2})
         if not hasattr(typed, "Sequence"):
-            assert process is None
-        else:
-            assert process is not None
-            assert process([1, 1]) == typed.Sequence([1, 1])
+            assert set_ is None and multiset is None
+            return
+        assert set_ is not None and multiset is not None
+        assert sequence((2, 1, 2)) == typed.Sequence([2, 1, 2])
+        assert set_(frozenset({1})) == typed.Set([1])
+        assert multiset({1}) == typed.Multiset([1])
+
+    @pytest.mark.parametrize("dialect_cls", [CubridDialect, PyCubridDialect])
+    @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
+    def test_literal_rendering(self, dialect_cls, type_cls, name):
+        col = column("c", type_cls(Integer()))
+        dialect = dialect_cls()
+        null = (
+            select(column("id"))
+            .where(col.is_(None))
+            .compile(dialect=dialect, compile_kwargs={"literal_binds": True})
+        )
+        assert "IS NULL" in str(null)
+        stmt = select(column("id")).where(col == [1, 2])
+        with pytest.raises(exc.CompileError) as info:
+            stmt.compile(dialect=dialect, compile_kwargs={"literal_binds": True})
+        # SQLAlchemy wraps the processor's error; the cause names the type.
+        assert f"{type_cls.__visit_name__} values cannot be rendered" in str(info.value.__cause__)
+        processor = type_cls(Integer()).literal_processor(dialect)
+        assert processor(None) == "NULL"
 
 
 class TestRepr:

@@ -10,7 +10,9 @@ The typed parameters are on pycubrid main but not in a release yet: the released
 pycubrid (1.8.0, the ``[pycubrid]`` floor) rejects collection parameters, so
 every case that binds a collection is a strict xfail there and the upstream
 canary (pycubrid@main, ``CUBRID_REQUIRE_TYPED_COLLECTIONS=1``) runs them for
-real. A ``NULL`` collection binds on every pycubrid release and is never xfailed.
+real. A ``NULL`` collection binds on every pycubrid release and is never
+xfailed, and neither is a ``set``/``frozenset`` bound to a ``SEQUENCE``, which
+the dialect rejects with ``TypeError`` before the driver sees it.
 
 The sync tests use the driver ``CUBRID_TEST_URL`` selects. On CUBRIDdb
 (``cubrid://``) the pycubrid cases are skipped and ``TestCubriddbCollectionBinds``
@@ -242,6 +244,17 @@ class TestCoreRoundTrip:
             row = conn.execute(select(core_table)).one()
         assert _normalized(row) == _expected(read)
 
+    @pytest.mark.parametrize("value", [{2, 1}, frozenset({2, 1})])
+    def test_sequence_rejects_a_set(self, engine: Engine, core_table: Table, value: Any) -> None:
+        # Raised by the dialect before the driver, so on every pycubrid version.
+        with pytest.raises(sa.exc.StatementError) as info:
+            with engine.begin() as conn:
+                conn.execute(core_table.insert(), _insert_params(1, {"sq": value}))
+        assert isinstance(info.value.orig, TypeError)
+        assert "SEQUENCE is ordered; pass a list or tuple" in str(info.value.orig)
+        with engine.connect() as conn:
+            assert conn.execute(select(sa.func.count()).select_from(core_table)).scalar() == 0
+
     def test_null_collections(self, engine: Engine, core_table: Table) -> None:
         # Binds no collection, so this passes on released pycubrid too.
         with engine.begin() as conn:
@@ -447,6 +460,13 @@ class TestAsyncRoundTrip:
             await eng.dispose()
         assert calls == ([] if insertmanyvalues else [len(params) - 1])
         assert [_normalized(row) for row in rows] == _MANY_EXPECTED
+
+    async def test_sequence_rejects_a_set(self, async_engine: AsyncEngine) -> None:
+        with pytest.raises(sa.exc.StatementError) as info:
+            async with async_engine.begin() as conn:
+                await conn.execute(_core.insert(), _insert_params(1, {"sq": {2, 1}}))
+        assert isinstance(info.value.orig, TypeError)
+        assert "SEQUENCE is ordered" in str(info.value.orig)
 
     async def test_core_null_collections(self, async_engine: AsyncEngine) -> None:
         async with async_engine.begin() as conn:
