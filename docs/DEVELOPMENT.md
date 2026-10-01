@@ -471,7 +471,9 @@ The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinne
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
 run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
 the existing pycubrid/Alembic extras and development test dependencies. Offline
-selection is `-m "not integration"`; the integration environment selects
+selection in the `py3xx` environments is `-m "not integration and not repo"`, and
+the `repo` environment runs the repository-tooling tests with `-m repo` (#594);
+the integration environment selects
 `-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
 compliance suite requires the testing plugin enabled by `--dburi`; existing CI
 runs it separately with that argument and its known-failure baseline. Regular
@@ -479,7 +481,7 @@ tox integration does not run the formal suite. The offline threshold remains 95%
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 

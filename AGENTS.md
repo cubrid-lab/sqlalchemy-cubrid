@@ -98,9 +98,12 @@ make test-all         # tox across Python 3.10–3.14
 ### Test Commands (manual)
 
 ```bash
-# Offline (no DB needed) — this is the primary test command
-pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py \
+# Offline (no DB needed) — this is the primary test command (same as `make test`)
+pytest test/ -v -m "not integration and not repo" \
   --cov=sqlalchemy_cubrid --cov-report=term-missing --cov-fail-under=95
+
+# Repository-tooling tests (Makefile, signal handling, repo scripts; same as `make test-repo`)
+pytest test/ -v -m repo
 
 # Integration (requires Docker)
 docker compose up -d
