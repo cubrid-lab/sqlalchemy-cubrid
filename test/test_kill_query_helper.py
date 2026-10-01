@@ -27,7 +27,7 @@ def test_selects_only_the_active_query_of_the_exact_victim_account() -> None:
         [
             (41, "DBA", "2026-10-02 08:00:00"),  # unrelated slow query
             (42, "kq634_1234abcd5678ef90", None),  # same user's idle transaction
-            (43, "KQ634_1234ABCD5678EF90 ", "2026-10-02 08:00:01"),
+            (43, "KQ634_1234ABCD5678EF90", "2026-10-02 08:00:01"),
             (44, "kq634_99999999aaaaaaaa", "2026-10-02 08:00:02"),
         ]
     )
@@ -41,6 +41,13 @@ def test_selects_only_the_active_query_of_the_exact_victim_account() -> None:
 
 def test_zero_matches_waits_without_killing_any_query() -> None:
     cursor = _TransactionCursor([(41, "DBA", "2026-10-02 08:00:00")])
+    assert kill_unique_query(cursor, "kq634_1234abcd5678ef90") is False
+    assert cursor.statements == ["SHOW TRANSACTION TABLES"]
+
+
+@pytest.mark.parametrize("username", [" kq634_1234abcd5678ef90", "kq634_1234abcd5678ef90 "])
+def test_whitespace_changes_account_identity_and_cannot_select_a_victim(username: str) -> None:
+    cursor = _TransactionCursor([(41, username, "2026-10-02 08:00:00")])
     assert kill_unique_query(cursor, "kq634_1234abcd5678ef90") is False
     assert cursor.statements == ["SHOW TRANSACTION TABLES"]
 

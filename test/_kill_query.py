@@ -32,7 +32,7 @@ def running_targets(cursor: Any, username: str) -> set[int]:
 
     targets: set[int] = set()
     for row in cursor.fetchall():
-        if str(row[user]).strip().casefold() != username or row[started] is None:
+        if str(row[user]).casefold() != username or row[started] is None:
             continue
         tran_index = row[index]
         if type(tran_index) is not int or tran_index <= 0:
