@@ -483,8 +483,8 @@ flowchart LR
     `NCHAR`/`NVARCHAR`는 국가 문자 의미론을 사용합니다. 예상치 못한 비교/정렬을 피하려면 애플리케이션 인코딩과 데이터베이스 콜레이션을 정렬하세요.
 
 !!! warning "BLOB/CLOB 조회는 드라이버 LOB 로케이터를 반환함"
-    CUBRID 10.2 및 11.4, pycubrid 1.3.2 및 1.7.1, CUBRIDdb 11.3에서 실제로 검증했습니다(#485). `bytes`/`str` 바인딩은 전체 값을 저장하고 `NULL`은 `None`으로 왕복되지만, NULL이 아닌 `BLOB`/`CLOB` 컬럼을 조회하면 `bytes`/`str` 대신 드라이버의 LOB 로케이터(pycubrid는 `dict` 핸들, CUBRIDdb는 `'file:...'` 문자열)가 반환됩니다. `LargeBinary`/`BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. `cubrid+aiopycubrid://`도 동일하며, `None`을 포함한 `LargeBinary`/`BLOB` 값 바인딩은 #500부터 정상 동작합니다.
-    내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다.
+    CUBRID 10.2 및 11.4에서 Core/ORM, 동기/비동기 전 조합을 pycubrid 1.8.0(지원 최저 버전), pycubrid main, CUBRIDdb 11.3으로 실제 검증했습니다(#485, `test/test_lob_value_contract.py`). `bytes`/`str` 바인딩은 전체 값을 저장하고 `NULL`은 `None`으로 왕복되지만, NULL이 아닌 `BLOB`/`CLOB` 컬럼을 조회하면 `bytes`/`str` 대신 드라이버의 LOB 로케이터(동기 pycubrid는 `dict` 핸들, `cubrid+aiopycubrid://`는 `file_locator` 문자열, CUBRIDdb는 `'file:...'` 문자열)가 반환됩니다. `LargeBinary`/`BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. `cubrid+aiopycubrid://`에서 `None`을 포함한 `LargeBinary`/`BLOB` 값 바인딩은 #500부터 정상 동작합니다.
+    내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441/#442에서 추적하며, pycubrid main에도 아직 구현되어 있지 않아 같은 strict xfail이 양쪽에 적용됩니다 — 해결되는 즉시 xfail이 실패하는 XPASS로 바뀝니다.
 
 !!! warning "LOB와 컬렉션 페이로드 형태는 드라이버마다 다를 수 있음"
     `CUBRIDdb`와 `pycubrid`는 `BLOB`/`CLOB`과 컬렉션 값을 다르게 노출할 수 있습니다.

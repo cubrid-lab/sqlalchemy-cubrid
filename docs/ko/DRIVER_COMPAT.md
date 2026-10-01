@@ -167,15 +167,15 @@ CUBRID 12는 아직 출시되지 않았습니다. 출시되면 드라이버와 �
 
 ### 6. `BLOB` / `CLOB` 조회는 LOB 로케이터를 반환
 
-CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#485). 모든 릴리스된 드라이버에서 `BLOB` / `CLOB` 컬럼에 `bytes` / `str`을 바인딩하면 전체 값이 저장되고 `NULL`은 `None`으로 왕복됩니다. 그러나 NULL이 아닌 `BLOB` / `CLOB` 컬럼을 조회하면 `bytes` / `str` 대신 드라이버의 LOB 로케이터가 반환됩니다:
+CUBRID 10.2 및 11.4에서 Core/ORM, 동기/비동기 전 조합을 pycubrid 1.8.0(지원 최저 버전)과 pycubrid main 양쪽으로 실제 검증했습니다(#485; `test/test_lob_value_contract.py`, 재검증 시 다시 실행). 모든 릴리스된 드라이버에서 `BLOB` / `CLOB` 컬럼에 `bytes` / `str`을 바인딩하면 전체 값이 저장되고 `NULL`은 `None`으로 왕복됩니다. 그러나 NULL이 아닌 `BLOB` / `CLOB` 컬럼을 조회하면 `bytes` / `str` 대신 드라이버의 LOB 로케이터가 반환됩니다:
 
 | 드라이버 URL | NULL이 아닌 `BLOB` / `CLOB` 조회 결과 |
 |---|---|
 | `cubrid://` (`CUBRIDdb` 11.3) | 서버 파일 로케이터 `str` (`'file:...'`) |
-| `cubrid+pycubrid://` (pycubrid 1.3.2 ~ 1.7.1) | LOB 핸들 `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
-| `cubrid+aiopycubrid://` (pycubrid 1.7.1) | LOB 핸들 `dict` (`None`을 포함한 `LargeBinary` / `BLOB` 값 바인딩은 #500부터 정상 동작) |
+| `cubrid+pycubrid://` (pycubrid 1.8.0 및 main) | LOB 핸들 `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
+| `cubrid+aiopycubrid://` (pycubrid 1.8.0 및 main) | `file_locator` 문자열 (`None`을 포함한 `LargeBinary` / `BLOB` 값 바인딩은 #500부터 정상 동작) |
 
-`LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441에서 추적합니다. [타입](TYPES.md)도 참고하세요.
+`LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441/#442에서 추적하며, pycubrid main에도 아직 구현되어 있지 않아 `test_lob_value_contract.py`는 릴리스된 드라이버와 pycubrid main 양쪽에서 동일하게 strict xfail 처리합니다 — 향후 pycubrid가 이를 해결하면 xfail이 실패하는 XPASS로 바뀌어 조용히 통과하지 않습니다. [타입](TYPES.md)도 참고하세요.
 
 ### 7. `executemany`가 `None`에 이전 행의 값을 재사용 (방언 가드)
 
