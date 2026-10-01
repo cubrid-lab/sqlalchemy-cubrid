@@ -229,6 +229,18 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 
 **pycubrid의 `AUTOCOMMIT`.** pycubrid 1.8.0은 오토커밋 모드에서도 세션을 유지하므로, `CUBRIDdb`와 마찬가지로 문장은 적용 중이던 서버 수준을 유지하고 세션 변수도 문장 사이에 유지됩니다. 연결을 `AUTOCOMMIT`으로 바꾸면 방언은 격리 수준 다시 적용을 멈춥니다.
 
+### 11. 컬렉션 파라미터 (SET, MULTISET, SEQUENCE)
+
+컬렉션 컬럼에 Python `list`, `tuple`, `set`을 바인딩하는 방식은 드라이버마다 다릅니다(#484, CUBRID 10.2와 11.4에서 검증).
+
+| 드라이버 | `list` / `tuple` / `set` 바인딩 | 컬렉션 조회 |
+|---|---|---|
+| pycubrid main (타입 지정 컬렉션 파라미터, cubrid-lab/pycubrid#567) | 방언이 값을 컬럼 타입에 맞는 `pycubrid.types.Set`, `Multiset`, `Sequence`로 감쌉니다. `SET`, `MULTISET`, `SEQUENCE`의 의미가 유지됩니다. `SEQUENCE`는 `list`나 `tuple`만 받으며, `set`/`frozenset`은 `TypeError`("SEQUENCE is ordered; pass a list or tuple")를 발생시킵니다. | `?decode_collections=true`이면 `frozenset`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`), 없으면 원시 `bytes` |
+| pycubrid 1.8.0 (릴리스) | `ProgrammingError`: pycubrid가 컬렉션 파라미터를 거부합니다. `SEQUENCE`에 넘긴 `set`/`frozenset`은 방언이 위와 같은 `TypeError`를 발생시킵니다. | 위와 같음 |
+| CUBRIDdb 11.3.0.51 | CUBRIDdb가 값을 직접, 항상 SET 호스트 변수로 바인딩합니다. MULTISET은 중복을, SEQUENCE는 순서를 잃습니다(`[3, 1, 2, 1]`은 `{1, 2, 3}`으로 저장됨). `None` 원소는 지원되지 않습니다. `[None]`은 드라이버 안에서 `UnboundLocalError`로, `[1, None]`은 `-494 Cannot coerce host var to type sequence`로 실패합니다. | 원소 타입과 관계없이 `str` 원소로 된 `set`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`) |
+
+방언은 CUBRIDdb의 동작을 바꾸지 않습니다. CUBRIDdb에서 중복이나 순서가 필요한 컬렉션은 바인드 파라미터로 보내지 말고 SQL에 컬렉션 리터럴을 쓰거나(`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`) `cubrid+pycubrid://`를 사용하세요. [타입 매핑, 컬렉션 값](TYPES.md#컬렉션-값)을 참고하세요.
+
 ---
 
 ## 설치 참고
