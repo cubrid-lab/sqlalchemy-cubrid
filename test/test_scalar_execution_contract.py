@@ -152,7 +152,7 @@ class TestCompatNativeNotInvoked:
                 meta.drop_all(conn)
                 meta.create_all(conn)
                 conn.execute(table.insert(), {"id": 1, "n": 42})
-                got = conn.execute(select(table.c.n).where(table.c.id == 1)).scalar_one()
+                got: int = conn.execute(select(table.c.n).where(table.c.id == 1)).scalar_one()
                 assert got == 42
                 meta.drop_all(conn)
         finally:
@@ -192,7 +192,7 @@ class TestScalarValueContractCore:
             conn.execute(scalar_table.delete())
             conn.execute(scalar_table.insert(), {"id": 1, kind: value})
         with engine.connect() as conn:
-            got = conn.execute(
+            got: object = conn.execute(
                 select(scalar_table.c[kind]).where(scalar_table.c.id == 1)
             ).scalar_one()
         _assert_scalar_value(got, kind, value)
@@ -348,7 +348,7 @@ class TestFailedBindThenConnectionReuse:
             assert conn.connection.dbapi_connection is raw
             conn.execute(sa.insert(cast(Table, _NotNullRow.__table__)), {"id": 1, "n": 7})
             conn.commit()
-            got = conn.execute(select(cast(Table, _NotNullRow.__table__).c.n)).scalar_one()
+            got: int = conn.execute(select(cast(Table, _NotNullRow.__table__).c.n)).scalar_one()
         assert got == 7
 
     def test_orm_flush(self, engine: Engine) -> None:
@@ -410,7 +410,7 @@ class TestAsyncScalarValueContract:
             await conn.execute(table.insert(), {"id": 1, kind: value})
         async with async_engine.connect() as conn:
             result = await conn.execute(select(table.c[kind]).where(table.c.id == 1))
-            got = result.scalar_one()
+            got: object = result.scalar_one()
         _assert_scalar_value(got, kind, value)
 
     async def test_update(self, async_engine: AsyncEngine) -> None:
@@ -547,5 +547,5 @@ class TestAsyncFailedBindThenConnectionReuse:
             )
             await conn.commit()
             result = await conn.execute(select(cast(Table, _AsyncNotNullRow.__table__).c.n))
-            got = result.scalar_one()
+            got: int = result.scalar_one()
         assert got == 7
