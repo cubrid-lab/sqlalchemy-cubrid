@@ -376,6 +376,10 @@ class TestFailedBindThenConnectionReuse:
 
 @pytest_asyncio.fixture
 async def async_engine() -> AsyncIterator[AsyncEngine]:
+    # cubrid+aiopycubrid:// needs pycubrid installed, which the CUBRIDdb-only
+    # CI step (CUBRID_TEST_URL=cubrid://, no [pycubrid] extra) does not have;
+    # skip there instead of erroring on import.
+    pytest.importorskip("pycubrid", reason="cubrid+aiopycubrid:// needs pycubrid installed")
     eng = create_async_engine(_async_url())
     yield eng
     await eng.dispose()
