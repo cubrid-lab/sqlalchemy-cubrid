@@ -857,6 +857,110 @@ class TestReflectionMethods:
         assert members[1].__class__.__name__ == "VARCHAR"
         assert members[1].length == 50
 
+    def test_get_columns_numeric_params_tolerate_whitespace(self):
+        """#609: NUMERIC(10, 2) must reflect like NUMERIC(10,2), not NullType."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        rows = [
+            ("compact_num", "NUMERIC(10,2)", "YES", "", None, ""),
+            ("spaced_num", "NUMERIC(10, 2)", "YES", "", None, ""),
+            ("compact_dec", "DECIMAL(12,4)", "YES", "", None, ""),
+            ("spaced_dec", "DECIMAL(12, 4)", "YES", "", None, ""),
+            ("padded_num", "NUMERIC( 8 , 3 )", "YES", "", None, ""),
+            ("spaced_precision_only", "NUMERIC( 7 )", "YES", "", None, ""),
+        ]
+        comment_rows: list[Any] = []
+        connection.execute.side_effect = [rows, comment_rows]
+
+        with patch("sqlalchemy.util.warn") as warn:
+            columns = _invoke_reflection(dialect, "get_columns", connection, "num_table")
+
+        assert [column["type"].__class__.__name__ for column in columns] == [
+            "NUMERIC",
+            "NUMERIC",
+            "DECIMAL",
+            "DECIMAL",
+            "NUMERIC",
+            "NUMERIC",
+        ]
+        assert [(column["type"].precision, column["type"].scale) for column in columns] == [
+            (10, 2),
+            (10, 2),
+            (12, 4),
+            (12, 4),
+            (8, 3),
+            (7, None),
+        ]
+        warn.assert_not_called()
+
+    def test_get_columns_collection_member_numeric_tolerates_whitespace(self):
+        """#609: the same normalization applies to collection members."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        rows = [
+            ("set_col", "SET(NUMERIC(10, 2),VARCHAR(50))", "YES", "", None, ""),
+        ]
+        comment_rows: list[Any] = []
+        connection.execute.side_effect = [rows, comment_rows]
+
+        with patch("sqlalchemy.util.warn") as warn:
+            columns = _invoke_reflection(dialect, "get_columns", connection, "coll_table")
+
+        col_type = columns[0]["type"]
+        assert col_type.__class__.__name__ == "SET"
+        members = col_type._ddl_values
+        assert len(members) == 2
+        assert members[0].__class__.__name__ == "NUMERIC"
+        assert members[0].precision == 10
+        assert members[0].scale == 2
+        assert members[1].__class__.__name__ == "VARCHAR"
+        assert members[1].length == 50
+        warn.assert_not_called()
+
+    def test_get_columns_whitespace_normalization_spans_length_branches(self):
+        """#609: the widened pattern covers lengths and leaves other branches alone.
+
+        ENUM is deliberately not asserted here: reflection already drops it to
+        NULLTYPE on main, independently of this change.
+        """
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        rows = [
+            ("char_col", "CHAR(3)", "YES", "", None, ""),
+            ("spaced_char", "VARCHAR( 100 )", "YES", "", None, ""),
+            ("bit_col", "BIT(8)", "YES", "", None, ""),
+            ("bit_varying_col", "BIT VARYING( 16 )", "YES", "", None, ""),
+            ("spaced_nchar", "NCHAR VARYING( 20 )", "YES", "", None, ""),
+            ("plain_col", "INTEGER", "NO", "", None, ""),
+        ]
+        comment_rows: list[Any] = []
+        connection.execute.side_effect = [rows, comment_rows]
+
+        with patch("sqlalchemy.util.warn") as warn:
+            columns = _invoke_reflection(dialect, "get_columns", connection, "mixed_table")
+
+        assert columns[0]["type"].__class__.__name__ == "CHAR"
+        assert columns[0]["type"].length == 3
+        assert columns[1]["type"].__class__.__name__ == "VARCHAR"
+        assert columns[1]["type"].length == 100
+        assert columns[2]["type"].__class__.__name__ == "BIT"
+        assert columns[2]["type"].length == 8
+        assert columns[3]["type"].__class__.__name__ == "BIT"
+        assert columns[3]["type"].length == 16
+        assert columns[4]["type"].__class__.__name__ == "NVARCHAR"
+        assert columns[4]["type"].length == 20
+        assert columns[5]["type"].__class__.__name__ == "INTEGER"
+        warn.assert_not_called()
+
     def test_get_pk_constraint_with_primary_key_and_constraint_name(self):
         dialect = CubridDialect()
         connection = MagicMock()

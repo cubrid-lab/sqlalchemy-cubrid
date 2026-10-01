@@ -153,7 +153,9 @@ def _is_unknown_class_error(error: BaseException) -> bool:
 
 # Pre-compiled patterns for column type parsing in get_columns().
 # Avoids re-compilation on every reflection call.
-_RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
+# Parameter lists tolerate whitespace around the digits and commas, so
+# NUMERIC(10, 2) normalizes to the same lookup key as NUMERIC(10,2) (#609).
+_RE_TYPE_PARAMS = re.compile(r"\(\s*\d+(?:\s*,\s*\d+)*\s*\)")
 _RE_ENUM = re.compile(r"^ENUM\s*\((.*)\)\s*$", re.IGNORECASE)
 
 
@@ -167,7 +169,7 @@ def _parse_enum_elements(raw: str) -> list[str]:
 
 
 _RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*\((.+)\)$", re.IGNORECASE)
-_RE_LENGTH = re.compile(r"\((\d+)\)")
+_RE_LENGTH = re.compile(r"\(\s*(\d+)\s*\)")
 
 
 def _is_explicitly_quoted_name(value: object) -> bool:
@@ -201,7 +203,7 @@ def _split_collection_members(inner: str) -> list[str]:
     return parts
 
 
-_RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:,\s*(\d+))?\)")
+_RE_PRECISION_SCALE = re.compile(r"\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)")
 
 # CUBRID's ``SHOW CREATE TABLE`` emits foreign-key clauses such as::
 #
