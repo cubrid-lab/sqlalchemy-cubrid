@@ -1556,10 +1556,15 @@ class CubridDialect(default.DefaultDialect):
         errors that carry neither a code nor an ``OSError`` cause (e.g.
         pycubrid's client-side "connection lost during receive").
 
-        Codes come from ``args[0]`` (CUBRIDdb) and, for pycubrid, from its
-        ``errno`` attribute; ``errno`` is matched against the server-session
-        codes (``_server_session_lost_codes``, #565) and the legacy-renumbered
+        Codes come only from where each driver structurally puts them:
+        an ``int`` ``args[0]`` (CUBRIDdb) and, for pycubrid, its ``errno``
+        attribute; ``errno`` is matched against the server-session codes
+        (``_server_session_lost_codes``, #565) and the legacy-renumbered
         CAS codes pycubrid receives (``_pycubrid_legacy_cas_codes``, #578).
+        No code is ever parsed out of message text: a message that starts
+        with a number (e.g. server text echoing application data) is just
+        text (#608).
+
         The message fallback reads the driver's own message (``args[0]``
         when it is a string), not pycubrid's ``str()`` with its code
         description.
@@ -1588,6 +1593,8 @@ class CubridDialect(default.DefaultDialect):
         # there reach pycubrid legacy-renumbered instead, in
         # ``_pycubrid_legacy_cas_codes`` (#578).
         pycubrid_errno = getattr(e, "errno", None)
+        if not isinstance(pycubrid_errno, int) or isinstance(pycubrid_errno, bool):
+            pycubrid_errno = None
         if (
             pycubrid_errno in self._server_session_lost_codes
             or pycubrid_errno in self._pycubrid_legacy_cas_codes
@@ -1599,11 +1606,14 @@ class CubridDialect(default.DefaultDialect):
         if self._has_oserror_cause(e):
             return True
 
-        # 3. Message fallback for string-only driver errors that carry
-        #    neither a numeric code nor an OSError cause. Match the driver's
-        #    own message: pycubrid's ``str()`` appends a description looked
-        #    up from ``errno`` (-4 and -671 read "Communication error"), which
-        #    must not decide the outcome. For any exception that does not
+        # 3. Message fallback for driver errors that carry neither a
+        #    disconnect code nor an OSError cause, e.g. pycubrid's code-less
+        #    "connection lost during receive", or server errors such as -190 /
+        #    -191 ("Failed to connect to database server") that are not in the
+        #    code tables. Match the driver's own message: pycubrid's
+        #    ``str()`` appends a description looked up from ``errno`` (-4 and
+        #    -671 read "Communication error"), which must not decide the
+        #    outcome. For any exception that does not
         #    override ``__str__`` a single string arg *is* ``str(e)``, and
         #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
         if len(e.args) == 1 and isinstance(e.args[0], str):
@@ -1635,23 +1645,16 @@ class CubridDialect(default.DefaultDialect):
 
     @staticmethod
     def _extract_error_code(exception: Exception) -> Optional[int]:
-        """Extract a numeric error code from a CUBRID DBAPI exception.
+        """Return the CUBRIDdb error code in ``exception.args[0]``, or ``None``.
 
-        CUBRIDdb stores the error code in ``exception.args[0]``.
-        Returns ``None`` if no numeric code can be extracted.
+        CUBRIDdb raises ``(code, message)`` with an ``int`` code. A string
+        ``args[0]`` (pycubrid's message, or any other driver text) never
+        carries a code, even when it starts with a number (#608).
         """
         if exception.args:
             first_arg = exception.args[0]
-            if isinstance(first_arg, int):
+            if isinstance(first_arg, int) and not isinstance(first_arg, bool):
                 return first_arg
-            # Some errors embed the code at the start: "-20004 ..."
-            if isinstance(first_arg, str):
-                parts = first_arg.split(None, 1)
-                if parts:
-                    try:
-                        return int(parts[0])
-                    except (ValueError, IndexError):
-                        pass
         return None
 
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:

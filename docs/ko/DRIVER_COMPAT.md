@@ -120,10 +120,10 @@ SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위�
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int 또는 str
+    code = e.args[0]  # int
 ```
 
-방언의 `_extract_error_code()`는 정수 코드와 문자열에 박힌 코드(예: `"-20004 Cannot communicate with server"`) 모두 처리합니다.
+방언의 `_extract_error_code()`는 정수 `args[0]`만 읽습니다. 문자열 `args[0]`은 숫자로 시작하더라도(예: 애플리케이션 데이터를 인용한 `"-20004 rows rejected ..."`) 코드를 담지 않습니다. 1.8.0까지의 릴리스는 이런 앞쪽 숫자를 코드로 해석해 멀쩡한 연결을 무효화할 수 있었습니다(#608).
 
 pycubrid는 `args`에 메시지만 담고 서버 오류 코드는 `errno`(및 `code`)에 담습니다. `is_disconnect()`는 [알려진 문제 1](#1-연결-해제-감지에-operationalerror를-사용하지-않음)에 나열된 서버 코드에 대해 `errno`를 읽습니다. pycubrid의 `str()`은 `errno`의 설명(예: -4와 -671의 `Communication error`)도 덧붙이므로, 메시지 패턴은 드라이버 자체 메시지인 `args[0]`과 비교합니다.
 
