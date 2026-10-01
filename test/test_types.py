@@ -7,7 +7,17 @@ visit names, repr, and inheritance.
 
 from __future__ import annotations
 
+import types
+from typing import Any
+
+import pytest
+from sqlalchemy import Integer, column, select
 from sqlalchemy.sql import sqltypes
+
+from sqlalchemy_cubrid import types as cubrid_types
+from sqlalchemy_cubrid.aio_pycubrid_dialect import PyCubridAsyncDialect
+from sqlalchemy_cubrid.dialect import CubridDialect
+from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
 
 from sqlalchemy_cubrid.types import (
     BIGINT,
@@ -219,6 +229,114 @@ class TestCollectionTypes:
     def test_empty_set(self):
         t = SET()
         assert t._ddl_values == ()
+
+
+class _Typed:
+    """Stand-in for a pycubrid typed collection (``pycubrid.types.Set`` etc.)."""
+
+    def __init__(self, elements: Any = ()) -> None:
+        self.elements = tuple(elements)
+
+    def __eq__(self, other: object) -> bool:
+        return type(other) is type(self) and self.elements == getattr(other, "elements", None)
+
+
+def _fake_pycubrid_types(*names: str) -> types.ModuleType:
+    module = types.ModuleType("pycubrid.types")
+    for name in names:
+        setattr(module, name, type(name, (_Typed,), {}))
+    return module
+
+
+@pytest.fixture
+def pycubrid_types(monkeypatch: pytest.MonkeyPatch):
+    """Install a fake ``pycubrid.types`` with the given class names."""
+
+    def install(*names: str) -> types.ModuleType:
+        module = _fake_pycubrid_types(*names)
+
+        def fake_import(name: str) -> types.ModuleType:
+            assert name == "pycubrid.types"
+            return module
+
+        monkeypatch.setattr(cubrid_types, "import_module", fake_import)
+        return module
+
+    return install
+
+
+_COLLECTION_CLASSES = [(SET, "Set"), (MULTISET, "Multiset"), (SEQUENCE, "Sequence")]
+
+
+class TestCollectionBindProcessor:
+    """#484: plain collections bind as pycubrid typed collections."""
+
+    @pytest.mark.parametrize("dialect_cls", [PyCubridDialect, PyCubridAsyncDialect])
+    @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
+    def test_wraps_plain_collections(self, pycubrid_types, dialect_cls, type_cls, name):
+        module = pycubrid_types("Set", "Multiset", "Sequence")
+        typed = getattr(module, name)
+        process = type_cls(Integer()).bind_processor(dialect_cls())
+        assert process is not None
+        for value in ([3, 1, 1], (3, 1, 1), {1, 3}, frozenset({1, 3}), []):
+            got = process(value)
+            assert type(got) is typed
+            assert got.elements == tuple(value)
+
+    @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
+    def test_passes_other_values_through(self, pycubrid_types, type_cls, name):
+        module = pycubrid_types("Set", "Multiset", "Sequence")
+        process = type_cls(Integer()).bind_processor(PyCubridDialect())
+        assert process is not None
+        already_typed = module.Multiset([1])
+        text = "{1, 2}"
+        mapping = {"a": 1}
+        assert process(None) is None
+        assert process(already_typed) is already_typed
+        assert process(text) is text
+        assert process(mapping) is mapping
+
+    @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
+    def test_no_processor_without_typed_collections(self, pycubrid_types, type_cls, name):
+        # Released pycubrid 1.8.0: no typed classes, so values reach the driver
+        # unchanged (and pycubrid rejects a plain collection parameter).
+        pycubrid_types()
+        assert type_cls(Integer()).bind_processor(PyCubridDialect()) is None
+
+    def test_no_processor_without_pycubrid(self, monkeypatch):
+        def missing(name: str) -> types.ModuleType:
+            raise ImportError(name)
+
+        monkeypatch.setattr(cubrid_types, "import_module", missing)
+        assert SET(Integer()).bind_processor(PyCubridDialect()) is None
+
+    @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
+    def test_no_processor_on_cubriddb(self, pycubrid_types, type_cls, name):
+        # CUBRIDdb binds list/tuple/set values itself (as a SET host variable).
+        pycubrid_types("Set", "Multiset", "Sequence")
+        assert type_cls(Integer()).bind_processor(CubridDialect()) is None
+
+    @pytest.mark.parametrize("dialect_cls", [CubridDialect, PyCubridDialect])
+    @pytest.mark.parametrize(("type_cls", "name"), _COLLECTION_CLASSES)
+    def test_values_are_returned_as_the_driver_decodes_them(self, dialect_cls, type_cls, name):
+        dialect = dialect_cls()
+        assert type_cls(Integer()).result_processor(dialect, None) is None
+
+    def test_compiled_statement_uses_the_processor(self, pycubrid_types):
+        module = pycubrid_types("Set", "Multiset", "Sequence")
+        stmt = select(column("id")).where(column("sq", SEQUENCE(Integer())) == [2, 1])
+        compiled = stmt.compile(dialect=PyCubridDialect())
+        (process,) = compiled._bind_processors.values()
+        assert process([2, 1]) == module.Sequence([2, 1])
+
+    def test_installed_pycubrid_feature_detection(self):
+        typed = pytest.importorskip("pycubrid.types")
+        process = SEQUENCE(Integer()).bind_processor(PyCubridDialect())
+        if not hasattr(typed, "Sequence"):
+            assert process is None
+        else:
+            assert process is not None
+            assert process([1, 1]) == typed.Sequence([1, 1])
 
 
 class TestRepr:

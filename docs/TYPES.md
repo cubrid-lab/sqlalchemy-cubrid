@@ -207,6 +207,65 @@ CREATE TABLE tagged_items (
 > no separate `LIST` type, since a type compiling to `LIST(...)` would produce
 > spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`.
 
+#### Collection values
+
+Bind a collection column's value as a Python `list`, `tuple`, `set` or
+`frozenset`. What happens next depends on the driver:
+
+| | `cubrid+pycubrid://`, `cubrid+aiopycubrid://` with typed collection parameters (pycubrid main) | Released pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
+|---|---|---|---|
+| Binding a `list`/`tuple`/`set`/`frozenset` | Wrapped in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type and sent as a `SET{...}`, `MULTISET{...}` or `SEQUENCE{...}` literal | `ProgrammingError` (pycubrid rejects collection parameters) | Bound by CUBRIDdb itself, always as a SET: a MULTISET loses duplicates and a SEQUENCE loses its order ([Driver Compatibility, Known Issue 11](DRIVER_COMPAT.md#11-collection-parameters-set-multiset-sequence)) |
+| Reading `SET` | `frozenset` with `?decode_collections=true`, raw `bytes` without it | Same | `set` of `str` |
+| Reading `MULTISET` / `SEQUENCE` | `list` with `?decode_collections=true`, raw `bytes` without it | Same | `list` of `str` |
+
+```python
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
+from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET
+
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/demodb?decode_collections=true")
+items = Table(
+    "items", MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("tags", SET(String(20))),
+    Column("scores", MULTISET(Integer())),
+    Column("history", SEQUENCE(Integer())),
+)
+
+with engine.begin() as conn:
+    conn.execute(items.insert(), {"id": 1, "tags": {"a", "b"}, "scores": [2, 2, 1], "history": [3, 1, 3]})
+    row = conn.execute(select(items)).one()
+    # row.tags == frozenset({"a", "b"}); sorted(row.scores) == [1, 2, 2]; row.history == [3, 1, 3]
+    conn.execute(select(items.c.id).where(items.c.history == [3, 1, 3]))  # SEQUENCE{3, 1, 3}
+```
+
+On pycubrid:
+
+- The typed parameters (cubrid-lab/pycubrid#567) are on pycubrid main and are
+  not in a pycubrid release yet. The dialect detects them
+  (`pycubrid.types.Set`, `Multiset` and `Sequence`); with an older pycubrid it
+  passes values to the driver unchanged, so a collection parameter fails as
+  before.
+- Each element must be a value pycubrid can bind on its own: `None`, `bool`,
+  `int`, `float`, `Decimal`, `str`, `bytes`, `bytearray`, `date`, `time` or
+  `datetime`. Nested collections are rejected.
+- A value that is already a `pycubrid.types.Set`, `Multiset` or `Sequence`,
+  `None` and any other value (for example a `str`) are passed to the driver
+  unchanged.
+- The server keeps the collection semantics, and the dialect does not change
+  them: a `SET` drops duplicates, a `MULTISET` keeps duplicates but not their
+  order (compare `sorted(...)`), and a `SEQUENCE` keeps both. An empty
+  collection reads back as `frozenset()` or `[]`, a `NULL` column as `None`,
+  and a `NULL` element as `None` inside the collection.
+- The dialect does not convert values read back: they are what pycubrid
+  decodes. Without `decode_collections=true` pycubrid returns the raw
+  collection bytes.
+- In the ORM, assign a new collection to change a column
+  (`obj.history = [*obj.history, 4]`). SQLAlchemy does not track in-place
+  changes to a `list` or `set` attribute.
+
+The round trips are tested live on CUBRID 10.2 and 11.4 with pycubrid main
+(Core and ORM, sync and async; `test/test_collection_roundtrip.py`).
+
 ### JSON Type
 
 CUBRID 10.2+ supports native JSON (RFC 7159). The dialect provides full JSON type support:
@@ -421,9 +480,9 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | Equivalent to very large `VARCHAR`. |
 | `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
 | `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (documented) | Binary LOB. Current drivers return a LOB locator on read; see the warning below. |
-| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent collection payload | CUBRID-specific collection; unique unordered members. |
-| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent collection payload | CUBRID-specific collection; duplicates allowed. |
-| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent collection payload | CUBRID-specific collection; ordered with duplicates. |
+| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent; `frozenset` on pycubrid with `decode_collections=true` | CUBRID-specific collection; unique unordered members. See [Collection values](#collection-values). |
+| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; duplicates allowed. See [Collection values](#collection-values). |
+| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; ordered with duplicates. See [Collection values](#collection-values). |
 | `OBJECT` | `sqlalchemy_cubrid.OBJECT` | Driver-dependent object reference | OID reference type; database-specific. Declared/compiled only; not auto-reflected. |
 | `BOOLEAN` (emulated) | `sqlalchemy.Boolean` -> `SMALLINT` | `bool` | Stored as `1` / `0`; `supports_native_boolean=False`. |
 

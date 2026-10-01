@@ -13,6 +13,7 @@ See: https://www.cubrid.org/manual/en/11.0/sql/datatype.html
 from __future__ import annotations
 
 import inspect
+from importlib import import_module
 from typing import Any, Sequence
 
 from sqlalchemy.sql import sqltypes
@@ -320,37 +321,80 @@ class CLOB(sqltypes.Text):
 # ---------------------------------------------------------------------------
 
 
-class SET(_StringType):
+#: Dialect drivers whose DB-API is pycubrid (sync and async).
+_PYCUBRID_DRIVERS = frozenset({"pycubrid", "aiopycubrid"})
+
+#: Python values the collection bind processors wrap in a pycubrid typed
+#: collection. Anything else (``None``, an already typed value, a string, ...)
+#: goes to the driver unchanged.
+_PLAIN_COLLECTIONS = (list, tuple, set, frozenset)
+
+
+def _pycubrid_collection_class(name: str) -> Any | None:
+    """Return ``pycubrid.types.<name>`` when the installed pycubrid has it.
+
+    pycubrid added ``Set``, ``Multiset`` and ``Sequence`` parameters for
+    ordinary cursors in cubrid-lab/pycubrid#567; older releases (including the
+    1.8.0 floor) do not define them and reject collection parameters.
+    """
+    try:
+        module = import_module("pycubrid.types")
+    except ImportError:
+        return None
+    return getattr(module, name, None)
+
+
+class _CollectionType(_StringType):
+    """Base for the CUBRID collection types.
+
+    On the pycubrid drivers, when the installed pycubrid provides typed
+    collection parameters, a ``list``/``tuple``/``set``/``frozenset`` value is
+    bound as the matching typed collection (``SET{...}``, ``MULTISET{...}``,
+    ``SEQUENCE{...}``). Values are returned as the driver decodes them; see
+    docs/TYPES.md ("Collection values").
+    """
+
+    #: Name of the matching class in ``pycubrid.types``.
+    _pycubrid_name: str
+
+    def __init__(self, *values: Any, **kw: Any) -> None:
+        self._ddl_values = values
+        super().__init__(**kw)
+
+    def bind_processor(self, dialect: Any) -> Any:
+        if dialect.driver not in _PYCUBRID_DRIVERS:
+            return None
+        typed = _pycubrid_collection_class(self._pycubrid_name)
+        if typed is None:
+            return None
+
+        def process(value: Any) -> Any:
+            if isinstance(value, _PLAIN_COLLECTIONS):
+                return typed(value)
+            return value
+
+        return process
+
+
+class SET(_CollectionType):
     """CUBRID SET type."""
 
     __visit_name__ = "SET"
-
-    def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct a SET."""
-        self._ddl_values = values
-        super().__init__(**kw)
+    _pycubrid_name = "Set"
 
 
-class MULTISET(_StringType):
+class MULTISET(_CollectionType):
     """CUBRID MULTISET type."""
 
     __visit_name__ = "MULTISET"
-
-    def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct a MULTISET."""
-        self._ddl_values = values
-        super().__init__(**kw)
+    _pycubrid_name = "Multiset"
 
 
-class SEQUENCE(_StringType):
+class SEQUENCE(_CollectionType):
     """CUBRID SEQUENCE type."""
 
     __visit_name__ = "SEQUENCE"
-
-    def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct a SEQUENCE."""
-        self._ddl_values = values
-        super().__init__(**kw)
+    _pycubrid_name = "Sequence"
 
 
 # ---------------------------------------------------------------------------
