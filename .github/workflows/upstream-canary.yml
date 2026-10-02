@@ -132,6 +132,17 @@ jobs:
           CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
           CUBRID_REQUIRE_TYPED_COLLECTIONS: "1"
         run: python -m pytest test/test_collection_roundtrip.py -v --tb=short -rxs
+      - name: Run LOB value contract tests (#485)
+        # Run even when an earlier integration step failed, so its result is
+        # still reported. No CUBRID_REQUIRE_* switch: pycubrid main does not
+        # implement official LOB fetch yet either (cubrid-lab/pycubrid#441/
+        # #442 are open upstream), so every case here is still a strict
+        # xfail, same as on the released driver; strict=True alone turns a
+        # future fix into a failing XPASS, which is the signal to watch for.
+        if: ${{ !cancelled() }}
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+        run: python -m pytest test/test_lob_value_contract.py -v --tb=short -rxs
       # Recorded even when an earlier step fails; with job-level
       # continue-on-error the report job cannot rely on needs.<job>.result.
       - name: Record job status
