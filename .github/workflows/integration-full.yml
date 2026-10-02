@@ -108,7 +108,9 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          python -m pytest test/test_integration.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+          python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
 
       - name: Run async integration tests
         env:
@@ -120,7 +122,9 @@ jobs:
           # extra installed above). Testing against pycubrid@main (HEAD) is
           # handled separately by upstream-canary.yml.
           pip install -e ".[pycubrid]"
-          python -m pytest test/test_aio_integration.py test/test_lob_value_contract.py test/test_scalar_execution_contract.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_aio_integration.py test/test_lob_value_contract.py test/test_scalar_execution_contract.py -v --tb=short | tee async-integration.log
+          python -m scripts.check_not_all_skipped async-integration.log --label "Run async integration tests"
 
       - name: Run driver-differential comparison (required)
         env:
@@ -153,9 +157,12 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
         run: |
+          set -o pipefail
           python -m pytest test/test_show_create_table_server_output.py \
             test/test_reflection_enum_collection.py \
-            test/test_unique_constraint_fallback.py -m integration -v --tb=short
+            test/test_unique_constraint_fallback.py -m integration -v --tb=short | tee show-create-table.log
+          python -m scripts.check_not_all_skipped show-create-table.log \
+            --label "Check recorded SHOW CREATE TABLE output and unique-constraint fallback"
 
       # Snapshot generation is gated to a single Python (3.12) so the 5x4
       # Python x CUBRID matrix yields exactly one artifact per CUBRID version,
@@ -244,7 +251,13 @@ jobs:
       - name: Run make integration
         env:
           CUBRID_VERSION: ${{ matrix.cubrid-version }}
-        run: make integration INTEGRATION_DRIVER=${{ matrix.driver }}
+        run: |
+          set -o pipefail
+          make integration INTEGRATION_DRIVER=${{ matrix.driver }} 2>&1 | tee make-integration.log
+      - name: Guard against an all-skipped make integration run (#486)
+        run: |
+          python -m scripts.check_not_all_skipped make-integration.log \
+            --label "make integration (${{ matrix.driver }}, CUBRID ${{ matrix.cubrid-version }})"
 
   full-matrix-result:
     name: Full compatibility matrix result

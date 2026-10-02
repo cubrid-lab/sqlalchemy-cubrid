@@ -42,6 +42,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.engine import make_url
 
 from sqlalchemy_cubrid.dialect import CubridDialect
 
@@ -186,10 +187,10 @@ def test_null_handling_agrees(both_engines: Any) -> None:
 
 # ---------------------------------------------------------------------------
 # DB-API contract areas that already behave correctly on the released drivers
-# (#486, tracker #479). Areas still blocked upstream — collections, prepared
-# binding — belong to #483-#484; LOBs to #485. IntegrityError classification
-# (#480), results across commit/rollback (#481) and cursor.description (#482)
-# are at the end of this module.
+# (#486, tracker #479). LOBs are handled separately in #485 (not touched here).
+# IntegrityError classification (#480), results across commit/rollback (#481),
+# cursor.description (#482) and collection round trips (#484) are at the end
+# of this module.
 # ---------------------------------------------------------------------------
 
 _CJK = "中文한글日本語"
@@ -488,6 +489,80 @@ def test_scalar_description_agrees(both_engines: Any) -> None:
     py_desc = run(pyc)
     assert [d[:2] for d in py_desc] == [e[:2] for e in expected]
     assert [d[2] for d in py_desc] == [e[2] for e in expected]
+
+
+# ---------------------------------------------------------------------------
+# #484: SET/MULTISET/SEQUENCE round trips agree
+# ---------------------------------------------------------------------------
+
+
+def test_collection_roundtrip_agrees(both_engines: Any) -> None:
+    """SET/MULTISET/SEQUENCE values agree once each driver's native shape is normalized.
+
+    Binding a collection as a parameter is blocked on released pycubrid
+    (``ProgrammingError``; the typed-collection parameters of
+    cubrid-lab/pycubrid#567 are on pycubrid main only, see
+    docs/DRIVER_COMPAT.md #11 and test_collection_roundtrip.py), so this case
+    writes the collection literal directly in SQL, which both drivers accept
+    identically. Reading differs by driver: CUBRIDdb always returns `str`
+    elements regardless of the declared element type, while pycubrid (with
+    ``?decode_collections=true``) returns the declared element type (`int`
+    here); SET comes back as a `set` (CUBRIDdb) or `frozenset` (pycubrid).
+    Both sides are normalized to `str` elements before comparing: SET as a
+    set (order never matters there) and MULTISET via `sorted()` (unordered,
+    docs/TYPES.md), both keeping duplicate counts; SEQUENCE compares the
+    insertion order directly, which both drivers preserve. A NULL collection
+    is unaffected by any of this and compares equal (`None`) on both drivers.
+    """
+    _, cext = both_engines
+    # both_engines already proved pycubrid connects with the plain URL; add
+    # decode_collections without disturbing any query options CUBRID_TEST_URL
+    # already carries (update_query_dict, not string concatenation), and let a
+    # connection failure here fail the test like any other, rather than skip
+    # and silently drop this case from the required lane.
+    pyc_url = make_url(_pycubrid_url()).update_query_dict({"decode_collections": "true"})
+    pyc = create_engine(pyc_url)
+    try:
+        _run_collection_roundtrip(cext)
+        _run_collection_roundtrip(pyc)
+    finally:
+        pyc.dispose()
+
+
+def _run_collection_roundtrip(engine: Any) -> None:
+    table = "drvdiff_coll"
+    with engine.begin() as conn:
+        conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+        conn.execute(
+            text(
+                f"CREATE TABLE {table} (id INTEGER PRIMARY KEY, s SET(INTEGER), "
+                "ms MULTISET(INTEGER), sq SEQUENCE(INTEGER))"
+            )
+        )
+        # Row 1 proves SET dedups and is unordered, MULTISET keeps duplicates,
+        # and SEQUENCE keeps insertion order; row 2 proves NULL collections
+        # round-trip as None.
+        conn.execute(
+            text(
+                f"INSERT INTO {table} (id, s, ms, sq) VALUES (1, {{3,1,2,1}}, {{3,1,2,1}}, {{3,1,2,1}})"
+            )
+        )
+        conn.execute(text(f"INSERT INTO {table} (id, s, ms, sq) VALUES (2, NULL, NULL, NULL)"))
+    try:
+        with engine.connect() as conn:
+            rows = conn.execute(text(f"SELECT s, ms, sq FROM {table} ORDER BY id")).all()
+    finally:
+        with engine.begin() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {table}"))
+
+    (s, ms, sq), (s_null, ms_null, sq_null) = rows
+    assert {str(v) for v in s} == {"1", "2", "3"}
+    # MULTISET is unordered (docs/TYPES.md); compare duplicate counts via
+    # sorted(), not the server's current iteration order, like
+    # test_collection_roundtrip.py does.
+    assert sorted(str(v) for v in ms) == ["1", "1", "2", "3"]
+    assert [str(v) for v in sq] == ["3", "1", "2", "1"]
+    assert (s_null, ms_null, sq_null) == (None, None, None)
 
 
 if __name__ == "__main__":

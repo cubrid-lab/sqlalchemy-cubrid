@@ -278,7 +278,11 @@ jobs:
       - name: Run make integration
         env:
           CUBRID_VERSION: "11.4"
-        run: make integration INTEGRATION_DRIVER=pycubrid
+        run: |
+          set -o pipefail
+          make integration INTEGRATION_DRIVER=pycubrid 2>&1 | tee make-integration.log
+      - name: Guard against an all-skipped make integration run (#486)
+        run: python -m scripts.check_not_all_skipped make-integration.log --label "make integration (pycubrid)"
 
   integration-tests:
     # Explicit name: the pycubrid-compliance-sqlalchemy matrix value is only the
@@ -382,7 +386,9 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          python -m pytest test/test_integration.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+          python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
 
       - name: Run async integration tests
         env:
@@ -394,7 +400,9 @@ jobs:
           # extra installed above). Testing against pycubrid@main (HEAD) is
           # handled separately by upstream-canary.yml.
           pip install -e ".[pycubrid]"
-          python -m pytest test/test_aio_integration.py test/test_lob_value_contract.py test/test_scalar_execution_contract.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_aio_integration.py test/test_lob_value_contract.py test/test_scalar_execution_contract.py -v --tb=short | tee async-integration.log
+          python -m scripts.check_not_all_skipped async-integration.log --label "Run async integration tests"
 
       - name: Run pycubrid sync integration tests
         env:
@@ -409,10 +417,12 @@ jobs:
           e.dispose()
           print('pycubrid sync: connected')
           "
+          set -o pipefail
           python -m pytest test/test_integration.py test/test_alembic_registration.py \
             test/test_show_create_table_server_output.py \
             test/test_unique_constraint_fallback.py test/test_lob_value_contract.py \
-            test/test_scalar_execution_contract.py -v --tb=short
+            test/test_scalar_execution_contract.py -v --tb=short | tee pycubrid-sync-integration.log
+          python -m scripts.check_not_all_skipped pycubrid-sync-integration.log --label "Run pycubrid sync integration tests"
 
       - name: Run driver-differential comparison (required)
         env:
@@ -440,7 +450,9 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          python -m pytest test/test_regression.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_regression.py -v --tb=short | tee regression.log
+          python -m scripts.check_not_all_skipped regression.log --label "Run regression tests"
 
       - name: Run SQLAlchemy dialect compliance suite (gating, CUBRIDdb)
         if: matrix.python-version == '3.14' && matrix.cubrid-version == '11.4'

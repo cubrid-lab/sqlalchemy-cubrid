@@ -672,10 +672,13 @@ CUBRIDdb C 확장에서 실행하고 결과가 일치하는지 확인합니다. 
 릴리스된 드라이버에서 이미 동작하는 DB-API 계약 영역을 다룹니다. 정수·UTF-8/CJK·NULL
 값을 사용하는 Core `executemany`, 정수·UTF-8/CJK 값을 사용하는 텍스트 `executemany`, 스칼라 바인드, 텍스트 SQL 결과 컬럼 이름,
 커밋/롤백 가시성이 해당합니다. 또한 제약 조건 위반 예외 클래스(#480), 롤백 이후 읽은
-결과(#481), 스칼라 `cursor.description`의 이름·타입 코드·`null_ok`(#482)도 비교합니다.
+결과(#481), 스칼라 `cursor.description`의 이름·타입 코드·`null_ok`(#482), 그리고
+`SET`/`MULTISET`/`SEQUENCE` 왕복(#484, 릴리스된 pycubrid는 컬렉션을 매개변수로 바인딩하는
+것을 거부하므로 컬렉션 리터럴을 SQL에 직접 작성한 뒤 각 드라이버가 돌려준 값을 `str`
+원소로 정규화해 비교)도 비교합니다.
 이 검사들은 pycubrid 1.8.0에 포함된 수정 동작(NOT NULL/외래 키 예외 클래스, 롤백 이후 결과,
-`null_ok`)을 요구하며 조건 없이 실행됩니다. 업스트림에 막힌
-영역은 별도로 추적하며(#483–#484), LOB 값은 #485에서 다룹니다.
+`null_ok`)을 요구하며 조건 없이 실행됩니다. 이제 #479의 모든 계약 영역이 LOB(별도로
+#485에서 다룸)을 제외하고 이 모듈에 차분 케이스를 갖습니다.
 
 `ci.yml`과 `integration-full.yml`의 통합 잡은 두 드라이버를 모두 설치하고
 `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`로 이 모듈을 실행합니다. 이 변수가 설정되면
@@ -691,6 +694,30 @@ CUBRIDdb(패키지 버전과 소스 태그), CUBRID 서버 버전을 잡 로그�
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
 ```
+
+### 전부 건너뛴 레인 가드
+
+실행하려던 테스트를 전부 건너뛴 레인도 일반 pytest에서는 `0`으로 종료되어,
+잘못 구성된 레인(오래된 `skipif`, 더 이상 연결되지 않는 드라이버, 더 이상 맞지 않는
+파일 목록)이 녹색 체크 뒤에 숨어버립니다. 필수 드라이버 차분, 트랜잭션 DDL(#503),
+서버 재시작(#565) 레인은 이미 `test/conftest.py`의 자체 `CUBRID_REQUIRE_*` 검사로
+스스로를 보호합니다. `ci.yml`의 `integration-tests`, `make-integration` 잡과
+`integration-full.yml`의 `integration-full`, `make-integration` 잡에 있는 일반
+`pytest`/`make integration` 단계에서는 `scripts/check_not_all_skipped.py`가 직전
+실행의 `tee` 출력을 읽어, 최소 하나의 요약 줄이 실제 실행
+(`passed`/`failed`/`error`/`xpassed`/`xfailed`)을 보여주지 않으면 실패시킵니다.
+`skipped`/`deselected`만 있거나 수집된 테스트가 0개면 해당 단계가 실패합니다:
+
+```bash
+set -o pipefail
+python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
+```
+
+특정 셀이 의도적으로 전부 건너뛰도록 되어 있다면 `--allow-all-skipped "<이유>"`를
+전달해 실패 대신 이유를 출력하고 0으로 종료하게 합니다. `matrix-result`와
+`full-matrix-result`는 변경이 필요 없습니다: 이 검사는 이미 그 잡들이 의존하는 잡
+내부에서 실행되므로, 이 가드에 걸린 단계는 이미 해당 잡을 실패시킵니다.
 
 ### SQLAlchemy 컴플라이언스 레인
 
