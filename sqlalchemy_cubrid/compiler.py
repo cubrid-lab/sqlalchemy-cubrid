@@ -971,7 +971,9 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_BIT(self, type_: Any, **kw: Any) -> str:
         ddl_name = "BIT VARYING" if type_.varying else "BIT"
         hint = "an unlimited BIT VARYING" if type_.varying else "the default BIT(1)"
-        self._reject_nonpositive_length(type_, ddl_name, default_hint=f"omit the length to get {hint}")
+        self._reject_nonpositive_length(
+            type_, ddl_name, default_hint=f"omit the length to get {hint}"
+        )
         if type_.varying:
             compiled = "BIT VARYING"
             if type_.length is not None:
@@ -1040,7 +1042,9 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_CHAR(self, type_: Any, **kw: Any) -> str:
         if hasattr(type_, "national") and type_.national:
             return self.visit_NCHAR(type_)
-        self._reject_nonpositive_length(type_, "CHAR", default_hint="omit the length to emit bare CHAR")
+        self._reject_nonpositive_length(
+            type_, "CHAR", default_hint="omit the length to emit bare CHAR"
+        )
         if type_.length is not None:
             return f"CHAR({type_.length})"
         else:
@@ -1054,7 +1058,9 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
             return "NCHAR VARYING(4096)"
 
     def visit_NCHAR(self, type_: Any, **kw: Any) -> str:
-        self._reject_nonpositive_length(type_, "NCHAR", default_hint="omit the length to emit bare NCHAR")
+        self._reject_nonpositive_length(
+            type_, "NCHAR", default_hint="omit the length to emit bare NCHAR"
+        )
         if type_.length is not None:
             return f"NCHAR({type_.length})"
         else:
