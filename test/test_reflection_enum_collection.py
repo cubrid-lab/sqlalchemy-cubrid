@@ -253,8 +253,15 @@ def test_object_domain_member_keeps_its_class() -> None:
     )
     dialect = CubridDialect()
     assert dialect.type_compiler.process(from_catalog) == "SEQUENCE(t_ref,INTEGER)"
-    with pytest.raises(ValueError, match="no domain class"):
-        _reflect_rows(rows, [("c", "OBJECT", 0, 0, None)], [])
+    # The referenced class was dropped (10.2; 11.x with DONT_REUSE_OID): the
+    # view keeps the row without a class. The column warns and is NullType,
+    # the rest of the table still reflects.
+    with pytest.warns(sa_exc.SAWarning, match="collection type of column 'c'"):
+        dropped = _reflect_catalog_type(
+            "SEQUENCE OF INTEGER,OBJECT",
+            member_rows=[("c", "OBJECT", 0, 0, None), ("c", "INTEGER", 10, 0, None)],
+        )
+    assert isinstance(dropped, NullType)
     with pytest.warns(sa_exc.SAWarning, match="collection"):
         from_show_columns = _reflect_catalog_type("SET OF t_ref")
     assert isinstance(from_show_columns, NullType)
@@ -584,3 +591,131 @@ def test_live_object_member_of_another_owner_round_trip(
         assert _normalize_ddl(recreated) == _normalize_ddl(original)
     finally:
         _run(live_engine, "DROP TABLE IF EXISTS sct_obj_x")
+
+
+def test_monetary_member_reflects() -> None:
+    """``SET(MONETARY)`` is legal; MONETARY is not in ``ischema_names`` but is
+    a dialect type (10.2 and 11.4: ``SET OF MONETARY`` / ``('m', 'MONETARY',
+    15, 0)``)."""
+    coltype = _reflect_catalog_type(
+        "MULTISET OF INTEGER,MONETARY",
+        member_rows=[("c", "MONETARY", 15, 0, None), ("c", "INTEGER", 10, 0, None)],
+    )
+    assert CubridDialect().type_compiler.process(coltype) == "MULTISET(MONETARY,INTEGER)"
+
+
+def test_unknown_member_type_warns_instead_of_failing_the_table() -> None:
+    with pytest.warns(sa_exc.SAWarning, match="collection type of column 'c'"):
+        coltype = _reflect_catalog_type(
+            "SET OF NEWTYPE", member_rows=[("c", "NEWTYPE", 0, 0, None)]
+        )
+    assert isinstance(coltype, NullType)
+
+
+@pytest.mark.parametrize(
+    "coltypes",
+    [("ENUM('z')", "ENUM('a')"), ("SET OF INTEGER", "SET OF INTEGER")],
+    ids=["enum", "collection"],
+)
+def test_duplicate_column_name_fails_closed(coltypes: tuple[str, str]) -> None:
+    """``CREATE TABLE t CLASS ATTRIBUTE (e ENUM('z')) (e ENUM('a'))``: SHOW
+    COLUMNS lists the class attribute and the instance attribute under one
+    name (10.2 and 11.4), and the by-name catalog lookups cannot tell them
+    apart."""
+    dialect = CubridDialect()
+    connection = MagicMock()
+
+    def execute(statement: Any, params: Any = None) -> list[Any]:
+        sql = str(statement)
+        if sql.startswith("SHOW COLUMNS IN"):
+            return [
+                ("e", coltypes[0], "YES", "", None, ""),
+                ("e", coltypes[1], "YES", "", None, ""),
+            ]
+        if "_db_domain" in sql:
+            return [("e", "a", 1)]
+        if "db_attr_setdomain_elm" in sql:
+            return [("e", "INTEGER", 10, 0, None)]
+        return []
+
+    connection.execute.side_effect = execute
+    with pytest.warns(sa_exc.SAWarning, match="lists the name more than once"):
+        columns = dialect.get_columns(connection, "t")
+    assert all(isinstance(column["type"], NullType) for column in columns)
+
+
+def test_catalog_queries_select_instance_attributes_only() -> None:
+    dialect = CubridDialect()
+    statements: list[str] = []
+
+    def execute(statement: Any, params: Any = None) -> list[Any]:
+        sql = " ".join(str(statement).split())
+        statements.append(sql)
+        if sql.startswith("SHOW COLUMNS IN"):
+            return [
+                ("e", "ENUM('a')", "YES", "", None, ""),
+                ("s", "SET OF INTEGER", "YES", "", None, ""),
+                ("u", None, "YES", "", None, ""),
+            ]
+        return []
+
+    connection = MagicMock()
+    connection.execute.side_effect = execute
+    with pytest.warns(sa_exc.SAWarning):
+        dialect.get_columns(connection, "t")
+    assert any("_db_domain" in sql and "a.attr_type = 0" in sql for sql in statements)
+    assert any(
+        "db_attr_setdomain_elm" in sql and "attr_type = 'INSTANCE'" in sql for sql in statements
+    )
+    assert any(
+        "FROM db_attribute" in sql and "attr_type = 'INSTANCE'" in sql and "data_type IN" in sql
+        for sql in statements
+    )
+
+
+@pytest.mark.integration
+def test_live_dropped_class_and_monetary_members(live_engine: sa.Engine) -> None:
+    """Main reflected these tables with a warning; they must not fail as a
+    whole: a member class that was dropped warns and is NullType, MONETARY
+    members reflect, and a CLASS ATTRIBUTE ENUM does not add values."""
+    options = " DONT_REUSE_OID" if _live_version(live_engine) >= (11, 0) else ""
+    drop = (
+        "DROP TABLE IF EXISTS sct_dropped",
+        "DROP TABLE IF EXISTS sct_dropped_ref",
+        "DROP TABLE IF EXISTS sct_money",
+        "DROP TABLE IF EXISTS sct_class_attr",
+    )
+    _run(live_engine, *drop)
+    try:
+        _run(
+            live_engine,
+            f"CREATE TABLE sct_dropped_ref (id INT){options}",
+            "CREATE TABLE sct_dropped (o SET(sct_dropped_ref), i INT)",
+            "DROP TABLE sct_dropped_ref",
+            "CREATE TABLE sct_money (m SET(MONETARY), n MULTISET(MONETARY, INT))",
+            "CREATE TABLE sct_class_attr CLASS ATTRIBUTE (e ENUM('z')) (e ENUM('a'), i INT)",
+        )
+        inspector = sa.inspect(live_engine)
+        with pytest.warns(sa_exc.SAWarning, match="collection type of column 'o'"):
+            dropped = {c["name"]: c["type"] for c in inspector.get_columns("sct_dropped")}
+        assert isinstance(dropped["o"], NullType)
+        assert not isinstance(dropped["i"], NullType)
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", sa_exc.SAWarning)
+            money = inspector.get_columns("sct_money")
+        assert _compiled(live_engine.dialect, money) == {
+            "m": "SET(MONETARY)",
+            "n": "MULTISET(MONETARY,INTEGER)",
+        }
+        with pytest.warns(sa_exc.SAWarning, match="lists the name more than once"):
+            class_attr = inspector.get_columns("sct_class_attr")
+        assert [type(c["type"]).__name__ for c in class_attr if c["name"] == "e"] == [
+            "NullType",
+            "NullType",
+        ]
+        metadata = sa.MetaData()
+        with pytest.warns(sa_exc.SAWarning):
+            metadata.reflect(live_engine, only=["sct_dropped", "sct_money"])
+        assert set(metadata.tables) == {"sct_dropped", "sct_money"}
+    finally:
+        _run(live_engine, *drop)

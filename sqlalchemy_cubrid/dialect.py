@@ -76,6 +76,7 @@ from sqlalchemy_cubrid.types import (
     JSON,
     JSONIndexType,
     JSONPathType,
+    MONETARY,
     MULTISET,
     NCHAR,
     NUMERIC,
@@ -552,6 +553,9 @@ class CubridDialect(default.DefaultDialect):
         member_types, member_families, collection_kinds = self._collection_catalog(
             connection, table_name, rows, **kw
         )
+        # The catalog lookups are by column name; a CLASS ATTRIBUTE of the
+        # same name is also listed by SHOW COLUMNS (#631).
+        name_counts = Counter(row[0] for row in rows)
         for row in rows:
             colname = row[0]
             coltype_raw = row[1]
@@ -570,7 +574,17 @@ class CubridDialect(default.DefaultDialect):
             # Collection types: SET(VARCHAR(100)), SET OF NUMERIC,VARCHAR, etc.
             collection_match = _RE_COLLECTION.match(coltype_raw) if coltype_raw else None
 
-            if coltype_raw is None and colname in collection_kinds:
+            if name_counts[colname] > 1 and (
+                coltype_raw is None
+                or enum_match
+                or (collection_match and collection_match.group(3))
+            ):
+                util.warn(
+                    f"Could not safely reflect column '{colname}': SHOW COLUMNS lists the "
+                    "name more than once"
+                )
+                coltype = sqltypes.NULLTYPE
+            elif coltype_raw is None and colname in collection_kinds:
                 # A collection declared without member types (#631).
                 coltype = self.ischema_names[collection_kinds[colname]]()
             elif enum_match:
@@ -1317,7 +1331,10 @@ class CubridDialect(default.DefaultDialect):
                 "SELECT a.attr_name, e.*, ROWNUM "
                 "FROM _db_class c, _db_attribute a, _db_domain d, "
                 "TABLE(d.enumeration) e WHERE c.unique_name = :class_name "
-                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name"
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name "
+                # Instance attributes only: a CLASS ATTRIBUTE may share the
+                # name and would add its values (#631).
+                "AND a.attr_type = 0"
             )
         else:
             class_name = str(table_name)
@@ -1326,7 +1343,10 @@ class CubridDialect(default.DefaultDialect):
                 "FROM _db_class c, _db_attribute a, _db_domain d, "
                 "TABLE(d.enumeration) e WHERE "
                 "c.class_name IN (:class_name, LOWER(:class_name)) "
-                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name"
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name "
+                # Instance attributes only: a CLASS ATTRIBUTE may share the
+                # name and would add its values (#631).
+                "AND a.attr_type = 0"
             )
         values: dict[str, list[str]] = {}
         for attr_name in enum_columns:
@@ -1397,6 +1417,7 @@ class CubridDialect(default.DefaultDialect):
                     + (", domain_owner_name" if owner_aware else "")
                     + " FROM db_attr_setdomain_elm WHERE "
                     + class_filter
+                    + " AND attr_type = 'INSTANCE'"
                 ),
                 filter_params,
             )
@@ -1405,22 +1426,30 @@ class CubridDialect(default.DefaultDialect):
             if owner_aware and any(row[5] for row in catalog_rows):
                 info = self._get_class_info(connection, table_name, **kw)
                 table_owner = info[1] if info else None
+            unsafe: set[str] = set()
             for row in catalog_rows:
                 name, data_type, precision, scale, domain_class = row[:5]
                 domain_owner = row[5] if len(row) > 5 else None
-                member_types.setdefault(name, []).append(
-                    self._collection_member_type(
-                        data_type, precision, scale, domain_class, domain_owner, table_owner
-                    )
+                member = self._collection_member_type(
+                    data_type, precision, scale, domain_class, domain_owner, table_owner
                 )
+                if member is None:
+                    unsafe.add(name)
+                member_types.setdefault(name, []).append(member)
                 member_families.setdefault(name, []).append(
                     _CATALOG_SHOW_MEMBER_NAMES.get(data_type, data_type)
                 )
+            # A member the dialect cannot express leaves the column without
+            # catalog families, so get_columns warns and uses NullType.
+            for name in unsafe:
+                member_types.pop(name, None)
+                member_families.pop(name, None)
         if has_untyped:
             result = connection.execute(
                 text(
                     "SELECT attr_name, data_type FROM db_attribute "  # nosec B608 - constant clause
-                    "WHERE " + class_filter + " AND data_type IN ('SET', 'MULTISET', 'SEQUENCE')"
+                    "WHERE " + class_filter + " AND attr_type = 'INSTANCE' "
+                    "AND data_type IN ('SET', 'MULTISET', 'SEQUENCE')"
                 ),
                 filter_params,
             )
@@ -1442,14 +1471,16 @@ class CubridDialect(default.DefaultDialect):
         ``VARBIT``, ``SHORT``). An object domain (``OBJECT`` with its
         ``domain_class_name``) is kept as the quoted class name, which the
         collection DDL emits verbatim (``SET(t_ref)``). An incomplete object
-        domain or unknown type raises rather than silently changing its DDL.
+        domain (its class was dropped) or a type the dialect cannot express
+        returns ``None``, so the column warns and reflects as ``NullType``
+        rather than with a changed DDL.
         From 11.2 a class whose owner (*domain_owner*) differs from the
         table's (*table_owner*) is qualified as ``owner.class``, so the DDL
         does not resolve it in the table owner's schema.
         """
         if data_type == "OBJECT":
             if not domain_class:
-                raise ValueError("OBJECT collection member has no domain class")
+                return None
             quoted = self.identifier_preparer.quote(domain_class)
             if domain_owner and table_owner and domain_owner.upper() != table_owner.upper():
                 return self.identifier_preparer.quote(domain_owner.lower()) + "." + quoted
@@ -1467,9 +1498,11 @@ class CubridDialect(default.DefaultDialect):
             return BIT(length=int(precision), varying=name == "BIT VARYING")
         if name == "NUMERIC":
             return NUMERIC(precision=int(precision), scale=int(scale))
-        if name in self.ischema_names:
+        if name == "MONETARY":
+            return MONETARY()
+        if name in self.ischema_names and name != "ENUM":
             return self.ischema_names[name]()
-        raise ValueError(f"Unknown collection member domain type {data_type!r}")
+        return None
 
     @reflection.cache
     def has_table(
