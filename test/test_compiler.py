@@ -8,6 +8,7 @@ a database connection.
 from __future__ import annotations
 
 import operator
+import re
 
 import pytest
 import sqlalchemy as sa
