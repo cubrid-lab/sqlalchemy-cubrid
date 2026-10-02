@@ -11,7 +11,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -30,7 +29,7 @@ CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공�
 **sqlalchemy-cubrid**는 이 공백을 메웁니다:
 
 - **statement caching**과 **PEP 561 타입 지원**을 갖춘 완전한 SQLAlchemy 2.0–2.1 방언
-- **오프라인 테스트 619개**, **약 98.26% 코드 커버리지** — 데이터베이스 없이도 실행 가능
+- **방대한 오프라인 테스트 스위트** — 데이터베이스 없이도 실행 가능; CI가 `offline-tests` 작업에서 최소 95% 라인 커버리지를 강제합니다 (`--cov-fail-under=95`)
 - **동시성 스트레스 테스트** — `QueuePool` 기반 동기 스레드 + `asyncio.gather` 워크로드를 실 CUBRID에서 검증
 - **SQLAlchemy 2.1 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.1 검증 전까지는 `<2.3`로 고정
 - **Python 3.10 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료

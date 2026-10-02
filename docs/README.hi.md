@@ -11,7 +11,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -30,7 +29,7 @@ CUBRID एक उच्च-प्रदर्शन ओपन-सोर्स �
 **sqlalchemy-cubrid** इस कमी को पूरा करता है:
 
 - **statement caching** और **PEP 561 typing** के साथ पूर्ण SQLAlchemy 2.0–2.1 dialect
-- **619 ऑफ़लाइन टेस्ट** और **लगभग 98.26% code coverage** — इन्हें चलाने के लिए डेटाबेस की आवश्यकता नहीं
+- **विस्तृत ऑफ़लाइन टेस्ट सुइट** — इन्हें चलाने के लिए डेटाबेस की आवश्यकता नहीं; CI `offline-tests` जॉब में न्यूनतम 95% लाइन कवरेज सुनिश्चित करता है (`--cov-fail-under=95`)
 - **Concurrency stress tests** — `QueuePool` sync threaded + `asyncio.gather` workloads को live CUBRID पर validate किया गया है
 - **SQLAlchemy 2.1-ready compat shim** — private API access को `_compat.py` में wrap किया गया है (पूर्ण SA 2.1 validation तक अभी भी `<2.3` पर pinned)
 - **Python 3.10 -- 3.14** पर **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) के खिलाफ टेस्ट किया गया

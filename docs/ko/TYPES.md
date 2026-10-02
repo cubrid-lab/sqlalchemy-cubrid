@@ -308,7 +308,11 @@ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 | `DATE`              | `DATE`             |
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
+| `TIMESTAMPTZ`       | `TIMESTAMPTZ` (`timezone=True`) |
+| `TIMESTAMPLTZ`      | `TIMESTAMPLTZ` (`timezone=True`) |
 | `DATETIME`          | `DATETIME`         |
+| `DATETIMETZ`        | `DATETIMETZ` (`timezone=True`) |
+| `DATETIMELTZ`       | `DATETIMELTZ` (`timezone=True`) |
 | `BIT(n)`            | `BIT(n)`           |
 | `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
@@ -325,6 +329,8 @@ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 | `SEQUENCE`          | `SEQUENCE`         |
 
 다음 방언 타입은 `dialect.ischema_names`에 없기 때문에 **선언/컴파일은 되지만 자동 리플렉트되지 않습니다**: `REAL`, `MONETARY`, `OBJECT`.
+
+**TZ/LTZ 리플렉션** (#181, #442). `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ`, `DATETIMELTZ`는 일반 `TIMESTAMP`/`DATETIME`으로 합쳐지지 않고 각각 전용 방언 클래스로 리플렉트되며, 모두 `timezone=True`로 설정되므로 왕복한 `datetime`이 타임존 인식 상태를 유지하고 `metadata.reflect()` + `create_all()`이 원래 컬럼 타입을 그대로 재현합니다. 다만 방언은 명시적 타임존(`TZ`)과 로컬 타임존(`LTZ`)의 *값* 의미론 자체는 Python 레벨에서 구분하지 않습니다 — 둘 다 타임존 인식 `datetime`으로 표현되며, 차이는 리플렉트된 SQLAlchemy 타입 클래스에만 있습니다.
 
 **ENUM 및 컬렉션 컬럼** (#631). `SHOW COLUMNS`는 네이티브 ENUM 값을 이스케이프하지 않아, 값 하나에 `', '`가 들어 있으면 별도 값 두 개와 출력이 같을 수 있습니다. `_db_domain`을 읽을 권한이 있는 사용자(일반적으로 DBA)에 대해서는 이 모호한 문자열을 나누지 않고 도메인 카탈로그에서 정확한 순서의 값을 읽습니다. DBA가 아닌 사용자의 특정 `-494` 권한 거부는 경고와 `NullType`으로 처리하며, 다른 카탈로그 오류는 그대로 전파합니다. 공개된 권한 있는 메타데이터 경로가 마련되기 전까지는 해당 사용자가 모델에 ENUM 타입을 직접 선언해야 합니다.
 
@@ -457,6 +463,10 @@ for col in users.columns:
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | 시각만. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | 하나의 값으로 날짜 + 시간. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID 타임스탬프 의미론은 스키마 기본값에 따라 자동 갱신될 수 있음. |
+| `TIMESTAMPTZ` | `sqlalchemy_cubrid.TIMESTAMPTZ` | `datetime.datetime` (timezone-aware) | 명시적 타임존 타임스탬프; `timezone=True`. `TIMESTAMP`가 아닌 전용 타입으로 리플렉트 (#181). |
+| `TIMESTAMPLTZ` | `sqlalchemy_cubrid.TIMESTAMPLTZ` | `datetime.datetime` (timezone-aware) | 로컬 타임존 타임스탬프; `timezone=True`. `TIMESTAMP`가 아닌 전용 타입으로 리플렉트 (#181). |
+| `DATETIMETZ` | `sqlalchemy_cubrid.DATETIMETZ` | `datetime.datetime` (timezone-aware) | 명시적 타임존 datetime; `timezone=True`. `DATETIME`이 아닌 전용 타입으로 리플렉트 (#442). |
+| `DATETIMELTZ` | `sqlalchemy_cubrid.DATETIMELTZ` | `datetime.datetime` (timezone-aware) | 로컬 타임존 datetime; `timezone=True`. `DATETIME`이 아닌 전용 타입으로 리플렉트 (#442). |
 | `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | 고정 길이 비트 문자열. `sa.BINARY(n)`은 `BIT(n*8)`로 컴파일. |
 | `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | 가변 길이 비트 문자열. `sa.VARBINARY(n)`은 `BIT VARYING(n*8)`로 컴파일. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | 고정 길이 문자 데이터. |

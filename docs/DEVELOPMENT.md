@@ -522,16 +522,20 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI Matrix
 
-The CI pipeline tests the following matrix:
+The CI pipeline tests the following matrix on every PR/push. The integration
+rows are a reduced matrix of exactly 2 combinations (newest Python × newest
+CUBRID, oldest × oldest), not every Python × CUBRID cell; the full 5×4 cross
+product runs nightly, on demand, and as the release gate via
+`integration-full.yml`:
 
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.2** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.0** | ✅ | — | — | — | ✅ |
-| **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+| **CUBRID 11.4** | — | — | — | — | ✅ |
+| **CUBRID 11.2** | — | — | — | — | — |
+| **CUBRID 11.0** | — | — | — | — | — |
+| **CUBRID 10.2** | ✅ | — | — | — | — |
 
 `make test` deselects the `repo` marker, which `test/conftest.py` applies to the
 modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
@@ -549,9 +553,7 @@ runs them in its `repo` environment.
 ### Requirements
 
 - **Minimum threshold**: 95% line coverage
-- **Current CI offline collection**: 603 tests (`pytest --collect-only` excluding `test_integration.py`, `test_suite.py`, and `test_aio_integration.py`, matching `.github/workflows/ci.yml` and `make test`)
-- **Current line coverage**: ~98.26% offline in the CI/make test configuration
-- CI enforces the threshold via `--cov-fail-under=95`
+- CI enforces the threshold via `--cov-fail-under=95` in the `offline-tests` job (`.github/workflows/ci.yml`); run `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` locally for current test counts and coverage rather than relying on a snapshot here, since both grow with every PR
 
 ### Running Coverage
 
@@ -571,15 +573,14 @@ make test
 
 ### Known Unreachable Lines
 
-Three lines in `compiler.py` and one in `dml.py` are verified unreachable by design (defensive fallbacks that
-cannot trigger through SA's public API):
-
-| File | Line | Description |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause` returning `""` |
-| `compiler.py` | 84 | `limit_clause` returning `""` |
-| `compiler.py` | 298--300 | Defensive branch in DDL compilation |
-| `dml.py` | 310 | `else` branch in type normalization |
+A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
+`for_update_clause`/`limit_clause` return, a DDL compilation default branch, an
+`else` arm in type normalization) that cannot trigger through SQLAlchemy's
+public API and so never execute under the offline suite. Their exact line
+numbers shift as the modules change; run `pytest test/ -m "not integration and
+not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test`)
+and check the `Missing` column for the current set instead of a pinned list
+here.
 
 ---
 
@@ -683,7 +684,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
-3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+3. **Integration Tests** — reduced matrix, 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and in the release gate in `integration-full.yml`)
 5. **Coverage** — Enforces ≥ 95% threshold
 

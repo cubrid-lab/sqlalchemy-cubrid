@@ -337,7 +337,11 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `DATE`              | `DATE`             |
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
+| `TIMESTAMPTZ`       | `TIMESTAMPTZ` (`timezone=True`) |
+| `TIMESTAMPLTZ`      | `TIMESTAMPLTZ` (`timezone=True`) |
 | `DATETIME`          | `DATETIME`         |
+| `DATETIMETZ`        | `DATETIMETZ` (`timezone=True`) |
+| `DATETIMELTZ`       | `DATETIMELTZ` (`timezone=True`) |
 | `BIT(n)`            | `BIT(n)`           |
 | `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
@@ -354,6 +358,8 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**TZ/LTZ reflection** (#181, #442). `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as their own dedicated dialect classes rather than collapsing into plain `TIMESTAMP`/`DATETIME`, and each sets `timezone=True`, so a round-tripped `datetime` keeps its timezone awareness and `metadata.reflect()` + `create_all()` reproduces the original column type. The dialect does not otherwise distinguish explicit-timezone (`TZ`) from local-timezone (`LTZ`) *value* semantics in Python — both are represented as an aware `datetime` — only the reflected SQLAlchemy type class differs.
 
 **ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
 
@@ -486,6 +492,10 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | Time of day only. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | Date + time in one value. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID timestamp semantics may auto-update depending on schema defaults. |
+| `TIMESTAMPTZ` | `sqlalchemy_cubrid.TIMESTAMPTZ` | `datetime.datetime` (aware) | Explicit-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `TIMESTAMPLTZ` | `sqlalchemy_cubrid.TIMESTAMPLTZ` | `datetime.datetime` (aware) | Local-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `DATETIMETZ` | `sqlalchemy_cubrid.DATETIMETZ` | `datetime.datetime` (aware) | Explicit-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `DATETIMELTZ` | `sqlalchemy_cubrid.DATETIMELTZ` | `datetime.datetime` (aware) | Local-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
 | `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | Fixed-length bit string; `sa.BINARY(n)` compiles to `BIT(n*8)`. |
 | `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | Variable-length bit string; `sa.VARBINARY(n)` compiles to `BIT VARYING(n*8)`. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | Fixed-length character data. |

@@ -2396,7 +2396,11 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `DATE`              | `DATE`             |
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
+| `TIMESTAMPTZ`       | `TIMESTAMPTZ` (`timezone=True`) |
+| `TIMESTAMPLTZ`      | `TIMESTAMPLTZ` (`timezone=True`) |
 | `DATETIME`          | `DATETIME`         |
+| `DATETIMETZ`        | `DATETIMETZ` (`timezone=True`) |
+| `DATETIMELTZ`       | `DATETIMELTZ` (`timezone=True`) |
 | `BIT(n)`            | `BIT(n)`           |
 | `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
@@ -2413,6 +2417,8 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**TZ/LTZ reflection** (#181, #442). `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as their own dedicated dialect classes rather than collapsing into plain `TIMESTAMP`/`DATETIME`, and each sets `timezone=True`, so a round-tripped `datetime` keeps its timezone awareness and `metadata.reflect()` + `create_all()` reproduces the original column type. The dialect does not otherwise distinguish explicit-timezone (`TZ`) from local-timezone (`LTZ`) *value* semantics in Python — both are represented as an aware `datetime` — only the reflected SQLAlchemy type class differs.
 
 **ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
 
@@ -2545,6 +2551,10 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | Time of day only. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | Date + time in one value. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID timestamp semantics may auto-update depending on schema defaults. |
+| `TIMESTAMPTZ` | `sqlalchemy_cubrid.TIMESTAMPTZ` | `datetime.datetime` (aware) | Explicit-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `TIMESTAMPLTZ` | `sqlalchemy_cubrid.TIMESTAMPLTZ` | `datetime.datetime` (aware) | Local-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `DATETIMETZ` | `sqlalchemy_cubrid.DATETIMETZ` | `datetime.datetime` (aware) | Explicit-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `DATETIMELTZ` | `sqlalchemy_cubrid.DATETIMELTZ` | `datetime.datetime` (aware) | Local-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
 | `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | Fixed-length bit string; `sa.BINARY(n)` compiles to `BIT(n*8)`. |
 | `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | Variable-length bit string; `sa.VARBINARY(n)` compiles to `BIT VARYING(n*8)`. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | Fixed-length character data. |
@@ -4269,6 +4279,10 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
+| TIMESTAMPTZ | `TIMESTAMPTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| TIMESTAMPLTZ | `TIMESTAMPLTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| DATETIMETZ | `DATETIMETZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
+| DATETIMELTZ | `DATETIMELTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
 | BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ Length and `VARYING` preserved |
 | BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ Reflects as `BIT(n*8)` |
 | BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ Reflects as `BIT VARYING(n*8)` |
@@ -4289,7 +4303,7 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 | Dimension | PR / push | Nightly + dispatch + release |
 |---|---|---|
 | Offline tests | Python 3.10, 3.11, 3.12, 3.13, 3.14 | Same |
-| Integration tests | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8 jobs | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
+| Integration tests | Reduced matrix, 2 combinations: Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest) | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
 
 The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on demand via `workflow_dispatch`, and as the release gate that `release.yml` calls for every release.
 
@@ -4307,12 +4321,13 @@ Most known failures are shared by both drivers: CUBRID backend rules (identifier
 
 ## Test Coverage
 
+Offline and integration test counts grow with every PR; see the `offline-tests`
+/ `integration-tests` CI job output for current numbers instead of a pinned
+snapshot here.
+
 | Metric | Value |
 |---|---|
-| Offline tests | 619 |
-| Integration tests | 35 sync + 16 async |
-| Line coverage | ~98.26% offline |
-| Coverage threshold | 95% (CI-enforced) |
+| Coverage threshold | 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job) |
 
 ---
 
@@ -6702,16 +6717,20 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI Matrix
 
-The CI pipeline tests the following matrix:
+The CI pipeline tests the following matrix on every PR/push. The integration
+rows are a reduced matrix of exactly 2 combinations (newest Python × newest
+CUBRID, oldest × oldest), not every Python × CUBRID cell; the full 5×4 cross
+product runs nightly, on demand, and as the release gate via
+`integration-full.yml`:
 
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.2** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.0** | ✅ | — | — | — | ✅ |
-| **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+| **CUBRID 11.4** | — | — | — | — | ✅ |
+| **CUBRID 11.2** | — | — | — | — | — |
+| **CUBRID 11.0** | — | — | — | — | — |
+| **CUBRID 10.2** | ✅ | — | — | — | — |
 
 `make test` deselects the `repo` marker, which `test/conftest.py` applies to the
 modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
@@ -6729,9 +6748,7 @@ runs them in its `repo` environment.
 ### Requirements
 
 - **Minimum threshold**: 95% line coverage
-- **Current CI offline collection**: 603 tests (`pytest --collect-only` excluding `test_integration.py`, `test_suite.py`, and `test_aio_integration.py`, matching `.github/workflows/ci.yml` and `make test`)
-- **Current line coverage**: ~98.26% offline in the CI/make test configuration
-- CI enforces the threshold via `--cov-fail-under=95`
+- CI enforces the threshold via `--cov-fail-under=95` in the `offline-tests` job (`.github/workflows/ci.yml`); run `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` locally for current test counts and coverage rather than relying on a snapshot here, since both grow with every PR
 
 ### Running Coverage
 
@@ -6751,15 +6768,14 @@ make test
 
 ### Known Unreachable Lines
 
-Three lines in `compiler.py` and one in `dml.py` are verified unreachable by design (defensive fallbacks that
-cannot trigger through SA's public API):
-
-| File | Line | Description |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause` returning `""` |
-| `compiler.py` | 84 | `limit_clause` returning `""` |
-| `compiler.py` | 298--300 | Defensive branch in DDL compilation |
-| `dml.py` | 310 | `else` branch in type normalization |
+A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
+`for_update_clause`/`limit_clause` return, a DDL compilation default branch, an
+`else` arm in type normalization) that cannot trigger through SQLAlchemy's
+public API and so never execute under the offline suite. Their exact line
+numbers shift as the modules change; run `pytest test/ -m "not integration and
+not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test`)
+and check the `Missing` column for the current set instead of a pinned list
+here.
 
 ---
 
@@ -6863,7 +6879,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
-3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+3. **Integration Tests** — reduced matrix, 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and in the release gate in `integration-full.yml`)
 5. **Coverage** — Enforces ≥ 95% threshold
 

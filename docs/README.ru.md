@@ -11,7 +11,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -31,7 +30,7 @@ CUBRID — это высокопроизводительная реляцион�
 **sqlalchemy-cubrid** закрывает этот пробел:
 
 - Полноценный диалект SQLAlchemy 2.0–2.1 с **кэшированием выражений** и **типизацией PEP 561**
-- **619 офлайн-тестов** с **~98,26 % покрытия кода** — для запуска не требуется база данных
+- **Обширный набор офлайн-тестов** — для запуска не требуется база данных; CI обеспечивает минимум 95 % покрытия строк в задаче `offline-tests` (`--cov-fail-under=95`)
 - **Стресс-тесты конкурентности** — синхронные threaded-нагрузки `QueuePool` и `asyncio.gather` валидированы на реальном CUBRID
 - **Compat shim, готовый к SQLAlchemy 2.1** — доступ к приватным API обёрнут в `_compat.py` (пока остаётся ограничение `<2.3` до полной валидации SA 2.1)
 - Протестирован на **4 версиях CUBRID** (10.2, 11.0, 11.2, 11.4) и **Python 3.10 -- 3.14**
