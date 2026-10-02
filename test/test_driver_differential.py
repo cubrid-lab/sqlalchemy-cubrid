@@ -42,6 +42,7 @@ from sqlalchemy import (
     select,
     text,
 )
+from sqlalchemy.engine import make_url
 
 from sqlalchemy_cubrid.dialect import CubridDialect
 
@@ -507,20 +508,20 @@ def test_collection_roundtrip_agrees(both_engines: Any) -> None:
     elements regardless of the declared element type, while pycubrid (with
     ``?decode_collections=true``) returns the declared element type (`int`
     here); SET comes back as a `set` (CUBRIDdb) or `frozenset` (pycubrid).
-    Both sides are normalized to `str` elements (SET as a set, so order
-    never matters there) before comparing; the server already returns
-    MULTISET sorted and SEQUENCE in insertion order on both drivers, so no
-    further reordering is needed. A NULL collection is unaffected by any of
-    this and compares equal (`None`) on both drivers.
+    Both sides are normalized to `str` elements before comparing: SET as a
+    set (order never matters there) and MULTISET via `sorted()` (unordered,
+    docs/TYPES.md), both keeping duplicate counts; SEQUENCE compares the
+    insertion order directly, which both drivers preserve. A NULL collection
+    is unaffected by any of this and compares equal (`None`) on both drivers.
     """
     _, cext = both_engines
-    pyc = create_engine(_pycubrid_url() + "?decode_collections=true")
-    try:
-        with pyc.connect() as conn:
-            conn.execute(text("SELECT 1"))
-    except Exception:  # driver unavailable / not built
-        pytest.skip("pycubrid driver is required")
-
+    # both_engines already proved pycubrid connects with the plain URL; add
+    # decode_collections without disturbing any query options CUBRID_TEST_URL
+    # already carries (update_query_dict, not string concatenation), and let a
+    # connection failure here fail the test like any other, rather than skip
+    # and silently drop this case from the required lane.
+    pyc_url = make_url(_pycubrid_url()).update_query_dict({"decode_collections": "true"})
+    pyc = create_engine(pyc_url)
     try:
         _run_collection_roundtrip(cext)
         _run_collection_roundtrip(pyc)
@@ -556,7 +557,10 @@ def _run_collection_roundtrip(engine: Any) -> None:
 
     (s, ms, sq), (s_null, ms_null, sq_null) = rows
     assert {str(v) for v in s} == {"1", "2", "3"}
-    assert [str(v) for v in ms] == ["1", "1", "2", "3"]
+    # MULTISET is unordered (docs/TYPES.md); compare duplicate counts via
+    # sorted(), not the server's current iteration order, like
+    # test_collection_roundtrip.py does.
+    assert sorted(str(v) for v in ms) == ["1", "1", "2", "3"]
     assert [str(v) for v in sq] == ["3", "1", "2", "1"]
     assert (s_null, ms_null, sq_null) == (None, None, None)
 

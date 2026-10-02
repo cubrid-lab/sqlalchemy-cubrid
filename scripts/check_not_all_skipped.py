@@ -38,12 +38,14 @@ from pathlib import Path
 #: or "===== no tests ran in 0.01s =====". Matched per line, last match wins.
 _SUMMARY_LINE = re.compile(r"^=+\s*(?P<body>.+?)\s*=+\s*$")
 _NO_TESTS_RAN = re.compile(r"\bno tests ran\b")
+#: "error" also matches the "error" prefix of "errors", so that alternative
+#: would never be reached; the dict key is "error" either way.
 _COUNT = re.compile(
-    r"(?P<count>\d+) (?P<outcome>passed|failed|error|errors|skipped|deselected|xfailed|xpassed)"
+    r"(?P<count>\d+) (?P<outcome>passed|failed|error|skipped|deselected|xfailed|xpassed)"
 )
 
 #: Outcomes that prove the lane actually exercised code, not just skipped past it.
-_MEANINGFUL_OUTCOMES = frozenset({"passed", "failed", "error", "errors", "xpassed", "xfailed"})
+_MEANINGFUL_OUTCOMES = frozenset({"passed", "failed", "error", "xpassed", "xfailed"})
 
 
 def _last_summary_body(log_text: str) -> str | None:
