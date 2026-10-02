@@ -971,7 +971,7 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_BIT(self, type_: Any, **kw: Any) -> str:
         ddl_name = "BIT VARYING" if type_.varying else "BIT"
         hint = "an unlimited BIT VARYING" if type_.varying else "the default BIT(1)"
-        self._reject_zero_length(type_, ddl_name, default_hint=f"omit the length to get {hint}")
+        self._reject_nonpositive_length(type_, ddl_name, default_hint=f"omit the length to get {hint}")
         if type_.varying:
             compiled = "BIT VARYING"
             if type_.length is not None:
@@ -1014,21 +1014,24 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
         return "DATETIMELTZ"
 
     @staticmethod
-    def _reject_zero_length(type_: Any, ddl_name: str, default_hint: str | None = None) -> None:
+    def _reject_nonpositive_length(
+        type_: Any, ddl_name: str, default_hint: str | None = None
+    ) -> None:
         # ``length=None`` means "not specified" and gets the documented default;
-        # an explicit 0 is not a valid CUBRID length, so do not silently widen it.
-        if type_.length == 0:
+        # explicit zero/negative lengths are invalid CUBRID DDL and must fail locally.
+        length = type_.length
+        if length is not None and length <= 0:
             if default_hint is None:
                 default_hint = f"omit the length to get the default {ddl_name}(4096)"
             raise CompileError(
-                f"CUBRID does not support {ddl_name}(0); use a length of at least 1, "
+                f"CUBRID does not support {ddl_name}({length}); use a length of at least 1, "
                 f"or {default_hint}"
             )
 
     def visit_VARCHAR(self, type_: Any, **kw: Any) -> str:
         if hasattr(type_, "national") and type_.national:
             return self.visit_NVARCHAR(type_)
-        self._reject_zero_length(type_, "VARCHAR")
+        self._reject_nonpositive_length(type_, "VARCHAR")
         if type_.length is not None:
             return "VARCHAR(%d)" % type_.length
         else:
@@ -1037,21 +1040,21 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_CHAR(self, type_: Any, **kw: Any) -> str:
         if hasattr(type_, "national") and type_.national:
             return self.visit_NCHAR(type_)
-        self._reject_zero_length(type_, "CHAR", default_hint="omit the length to emit bare CHAR")
+        self._reject_nonpositive_length(type_, "CHAR", default_hint="omit the length to emit bare CHAR")
         if type_.length is not None:
             return f"CHAR({type_.length})"
         else:
             return "CHAR"
 
     def visit_NVARCHAR(self, type_: Any, **kw: Any) -> str:
-        self._reject_zero_length(type_, "NCHAR VARYING")
+        self._reject_nonpositive_length(type_, "NCHAR VARYING")
         if type_.length is not None:
             return f"NCHAR VARYING({type_.length})"
         else:
             return "NCHAR VARYING(4096)"
 
     def visit_NCHAR(self, type_: Any, **kw: Any) -> str:
-        self._reject_zero_length(type_, "NCHAR", default_hint="omit the length to emit bare NCHAR")
+        self._reject_nonpositive_length(type_, "NCHAR", default_hint="omit the length to emit bare NCHAR")
         if type_.length is not None:
             return f"NCHAR({type_.length})"
         else:
@@ -1081,13 +1084,15 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     # bits: BINARY(n) -> BIT(n*8), VARBINARY(n) -> BIT VARYING(n*8) (#545).
     # Both drivers bind and return BIT values as ``bytes``.
     def visit_BINARY(self, type_: Any, **kw: Any) -> str:
-        if type_.length == 0:
-            raise CompileError("CUBRID does not support BINARY(0); use a length of at least 1")
+        self._reject_nonpositive_length(
+            type_, "BINARY", default_hint="omit the length to get the default BINARY(1)"
+        )
         return "BIT(%d)" % ((type_.length or 1) * 8)
 
     def visit_VARBINARY(self, type_: Any, **kw: Any) -> str:
-        if type_.length == 0:
-            raise CompileError("CUBRID does not support VARBINARY(0); use a length of at least 1")
+        self._reject_nonpositive_length(
+            type_, "VARBINARY", default_hint="omit the length to emit bare BIT VARYING"
+        )
         if type_.length is None:
             return "BIT VARYING"
         return "BIT VARYING(%d)" % (type_.length * 8)
