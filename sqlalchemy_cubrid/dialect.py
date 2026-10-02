@@ -1450,6 +1450,9 @@ class CubridDialect(default.DefaultDialect):
         if data_type == "OBJECT":
             if not domain_class:
                 raise ValueError("OBJECT collection member has no domain class")
+            if self.server_version_info is not None and self.server_version_info >= (11, 2):
+                if not domain_owner or not table_owner:
+                    raise ValueError("OBJECT collection member owner is unavailable")
             quoted = self.identifier_preparer.quote(domain_class)
             if domain_owner and table_owner and domain_owner.upper() != table_owner.upper():
                 return self.identifier_preparer.quote(domain_owner.lower()) + "." + quoted

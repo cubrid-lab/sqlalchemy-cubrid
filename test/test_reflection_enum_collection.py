@@ -429,8 +429,6 @@ def test_enum_member_of_collection_fails_closed() -> None:
         ("RA", "RB", "ra.tref2"),
         ("RB", "RB", "tref2"),
         ("Rb", "RB", "tref2"),
-        (None, "RB", "tref2"),
-        ("RA", None, "tref2"),
     ],
 )
 def test_object_member_of_another_owner_is_qualified(
@@ -438,10 +436,46 @@ def test_object_member_of_another_owner_is_qualified(
 ) -> None:
     """``rb.tx (o SET(ra.tref2))`` must not reflect as ``SET(tref2)``, which
     ``create_all()`` would resolve in ``rb``'s schema."""
-    member = CubridDialect()._collection_member_type(
-        "OBJECT", 0, 0, "tref2", domain_owner, table_owner
-    )
+    dialect = CubridDialect()
+    dialect.server_version_info = (11, 4)
+    member = dialect._collection_member_type("OBJECT", 0, 0, "tref2", domain_owner, table_owner)
     assert member == expected
+
+
+@pytest.mark.parametrize(
+    ("domain_owner", "class_info"),
+    [(None, ("CLASS", "RB")), ("RA", None)],
+    ids=["missing_domain_owner", "missing_table_owner"],
+)
+def test_missing_object_owner_fails_closed_through_get_columns(
+    domain_owner: str | None, class_info: tuple[str, str] | None
+) -> None:
+    """On 11.2+ an unqualified target can resolve to the wrong class."""
+    dialect = CubridDialect()
+    dialect.server_version_info = (11, 4)
+
+    def execute(statement: Any, params: Any = None) -> Any:
+        sql = " ".join(str(statement).split())
+        if sql.startswith("SHOW COLUMNS IN"):
+            return [("o", "SET OF OBJECT", "YES", "", None, "")]
+        if "FROM db_class" in sql:
+            result = MagicMock()
+            result.first.return_value = class_info
+            return result
+        if "db_attr_setdomain_elm" in sql:
+            return [("o", "OBJECT", 0, 0, "tref2", domain_owner)]
+        return []
+
+    connection = MagicMock()
+    connection.execute.side_effect = execute
+    with pytest.raises(ValueError, match="owner"):
+        dialect.get_columns(connection, "tx")
+
+
+def test_global_names_keep_unqualified_object_member_before_11_2() -> None:
+    dialect = CubridDialect()
+    dialect.server_version_info = (10, 2)
+    assert dialect._collection_member_type("OBJECT", 0, 0, "tref2") == "tref2"
 
 
 def test_member_owner_is_read_on_11_2() -> None:
