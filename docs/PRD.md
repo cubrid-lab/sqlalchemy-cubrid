@@ -285,8 +285,9 @@ A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
 `for_update_clause`/`limit_clause` return, a DDL type-compilation fallback, an
 `else` branch in type normalization) that cannot trigger through SQLAlchemy's
 public API. Their exact line numbers shift as the modules change; run
-`pytest --cov-report=term-missing` and check the `Missing` column for the
-current set.
+`pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid
+--cov-report=term-missing` (or `make test`) and check the `Missing` column for
+the current set.
 
 ### 4.3 CI Matrix
 

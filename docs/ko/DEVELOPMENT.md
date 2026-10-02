@@ -507,7 +507,7 @@ tox -e typecheck-sa20,typecheck-sa21
 
 CI 파이프라인은 모든 PR/push에서 다음 매트릭스를 테스트합니다. 통합 테스트
 행은 모든 Python × CUBRID 조합이 아니라 정확히 2개 조합(최신 Python ×
-최신 CUBRID, 최구 × 최구)으로 축소된 매트릭스입니다. 전체 5×4 조합은
+최신 CUBRID, 최저 × 최저)으로 축소된 매트릭스입니다. 전체 5×4 조합은
 나이틀리, 수동 실행, 그리고 `integration-full.yml`을 통한 릴리스 게이트에서
 실행됩니다:
 
@@ -560,7 +560,8 @@ make test
 반환, DDL 컴파일의 기본 분기, 타입 정규화의 `else` 분기 등 방어적 폴백)은
 SQLAlchemy 공개 API로는 발동할 수 없어 오프라인 스위트에서 절대 실행되지
 않습니다. 정확한 라인 번호는 모듈이 바뀔 때마다 변하므로, 여기 고정된
-목록 대신 `pytest --cov-report=term-missing`을 실행해 `Missing` 열에서
+목록 대신 `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid
+--cov-report=term-missing`(또는 `make test`)을 실행해 `Missing` 열에서
 현재 목록을 확인하세요.
 
 ---

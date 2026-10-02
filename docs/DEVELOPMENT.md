@@ -577,7 +577,8 @@ A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
 `for_update_clause`/`limit_clause` return, a DDL compilation default branch, an
 `else` arm in type normalization) that cannot trigger through SQLAlchemy's
 public API and so never execute under the offline suite. Their exact line
-numbers shift as the modules change; run `pytest --cov-report=term-missing`
+numbers shift as the modules change; run `pytest test/ -m "not integration and
+not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test`)
 and check the `Missing` column for the current set instead of a pinned list
 here.
 

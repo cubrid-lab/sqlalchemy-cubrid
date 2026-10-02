@@ -214,7 +214,7 @@ test/
 
 - Large and growing offline and integration suites; exact counts shift with every PR, so see the `offline-tests` / `integration-tests` CI job output for current numbers rather than a hardcoded snapshot here
 - Coverage threshold: 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job)
-- A handful of defensive fallback branches are intentionally unreachable in normal operation (SA-version-specific compatibility shims, exhaustive-but-unreachable `else` arms); see `--cov-report=term-missing` output for current line numbers instead of a pinned list
+- A handful of defensive fallback branches are intentionally unreachable in normal operation (SA-version-specific compatibility shims, exhaustive-but-unreachable `else` arms); see `--cov=sqlalchemy_cubrid --cov-report=term-missing` output (or `make test`) for current line numbers instead of a pinned list
 
 ### Running Tests
 
