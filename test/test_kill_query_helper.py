@@ -3,8 +3,36 @@
 from __future__ import annotations
 
 import pytest
+from sqlalchemy.engine import make_url
 
 from test._kill_query import kill_unique_query, running_targets
+from test.test_integration import _kill_query_victim_url
+
+
+@pytest.mark.parametrize("admin_password", ["", "nonempty-dba-secret"])
+@pytest.mark.parametrize("driver", ["cubrid", "cubrid+pycubrid"])
+def test_victim_url_uses_its_own_passwordless_account(admin_password: str, driver: str) -> None:
+    admin_url = make_url(f"{driver}://dba@db.example:33000/testdb?connect_timeout=5").set(
+        password=admin_password
+    )
+
+    victim_url = _kill_query_victim_url(admin_url, "kq634_1234abcd5678ef90")
+
+    assert victim_url.username == "kq634_1234abcd5678ef90"
+    assert victim_url.password == ""
+    assert victim_url.drivername == admin_url.drivername
+    assert victim_url.host == admin_url.host
+    assert victim_url.port == admin_url.port
+    assert victim_url.database == admin_url.database
+    assert victim_url.query == admin_url.query
+    assert admin_url.username == "dba"
+    assert admin_url.password == admin_password
+    args, kwargs = victim_url.get_dialect()().create_connect_args(victim_url)
+    if driver == "cubrid":
+        assert args[1:] == ("kq634_1234abcd5678ef90", "")
+    else:
+        assert kwargs["user"] == "kq634_1234abcd5678ef90"
+        assert kwargs["password"] == ""
 
 
 class _TransactionCursor:

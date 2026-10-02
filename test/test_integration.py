@@ -1453,6 +1453,11 @@ _SLOW_QUERY = text(
 )
 
 
+def _kill_query_victim_url(admin_url: sa.engine.URL, username: str) -> sa.engine.URL:
+    # URL.set(password=None) retains the DBA password; this account has none.
+    return admin_url.set(username=username, password="")
+
+
 class TestIsDisconnect:
     """Serialized disruptive cases: KILL QUERY is server-wide (#612, #634).
 
@@ -1486,7 +1491,7 @@ class TestIsDisconnect:
                 admin.commit()
 
             victim_engine = create_engine(
-                engine.url.set(username=username, password=None),
+                _kill_query_victim_url(engine.url, username),
                 poolclass=sa.pool.NullPool,
             )
             with victim_engine.connect() as conn:
