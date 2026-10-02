@@ -312,7 +312,9 @@ connection open until the killer has exited or been stopped. The killer uses
 than one matching active query fails without issuing KILL. It never chooses a
 newly appeared DBA or other user's query by timing. Cleanup disposes the
 victim engine and drops only the account created by this run, through the
-verified user-drop helper. Use a disposable DBA test database; another
+verified user-drop helper. The victim URL explicitly clears the DBA password
+because the generated account has no password, even when `CUBRID_TEST_URL`
+contains a nonempty DBA password. Use a disposable DBA test database; another
 session sharing that dedicated account would make the test fail closed.
 
 `test/test_server_restart.py` (#565) stops and starts `cub_server` with
