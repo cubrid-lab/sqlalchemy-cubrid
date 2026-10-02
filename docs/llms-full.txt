@@ -2398,6 +2398,7 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `CHAR VARYING`      | `VARCHAR`          |
 | `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
+| `ENUM('a', ...)`    | `ENUM('a', ...)` (DBA; otherwise `NullType` + warning) |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
 | `SET`               | `SET`              |
@@ -2405,6 +2406,12 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
+
+`SHOW COLUMNS` prints collections as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member modifiers and sometimes in a different order. The public `db_attr_setdomain_elm` view supplies each member's precision, scale and object-domain class. The dialect uses those rows only when they account for every reported member family; missing or inconsistent rows warn and yield `NullType` instead of silently changing the DDL. An OBJECT member whose class was dropped (listed without its class) and a member type the dialect cannot express warn and yield `NullType`; the rest of the table still reflects. `MONETARY` members reflect as `MONETARY`. A column name that `SHOW COLUMNS` lists twice (a `CLASS ATTRIBUTE` of the same name) warns and yields `NullType` for ENUM and collection columns, and the catalog lookups read instance attributes only. On CUBRID 11.2+ an OBJECT member whose class belongs to another owner than the table reflects as `owner.class`. An `ENUM` member (`SET(ENUM('x', 'y'))`, listed without its values) warns and yields `NullType`. Members keep the order the view lists them in, which is the declaration order on the supported servers. A member's collation (`VARCHAR(10) COLLATE utf8_bin`) is not in the view and is not reflected. An untyped collection takes its kind from `db_attribute` and reflects as `SET()` / `MULTISET()` / `SEQUENCE()`. With authorized ENUM metadata and complete collection-domain rows, `metadata.reflect()` followed by `create_all()` reproduced the tested DDL on CUBRID 10.2, 11.2 and 11.4; 11.0 remains in the nightly matrix. This is not a claim of full ENUM reflection for non-DBA users.
+
+On CUBRID 11.2+, an OBJECT member also warns and yields `NullType` when either its domain owner or the reflected table owner is unavailable; rendering an unqualified class could resolve to a different owner's class.
 
 ---
 
