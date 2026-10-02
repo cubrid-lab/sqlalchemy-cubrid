@@ -526,7 +526,7 @@ class TestTypeCompilation:
         ("type_", "expected"),
         [
             pytest.param(sa.String(-1), "VARCHAR(-1)", id="String"),
-            pytest.param(sa.Unicode(-1), "NCHAR VARYING(-1)", id="Unicode"),
+            pytest.param(sa.Unicode(-1), "VARCHAR(-1)", id="Unicode"),
             pytest.param(sa.VARCHAR(-1), "VARCHAR(-1)", id="sa.VARCHAR"),
             pytest.param(cubrid_types.VARCHAR(length=-1), "VARCHAR(-1)", id="cubrid.VARCHAR"),
             pytest.param(sa.CHAR(-1), "CHAR(-1)", id="sa.CHAR"),
