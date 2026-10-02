@@ -505,16 +505,20 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI 매트릭스
 
-CI 파이프라인은 다음 매트릭스를 테스트합니다:
+CI 파이프라인은 모든 PR/push에서 다음 매트릭스를 테스트합니다. 통합 테스트
+행은 모든 Python × CUBRID 조합이 아니라 정확히 2개 조합(최신 Python ×
+최신 CUBRID, 최구 × 최구)으로 축소된 매트릭스입니다. 전체 5×4 조합은
+나이틀리, 수동 실행, 그리고 `integration-full.yml`을 통한 릴리스 게이트에서
+실행됩니다:
 
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **오프라인 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **저장소 도구 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.2** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.0** | ✅ | — | — | — | ✅ |
-| **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+| **CUBRID 11.4** | — | — | — | — | ✅ |
+| **CUBRID 11.2** | — | — | — | — | — |
+| **CUBRID 11.0** | — | — | — | — | — |
+| **CUBRID 10.2** | ✅ | — | — | — | — |
 
 `make test`는 `repo` 마커를 제외합니다. 이 마커는 `test/conftest.py`가
 `REPO_TOOLING_MODULES`에 나열된 모듈(`test_make_integration.py`,
@@ -532,9 +536,7 @@ Python에서 `-m repo`를 실행하고, 이 잡이 성공하지 않으면 `matri
 ### 요구사항
 
 - **최소 임계값**: 라인 커버리지 95%
-- **현재 CI 오프라인 수집**: 603개 테스트 (`test_integration.py`, `test_suite.py`, `test_aio_integration.py` 제외한 `pytest --collect-only` — `.github/workflows/ci.yml` 및 `make test`와 일치)
-- **현재 라인 커버리지**: CI/make test 구성에서 오프라인 ~98.26%
-- CI는 `--cov-fail-under=95`로 임계값을 강제
+- CI는 `offline-tests` 작업(`.github/workflows/ci.yml`)에서 `--cov-fail-under=95`로 임계값을 강제합니다. 현재 테스트 개수와 커버리지는 여기 고정된 스냅샷 대신 `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing`을 로컬에서 실행해 확인하세요 — 둘 다 PR마다 변합니다
 
 ### 커버리지 실행
 
@@ -554,14 +556,12 @@ make test
 
 ### 알려진 도달 불가능 라인
 
-`compiler.py`의 세 라인과 `dml.py`의 한 라인은 설계상 도달 불가능으로 검증되어 있습니다 (SA 공개 API로는 발동할 수 없는 방어적 폴백):
-
-| 파일 | 라인 | 설명 |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause`가 `""` 반환 |
-| `compiler.py` | 84 | `limit_clause`가 `""` 반환 |
-| `compiler.py` | 298--300 | DDL 컴파일의 방어적 분기 |
-| `dml.py` | 310 | 타입 정규화의 `else` 분기 |
+`compiler.py`와 `dml.py`의 일부 라인(`for_update_clause`/`limit_clause`의 빈
+반환, DDL 컴파일의 기본 분기, 타입 정규화의 `else` 분기 등 방어적 폴백)은
+SQLAlchemy 공개 API로는 발동할 수 없어 오프라인 스위트에서 절대 실행되지
+않습니다. 정확한 라인 번호는 모듈이 바뀔 때마다 변하므로, 여기 고정된
+목록 대신 `pytest --cov-report=term-missing`을 실행해 `Missing` 열에서
+현재 목록을 확인하세요.
 
 ---
 
@@ -660,7 +660,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + 포맷 검증
 2. **오프라인 테스트** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × 오프라인 테스트 스위트
-3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
+3. **통합 테스트** — 축소된 매트릭스, 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
 4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 야간 및 릴리스 게이트에서 `integration-full.yml`로 실행)
 5. **커버리지** — ≥ 95% 임계값 강제
 

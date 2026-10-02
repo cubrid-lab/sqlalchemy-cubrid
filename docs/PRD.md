@@ -27,7 +27,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 - **DML extensions** — ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT, TRUNCATE
 - **DDL support** — COMMENT, IF NOT EXISTS / IF EXISTS, AUTO_INCREMENT
 - **Alembic migration support** via `CubridImpl`, registered when the dialect loads
-- **~98.26% offline coverage** (619 offline tests, 35 sync integration tests, 16 async integration tests)
+- **Extensive offline and integration test suites** — CI enforces a minimum 95% line-coverage gate on the offline suite (`--cov-fail-under=95`); see CI job output for current test counts
 - **CI/CD** — Python 3.10–3.14 × CUBRID 10.2–11.4 matrix
 - **17 English documentation files** in `docs/` covering the dialect
 
@@ -37,12 +37,12 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 |---|---|---|
 | Installable on Python 3.10+ | ✅ | ✅ `pip install sqlalchemy-cubrid` |
 | SQLAlchemy 2.0 – 2.1 compatible | ✅ | ✅ Full API compliance |
-| Offline tests (no live DB) | ✅ | ✅ 619 tests, ~98.26% coverage |
+| Offline tests (no live DB) | ✅ | ✅ Extensive suite, coverage ≥ 95% CI-enforced |
 | All dialect methods implemented | ✅ | ✅ Reflection, compilation, types |
 | CI/CD with version matrix | ✅ | ✅ Py 3.10–3.14 × CUBRID 10.2–11.4 |
 | Publishable to PyPI | ✅ | ✅ Release workflow on tag |
 | Alembic support | ✅ | ✅ CubridImpl auto-registered + autogenerate |
-| ≥ 95% code coverage | ✅ | ✅ ~98.26% (CI-enforced) |
+| ≥ 95% code coverage | ✅ | ✅ CI-enforced via `--cov-fail-under=95` |
 | Comprehensive documentation | ✅ | ✅ 17 English docs files + README |
 
 ---
@@ -269,34 +269,31 @@ stmt = (
 
 ### 4.1 Test Matrix
 
-| Test File | Tests | Coverage Area |
-|---|---|---|
-| `test_compiler.py` | 70 | SQL compilation (SELECT, JOIN, CAST, LIMIT, DML, DDL) |
-| `test_types.py` | 53 | Type compilation, reflection, collection, MONETARY, OBJECT |
-| `test_requirements.py` | 46 | SA 2.0 requirement flags (parametrized) |
-| `test_dialect_offline.py` | 24 | Reflection stubs, connection, isolation, savepoint |
-| `test_base.py` | 15 | ExecutionContext, IdentifierPreparer |
-| `test_dml.py` | ~80 | ON DUPLICATE KEY UPDATE, MERGE, REPLACE compilation |
-| `test_alembic.py` | 21 | Import, registry, entry-point, autogenerate |
-| `test_dialects.py` | ~23 | Edge cases, dialect config |
-| `test_trace.py` | 7 | Query trace utility |
-| **Total** | **619 offline tests** | **~98.26% coverage** |
+The offline suite spans `test/test_compiler.py`, `test_types.py`,
+`test_requirements.py`, `test_dialect_offline.py`, `test_base.py`,
+`test_dml.py`, `test_alembic*.py`, `test_dialects.py`, `test_trace.py`, and
+many more modules covering reflection, collections, Alembic plugin
+registration, driver contracts and repository tooling. Per-file and total test
+counts shift with nearly every PR; run `pytest test/ -m "not integration and
+not repo" --collect-only` or check the `offline-tests` CI job output for
+current numbers instead of a pinned snapshot here. CI enforces a minimum 95%
+line-coverage gate (`--cov-fail-under=95`).
 
-### 4.2 Unreachable Lines (4 entries)
+### 4.2 Unreachable Lines
 
-| File | Line | Reason |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause` returning `""` — SA always calls with valid state |
-| `compiler.py` | 84 | `limit_clause` returning `""` — SA always provides limit context |
-| `compiler.py` | 298-300 | DDL type compilation fallback — all types covered |
-| `dml.py` | 310 | `else` branch in type normalization — all input types covered |
+A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
+`for_update_clause`/`limit_clause` return, a DDL type-compilation fallback, an
+`else` branch in type normalization) that cannot trigger through SQLAlchemy's
+public API. Their exact line numbers shift as the modules change; run
+`pytest --cov-report=term-missing` and check the `Missing` column for the
+current set.
 
 ### 4.3 CI Matrix
 
 | Workflow | Python versions | CUBRID versions | Source |
 |---|---|---|---|
 | PR/push offline tests | 3.10, 3.11, 3.12, 3.13, 3.14 | N/A (offline) | `.github/workflows/ci.yml` |
-| PR/push integration tests | 3.10, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/ci.yml` |
+| PR/push integration tests | Reduced matrix: 3.14 (with 11.4), 3.10 (with 10.2) | 11.4, 10.2 — 2 combinations only, not a cross product | `.github/workflows/ci.yml` |
 | Nightly / release-gate / manual full integration matrix | 3.10, 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
 
 ---

@@ -9,7 +9,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -29,7 +28,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 **sqlalchemy-cubrid** bridges that gap:
 
 - Full SQLAlchemy 2.0–2.1 dialect with **statement caching** and **PEP 561 typing**
-- **Extensive offline test suite** with **high code coverage** ([CI badge above](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)) — no database required to run them
+- **Extensive offline test suite** — no database required to run it; CI enforces a minimum 95% line-coverage gate (`--cov-fail-under=95` in the `offline-tests` job, [CI badge above](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml))
 - **Concurrency stress tests** — `QueuePool` sync threaded + asyncio.gather workloads validated against live CUBRID
 - **SQLAlchemy 2.1-ready compat shim** — private API access wrapped in `_compat.py`; dependency pin now `>=2.0,<2.3` covering SA 2.0 and 2.1
 - Tested against **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) across **Python 3.10 -- 3.14**
@@ -41,7 +40,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 
 - **Status**: Production/Stable [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
 - Supported matrix: SQLAlchemy `>=2.0,<2.3`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.10`–`3.14`
-- Integration CI exercises Python 3.10 and 3.14 against all four CUBRID versions on every PR; intermediate versions (3.11–3.13) are supported and validated via the offline test suite
+- Integration CI runs a reduced matrix on every PR — Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest); the full Python 3.10–3.14 × CUBRID 10.2–11.4 matrix runs nightly, on demand, and as the release gate ([integration-full.yml](.github/workflows/integration-full.yml)). Intermediate Python versions (3.11–3.13) are supported and validated via the offline test suite on every PR
 - SQLAlchemy 2.1 pre-releases are exercised by a non-gating `--pre` canary CI job
 - See [Known Limitations](#known-limitations) for behavior boundaries and unsupported features
 
@@ -213,7 +212,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 - **Async requires pycubrid >= 1.8.0,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project
 - **CARDINALITY() broken** — `func.cardinality()` raises `CompileError` with workaround guidance; the CUBRID server has a [known bug](https://github.com/cubrid-lab/.github/issues/3)
 - **Reserved words auto-quoted** — Column names matching CUBRID reserved words (`day`, `count`, `value`, etc.) are automatically double-quoted in DDL; see [reserved word list](https://github.com/cubrid-lab/.github/issues/5)
-- **Timezone type fidelity** — CUBRID `TIMESTAMPTZ` is reflected as `TIMESTAMP`; timezone offset is preserved in the stored value but the dialect does not distinguish `TZ` vs `LTZ` semantics at the SQLAlchemy type level. In practice this means `datetime` objects round-trip correctly but explicit TZ/LTZ type introspection is not available
+- **Timezone type reflection** — CUBRID's `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as distinct SQLAlchemy types (`sqlalchemy_cubrid.TIMESTAMPTZ`/`TIMESTAMPLTZ`/`DATETIMETZ`/`DATETIMELTZ`, each with `timezone=True`) rather than collapsing into plain `TIMESTAMP`/`DATETIME` (#181, #442); see [Type Mapping](docs/TYPES.md#type-reflection-ischema_names-only)
 
 ## Documentation
 

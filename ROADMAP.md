@@ -1,6 +1,6 @@
 # Roadmap
 
-> **Last updated**: 2026-08-24
+> **Last updated**: 2026-10-02
 >
 > This roadmap reflects current priorities. For the ecosystem-wide view, see the
 > [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md).
@@ -11,17 +11,17 @@
 - 🗂️ [Org Project Board](https://github.com/orgs/cubrid-lab/projects/2)
 - 🌐 [Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)
 
-## Current Release Line — v1.6.x — Stable Maintenance & Polish
+## Current Release Line — v1.8.x — Stable Maintenance & Polish
 
 - Documentation accuracy and consistency across README / docs / AI-facing project files
-- Continued SQLAlchemy 2.0–2.1 hardening while forward-testing against SA 2.1 pre-releases
+- Continued SQLAlchemy 2.0–2.1 hardening while forward-testing against post-2.1 pre-releases
 - Reflection/autogenerate polish and benchmark-driven performance tuning
 
 ## Next — Performance & Ecosystem
 
 - Performance profiling and benchmark integration
 - Ecosystem examples and cookbook expansion
-- SQLAlchemy 2.1 GA readiness and forward-compatibility investigation (SA 2.2+)
+- SQLAlchemy 2.1 is released and tested (CI pins 2.1.1); forward-compatibility investigation continues for SA 2.2+ pre-releases via the non-gating canary CI job
 
 ## Compatibility
 

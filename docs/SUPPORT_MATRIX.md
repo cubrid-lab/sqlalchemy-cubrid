@@ -152,6 +152,10 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
+| TIMESTAMPTZ | `TIMESTAMPTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| TIMESTAMPLTZ | `TIMESTAMPLTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| DATETIMETZ | `DATETIMETZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
+| DATETIMELTZ | `DATETIMELTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
 | BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ Length and `VARYING` preserved |
 | BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ Reflects as `BIT(n*8)` |
 | BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ Reflects as `BIT VARYING(n*8)` |
@@ -172,7 +176,7 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 | Dimension | PR / push | Nightly + dispatch + release |
 |---|---|---|
 | Offline tests | Python 3.10, 3.11, 3.12, 3.13, 3.14 | Same |
-| Integration tests | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8 jobs | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
+| Integration tests | Reduced matrix, 2 combinations: Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest) | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
 
 The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on demand via `workflow_dispatch`, and as the release gate that `release.yml` calls for every release.
 
@@ -190,12 +194,13 @@ Most known failures are shared by both drivers: CUBRID backend rules (identifier
 
 ## Test Coverage
 
+Offline and integration test counts grow with every PR; see the `offline-tests`
+/ `integration-tests` CI job output for current numbers instead of a pinned
+snapshot here.
+
 | Metric | Value |
 |---|---|
-| Offline tests | 619 |
-| Integration tests | 35 sync + 16 async |
-| Line coverage | ~98.26% offline |
-| Coverage threshold | 95% (CI-enforced) |
+| Coverage threshold | 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job) |
 
 ---
 
