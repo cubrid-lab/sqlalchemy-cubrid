@@ -119,15 +119,16 @@ class _Connection:
         return sum(1 for sql in self.statements if sql.startswith(prefix))
 
 
-@pytest.fixture
-def dialect() -> CubridDialect:
-    return CubridDialect()
-
-
 def _dialect(version: tuple[int, ...]) -> CubridDialect:
     dialect = CubridDialect()
     dialect.server_version_info = version
     return dialect
+
+
+@pytest.fixture
+def dialect() -> CubridDialect:
+    """A dialect that knows its server version, as after the first connect."""
+    return _dialect((11, 0, 16))
 
 
 @pytest.mark.parametrize(
@@ -148,6 +149,20 @@ def test_verified_empty_catalog_skips_show_create_table(
     assert connection.count("SHOW INDEXES") == 0
     # db_class lookup + one catalog query.
     assert len(connection.statements) == 2
+
+
+def test_unknown_server_version_keeps_ddl_fallback() -> None:
+    """Without a server version the catalog rows cannot be tied to an owner
+    (#624): on 11.2+ they may belong to another owner's class, so an empty
+    result is not vouched for and the DDL path decides."""
+    other_owner = _Connection((PK,), owner="DBA", current_user="RVU629")
+    with pytest.raises(NoSuchTableError):
+        CubridDialect().get_unique_constraints(other_owner, "t")
+    assert other_owner.count("SHOW CREATE TABLE") == 1
+
+    own = _Connection((PK,))
+    assert CubridDialect().get_unique_constraints(own, "t") == []
+    assert own.count("SHOW CREATE TABLE") == 1
 
 
 def test_table_without_any_index_keeps_ddl_fallback(dialect: CubridDialect) -> None:
