@@ -238,11 +238,17 @@ stores the full value and `NULL` round-trips as `None`. Selecting a non-NULL
 For `LargeBinary` / `BLOB`, SQLAlchemy's result processor then raises `TypeError`.
 To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`),
 or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
-`str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442:
-pycubrid main does not implement it yet either, so `test_lob_value_contract.py`
-xfails the same cases on both the released driver and pycubrid main, strictly —
-a future pycubrid release that fixes this turns the xfail into a failing XPASS
-instead of silently staying green. See also [Types](TYPES.md).
+`str`. pycubrid's LOB handles (cubrid-lab/pycubrid#441/#442, completed) are
+explicit calls on `pycubrid.compat.native` (`connection.lob()`,
+`cursor.fetch_lob()`, `cursor.bind_lob()`, sync only). The dialect does not use
+that module, and ordinary fetch on pycubrid main (checked at `9fbbc05`) still
+returns the locator, so `test_lob_value_contract.py` xfails the same cases on
+both the released driver and pycubrid main, strictly — a pycubrid release that
+changes ordinary fetch turns the xfail into a failing XPASS instead of silently
+staying green. The dialect does not convert on the server for you: wrapping
+every `BLOB` / `CLOB` select in `BLOB_TO_BIT` / `CLOB_TO_CHAR` would change the
+emitted SQL, would not apply to `text()` statements and would load each whole
+value into memory. See also [Types](TYPES.md).
 
 ### 7. `executemany` reuses the previous row's value for `None` (dialect guard)
 

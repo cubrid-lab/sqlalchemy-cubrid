@@ -175,7 +175,7 @@ CUBRID 10.2 및 11.4에서 Core/ORM, 동기/비동기 전 조합을 pycubrid 1.8
 | `cubrid+pycubrid://` (pycubrid 1.8.0 및 main) | LOB 핸들 `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
 | `cubrid+aiopycubrid://` (pycubrid 1.8.0 및 main) | `file_locator` 문자열 (`None`을 포함한 `LargeBinary` / `BLOB` 값 바인딩은 #500부터 정상 동작) |
 
-`LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 공식 LOB 조회는 cubrid-lab/pycubrid#441/#442에서 추적하며, pycubrid main에도 아직 구현되어 있지 않아 `test_lob_value_contract.py`는 릴리스된 드라이버와 pycubrid main 양쪽에서 동일하게 strict xfail 처리합니다 — 향후 pycubrid가 이를 해결하면 xfail이 실패하는 XPASS로 바뀌어 조용히 통과하지 않습니다. [타입](TYPES.md)도 참고하세요.
+`LargeBinary` / `BLOB`의 경우 SQLAlchemy 결과 프로세서가 `TypeError`를 발생시킵니다. 내용을 읽으려면 서버에서 변환(`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`)하거나, 대용량 텍스트는 `str`로 왕복되는 `sqlalchemy.Text`(CUBRID `STRING`)에 저장하세요. pycubrid의 LOB 핸들(cubrid-lab/pycubrid#441/#442, 완료)은 `pycubrid.compat.native`의 명시적 호출(`connection.lob()`, `cursor.fetch_lob()`, `cursor.bind_lob()`, 동기 전용)입니다. 방언은 이 모듈을 사용하지 않으며 pycubrid main(`9fbbc05`에서 확인)의 일반 조회는 여전히 로케이터를 반환하므로, `test_lob_value_contract.py`는 릴리스된 드라이버와 pycubrid main 양쪽에서 동일하게 strict xfail 처리합니다 — pycubrid가 일반 조회 동작을 바꾸면 xfail이 실패하는 XPASS로 바뀌어 조용히 통과하지 않습니다. 방언은 서버 변환을 대신 수행하지 않습니다. 모든 `BLOB` / `CLOB` 조회를 `BLOB_TO_BIT` / `CLOB_TO_CHAR`로 감싸면 생성되는 SQL이 바뀌고, `text()` 문에는 적용되지 않으며, 값 전체를 메모리에 올리기 때문입니다. [타입](TYPES.md)도 참고하세요.
 
 ### 7. `executemany`가 `None`에 이전 행의 값을 재사용 (방언 가드)
 
