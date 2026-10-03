@@ -38,11 +38,7 @@ source venv/bin/activate
 # Install in development mode with dev dependencies
 pip install -e ".[dev]"
 
-# Install test coverage tool
-pip install pytest-cov
-
-# Install pre-commit hooks (optional but recommended)
-pip install pre-commit
+# Install pre-commit hooks
 pre-commit install
 ```
 
@@ -110,7 +106,6 @@ message naming the URL without its password, instead of silently skipping
 ### Multi-Python Testing with tox
 
 ```bash
-pip install tox
 tox           # Run all environments
 tox -e py312  # Run a specific Python version
 tox -e lint   # Run lint checks only

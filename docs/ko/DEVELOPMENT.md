@@ -45,8 +45,7 @@ make install
 
 `make install`이 수행하는 것:
 1. `pip install -e ".[dev]"` — dev 의존성과 함께 편집 가능 설치
-2. `pip install pytest-cov pre-commit tox` — 테스트 도구
-3. `pre-commit install` — git 훅 설정
+2. `pre-commit install` — git 훅 설정
 
 ### 수동 설정
 
@@ -59,11 +58,7 @@ source venv/bin/activate  # Linux/macOS
 # dev 의존성과 함께 편집 가능 모드로 설치
 pip install -e ".[dev]"
 
-# 테스트 커버리지 및 다중 버전 도구 설치
-pip install pytest-cov tox
-
-# (선택) pre-commit 훅 설치
-pip install pre-commit
+# pre-commit 훅 설치
 pre-commit install
 ```
 
@@ -487,9 +482,6 @@ skip_missing_interpreters = true
 ### tox 실행
 
 ```bash
-# tox 설치
-pip install tox
-
 # 모든 환경 실행
 tox
 
