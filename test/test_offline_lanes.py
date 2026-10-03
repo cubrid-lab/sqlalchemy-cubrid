@@ -10,7 +10,8 @@
 ``make test`` deselects the ``repo`` marker that ``test/conftest.py`` applies
 to ``REPO_TOOLING_MODULES``. These checks keep that split from silently
 dropping tests: the fast selections exclude ``repo``, the repository-tooling
-selections are ``-m repo``, and the ``repo-tests`` CI job stays required.
+selections are ``-m repo``, and the ``repo-tests`` CI job runs and is required
+when repository tooling changes (``docs/CI_POLICY.md``).
 """
 
 from __future__ import annotations
@@ -68,20 +69,23 @@ def test_ci_offline_job_is_fast_lane():
     assert '-m "not integration and not repo"' in _ci_job("offline-tests")
 
 
-def test_ci_repo_job_runs_repo_lane_on_every_python():
+def test_ci_repo_job_runs_repo_lane_when_tooling_changes():
     job = _ci_job("repo-tests")
     assert "python -m pytest test/ -m repo" in job
-    assert "if:" not in job.split("steps:", 1)[0], "repo-tests must run on every event"
+    conditions = re.findall(r"^\s+if: (.*)$", job.split("steps:", 1)[0], re.M)
+    assert conditions == ["needs.detect-changes.outputs.tooling == 'true'"]
     offline = _ci_job("offline-tests")
     versions = re.compile(r"python-version: (\[.*?\])")
     assert versions.search(job).group(1) == versions.search(offline).group(1)
 
 
-def test_ci_repo_job_is_required():
+def test_ci_repo_job_is_required_when_selected():
     result = _ci_job("matrix-result")
     needs = re.search(r"needs: \[(.*?)\]", result)
     assert needs and "repo-tests" in [n.strip() for n in needs.group(1).split(",")]
-    assert "needs.repo-tests.result != 'success'" in result
+    assert "R_REPO_TESTS: ${{ needs.repo-tests.result }}" in result
+    assert "E_REPO_TESTS: ${{ needs.detect-changes.outputs.tooling }}" in result
+    assert 'check repo-tests "$R_REPO_TESTS" "$E_REPO_TESTS"' in result
 
 
 class _Item:
