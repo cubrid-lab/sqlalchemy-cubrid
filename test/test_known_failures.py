@@ -114,8 +114,14 @@ def test_duplicate_node_id_is_rejected(tmp_path: Path):
 def test_gated_server_lanes_and_pins_match_ci():
     """The (lane, server) pairs and SQLAlchemy pins in conftest.py are the ones ci.yml runs."""
     ci = _CI.read_text(encoding="utf-8")
-    cells = re.findall(
-        r'cubrid-version: "([0-9.]+)"\n\s+pycubrid-compliance-sqlalchemy: "([0-9.]+)"', ci
+    # The matrix is an inline JSON ``include`` list; pull-request runs use a
+    # subset of the cells that pushes to main run.
+    cells = sorted(
+        set(
+            re.findall(
+                r'"cubrid-version":"([0-9.]+)","pycubrid-compliance-sqlalchemy":"([0-9.]+)"', ci
+            )
+        )
     )
     assert cells, "ci.yml integration matrix not found"
     expected = {"cubrid@sa2.0@cubrid11.4"} | {
