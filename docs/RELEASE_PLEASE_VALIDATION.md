@@ -1,7 +1,13 @@
 # Release-please migration validation
 
 Recorded 2026-10-03 against main `7432169960f486040ac6ef23c3e355b9f4bea01e`
-and the adapters/configuration in PRs #655 / #656. The migration changes no
+and these exact reviewed implementation snapshots:
+
+- #655 adapters: `9952967b12a6b06270710fb4e05a6b91199f7499`.
+- #656 configuration/workflows: `8b4dee606d7b556af55dc54a1d93c93d1d5106c7`.
+
+The recorded checks below apply to those immutable revisions; PR numbers alone
+are not validation evidence. Reruns must record their new tested SHAs. The migration changes no
 published package version: the repository remains 1.8.0 until a separate
 reviewed release PR is merged.
 
@@ -42,8 +48,13 @@ artifact's database/cookbook behavior. Required CI must pass at the final heads.
 
 ## Reproduce the pinned-core scenarios
 
-Install `release-please@17.6.0` in a temporary Node tools directory; the following
-script uses the real Python strategy and local file-backed mocked SCM reads.
+Install the pinned core at the exact path used by this script:
+
+```bash
+npm install --prefix /tmp/release-please-tools --ignore-scripts release-please@17.6.0
+```
+
+The following script uses the real Python strategy and local file-backed mocked SCM reads.
 Save it outside the checkout, then run `node <script> <repository-path>`.
 Its output candidate lives in `/tmp/sa-rp-candidate`, not in the repository.
 
