@@ -257,7 +257,7 @@ The dialect translates automatically in `create_connect_args()`.
 |---|---|---|
 | `.github/workflows/ci.yml` | PR, main, weekly, manual | Minimum PR smoke and representative integration; see docs/CI_POLICY.md |
 | `.github/workflows/integration-full.yml` | Manual dispatch, release workflow_call | Full supported compatibility matrix |
-| `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`) | Open the `chore: release vX.Y.Z` PR (dated CHANGELOG section + version bump) |
+| `.github/workflows/release-please.yml` | Push to main, manual dispatch | Prepare the release PR; compose generated and curated notes; never publish |
 | `.github/workflows/release.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
 
 ### CI Matrix
@@ -450,11 +450,15 @@ Contributors provide the change and validation evidence through the normal PR pa
 
 Version is single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`
 (`pyproject.toml` reads it dynamically). Merging a reviewed release PR is the only
-normal way to release: `prepare-release.yml` opens it (dated CHANGELOG section +
+normal way to release: `release-please.yml` opens it (dated CHANGELOG section +
 version bump, checked by `make release-check VERSION=x.y.z`), and after the
 squash-merge `release.yml` detects the version change and runs consistency → full
 matrix → build → tag/Release/PyPI → cookbook verification (the cookbook smoke test
 called as a pinned reusable workflow, no token) → summary on its own.
+Freeze release PRs with `autorelease: review` before editing candidate notes; wait
+for preparation to finish and start required PR CI on the final head. Curated
+main Unreleased notes are preserved during regeneration; branch-only edits
+require the freeze.
 Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
 tags or publish by hand; the only manual entry point is the narrow recovery
 dispatch of `release.yml`. Procedure, failure matrix and recovery:
