@@ -8,52 +8,78 @@ version files) with the sibling cubrid-lab repositories.
 Key invariants:
 
 - The version is single-sourced from `sqlalchemy_cubrid/__init__.py` (`__version__`).
-- `CHANGELOG.md` is hand-curated and the only source of release notes,
-  including the Upgrade notes. It is not generated.
+- `RELEASE_CHANGELOG.md` contains generated Conventional Commit entries.
+  `CHANGELOG.md` combines them with reviewed Upgrade notes and remains the
+  publication source; historical sections are preserved byte for byte.
 - A release is decided from git facts on `main`, never from a PR title.
 - The workflows never delete PyPI files, never move a tag and never create a
   version that was not merged through a release PR.
 
 ## Normal flow
 
-```text
-prepare-release.yml  ->  release PR (review, edit notes)  ->  squash-merge  ->  release.yml
-```
+`release-please.yml` → reviewed release PR → squash merge → `release.yml`.
 
 ### 1. Prepare the release PR
 
-```bash
-gh workflow run prepare-release.yml -f version=X.Y.Z
-```
+On each push to `main`, or a manual `release-please.yml` dispatch from `main`,
+the SHA-pinned upstream action prepares a Python release PR. It never creates
+tags or GitHub Releases (`skip-github-release: true`). The former
+`prepare-release.yml` entry point is removed; `prepare_release.py` remains only
+as tested legacy transformation code, without an active workflow caller.
 
-The workflow (dispatch it from `main`) validates `X.Y.Z` (greater than the
-current `__version__`, no existing tag or `release/vX.Y.Z` branch), then
-`scripts/prepare_release.py`:
+Before proposing another release, the preparer reconciles merged
+`autorelease: pending` PRs only when their manifest version, tag commit,
+published non-draft GitHub Release and a successful `release.yml` run at the
+merge SHA all agree. That run must include successful publication and cookbook
+verification jobs. It then transitions pending to `autorelease: tagged`.
+Partial publication remains pending and blocks the next release. Recovery runs
+at another head SHA require a maintainer to verify the same facts and perform
+the label transition manually; no release is repeated to clear labels.
 
-- moves everything under `## [Unreleased]` into `## [X.Y.Z] - <UTC date>` and
-  leaves an empty `## [Unreleased]` above it;
-- sets `__version__ = "X.Y.Z"` in `sqlalchemy_cubrid/__init__.py`.
+The root manifest starts at `1.8.0`, bootstrapped from published `v1.8.0` commit
+`78bcbc7dbd70d8f2c756b25d3c271977ace42aa5`. Tags retain `vX.Y.Z`, without a
+component prefix. The Python strategy updates `sqlalchemy_cubrid/__init__.py`;
+`pyproject.toml` continues to read its version dynamically.
 
-It runs `make release-check VERSION=X.Y.Z` on the result and only then pushes
-`release/vX.Y.Z` and opens the PR **`chore: release vX.Y.Z`**.
+`always-update: true` ensures curated-only main changes and failed composition
+retries return a candidate for composition, even if generated notes are unchanged.
+The action writes Conventional Commit entries to `RELEASE_CHANGELOG.md`.
+`compose_release_changelog.py` uses the same unchanged main SHA's curated
+`[Unreleased]` entries, adds the candidate's generated notes under
+`### Conventional commits`, and creates the canonical dated header required
+by the existing publisher. It preserves released history and one empty
+Unreleased section. Stale main runs fail before generation and before pushing
+composed notes. The candidate must pass `make release-check VERSION=X.Y.Z`.
 
-### 2. Review the release PR
+### 2. Review, freeze and validate the release PR
 
-- Edit the CHANGELOG section as needed (Upgrade notes, wording) by pushing to
-  `release/vX.Y.Z`. You can also correct the date there; the release reads
-  whatever dated section is merged. (The PR checklist is shared with the
-  sibling repositories; this repository has no `RELEASE_POLICY.md`, so its
-  classification item does not apply.)
-- **Start CI.** The PR is created with `GITHUB_TOKEN`, and GitHub does not start
-  workflows for events caused by `GITHUB_TOKEN`, so CI does not run on it by
-  itself. Close and reopen the PR, or push any commit (including your edits, or
-  `git commit --allow-empty -m "ci: run checks"`) to the branch. No extra
-  secret is needed; a maintainer PAT is not required.
-- Local re-check if you edit by hand: `make release-check VERSION=X.Y.Z`.
+- Check the proposed version, manifest, package metadata, notes and generated
+  change classification. Upstream Python defaults are: `fix` patch, `feat`
+  minor, breaking changes major, `docs` patch, and hidden `chore` alone no PR.
+  A reviewed Conventional Commit footer `Release-As: X.Y.Z` overrides the next
+  version; review compatibility before merging it. Do not edit the manifest
+  alone or assume generation constitutes release approval.
+- Before editing the release branch, apply **`autorelease: review`** to its PR.
+  Wait for any running preparation workflow to finish; then edit. This freezes
+  regeneration before the upstream action and before the composed-note push.
+  The generated date is copied from the candidate header, so composition is
+  deterministic for identical inputs. Leave the freeze label through merge.
+- Curated notes added to main's Unreleased section survive subsequent
+  regeneration. Edits made only on the candidate branch require the freeze
+  label. Removing that label permits upstream regeneration and may overwrite
+  those branch-only edits; first move essential text to main if needed.
+- The workflow uses `GITHUB_TOKEN`; bot-created or updated PRs do **not**
+  automatically start normal PR CI. After preparation completes, a maintainer
+  closes/reopens the PR or pushes a commit, then verifies checks cover the
+  final composed head. No new PAT or contributor secret is required.
+- Run `make release-check VERSION=X.Y.Z` again after manual edits. Require
+  all normal PR checks before squash-merging; the merged version change
+  starts the existing guarded publisher, regardless of PR title.
 
-### 3. Squash-merge
+### 3. Squash merge
 
-Keep the title `chore: release vX.Y.Z`. The merge commit starts `release.yml`.
+Merge only the reviewed, fully validated release PR. Version selection is
+release-please's proposal; maintainer approval remains the publication decision.
 
 ### 4. Automatic release (`release.yml`)
 
@@ -231,7 +257,7 @@ cookbook.
 
 - Squash merge only; the PR title becomes the commit title.
 - Settings → Actions → General: "Allow GitHub Actions to create and approve
-  pull requests" (for `prepare-release.yml`).
+  pull requests" (for `release-please.yml`).
 - Environment `pypi`: deployment branches limited to `main`; PyPI Trusted
   Publisher for `cubrid-lab/sqlalchemy-cubrid`, workflow `release.yml`, environment
   `pypi` (<https://pypi.org/manage/project/sqlalchemy-cubrid/settings/publishing/>).

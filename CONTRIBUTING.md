@@ -333,7 +333,7 @@ their messages meaningful and keep any `Co-authored-by:` trailers intact.
 Contributors never release. Add user-visible changes under `## [Unreleased]` in
 `CHANGELOG.md`, and do not change `__version__` or add a dated `## [X.Y.Z]`
 section in an ordinary PR: a merged version change is what starts an automatic
-release. Maintainers open release PRs with `prepare-release.yml`; see
+release. Maintainers prepare release PRs with `release-please.yml`; see
 [`RELEASING.md`](RELEASING.md).
 
 ---
