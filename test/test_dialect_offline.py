@@ -2347,6 +2347,9 @@ class TestIsDisconnect:
                 "to type double. select  cast('lost connection' as double)+ cast(1 as double)...",
                 -494,
             ),
+            # Not recorded: a server code below the legacy CAS block (-1000 ..
+            # -1200); -1284 is ER_TRUNCATE_PK_REFERRED in CUBRID 11.4.6.
+            ("DatabaseError", "server text naming [connection refused]", -1284),
         ],
     )
     @pytest.mark.parametrize("variant", ["sync", "async"])
@@ -2370,8 +2373,9 @@ class TestIsDisconnect:
             (-190, "Failed to connect to database server, 'testdb', on the following host(s): h"),
             # Message 368 of the CUBRID 11.4.6 catalog.
             (-368, "Communication error during connect for testdb."),
-            # A legacy CAS code (-1xxx) is not a server code: its text is the CAS's own.
+            # A legacy CAS code (-1000 .. -1200) may be the CAS's own text.
             (-1003, "Cannot communicate with the broker"),
+            (-1200, "Cannot communicate with the broker"),
         ],
     )
     def test_pycubrid_connect_failure_codes_keep_message_fallback(

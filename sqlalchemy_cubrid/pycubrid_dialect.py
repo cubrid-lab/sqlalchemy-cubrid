@@ -422,15 +422,20 @@ class PyCubridDialect(CubridDialect):
             return False
         return errno in self._server_session_lost_codes or errno in self._pycubrid_legacy_cas_codes
 
-    # pycubrid receives CAS codes legacy-renumbered to -1xxx (see above), which
-    # overlaps the server codes below -1000, so only codes above -1000 are
-    # certainly the server's.
-    _server_code_floor = -1000
+    # pycubrid receives CAS codes legacy-renumbered by +9000 (see above):
+    # ``cas_error.h`` runs from CAS_ER_DBMS (-10000) to CAS_ER_IS (-10200), so
+    # they arrive as -1000 .. -1200 and overlap server codes there (CUBRID
+    # 11.4.6: ER_SM_ONLY_NORMAL_ATTRIBUTES is -1000, ER_JSON_INVALID_PATH
+    # -1200). A code inside that block may be the CAS's; any other negative
+    # code above ``_server_code_floor`` is certainly the server's.
+    _legacy_cas_code_block = range(-1200, -999)
 
     def _server_error_code(self, e: Exception) -> int | None:
         """Read the code from pycubrid's ``errno`` (its ``args`` hold only text)."""
         errno = getattr(e, "errno", None)
         if not isinstance(errno, int) or isinstance(errno, bool):
+            return None
+        if errno in self._legacy_cas_code_block:
             return None
         return self._as_server_code(errno)
 
