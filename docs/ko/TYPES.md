@@ -334,6 +334,18 @@ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 
 **ENUM 및 컬렉션 컬럼** (#631). `SHOW COLUMNS`는 네이티브 ENUM 값을 이스케이프하지 않아, 값 하나에 `', '`가 들어 있으면 별도 값 두 개와 출력이 같을 수 있습니다. `_db_domain`을 읽을 권한이 있는 사용자(일반적으로 DBA)에 대해서는 이 모호한 문자열을 나누지 않고 도메인 카탈로그에서 정확한 순서의 값을 읽습니다. DBA가 아닌 사용자의 특정 `-494` 권한 거부는 경고와 `NullType`으로 처리하며, 다른 카탈로그 오류는 그대로 전파합니다. 공개된 권한 있는 메타데이터 경로가 마련되기 전까지는 해당 사용자가 모델에 ENUM 타입을 직접 선언해야 합니다.
 
+**DBA가 아닌 사용자의 ENUM 리플렉션: 확인된 제한** (#641). 테스트한 소스 중에는 DBA가 아닌 사용자에게 ENUM 값을 모호하지 않게 제공하는 것이 없습니다. 권한을 부여받지 않은 사용자로 CUBRID 10.2.18, 11.0.16, 11.2.9, 11.4.6에서 자신의 테이블 `ENUM('a'', ''b', 'other')`(값 2개)와 `ENUM('a', 'b', 'other')`(값 3개)를 확인했습니다.
+
+| 후보 소스 | 네 버전 모두의 결과 |
+|---|---|
+| `SHOW COLUMNS`, `SHOW FULL COLUMNS`, `SHOW CREATE TABLE` | 두 테이블 모두 `ENUM('a', 'b', 'other')`로 출력 |
+| `db_attribute` | `data_type`이 `ENUM`일 뿐 값은 없음. 도메인의 값을 담은 다른 공개 카탈로그 뷰도 없음 |
+| `_db_domain` | `-494 SELECT is not authorized on _db_domain` |
+| 드라이버 메타데이터(pycubrid `cursor.description`, CCI 속성 스키마 정보) | 타입 코드만 있고 값은 없음 |
+| 컬럼 타입에 대한 SQL 식(정수와의 `UNION ALL`, `COALESCE`, `IFNULL`, `CASE`, `NVL2`, 값 또는 값이 아닌 문자열과의 비교) | 정수는 정수로, 문자열은 문자열로 남고 값이 아닌 문자열도 허용되므로 값의 위치와 포함 여부를 알 수 없음 |
+
+따라서 이런 컬럼은 계속 경고와 함께 `NullType`으로 리플렉트됩니다. CUBRIDdb와 JDBC의 메타데이터 호출은 테스트하지 않았습니다. 이는 위 버전에서 확인한 동작이며, 이후 서버에 대한 설명은 아닙니다.
+
 `SHOW COLUMNS`는 컬렉션을 `SET OF NUMERIC,VARCHAR`(`MULTISET OF ...`, `SEQUENCE OF ...`도 동일하며 `LIST`는 `SEQUENCE`로 출력) 형태로 출력하고 멤버의 길이·정밀도를 생략하거나 순서를 바꿀 수 있습니다. 공개 뷰 `db_attr_setdomain_elm`은 멤버의 정밀도·스케일·객체 도메인 클래스를 제공합니다. 방언은 이 행들이 출력된 모든 멤버 타입 계열을 설명할 때만 사용합니다. 행이 누락되거나 모순되면 잘못된 DDL을 만드는 대신 경고와 `NullType`을 반환합니다. 클래스가 삭제된(클래스 없이 나열되는) OBJECT 멤버와 방언이 표현할 수 없는 멤버 타입은 경고와 함께 `NullType`을 반환하며, 테이블의 나머지 컬럼은 그대로 리플렉트됩니다. `MONETARY` 멤버는 `MONETARY`로 리플렉트됩니다. `SHOW COLUMNS`가 같은 이름을 두 번 나열하는 컬럼(같은 이름의 `CLASS ATTRIBUTE`)은 ENUM·컬렉션 컬럼일 때 경고와 함께 `NullType`을 반환하며, 카탈로그 조회는 인스턴스 속성만 읽습니다. CUBRID 11.2 이상에서 클래스 소유자가 테이블 소유자와 다른 OBJECT 멤버는 `owner.class`로 리플렉트됩니다. `ENUM` 멤버(`SET(ENUM('x', 'y'))`, 값 없이 나열됨)는 경고와 함께 `NullType`을 반환합니다. 멤버는 뷰가 나열하는 순서를 따르며, 지원 서버에서는 선언 순서입니다. 멤버 콜레이션(`VARCHAR(10) COLLATE utf8_bin`)은 뷰에 없으므로 리플렉트되지 않습니다. 멤버 타입 없이 선언된 컬렉션은 `db_attribute`에서 종류를 읽어 `SET()` / `MULTISET()` / `SEQUENCE()`로 리플렉트합니다. ENUM 카탈로그 접근 권한과 완전한 컬렉션 도메인 정보가 있을 때 `metadata.reflect()` 후 `create_all()`로 CUBRID 10.2, 11.2, 11.4에서 검증한 DDL을 재생성했으며, 11.0은 야간 매트릭스 검증 대상입니다. 이는 DBA가 아닌 사용자의 ENUM 전체 리플렉션을 보장한다는 뜻은 아닙니다.
 
 CUBRID 11.2 이상에서 OBJECT 멤버의 도메인 소유자 또는 리플렉트한 테이블의 소유자를 확인할 수 없어도 경고와 `NullType`을 반환합니다. 소유자 없는 클래스 이름을 출력하면 다른 소유자의 클래스로 해석될 수 있기 때문입니다.
