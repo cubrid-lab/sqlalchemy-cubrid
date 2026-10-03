@@ -2338,6 +2338,28 @@ class TestIsDisconnect:
         exc = pycubrid.OperationalError("-20004 opaque")
         exc.__cause__ = ConnectionResetError(104, "reset")
         assert dialect.is_disconnect(exc, None, None) is True
+        # The read-timeout path: pycubrid raises from the socket's TimeoutError.
+        exc = pycubrid.OperationalError("socket communication timed out")
+        exc.__cause__ = TimeoutError("timed out")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @pytest.mark.parametrize("legacy_class", [False, True])
+    def test_asyncio_timeout_cause_is_disconnect(self, pycubrid_dialect, monkeypatch, legacy_class):
+        """aiopycubrid's read timeout retires the session, so it disconnects (#624).
+
+        ``asyncio.TimeoutError`` is an ``OSError`` only from Python 3.11; on
+        3.10 it is a separate class, simulated here by ``legacy_class``.
+        """
+        import asyncio
+
+        if legacy_class:
+            monkeypatch.setattr(asyncio, "TimeoutError", type("TimeoutError", (Exception,), {}))
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.OperationalError(
+            "read timeout: no complete round trip within read_timeout=1.0s"
+        )
+        exc.__cause__ = asyncio.TimeoutError()
+        assert dialect.is_disconnect(exc, None, None) is True
 
     def test_pycubrid_failed_reconnect_is_disconnect(self, pycubrid_dialect):
         """pycubrid's failed CHECK_CAS reconnect leaves the connection closed."""
