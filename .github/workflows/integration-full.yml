@@ -1,14 +1,12 @@
 name: Integration Full Matrix
 
 # Full Python x CUBRID compatibility validation.
-# Regular CI runs {3.10, 3.14} x all CUBRID versions on every PR/push.
-# This workflow runs the full 5x4 matrix on a nightly schedule, on demand
+# Routine CI uses representative combinations; see docs/CI_POLICY.md.
+# Full verification runs only on explicit dispatch or a release workflow call.
 # (workflow_dispatch), and as the release gate: release.yml calls it through
 # workflow_call with the release commit SHA.
 
 on:
-  schedule:
-    - cron: "0 3 * * *"
   workflow_dispatch:
   workflow_call:
     inputs:
@@ -17,8 +15,8 @@ on:
         required: true
         type: string
 
-# A release call gets its own group per SHA and is never cancelled; a nightly
-# or manual run keeps the per-ref group that replaces an older pending run.
+# Full verification runs only on explicit dispatch or a release workflow call.
+# Manual runs replace older pending runs; release calls are isolated by SHA.
 concurrency:
   group: integration-full-${{ inputs.sha && format('release-{0}', inputs.sha) || github.ref }}
   cancel-in-progress: ${{ !inputs.sha }}
@@ -201,7 +199,7 @@ jobs:
     # (#575): the whole `integration`-marked suite in one pytest session, as
     # contributors run it locally. PR CI runs only the default pycubrid cell
     # (ci.yml); the CUBRIDdb session takes a C-extension build and another
-    # full-suite run, so it runs here, nightly and as the release gate.
+    # full-suite run, so it runs here, on full dispatch and as the release gate.
     name: make integration (${{ matrix.driver }}, CUBRID ${{ matrix.cubrid-version }})
     runs-on: ubuntu-latest
     strategy:

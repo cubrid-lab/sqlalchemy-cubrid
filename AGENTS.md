@@ -255,16 +255,18 @@ The dialect translates automatically in `create_connect_args()`.
 
 | File | Trigger | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | Push to main, PRs | Lint + offline tests (Py 3.10–3.14) + regular integration matrix |
-| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), manual dispatch, `workflow_call` from `release.yml` | Full Python × CUBRID compatibility matrix |
+| `.github/workflows/ci.yml` | PR, main, weekly, manual | Minimum PR smoke and representative integration; see docs/CI_POLICY.md |
+| `.github/workflows/integration-full.yml` | Manual dispatch, release workflow_call | Full supported compatibility matrix |
 | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`) | Open the `chore: release vX.Y.Z` PR (dated CHANGELOG section + version bump) |
 | `.github/workflows/release.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
 
 ### CI Matrix
 
-- **Offline (every PR/push)**: Python 3.10, 3.11, 3.12, 3.13, 3.14
-- **Integration (every PR/push)**: reduced matrix, 2 combinations — Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest)
-- **Integration full (nightly + dispatch + every release)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
+- PR runtime smoke: Ubuntu/Python 3.12 only, selected for code changes.
+- High-risk PR integration: Python 3.14/CUBRID 11.4; targeted extra lanes.
+- main and changed-weekly: one full offline coverage lane, oldest/newest live endpoints.
+- Full integration: manual and every release; no automatic nightly full matrix.
+- Details, change classification and gate requirements: [CI policy](docs/CI_POLICY.md).
 
 ## Documentation Map
 
