@@ -489,3 +489,50 @@ def test_correct_for_autogen_foreignkeys_matches_by_name_first() -> None:
     impl.correct_for_autogen_foreignkeys({conn_plain, conn_cascade}, {md_plain, md_cascade})
     assert conn_plain.ondelete is None
     assert conn_cascade.ondelete == "RESTRICT"
+
+
+def test_correct_for_autogen_foreignkeys_ignores_same_name_on_other_columns() -> None:
+    """A same-named model FK on different columns is not the reflected FK (#624).
+
+    The reflected ``fk_x(a)`` is then compared with the model FKs that cover
+    ``a``; the one here names RESTRICT explicitly, so it stays.
+    """
+    from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+    def _table(metadata, *fks):
+        sa.Table("parent", metadata, sa.Column("id", sa.Integer, primary_key=True))
+        child = sa.Table(
+            "child",
+            metadata,
+            sa.Column("id", sa.Integer, primary_key=True),
+            sa.Column("a", sa.Integer),
+            sa.Column("b", sa.Integer),
+        )
+        for fk in fks:
+            child.append_constraint(fk)
+        return fks
+
+    impl = CubridImpl(CubridDialect(), None, False, False, None, {})
+    (conn_fk,) = _table(
+        sa.MetaData(),
+        sa.ForeignKeyConstraint(["a"], ["parent.id"], name="fk_x", ondelete="RESTRICT"),
+    )
+    md_other_columns, md_same_columns = _table(
+        sa.MetaData(),
+        sa.ForeignKeyConstraint(["b"], ["parent.id"], name="fk_x"),
+        sa.ForeignKeyConstraint(["a"], ["parent.id"], ondelete="RESTRICT"),
+    )
+    impl.correct_for_autogen_foreignkeys({conn_fk}, {md_other_columns, md_same_columns})
+    assert conn_fk.ondelete == "RESTRICT"
+
+    # With no model FK on the same columns there is nothing to compare against.
+    (conn_fk,) = _table(
+        sa.MetaData(),
+        sa.ForeignKeyConstraint(["a"], ["parent.id"], name="fk_x", ondelete="RESTRICT"),
+    )
+    (md_other_columns,) = _table(
+        sa.MetaData(),
+        sa.ForeignKeyConstraint(["b"], ["parent.id"], name="fk_x"),
+    )
+    impl.correct_for_autogen_foreignkeys({conn_fk}, {md_other_columns})
+    assert conn_fk.ondelete == "RESTRICT"

@@ -416,15 +416,18 @@ class CubridImpl(DefaultImpl):
                 metadata_by_name[fk.name] = fk
             metadata_by_key.setdefault(self._fk_match_key(fk), []).append(fk)
         for conn_fk in conn_fks:
-            # Match by name when both sides are named; otherwise every model
-            # FK on the same columns and target is a candidate, and RESTRICT
-            # is cleared only if none of them names an action.
+            # Match by name when both sides are named and cover the same
+            # columns and target; a same-named model FK on other columns is
+            # a different constraint (#624). Otherwise every model FK on the
+            # same columns and target is a candidate. The reflected FK
+            # cannot be paired with one of them, so RESTRICT is cleared only
+            # if none names an action: keeping it reports at most a real
+            # difference, while clearing it could hide one.
+            conn_key = self._fk_match_key(conn_fk)
             named = metadata_by_name.get(conn_fk.name) if isinstance(conn_fk.name, str) else None
-            candidates = (
-                [named]
-                if named is not None
-                else metadata_by_key.get(self._fk_match_key(conn_fk), [])
-            )
+            if named is not None and self._fk_match_key(named) != conn_key:
+                named = None
+            candidates = [named] if named is not None else metadata_by_key.get(conn_key, [])
             if not candidates:
                 continue
             for option in ("ondelete", "onupdate"):
