@@ -43,7 +43,9 @@ jobs:
       - name: Install test and packaging dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install -e ".[pycubrid,alembic]" pytest pytest-asyncio hypothesis build twine
+          # PyYAML: test_ci_policy.py and test_release_workflows.py import yaml
+          # at collection; the dev extra only brings it in through pre-commit.
+          python -m pip install -e ".[pycubrid,alembic]" pytest pytest-asyncio hypothesis PyYAML build twine
           python -m pip freeze
       - name: Run offline regressions
         run: python -m pytest test/ -m "not integration and not repo" -q

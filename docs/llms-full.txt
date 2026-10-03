@@ -7145,6 +7145,11 @@ fail the run normally. It is separate from required PR checks and release gates;
 there is no new schedule, PR matrix cell or CUBRID provisioning. This lane alone
 does not establish official support, live database or free-threaded compatibility.
 
+GitHub dispatches a manual workflow only after its file is on the default
+branch, so the lane cannot run before it is merged. Its first run is made at
+the merged commit and recorded on the tracking issue; ordinary PR CI is not
+Python 3.15 evidence.
+
 ---
 
 # Release-please migration validation
