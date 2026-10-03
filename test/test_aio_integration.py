@@ -1,16 +1,25 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 import json
 import os
+from decimal import Decimal
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from unittest.mock import patch
 
 import pytest
 import pytest_asyncio
+import sqlalchemy as sa
 from sqlalchemy import Column, Integer, MetaData, String, Table, select, text
-from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
+from sqlalchemy.engine import URL
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from sqlalchemy_cubrid import DOUBLE, MULTISET, SEQUENCE, SET
+
+from scripts.integration_urls import async_url
 
 _DEFAULT_SYNC_URL = "cubrid://dba@localhost:33000/testdb"
 
@@ -23,45 +32,15 @@ class SupportsPing(Protocol):
     def ping(self, reconnect: bool = True) -> bool: ...
 
 
-def _async_url() -> str:
+def _async_url() -> URL:
     sync = os.environ.get("CUBRID_TEST_URL", _DEFAULT_SYNC_URL)
-    return sync.replace("cubrid://", "cubrid+aiopycubrid://", 1)
+    return async_url(sync, os.environ.get("CUBRID_TEST_AURL"))
 
 
-def _can_connect_async() -> bool:
-    async def _probe() -> bool:
-        engine = create_async_engine(_async_url())
-        try:
-            async with engine.connect() as conn:
-                _ = await conn.execute(text("SELECT 1"))
-            return True
-        finally:
-            await engine.dispose()
-
-    try:
-        return asyncio.run(_probe())
-    except Exception:
-        return False
-
-
-# In CI, CUBRID is intentionally provisioned — connectivity failure
-# should be a hard test error, not a silent skip.  Locally, developers
-# without a running CUBRID instance get a skip.
-_in_ci = os.environ.get("CI", "").lower() in ("true", "1")
-_available = _can_connect_async()
-if _in_ci and not _available:
-    pytest.fail(
-        "CUBRID async instance is NOT reachable but CI=true — "
-        "integration tests must not be silently skipped in CI. "
-        "Check the CUBRID service container.",
-        pytrace=False,
-    )
-
+# The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
+# unset and errors them when its server is unreachable (#593).
 pytestmark = [
-    pytest.mark.skipif(
-        not _available,
-        reason="CUBRID async instance not available (set CUBRID_TEST_URL)",
-    ),
+    pytest.mark.integration,
     pytest.mark.asyncio,
 ]
 
@@ -220,16 +199,29 @@ class TestAsyncCRUD:
                 )
             )
 
+    async def test_driver_connection_is_pycubrid_aio_connection(self, engine: AsyncEngine):
+        pycubrid_aio = pytest.importorskip("pycubrid.aio")
+        async with engine.connect() as conn:
+            raw = await conn.get_raw_connection()
+            driver_conn = cast(Any, raw.driver_connection)
+            assert isinstance(driver_conn, pycubrid_aio.AsyncConnection)
+            assert driver_conn is cast(Any, raw.dbapi_connection)._connection
+            # Driver-level async APIs work on the returned object.
+            assert await driver_conn.ping(False) is True
+            cursor = driver_conn.cursor()
+            try:
+                await cursor.execute("SELECT 1")
+                assert await cursor.fetchall() == [(1,)]
+            finally:
+                await cursor.close()
+
     async def test_pool_pre_ping_recovers_after_connection_drop(
         self,
         pre_ping_engine: AsyncEngine,
     ):
         async with pre_ping_engine.connect() as conn:
             raw = await conn.get_raw_connection()
-            dropped_driver_connection = cast(
-                object,
-                getattr(cast(object, raw.driver_connection), "_connection"),
-            )
+            dropped_driver_connection = cast(object, raw.driver_connection)
             close_streams = cast(
                 Callable[[], Awaitable[None]],
                 getattr(dropped_driver_connection, "_close_streams"),
@@ -248,10 +240,7 @@ class TestAsyncCRUD:
         with patch.object(dialect, "do_ping", side_effect=record_do_ping):
             async with pre_ping_engine.connect() as conn:
                 raw = await conn.get_raw_connection()
-                recovered_driver_connection = cast(
-                    object,
-                    getattr(cast(object, raw.driver_connection), "_connection"),
-                )
+                recovered_driver_connection = cast(object, raw.driver_connection)
                 result = await conn.execute(text("SELECT 1"))
                 assert result.scalar_one() == 1
 
@@ -377,3 +366,597 @@ class TestAsyncJSON:
 
         async with engine.begin() as conn:
             _ = await conn.execute(text("DROP TABLE IF EXISTS aio_test_json_orm"))
+
+
+# ---------------------------------------------------------------------------
+# #485: SQLAlchemy-facing BLOB/CLOB value contract (async)
+# ---------------------------------------------------------------------------
+# Moved to the dedicated test/test_lob_value_contract.py (sync and async,
+# Core and ORM, in one module) instead of growing this already very large
+# file further.
+
+
+# PEP 249 module-level names; kept in sync with the offline copy in
+# test_aio_pycubrid_dialect.py. This live lane installs the released pycubrid,
+# so the parity check runs against the real driver here (#500).
+_PEP249_NAMES = (
+    "apilevel",
+    "threadsafety",
+    "paramstyle",
+    "Warning",
+    "Error",
+    "InterfaceError",
+    "DatabaseError",
+    "DataError",
+    "OperationalError",
+    "IntegrityError",
+    "InternalError",
+    "ProgrammingError",
+    "NotSupportedError",
+    "Date",
+    "Time",
+    "Timestamp",
+    "DateFromTicks",
+    "TimeFromTicks",
+    "TimestampFromTicks",
+    "Binary",
+    "STRING",
+    "BINARY",
+    "NUMBER",
+    "DATETIME",
+    "ROWID",
+)
+
+
+@pytest.mark.parametrize("name", _PEP249_NAMES)
+def test_adapter_exposes_every_pycubrid_pep249_name(engine: AsyncEngine, name: str):
+    pycubrid = pytest.importorskip("pycubrid")
+    if not hasattr(pycubrid, name):
+        pytest.skip(f"pycubrid {pycubrid.__version__} does not define {name}")
+    dbapi = cast(object, engine.dialect.dbapi)
+    assert getattr(dbapi, name) is getattr(pycubrid, name)
+
+
+# ---------------------------------------------------------------------------
+# #481: results are never silently truncated across commit or rollback
+# ---------------------------------------------------------------------------
+
+# More rows than pycubrid's default FETCH batch (``fetch_size=100``), each wide
+# enough that the broker's first response holds only ~16 of them.
+_WIDE_ROWS = 500
+_WIDE_PAYLOAD = "x" * 1000
+_FETCHMANY_SIZE = 17
+
+
+class TestAsyncResultCompletenessAcrossTransactionBoundary:
+    """``AsyncConnection.execute()`` results across commit/rollback.
+
+    SQLAlchemy's async DB-API adapter reads every row of a non-streaming result
+    before ``execute()`` returns, so no FETCH happens after the boundary and the
+    result stays complete. ``AsyncConnection.stream()`` is not available: the
+    dialect does not support server-side cursors. The raw driver-cursor case
+    below exercises the lazily fetching ``pycubrid.aio`` cursor directly.
+    """
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def wide_table(self, engine: AsyncEngine) -> AsyncIterator[Table]:
+        table = Table(
+            "aio_test_rc481",
+            MetaData(),
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", String(1000)),
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(table.drop, checkfirst=True)
+            await conn.run_sync(table.create)
+            _ = await conn.execute(
+                table.insert(), [{"id": i, "payload": _WIDE_PAYLOAD} for i in range(_WIDE_ROWS)]
+            )
+        yield table
+        async with engine.begin() as conn:
+            await conn.run_sync(table.drop, checkfirst=True)
+
+    @pytest.mark.parametrize("method", ["fetchone", "fetchmany", "fetchall"])
+    @pytest.mark.parametrize("boundary", ["commit", "rollback", "none"])
+    async def test_unfinished_result_is_complete_or_raises(
+        self, engine: AsyncEngine, wide_table: Table, boundary: str, method: str
+    ):
+        async with engine.connect() as conn:
+            _ = (await conn.execute(text("SELECT 1"))).all()
+            result = await conn.execute(
+                select(wide_table.c.id, wide_table.c.payload).order_by(wide_table.c.id)
+            )
+            first = result.fetchone()
+            assert first is not None
+            if boundary == "commit":
+                await conn.commit()
+            elif boundary == "rollback":
+                await conn.rollback()
+            rest: list[sa.Row[tuple[int, str]]] = []
+            try:
+                if method == "fetchall":
+                    rest = list(result.fetchall())
+                elif method == "fetchmany":
+                    while part := result.fetchmany(_FETCHMANY_SIZE):
+                        rest.extend(part)
+                else:
+                    while (row := result.fetchone()) is not None:
+                        rest.append(row)
+            except sa.exc.DBAPIError:
+                if boundary == "none":
+                    raise
+                return  # an explicit failure satisfies the contract
+        ids = [first.id] + [row.id for row in rest]
+        assert len(ids) == _WIDE_ROWS, f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
+        assert ids == list(range(_WIDE_ROWS))
+        assert all(row.payload == _WIDE_PAYLOAD for row in rest)
+
+    @pytest.mark.parametrize("boundary", ["commit", "rollback"])
+    async def test_raw_driver_cursor_is_complete_or_raises(
+        self,
+        engine: AsyncEngine,
+        wide_table: Table,
+        boundary: str,
+    ):
+        """The aiopycubrid driver cursor itself, which fetches lazily.
+
+        SQLAlchemy's buffering hides pycubrid#395 above, so this case drives the
+        underlying ``pycubrid.aio`` connection directly: execute, fetch one row,
+        end the transaction, then fetch the rest.
+        """
+        async with engine.connect() as conn:
+            driver_conn = cast(Any, (await conn.get_raw_connection()).driver_connection)
+            cursor = driver_conn.cursor()
+            try:
+                await cursor.execute("SELECT 1")
+                assert await cursor.fetchall() == [(1,)]
+                await cursor.execute("SELECT id, payload FROM aio_test_rc481 ORDER BY id")
+                # The first response must not hold the whole result.
+                assert 0 < cursor._fetched_count < _WIDE_ROWS
+                first = await cursor.fetchone()
+                # Checked before the boundary, so it holds even when the rest raises.
+                assert first is not None and first[0] == 0 and first[1] == _WIDE_PAYLOAD
+                if boundary == "commit":
+                    await driver_conn.commit()
+                else:
+                    await driver_conn.rollback()
+                pycubrid = pytest.importorskip("pycubrid")
+                try:
+                    rest: list[tuple[Any, ...]] | None = list(await cursor.fetchall())
+                except pycubrid.Error:
+                    rest = None  # an explicit failure satisfies the contract
+                if rest is not None:
+                    # Everything returned, including the row fetchone() consumed,
+                    # is an in-order prefix with intact payloads.
+                    returned = [first, *rest]
+                    ids = [row[0] for row in returned]
+                    assert ids == list(range(len(ids)))
+                    assert all(row[1] == _WIDE_PAYLOAD for row in returned)
+                if rest is not None:
+                    assert len(ids) == _WIDE_ROWS, (
+                        f"silently truncated: {len(ids)} of {_WIDE_ROWS} rows"
+                    )
+            finally:
+                await cursor.close()
+
+
+# ---------------------------------------------------------------------------
+# #480: constraint violations surface as sqlalchemy.exc.IntegrityError
+# ---------------------------------------------------------------------------
+
+
+class _AsyncIntegrityBase(DeclarativeBase):
+    pass
+
+
+class _AsyncIntegrityParent(_AsyncIntegrityBase):
+    __tablename__ = "aio_test_ie480_parent"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    name: Mapped[str | None] = mapped_column(String(20), nullable=False)
+
+
+class _AsyncIntegrityChild(_AsyncIntegrityBase):
+    __tablename__ = "aio_test_ie480_child"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    parent_id: Mapped[int] = mapped_column(sa.ForeignKey("aio_test_ie480_parent.id"))
+
+
+# kind -> (mapped class, values violating the constraint, native CUBRID error
+# code); parent 1 always exists.
+_ASYNC_INTEGRITY_VIOLATIONS: dict[str, tuple[type[_AsyncIntegrityBase], dict[str, object], int]] = {
+    "not_null": (_AsyncIntegrityParent, {"id": 2, "name": None}, -631),
+    "foreign_key": (_AsyncIntegrityChild, {"id": 1, "parent_id": 999}, -922),
+    "unique_pk": (_AsyncIntegrityParent, {"id": 1, "name": "duplicate"}, -670),  # control
+}
+
+
+def _assert_integrity_error(engine: AsyncEngine, exc: sa.exc.DBAPIError) -> None:
+    assert isinstance(exc, sa.exc.IntegrityError), (
+        f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
+        f"wrapping {type(exc.orig).__module__}.{type(exc.orig).__name__}"
+    )
+    assert isinstance(exc.orig, engine.dialect.loaded_dbapi.IntegrityError)
+
+
+def _integrity_counts(conn: sa.Connection) -> tuple[int, int]:
+    parents, children = (
+        conn.execute(select(sa.func.count()).select_from(model)).scalar_one()
+        for model in (_AsyncIntegrityParent, _AsyncIntegrityChild)
+    )
+    return parents, children
+
+
+async def _dbapi_connection(conn: Any) -> Any:
+    return (await conn.get_raw_connection()).dbapi_connection
+
+
+class TestAsyncIntegrityErrorContract:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _integrity_tables(self, engine: AsyncEngine) -> AsyncIterator[None]:
+        async with engine.begin() as conn:
+            await conn.run_sync(_AsyncIntegrityBase.metadata.drop_all)
+            await conn.run_sync(_AsyncIntegrityBase.metadata.create_all)
+            _ = await conn.execute(sa.insert(_AsyncIntegrityParent), {"id": 1, "name": "parent"})
+        yield
+        async with engine.begin() as conn:
+            await conn.run_sync(_AsyncIntegrityBase.metadata.drop_all)
+
+    @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
+    async def test_core_violation_raises_integrity_error(self, engine: AsyncEngine, kind: str):
+        model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        async with engine.connect() as conn:
+            raw = await _dbapi_connection(conn)
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                _ = await conn.execute(sa.insert(model), values)
+            assert not excinfo.value.connection_invalidated
+            await conn.rollback()
+            # The same AsyncConnection, on the same DBAPI connection, runs new
+            # statements after the rollback.
+            assert not conn.invalidated
+            assert await _dbapi_connection(conn) is raw
+            assert await conn.run_sync(_integrity_counts) == (1, 0)
+            _ = await conn.execute(sa.insert(_AsyncIntegrityChild), {"id": 10, "parent_id": 1})
+            assert await conn.run_sync(_integrity_counts) == (1, 1)
+            await conn.rollback()
+        assert excinfo.value.orig.code == code  # pycubrid Error.code
+        _assert_integrity_error(engine, excinfo.value)
+
+    @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
+    async def test_orm_flush_violation_raises_integrity_error(self, engine: AsyncEngine, kind: str):
+        model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        # The AsyncSession is bound to one AsyncConnection, so after its rollback
+        # it keeps using that connection and its DBAPI connection.
+        async with engine.connect() as conn, AsyncSession(bind=conn) as session:
+            raw = await _dbapi_connection(conn)
+            session.add(model(**values))
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                await session.flush()
+            assert not excinfo.value.connection_invalidated
+            await session.rollback()
+            assert not conn.invalidated
+            assert await session.connection() is conn
+            assert await _dbapi_connection(conn) is raw
+            session.add(_AsyncIntegrityChild(id=10, parent_id=1))
+            await session.flush()
+            assert await conn.run_sync(_integrity_counts) == (1, 1)
+            await session.rollback()
+        assert excinfo.value.orig.code == code  # pycubrid Error.code
+        _assert_integrity_error(engine, excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# #482: the cursor.description subset observable through SQLAlchemy
+# ---------------------------------------------------------------------------
+
+# column -> (SQLAlchemy type, nullable, CUBRID type code); same expectations as
+# the sync pycubrid lane in test_integration.py.
+_DESC_COLUMNS: dict[str, tuple[Any, bool, int]] = {
+    "id": (Integer, False, 8),
+    "nn": (String(20), False, 2),
+    "nl": (String(20), True, 2),
+    "bi": (sa.BigInteger, True, 21),
+    "n": (sa.Numeric(10, 2), True, 7),
+    "d": (DOUBLE, True, 12),
+    "dt": (sa.Date, True, 13),
+    "ts": (sa.TIMESTAMP, True, 15),
+}
+_DESC_ROW: dict[str, Any] = {
+    "id": 1,
+    "nn": "a",
+    "nl": None,
+    "bi": 2,
+    "n": Decimal("3.50"),
+    "d": 1.5,
+    "dt": datetime.date(2020, 1, 2),
+    "ts": datetime.datetime(2020, 1, 2, 3, 4, 5),
+}
+# column -> (collection type, pycubrid type code: SET 16, MULTISET 17, SEQUENCE 18).
+_DESC_COLLECTIONS: dict[str, tuple[Any, int]] = {
+    "s": (SET, 16),
+    "ms": (MULTISET, 17),
+    "sq": (SEQUENCE, 18),
+}
+# CUBRID collection literals cannot be bound as parameters portably (#484).
+_DESC_COLLECTION_ROW = text(
+    "INSERT INTO aio_test_cd482_coll (id, s, ms, sq) VALUES (1, {1,2}, {1,1}, {2,1})"
+)
+_DESC_TEXTUAL = text("SELECT id, nn AS alias, bi + 1 AS expr, 1 + 1 FROM aio_test_cd482")
+
+_desc_metadata = MetaData()
+_desc_table = Table(
+    "aio_test_cd482",
+    _desc_metadata,
+    *(
+        Column(name, type_, primary_key=name == "id", autoincrement=False, nullable=nullable)
+        for name, (type_, nullable, _) in _DESC_COLUMNS.items()
+    ),
+)
+_desc_collections = Table(
+    "aio_test_cd482_coll",
+    _desc_metadata,
+    Column("id", Integer, primary_key=True, autoincrement=False),
+    *(Column(name, kind(Integer())) for name, (kind, _) in _DESC_COLLECTIONS.items()),
+)
+
+
+def _description(result: sa.CursorResult[Any]) -> list[tuple[Any, ...]]:
+    assert result.cursor is not None and result.cursor.description is not None
+    return [tuple(d) for d in result.cursor.description]
+
+
+class TestAsyncCursorDescriptionContract:
+    @pytest_asyncio.fixture(autouse=True)
+    async def _description_tables(self, engine: AsyncEngine) -> AsyncIterator[None]:
+        async with engine.begin() as conn:
+            await conn.run_sync(_desc_metadata.drop_all)
+            await conn.run_sync(_desc_metadata.create_all)
+            _ = await conn.execute(_desc_table.insert(), _DESC_ROW)
+            _ = await conn.execute(_DESC_COLLECTION_ROW)
+        yield
+        async with engine.begin() as conn:
+            await conn.run_sync(_desc_metadata.drop_all)
+
+    async def test_textual_sql_column_names(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            result = await conn.execute(_DESC_TEXTUAL)
+            names = [d[0] for d in _description(result)]
+            keys = list(result.keys())
+            row = result.one()
+        assert names == keys == ["id", "alias", "expr", "1+1"]
+        assert row._mapping["alias"] == "a" and row.expr == 3
+
+    async def test_core_select_keys_match_description(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            reflected = await conn.run_sync(
+                lambda sync_conn: Table("aio_test_cd482", MetaData(), autoload_with=sync_conn)
+            )
+            result = await conn.execute(select(reflected))
+            names = [d[0] for d in _description(result)]
+            assert list(result.keys()) == names == list(_DESC_COLUMNS)
+
+    async def test_scalar_type_codes(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            result = await conn.execute(select(_desc_table))
+            codes = {d[0]: d[1] for d in _description(result)}
+        assert codes == {name: spec[2] for name, spec in _DESC_COLUMNS.items()}
+
+    async def test_null_ok(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            result = await conn.execute(select(_desc_table))
+            null_ok = {d[0]: bool(d[6]) for d in _description(result)}
+        assert null_ok == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
+
+    async def test_reflected_nullability_uses_catalog(self, engine: AsyncEngine):
+        """Reflection reads nullability from the catalog, not cursor.description."""
+        async with engine.connect() as conn:
+            columns = await conn.run_sync(
+                lambda sync_conn: sa.inspect(sync_conn).get_columns("aio_test_cd482")
+            )
+        nullable = {c["name"]: c["nullable"] for c in columns}
+        assert nullable == {name: spec[1] for name, spec in _DESC_COLUMNS.items()}
+
+    async def test_collection_type_codes(self):
+        # A dedicated engine keeps any broken connection out of the shared pool:
+        # pycubrid < 1.8.0 misreads the collection column header.
+        engine = create_async_engine(_async_url())
+        try:
+            async with engine.connect() as conn:
+                result = await conn.execute(
+                    select(*(_desc_collections.c[name] for name in _DESC_COLLECTIONS))
+                )
+                codes = {d[0]: d[1] for d in _description(result)}
+                assert len(result.all()) == 1
+            assert codes == {name: spec[1] for name, spec in _DESC_COLLECTIONS.items()}
+        finally:
+            await engine.dispose()
+
+    async def test_sync_and_async_descriptions_agree(self, engine: AsyncEngine):
+        """Names, type codes and null_ok match the sync pycubrid dialect."""
+        async with engine.connect() as conn:
+            result = await conn.execute(select(_desc_table))
+            async_desc = [(d[0], d[1], bool(d[6])) for d in _description(result)]
+        sync_engine = sa.create_engine(_async_url().set(drivername="cubrid+pycubrid"))
+        try:
+            with sync_engine.connect() as sync_conn:
+                sync_result = sync_conn.execute(select(_desc_table))
+                sync_desc = [(d[0], d[1], bool(d[6])) for d in _description(sync_result)]
+                sync_result.all()
+        finally:
+            sync_engine.dispose()
+        assert async_desc == sync_desc
+
+
+class TestAsyncIsolationLevelAcrossTransactionBoundaries:
+    """The configured isolation level survives commit, rollback and pool checkin (#505)."""
+
+    async def test_engine_level_survives_commit_rollback_and_checkin(self):
+        eng = create_async_engine(
+            _async_url(), isolation_level="SERIALIZABLE", pool_size=1, max_overflow=0
+        )
+        try:
+            async with eng.connect() as conn:
+                dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+                _ = await conn.execute(text("SELECT 1"))
+                await conn.commit()
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+                _ = await conn.execute(text("SELECT 1"))
+                await conn.rollback()
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+
+            async with eng.connect() as conn:
+                assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+                assert await conn.get_isolation_level() == "SERIALIZABLE"
+        finally:
+            await eng.dispose()
+
+    async def test_connection_level_survives_commit_and_rollback(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            conn = await conn.execution_options(isolation_level="REPEATABLE READ")
+            _ = await conn.execute(text("SELECT 1"))
+            await conn.commit()
+            assert await conn.get_isolation_level() == "REPEATABLE READ"
+            _ = await conn.execute(text("SELECT 1"))
+            await conn.rollback()
+            assert await conn.get_isolation_level() == "REPEATABLE READ"
+
+
+class TestAsyncAutocommitIsolationLevel:
+    """``isolation_level="AUTOCOMMIT"`` and engine-level restore on aiopycubrid (#501)."""
+
+    TABLE = "aio_iso501_autocommit"
+
+    @pytest_asyncio.fixture
+    async def observer(self) -> AsyncIterator[Callable[[int], Awaitable[int]]]:
+        """A second session that sees only committed rows."""
+        eng = create_async_engine(_async_url(), poolclass=sa.pool.NullPool)
+        async with eng.begin() as conn:
+            _ = await conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+            _ = await conn.execute(text(f"CREATE TABLE {self.TABLE} (id INT)"))
+
+        async def committed(row_id: int) -> int:
+            async with eng.connect() as conn:
+                result = await conn.execute(
+                    text(f"SELECT COUNT(*) FROM {self.TABLE} WHERE id = :id"), {"id": row_id}
+                )
+                return int(result.scalar_one())
+
+        yield committed
+        async with eng.begin() as conn:
+            _ = await conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+        await eng.dispose()
+
+    @pytest_asyncio.fixture
+    async def make_engine(self) -> AsyncIterator[Callable[..., AsyncEngine]]:
+        engines: list[AsyncEngine] = []
+
+        def make(**kw: Any) -> AsyncEngine:
+            eng = create_async_engine(_async_url(), pool_size=1, max_overflow=0, **kw)
+            engines.append(eng)
+            return eng
+
+        yield make
+        for eng in engines:
+            await eng.dispose()
+
+    async def _insert(self, conn: Any, row_id: int) -> None:
+        _ = await conn.execute(text(f"INSERT INTO {self.TABLE} VALUES (:id)"), {"id": row_id})
+
+    @pytest.mark.parametrize("path", ["create_engine", "engine_options", "connection_options"])
+    async def test_autocommit_row_is_visible_before_commit_and_survives_rollback(
+        self,
+        observer: Callable[[int], Awaitable[int]],
+        make_engine: Callable[..., AsyncEngine],
+        path: str,
+    ):
+        if path == "create_engine":
+            eng = make_engine(isolation_level="AUTOCOMMIT")
+        elif path == "engine_options":
+            eng = make_engine().execution_options(isolation_level="AUTOCOMMIT")
+        else:
+            eng = make_engine()
+        async with eng.connect() as conn:
+            if path == "connection_options":
+                conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            await self._insert(conn, 1)
+            assert await observer(1) == 1
+            await conn.rollback()
+        assert await observer(1) == 1
+
+    async def test_pooled_connection_is_transactional_again_after_checkin(
+        self,
+        observer: Callable[[int], Awaitable[int]],
+        make_engine: Callable[..., AsyncEngine],
+    ):
+        eng = make_engine()
+        async with eng.connect() as conn:
+            conn = await conn.execution_options(isolation_level="AUTOCOMMIT")
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            await self._insert(conn, 1)
+
+        async with eng.connect() as conn:
+            assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is False
+            await self._insert(conn, 2)
+            assert await observer(2) == 0
+            await conn.rollback()
+        assert await observer(1) == 1
+        assert await observer(2) == 0
+
+    @pytest.mark.parametrize("override", ["REPEATABLE READ", "AUTOCOMMIT"])
+    async def test_engine_level_is_restored_after_connection_override(
+        self, make_engine: Callable[..., AsyncEngine], override: str
+    ):
+        eng = make_engine(isolation_level="SERIALIZABLE")
+        async with eng.connect() as conn:
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            conn = await conn.execution_options(isolation_level=override)
+            if override == "AUTOCOMMIT":
+                assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            else:
+                assert await conn.get_isolation_level() == override
+
+        async with eng.connect() as conn:
+            assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is False
+            assert await conn.get_isolation_level() == "SERIALIZABLE"
+            _ = await conn.execute(text("SELECT 1"))
+            await conn.commit()
+            assert await conn.get_isolation_level() == "SERIALIZABLE"
+
+    async def test_engine_level_autocommit_is_restored_after_connection_override(
+        self,
+        observer: Callable[[int], Awaitable[int]],
+        make_engine: Callable[..., AsyncEngine],
+    ):
+        eng = make_engine(isolation_level="AUTOCOMMIT")
+        async with eng.connect() as conn:
+            dbapi_conn = (await conn.get_raw_connection()).dbapi_connection
+            conn = await conn.execution_options(isolation_level="SERIALIZABLE")
+            await self._insert(conn, 1)
+            assert await observer(1) == 0
+            await conn.rollback()
+
+        async with eng.connect() as conn:
+            assert (await conn.get_raw_connection()).dbapi_connection is dbapi_conn
+            assert eng.dialect.detect_autocommit_setting(dbapi_conn) is True
+            await self._insert(conn, 2)
+            assert await observer(2) == 1
+        assert await observer(1) == 0
+
+    async def test_invalid_level_raises_argument_error_on_every_path(
+        self, make_engine: Callable[..., AsyncEngine]
+    ):
+        with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+            async with make_engine(isolation_level="BOGUS").connect():
+                pass
+        with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+            async with make_engine().execution_options(isolation_level="BOGUS").connect():
+                pass
+        async with make_engine().connect() as conn:
+            with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
+                _ = await conn.execution_options(isolation_level="BOGUS")

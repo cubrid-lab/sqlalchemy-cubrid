@@ -13,6 +13,7 @@ from __future__ import annotations
 import importlib
 import importlib.metadata
 import importlib.resources
+import sys
 from pathlib import Path
 from typing import cast
 
@@ -98,11 +99,36 @@ class TestEntryPoints:
         assert '[project.entry-points."sqlalchemy.dialects"]' in pyproject_text
         assert entry_line in pyproject_text
 
-    def test_alembic_entry_point_declared(self):
+    def test_no_alembic_ddl_entry_point_declared(self):
+        # Alembic never reads an ``alembic.ddl`` group; CubridImpl is registered
+        # by the alembic.plugins entry point or the dialect module (#504, #595).
+        assert '[project.entry-points."alembic.ddl"]' not in _read_pyproject()
+
+    def test_alembic_plugin_entry_point_declared(self):
+        # Alembic 1.18+ loads this group on import and registers CubridImpl (#595).
         pyproject_text = _read_pyproject()
 
-        assert '[project.entry-points."alembic.ddl"]' in pyproject_text
-        assert 'cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"' in pyproject_text
+        assert '[project.entry-points."alembic.plugins"]' in pyproject_text
+        assert 'sqlalchemy_cubrid = "_sqlalchemy_cubrid_alembic"' in pyproject_text
+        assert 'py-modules = ["_sqlalchemy_cubrid_alembic"]' in pyproject_text
+
+    def test_alembic_plugin_shim_imports_only_the_standard_library(self):
+        # Alembic does not guard the entry point load (#595): the shim must
+        # load even when the sqlalchemy_cubrid package cannot be imported.
+        import ast
+
+        tree = ast.parse((PROJECT_ROOT / "_sqlalchemy_cubrid_alembic.py").read_text())
+        imported = {
+            alias.name.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Import)
+            for alias in node.names
+        } | {
+            node.module.split(".")[0]
+            for node in ast.walk(tree)
+            if isinstance(node, ast.ImportFrom) and node.module
+        }
+        assert imported <= set(sys.stdlib_module_names) | {"__future__"}
 
     @pytest.mark.parametrize(
         ("entry_name", "expected_module", "expected_class_name"),
@@ -133,22 +159,35 @@ class TestEntryPoints:
         assert loaded.__module__ == expected_module
         assert loaded.__name__ == expected_class_name
 
-    def test_alembic_entry_point_loadable(self):
-        entry_points = {
-            entry_point.name: entry_point
-            for entry_point in importlib.metadata.entry_points(group="alembic.ddl")
-            if entry_point.name == "cubrid"
-        }
+    @pytest.mark.parametrize(
+        "entry_name",
+        ["cubrid", "cubrid.cubrid", "cubrid.cubriddb", "cubrid.pycubrid", "cubrid.aiopycubrid"],
+    )
+    def test_every_dialect_entry_point_resolves_alembic_impl(self, entry_name: str):
+        # Alembic looks up its impl by ``dialect.name``; loading any CUBRID
+        # dialect must leave CubridImpl registered under that name (#504).
+        from alembic.ddl.impl import _impls
 
-        assert "cubrid" in entry_points
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
-        loaded = cast(type[object], entry_points["cubrid"].load())
+        loaded = cast(type[object], _entry_points_by_name("sqlalchemy.dialects")[entry_name].load())
 
-        assert loaded.__module__ == "sqlalchemy_cubrid.alembic_impl"
-        assert loaded.__name__ == "CubridImpl"
+        assert getattr(loaded, "name") == "cubrid"
+        assert _impls[getattr(loaded, "name")] is CubridImpl
 
 
 class TestDialectResolution:
+    def test_async_engine_creation_without_database(self):
+        import asyncio
+
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        pytest.importorskip("pycubrid")
+        engine = create_async_engine("cubrid+aiopycubrid://dba@localhost:33000/testdb")
+
+        assert engine.dialect.is_async
+        asyncio.run(engine.dispose())
+
     @pytest.mark.parametrize(
         ("url", "expected_module", "expected_class_name"),
         [

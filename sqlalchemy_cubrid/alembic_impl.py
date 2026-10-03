@@ -8,9 +8,13 @@
 """Alembic migration support for the CUBRID dialect.
 
 This module provides the Alembic ``DefaultImpl`` subclass that enables
-Alembic migrations against a CUBRID database.  It is registered as an
-entry-point under ``alembic.ddl`` so that Alembic auto-discovers it
-when the target database URL uses the ``cubrid://`` scheme.
+Alembic migrations against a CUBRID database.  Alembic keys its
+implementations by dialect name, and ``DefaultImpl`` subclasses register
+themselves on import via ``__dialect__``.  Alembic 1.18+ imports this module
+through the ``alembic.plugins`` entry point
+(:mod:`_sqlalchemy_cubrid_alembic`); with Alembic 1.7.2-1.17
+``sqlalchemy_cubrid.dialect`` imports it.  Either way every CUBRID URL
+(``cubrid://``, ``cubrid+pycubrid://``, ``cubrid+aiopycubrid://``) finds it.
 
 Usage::
 
@@ -18,13 +22,23 @@ Usage::
     [alembic]
     sqlalchemy.url = cubrid://dba:password@localhost:33000/demodb
 
-    # That's it — Alembic will pick up the CUBRID implementation
-    # automatically via the ``alembic.ddl`` entry point.
+    # That's it — the CUBRID implementation is registered automatically;
+    # the default env.py needs no extra import.
 
 CUBRID-specific notes
 ---------------------
-* **DDL is auto-committed** — CUBRID implicitly commits every DDL
-  statement, so ``transactional_ddl`` is set to ``False``.
+* **DDL is transactional** — CUBRID does not implicitly commit DDL.
+  With client autocommit off (the dialect always turns it off),
+  ``CREATE``/``ALTER``/``DROP``/``TRUNCATE``/``CREATE INDEX``/``RENAME``
+  and friends are undone by ``ROLLBACK`` and never commit earlier DML, so
+  ``transactional_ddl`` is ``True``: by default Alembic runs the whole
+  upgrade in one transaction.  Pass ``transaction_per_migration=True`` to
+  ``context.configure()`` to commit after each revision instead, which
+  releases schema locks sooner on long or large-table migrations.
+* **Offline scripts have no ``BEGIN``** — CUBRID has no ``BEGIN``
+  statement (csql rejects it); a transaction starts implicitly, so
+  :meth:`CubridImpl.emit_begin` emits nothing and ``--sql`` output ends
+  each transaction with ``COMMIT;`` only.
 * **Native column rename** — CUBRID supports
   ``ALTER TABLE … RENAME COLUMN old TO new``.  Alembic's
   ``alter_column(new_column_name=…)`` emits it directly.
@@ -59,6 +73,8 @@ from alembic.ddl.base import (
     format_server_default,
 )
 from sqlalchemy.ext.compiler import compiles
+
+from sqlalchemy_cubrid.types import STRING as CUBRID_STRING
 
 if TYPE_CHECKING:
     from typing import Protocol
@@ -174,19 +190,20 @@ def _cubrid_modify_column(element: CubridModifyColumn, compiler: Any, **kw: Any)
 class CubridImpl(DefaultImpl):
     """Alembic migration implementation for CUBRID.
 
-    Registered via the ``alembic.ddl`` entry-point so Alembic
-    auto-discovers it for ``cubrid://`` URLs.
+    Registered on import through ``__dialect__``; the CUBRID dialect
+    module imports it when Alembic is installed.
 
     Attributes
     ----------
     __dialect__ : str
         ``"cubrid"`` — matches the SQLAlchemy dialect name.
     transactional_ddl : bool
-        ``False`` — CUBRID implicitly commits DDL statements.
+        ``True`` — CUBRID DDL runs inside the current transaction and is
+        undone by ``ROLLBACK``; only client autocommit commits it early.
     """
 
     __dialect__: str = "cubrid"
-    transactional_ddl: bool = False
+    transactional_ddl: bool = True
 
     _collection_type_names: set[str] = {"SET", "MULTISET", "SEQUENCE"}
 
@@ -195,9 +212,21 @@ class CubridImpl(DefaultImpl):
     # ``Text`` / ``CLOB`` / ``STRING`` column it sees a VARCHAR with that
     # exact length, which trips Alembic's default compare_type into
     # reporting a spurious type change on every autogenerate run
-    # (see cubrid-lab/sqlalchemy-cubrid#120).
+    # (see cubrid-lab/sqlalchemy-cubrid#120). ``UnicodeText`` also compiles
+    # to STRING (#534). The dialect's own ``STRING`` type is matched by
+    # class, not by name: the generic ``sa.String`` has the same upper-cased
+    # name, and ``String(n)`` must go through the length comparison (#544).
     _CUBRID_UNBOUNDED_VARCHAR_LENGTH: int = 1073741823
-    _unbounded_string_type_names: set[str] = {"TEXT", "CLOB", "STRING"}
+    _unbounded_string_type_names: set[str] = {"TEXT", "UNICODETEXT", "CLOB"}
+
+    def emit_begin(self) -> None:
+        """Emit nothing: CUBRID has no ``BEGIN`` statement.
+
+        A CUBRID transaction starts implicitly with the first statement
+        after a ``COMMIT``/``ROLLBACK``, and csql rejects ``BEGIN``.  The
+        inherited :meth:`emit_commit` still writes ``COMMIT;``, which ends
+        each transaction in ``--sql`` output.
+        """
 
     @staticmethod
     def _normalize_collection_value(value: object) -> str:
@@ -364,6 +393,65 @@ class CubridImpl(DefaultImpl):
             **kw,
         )
 
+    def correct_for_autogen_foreignkeys(
+        self,
+        conn_fks: set[sa.ForeignKeyConstraint],
+        metadata_fks: set[sa.ForeignKeyConstraint],
+    ) -> None:
+        """Treat a reflected ``RESTRICT`` as the default referential action (#597).
+
+        CUBRID's default for ``ON DELETE`` / ``ON UPDATE`` is ``RESTRICT``
+        and ``SHOW CREATE TABLE`` always prints it, so a foreign key created
+        without actions reflects as ``ondelete="RESTRICT"`` /
+        ``onupdate="RESTRICT"``. Where the matching model foreign key has no
+        action, clear the reflected ``RESTRICT`` so autogenerate does not
+        drop and re-create an unchanged constraint. Reflection itself stays
+        truthful; other actions (including ``NO ACTION``, which CUBRID
+        prints as such) still compare as they are.
+        """
+        metadata_by_name: dict[str, sa.ForeignKeyConstraint] = {}
+        metadata_by_key: dict[tuple[Any, ...], list[sa.ForeignKeyConstraint]] = {}
+        for fk in metadata_fks:
+            if isinstance(fk.name, str):
+                metadata_by_name[fk.name] = fk
+            metadata_by_key.setdefault(self._fk_match_key(fk), []).append(fk)
+        for conn_fk in conn_fks:
+            # Match by name when both sides are named; otherwise every model
+            # FK on the same columns and target is a candidate, and RESTRICT
+            # is cleared only if none of them names an action.
+            named = metadata_by_name.get(conn_fk.name) if isinstance(conn_fk.name, str) else None
+            candidates = (
+                [named]
+                if named is not None
+                else metadata_by_key.get(self._fk_match_key(conn_fk), [])
+            )
+            if not candidates:
+                continue
+            for option in ("ondelete", "onupdate"):
+                conn_action = getattr(conn_fk, option)
+                if (
+                    conn_action is not None
+                    and conn_action.upper() == "RESTRICT"
+                    and all(getattr(fk, option) is None for fk in candidates)
+                ):
+                    # The rebuilt FK (e.g. in a downgrade) then omits
+                    # RESTRICT, which is the same action on CUBRID.
+                    setattr(conn_fk, option, None)
+
+    @staticmethod
+    def _fk_match_key(fk: sa.ForeignKeyConstraint) -> tuple[Any, ...]:
+        """Identify a foreign key by its columns, ignoring name and actions.
+
+        The target schema is left out: CUBRID is single-schema and
+        ``get_foreign_keys()`` sets ``referred_schema`` to the schema it was
+        called with (``None`` by default), while a model may name the owner
+        explicitly, so including it would only cause mismatches.
+        """
+        return (
+            tuple(fk.columns[key].name for key in fk.column_keys),
+            tuple((element.column.table.name, element.column.name) for element in fk.elements),
+        )
+
     @classmethod
     def _is_unbounded_string_match(
         cls, inspector_type: TypeEngine[Any], metadata_type: TypeEngine[Any]
@@ -384,8 +472,10 @@ class CubridImpl(DefaultImpl):
         unbounded_name = unbounded_side.__class__.__name__.upper()
         if unbounded_name in cls._unbounded_string_type_names:
             return True
-        # Plain SQLAlchemy String() with no length declared also maps to
-        # VARCHAR(1073741823) on CUBRID.
+        if isinstance(unbounded_side, CUBRID_STRING):
+            return True
+        # A generic String() with no length declared is treated as unbounded
+        # too; String(n) falls through to the normal length comparison (#544).
         if unbounded_name == "STRING" or unbounded_name.endswith("STRING"):
             return getattr(unbounded_side, "length", None) is None
         return False
@@ -407,6 +497,10 @@ class CubridImpl(DefaultImpl):
 
         table = index.table
         if index.unique and table is not None and table.name:
+            if self.connection is None:
+                raise CompileError(
+                    "CUBRID UNIQUE index FK collision checks require a live connection"
+                )
             insp = sa_inspect(self.connection)
             fks = insp.get_foreign_keys(table.name, schema=getattr(table, "schema", None))
             idx_cols = tuple(c.name for c in index.columns)
@@ -430,3 +524,20 @@ class CubridImpl(DefaultImpl):
                     )
 
         super().create_index(index, **kw)
+
+    def drop_index(self, index: Any, **kw: Any) -> None:
+        """Require ``table_name`` for ``op.drop_index()`` (#533).
+
+        CUBRID needs ``DROP INDEX <name> ON <table>``. Without
+        ``table_name`` Alembic binds the index to a placeholder table named
+        ``no_table``, which would otherwise be emitted verbatim.
+        """
+        from sqlalchemy.exc import CompileError
+
+        table = index.table
+        if table is not None and table.name == "no_table":
+            raise CompileError(
+                "CUBRID DROP INDEX requires the table (DROP INDEX <name> ON <table>); "
+                "pass table_name to op.drop_index(%r, table_name=...)" % index.name
+            )
+        super().drop_index(index, **kw)

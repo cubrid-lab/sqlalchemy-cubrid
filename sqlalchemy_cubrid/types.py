@@ -13,8 +13,11 @@ See: https://www.cubrid.org/manual/en/11.0/sql/datatype.html
 from __future__ import annotations
 
 import inspect
-from typing import Any, Sequence
+from importlib import import_module
+from typing import Any, Callable, Sequence
 
+from sqlalchemy import exc
+from sqlalchemy.engine.interfaces import Dialect
 from sqlalchemy.sql import sqltypes
 
 
@@ -94,6 +97,7 @@ class NUMERIC(_NumericType, sqltypes.NUMERIC[Any]):  # pyright: ignore[reportUns
     """CUBRID NUMERIC type."""
 
     __visit_name__ = "NUMERIC"
+    render_bind_cast = True
 
     def __init__(self, precision: int | None = None, scale: int | None = None, **kw: Any) -> None:
         """Construct a NUMERIC.
@@ -109,6 +113,7 @@ class DECIMAL(_NumericType, sqltypes.DECIMAL[Any]):  # pyright: ignore[reportUns
     """CUBRID DECIMAL type."""
 
     __visit_name__ = "DECIMAL"
+    render_bind_cast = True
 
     def __init__(self, precision: int | None = None, scale: int | None = None, **kw: Any) -> None:
         """Construct a DECIMAL.
@@ -184,7 +189,10 @@ class BIT(sqltypes.TypeEngine[Any]):
         """
         self.length: int | None
         if not varying:
-            self.length = length or 1
+            # ``length is None`` means unspecified and defaults to 1.
+            # An explicit ``length=0`` is kept so the compiler can reject it
+            # instead of silently coercing to BIT(1).
+            self.length = 1 if length is None else length
         else:
             self.length = length  # BIT VARYING can be unlimited-length
         self.varying = varying
@@ -282,9 +290,9 @@ class ENUM(sqltypes.Enum):
     CUBRID supports a native ``ENUM('a', 'b', ...)`` column type across all
     versions the dialect targets (verified live on 10.2, 11.0, and 11.4).
     Plain ``sa.Enum("a", "b")`` maps to this type via the dialect colspecs,
-    so native ENUM DDL is emitted by default. ``native_enum=False`` follows
-    the MySQL-dialect convention of being ignored; use a ``TypeDecorator``
-    over ``String`` if you need an explicit VARCHAR fallback.
+    so native ENUM DDL is emitted by default. ``native_enum=False`` honours
+    the SQLAlchemy contract and emits ``VARCHAR(n)`` instead (n sized to the
+    longest element).
 
     Reflected ``ENUM(...)`` columns round-trip through ``SHOW COLUMNS``,
     which reports the full element list.
@@ -315,37 +323,119 @@ class CLOB(sqltypes.Text):
 # ---------------------------------------------------------------------------
 
 
-class SET(_StringType):
+#: Python values the collection bind processors wrap in a pycubrid typed
+#: collection. Anything else (``None``, an already typed value, a string, ...)
+#: goes to the driver unchanged.
+_PLAIN_COLLECTIONS = (list, tuple, set, frozenset)
+
+#: Unordered Python collections, which a SEQUENCE (ordered) column rejects.
+_UNORDERED_COLLECTIONS = (set, frozenset)
+
+
+def _pycubrid_collection_class(name: str) -> Any | None:
+    """Return ``pycubrid.types.<name>`` when the installed pycubrid has it.
+
+    pycubrid added ``Set``, ``Multiset`` and ``Sequence`` parameters for
+    ordinary cursors in cubrid-lab/pycubrid#567; older releases (including the
+    1.8.0 floor) do not define them and reject collection parameters.
+    """
+    try:
+        module = import_module("pycubrid.types")
+    except ImportError:
+        return None
+    return getattr(module, name, None)
+
+
+def _is_pycubrid_dialect(dialect: Dialect) -> bool:
+    """True for ``cubrid+pycubrid://`` and ``cubrid+aiopycubrid://``.
+
+    ``PyCubridDialect`` sets the marker (the async dialect inherits it); a
+    class attribute avoids importing the dialect module, which imports this one.
+    """
+    return getattr(dialect, "_cubrid_pycubrid_dbapi", False) is True
+
+
+class _CollectionType(_StringType):
+    """Base for the CUBRID collection types.
+
+    On the pycubrid drivers, when the installed pycubrid provides typed
+    collection parameters, a ``list``/``tuple`` value (and, except for
+    ``SEQUENCE``, a ``set``/``frozenset``) is bound as the matching typed
+    collection (``SET{...}``, ``MULTISET{...}``, ``SEQUENCE{...}``). Values are
+    returned as the driver decodes them; see docs/TYPES.md ("Collection
+    values").
+    """
+
+    #: Name of the matching class in ``pycubrid.types``.
+    _pycubrid_name: str
+
+    #: Whether the collection keeps its elements' order (only ``SEQUENCE``).
+    _ordered: bool = False
+
+    def __init__(self, *values: Any, **kw: Any) -> None:
+        """Construct the type; *values* are the element types for the DDL."""
+        self._ddl_values = values
+        super().__init__(**kw)
+
+    def bind_processor(self, dialect: Dialect) -> Callable[[Any], Any] | None:
+        """Wrap plain collections in the pycubrid typed collection.
+
+        A ``set``/``frozenset`` bound to a ``SEQUENCE`` raises ``TypeError`` on
+        the pycubrid drivers whatever the pycubrid version: it has no order.
+        """
+        if not _is_pycubrid_dialect(dialect):
+            return None
+        typed = _pycubrid_collection_class(self._pycubrid_name)
+        if typed is None and not self._ordered:
+            return None
+        visit_name = self.__visit_name__
+
+        def process(value: Any) -> Any:
+            if self._ordered and isinstance(value, _UNORDERED_COLLECTIONS):
+                raise TypeError(
+                    f"{visit_name} is ordered; pass a list or tuple, not a {type(value).__name__}"
+                )
+            if typed is not None and isinstance(value, _PLAIN_COLLECTIONS):
+                return typed(value)
+            return value
+
+        return process
+
+    def literal_processor(self, dialect: Dialect) -> Callable[[Any], str]:
+        """Render ``NULL``; reject collection values as inline literals."""
+        visit_name = self.__visit_name__
+
+        def process(value: Any) -> str:
+            if value is None:
+                return "NULL"
+            raise exc.CompileError(
+                f"{visit_name} values cannot be rendered as inline literals "
+                "(literal_binds / literal_execute); bind them as parameters"
+            )
+
+        return process
+
+
+class SET(_CollectionType):
     """CUBRID SET type."""
 
     __visit_name__ = "SET"
-
-    def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct a SET."""
-        self._ddl_values = values
-        super().__init__(**kw)
+    _pycubrid_name = "Set"
 
 
-class MULTISET(_StringType):
+class MULTISET(_CollectionType):
     """CUBRID MULTISET type."""
 
     __visit_name__ = "MULTISET"
-
-    def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct a MULTISET."""
-        self._ddl_values = values
-        super().__init__(**kw)
+    _pycubrid_name = "Multiset"
 
 
-class SEQUENCE(_StringType):
+class SEQUENCE(_CollectionType):
     """CUBRID SEQUENCE type."""
 
     __visit_name__ = "SEQUENCE"
-
-    def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct a SEQUENCE."""
-        self._ddl_values = values
-        super().__init__(**kw)
+    _pycubrid_name = "Sequence"
+    _ordered = True
 
 
 # ---------------------------------------------------------------------------
@@ -359,12 +449,20 @@ class TIMESTAMPTZ(sqltypes.TIMESTAMP):
     __visit_name__ = "TIMESTAMPTZ"
     timezone = True
 
+    def __init__(self, **kwargs: bool) -> None:
+        kwargs.pop("timezone", None)  # Discard it if passed in kwargs
+        super().__init__(timezone=True, **kwargs)
+
 
 class TIMESTAMPLTZ(sqltypes.TIMESTAMP):
     """CUBRID TIMESTAMPLTZ — timestamp with local timezone."""
 
     __visit_name__ = "TIMESTAMPLTZ"
     timezone = True
+
+    def __init__(self, **kwargs: bool) -> None:
+        kwargs.pop("timezone", None)  # Discard it if passed in kwargs
+        super().__init__(timezone=True, **kwargs)
 
 
 class DATETIMETZ(sqltypes.DATETIME):
@@ -373,12 +471,20 @@ class DATETIMETZ(sqltypes.DATETIME):
     __visit_name__ = "DATETIMETZ"
     timezone = True
 
+    def __init__(self, **kwargs: bool) -> None:
+        kwargs.pop("timezone", None)  # Discard it if passed in kwargs
+        super().__init__(timezone=True, **kwargs)
+
 
 class DATETIMELTZ(sqltypes.DATETIME):
     """CUBRID DATETIMELTZ — datetime with local timezone."""
 
     __visit_name__ = "DATETIMELTZ"
     timezone = True
+
+    def __init__(self, **kwargs: bool) -> None:
+        kwargs.pop("timezone", None)  # Discard it if passed in kwargs
+        super().__init__(timezone=True, **kwargs)
 
 
 # ---------------------------------------------------------------------------

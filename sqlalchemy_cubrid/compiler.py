@@ -9,10 +9,11 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol, cast
 
 from sqlalchemy.exc import CompileError
-from sqlalchemy.sql import compiler, elements
+from sqlalchemy.schema import CreateIndex
+from sqlalchemy.sql import compiler, dml, elements, schema, selectable
 from sqlalchemy.sql import sqltypes
 
 from sqlalchemy_cubrid._compat import (
@@ -24,9 +25,59 @@ from sqlalchemy_cubrid._compat import (
     is_literal_value,
 )
 
+# CUBRID's LIMIT is ``offset, row_count`` with no bare-OFFSET form, so an offset
+# without a limit needs a row_count meaning "all remaining rows". CUBRID computes
+# ``offset + row_count`` internally and overflow-checks it against the signed
+# BIGINT max, so the sentinel cannot be 2^63-1 (any positive offset overflows:
+# errno -458). 2^62 is effectively unbounded (~4.6e18 rows) yet leaves ~4.6e18
+# rows of offset headroom before the sum overflows. Do NOT reuse the VARCHAR-
+# length 2^30-1: it is a string bound and silently caps rows (#414).
+_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT: int = 4611686018427387904
+
+
+class _BaseDMLCompiler(Protocol):
+    """Typed boundaries for base hooks unannotated in SQLAlchemy 2.0/2.1.
+
+    Named arguments match the installed framework signatures. ``kw`` remains
+    SQLAlchemy's open-ended compilation-option mapping.
+    """
+
+    def visit_insert(
+        self,
+        insert_stmt: dml.Insert,
+        visited_bindparam: list[str] | None = None,
+        visiting_cte: selectable.CTE | None = None,
+        **kw: Any,
+    ) -> str: ...
+
+    def visit_delete(
+        self, delete_stmt: dml.Delete, visiting_cte: selectable.CTE | None = None, **kw: Any
+    ) -> str: ...
+
+    def update_post_criteria_clause(self, update_stmt: dml.Update, **kw: Any) -> str | None: ...
+
+    def _render_cte_clause(
+        self, nesting_level: int | None = None, include_following_stack: bool = False
+    ) -> str:
+        """Render the pending WITH clause (private SQLAlchemy hook, used for #591)."""
+
+
+class _BaseDDLCompiler(Protocol):
+    def visit_create_index(
+        self,
+        create: CreateIndex,
+        include_schema: bool = False,
+        include_table_schema: bool = True,
+        **kw: Any,
+    ) -> str: ...
+
 
 class CubridCompiler(compiler.SQLCompiler):
     """SQLCompiler subclass for CUBRID."""
+
+    # WITH clause returned by the latest _render_cte_clause() call; read by
+    # visit_replace() to find where SQLAlchemy wrote the INSERT verb (#591).
+    _cubrid_last_cte_clause: str | None = None
 
     def visit_sysdate_func(self, fn: Any, **kw: Any) -> str:
         return "SYSDATE"
@@ -56,9 +107,10 @@ class CubridCompiler(compiler.SQLCompiler):
 
     def visit_is_distinct_from_binary(self, binary: Any, operator: Any, **kw: Any) -> str:
         # CUBRID has no SQL-standard IS [NOT] DISTINCT FROM syntax, but
-        # supports the null-safe equal operator <=> — same emulation the
-        # MySQL dialect uses.
-        return "NOT (%s <=> %s)" % (
+        # supports the null-safe equal operator <=>.  Unlike MySQL, CUBRID
+        # rejects ``NOT (a <=> b)`` in a SELECT projection, so negate the
+        # guaranteed 0/1 result with an equality comparison instead.
+        return "(%s <=> %s) = 0" % (
             self.process(binary.left, **kw),
             self.process(binary.right, **kw),
         )
@@ -69,12 +121,54 @@ class CubridCompiler(compiler.SQLCompiler):
             self.process(binary.right, **kw),
         )
 
+    # ``col.is_(True)`` and friends (#465). Without a native BOOLEAN,
+    # SQLAlchemy renders ``IS 1`` / ``IS NOT 0``, which CUBRID rejects: its
+    # ``IS`` only takes ``[NOT] NULL`` or ``[NOT] TRUE/FALSE``, and since 11.2
+    # ``IS TRUE`` needs a logical operand (``b IS TRUE`` fails for a SMALLINT
+    # column), while ``(x = 1) IS NOT TRUE`` is rejected in a SELECT list.
+    # ``IS`` against a value is null-safe equality, so render it with ``<=>``
+    # as IS [NOT] DISTINCT FROM: ``b IS TRUE`` is 1 only for 1 and 0 (never
+    # NULL) for 0 and NULL, and ``b IS NOT TRUE`` is its exact complement.
+    # ``IS [NOT] NULL`` keeps its own syntax.
+
+    def visit_is__binary(self, binary: Any, operator: Any, **kw: Any) -> str:
+        if isinstance(binary.right, elements.Null):
+            return "%s IS NULL" % self.process(binary.left, **kw)
+        return self.visit_is_not_distinct_from_binary(binary, operator, **kw)
+
+    def visit_is_not_binary(self, binary: Any, operator: Any, **kw: Any) -> str:
+        if isinstance(binary.right, elements.Null):
+            return "%s IS NOT NULL" % self.process(binary.left, **kw)
+        return self.visit_is_distinct_from_binary(binary, operator, **kw)
+
     def visit_cast(self, cast: Any, **kw: Any) -> str:
         # https://www.cubrid.org/manual/en/11.0/sql/function/typecast_fn.html#cast
         type_ = self.process(cast.typeclause)
         if type_ is None:
             return self.process(cast.clause.self_group())
         return f"CAST({self.process(cast.clause)} AS {type_})"
+
+    def default_from(self) -> str:
+        # CUBRID rejects a FROM-less SELECT that carries a WHERE clause
+        # (e.g. ``SELECT 1 WHERE ? = ?``). ``db_root`` is a single-row system
+        # table present across all supported CUBRID versions, so it serves the
+        # same role as Oracle's ``DUAL``.
+        return " FROM db_root"
+
+    def render_bind_cast(self, type_: Any, dbapi_type: Any, sqltext: str) -> str:
+        # CUBRID coerces a bound parameter in ``NUMERIC(p,s) + ?`` arithmetic to
+        # an integer, silently dropping the fractional scale (a SQL literal or an
+        # explicit CAST keeps it). Only NUMERIC/DECIMAL binds with a known scale
+        # are cast; everything else is passed through unchanged so the global
+        # RENDER_CASTS bind typing does not alter other parameter behaviour.
+        if (
+            isinstance(dbapi_type, sqltypes.Numeric)
+            and dbapi_type.precision is not None
+            and dbapi_type.scale is not None
+        ):
+            rendered_type = self.dialect.type_compiler_instance.process(dbapi_type)
+            return f"CAST({sqltext} AS {rendered_type})"
+        return sqltext
 
     def render_literal_value(self, value: Any, type_: Any) -> str:
         # SQLAlchemy's base render_literal_value escapes single quotes, which is
@@ -119,7 +213,7 @@ class CubridCompiler(compiler.SQLCompiler):
         raise CompileError("CUBRID does not support LATERAL")
 
     @staticmethod
-    def _check_returning(stmt: Any, operation: str) -> None:
+    def _check_returning(stmt: dml.UpdateBase, operation: str) -> None:
         """Raise CompileError if RETURNING is requested (not supported by CUBRID).
 
         CUBRID does not support INSERT/UPDATE/DELETE ... RETURNING.
@@ -133,17 +227,48 @@ class CubridCompiler(compiler.SQLCompiler):
                 "result.inserted_primary_key (uses LAST_INSERT_ID() automatically)."
             )
 
-    def visit_insert(self, insert_stmt: Any, **kw: Any) -> Any:
+    def visit_insert(
+        self,
+        insert_stmt: dml.Insert,
+        visited_bindparam: list[str] | None = None,
+        visiting_cte: selectable.CTE | None = None,
+        **kw: Any,
+    ) -> str:
         self._check_returning(insert_stmt, "INSERT")
-        return super().visit_insert(insert_stmt, **kw)
+        result = cast(_BaseDMLCompiler, super()).visit_insert(
+            insert_stmt, visited_bindparam, visiting_cte, **kw
+        )
+        # SQLAlchemy's insertmanyvalues row-expansion miscounts parameters when a
+        # target column's type wraps its bind in a bind_expression (e.g. a
+        # TypeDecorator rendering CAST(? AS ...)), emitting more placeholders than
+        # params ("wrong number of parameters"). Drop the insertmanyvalues plan for
+        # such statements so execution falls back to ordinary DBAPI executemany;
+        # the normal fast path is untouched (#421).
+        if self._insertmanyvalues is not None and self._insert_has_bind_expression(insert_stmt):
+            self._insertmanyvalues = None
+        return result
 
-    def visit_update(self, update_stmt: Any, **kw: Any) -> Any:
+    @staticmethod
+    def _insert_has_bind_expression(insert_stmt: Any) -> bool:
+        table = getattr(insert_stmt, "table", None)
+        if table is None:
+            return False
+        return any(
+            type(column.type).bind_expression is not sqltypes.TypeEngine.bind_expression
+            for column in table.c
+        )
+
+    def visit_update(
+        self, update_stmt: dml.Update, visiting_cte: selectable.CTE | None = None, **kw: Any
+    ) -> str:
         self._check_returning(update_stmt, "UPDATE")
-        return super().visit_update(update_stmt, **kw)
+        return super().visit_update(update_stmt, visiting_cte, **kw)
 
-    def visit_delete(self, delete_stmt: Any, **kw: Any) -> Any:
+    def visit_delete(
+        self, delete_stmt: dml.Delete, visiting_cte: selectable.CTE | None = None, **kw: Any
+    ) -> str:
         self._check_returning(delete_stmt, "DELETE")
-        return super().visit_delete(delete_stmt, **kw)
+        return cast(_BaseDMLCompiler, super()).visit_delete(delete_stmt, visiting_cte, **kw)
 
     def for_update_clause(self, select: Any, **kw: Any) -> str:  # pyright: ignore[reportIncompatibleMethodOverride]
         """Render FOR UPDATE clause.
@@ -180,7 +305,10 @@ class CubridCompiler(compiler.SQLCompiler):
             return ""
         if limit_clause is None:
             assert offset_clause is not None
-            return " \n LIMIT %s, 1073741823" % (self.process(offset_clause, **kw),)
+            return " \n LIMIT %s, %s" % (
+                self.process(offset_clause, **kw),
+                _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT,
+            )
         if offset_clause is not None:
             return " \n LIMIT %s, %s" % (
                 self.process(offset_clause, **kw),
@@ -197,13 +325,13 @@ class CubridCompiler(compiler.SQLCompiler):
             return f"LIMIT {limit}"
         return None
 
-    def update_post_criteria_clause(self, update_stmt: Any, **kw: Any) -> str | None:
+    def update_post_criteria_clause(self, update_stmt: dml.Update, **kw: Any) -> str | None:
         # SA 2.1 replaced the dialect-level ``update_limit_clause`` hook with
         # ``update_post_criteria_clause``. SA 2.0 never calls this method, so
         # the override is harmless there.
         parts: list[str] = []
         try:
-            base = super().update_post_criteria_clause(update_stmt, **kw)
+            base = cast(_BaseDMLCompiler, super()).update_post_criteria_clause(update_stmt, **kw)
         except AttributeError:  # pragma: no cover — SA 2.0 base class lacks this hook
             base = None
         if base:
@@ -254,6 +382,15 @@ class CubridCompiler(compiler.SQLCompiler):
         if table is None:
             return "ON DUPLICATE KEY UPDATE"
 
+        # Inline multi-row VALUES (``insert(t).values([{...}, {...}])``) carries
+        # several candidate rows in one statement. CUBRID has no ``VALUES(col)`` /
+        # row-alias syntax to reference "this row's inserted value" in ON
+        # DUPLICATE KEY UPDATE, so a per-row ``inserted.col`` reference is not
+        # expressible (one trailing bind would set every conflicting row to a
+        # single row's value — silent corruption). executemany differs: it sends
+        # a single-row statement per parameter set and stays correct (#371).
+        is_inline_multi_values = bool(getattr(statement, "_multi_values", ()))
+
         if on_duplicate._parameter_ordering:
             parameter_ordering = [
                 coercions.expect(roles.DMLColumnRole, key)
@@ -301,15 +438,32 @@ class CubridCompiler(compiler.SQLCompiler):
                         isinstance(element, elements.ColumnClause)
                         and element.table is on_duplicate.inserted_alias
                     ):
+                        if is_inline_multi_values:
+                            raise CompileError(
+                                "CUBRID cannot reference the inserted value of "
+                                "column '%s' (stmt.inserted.%s) in ON DUPLICATE "
+                                "KEY UPDATE for a multi-row VALUES INSERT: CUBRID "
+                                "has no VALUES(col) / row-alias syntax, so there "
+                                "is no single value to bind per conflicting row. "
+                                "Use executemany (pass the row list to "
+                                "Connection.execute instead of .values([...])), a "
+                                "single-row INSERT, a literal/expression update, "
+                                "or MERGE." % (element.name, element.name)
+                            )
                         # Re-use the INSERT bind parameter so the value
                         # appears twice in the positional parameter list.
+                        # This only works for single-row INSERT — multi-row
+                        # INSERT uses suffixed keys (val_m0, val_m1) that
+                        # cannot be mapped to a single UPDATE bind.
                         if element.name in insert_binds:
                             return insert_binds[element.name]
                         raise CompileError(
                             "CUBRID ON DUPLICATE KEY UPDATE: cannot resolve "
                             "INSERT bind parameter for column '%s'. "
-                            "Ensure the column is included in the INSERT "
-                            "values." % element.name
+                            "stmt.inserted references are only supported for "
+                            "single-row INSERT. For multi-row INSERT, use "
+                            "literal values instead: "
+                            "on_duplicate_key_update(col='value')" % element.name
                         )
                     else:
                         return None
@@ -473,15 +627,33 @@ class CubridCompiler(compiler.SQLCompiler):
 
         return "\n".join(lines)
 
-    def visit_replace(self, replace_stmt: Any, **kw: Any) -> str:
-        text = str(super().visit_insert(replace_stmt, **kw))  # type: ignore[no-untyped-call]
-        if "INSERT INTO" in text:
-            return text.replace("INSERT INTO", "REPLACE INTO", 1)
-        if text.startswith("INSERT"):
-            return "REPLACE" + text[len("INSERT") :]
-        raise NotImplementedError(
-            f"Could not convert INSERT to REPLACE: unexpected SQL format: {text!r}"
+    def _render_cte_clause(
+        self, nesting_level: int | None = None, include_following_stack: bool = False
+    ) -> str:
+        clause = cast(_BaseDMLCompiler, super())._render_cte_clause(
+            nesting_level=nesting_level, include_following_stack=include_following_stack
         )
+        self._cubrid_last_cte_clause = clause
+        return clause
+
+    def visit_replace(self, replace_stmt: Any, **kw: Any) -> str:
+        # SQLAlchemy's visit_insert writes the "INSERT " verb first, then the
+        # prefixes, "INTO" and the rest; the only text it may put in front of the
+        # verb is the WITH clause, prepended by its last _render_cte_clause() call.
+        # Swap the verb at that exact offset instead of searching the SQL text,
+        # which can hold "INSERT INTO" in prefixes, comments, literals or
+        # identifiers (#591).
+        outer_cte_clause = self._cubrid_last_cte_clause
+        self._cubrid_last_cte_clause = None
+        try:
+            text = cast(_BaseDMLCompiler, super()).visit_insert(replace_stmt, **kw)
+            cte_clause = self._cubrid_last_cte_clause
+        finally:
+            self._cubrid_last_cte_clause = outer_cte_clause
+        verb_at = len(cte_clause) if cte_clause and text.startswith(cte_clause) else 0
+        if not text.startswith("INSERT ", verb_at):
+            raise CompileError(f"Could not locate the INSERT verb to emit REPLACE: {text!r}")
+        return text[:verb_at] + "REPLACE" + text[verb_at + len("INSERT") :]
 
     def _render_json_extract_from_binary(
         self, binary: elements.BinaryExpression[Any], operator: Any, **kw: Any
@@ -510,8 +682,24 @@ class CubridCompiler(compiler.SQLCompiler):
                 self.process(binary.left, **kw),
                 self.process(binary.right, **kw),
             )
+        elif (
+            isinstance(binary.type, sqltypes.Numeric)
+            and not isinstance(binary.type, sqltypes.Float)
+            and binary.type.precision is not None
+            and binary.type.scale is not None
+        ):
+            # as_numeric(p, s): cast to NUMERIC(p,s) so the driver returns a
+            # Decimal with the requested scale (MySQL renders DECIMAL(p, s)).
+            type_expression = "ELSE CAST(JSON_EXTRACT(%s, %s) AS NUMERIC(%d,%d))" % (
+                self.process(binary.left, **kw),
+                self.process(binary.right, **kw),
+                binary.type.precision,
+                binary.type.scale,
+            )
         elif binary.type._type_affinity is sqltypes.Numeric or (
             # SA 2.1 split Float out of the Numeric affinity; treat both as DOUBLE.
+            # A Numeric without both precision and scale also stays DOUBLE, since
+            # a bare CUBRID NUMERIC means NUMERIC(15,0) and would truncate.
             binary.type._type_affinity is sqltypes.Float
         ):
             type_expression = "ELSE CAST(JSON_EXTRACT(%s, %s) AS DOUBLE)" % (
@@ -558,10 +746,14 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         if not column.nullable:
             colspec.append("NOT NULL")
 
+        # An Identity() is stored as column.server_default but is CUBRID's
+        # AUTO_INCREMENT, not a literal DEFAULT — treat it like no server_default
+        # here so the autoincrement column still emits AUTO_INCREMENT (#388).
+        server_default_is_identity = isinstance(column.server_default, schema.Identity)
         if (
             column.table is not None
             and column is column.table._autoincrement_column
-            and (column.server_default is None)
+            and (column.server_default is None or server_default_is_identity)
         ):
             colspec.append("AUTO_INCREMENT")
         else:
@@ -614,9 +806,9 @@ class CubridDDLCompiler(compiler.DDLCompiler):
             ),
         )
 
-    def visit_create_index(  # type: ignore[override]
+    def visit_create_index(
         self,
-        create: Any,
+        create: CreateIndex,
         include_schema: bool = False,
         include_table_schema: bool = True,
         **kw: Any,
@@ -639,11 +831,21 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         Non-unique indexes are passed through to CUBRID as-is.
 
         Closes #355.
+
+        CUBRID (10.2 through 11.4) also has no ``CREATE INDEX IF NOT EXISTS``;
+        a requested ``if_not_exists`` raises ``CompileError`` like
+        ``if_exists`` in :meth:`visit_drop_index` (#540).
         """
+        if create.if_not_exists:
+            raise CompileError(
+                "CUBRID does not support CREATE INDEX IF NOT EXISTS; "
+                "check inspect(conn).has_index() before creating, "
+                "or use Index.create(checkfirst=True), instead"
+            )
         index = create.element
         table = index.table
 
-        if index.unique:
+        if index.unique and table is not None:
             idx_col_names = tuple(c.name for c in index.columns)
             for fk in table.foreign_key_constraints:
                 fk_col_names = tuple(c.parent.name for c in fk.elements)
@@ -664,11 +866,42 @@ class CubridDDLCompiler(compiler.DDLCompiler):
                         "that already have an FK auto-index (%s). %s" % (cols, hint)
                     )
 
-        return super().visit_create_index(
+        return cast(_BaseDDLCompiler, super()).visit_create_index(
             create,
             include_schema=include_schema,
             include_table_schema=include_table_schema,
             **kw,
+        )
+
+    def visit_drop_index(self, drop: Any, **kw: Any) -> str:
+        """Emit ``DROP INDEX <name> ON <table>``.
+
+        CUBRID (10.2 through 11.4) rejects a bare ``DROP INDEX <name>`` with a
+        -493 syntax error: an index is scoped to its table, so the table is
+        required. CUBRID also has no ``DROP INDEX IF EXISTS``; a requested
+        ``if_exists`` raises ``CompileError`` rather than emitting SQL the
+        server rejects or silently dropping the guard (a compiler cannot check
+        existence). Callers that need the guard can check
+        ``inspect(conn).has_index(table, name)`` first.
+
+        Closes #533.
+        """
+        index = drop.element
+        if index.name is None:
+            raise CompileError("DROP INDEX requires that the index have a name")
+        if index.table is None:
+            raise CompileError(
+                "CUBRID DROP INDEX requires the index's table "
+                "(DROP INDEX <name> ON <table>); index %r is not bound to a table" % index.name
+            )
+        if drop.if_exists:
+            raise CompileError(
+                "CUBRID does not support DROP INDEX IF EXISTS; "
+                "check inspect(conn).has_index() before dropping instead"
+            )
+        return "\nDROP INDEX %s ON %s" % (
+            self._prepared_index_name(index, include_schema=False),
+            self.preparer.format_table(index.table),
         )
 
 
@@ -736,6 +969,11 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
         return "BIGINT"
 
     def visit_BIT(self, type_: Any, **kw: Any) -> str:
+        ddl_name = "BIT VARYING" if type_.varying else "BIT"
+        hint = "an unlimited BIT VARYING" if type_.varying else "the default BIT(1)"
+        self._reject_nonpositive_length(
+            type_, ddl_name, default_hint=f"omit the length to get {hint}"
+        )
         if type_.varying:
             compiled = "BIT VARYING"
             if type_.length is not None:
@@ -777,10 +1015,26 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_DATETIMELTZ(self, type_: Any, **kw: Any) -> str:
         return "DATETIMELTZ"
 
+    @staticmethod
+    def _reject_nonpositive_length(
+        type_: Any, ddl_name: str, default_hint: str | None = None
+    ) -> None:
+        # ``length=None`` means "not specified" and gets the documented default;
+        # explicit zero/negative lengths are invalid CUBRID DDL and must fail locally.
+        length = type_.length
+        if length is not None and length <= 0:
+            if default_hint is None:
+                default_hint = f"omit the length to get the default {ddl_name}(4096)"
+            raise CompileError(
+                f"CUBRID does not support {ddl_name}({length}); use a length of at least 1, "
+                f"or {default_hint}"
+            )
+
     def visit_VARCHAR(self, type_: Any, **kw: Any) -> str:
         if hasattr(type_, "national") and type_.national:
             return self.visit_NVARCHAR(type_)
-        elif type_.length:
+        self._reject_nonpositive_length(type_, "VARCHAR")
+        if type_.length is not None:
             return "VARCHAR(%d)" % type_.length
         else:
             return "VARCHAR(4096)"
@@ -788,19 +1042,26 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
     def visit_CHAR(self, type_: Any, **kw: Any) -> str:
         if hasattr(type_, "national") and type_.national:
             return self.visit_NCHAR(type_)
-        elif type_.length:
+        self._reject_nonpositive_length(
+            type_, "CHAR", default_hint="omit the length to emit bare CHAR"
+        )
+        if type_.length is not None:
             return f"CHAR({type_.length})"
         else:
             return "CHAR"
 
     def visit_NVARCHAR(self, type_: Any, **kw: Any) -> str:
-        if type_.length:
+        self._reject_nonpositive_length(type_, "NCHAR VARYING")
+        if type_.length is not None:
             return f"NCHAR VARYING({type_.length})"
         else:
             return "NCHAR VARYING(4096)"
 
     def visit_NCHAR(self, type_: Any, **kw: Any) -> str:
-        if type_.length:
+        self._reject_nonpositive_length(
+            type_, "NCHAR", default_hint="omit the length to emit bare NCHAR"
+        )
+        if type_.length is not None:
             return f"NCHAR({type_.length})"
         else:
             return "NCHAR"
@@ -813,6 +1074,40 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
 
     def visit_text(self, type_: Any, **kw: Any) -> str:
         return self.visit_STRING(type_)
+
+    # CUBRID has no TEXT type ("TEXT is not defined"). GenericTypeCompiler
+    # routes ``UnicodeText`` (visit_unicode_text) and ``sqltypes.TEXT`` to
+    # visit_TEXT, so map both to STRING like ``Text`` (#534). CUBRID strings
+    # use the database charset, so there is no separate national text type.
+    def visit_TEXT(self, type_: Any, **kw: Any) -> str:
+        return self.visit_STRING(type_)
+
+    def visit_unicode_text(self, type_: Any, **kw: Any) -> str:
+        return self.visit_STRING(type_)
+
+    # CUBRID has no BINARY/VARBINARY ("BINARY" is a syntax error, "VARBINARY"
+    # is not defined). Map them to CUBRID's bit strings, whose length is in
+    # bits: BINARY(n) -> BIT(n*8), VARBINARY(n) -> BIT VARYING(n*8) (#545).
+    # Both drivers bind and return BIT values as ``bytes``.
+    def visit_BINARY(self, type_: Any, **kw: Any) -> str:
+        self._reject_nonpositive_length(
+            type_, "BINARY", default_hint="omit the length to get the default BINARY(1)"
+        )
+        return "BIT(%d)" % ((type_.length or 1) * 8)
+
+    def visit_VARBINARY(self, type_: Any, **kw: Any) -> str:
+        self._reject_nonpositive_length(
+            type_, "VARBINARY", default_hint="omit the length to emit bare BIT VARYING"
+        )
+        if type_.length is None:
+            return "BIT VARYING"
+        return "BIT VARYING(%d)" % (type_.length * 8)
+
+    # CUBRID has no UUID type. ``sa.UUID`` gets the same CHAR(32) storage as
+    # ``sa.Uuid``; the dialect has no native UUID support, so SQLAlchemy's
+    # Uuid bind/result processors convert to and from 32-char hex (#545).
+    def visit_UUID(self, type_: Any, **kw: Any) -> str:
+        return "CHAR(32)"
 
     def visit_BLOB(self, type_: Any, **kw: Any) -> str:
         return "BLOB"

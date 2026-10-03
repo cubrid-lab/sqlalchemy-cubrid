@@ -69,7 +69,7 @@
 | FOR UPDATE (행 잠금) | ✅ | ✅ | ✅ | ❌ |
 | LIMIT를 가진 UPDATE | ✅ | ✅ | ❌ | ❌ |
 | TRUNCATE TABLE | ✅ | ✅ | ✅ | ❌ |
-| IS DISTINCT FROM | ❌ | ❌ | ✅ | ❌ |
+| IS DISTINCT FROM | ✅ | ❌ | ✅ | ❌ |
 | Postfetch LASTROWID | ✅ | ✅ | ❌ | ✅ |
 
 ### 참고
@@ -81,8 +81,8 @@
 - **FOR UPDATE**: CUBRID는 `SELECT … FOR UPDATE [OF col1, col2]`를 지원합니다. NOWAIT와 SKIP LOCKED는 미지원.
 - **LIMIT를 가진 UPDATE**: CUBRID와 MySQL 모두 `UPDATE … LIMIT n`을 지원합니다. PostgreSQL과 SQLite는 미지원.
 - **다중 테이블 UPDATE**: SQLAlchemy의 다중 테이블 UPDATE 패턴은 `UPDATE t1, t2 SET ... WHERE ...`로 컴파일되며, CUBRID가 받는 MySQL 스타일 구문과 일치합니다. 방언은 추가 `FROM` 절이 필요 없기 때문에 의도적으로 `update_from_clause()`를 비활성화합니다.
-- **TRUNCATE**: CUBRID는 `TRUNCATE TABLE`을 지원합니다. 방언은 오토커밋 감지에 `TRUNCATE`를 포함합니다.
-- **IS DISTINCT FROM**: CUBRID SQL 연산자가 아닙니다. SQLAlchemy는 네이티브 지원이 없는 방언에서 `CASE` 표현식으로 에뮬레이트할 수 있습니다.
+- **TRUNCATE**: CUBRID는 `TRUNCATE TABLE`을 지원합니다. 다른 문과 마찬가지로 연결의 트랜잭션 안에서 실행되며 커밋될 때만 반영됩니다 ([SQL 텍스트 기반 오토커밋 없음](CONNECTION.md#sql-텍스트-기반-오토커밋-없음) 참고).
+- **IS DISTINCT FROM**: CUBRID에는 SQL 표준 구문이 없지만 NULL-안전 등가 연산자 `<=>`를 지원합니다. 방언은 `a IS DISTINCT FROM b`를 `(a <=> b) = 0`으로, `a IS NOT DISTINCT FROM b`를 `a <=> b`로 에뮬레이트하여 술어와 SELECT 프로젝션 모두에서 NULL-안전 의미를 보존합니다 (#344, #377). CUBRID의 `IS`는 `NULL`, `TRUE`, `FALSE`만 받으므로, 값과의 `IS`/`IS NOT`(예: Boolean `col.is_(True)`)도 같은 방식(`col <=> 1`, `(col <=> 1) = 0`)으로 렌더링합니다 (#465). [불리언 조건식](TYPES.md#불리언-조건식)을 참고하세요.
 
 ---
 
@@ -102,7 +102,7 @@
 
 - **ALTER TABLE**: CUBRID는 컬럼과 제약조건 추가/삭제를 위한 표준 `ALTER TABLE`을 지원합니다. SQLite는 ALTER 지원이 제한적입니다 (컬럼 추가만, 3.35 이전에는 drop/rename 불가).
 - **코멘트**: CUBRID는 테이블(예: `CREATE TABLE t (...) COMMENT = 'text'`)과 컬럼(예: `col TYPE COMMENT 'text'`) 모두 인라인 `COMMENT` 구문을 지원합니다. 방언은 `SetTableComment`, `DropTableComment`, `SetColumnComment` DDL 구성을 구현합니다. 코멘트 리플렉션은 `get_table_comment()`와 `get_columns()`의 컬럼 코멘트로 지원됩니다.
-- **IF NOT EXISTS / IF EXISTS**: CUBRID는 `CREATE TABLE IF NOT EXISTS`와 `DROP TABLE IF EXISTS`를 지원합니다. 기본 SA 컴파일러가 이를 네이티브로 처리합니다.
+- **IF NOT EXISTS / IF EXISTS**: CUBRID는 `CREATE TABLE IF NOT EXISTS`와 `DROP TABLE IF EXISTS`를 지원합니다. 기본 SA 컴파일러가 이를 네이티브로 처리합니다. CUBRID에는 `CREATE INDEX IF NOT EXISTS`와 `DROP INDEX IF EXISTS`가 없으므로 `CreateIndex(..., if_not_exists=True)`와 `DropIndex(..., if_exists=True)`는 `CompileError`를 발생시킵니다(#540, #533). 대신 `checkfirst=True` 또는 `inspect(conn).has_index()`를 사용하세요.
 - **임시 테이블**: CUBRID는 `CREATE TEMPORARY TABLE`이나 세션 범위 테이블을 지원하지 않습니다.
 - **다중 스키마**: CUBRID는 단일 스키마 모델로 동작합니다. MySQL은 데이터베이스를 스키마로 사용합니다. SQLite는 데이터베이스를 attach할 수 있지만 진정한 스키마 지원은 없습니다.
 
@@ -133,7 +133,7 @@
 - **윈도우 함수**: CUBRID는 `OVER(PARTITION BY … ORDER BY …)`와 함께 `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()` 등의 윈도우 함수를 지원합니다. SA 기본 컴파일러가 이를 네이티브로 처리합니다.
 - **NULLS FIRST / NULLS LAST**: CUBRID는 `ORDER BY col ASC NULLS FIRST`와 `ORDER BY col DESC NULLS LAST`를 지원합니다. SA 기본 컴파일러가 네이티브로 처리합니다.
 - **GROUP_CONCAT**: CUBRID는 `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`를 지원합니다. `sa.func.group_concat(column)`을 사용하세요.
-- **LIMIT / OFFSET**: CUBRID는 MySQL 스타일 `LIMIT [offset,] count` 구문을 사용합니다. 오프셋만 주어지면 방언은 회피로 `LIMIT offset, 1073741823`(최대 int)을 냅니다.
+- **LIMIT / OFFSET**: CUBRID는 MySQL 스타일 `LIMIT [offset,] count` 구문을 사용합니다. 오프셋만 주어지면 방언은 "남은 모든 행" 센티넬로 `LIMIT offset, 4611686018427387904`(2^62)를 냅니다 — 사실상 무제한이면서, CUBRID가 내부적으로 계산하는 `offset + count` 덧셈이 부호 있는 BIGINT 범위를 넘어 오버플로하지 않을 만큼 작습니다.
 - **조인 변형**: INNER JOIN과 LEFT OUTER JOIN은 정상 컴파일됩니다. FULL OUTER JOIN과 `LATERAL`은 CUBRID가 지원하지 않아 컴파일 중 거부됩니다.
 - **Lateral 조인**: CUBRID는 `LATERAL` 서브쿼리를 지원하지 않습니다. `LATERAL` 키워드는 구문 오류를 일으킵니다.
 - **전문 검색**: CUBRID는 `MATCH … AGAINST` 구문이나 전문 인덱스를 지원하지 않습니다.
@@ -170,7 +170,7 @@
 
 | 타입 | CUBRID | MySQL | PostgreSQL | SQLite |
 |------|--------|-------|------------|--------|
-| ENUM | ❌ | ✅ | ✅ | ❌ |
+| ENUM | ✅ | ✅ | ✅ | ❌ |
 | JSON | ✅ | ✅ | ✅ | ⚠️ |
 | ARRAY | ❌ | ❌ | ✅ | ❌ |
 | UUID | ❌ | ❌ | ✅ | ❌ |
@@ -181,7 +181,7 @@
 
 - **BOOLEAN**: CUBRID는 `BOOLEAN`을 `SMALLINT`로 매핑합니다. MySQL은 `TINYINT(1)`로 매핑합니다. SQLite는 불리언을 정수로 저장합니다. PostgreSQL만 네이티브 `BOOLEAN` 타입을 가집니다.
 - **NCHAR / NVARCHAR**: CUBRID는 일급 국가 문자 타입을 가집니다. MySQL은 컬럼 문자셋으로 국가 문자를 처리합니다. PostgreSQL과 SQLite에는 별도의 국가 문자 타입이 없습니다.
-- **JSON**: CUBRID 10.2+는 25개 이상의 JSON 함수를 가진 네이티브 JSON 지원(RFC 7159)이 있습니다. 방언은 `JSON` 타입, `JSON_EXTRACT`를 통한 `col["key"]` 경로 표현식, 타입별 접근(`as_string()`, `as_integer()`, `as_float()`)을 지원합니다. MySQL(5.7+)과 PostgreSQL도 네이티브 JSON 지원이 있습니다. SQLite는 JSON 함수는 있지만 전용 컬럼 타입은 없습니다.
+- **JSON**: CUBRID 10.2+는 25개 이상의 JSON 함수를 가진 네이티브 JSON 지원(RFC 7159)이 있습니다. 방언은 `JSON` 타입, `JSON_EXTRACT`를 통한 `col["key"]` 경로 표현식, 타입별 접근(`as_string()`, `as_integer()`, `as_float()`, 그리고 `NUMERIC(p,s)`로 캐스팅해 `Decimal`을 반환하는 `as_numeric(p, s)`)을 지원합니다. `as_numeric()`은 JSON 숫자, 일반 십진수 형식의 숫자 문자열(`"15.5"`), JSON `true`/`false`(`1.00`/`0.00`)를 캐스팅합니다. 지수 표기 문자열(`"1e3"`)은 CUBRID 오류 -181, `NUMERIC(p,s)` 범위를 벗어난 값은 -427을 발생시키므로 이런 값에는 `as_float()`를 사용하세요. 숫자가 아닌 문자열(`"abc"`)은 `as_numeric()`과 `as_float()` 모두에서 -181이 발생하므로 캐스팅 전에 검증하거나 걸러내세요. MySQL(5.7+)과 PostgreSQL도 네이티브 JSON 지원이 있습니다. SQLite는 JSON 함수는 있지만 전용 컬럼 타입은 없습니다.
 - **ARRAY**: CUBRID는 유사 목적을 수행하지만 SQL 표준 배열은 아닌 컬렉션 타입(`SET`, `MULTISET`, `SEQUENCE`)을 사용합니다. PostgreSQL은 네이티브 `ARRAY[]` 지원이 있습니다.
 - **CLOB**: CUBRID와 MySQL은 명시적 `CLOB` 타입이 있습니다. PostgreSQL은 `TEXT`(무제한 길이)를 사용합니다. SQLite는 모든 텍스트를 `TEXT`로 저장합니다.
 
@@ -212,9 +212,14 @@
 
 - **CHECK 제약**: CUBRID는 CHECK 제약 구문을 파싱하지만 런타임에 강제하지 않습니다. 오해를 일으키는 메타데이터의 리플렉션을 피하기 위해 방언은 의도적으로 `get_check_constraints()`에서 빈 리스트를 반환합니다.
 - **테이블 코멘트**: `db_class.comment` 시스템 카탈로그 컬럼을 조회하는 `get_table_comment()`로 리플렉트됩니다.
-- **컬럼 코멘트**: `_db_attribute.comment` 시스템 카탈로그 컬럼을 조회하는 `get_columns()`로 리플렉트됩니다. 각 컬럼 dict의 `"comment"` 키로 반환됩니다.
-- **has_index**: CUBRID 방언은 `_db_index`를 조회해 `has_index()`를 구현합니다. MySQL SA 방언은 전용 `has_index()` 메서드를 제공하지 않습니다.
-- **리플렉션 소스**: 리플렉션은 여러 소스에 분산되어 있습니다: 컬럼/코멘트는 `SHOW COLUMNS IN` + `_db_attribute`, PK 이름은 `SHOW COLUMNS IN` + 선택적 `db_constraint` 조회, 외래 키와 유니크 제약은 `SHOW CREATE TABLE` 파싱, 인덱스는 `SHOW INDEXES IN` + `_db_index`, 뷰 정의는 `SHOW CREATE VIEW`, 테이블/뷰 이름과 테이블 코멘트는 `db_class`.
+- **컬럼 코멘트**: `db_attribute.comment` 카탈로그 뷰 컬럼을 조회하는 `get_columns()`로 리플렉트됩니다. 각 컬럼 dict의 `"comment"` 키로 반환됩니다.
+- **has_index**: CUBRID 방언은 `db_index`를 조회해 `has_index()`를 구현합니다. MySQL SA 방언은 전용 `has_index()` 메서드를 제공하지 않습니다. CUBRID는 따옴표로 감싼 식별자도 소문자로 저장하므로, `has_table()`과 `has_index()`는 대소문자가 섞인 이름을 소문자로 저장된 이름과도 비교합니다(#543). 따라서 `Index("IX_Mixed", Table("Users", ...))`에서도 `Index.drop(checkfirst=True)`가 동작합니다.
+- **유니크 제약과 유니크 인덱스**: CUBRID는 `UNIQUE` 제약을 유니크 인덱스로 구현하며 `CREATE UNIQUE INDEX`와 구분할 수 없습니다. 따라서 MySQL과 마찬가지로 각 항목은 `get_indexes()`와 `get_unique_constraints()` 모두에 나타나며, 유니크 제약 항목에는 해당 인덱스 이름을 담은 `duplicates_index`가 있습니다. `Table` 리플렉션(및 Alembic autogenerate)은 이 키를 사용해 유니크 인덱스만 남깁니다. 뷰에 대해서는 `get_indexes()`가 빈 리스트를 반환합니다.
+- **존재하지 않는 테이블과 뷰**: `get_columns()`, `get_pk_constraint()`, `get_foreign_keys()`, `get_indexes()`, `get_unique_constraints()`, `get_table_comment()`, `get_view_definition()`은 존재하지 않는 객체에 대해 `NoSuchTableError`를 발생시키므로 `get_multi_*()` 변형은 해당 객체를 결과에서 제외합니다. `get_view_definition()`은 테이블에 대해서도 이 예외를 발생시킵니다. 뷰에 대해서는 `get_foreign_keys()`와 `get_unique_constraints()`가 `SHOW CREATE TABLE`을 실행하지 않고 빈 리스트를 반환합니다.
+- **리플렉션 소스**: 리플렉션은 여러 소스에 분산되어 있습니다: 컬럼/코멘트는 `SHOW COLUMNS IN` + `db_attribute`, 기본 키(이름과 키 순서의 모든 컬럼)는 `db_index` + `db_index_key`, 외래 키는 `SHOW CREATE TABLE` 파싱, 유니크 제약은 `db_index` + `SHOW INDEXES IN`(`db_index`에 테이블의 인덱스가 하나도 없거나, CUBRID 11.2부터 이름이 다른 소유자의 클래스로 해석될 때만 `SHOW CREATE TABLE` 파싱으로 대체하며, 그 밖에 기본 키, 외래 키 또는 다른 인덱스는 있지만 유니크 인덱스가 없는 테이블은 카탈로그만으로 판단, #610), 인덱스는 `SHOW INDEXES IN` + `db_index`, 뷰 정의는 `SHOW CREATE VIEW`, 테이블/뷰 이름과 테이블 코멘트는 `db_class`.
+- **외래 키 DDL 문법**: `get_foreign_keys()`는 지원 서버(10.2, 11.0, 11.2, 11.4)의 `SHOW CREATE TABLE` 출력에 의존하며, 이 출력은 `test/fixtures/show_create_table/`에 기록되어 있고 `test/test_show_create_table_server_output.py`가 실제 서버와 비교합니다 (#611): 모든 식별자는 대괄호로 출력되고 공백, 쉼표, 괄호는 그대로 유지됩니다. 각 외래 키는 두 동작을 모두 `ON DELETE`, `ON UPDATE` 순서로 출력하며 기본값은 `RESTRICT`로 출력됩니다. 동작은 `CASCADE`, `SET NULL`, `NO ACTION`, `RESTRICT`입니다(서버는 `ON UPDATE CASCADE`를 거부하며 `SET DEFAULT`는 없습니다). 참조 테이블은 11.2부터 소유자가 붙어(`[dba.parent]`) 출력되고 10.2와 11.0에서는 붙지 않으며, `referred_table`에서는 소유자를 제거합니다. `UNIQUE` 제약과 `CREATE UNIQUE INDEX` 인덱스는 모두 `UNIQUE KEY`로 출력됩니다.
+- **DBA가 아닌 사용자의 리플렉션**: 리플렉션은 모든 사용자가 읽을 수 있는 카탈로그 뷰(`db_class`, `db_index`, `db_index_key`, `db_attribute`)만 읽고, DBA만 읽을 수 있는 `_db_index`, `_db_index_key`, `_db_attribute` 카탈로그 테이블은 읽지 않습니다. 따라서 DBA가 아닌 사용자도 DBA와 같은 인덱스, 기본 키, 유니크 제약, `has_index()` 결과와 컬럼 코멘트를 얻습니다. 테이블 이름은 `SHOW COLUMNS IN <name>`과 같이 입력한 그대로 또는 소문자로 변환해 비교합니다. CUBRID 11.2부터 이 뷰에는 다른 소유자의 같은 이름 클래스도 나타나므로, 리플렉트하는 클래스의 소유자 행만 사용합니다(`db_class`와 마찬가지로 현재 사용자의 클래스가 우선). 카탈로그 조회가 실패하면 불완전한 메타데이터로 조용히 대체하지 않고 예외를 발생시킵니다.
+- **`SHOW CREATE TABLE` 실패**: `get_foreign_keys()`(와 `get_unique_constraints()`의 `SHOW CREATE TABLE` 대체 경로)는 `SHOW CREATE TABLE`이 성공했고 DDL에 해당 제약이 없을 때만 빈 리스트를 반환합니다. `Unknown class`이거나 카탈로그에 있는 테이블에 대해 행이 반환되지 않으면 `NoSuchTableError`를 발생시키고, 그 밖의 실패(연결 끊김, 권한 오류, 드라이버 오류)는 로그를 남기고 "제약 없음"으로 보고하는 대신 그대로 전파합니다. 이전 동작 때문에 Alembic autogenerate가 이미 존재하는 외래 키에 대해 `add_fk`를 생성했습니다 (#589). CUBRID는 사용자가 `SELECT` 권한을 가진 테이블만 `db_class`에 보여 주고, 그런 테이블에 대한 `SHOW CREATE TABLE`은 권한 오류로 실패하지 않으므로(CUBRID 10.2와 11.4에서 DBA가 아닌 사용자로 확인) DBA가 아닌 사용자에게도 실패를 허용하지 않습니다. CUBRID 11.2부터 소유자를 붙이지 않은 이름은 현재 사용자의 스키마에서 찾으므로, 다른 소유자의 테이블은 현재 사용자에게 권한이 부여되어 있어도 `get_columns()`와 마찬가지로 `NoSuchTableError`를 발생시킵니다. 따라서 `get_unique_constraints()`는 카탈로그에 그런 테이블의 인덱스가 있어도 `SHOW CREATE TABLE`을 계속 읽습니다. 현재 사용자의 테이블(11.2 이전에는 보이는 모든 테이블)에 대해 카탈로그에 인덱스는 있지만 유니크 인덱스가 없으면 `get_unique_constraints()`는 `SHOW CREATE TABLE`을 실행하지 않고 `[]`를 반환합니다 (#610).
 
 ---
 
@@ -226,7 +231,7 @@
 | 세이브포인트 | ✅ | ✅ | ✅ | ✅ |
 | 2단계 커밋 | ❌ | ✅ | ✅ | ❌ |
 | 서버 측 커서 | ❌ | ✅ | ✅ | ❌ |
-| 오토커밋 감지 | ✅ | ✅ | ✅ | ✅ |
+| SQL 텍스트 기반 오토커밋 감지 | ❌ | ❌ | ❌ | ❌ |
 | 연결 수준 인코딩 | ❌ | ✅ | ✅ | ❌ |
 
 ### CUBRID 격리 수준
@@ -239,11 +244,13 @@ CUBRID의 MVCC 엔진(10.0+)은 세 가지 격리 수준을 지원합니다:
 | `REPEATABLE READ` (5) | 트랜잭션 내 반복 가능한 읽기 |
 | `READ COMMITTED` (4, 기본) | 읽기는 커밋된 데이터만 봄. 반복 불가능 리드 가능 |
 
+SQLAlchemy의 `AUTOCOMMIT` 수준도 모든 드라이버에서 받으며, 드라이버를 오토커밋 모드로 전환합니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
+
 ### 참고
 
 - **2단계 커밋**: CUBRID는 `XA`를 통한 분산 트랜잭션을 지원하지 않습니다.
 - **서버 측 커서**: CUBRID Python 드라이버는 서버 측 커서 기능을 노출하지 않습니다.
-- **오토커밋 감지**: CUBRID 실행 컨텍스트는 `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, `TRUNCATE` 문에 매칭하는 정규식 패턴을 사용해 오토커밋 활성화 시점을 결정합니다.
+- **SQL 텍스트 기반 오토커밋 감지**: SQLAlchemy 2.x는 어떤 방언에서도 문장 텍스트를 검사해 커밋 여부를 결정하지 않습니다. DML과 DDL은 `conn.commit()`, `engine.begin()` 블록, `Session` 커밋을 통해서만 커밋됩니다. [SQL 텍스트 기반 오토커밋 없음](CONNECTION.md#sql-텍스트-기반-오토커밋-없음)을 참고하세요.
 - **세이브포인트**: CUBRID는 `SAVEPOINT`와 `ROLLBACK TO SAVEPOINT`를 지원합니다. `RELEASE SAVEPOINT`는 미지원 — 방언은 `do_release_savepoint()`를 no-op로 구현합니다.
 
 ---
@@ -253,7 +260,7 @@ CUBRID의 MVCC 엔진(10.0+)은 세 가지 격리 수준을 지원합니다:
 | 기능 | CUBRID | MySQL | PostgreSQL | SQLite |
 |---------|--------|-------|------------|--------|
 | 문장 캐싱 | ✅ | ✅ | ✅ | ✅ |
-| 네이티브 enum | ❌ | ✅ | ✅ | ❌ |
+| 네이티브 enum | ✅ | ✅ | ✅ | ❌ |
 | 네이티브 불리언 | ❌ | ❌ | ✅ | ❌ |
 | 네이티브 decimal | ✅ | ✅ | ✅ | ❌ |
 | 시퀀스 | ❌ | ❌ | ✅ | ❌ |
@@ -267,8 +274,9 @@ CUBRID의 MVCC 엔진(10.0+)은 세 가지 격리 수준을 지원합니다:
 ### 참고
 
 - **문장 캐싱**: `supports_statement_cache = True`. 방언은 SQLAlchemy 2.0의 컴파일 캐시와 완전 호환됩니다.
-- **이름 정규화**: CUBRID는 인용되지 않은 식별자를 소문자로 폴딩합니다. 방언은 Python 측 기대에 맞게 식별자를 정규화합니다 (`requires_name_normalize = True`).
+- **이름 정규화**: CUBRID는 인용되지 않은 식별자를 소문자로 폴딩하며, 이는 대소문자를 구분하지 않는 이름에 대한 SQLAlchemy의 소문자 규칙과 이미 일치합니다. 따라서 방언은 `requires_name_normalize = False`로 설정하며 SQLAlchemy의 대문자 이름 정규화를 적용하지 않습니다.
 - **최대 식별자 길이**: CUBRID는 254자까지 식별자를 허용합니다 — MySQL(64)이나 PostgreSQL(63)보다 상당히 깁니다.
+- **결과 메타데이터 (`cursor.description`)**: 방언은 드라이버의 `cursor.description`을 그대로 전달하며(`CursorResult.cursor.description`) 어떤 값도 정규화하지 않습니다. CUBRID 10.2 및 11.4에서 동기·비동기 pycubrid와 CUBRIDdb로 실제 검증했습니다(#482). `Result.keys()`는 `text()`의 별칭과 표현식을 포함해 description 이름과 같습니다(`1 + 1`의 이름은 `1+1`). 스칼라 타입 코드는 모든 드라이버에서 CUBRID 코드입니다(예: `VARCHAR` 2, `NUMERIC` 7, `INTEGER` 8, `DOUBLE` 12, `DATE` 13, `TIMESTAMP` 15, `BIGINT` 21). 동기와 비동기 pycubrid는 같은 값을 보고합니다. 드라이버 차이: 컬렉션 컬럼은 pycubrid에서 `SET` 16 / `MULTISET` 17 / `SEQUENCE` 18이지만 CUBRIDdb에서는 CCI 복합 코드(비트 `0x60`의 종류와 요소 타입의 조합, 즉 `SET(INTEGER)`는 40)입니다. `null_ok`는 pycubrid에서 `bool`, CUBRIDdb에서 `0`/`1`입니다. 릴리스된 pycubrid 1.7.1은 `null_ok`를 반대로 보고하고(cubrid-lab/pycubrid#431) 컬렉션 컬럼을 요소 타입 코드로 보고합니다(cubrid-lab/pycubrid#430). 두 문제 모두 pycubrid 1.8.0에서 수정되었으며, 계약 테스트는 수정된 동작을 요구합니다. SQLAlchemy 자체는 `null_ok`를 사용하지 않으며, 리플렉션(`Inspector.get_columns()`)은 카탈로그에서 NULL 허용 여부를 읽으므로 영향을 받지 않습니다.
 
 ---
 
@@ -469,7 +477,7 @@ stmt = (
 | JSON 타입 | ✅ | `JSON_EXTRACT`를 통한 경로 표현식을 갖춘 네이티브 JSON 지원 (CUBRID 10.2+) |
 | 임시 테이블 | ❌ | CUBRID는 `CREATE TEMPORARY TABLE` 미지원 |
 | 다중 스키마 | ❌ | CUBRID는 단일 스키마 모델로 동작 |
-| IS DISTINCT FROM | ❌ | CUBRID SQL 연산자가 아님 |
+| IS DISTINCT FROM | ✅ | NULL-안전 `<=>`로 에뮬레이트 (#344, #377) |
 | CHECK 제약 리플렉션 | ❌ | CUBRID는 CHECK 제약을 파싱하지만 무시 |
 | 시퀀스 | ❌ | CUBRID는 대신 `AUTO_INCREMENT` 사용 |
 | Lateral 조인 | ❌ | `LATERAL` 키워드가 CUBRID에서 구문 오류 발생 |
@@ -479,4 +487,4 @@ stmt = (
 
 ---
 
-*최종 갱신: 2026년 4월 · sqlalchemy-cubrid v1.4.0 Beta · SQLAlchemy 2.0–2.1*
+*최종 갱신: 2026년 9월 · sqlalchemy-cubrid v1.8.0 · SQLAlchemy 2.0–2.1*

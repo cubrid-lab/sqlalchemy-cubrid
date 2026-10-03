@@ -5,21 +5,42 @@
 # This module is part of sqlalchemy-cubrid and is released under
 # the MIT License: http://www.opensource.org/licenses/mit-license.php
 
-"""CUBRID dialect for SQLAlchemy 2.0."""
+"""CUBRID dialect for SQLAlchemy 2.0.
+
+Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
+
+    from sqlalchemy import create_engine, inspect
+
+    engine = create_engine("cubrid+pycubrid://dba:pw@localhost:33000/demodb")
+    insp = inspect(engine)
+    insp.get_table_names()
+    insp.get_columns("users")
+    insp.get_pk_constraint("users")["constrained_columns"]
+"""
 
 from __future__ import annotations
 
+from collections import Counter
+import importlib
+import importlib.metadata
+import importlib.util
 import logging
+import os
 import re
+import sys
+import warnings
 
 from typing import Any, Callable, Optional, Sequence, cast
 
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy import util
+from sqlalchemy.exc import ArgumentError, NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
     DBAPIConnection,
+    BindTyping,
     ConnectArgsType,
+    IsolationLevel,
     ReflectedCheckConstraint,
     ReflectedColumn,
     ReflectedForeignKeyConstraint,
@@ -55,6 +76,7 @@ from sqlalchemy_cubrid.types import (
     JSON,
     JSONIndexType,
     JSONPathType,
+    MONETARY,
     MULTISET,
     NCHAR,
     NUMERIC,
@@ -81,22 +103,81 @@ from sqlalchemy.types import (
 
 log = logging.getLogger(__name__)
 
+
+def _count_is_positive(count: Any) -> bool:
+    """True if a catalog ``COUNT(*)`` result is greater than zero.
+
+    ``COUNT(*)`` is ``BIGINT`` in CUBRID, and the ``CUBRID-Python`` releases
+    on PyPI (9.3.x) fetch ``BIGINT`` as ``str``, so ``bool('0')`` would be
+    ``True``. Coerce first, so ``int``, ``str``, ``Decimal`` and ``None`` all
+    work (#583).
+    """
+    return int(count or 0) > 0
+
+
+# Oldest CUBRIDdb release line the dialect is tested with: CI builds
+# cubrid-python v11.3.0.51 from source. PyPI only has CUBRID-Python 9.3.x and
+# older, which fetches BIGINT as str and fails parts of the integration suite
+# (#583, #585). Only (major, minor) is compared: a source build's fourth
+# component is a git commit count, not the release tag.
+_MIN_TESTED_CUBRIDDB = (11, 3)
+
+
+def _cubriddb_version(dbapi: Any) -> tuple[str, tuple[int, int]] | None:
+    """Return the loaded CUBRIDdb C extension's version string and (major, minor).
+
+    ``CUBRIDdb`` imports its ``_cubrid`` extension module, whose ``__version__``
+    is the compiled-in driver version (``b'9.3.0.0001'`` from PyPI,
+    ``b'11.3.0.0001'`` from a v11.3.0.51 source build). ``None`` if it is
+    missing or unparseable.
+    """
+    raw = getattr(getattr(dbapi, "_cubrid", None), "__version__", None)
+    if isinstance(raw, bytes):
+        raw = raw.decode("ascii", "replace")
+    if not isinstance(raw, str):
+        return None
+    m = re.match(r"(\d+)\.(\d+)", raw)
+    if m is None:
+        return None
+    return raw, (int(m.group(1)), int(m.group(2)))
+
+
+def _is_unknown_class_error(error: BaseException) -> bool:
+    """True only for CUBRID's ``Unknown class "<owner>.<name>"`` error.
+
+    Used to translate a driver error from a reflection query on a missing
+    table or view into SQLAlchemy's ``NoSuchTableError``. The native code
+    (-493) and SQLSTATE (42S02) are not enough: CUBRID uses -493 for every
+    parser error, and pycubrid before 1.8.0 reports syntax errors, ``<name>
+    is not a class`` and some permission errors with SQLSTATE 42S02 and a
+    ``Table not found`` description, so only the server message identifies a missing
+    object (#454, #530). Only the driver error (``orig``) is inspected, never
+    the SQLAlchemy wrapper, whose text includes the SQL statement.
+    """
+    return "Unknown class" in str(getattr(error, "orig", error))
+
+
 # Pre-compiled patterns for column type parsing in get_columns().
 # Avoids re-compilation on every reflection call.
-_RE_TYPE_PARAMS = re.compile(r"\([\d,]+\)")
+# A parameter list of digits, with optional whitespace around each comma, so
+# ``NUMERIC(10, 2)`` is looked up as ``NUMERIC`` like ``NUMERIC(10,2)`` (#609).
+_RE_TYPE_PARAMS = re.compile(r"\(\d+(?:\s*,\s*\d+)*\)")
 _RE_ENUM = re.compile(r"^ENUM\s*\((.*)\)\s*$", re.IGNORECASE)
-
-
-def _parse_enum_elements(raw: str) -> list[str]:
-    """Extract quoted element strings from an ENUM(...) type string.
-
-    Handles doubled single-quote escaping inside elements
-    (e.g. ENUM('it''s', 'b') -> ["it's", "b"]).
-    """
-    return [m.replace("''", "'") for m in re.findall(r"'((?:[^']|'')*)'", raw)]
-
-
-_RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*\((.+)\)$", re.IGNORECASE)
+# ``SET(INT)`` or the form the servers print, ``SET OF INTEGER,VARCHAR`` (#631).
+_RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*(?:\((.+)\)|\s+OF\s+(.+))$", re.IGNORECASE)
+_RE_COLLECTION_OF = re.compile(r"^(?:SET|MULTISET|SEQUENCE)\s+OF\s", re.IGNORECASE)
+#: ``db_attr_setdomain_elm`` type names that differ from the DDL names.
+_CATALOG_MEMBER_TYPE_NAMES = {
+    "STRING": "VARCHAR",
+    "VARNCHAR": "NCHAR VARYING",
+    "VARBIT": "BIT VARYING",
+    "SHORT": "SMALLINT",
+}
+_CATALOG_SHOW_MEMBER_NAMES = {
+    "STRING": "VARCHAR",
+    "VARNCHAR": "NCHAR VARYING",
+    "VARBIT": "BIT VARYING",
+}
 _RE_LENGTH = re.compile(r"\((\d+)\)")
 
 
@@ -131,7 +212,7 @@ def _split_collection_members(inner: str) -> list[str]:
     return parts
 
 
-_RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:,\s*(\d+))?\)")
+_RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:\s*,\s*(\d+))?\)")
 
 # CUBRID's ``SHOW CREATE TABLE`` emits foreign-key clauses such as::
 #
@@ -140,20 +221,27 @@ _RE_PRECISION_SCALE = re.compile(r"\((\d+)(?:,\s*(\d+))?\)")
 #
 # We parse this DDL fragment because CUBRID exposes no queryable view that
 # carries the referenced table/columns alongside the constraint name.
+#
+# A column list is matched as bracketed names only (each optionally followed
+# by ASC/DESC), because a name may itself contain ``(``, ``)``, ``,`` or spaces
+# (``([(3)], [a, b])``, #532). CUBRID cannot put ``]`` inside an identifier, so
+# ``[^\]]+`` spans one whole name. Whitespace is allowed inside the parentheses.
+_BRACKETED_COLUMN = r"\[[^\]]+\](?:\s+(?:ASC|DESC))?"
+_BRACKETED_COLUMN_LIST = rf"{_BRACKETED_COLUMN}(?:\s*,\s*{_BRACKETED_COLUMN})*"
 _RE_FOREIGN_KEY = re.compile(
     r"CONSTRAINT\s+\[(?P<name>[^\]]+)\]\s+FOREIGN\s+KEY\s*"
-    r"\((?P<cols>[^)]+)\)\s+REFERENCES\s+"
-    r"\[(?P<ref_table>[^\]]+)\]\s*\((?P<ref_cols>[^)]+)\)"
+    rf"\(\s*(?P<cols>{_BRACKETED_COLUMN_LIST})\s*\)\s+REFERENCES\s+"
+    rf"\[(?P<ref_table>[^\]]+)\]\s*\(\s*(?P<ref_cols>{_BRACKETED_COLUMN_LIST})\s*\)"
     r"(?:\s+ON\s+DELETE\s+(?P<ondelete>CASCADE|SET\s+NULL|NO\s+ACTION|RESTRICT))?"
     r"(?:\s+ON\s+UPDATE\s+(?P<onupdate>CASCADE|SET\s+NULL|NO\s+ACTION|RESTRICT))?",
     re.IGNORECASE,
 )
 # Parses ``CONSTRAINT [name] UNIQUE KEY ([col1], [col2])`` from
 # ``SHOW CREATE TABLE`` output. Used as a fallback when the
-# ``_db_index`` system catalog query fails.
+# ``db_index`` catalog view finds no unique index.
 _RE_UNIQUE_KEY = re.compile(
     r"CONSTRAINT\s+\[(?P<name>[^\]]+)\]\s+UNIQUE\s+KEY\s*"
-    r"\((?P<cols>[^)]+)\)",
+    rf"\(\s*(?P<cols>{_BRACKETED_COLUMN_LIST})\s*\)",
     re.IGNORECASE,
 )
 _RE_BRACKET_IDENT = re.compile(r"\[([^\]]+)\]")
@@ -256,13 +344,17 @@ class CubridDialect(default.DefaultDialect):
     max_index_name_length = 254
     max_constraint_name_length = 254
 
-    requires_name_normalize = True
+    requires_name_normalize = False
 
     # Data type support
-    supports_native_enum = False
+    supports_native_enum = True
     supports_native_boolean = False  # CUBRID uses SMALLINT for booleans
     supports_native_decimal = True
     supports_native_lateral = False
+
+    # Render CAST(... AS NUMERIC(p,s)) on scaled numeric binds so CUBRID does
+    # not coerce them to integers in arithmetic; see CubridSQLCompiler.
+    bind_typing = BindTyping.RENDER_CASTS
 
     # Column options
     supports_sequences = False
@@ -280,7 +372,11 @@ class CubridDialect(default.DefaultDialect):
     use_insertmanyvalues = True
     use_insertmanyvalues_wo_returning = True
     insertmanyvalues_implicit_sentinel = InsertmanyvaluesSentinelOpts.ANY_AUTOINCREMENT
-    supports_is_distinct_from = False
+    supports_is_distinct_from = True
+
+    # Accurate on both drivers: pycubrid sums executemany rowcount itself, and
+    # CUBRIDdb's last-row-only rowcount is corrected by do_executemany (#502).
+    supports_sane_multi_rowcount = True
 
     # RETURNING
     insert_returning = False
@@ -300,7 +396,20 @@ class CubridDialect(default.DefaultDialect):
         no_backslash_escapes: bool = True,
         **kwargs: Any,
     ) -> None:
-        super().__init__(**kwargs)
+        if isolation_level is not None:
+            if not isinstance(isolation_level, str):
+                raise ArgumentError(
+                    f"isolation_level must be a string such as 'SERIALIZABLE' or "
+                    f"'AUTOCOMMIT', got {isolation_level!r}"
+                )
+            # SQLAlchemy applies the engine-level level on connect and restores
+            # it on pool checkin, asserting that it equals the level read back
+            # at first connect, so pass the canonical spelling of an alias.
+            name = isolation_level.replace("_", " ").upper()
+            code = self._ISOLATION_LEVEL_MAP.get(name)
+            isolation_level = self._ISOLATION_LEVEL_REVERSE[code] if code is not None else name
+        # An unknown name is passed through so SQLAlchemy raises ArgumentError.
+        super().__init__(isolation_level=cast(Optional[IsolationLevel], isolation_level), **kwargs)
         self.isolation_level = isolation_level
         self._json_serializer = json_serializer
         self._json_deserializer = json_deserializer
@@ -319,17 +428,44 @@ class CubridDialect(default.DefaultDialect):
         except ImportError as e:
             raise ImportError(
                 "Could not import CUBRIDdb. The bare cubrid:// URL uses the "
-                "legacy CUBRID-Python C-extension driver. Either install it "
-                "(pip install CUBRID-Python), or switch to the maintained "
+                "legacy CUBRIDdb C-extension driver. Switch to the maintained "
                 "pure-Python driver with a cubrid+pycubrid:// URL "
-                '(pip install "sqlalchemy-cubrid[pycubrid]").'
+                '(pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb '
+                "from cubrid-python v11.3.0.51 or later (the CUBRID-Python "
+                "9.3.x releases on PyPI are untested)."
             ) from e
         return cast(DBAPIModule, cubrid_dbapi)  # pyright: ignore[reportInvalidCast]
 
-    # Keep legacy dbapi() for SA 1.x compat if needed
-    @classmethod
-    def dbapi(cls) -> DBAPIModule:  # type: ignore[override]
-        return cls.import_dbapi()
+    def do_executemany(
+        self,
+        cursor: Any,
+        statement: str,
+        parameters: Any,
+        context: Any = None,
+    ) -> None:
+        """Run ``executemany`` as one ``execute`` per row, summing rowcount.
+
+        CUBRIDdb (up to at least 11.3.0.51) prepares an ``executemany``
+        statement once and never binds ``None``, so a ``None`` parameter
+        silently reuses the previous row's value; its ``rowcount`` also
+        reflects only the last row. Both are fixed by executing each row
+        separately (each ``execute`` re-prepares, so unbound parameters are
+        NULL) and reporting the total, which keeps
+        ``supports_sane_multi_rowcount`` accurate for ORM batched UPDATE and
+        DELETE. The guard applies to every statement, not only when a row
+        contains ``None``, because the last-row rowcount is wrong either way.
+        insertmanyvalues batches go through ``do_execute`` and are not
+        affected, but an INSERT into a table with a ``bind_expression()`` type
+        falls back to executemany (#421) and does use this guard.
+        :class:`PyCubridDialect` restores the driver's own ``executemany``.
+        Remove once a fixed CUBRIDdb is the minimum (#502).
+        """
+        rowcount = 0
+        for params in parameters:
+            cursor.execute(statement, params)
+            if rowcount >= 0:
+                rowcount = -1 if cursor.rowcount < 0 else rowcount + cursor.rowcount
+        cursor.rowcount = rowcount
 
     def create_connect_args(self, url: URL) -> ConnectArgsType:
         """Build DB-API connection arguments for CUBRID.
@@ -354,9 +490,38 @@ class CubridDialect(default.DefaultDialect):
 
     def initialize(self, connection: Any) -> None:
         super().initialize(connection)
+        self._warn_if_untested_cubriddb()
         log.debug(
             "CUBRID dialect initialized: server_version=%s",
             self.server_version_info,
+        )
+
+    def _warn_if_untested_cubriddb(self) -> None:
+        """Warn once per engine when CUBRIDdb is older than the tested line (#585).
+
+        A warning rather than ``NotSupportedError``: the ``[cubrid]`` /
+        ``[cubriddb]`` extras have always installed the PyPI 9.3.x release, so
+        refusing to connect would break existing deployments in a minor
+        release. The pycubrid variants inherit :meth:`initialize` and skip this.
+        """
+        if self.driver != "cubrid":
+            return
+        found = _cubriddb_version(self.dbapi)
+        if found is None:
+            log.debug("CUBRIDdb version could not be determined; skipping version check")
+            return
+        raw, major_minor = found
+        if major_minor >= _MIN_TESTED_CUBRIDDB:
+            return
+        util.warn(
+            f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "
+            "sqlalchemy-cubrid is tested with. The CUBRID-Python releases on "
+            "PyPI (9.3.x, installed by the [cubrid] and [cubriddb] extras) are "
+            "untested: they return BIGINT as str and fail parts of the "
+            "integration suite. Use the recommended cubrid+pycubrid:// URL "
+            '(pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb '
+            "from cubrid-python v11.3.0.51 or later; see "
+            "https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/"
         )
 
     # ----- Reflection methods -----
@@ -377,8 +542,21 @@ class CubridDialect(default.DefaultDialect):
 
         columns: list[ReflectedColumn] = []
         quoted = self.identifier_preparer.quote_identifier(table_name)
-        result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
-        for row in result:
+        try:
+            result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
+        rows = list(result)
+        enum_values = self._enum_catalog(connection, table_name, rows, **kw)
+        member_types, member_families, collection_kinds = self._collection_catalog(
+            connection, table_name, rows, **kw
+        )
+        # The catalog lookups are by column name; a CLASS ATTRIBUTE of the
+        # same name is also listed by SHOW COLUMNS (#631).
+        name_counts = Counter(row[0] for row in rows)
+        for row in rows:
             colname = row[0]
             coltype_raw = row[1]
             nullable = row[2] == "YES"
@@ -386,20 +564,58 @@ class CubridDialect(default.DefaultDialect):
             autoincrement = "auto_increment" in row[5] if row[5] else False
 
             # Strip length/precision from type string for lookup
-            coltype_key = _RE_TYPE_PARAMS.sub("", coltype_raw).strip()
+            coltype_key = _RE_TYPE_PARAMS.sub("", coltype_raw or "").strip()
 
             coltype: Any  # noqa: F842 — type varies per branch below
 
-            # ENUM('a', 'b', ...) — native enum with its element list
-            enum_match = _RE_ENUM.match(coltype_raw.strip())
-            if enum_match:
-                coltype = ENUM(*_parse_enum_elements(enum_match.group(1)))
+            # ENUM('a', 'b', ...) — exact values must come from the domain
+            # catalog; SHOW COLUMNS loses quote escaping (#631).
+            enum_match = _RE_ENUM.match(coltype_raw.strip()) if coltype_raw else None
+            # Collection types: SET(VARCHAR(100)), SET OF NUMERIC,VARCHAR, etc.
+            collection_match = _RE_COLLECTION.match(coltype_raw) if coltype_raw else None
 
-            # Collection types: SET(VARCHAR(100)), MULTISET(INT), etc.
-            collection_match = None if enum_match else _RE_COLLECTION.match(coltype_raw)
-            if collection_match:
+            if name_counts[colname] > 1 and (
+                coltype_raw is None
+                or enum_match
+                or (collection_match and collection_match.group(3))
+            ):
+                util.warn(
+                    f"Could not safely reflect column '{colname}': SHOW COLUMNS lists the "
+                    "name more than once"
+                )
+                coltype = sqltypes.NULLTYPE
+            elif coltype_raw is None and colname in collection_kinds:
+                # A collection declared without member types (#631).
+                coltype = self.ischema_names[collection_kinds[colname]]()
+            elif enum_match:
+                values = enum_values.get(colname) if enum_values is not None else None
+                if values:
+                    coltype = ENUM(*values)
+                else:
+                    util.warn(f"Could not safely reflect ENUM values of column '{colname}'")
+                    coltype = sqltypes.NULLTYPE
+            elif collection_match and collection_match.group(3) is not None:
+                # SHOW COLUMNS drops member modifiers and may reorder members.
+                # The catalog must account for every reported type family;
+                # otherwise constructing a collection would silently change
+                # its domain (#631).
+                shown = Counter(
+                    member.strip().upper()
+                    for member in _split_collection_members(collection_match.group(3))
+                )
+                catalog = Counter(member_families.get(colname, []))
+                # An ENUM member is listed without its values, and ENUM() is
+                # not valid DDL, so it cannot be reflected either (#631).
+                if catalog and catalog == shown and "ENUM" not in catalog:
+                    coltype = self.ischema_names[collection_match.group(1).upper()](
+                        *member_types[colname]
+                    )
+                else:
+                    util.warn(f"Could not safely reflect collection type of column '{colname}'")
+                    coltype = sqltypes.NULLTYPE
+            elif collection_match:
                 coll_name = collection_match.group(1).upper()
-                inner_raw = collection_match.group(2)
+                inner_raw = collection_match.group(2) or ""
                 coll_cls = self.ischema_names[coll_name]
                 members: list[Any] = []
                 for member_str in _split_collection_members(inner_raw):
@@ -419,6 +635,14 @@ class CubridDialect(default.DefaultDialect):
                             )  # pyright: ignore[reportCallIssue]
                         else:
                             members.append(self.ischema_names[member_key]())
+                    elif member_key in ("BIT", "BIT VARYING"):
+                        length_match = _RE_LENGTH.search(member_str)
+                        members.append(
+                            BIT(
+                                length=int(length_match.group(1)) if length_match else None,
+                                varying=member_key == "BIT VARYING",
+                            )
+                        )
                     elif member_key in self.ischema_names:
                         cls = self.ischema_names[member_key]
                         members.append(cls() if callable(cls) else cls)
@@ -437,14 +661,20 @@ class CubridDialect(default.DefaultDialect):
                     coltype = self.ischema_names[coltype_key](precision=precision, scale=scale)  # pyright: ignore[reportCallIssue]
                 else:
                     coltype = self.ischema_names[coltype_key]()
+            elif coltype_key in ("BIT", "BIT VARYING"):
+                # Keep the bit length and VARYING so a reflected BIT(32) /
+                # BIT VARYING(64) compiles back to the same DDL (#545).
+                length_match = _RE_LENGTH.search(coltype_raw)
+                coltype = BIT(
+                    length=int(length_match.group(1)) if length_match else None,
+                    varying=coltype_key == "BIT VARYING",
+                )
             else:
                 try:
                     coltype_cls = self.ischema_names[coltype_key]
                     # Some ischema entries are classes, some are instances
                     coltype = coltype_cls() if callable(coltype_cls) else coltype_cls
                 except KeyError:
-                    from sqlalchemy import util
-
                     util.warn("Did not recognize type '%s' of column '%s'" % (coltype_raw, colname))
                     coltype = sqltypes.NULLTYPE
 
@@ -462,18 +692,18 @@ class CubridDialect(default.DefaultDialect):
                 }
             )
 
-        try:
-            comment_result = connection.execute(
-                text(
-                    "SELECT attr_name, comment FROM _db_attribute "
-                    "WHERE class_name = :name ORDER BY def_order"
-                ),
-                {"name": table_name},
-            )
-            comment_map = {row[0]: row[1] for row in comment_result}
-        except Exception:
-            log.debug("Column comment query failed for %s", table_name, exc_info=True)
-            comment_map = {}
+        # ``db_attribute`` is the public catalog view; ``_db_attribute`` is
+        # readable only by DBA (#549). A failing query raises instead of
+        # silently dropping every column comment.
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        comment_result = connection.execute(
+            text(
+                "SELECT attr_name, comment FROM db_attribute "  # nosec B608 - constant clause
+                "WHERE " + class_filter + " ORDER BY def_order"
+            ),
+            filter_params,
+        )
+        comment_map = {row[0]: row[1] for row in comment_result}
 
         for column in columns:
             column["comment"] = comment_map.get(column["name"])
@@ -494,28 +724,44 @@ class CubridDialect(default.DefaultDialect):
         constraint_name = None
         constrained_columns: list[str] = []
 
-        quoted = self.identifier_preparer.quote_identifier(table_name)
-        result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
-        for row in result:
-            if row[3] == "PRI":
-                constrained_columns.append(row[0])
+        # Read the PK columns from the public ``db_index`` / ``db_index_key``
+        # catalog views (the ``_db_index`` tables are DBA-only, #549).
+        # ``SHOW COLUMNS`` marks only the *first* column of a composite PK as
+        # ``PRI`` and gives no column order, so it drops the trailing columns of
+        # a multi-column key (#426). The catalog gives every column in
+        # ``key_order``. A failing query raises.
+        class_filter, filter_params = self._catalog_class_filter(
+            connection, table_name, "i", "k", **kw
+        )
+        pk_result = connection.execute(
+            text(
+                "SELECT k.key_attr_name, i.index_name "  # nosec B608 - constant clause
+                "FROM db_index i, db_index_key k WHERE "
+                + class_filter
+                + " AND i.is_primary_key = 'YES' "
+                "AND k.class_name = i.class_name AND k.index_name = i.index_name "
+                "ORDER BY k.key_order"
+            ),
+            filter_params,
+        )
+        for row in pk_result:
+            constrained_columns.append(row[0])
+            constraint_name = row[1]
 
-        # Find the PK constraint name from _db_index (the authoritative
-        # system catalog view for index metadata).
-        if constrained_columns:
+        # No catalog row: the table has no PK or does not exist. ``SHOW
+        # COLUMNS`` resolves the name like the server and raises for a missing
+        # table.
+        if not constrained_columns:
+            quoted = self.identifier_preparer.quote_identifier(table_name)
             try:
-                constraint_result = connection.execute(
-                    text(
-                        "SELECT index_name FROM _db_index "
-                        "WHERE class_of.class_name = :table AND is_primary_key = 1"
-                    ),
-                    {"table": table_name},
-                )
-                row = constraint_result.fetchone()
-                if row:
-                    constraint_name = row[0]
-            except Exception:  # nosec B110 — constraint name is optional metadata
-                log.debug("PK constraint name query failed for %s", table_name, exc_info=True)
+                result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+            except Exception as error:
+                if _is_unknown_class_error(error):
+                    raise NoSuchTableError(table_name) from error
+                raise
+            for row in result:
+                if row[3] == "PRI":
+                    constrained_columns.append(row[0])
 
         return {
             "name": constraint_name,
@@ -536,10 +782,38 @@ class CubridDialect(default.DefaultDialect):
         ON DELETE/UPDATE actions) in any system catalog view. The DDL
         output of ``SHOW CREATE TABLE`` is the only reliable source.
         See cubrid-lab/sqlalchemy-cubrid#120.
+
+        The constraints are returned sorted by name. Raises
+        :class:`NoSuchTableError` when *table_name* does not exist; a view has
+        no foreign keys.
         """
         self._raise_if_non_default_schema(schema, table_name)
 
+        class_type = self._get_class_type(connection, table_name, **kw)
+        if class_type is None:
+            raise NoSuchTableError(table_name)
+        if class_type == "VCLASS":
+            return []
         return self._get_foreign_keys_from_ddl(connection, table_name, schema)
+
+    def _get_show_create_table_ddl(self, connection: Any, table_name: str) -> str:
+        """Return the ``SHOW CREATE TABLE`` DDL of *table_name*.
+
+        Raises :class:`NoSuchTableError` when the server reports the table
+        missing (``Unknown class``, #530) or returns no row for it. Any other
+        failure (a disconnect, a permission error, a driver bug) propagates:
+        callers must not report it as "no constraints" (#589).
+        """
+        quoted = self.identifier_preparer.quote_identifier(table_name)
+        try:
+            row = connection.execute(text(f"SHOW CREATE TABLE {quoted}")).first()
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
+        if row is None:
+            raise NoSuchTableError(table_name)
+        return str(row[1]) if len(row) > 1 else str(row[0])
 
     def _get_foreign_keys_from_ddl(
         self,
@@ -554,20 +828,7 @@ class CubridDialect(default.DefaultDialect):
         or column metadata for foreign keys.
         """
         foreign_keys: list[ReflectedForeignKeyConstraint] = []
-        try:
-            quoted = self.identifier_preparer.quote_identifier(table_name)
-            result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
-            row = result.fetchone()
-        except Exception:  # nosec B110 — graceful fallback when DDL unavailable
-            log.warning(
-                "SHOW CREATE TABLE failed for %s; foreign keys will be empty",
-                table_name,
-                exc_info=True,
-            )
-            return foreign_keys
-        if row is None:
-            return foreign_keys
-        ddl = str(row[1]) if len(row) > 1 else str(row[0])
+        ddl = self._get_show_create_table_ddl(connection, table_name)
         for fk_match in _RE_FOREIGN_KEY.finditer(ddl):
             constraint_name = fk_match.group("name")
             constrained_columns = [
@@ -595,6 +856,10 @@ class CubridDialect(default.DefaultDialect):
                     "referred_columns": referred_columns,
                 }
             )
+        # ``SHOW CREATE TABLE`` lists constraints in its own order, not by
+        # name; return them sorted by name like SQLAlchemy's built-in
+        # dialects so the result is deterministic (#531).
+        foreign_keys.sort(key=lambda fk: fk["name"] or "")
         return foreign_keys
 
     @reflection.cache
@@ -610,7 +875,8 @@ class CubridDialect(default.DefaultDialect):
         result = connection.execute(
             text(
                 "SELECT class_name FROM db_class "
-                "WHERE class_type = 'CLASS' AND is_system_class = 'NO'"
+                "WHERE class_type = 'CLASS' AND is_system_class = 'NO' "
+                "ORDER BY class_name"
             )
         )
         return [row[0] for row in result]
@@ -626,7 +892,11 @@ class CubridDialect(default.DefaultDialect):
         if not self._schema_is_default(schema):
             return []
         result = connection.execute(
-            text("SELECT class_name FROM db_class WHERE class_type = 'VCLASS'")
+            text(
+                "SELECT class_name FROM db_class "
+                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO' "
+                "ORDER BY class_name"
+            )
         )
         return [row[0] for row in result]
 
@@ -634,14 +904,23 @@ class CubridDialect(default.DefaultDialect):
     def get_view_definition(
         self, connection: Any, view_name: str, schema: str | None = None, **kw: Any
     ) -> str:
-        """Return the CREATE VIEW definition."""
+        """Return the CREATE VIEW definition.
+
+        Raises :class:`NoSuchTableError` when *view_name* does not exist or is
+        not a view (``SHOW CREATE VIEW`` on a table returns no row).
+        """
         self._raise_if_non_default_schema(schema, view_name)
 
         quoted = self.identifier_preparer.quote_identifier(view_name)
-        result = connection.execute(text(f"SHOW CREATE VIEW {quoted}"))
-        row = result.fetchone()
+        try:
+            result = connection.execute(text(f"SHOW CREATE VIEW {quoted}"))
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(view_name) from error
+            raise
+        row = result.first()
         if row is None:
-            return ""
+            raise NoSuchTableError(view_name)
         return str(row[1])
 
     @reflection.cache
@@ -652,14 +931,23 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> list[ReflectedIndex]:
-        """Return index information for *table_name*."""
+        """Return index information for *table_name*.
+
+        A view has no indexes of its own, so an empty list is returned for
+        one (``SHOW INDEXES IN <view>`` lists the base table's indexes).
+        """
         self._raise_if_non_default_schema(schema, table_name)
+
+        if self._get_class_type(connection, table_name, **kw) == "VCLASS":
+            return []
 
         idict: dict[str, ReflectedIndex] = {}
 
         # Batch-fetch primary-key and foreign-key flags for all indexes on
-        # this table from CUBRID's ``_db_index`` catalog (single query for
-        # both, instead of N+1 lookups).
+        # this table from CUBRID's public ``db_index`` catalog view (single
+        # query for both, instead of N+1 lookups). ``_db_index`` is readable
+        # only by DBA (#549); a failing query raises rather than silently
+        # reporting the PK and FK indexes as ordinary ones.
         #
         # PK indexes are filtered because SQLAlchemy reports the PK via
         # ``get_pk_constraint`` separately.  FK indexes are filtered because
@@ -670,30 +958,27 @@ class CubridDialect(default.DefaultDialect):
         # See cubrid-lab/sqlalchemy-cubrid#120.
         pk_indexes: set[str] = set()
         fk_indexes: set[str] = set()
-        try:
-            flag_result = connection.execute(
-                text(
-                    "SELECT index_name, is_primary_key, is_foreign_key "
-                    "FROM _db_index WHERE class_of.class_name = :table"
-                ),
-                {"table": table_name},
-            )
-            for flag_row in flag_result:
-                if flag_row[1]:
-                    pk_indexes.add(flag_row[0])
-                if flag_row[2]:
-                    fk_indexes.add(flag_row[0])
-        except Exception:
-            # Fallback: if the catalog query fails, both sets stay empty so
-            # no indexes will be wrongly excluded.
-            log.debug(
-                "Batch index-flag query failed for table %s, falling back",
-                table_name,
-                exc_info=True,
-            )
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        flag_result = connection.execute(
+            text(
+                "SELECT index_name, is_primary_key, is_foreign_key "  # nosec B608 - constant clause
+                "FROM db_index WHERE " + class_filter
+            ),
+            filter_params,
+        )
+        for flag_row in flag_result:
+            if flag_row[1] == "YES":
+                pk_indexes.add(flag_row[0])
+            if flag_row[2] == "YES":
+                fk_indexes.add(flag_row[0])
 
         quoted = self.identifier_preparer.quote_identifier(table_name)
-        result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        try:
+            result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
         for row in result:
             index_name = row[2]
 
@@ -719,24 +1004,40 @@ class CubridDialect(default.DefaultDialect):
     ) -> list[ReflectedUniqueConstraint]:
         """Return unique constraints for *table_name*.
 
-        Primary path: query the ``_db_index`` system catalog for unique
+        CUBRID implements a ``UNIQUE`` constraint as a unique index and cannot
+        tell it apart from ``CREATE UNIQUE INDEX`` (same ``db_index`` flags,
+        and ``SHOW CREATE TABLE`` prints both as ``UNIQUE KEY``), so, as in
+        SQLAlchemy's MySQL dialect, every entry is also returned by
+        :meth:`get_indexes` and carries ``duplicates_index`` naming that index.
+        ``Table`` reflection then keeps the unique index and skips the
+        duplicate constraint.
+
+        Primary path: query the public ``db_index`` catalog view for unique
         indexes (excluding PK and FK auto-indexes), then resolve column
-        names via ``SHOW INDEXES``. Fallback: parse ``SHOW CREATE TABLE``
-        DDL output via regex.
+        names via ``SHOW INDEXES``. ``db_index`` lists a table's indexes
+        whenever ``db_class`` lists the table, so when it lists some index of
+        the table but no unique one, the table has none and ``SHOW CREATE
+        TABLE`` is not read (#610). ``SHOW CREATE TABLE`` DDL output is parsed
+        via regex only when the catalog lists no index of the table at all, or
+        (CUBRID 11.2+) when the name resolves to another owner's class, which
+        keeps raising :class:`NoSuchTableError` there. A failing catalog query
+        raises (#549).
+
+        Raises :class:`NoSuchTableError` when *table_name* does not exist; a
+        view has no unique constraints.
         """
         self._raise_if_non_default_schema(schema, table_name)
 
+        class_type = self._get_class_type(connection, table_name, **kw)
+        if class_type is None:
+            raise NoSuchTableError(table_name)
+        if class_type == "VCLASS":
+            return []
+
         # Primary path: system catalog + SHOW INDEXES
-        try:
-            uqs = self._get_unique_constraints_from_catalog(connection, table_name)
-            if uqs:
-                return uqs
-        except Exception:  # nosec B110 — graceful fallback
-            log.debug(
-                "Catalog query failed for unique constraints on %s; falling back to DDL regex",
-                table_name,
-                exc_info=True,
-            )
+        uqs = self._get_unique_constraints_from_catalog(connection, table_name, **kw)
+        if uqs is not None:
+            return uqs
 
         # Fallback: DDL regex (legacy path)
         return self._get_unique_constraints_from_ddl(connection, table_name)
@@ -745,38 +1046,62 @@ class CubridDialect(default.DefaultDialect):
         self,
         connection: Any,
         table_name: str,
-    ) -> list[ReflectedUniqueConstraint]:
-        """Query _db_index + SHOW INDEXES for UNIQUE constraints.
+        **kw: Any,
+    ) -> list[ReflectedUniqueConstraint] | None:
+        """Query db_index + SHOW INDEXES for UNIQUE constraints.
 
         Uses the same two-query pattern as ``get_indexes()``: first fetch
-        unique index names from ``_db_index`` (filtering out PK and FK
-        auto-indexes), then resolve column names from ``SHOW INDEXES``.
+        the table's indexes from ``db_index`` and keep the unique ones that
+        are not PK or FK auto-indexes, then resolve column names from
+        ``SHOW INDEXES``.
+
+        Returns ``None`` (the caller then parses the DDL) when it finds no
+        unique index and cannot vouch for the result: when ``db_index`` lists
+        no index of the table at all, or, since CUBRID 11.2, when the class
+        the name resolves to is another owner's. ``SHOW ...`` resolves an
+        unqualified name in the current user's schema, so for that class the
+        DDL path keeps raising :class:`NoSuchTableError` as before #610.
         """
         # Step 1: get unique index names (excluding PK and FK auto-indexes)
         unique_names: set[str] = set()
-        name_result = connection.execute(
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        # The filter names the owner only on 11.2+, where names are per owner.
+        owner = filter_params.get("owner")
+        flag_result = connection.execute(
             text(
-                "SELECT index_name FROM _db_index "
-                "WHERE class_of.class_name = :table "
-                "AND is_unique = 1 AND is_primary_key = 0 AND is_foreign_key = 0"
+                "SELECT index_name, is_unique, is_primary_key, is_foreign_key"  # nosec B608 - constant clause
+                + (", CURRENT_USER" if owner is not None else "")
+                + " FROM db_index WHERE "
+                + class_filter
             ),
-            {"table": table_name},
+            filter_params,
         )
-        for row in name_result:
-            unique_names.add(row[0])
+        verified = False
+        for row in flag_result:
+            verified = owner is None or row[4] == owner
+            if row[1] == "YES" and row[2] == "NO" and row[3] == "NO":
+                unique_names.add(row[0])
         if not unique_names:
-            return []
+            return [] if verified else None
 
         # Step 2: resolve column names from SHOW INDEXES
         quoted = self.identifier_preparer.quote_identifier(table_name)
-        col_result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        try:
+            col_result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+        except Exception as error:
+            if _is_unknown_class_error(error):
+                raise NoSuchTableError(table_name) from error
+            raise
         constraints: dict[str, list[str]] = {}
         for row in col_result:
             index_name = row[2]
             if index_name in unique_names:
                 constraints.setdefault(index_name, []).append(row[4])
 
-        return [{"name": name, "column_names": cols} for name, cols in constraints.items()]
+        return [
+            {"name": name, "column_names": cols, "duplicates_index": name}
+            for name, cols in constraints.items()
+        ]
 
     def _get_unique_constraints_from_ddl(
         self,
@@ -785,26 +1110,19 @@ class CubridDialect(default.DefaultDialect):
     ) -> list[ReflectedUniqueConstraint]:
         """Parse SHOW CREATE TABLE output for UNIQUE constraints (legacy fallback)."""
         unique_constraints: list[ReflectedUniqueConstraint] = []
-        try:
-            quoted = self.identifier_preparer.quote_identifier(table_name)
-            result = connection.execute(text(f"SHOW CREATE TABLE {quoted}"))
-            row = result.fetchone()
-        except Exception:  # nosec B110 — graceful fallback when DDL unavailable
-            log.warning(
-                "SHOW CREATE TABLE failed for %s; unique constraints will be empty",
-                table_name,
-                exc_info=True,
-            )
-            return unique_constraints
-        if row is None:
-            return unique_constraints
-        ddl = str(row[1]) if len(row) > 1 else str(row[0])
+        ddl = self._get_show_create_table_ddl(connection, table_name)
         for uc_match in _RE_UNIQUE_KEY.finditer(ddl):
             constraint_name = uc_match.group("name")
             column_names = [
                 col.strip() for col in _RE_BRACKET_IDENT.findall(uc_match.group("cols"))
             ]
-            unique_constraints.append({"name": constraint_name, "column_names": column_names})
+            unique_constraints.append(
+                {
+                    "name": constraint_name,
+                    "column_names": column_names,
+                    "duplicates_index": constraint_name,
+                }
+            )
         return unique_constraints
 
     @reflection.cache
@@ -835,15 +1153,26 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> ReflectedTableComment:
-        """Return table comment from CUBRID system catalog."""
+        """Return table comment from CUBRID system catalog.
+
+        Raises :class:`NoSuchTableError` when *table_name* does not exist. The
+        name and owner are matched like :meth:`_get_class_type`: the name as
+        given or folded to lower case, and the current user's class first.
+        """
         self._raise_if_non_default_schema(schema, table_name)
 
-        result = connection.execute(
-            text("SELECT comment FROM db_class WHERE class_name = :name"),
+        row = connection.execute(
+            text(
+                "SELECT comment FROM db_class "
+                "WHERE class_name IN (:name, LOWER(:name)) "
+                "ORDER BY CASE WHEN owner_name = CURRENT_USER THEN 0 "
+                "WHEN is_system_class = 'YES' THEN 1 ELSE 2 END"
+            ),
             {"name": table_name},
-        )
-        row = result.fetchone()
-        return {"text": row[0] if row and row[0] else None}
+        ).first()
+        if row is None:
+            raise NoSuchTableError(table_name)
+        return {"text": row[0] if row[0] else None}
 
     def get_schema_names(self, connection: Any, **kw: Any) -> list[str]:
         """Return the schema names visible to this connection.
@@ -870,12 +1199,12 @@ class CubridDialect(default.DefaultDialect):
 
         ``schema is None`` means "the default schema" in SQLAlchemy, so it is
         always accepted; a non-``None`` schema is accepted only when it matches
-        :attr:`default_schema_name`.  The comparison normalizes case via
-        :meth:`normalize_name` (CUBRID reports catalog names uppercased while
-        SQLAlchemy works in lower case), so ``schema="dba"`` matches a default
-        of ``"DBA"``.  Explicitly-quoted names (``quoted_name`` with
-        ``quote=True``) are compared case-sensitively, honouring the user's
-        intent to preserve case.  List/existence reflection methods
+        :attr:`default_schema_name`.  CUBRID folds unquoted identifiers to lower
+        case, so the comparison is case-insensitive for unquoted names and
+        ``schema="DBA"`` matches a default of ``"dba"``.  Explicitly-quoted names
+        (``quoted_name`` with ``quote=True``) are compared case-sensitively,
+        honouring the user's intent to preserve case.  List/existence reflection
+        methods
         (:meth:`get_table_names`, :meth:`get_view_names`, :meth:`has_table`,
         :meth:`has_index`) use this directly to return empty/false for a
         non-default schema, while object-detail methods go through
@@ -891,7 +1220,10 @@ class CubridDialect(default.DefaultDialect):
         # A name the user explicitly quoted is case-sensitive; do not normalize.
         if _is_explicitly_quoted_name(schema) or _is_explicitly_quoted_name(default):
             return False
-        return self.normalize_name(str(schema)) == self.normalize_name(str(default))
+        # Both inputs are concrete strings; the base hook returns a string
+        # (including quoted_name) but remains unannotated in SQLAlchemy 2.x.
+        normalize = cast(Callable[[str], str], self.normalize_name)
+        return normalize(str(schema)) == normalize(str(default))
 
     def _raise_if_non_default_schema(self, schema: str | None, object_name: str) -> None:
         """Raise :class:`NoSuchTableError` if *schema* is not the default schema.
@@ -908,6 +1240,274 @@ class CubridDialect(default.DefaultDialect):
             qualified = f"{schema}.{object_name}" if schema else object_name
             raise NoSuchTableError(qualified)
 
+    def _get_class_type(self, connection: Any, name: str, **kw: Any) -> str | None:
+        """Return ``'CLASS'`` (table), ``'VCLASS'`` (view) or ``None`` (missing).
+
+        See :meth:`_get_class_info` for how *name* is matched.
+        """
+        info = self._get_class_info(connection, name, **kw)
+        return info[0] if info is not None else None
+
+    @reflection.cache
+    def _get_class_info(self, connection: Any, name: str, **kw: Any) -> tuple[str, str] | None:
+        """Return ``(class_type, owner_name)`` of *name*, or ``None`` if missing.
+
+        CUBRID stores identifiers folded to lower case, so a mixed-case *name*
+        also matches its lower-case form, as in ``SHOW COLUMNS IN <name>``.
+        Since CUBRID 11.2 classes of different owners may share a name; the
+        row of the current user's own class wins (it is what ``SHOW ... IN
+        <name>`` resolves to), then a system class, then any other visible
+        class. CUBRID 10.2 class names are global, so there is one row at most.
+        ``info_cache`` is passed through ``**kw``, so an ``Inspector`` looks a
+        name up once.
+        """
+        # .first() closes the result: an open result keeps one of the
+        # connection's server query entries (at most 100, then -830).
+        row = connection.execute(
+            text(
+                "SELECT class_type, owner_name FROM db_class "
+                "WHERE class_name IN (:name, LOWER(:name)) "
+                "ORDER BY CASE WHEN owner_name = CURRENT_USER THEN 0 "
+                "WHEN is_system_class = 'YES' THEN 1 ELSE 2 END"
+            ),
+            {"name": name},
+        ).first()
+        if row is None or row[0] is None:
+            return None
+        return str(row[0]), str(row[1])
+
+    def _catalog_class_filter(
+        self, connection: Any, table_name: str, *aliases: str, **kw: Any
+    ) -> tuple[str, dict[str, str]]:
+        """Return a condition selecting *table_name*'s rows in a catalog view.
+
+        For the public ``db_index``, ``db_index_key`` and ``db_attribute``
+        views (the ``_db_*`` tables are DBA-only, #549). The name matches as
+        given or folded to lower case, like :meth:`_get_class_info`. Since
+        CUBRID 11.2 classes of different owners may share a name and these
+        views list every class the user may read, so the rows are limited to
+        the owner :meth:`_get_class_info` prefers (the current user's class
+        first). Before 11.2 class names are global and the views have no
+        ``owner_name``.
+        *aliases* are the (constant) table aliases to filter, the first one
+        also by name; the result is SQL with bound parameters only.
+        """
+        first, *others = [f"{alias}." if alias else "" for alias in aliases or ("",)]
+        condition = f"{first}class_name IN (:table, LOWER(:table))"
+        params = {"table": table_name}
+        version = self.server_version_info
+        if version is None or version < (11, 2):
+            return condition, params
+        info = self._get_class_info(connection, table_name, **kw)
+        if info is None:
+            return condition, params
+        condition += "".join(f" AND {prefix}owner_name = :owner" for prefix in (first, *others))
+        return condition, {**params, "owner": info[1]}
+
+    def _enum_catalog(
+        self, connection: Any, table_name: str, rows: list[Any], **kw: Any
+    ) -> dict[str, list[str]] | None:
+        """Read exact ENUM labels, never the ambiguous SHOW COLUMNS rendering.
+
+        CUBRID prints an element containing ``', '`` exactly like two
+        elements. The internal domain sequence retains each original string;
+        ``TABLE`` exposes it as SQL rows and ``ROWNUM`` records its order.
+        A non-DBA user cannot read ``_db_domain``; only that specific -494
+        authorization failure returns ``None`` so get_columns warns and uses
+        NullType. Other failures propagate rather than guessing labels.
+        """
+        enum_columns = [
+            row[0] for row in rows if isinstance(row[1], str) and _RE_ENUM.match(row[1].strip())
+        ]
+        if not enum_columns:
+            return {}
+
+        if self.server_version_info is not None and self.server_version_info >= (11, 2):
+            info = self._get_class_info(connection, table_name, **kw)
+            if info is None:
+                raise NoSuchTableError(table_name)
+            class_name = f"{info[1].lower()}.{str(table_name).lower()}"
+            query = text(
+                "SELECT a.attr_name, e.*, ROWNUM "
+                "FROM _db_class c, _db_attribute a, _db_domain d, "
+                "TABLE(d.enumeration) e WHERE c.unique_name = :class_name "
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name "
+                # Instance attributes only: a CLASS ATTRIBUTE may share the
+                # name and would add its values (#631).
+                "AND a.attr_type = 0"
+            )
+        else:
+            class_name = str(table_name)
+            query = text(
+                "SELECT a.attr_name, e.*, ROWNUM "
+                "FROM _db_class c, _db_attribute a, _db_domain d, "
+                "TABLE(d.enumeration) e WHERE "
+                "c.class_name IN (:class_name, LOWER(:class_name)) "
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name "
+                # Instance attributes only: a CLASS ATTRIBUTE may share the
+                # name and would add its values (#631).
+                "AND a.attr_type = 0"
+            )
+        values: dict[str, list[str]] = {}
+        for attr_name in enum_columns:
+            try:
+                result = connection.execute(
+                    query, {"class_name": class_name, "attr_name": attr_name}
+                )
+                numbered = [(row[2], row[1]) for row in result if row[0] == attr_name]
+            except Exception as error:
+                original = getattr(error, "orig", error)
+                code = getattr(original, "errno", None)
+                if code is None and original.args and isinstance(original.args[0], int):
+                    code = original.args[0]
+                denied_catalogs = ("_db_class", "_db_attribute", "_db_domain")
+                message = str(original).lower()
+                if code == -494 and any(
+                    f"select is not authorized on {catalog}" in message
+                    for catalog in denied_catalogs
+                ):
+                    return None
+                raise
+            if numbered:
+                numbered.sort(key=lambda item: item[0])
+                if [position for position, _ in numbered] != list(range(1, len(numbered) + 1)):
+                    raise ValueError(f"ENUM catalog order is incomplete for column {attr_name!r}")
+                if not all(isinstance(value, str) for _, value in numbered):
+                    raise ValueError(f"ENUM catalog returned a non-string for column {attr_name!r}")
+                values[attr_name] = [value for _, value in numbered]
+        return values
+
+    def _collection_catalog(
+        self, connection: Any, table_name: str, rows: list[Any], **kw: Any
+    ) -> tuple[dict[str, list[Any]], dict[str, list[str]], dict[str, str]]:
+        """Return member types, reported families and collection kinds.
+
+        ``SHOW COLUMNS`` prints a collection as ``SET OF NUMERIC,VARCHAR``,
+        without the member lengths or precision and in its own member order,
+        and prints no type at all for a collection declared without member
+        types (#631). For such *rows* (``SHOW COLUMNS`` rows) this reads the
+        public ``db_attr_setdomain_elm`` view, which lists each member type
+        with its precision and scale in declaration order, and the kind of
+        each untyped collection from ``db_attribute``. The reported families
+        let get_columns reject missing or inconsistent member-domain rows
+        instead of guessing from SHOW COLUMNS' lossy text.
+
+        Members are kept in the order the view returns them, which is the
+        declaration order on 10.2, 11.0, 11.2 and 11.4 (the view scans the
+        column's domain list; the recorded fixtures and the live round trip in
+        ``test/test_reflection_enum_collection.py`` pin it). A member's
+        collation is not in the view and is not reflected. From 11.2 the
+        view also gives an object-domain member's owner; a class of another
+        owner than the table is reflected as ``owner.class``.
+        """
+        member_types: dict[str, list[Any]] = {}
+        member_families: dict[str, list[str]] = {}
+        kinds: dict[str, str] = {}
+        has_of_form = any(row[1] and _RE_COLLECTION_OF.match(row[1]) for row in rows)
+        has_untyped = any(row[1] is None for row in rows)
+        if not (has_of_form or has_untyped):
+            return member_types, member_families, kinds
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        if has_of_form:
+            version = self.server_version_info
+            owner_aware = version is not None and version >= (11, 2)
+            result = connection.execute(
+                text(
+                    "SELECT attr_name, data_type, prec, scale, domain_class_name"  # nosec B608
+                    + (", domain_owner_name" if owner_aware else "")
+                    + " FROM db_attr_setdomain_elm WHERE "
+                    + class_filter
+                    + " AND attr_type = 'INSTANCE'"
+                ),
+                filter_params,
+            )
+            catalog_rows = [tuple(row) for row in result]
+            table_owner = None
+            if owner_aware and any(row[5] for row in catalog_rows):
+                info = self._get_class_info(connection, table_name, **kw)
+                table_owner = info[1] if info else None
+            unsafe: set[str] = set()
+            for row in catalog_rows:
+                name, data_type, precision, scale, domain_class = row[:5]
+                domain_owner = row[5] if len(row) > 5 else None
+                member = self._collection_member_type(
+                    data_type, precision, scale, domain_class, domain_owner, table_owner
+                )
+                if member is None:
+                    unsafe.add(name)
+                member_types.setdefault(name, []).append(member)
+                member_families.setdefault(name, []).append(
+                    _CATALOG_SHOW_MEMBER_NAMES.get(data_type, data_type)
+                )
+            # A member the dialect cannot express leaves the column without
+            # catalog families, so get_columns warns and uses NullType.
+            for name in unsafe:
+                member_types.pop(name, None)
+                member_families.pop(name, None)
+        if has_untyped:
+            result = connection.execute(
+                text(
+                    "SELECT attr_name, data_type FROM db_attribute "  # nosec B608 - constant clause
+                    "WHERE " + class_filter + " AND attr_type = 'INSTANCE' "
+                    "AND data_type IN ('SET', 'MULTISET', 'SEQUENCE')"
+                ),
+                filter_params,
+            )
+            kinds = {name: data_type for name, data_type in result}
+        return member_types, member_families, kinds
+
+    def _collection_member_type(
+        self,
+        data_type: str,
+        precision: Any,
+        scale: Any,
+        domain_class: str | None = None,
+        domain_owner: str | None = None,
+        table_owner: str | None = None,
+    ) -> Any:
+        """Return the type of a ``db_attr_setdomain_elm`` member row.
+
+        The view uses the internal type names (``STRING``, ``VARNCHAR``,
+        ``VARBIT``, ``SHORT``). An object domain (``OBJECT`` with its
+        ``domain_class_name``) is kept as the quoted class name, which the
+        collection DDL emits verbatim (``SET(t_ref)``). An incomplete object
+        domain (its class or required owner is missing) or a type the dialect cannot express
+        returns ``None``, so the column warns and reflects as ``NullType``
+        rather than with a changed DDL.
+        From 11.2 a class whose owner (*domain_owner*) differs from the
+        table's (*table_owner*) is qualified as ``owner.class``, so the DDL
+        does not resolve it in the table owner's schema.
+        """
+        if data_type == "OBJECT":
+            if not domain_class:
+                return None
+            if self.server_version_info is not None and self.server_version_info >= (11, 2):
+                if not domain_owner or not table_owner:
+                    return None
+            quoted = self.identifier_preparer.quote(domain_class)
+            if domain_owner and table_owner and domain_owner.upper() != table_owner.upper():
+                return self.identifier_preparer.quote(domain_owner.lower()) + "." + quoted
+            return quoted
+        name = _CATALOG_MEMBER_TYPE_NAMES.get(data_type, data_type)
+        string_types: dict[str, type[sqltypes.String]] = {
+            "CHAR": CHAR,
+            "VARCHAR": VARCHAR,
+            "NCHAR": NCHAR,
+            "NCHAR VARYING": NVARCHAR,
+        }
+        if name in string_types:
+            return string_types[name](length=int(precision))
+        if name in ("BIT", "BIT VARYING"):
+            return BIT(length=int(precision), varying=name == "BIT VARYING")
+        if name == "NUMERIC":
+            return NUMERIC(precision=int(precision), scale=int(scale))
+        if name == "MONETARY":
+            return MONETARY()
+        if name in self.ischema_names and name != "ENUM":
+            return self.ischema_names[name]()
+        return None
+
+    @reflection.cache
     def has_table(
         self,
         connection: Any,
@@ -915,7 +1515,12 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> bool:
-        """Check if *table_name* exists."""
+        """Check if *table_name* exists.
+
+        CUBRID stores identifiers folded to lower case, even quoted ones, so a
+        mixed-case *table_name* also matches its lower-case form, as in
+        :meth:`_get_class_type` (#543).
+        """
         if not self._schema_is_default(schema):
             return False
         result = connection.execute(
@@ -923,12 +1528,13 @@ class CubridDialect(default.DefaultDialect):
                 "SELECT COUNT(*) FROM db_class "
                 "WHERE class_type IN ('CLASS', 'VCLASS') "
                 "AND is_system_class = 'NO' "
-                "AND class_name = :name"
+                "AND class_name IN (:name, LOWER(:name))"
             ),
             {"name": table_name},
         )
-        return bool(result.scalar())
+        return _count_is_positive(result.scalar())
 
+    @reflection.cache
     def has_index(
         self,
         connection: Any,
@@ -937,21 +1543,30 @@ class CubridDialect(default.DefaultDialect):
         schema: str | None = None,
         **kw: Any,
     ) -> bool:
-        """Check if an index named *index_name* exists on *table_name*."""
+        """Check if an index named *index_name* exists on *table_name*.
+
+        Cached per ``info_cache`` like the other reflection methods, so an
+        ``Inspector`` answers from its cache until ``clear_cache()`` (#533).
+        A missing table or index returns ``False``; a failing catalog query
+        raises instead of caching a false negative.
+
+        CUBRID stores identifiers folded to lower case, even quoted ones, so
+        both names also match their lower-case form, and the table is resolved
+        like :meth:`_get_class_type`: the current user's own class first
+        (#543).
+        """
         if not self._schema_is_default(schema):
             return False
-        try:
-            result = connection.execute(
-                text(
-                    "SELECT COUNT(*) FROM _db_index "
-                    "WHERE class_of.class_name = :table AND index_name = :name"
-                ),
-                {"table": table_name, "name": index_name},
-            )
-            return bool(result.scalar())
-        except Exception:
-            log.debug("has_index query failed for %s.%s", table_name, index_name, exc_info=True)
-            return False
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        result = connection.execute(
+            text(
+                "SELECT COUNT(*) FROM db_index WHERE "  # nosec B608 - constant clause
+                + class_filter
+                + " AND index_name IN (:name, LOWER(:name))"
+            ),
+            {**filter_params, "name": index_name},
+        )
+        return _count_is_positive(result.scalar())
 
     def has_sequence(
         self,
@@ -969,16 +1584,14 @@ class CubridDialect(default.DefaultDialect):
         """Return a callable to set up a new DBAPI connection.
 
         Disables autocommit on the CUBRID driver so that
-        SQLAlchemy can manage transactions properly.
+        SQLAlchemy can manage transactions properly. SQLAlchemy applies an
+        engine-level ``isolation_level`` itself, after this hook.
         """
-        isolation_level = self.isolation_level
 
         def connect(conn: Any) -> None:
             # CUBRID Python driver defaults to autocommit=True;
             # SA manages transactions, so we turn it off.
             conn.set_autocommit(False)
-            if isolation_level is not None:
-                self.set_isolation_level(conn, isolation_level)
 
         return connect
 
@@ -1079,6 +1692,7 @@ class CubridDialect(default.DefaultDialect):
             "READ COMMITTED",
             "REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES",
             "CURSOR STABILITY",
+            "AUTOCOMMIT",
         ]
 
     def set_isolation_level(
@@ -1086,7 +1700,17 @@ class CubridDialect(default.DefaultDialect):
         dbapi_connection: DBAPIConnection,
         level: str,
     ) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
-        """Set the isolation level for *dbapi_conn*."""
+        """Set the isolation level for *dbapi_conn*.
+
+        ``AUTOCOMMIT`` turns on the driver's autocommit mode. Any other level
+        turns it off (if on) and runs ``SET TRANSACTION ISOLATION LEVEL``.
+        All three drivers (CUBRIDdb, pycubrid and the async adapter) expose an
+        ``autocommit`` property.
+        """
+        if level.upper() == "AUTOCOMMIT":
+            if not dbapi_connection.autocommit:  # pyright: ignore[reportAttributeAccessIssue]
+                dbapi_connection.autocommit = True  # pyright: ignore[reportAttributeAccessIssue]
+            return
         # Note: do NOT unwrap dbapi_conn.connection — the inner C-level
         # _cubrid.connection cursor cannot handle SET TRANSACTION SQL.
         # SA already passes the correct Python-level CUBRIDdb.connections.Connection.
@@ -1095,8 +1719,10 @@ class CubridDialect(default.DefaultDialect):
         if numeric_level is None:
             raise ValueError(
                 f"Invalid isolation level: {level!r}. "
-                f"Valid values: {list(self._ISOLATION_LEVEL_MAP.keys())}"
+                f"Valid values: {list(self.get_isolation_level_values())}"
             )
+        if dbapi_connection.autocommit:  # pyright: ignore[reportAttributeAccessIssue]
+            dbapi_connection.autocommit = False  # pyright: ignore[reportAttributeAccessIssue]
         cursor = dbapi_connection.cursor()
         try:
             cursor.execute(f"SET TRANSACTION ISOLATION LEVEL {numeric_level}")
@@ -1104,11 +1730,9 @@ class CubridDialect(default.DefaultDialect):
         finally:
             cursor.close()
 
-    def reset_isolation_level(self, dbapi_conn: DBAPIConnection) -> None:
-        """Revert isolation level to the CUBRID default (level 4)."""
-        self.set_isolation_level(
-            dbapi_conn, self._ISOLATION_LEVEL_REVERSE[self._DEFAULT_ISOLATION_CODE]
-        )
+    def detect_autocommit_setting(self, dbapi_conn: DBAPIConnection) -> bool:
+        """Return the driver's autocommit mode (no round trip on any driver)."""
+        return bool(dbapi_conn.autocommit)  # pyright: ignore[reportAttributeAccessIssue]
 
     def do_release_savepoint(self, connection: Any, name: str) -> None:
         """CUBRID does not support RELEASE SAVEPOINT; no-op."""
@@ -1119,11 +1743,11 @@ class CubridDialect(default.DefaultDialect):
     # Disconnect message patterns (lowercase) for is_disconnect().
     # Modeled after psycopg2's string-based approach since CUBRIDdb has
     # only Error, InterfaceError, DatabaseError, and NotSupportedError.
-    _disconnect_messages = (
+    # PyCubridDialect extends this with pycubrid's own client-side messages.
+    _disconnect_messages: tuple[str, ...] = (
         "connection is closed",
         "closed connection",
         "lost connection",
-        "connection lost",  # pycubrid: "connection lost during receive" (#322)
         "server has gone away",
         "connection reset",
         "broken pipe",
@@ -1137,26 +1761,51 @@ class CubridDialect(default.DefaultDialect):
         "failed to connect",
     )
 
-    # Numeric disconnect error codes (driver-independent, wording-agnostic).
-    # These stay stable even when the driver's error *messages* change.
+    # Client-side error codes that CUBRIDdb puts in ``args[0]`` for a dead or
+    # unusable connection. CUBRIDdb's ``args[0]`` holds a CCI code (-20xxx,
+    # CUBRID ``cas_cci.h``) or a CAS code (-10xxx, ``cas_error.h``) when the
+    # call failed before or instead of a server error, and the server's own
+    # code (``error_code.h``) otherwise, so server codes such as -4
+    # (``ER_INTERRUPTED``, an interrupted query) must not appear here (#572).
+    # pycubrid never receives this renewed -10xxx/-20xxx numbering; see
+    # ``PyCubridDialect._pycubrid_legacy_cas_codes`` for its CAS codes.
+    #
+    # -10002 (CAS_ER_NO_MORE_MEMORY) is included below because cas.c's
+    # process_request() sends it when the CAS's read-buffer allocation fails,
+    # then returns FN_CLOSE_CONN, closing the connection (CUBRID v11.4.6
+    # src/broker/cas.c).
     _disconnect_error_codes = frozenset(
         {
-            -4,  # pycubrid ER_COMMUNICATION / SQLSTATE 08S01
-            -21003,  # CAS_ER_COMMUNICATION
-            -21005,  # CAS_ER_COMMUNICATION (alternate)
-            -10005,  # ER_NET_CANT_CONNECT
-            -10007,  # ER_NET_SERVER_COMM_ERROR
+            -10002,  # CAS_ER_NO_MORE_MEMORY: CAS out of memory (see above)
+            -10003,  # CAS_ER_COMMUNICATION (CCI's IS_ER_COMMUNICATION, with -20004)
+            -20002,  # CCI_ER_CON_HANDLE: the connection handle is closed or invalid
+            -20004,  # CCI_ER_COMMUNICATION: "Cannot communicate with server"
+            -20016,  # CCI_ER_CONNECT: "Cannot connect to CUBRID CAS"
+        }
+    )
+
+    # Server error codes for which the CUBRID broker marks the CAS for reset
+    # (``reset_flag`` in CUBRID's src/broker/cas_error.c): the CAS's session
+    # with cub_server is gone. The CAS reconnects only after the client ends
+    # its transaction, so until then every statement fails, e.g. -111 and
+    # then -224 even after cub_server restarts (#565). Matched for both
+    # drivers: CUBRIDdb puts the code in ``args[0]`` (checked here),
+    # pycubrid in ``errno`` (checked by ``PyCubridDialect``).
+    _server_session_lost_codes = frozenset(
+        {
+            -111,  # ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
+            -199,  # ER_NET_SERVER_CRASHED
+            -224,  # ER_OBJ_NO_CONNECT ("A database has not been restarted")
+            -677,  # ER_BO_CONNECT_FAILED
         }
     )
 
     def is_disconnect(self, e: Exception, connection: Any, cursor: Any) -> bool:
         """Return True if *e* indicates a dropped connection.
 
-        This dialect supports multiple drivers with different exception
-        hierarchies: the legacy CUBRIDdb C-extension exposes only
-        ``Error``, ``InterfaceError``, ``DatabaseError``, and
-        ``NotSupportedError`` (no ``OperationalError``), whereas pycubrid
-        provides the full PEP 249 set (including ``OperationalError``).
+        Both CUBRIDdb 11.3 and pycubrid define the PEP 249 exception
+        classes (CUBRIDdb has no ``Warning``), but the dialect does not
+        classify disconnects by exception class.
 
         To stay robust across drivers *and* resilient to error-message
         wording drift, detection is layered: we anchor first on stable
@@ -1166,6 +1815,17 @@ class CubridDialect(default.DefaultDialect):
         wording), and finally fall back to string matching for driver
         errors that carry neither a code nor an ``OSError`` cause (e.g.
         pycubrid's client-side "connection lost during receive").
+
+        Codes come only from where the driver structurally puts them
+        (:meth:`_has_disconnect_code`): here an ``int`` ``args[0]``
+        (CUBRIDdb); :class:`PyCubridDialect` adds pycubrid's ``errno``
+        attribute and its own messages. No code is ever parsed out of
+        message text: a message that starts with a number (e.g. server text
+        echoing application data) is just text (#608).
+
+        The message fallback reads the driver's own message (``args[0]``
+        when it is a string), not pycubrid's ``str()`` with its code
+        description.
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1178,8 +1838,7 @@ class CubridDialect(default.DefaultDialect):
             return False
 
         # 1. Stable numeric error codes (wording-independent).
-        error_code = self._extract_error_code(e)
-        if error_code is not None and error_code in self._disconnect_error_codes:
+        if self._has_disconnect_code(e):
             return True
 
         # 2. An OSError in the explicit cause chain means a transport-level
@@ -1187,10 +1846,35 @@ class CubridDialect(default.DefaultDialect):
         if self._has_oserror_cause(e):
             return True
 
-        # 3. Message fallback for string-only driver errors that carry
-        #    neither a numeric code nor an OSError cause.
-        msg = str(e).lower()
+        # 3. Message fallback for driver errors that carry neither a
+        #    disconnect code nor an OSError cause, e.g. pycubrid's code-less
+        #    "connection lost during receive", or server errors such as -190 /
+        #    -191 ("Failed to connect to database server") that are not in the
+        #    code tables. Match the driver's own message: pycubrid's
+        #    ``str()`` appends a description looked up from ``errno`` (-4 and
+        #    -671 read "Communication error"), which must not decide the
+        #    outcome. For any exception that does not
+        #    override ``__str__`` a single string arg *is* ``str(e)``, and
+        #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
+        if len(e.args) == 1 and isinstance(e.args[0], str):
+            msg = e.args[0].lower()
+        else:
+            msg = str(e).lower()
         return any(pattern in msg for pattern in self._disconnect_messages)
+
+    def _has_disconnect_code(self, e: Exception) -> bool:
+        """Return True if *e* carries a disconnect code where CUBRIDdb puts it.
+
+        CUBRIDdb raises ``(code, message)``; its ``int`` code is matched
+        against the CCI/CAS client codes (``_disconnect_error_codes``) and the
+        server-session codes (``_server_session_lost_codes``, #565).
+        :class:`PyCubridDialect` extends this with pycubrid's ``errno``.
+        """
+        error_code = self._extract_error_code(e)
+        return error_code is not None and (
+            error_code in self._disconnect_error_codes
+            or error_code in self._server_session_lost_codes
+        )
 
     @staticmethod
     def _has_oserror_cause(exception: BaseException) -> bool:
@@ -1215,23 +1899,16 @@ class CubridDialect(default.DefaultDialect):
 
     @staticmethod
     def _extract_error_code(exception: Exception) -> Optional[int]:
-        """Extract a numeric error code from a CUBRID DBAPI exception.
+        """Return the CUBRIDdb error code in ``exception.args[0]``, or ``None``.
 
-        CUBRIDdb stores the error code in ``exception.args[0]``.
-        Returns ``None`` if no numeric code can be extracted.
+        CUBRIDdb raises ``(code, message)`` with an ``int`` code. A string
+        ``args[0]`` (pycubrid's message, or any other driver text) never
+        carries a code, even when it starts with a number (#608).
         """
         if exception.args:
             first_arg = exception.args[0]
-            if isinstance(first_arg, int):
+            if isinstance(first_arg, int) and not isinstance(first_arg, bool):
                 return first_arg
-            # Some errors embed the code at the start: "-21003 ..."
-            if isinstance(first_arg, str):
-                parts = first_arg.split(None, 1)
-                if parts:
-                    try:
-                        return int(parts[0])
-                    except (ValueError, IndexError):
-                        pass
         return None
 
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:
@@ -1249,3 +1926,74 @@ class CubridDialect(default.DefaultDialect):
 
 
 dialect = CubridDialect
+
+
+def _alembic_loads_cubrid_plugin() -> bool:
+    """Return True when Alembic registers ``CubridImpl`` through its plugin.
+
+    Alembic 1.18 and later load the ``alembic.plugins`` entry point group on
+    ``import alembic``, and sqlalchemy-cubrid publishes
+    :mod:`_sqlalchemy_cubrid_alembic` there (#595).  This checks
+    installed metadata only, so it never imports Alembic.  Any doubt (Alembic
+    already imported, an unparsable version, metadata that does not belong to
+    the importable ``alembic`` package, sqlalchemy-cubrid imported from
+    a tree without the entry point) returns False, and the caller imports
+    ``alembic_impl`` directly as before.
+    """
+    if "alembic" in sys.modules:
+        return False
+    try:
+        alembic_dist = importlib.metadata.distribution("alembic")
+        major, minor = alembic_dist.version.split(".")[:2]
+        if (int(major), int(minor)) < (1, 18):
+            return False
+        # The metadata must describe the Alembic that ``import alembic`` will
+        # load; an older copy earlier on sys.path would never read the plugin.
+        spec = importlib.util.find_spec("alembic")
+        if spec is None or spec.origin is None:
+            return False
+        if os.path.realpath(spec.origin) != os.path.realpath(
+            str(alembic_dist.locate_file("alembic/__init__.py"))
+        ):
+            return False
+        return any(
+            ep.group == "alembic.plugins" and ep.value == "_sqlalchemy_cubrid_alembic"
+            for ep in importlib.metadata.distribution("sqlalchemy-cubrid").entry_points
+        )
+    except Exception:
+        return False
+
+
+# Register ``CubridImpl`` with Alembic whenever Alembic is installed.
+# Alembic resolves its migration implementation from ``_impls[dialect.name]``,
+# which ``DefaultImpl`` subclasses populate on import via ``__dialect__``.
+# Every CUBRID dialect variant (``cubrid``, ``cubrid+cubriddb``,
+# ``cubrid+pycubrid``, ``cubrid+aiopycubrid``) imports this module and has
+# ``name = "cubrid"``, so a default ``env.py`` works with no extra import.
+# Alembic 1.18+ imports ``alembic_impl`` itself through the ``alembic.plugins``
+# entry point, so the dialect skips Alembic's import cost and log lines
+# (#561, #595).  Alembic 1.7.2-1.17 have no such hook, so the dialect imports
+# ``alembic_impl`` here.  Alembic stays optional: without it the import is
+# skipped silently.  A broken Alembic install (for example 1.7.0/1.7.1, which
+# raise ``NameError`` on SQLAlchemy 2.x) must never stop the dialect from
+# loading, so any other failure only disables the integration with a warning.
+if not _alembic_loads_cubrid_plugin():
+    try:
+        importlib.import_module("sqlalchemy_cubrid.alembic_impl")
+    except Exception as _exc:
+        try:
+            _alembic_absent = importlib.util.find_spec("alembic") is None
+        except Exception:  # pragma: no cover - e.g. alembic in sys.modules without a spec
+            _alembic_absent = False
+        if not (isinstance(_exc, ImportError) and _alembic_absent):
+            _alembic_msg = (
+                "sqlalchemy-cubrid: Alembic integration is disabled because the "
+                f"installed Alembic failed to import ({type(_exc).__name__}: {_exc}). "
+                'Install "alembic>=1.7.2,<2.0" to enable CUBRID migrations.'
+            )
+            # A warning filter set to "error" (``-W error``) turns warn() into a
+            # raise; fall back to the logger so the dialect still loads.
+            try:
+                warnings.warn(_alembic_msg, RuntimeWarning, stacklevel=2)
+            except Exception:
+                log.warning(_alembic_msg)

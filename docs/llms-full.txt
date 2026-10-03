@@ -46,6 +46,15 @@ with engine.connect() as conn:
 - [Changelog](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md)
 - [Contributing](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md)
 
+## Ecosystem
+
+Part of the cubrid-lab Python ecosystem:
+
+- pycubrid — Pure-Python DB-API 2.0 driver for CUBRID (sync + native asyncio)
+- **sqlalchemy-cubrid** — SQLAlchemy 2.0–2.2 dialect + Alembic
+- cubrid-cookbook-python — 68 runnable examples and application templates
+- cubrid-mcp-server — MCP server — natural-language access for LLM clients
+
 ---
 
 # Quick Start
@@ -60,14 +69,12 @@ Before you start, make sure the following are available:
 
 - CUBRID server (running and reachable)
 - Python 3.10+
-- One supported driver configuration:
-  - `cubrid://` via CUBRID-Python (C-extension)
+- Recommended driver configuration:
   - `cubrid+pycubrid://` via pycubrid
   - `cubrid+aiopycubrid://` via pycubrid.aio
 
 ```bash
-pip install sqlalchemy-cubrid
-# or: pip install "sqlalchemy-cubrid[pycubrid]"
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
 
 ---
@@ -75,8 +82,16 @@ pip install sqlalchemy-cubrid
 ## Install the Dialect
 
 ```bash
-pip install sqlalchemy-cubrid
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+### Alternative: C-extension driver
+
+If you specifically need CUBRIDdb, use the supported CUBRID-Python 11.3.0.51+ source build
+described in [DRIVER_COMPAT](DRIVER_COMPAT.md#building-cubriddb-from-source). Do not use the
+deprecated `[cubriddb]` extra / PyPI CUBRID-Python 9.3.x path.
+
+Then use `cubrid+cubriddb://`; the bare `cubrid://` URL selects the same C-extension driver.
 
 ---
 
@@ -85,9 +100,10 @@ pip install sqlalchemy-cubrid
 Use one of the supported URL formats:
 
 ```text
-cubrid://user:password@host:port/database
 cubrid+pycubrid://user:password@host:port/database
 cubrid+aiopycubrid://user:password@host:port/database
+cubrid+cubriddb://user:password@host:port/database
+cubrid://user:password@host:port/database
 ```
 
 Example:
@@ -95,7 +111,7 @@ Example:
 ```python
 from sqlalchemy import create_engine
 
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 ---
@@ -249,7 +265,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRID-Python (legacy) |
+| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (legacy) |
 
 ---
 
@@ -258,12 +274,15 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 ### Recommended: Pure Python Driver (pycubrid)
 
 For new projects, use the pure-Python [pycubrid](https://github.com/cubrid-lab/pycubrid)
-driver — it installs with pip alone, needs no C build toolchain, and works anywhere
-Python runs:
+driver. It requires no CUBRID native libraries. Install the recommended extra:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+This extra supports both sync and async pycubrid URLs and includes
+SQLAlchemy's `asyncio` dependencies (`greenlet`). The driver itself is pure Python;
+`greenlet` may require build tools when no compatible wheel is available.
 
 Or install separately:
 
@@ -277,29 +296,29 @@ Then use the `cubrid+pycubrid://` URL scheme:
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
-> **Tip**: `pycubrid` is a pure Python implementation — it works anywhere Python runs,
-> with no native library dependencies. See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
+> **Tip**: The `pycubrid` driver itself is pure Python and requires no native libraries.
+> The `[pycubrid]` extra also installs `greenlet`, which may need build tools.
+> See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 
-### Legacy: C-extension Driver (CUBRID-Python)
+### Legacy: C-extension Driver (CUBRIDdb)
 
-The legacy [CUBRID-Python](https://github.com/CUBRID/cubrid-python) C-extension driver
-is the driver bound to the bare `cubrid://` URL. Install it via the `[cubriddb]` extra
-and select it explicitly with the `cubrid+cubriddb://` URL scheme:
-
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
-
-Or install the driver directly:
+The legacy CUBRIDdb C-extension driver from
+[cubrid-python](https://github.com/CUBRID/cubrid-python) is the driver bound to the bare
+`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. The
+supported way to install it is to build cubrid-python v11.3.0.51 or later from source,
+see [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
+then install the dialect on its own:
 
 ```bash
-pip install sqlalchemy-cubrid CUBRID-Python
+pip install sqlalchemy-cubrid
 ```
 
-> **Note**: `CUBRID-Python` is a C-extension driver. On some platforms you may need
-> the CUBRID CCI library installed. See the
-> [CUBRID Python driver documentation](https://www.cubrid.org/manual/en/11.0/api/python.html)
-> for platform-specific instructions.
+> **Warning**: do not install the driver from PyPI (`pip install CUBRID-Python`, or the
+> deprecated `[cubrid]` / `[cubriddb]` extras). PyPI only has `CUBRID-Python` 9.3.x, which
+> is untested with this dialect: it returns `BIGINT` as `str` and fails parts of the
+> integration suite. A `cubrid://` engine emits a `SAWarning` at its first connection
+> when the loaded CUBRIDdb is older than 11.3. See
+> [PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 ---
 
 ## Connection String Format
@@ -338,6 +357,42 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `port`     | `33000`     | CUBRID broker port                     |
 | `database` | *(required)* | Database name                         |
 
+### URL Query Options
+
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward these URL query options to
+`pycubrid.connect()` / `pycubrid.aio.connect()`, converted from the query string to
+the type pycubrid expects:
+
+```python
+engine = create_engine(
+    "cubrid+pycubrid://dba@localhost:33000/demodb?connect_timeout=5&read_timeout=30"
+)
+```
+
+| Option | Value | Description |
+|--------|-------|-------------|
+| `connect_timeout` | positive number of seconds | Timeout for opening the broker connection |
+| `read_timeout` | positive number of seconds | Socket read timeout after connecting |
+| `fetch_size` | integer >= 1 | Server-side fetch batch size (pycubrid default `100`) |
+| `charset` | codec name | Python codec, or CUBRID `utf8` / `euckr` / `iso88591`; set it to the database charset. Requires a pycubrid release newer than 1.8.0 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)); with pycubrid 1.8.0, `create_engine()` raises `ArgumentError` naming the installed version |
+| `ssl` | boolean | `true` enables TLS with pycubrid's default context (TLS 1.2+); pass an `ssl.SSLContext` through `connect_args` for anything else |
+| `decode_collections` | boolean | Decode `SET` / `MULTISET` / `SEQUENCE` values into Python collections |
+| `no_backslash_escapes` | boolean | pycubrid's own string-escape mode (auto-detected when omitted). This is not the `create_engine(no_backslash_escapes=...)` dialect option described [below](#backslash-escaping-no_backslash_escapes), which controls `literal_binds` rendering |
+| `enable_timing` | boolean | pycubrid timing statistics |
+
+Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`. An invalid value,
+a repeated option, `host` / `port` / `database` / `user` / `password` (set them in the
+URL itself), `autocommit` (use `isolation_level="AUTOCOMMIT"`) and `json_deserializer`
+(pass it through `connect_args`) raise `sqlalchemy.exc.ArgumentError` from
+`create_engine()`. Any other key is ignored with pycubrid's
+`UnknownConnectionOptionWarning`, which suggests the closest supported option;
+`warnings.simplefilter("error", pycubrid.UnknownConnectionOptionWarning)` makes it an
+error. `connect_args` values override URL query options.
+
+The `cubrid://` / `cubrid+cubriddb://` (CUBRIDdb) dialect does not read the URL query
+string: CUBRIDdb's `connect(url, user, password)` takes no keyword options, and any
+query options are ignored.
+
 ---
 
 ## Entry Points
@@ -349,15 +404,18 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid://`          | CUBRIDdb    | Default legacy C-extension driver    |
 | `cubrid+cubrid://`   | CUBRIDdb    | Explicit legacy C-extension driver   |
 | `cubrid+cubriddb://` | CUBRIDdb    | Explicit legacy C-extension driver   |
-| `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no C build)      |
+| `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python, easiest installation, no native build step). The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver; to select it explicitly use `cubrid+cubriddb://` with the `[cubriddb]` install extra.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
 ---
 
 ## Async Connection
 
-For async applications, use the `cubrid+aiopycubrid://` URL scheme with `create_async_engine`. Requires `pycubrid>=1.3.2,<2.0`.
+For async applications, use the `cubrid+aiopycubrid://` URL scheme with `create_async_engine`. Requires `pycubrid>=1.8.0,<2.0`.
+
+Install `sqlalchemy-cubrid[pycubrid]` to include the driver and SQLAlchemy's async
+bridge. If installing the packages separately, also install `SQLAlchemy[asyncio]`.
 
 ```python
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -435,6 +493,8 @@ kwargs = {"host": host, "port": port, "database": database, "user": user, "passw
 # → pycubrid.connect(host="myhost", port=33000, database="mydb", user="dba", password="password")
 ```
 
+[URL query options](#url-query-options) are added to these keyword arguments.
+
 ---
 
 ## Connection Options
@@ -507,16 +567,14 @@ correctly by the driver regardless of this setting.
 
 Both CUBRID Python drivers default to `autocommit=True`. The dialect overrides this on every new connection so that SQLAlchemy can manage transactions properly. CUBRIDdb uses `conn.set_autocommit(False)`; pycubrid uses the property setter `conn.autocommit = False`.
 
-### DDL Autocommit Detection
+### No Statement-Text Autocommit
 
-CUBRID implicitly commits DDL statements. The dialect detects DDL patterns and enables autocommit for:
-
-- `CREATE`, `ALTER`, `DROP`
-- `GRANT`, `REVOKE`
-- `TRUNCATE`
-- `MERGE`
-
-This is handled by the `CubridExecutionContext.should_autocommit_text()` method using a regex pattern.
+The dialect does not inspect SQL text to decide when to commit. SQLAlchemy 2.x
+never consults the 1.x-era `should_autocommit_text()` hook, so DML and DDL
+(including `INSERT`, `REPLACE`, `MERGE`, `CREATE`, and `DROP`) run inside the
+connection's transaction and are committed only through the SQLAlchemy 2.x
+Connection API: `conn.commit()`, an `engine.begin()` block, or a `Session`
+commit. A connection closed without committing is rolled back.
 
 ---
 
@@ -538,11 +596,16 @@ The result (e.g., `11.2.0.0374`) is parsed into a tuple `(11, 2, 0, 374)` for in
 
 #### `ImportError: No module named 'CUBRIDdb'`
 
-The CUBRID Python driver is not installed:
+The CUBRIDdb C-extension driver that the `cubrid://` URL uses is not installed. Switch
+to the recommended pure-Python driver:
 
 ```bash
-pip install CUBRID-Python
+pip install "sqlalchemy-cubrid[pycubrid]"   # then use cubrid+pycubrid://
 ```
+
+or build CUBRIDdb from cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The
+`CUBRID-Python` 9.3.x release on PyPI is untested with this dialect.
 
 #### `Connection refused` on port 33000
 
@@ -662,9 +725,9 @@ engine = create_engine(
 
 The dialect implements `is_disconnect()` which detects connection failures using a layered strategy that is resilient to driver error-message wording changes:
 
-1. **Numeric error code matching (primary)** — checks stable CUBRID/CCI codes such as `ER_COMMUNICATION` (-4, pycubrid), `CAS_ER_COMMUNICATION` (-21003/-21005), `ER_NET_CANT_CONNECT` (-10005), and `ER_NET_SERVER_COMM_ERROR` (-10007).
+1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Codes are read only from these structured fields, never from message text: a message that starts with a number, such as a server error quoting application data (`-20004 rows rejected ...`), carries no code (#608). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
-3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver (which lacks `OperationalError`) and pycubrid's client-side string-only errors (e.g. "connection lost during receive") that carry neither a code nor an `OSError` cause.
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", or "reconnecting failed" when pycubrid cannot replace a lost CAS session) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671.
 
 Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 
@@ -672,16 +735,21 @@ When a disconnect is detected, SQLAlchemy automatically invalidates the connecti
 
 ### Error Code Mapping
 
-CUBRID driver exceptions are mapped to appropriate SQLAlchemy exception types. The driver exposes a limited exception hierarchy:
+CUBRID driver exceptions are mapped to appropriate SQLAlchemy exception types. Both drivers expose the full PEP 249 exception hierarchy:
 
 | CUBRID Driver Exception | SA Exception Mapping |
 |---|---|
 | `Error` (base) | `DBAPIError` |
 | `InterfaceError` | `InterfaceError` |
 | `DatabaseError` | `DatabaseError` |
+| `DataError` | `DataError` |
+| `OperationalError` | `OperationalError` |
+| `IntegrityError` | `IntegrityError` |
+| `InternalError` | `InternalError` |
+| `ProgrammingError` | `ProgrammingError` |
 | `NotSupportedError` | `NotSupportedError` |
 
-> **Note**: CUBRIDdb does not provide `OperationalError`, `ProgrammingError`, `InternalError`, or `DataError`. All database-level errors are raised as `DatabaseError`.
+> **Note**: CUBRIDdb 11.3.0.51 and pycubrid both provide every PEP 249 exception class above; SQLAlchemy wraps the class the driver raises. Which class a given server error gets depends on the driver, for example NOT NULL and foreign-key violations on released pycubrid. See [Driver Compatibility](DRIVER_COMPAT.md#exception-hierarchy).
 
 ### Pool Configuration Recommendations
 
@@ -982,7 +1050,7 @@ stmt = stmt.on_duplicate_key_update(
 )
 ```
 
-> **Note**: `stmt.inserted.<column>` is the supported way to render `VALUES(column)` in CUBRID ODKU clauses.
+> **Note**: `stmt.inserted.<column>` re-emits the INSERT bind parameter in the ON DUPLICATE KEY UPDATE clause.
 
 ---
 
@@ -1230,11 +1298,22 @@ CUBRID uses `SET`, `MULTISET`, and `SEQUENCE` instead of SQL `ARRAY`:
 | `MULTISET` | ✗ | ✓ | Counts, repeated values |
 | `SEQUENCE` | ✓ | ✓ | Ordered lists, history |
 
-### 5. DDL Auto-Commits
+### 5. DDL Is Transactional
 
-CUBRID implicitly commits all DDL statements (`CREATE TABLE`, `ALTER TABLE`, etc.).
-This means `Base.metadata.create_all(engine)` commits immediately — it cannot be
-rolled back. The Alembic integration sets `transactional_ddl = False` accordingly.
+CUBRID does not implicitly commit DDL. With client autocommit off, which the
+dialect sets on every connection, `CREATE TABLE`, `ALTER TABLE` and other DDL
+join the current transaction and are undone by a rollback:
+
+```python
+with engine.connect() as conn:
+    Base.metadata.create_all(conn)
+    conn.rollback()  # no table is left behind
+```
+
+`Base.metadata.create_all(engine)` runs in its own `engine.begin()` block and
+commits when it succeeds. Uncommitted DDL holds schema locks on its tables, so
+commit it promptly. The Alembic integration sets `transactional_ddl = True`
+accordingly.
 
 ### 6. No Temporary Tables
 
@@ -1341,7 +1420,7 @@ This dialect provides custom SQLAlchemy constructs for CUBRID-specific DML (Data
 
 ## ON DUPLICATE KEY UPDATE
 
-CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references, identical to MySQL's pre-8.0 syntax.
+CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. Unlike MySQL, CUBRID does not support the `VALUES()` function; the dialect re-emits INSERT bind parameters instead.
 
 ### Basic Usage
 
@@ -1362,15 +1441,15 @@ ON DUPLICATE KEY UPDATE name = 'updated_alice'
 
 ### Referencing Inserted Values
 
-Use `stmt.inserted` to reference the values being inserted — rendered as `VALUES(column_name)` in SQL:
+Use `stmt.inserted` to reference the values being inserted — the dialect re-emits the INSERT bind parameter:
 
 ```python
 from sqlalchemy_cubrid import insert
 
 stmt = insert(users).values(id=1, name="alice", email="alice@example.com")
 stmt = stmt.on_duplicate_key_update(
-    name=stmt.inserted.name,      # → VALUES(name)
-    email=stmt.inserted.email,    # → VALUES(email)
+    name=stmt.inserted.name,
+    email=stmt.inserted.email,
 )
 ```
 
@@ -1379,8 +1458,10 @@ stmt = stmt.on_duplicate_key_update(
 ```sql
 INSERT INTO users (id, name, email)
 VALUES (1, 'alice', 'alice@example.com')
-ON DUPLICATE KEY UPDATE name = VALUES(name), email = VALUES(email)
+ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
+
+> **Limitation — `stmt.inserted.col` and multi-row `VALUES` (#371):** referencing the inserted value only works for a **single-row** `INSERT` or for **executemany** (passing the row list to `Connection.execute(stmt, [rows])`, where each execution is logically single-row). It is **not** supported for an inline multi-row `insert(t).values([{...}, {...}])`: CUBRID has no `VALUES(col)` / row-alias syntax, so there is no single value to bind per conflicting row, and the dialect raises a `CompileError` rather than silently updating every conflicting row with one row's value. For a multi-row upsert, use executemany, split into single-row statements, use a literal/expression update (which does not reference the inserted value), or use `MERGE`.
 
 ### Argument Forms
 
@@ -1424,7 +1505,7 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = (SELECT max(users.name) FROM users)
 ```
 
-> **Note**: `stmt.inserted.<column>` compiles to `VALUES(<column>)`, which is the dialect's supported way to reference the incoming row in ON DUPLICATE KEY UPDATE clauses.
+> **Note**: `stmt.inserted.<column>` causes the dialect to re-emit the INSERT bind parameter for that column, so the value appears twice in the positional parameter list.
 
 ---
 
@@ -1451,6 +1532,7 @@ VALUES (1, 'alice', 'alice@example.com')
 
 - `REPLACE INTO` uses all standard INSERT value patterns (`values`, `from_select`, etc.)
 - On duplicate key conflicts, CUBRID replaces the existing row with the new row
+- `prefix_with()` text is rendered between the verb and `INTO` (`replace(users).prefix_with("/* audit */")` renders `REPLACE /* audit */ INTO users ...`), exactly as for `insert()`; prefixes, comments, literals and identifiers are never rewritten, even when they contain the text `INSERT INTO`
 - `REPLACE INTO` does not support `ON DUPLICATE KEY UPDATE`; use `insert(...).on_duplicate_key_update(...)` for in-place updates
 
 ---
@@ -1654,7 +1736,7 @@ with engine.begin() as conn:
     conn.execute(text("TRUNCATE TABLE temp_data"))
 ```
 
-The dialect includes `TRUNCATE` in its autocommit detection pattern, so it will be executed with autocommit enabled (matching CUBRID's implicit DDL commit behavior).
+`TRUNCATE` runs inside the connection's transaction like any other statement; the `engine.begin()` block above commits it on successful exit. The dialect does not autocommit based on SQL text (see [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit)).
 
 ---
 
@@ -2011,16 +2093,25 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
 | `Numeric(p, s)`      | `NUMERIC(p, s)`   | Exact numeric, up to 38 digits             |
 | `String(n)`          | `VARCHAR(n)`      | Variable-length character data             |
 | `Text`               | `STRING`          | Alias for `VARCHAR(1,073,741,823)`         |
-| `Unicode(n)`         | `NVARCHAR(n)`     | National character set                     |
-| `UnicodeText`        | `NVARCHAR`        | National character, max length             |
+| `Unicode(n)`         | `VARCHAR(n)`      | Database charset (no `NCHAR` needed)       |
+| `UnicodeText`        | `STRING`          | Same as `Text`; CUBRID has no `TEXT` type  |
 | `LargeBinary`        | `BLOB`            | Binary Large Object                        |
+| `BINARY(n)`          | `BIT(n*8)`        | Fixed-length bytes; CUBRID has no `BINARY` |
+| `VARBINARY(n)`       | `BIT VARYING(n*8)`| Variable-length bytes; no `VARBINARY`      |
+| `Uuid` / `UUID`      | `CHAR(32)`        | No native UUID; stored as 32-char hex      |
 | `Boolean`            | `SMALLINT`        | ⚠️ No native boolean — mapped to 0/1      |
 | `Date`               | `DATE`            | Calendar date                              |
 | `Time`               | `TIME`            | Time of day                                |
 | `DateTime`           | `DATETIME`        | Date and time combined                     |
 | `TIMESTAMP`          | `TIMESTAMP`       | Timestamp with auto-update behavior        |
 
-> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`.
+> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`. An explicit non-positive length (`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) is not a valid CUBRID length and raises `CompileError` instead of being widened to the default.
+
+> **BINARY / VARBINARY**: CUBRID has no `BINARY` or `VARBINARY` type, so the dialect stores them as bit strings, whose length is in bits: `BINARY(n)` compiles to `BIT(n*8)` (`BINARY()` to `BIT(8)`), `VARBINARY(n)` to `BIT VARYING(n*8)` and `VARBINARY()` to `BIT VARYING` (up to 1,073,741,823 bits). Values bind and return as `bytes` on both drivers. `BINARY` is fixed-length, so a shorter value comes back padded with `\x00` bytes. An empty `b""` is not preserved: depending on the driver it reads back as `None` (or as zero bytes for `BINARY` on pycubrid). A non-positive length (`BINARY(0)`, `VARBINARY(0)`) raises `CompileError`. These columns reflect as `BIT(n*8)` / `BIT VARYING(n*8)`, so Alembic autogenerate reports no type change for them.
+
+> **UUID**: CUBRID has no `UUID` type. `sa.Uuid` and `sa.UUID` both compile to `CHAR(32)` and use SQLAlchemy's non-native UUID handling: values are stored as 32-character hex strings, and read back as `uuid.UUID` (default) or as a hyphenated `str` with `as_uuid=False`. The column reflects as `CHAR(32)`.
+
+> **Character set and collation**: the dialect does not render a column-level `CHARSET` or `COLLATE` clause for string and text types. A `collation=` argument (for example `String(50, collation="utf8_bin")`, `Text(collation=...)` or `UnicodeText(collation=...)`) is dropped, and the column uses the database charset and collation. `Unicode` / `UnicodeText` do not select a different charset either: they compile to `VARCHAR(n)` / `STRING` like `String` / `Text`, so non-ASCII text (for example Korean, Japanese, Chinese or emoji) round-trips only when the database was created with a UTF-8 charset (for example `cubrid createdb testdb en_US.utf8`).
 
 ---
 
@@ -2175,6 +2266,74 @@ CREATE TABLE tagged_items (
 > no separate `LIST` type, since a type compiling to `LIST(...)` would produce
 > spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`.
 
+#### Collection values
+
+Bind a `SET` or `MULTISET` column's value as a Python `list`, `tuple`, `set`
+or `frozenset`. A `SEQUENCE` is ordered, so bind it as a `list` or `tuple`: on
+the pycubrid drivers a `set` or `frozenset` for a `SEQUENCE` column raises
+`TypeError` ("SEQUENCE is ordered; pass a list or tuple", wrapped in
+SQLAlchemy's `StatementError`) whatever the pycubrid version, and the dialect
+never sorts it for you. What happens next depends on the driver:
+
+| | `cubrid+pycubrid://`, `cubrid+aiopycubrid://` with typed collection parameters (pycubrid main) | Released pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
+|---|---|---|---|
+| Binding a `list`/`tuple` (and a `set`/`frozenset` for `SET`/`MULTISET`) | Wrapped in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type and sent as a `SET{...}`, `MULTISET{...}` or `SEQUENCE{...}` literal | `ProgrammingError` (pycubrid rejects collection parameters) | Bound by CUBRIDdb itself, always as a SET: a MULTISET loses duplicates and a SEQUENCE loses its order ([Driver Compatibility, Known Issue 11](DRIVER_COMPAT.md#11-collection-parameters-set-multiset-sequence)) |
+| Reading `SET` | `frozenset` with `?decode_collections=true`, raw `bytes` without it | Same | `set` of `str` |
+| Reading `MULTISET` / `SEQUENCE` | `list` with `?decode_collections=true`, raw `bytes` without it | Same | `list` of `str` |
+
+```python
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
+from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET
+
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/demodb?decode_collections=true")
+items = Table(
+    "items", MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("tags", SET(String(20))),
+    Column("scores", MULTISET(Integer())),
+    Column("history", SEQUENCE(Integer())),
+)
+
+with engine.begin() as conn:
+    conn.execute(items.insert(), {"id": 1, "tags": {"a", "b"}, "scores": [2, 2, 1], "history": [3, 1, 3]})
+    row = conn.execute(select(items)).one()
+    # row.tags == frozenset({"a", "b"}); sorted(row.scores) == [1, 2, 2]; row.history == [3, 1, 3]
+    conn.execute(select(items.c.id).where(items.c.history == [3, 1, 3]))  # SEQUENCE{3, 1, 3}
+```
+
+On pycubrid:
+
+- The typed parameters (cubrid-lab/pycubrid#567) are on pycubrid main and are
+  not in a pycubrid release yet. The dialect detects them
+  (`pycubrid.types.Set`, `Multiset` and `Sequence`); with an older pycubrid it
+  passes values to the driver unchanged, so a collection parameter fails as
+  before.
+- Each element must be a value pycubrid can bind on its own: `None`, `bool`,
+  `int`, `float`, `Decimal`, `str`, `bytes`, `bytearray`, `date`, `time` or
+  `datetime`. Nested collections are rejected.
+- A value that is already a `pycubrid.types.Set`, `Multiset` or `Sequence`,
+  `None` and any other value (for example a `str`) are passed to the driver
+  unchanged.
+- The server keeps the collection semantics, and the dialect does not change
+  them: a `SET` drops duplicates, a `MULTISET` keeps duplicates but not their
+  order (compare `sorted(...)`), and a `SEQUENCE` keeps both. An empty
+  collection reads back as `frozenset()` or `[]`, a `NULL` column as `None`,
+  and a `NULL` element as `None` inside the collection.
+- The dialect does not convert values read back: they are what pycubrid
+  decodes. Without `decode_collections=true` pycubrid returns the raw
+  collection bytes.
+- A `set`/`frozenset` bound to a `SEQUENCE` column raises `TypeError` (see
+  above), with every pycubrid version.
+- Collection values cannot be rendered inline: `literal_binds` and
+  `literal_execute` raise `CompileError` for a non-`NULL` collection value
+  (a `NULL` renders as `NULL`). Bind collections as parameters.
+- In the ORM, assign a new collection to change a column
+  (`obj.history = [*obj.history, 4]`). SQLAlchemy does not track in-place
+  changes to a `list` or `set` attribute.
+
+The round trips are tested live on CUBRID 10.2 and 11.4 with pycubrid main
+(Core and ORM, sync and async; `test/test_collection_roundtrip.py`).
+
 ### JSON Type
 
 CUBRID 10.2+ supports native JSON (RFC 7159). The dialect provides full JSON type support:
@@ -2237,14 +2396,20 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `DATE`              | `DATE`             |
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
+| `TIMESTAMPTZ`       | `TIMESTAMPTZ` (`timezone=True`) |
+| `TIMESTAMPLTZ`      | `TIMESTAMPLTZ` (`timezone=True`) |
 | `DATETIME`          | `DATETIME`         |
-| `BIT`               | `BIT`              |
-| `BIT VARYING`       | `BIT`              |
+| `DATETIMETZ`        | `DATETIMETZ` (`timezone=True`) |
+| `DATETIMELTZ`       | `DATETIMELTZ` (`timezone=True`) |
+| `BIT(n)`            | `BIT(n)`           |
+| `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
 | `VARCHAR`           | `VARCHAR`          |
 | `NCHAR`             | `NCHAR`            |
-| `CHAR VARYING`      | `NVARCHAR`         |
+| `CHAR VARYING`      | `VARCHAR`          |
+| `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
+| `ENUM('a', ...)`    | `ENUM('a', ...)` (DBA; otherwise `NullType` + warning) |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
 | `SET`               | `SET`              |
@@ -2252,6 +2417,14 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**TZ/LTZ reflection** (#181, #442). `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as their own dedicated dialect classes rather than collapsing into plain `TIMESTAMP`/`DATETIME`, and each sets `timezone=True`, so a round-tripped `datetime` keeps its timezone awareness and `metadata.reflect()` + `create_all()` reproduces the original column type. The dialect does not otherwise distinguish explicit-timezone (`TZ`) from local-timezone (`LTZ`) *value* semantics in Python — both are represented as an aware `datetime` — only the reflected SQLAlchemy type class differs.
+
+**ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
+
+`SHOW COLUMNS` prints collections as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member modifiers and sometimes in a different order. The public `db_attr_setdomain_elm` view supplies each member's precision, scale and object-domain class. The dialect uses those rows only when they account for every reported member family; missing or inconsistent rows warn and yield `NullType` instead of silently changing the DDL. An OBJECT member whose class was dropped (listed without its class) and a member type the dialect cannot express warn and yield `NullType`; the rest of the table still reflects. `MONETARY` members reflect as `MONETARY`. A column name that `SHOW COLUMNS` lists twice (a `CLASS ATTRIBUTE` of the same name) warns and yields `NullType` for ENUM and collection columns, and the catalog lookups read instance attributes only. On CUBRID 11.2+ an OBJECT member whose class belongs to another owner than the table reflects as `owner.class`. An `ENUM` member (`SET(ENUM('x', 'y'))`, listed without its values) warns and yields `NullType`. Members keep the order the view lists them in, which is the declaration order on the supported servers. A member's collation (`VARCHAR(10) COLLATE utf8_bin`) is not in the view and is not reflected. An untyped collection takes its kind from `db_attribute` and reflects as `SET()` / `MULTISET()` / `SEQUENCE()`. With authorized ENUM metadata and complete collection-domain rows, `metadata.reflect()` followed by `create_all()` reproduced the tested DDL on CUBRID 10.2, 11.2 and 11.4; 11.0 remains in the nightly matrix. This is not a claim of full ENUM reflection for non-DBA users.
+
+On CUBRID 11.2+, an OBJECT member also warns and yields `NullType` when either its domain owner or the reflected table owner is unavailable; rendering an unqualified class could resolve to a different owner's class.
 
 ---
 
@@ -2270,6 +2443,23 @@ class User(Base):
 - `True` is stored as `1`
 - `False` is stored as `0`
 - The `supports_native_boolean = False` flag tells SQLAlchemy to handle the conversion automatically
+
+### Boolean predicates
+
+CUBRID's `IS` accepts only `[NOT] NULL` and `[NOT] TRUE/FALSE`, and since CUBRID 11.2 `IS TRUE`/`IS FALSE` needs a logical operand (`b IS TRUE` fails for a `SMALLINT` column). SQLAlchemy renders `col.is_(True)` for a non-native Boolean as `col IS 1`, which CUBRID rejects on every version, so the dialect renders `IS`/`IS NOT` against a value with the null-safe equal `<=>`, like `IS [NOT] DISTINCT FROM`:
+
+| SQLAlchemy | SQL | Value for `1` / `0` / `NULL` |
+|---|---|---|
+| `col.is_(True)` | `col <=> 1` | true / false / false |
+| `col.is_(False)` | `col <=> 0` | false / true / false |
+| `col.is_not(True)` | `(col <=> 1) = 0` | false / true / true |
+| `col.is_not(False)` | `(col <=> 0) = 0` | true / false / true |
+| `col.is_(None)` / `col == None` | `col IS NULL` | false / false / true |
+| `col == True` / `col` | `col = 1` | true / false / NULL |
+| `col == False` / `not_(col)` | `col = 0` | false / true / NULL |
+| `true()` / `false()` | `1 = 1` / `0 = 1` (`1` / `0` in a SELECT list) | constant |
+
+`IS TRUE`/`IS FALSE` never yield `NULL`, and `IS NOT TRUE`/`IS NOT FALSE` are their exact complements, so SQLAlchemy's three-valued semantics are kept in `WHERE` clauses and in SELECT lists alike; the same applies to any expression, e.g. `(col == 5).is_(True)` renders `(col = 5) <=> 1`. One limitation is CUBRID's, not the dialect's: logical operators are not allowed in a SELECT list, so `select(and_(a, b))`, `select(or_(a, b))` or a projected `NOT (...)` fail; use them in `WHERE`, or wrap them in `case()` (a `NULL` condition then takes the `else_` branch).
 
 ---
 
@@ -2361,18 +2551,23 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | Time of day only. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | Date + time in one value. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID timestamp semantics may auto-update depending on schema defaults. |
-| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` | `bytes` / `str` | Representation may vary by DBAPI driver. |
-| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` | `bytes` / `str` | Variable-length bit string. |
+| `TIMESTAMPTZ` | `sqlalchemy_cubrid.TIMESTAMPTZ` | `datetime.datetime` (aware) | Explicit-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `TIMESTAMPLTZ` | `sqlalchemy_cubrid.TIMESTAMPLTZ` | `datetime.datetime` (aware) | Local-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `DATETIMETZ` | `sqlalchemy_cubrid.DATETIMETZ` | `datetime.datetime` (aware) | Explicit-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `DATETIMELTZ` | `sqlalchemy_cubrid.DATETIMELTZ` | `datetime.datetime` (aware) | Local-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | Fixed-length bit string; `sa.BINARY(n)` compiles to `BIT(n*8)`. |
+| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | Variable-length bit string; `sa.VARBINARY(n)` compiles to `BIT VARYING(n*8)`. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | Fixed-length character data. |
 | `VARCHAR(n)` | `sqlalchemy_cubrid.VARCHAR` / `sqlalchemy.String` | `str` | Variable-length string. |
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | National character set type. |
-| `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | Reflected to NVARCHAR by this dialect. |
+| `CHAR VARYING(n)` | `sqlalchemy_cubrid.VARCHAR` | `str` | Synonym of `VARCHAR(n)`; reflected to VARCHAR. |
+| `CHAR(32)` (UUID) | `sqlalchemy.Uuid` / `sqlalchemy.UUID` | `uuid.UUID` / `str` | No native UUID; 32-char hex. Reflects as `CHAR(32)`. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | Equivalent to very large `VARCHAR`. |
-| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` | Character LOB; large text payloads. |
-| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` | Binary LOB storage. |
-| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent collection payload | CUBRID-specific collection; unique unordered members. |
-| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent collection payload | CUBRID-specific collection; duplicates allowed. |
-| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent collection payload | CUBRID-specific collection; ordered with duplicates. |
+| `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
+| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (documented) | Binary LOB. Current drivers return a LOB locator on read; see the warning below. |
+| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent; `frozenset` on pycubrid with `decode_collections=true` | CUBRID-specific collection; unique unordered members. See [Collection values](#collection-values). |
+| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; duplicates allowed. See [Collection values](#collection-values). |
+| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; ordered with duplicates. See [Collection values](#collection-values). |
 | `OBJECT` | `sqlalchemy_cubrid.OBJECT` | Driver-dependent object reference | OID reference type; database-specific. Declared/compiled only; not auto-reflected. |
 | `BOOLEAN` (emulated) | `sqlalchemy.Boolean` -> `SMALLINT` | `bool` | Stored as `1` / `0`; `supports_native_boolean=False`. |
 
@@ -2391,6 +2586,10 @@ flowchart LR
 
 !!! warning "Character set and national string columns"
     `NCHAR`/`NVARCHAR` use national character semantics. Keep application encoding and database collation aligned to avoid unexpected comparisons/sorting.
+
+!!! warning "Reading BLOB/CLOB returns a driver LOB locator"
+    Verified live on CUBRID 10.2 and 11.4, Core and ORM, sync and async, with pycubrid 1.8.0 (the supported floor), pycubrid main, and CUBRIDdb 11.3 (#485, `test/test_lob_value_contract.py`): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on sync pycubrid, the `file_locator` string on `cubrid+aiopycubrid://`, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. Binding `LargeBinary`/`BLOB` values (including `None`) through `cubrid+aiopycubrid://` works since #500.
+    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442; pycubrid main does not implement it yet, so the strict xfail applies there too and turns into a failing XPASS the moment it does.
 
 !!! warning "LOB and collection payload shape can differ by driver"
     `CUBRIDdb` and `pycubrid` can expose `BLOB`/`CLOB` and collection values differently.
@@ -2424,6 +2623,7 @@ Since CUBRID 10.0 (the MVCC engine), CUBRID supports **three** transaction isola
   - [Engine-Level (Default for All Connections)](#engine-level-default-for-all-connections)
   - [Connection-Level (Per Connection)](#connection-level-per-connection)
   - [Execution Options (Per Statement Block)](#execution-options-per-statement-block)
+  - [AUTOCOMMIT](#autocommit)
 - [Accepted Level Names](#accepted-level-names)
 - [Comparison with SQL Standard](#comparison-with-sql-standard)
 - [How the Dialect Manages Isolation](#how-the-dialect-manages-isolation)
@@ -2507,6 +2707,37 @@ with engine.begin() as conn:
     # Commits at end of block
 ```
 
+### AUTOCOMMIT
+
+`AUTOCOMMIT` turns on the driver's autocommit mode, so each statement commits
+as soon as it runs. It works on `cubrid://` (CUBRIDdb), `cubrid+pycubrid://`
+and `cubrid+aiopycubrid://`, at every level SQLAlchemy offers:
+
+```python
+# Every connection from this engine
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb", isolation_level="AUTOCOMMIT")
+
+# An engine copy that shares the pool
+autocommit_engine = engine.execution_options(isolation_level="AUTOCOMMIT")
+
+# One connection
+with engine.connect().execution_options(isolation_level="AUTOCOMMIT") as conn:
+    conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
+    # Already visible to other sessions; conn.rollback() cannot undo it
+```
+
+`AUTOCOMMIT` is a driver mode, not a server isolation level. The server level
+stays what it was, and `conn.get_isolation_level()` still reports it, on
+`cubrid://` (CUBRIDdb) and, since pycubrid 1.8.0 keeps the session in
+autocommit mode, on `cubrid+pycubrid://` and `cubrid+aiopycubrid://` (see
+[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-replaces-the-session-after-a-cas-restart-dialect-re-applies-the-isolation-level)).
+Setting
+any other level turns driver autocommit off again, and a pooled connection
+returns to transactional mode when it is checked in (see
+[Reset on Connection Return](#reset-on-connection-return)). Use
+`engine.dialect.detect_autocommit_setting(dbapi_connection)` to check the mode
+of a DBAPI connection.
+
 ---
 
 ## Accepted Level Names
@@ -2522,11 +2753,17 @@ of the three MVCC levels; names are **case-insensitive**.
 | `READ COMMITTED`                                       | 4             |
 | `REPEATABLE READ SCHEMA, READ COMMITTED INSTANCES`     | 4             |
 | `CURSOR STABILITY`                                     | 4             |
+| `AUTOCOMMIT`                                           | driver autocommit, no server level |
 
 > The two long "SCHEMA, … INSTANCES" spellings and `CURSOR STABILITY` are retained
 > as backward-compatible aliases because they resolve to still-valid levels (4/5).
+> An engine-level alias is stored under its canonical name (for example
+> `isolation_level="CURSOR STABILITY"` becomes `READ COMMITTED`).
 > The legacy names that resolved to the removed levels 1–3 are **no longer
-> accepted** and raise `ValueError`.
+> accepted**. An unknown name raises `sqlalchemy.exc.ArgumentError` from
+> `create_engine(isolation_level=...)` (on first connect) and from
+> `execution_options(isolation_level=...)`; calling
+> `dialect.set_isolation_level()` directly raises `ValueError`.
 
 ---
 
@@ -2578,9 +2815,25 @@ The returned numeric value is mapped back to a descriptive string.
 > returns the canonical name (e.g. `"REPEATABLE READ"`), not necessarily the
 > exact string you supplied.
 
+### Kept Across Commit and Rollback on pycubrid
+
+pycubrid 1.8.0 keeps the CAS session, and with it the isolation level, across
+`commit()` / `rollback()`. It opens a new session, at the server default level,
+only when the CAS itself was restarted (see
+[Driver Compatibility, Known Issue 10](DRIVER_COMPAT.md#10-pycubrid-replaces-the-session-after-a-cas-restart-dialect-re-applies-the-isolation-level)).
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` therefore re-apply the level
+they last set on a connection after every commit and rollback, so an engine- or
+connection-level `isolation_level` also survives a CAS replaced at the end of a
+transaction. `cubrid://` (CUBRIDdb) keeps the session and needs no re-apply.
+
 ### Reset on Connection Return
 
-When a connection is returned to the pool, the dialect resets isolation to level 4 (`READ COMMITTED`) to ensure a clean state for the next checkout.
+When a connection whose level was changed with `execution_options()` is
+returned to the pool, SQLAlchemy restores the engine-level `isolation_level`
+(including `AUTOCOMMIT`). Without an engine-level setting it restores the level
+the first connection reported, which is the server default (normally
+`READ COMMITTED`). Earlier releases always reset to `READ COMMITTED`, which
+dropped an engine-level setting after a per-connection override.
 
 ---
 
@@ -2593,7 +2846,7 @@ When a connection is returned to the pool, the dialect resets isolation to level
 
 3. **Set isolation at the engine level** for application-wide defaults, and override per-connection only when needed.
 
-4. **Be aware of DDL auto-commit.** CUBRID auto-commits DDL statements regardless of isolation level. This means `CREATE TABLE`, `ALTER TABLE`, etc. are immediately visible to all transactions.
+4. **DDL is transactional.** At every isolation level, CUBRID runs DDL inside the current transaction: `ROLLBACK` undoes `CREATE TABLE`, `ALTER TABLE` and the like, and DDL never commits earlier DML. Uncommitted DDL holds a schema lock on its table, so other transactions that use the table wait until it commits or rolls back. Only client autocommit (driver-level autocommit, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it, #501) commits DDL immediately.
 
 ---
 
@@ -2636,12 +2889,12 @@ Install sqlalchemy-cubrid with the `alembic` extra:
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-This pulls in Alembic ≥ 1.7 as a dependency. The CUBRID Alembic implementation
-(`CubridImpl`) is registered automatically via the `alembic.ddl` entry point —
+This pulls in Alembic ≥ 1.7.2 as a dependency. The CUBRID Alembic implementation
+(`CubridImpl`) is registered automatically when the CUBRID dialect loads —
 no manual configuration is needed.
 
-> **Note**: If you install Alembic separately (`pip install alembic`), it will
-> still auto-discover the CUBRID implementation as long as `sqlalchemy-cubrid`
+> **Note**: If you install Alembic separately (`pip install alembic`), the
+> CUBRID implementation is still registered as long as `sqlalchemy-cubrid`
 > is installed in the same environment.
 
 ---
@@ -2684,8 +2937,21 @@ def run_migrations_online():
 
 ### env.py Setup
 
-The standard Alembic `env.py` works without modification. The `CubridImpl`
-class is auto-discovered when the connection URL uses the `cubrid://` scheme.
+The `CubridImpl` class is registered as soon as any CUBRID URL loads the
+dialect, so `env.py` never needs a CUBRID import. Which template to start from
+depends on the driver:
+
+- **Synchronous URLs** (`cubrid://`, `cubrid+cubriddb://`,
+  `cubrid+pycubrid://`): the standard `env.py` from `alembic init` works
+  without modification.
+- **Async URL** (`cubrid+aiopycubrid://`): use Alembic's async template,
+  `alembic init -t async <dir>`. Its generated `env.py` also works without
+  modification. The standard template's online path calls the synchronous
+  `engine_from_config()`, which cannot drive the async driver and fails with
+  `sqlalchemy.exc.MissingGreenlet`; offline `--sql` mode works with either
+  template. Verified on CUBRID 11.4 with Alembic 1.7.2 and 1.20.0:
+  `upgrade head` / `downgrade base` through an unmodified async-template
+  `env.py` (covered by `test/test_alembic_registration.py`).
 
 A minimal `env.py` for online migrations:
 
@@ -2757,38 +3023,169 @@ alembic history --verbose
 
 ## CUBRID-Specific Behavior
 
-### DDL Auto-Commit
+### Transactional DDL
 
-CUBRID implicitly commits every DDL statement. The `CubridImpl` sets
-`transactional_ddl = False`, which tells Alembic:
+CUBRID DDL is transactional. With client autocommit off — the dialect turns it
+off on every connection — `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`,
+`TRUNCATE`, `CREATE INDEX` (including `WITH ONLINE [PARALLEL n]`),
+`CREATE VIEW`, `CREATE SERIAL` and `RENAME TABLE` run inside the current
+transaction: `ROLLBACK` undoes them, and they never commit DML issued earlier in
+the same transaction (see the
+[CUBRID manual](https://www.cubrid.org/manual/en/11.4/sql/transaction.html),
+where `ROLLBACK WORK` undoes an `ALTER TABLE … DROP`). The only auto-commit
+behavior in CUBRID is client autocommit (`CCI_DEFAULT_AUTOCOMMIT`, or csql's
+default auto-commit mode), which commits after every statement, DDL or DML.
 
-- **No transaction wrapping** around DDL statements
-- Each `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE` commits immediately
-- A failed migration may leave the database in a partially-migrated state
+`CubridImpl` therefore sets `transactional_ddl = True`, which tells Alembic:
 
-**Implication**: If a migration with multiple DDL operations fails halfway
-through, you cannot simply roll back — the earlier operations have already
-been committed. Write migrations with small, atomic steps.
+- **The whole `alembic upgrade` runs in one transaction** by default. If any
+  revision fails, every revision in that run is rolled back, including the
+  `alembic_version` update, so the database stays at its starting revision.
+- With `transaction_per_migration=True` in `context.configure()`, each
+  revision runs and commits in its own transaction instead: revisions that
+  finished stay applied, and the failing revision is rolled back as a whole.
+- `context.is_transactional_ddl()` returns `True`.
 
-### Auto-Discovery
+**Schema locks.** Uncommitted DDL keeps its schema lock on the table until the
+transaction ends, so other sessions that touch the table wait (as `SCH_S_LOCK`
+waits) for the whole transaction; CUBRID's default `lock_timeout` is unlimited,
+so they wait indefinitely rather than time out. For long migrations, or
+migrations on large tables, set `transaction_per_migration=True` so each revision commits and
+releases its locks as soon as it finishes:
 
-The dialect registers `CubridImpl` via the `alembic.ddl` entry point in
-`pyproject.toml`:
-
-```toml
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
+```python
+# env.py
+context.configure(
+    connection=connection,
+    target_metadata=target_metadata,
+    transaction_per_migration=True,
+)
 ```
 
-When Alembic detects a `cubrid://` connection URL, it automatically loads
-`CubridImpl`. No imports or configuration are required in your migration files.
+Alembic's `autocommit_block()` is not a way to commit part of an upgrade early on
+CUBRID: it switches the connection to the `AUTOCOMMIT` isolation level, which the
+dialect does not accept before #501, and it gives up the upgrade's atomicity.
+Use `transaction_per_migration=True` to commit between revisions instead.
+
+**Offline (`--sql`) scripts.** CUBRID has no `BEGIN` statement (csql rejects it
+with `Syntax error: unexpected 'BEGIN'`); a transaction starts implicitly. The
+CUBRID implementation therefore emits no `BEGIN;` and ends each transaction with
+`COMMIT;` (one per upgrade, or one per revision with
+`transaction_per_migration=True`). Run the script with both
+`--no-auto-commit` and `--no-single-line`:
+
+```bash
+csql -u dba demodb --no-auto-commit --no-single-line -i upgrade.sql
+```
+
+`--no-auto-commit` makes those `COMMIT;` lines the only commit points; in csql's
+default auto-commit mode every statement commits on its own. `--no-single-line`
+makes csql stop at the first failing statement and exit with status 1, so the
+open transaction is rolled back: nothing from the whole upgrade (or, with
+`transaction_per_migration=True`, from the failing revision) is kept. In csql's
+default single-line mode, csql reports the error, **continues with the next
+statements, runs the trailing `COMMIT;` and exits 0**, so a failed script can
+leave partial schema and a bumped `alembic_version`.
+
+!!! note "Changed in 1.8.0"
+    Earlier releases set `transactional_ddl = False`. Alembic still wrapped each
+    revision in its own transaction in online mode, so each revision was already
+    atomic, but a failed `upgrade` kept the revisions before it. Now the whole
+    upgrade is atomic by default; set `transaction_per_migration=True` to keep the
+    previous per-revision behavior.
+
+### Auto-Registration
+
+Alembic picks its migration implementation from a registry keyed by
+`dialect.name`; a `DefaultImpl` subclass adds itself to that registry when its
+module is imported (`CubridImpl.__dialect__ = "cubrid"`). Every CUBRID URL —
+`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://` and
+`cubrid+aiopycubrid://` — has `dialect.name == "cubrid"`. sqlalchemy-cubrid
+imports `sqlalchemy_cubrid.alembic_impl` before Alembic looks the name up, in
+one of two ways depending on the installed Alembic:
+
+| Alembic | Who imports `alembic_impl` | When |
+|---|---|---|
+| 1.18 and later | Alembic, through the `alembic.plugins` entry point that sqlalchemy-cubrid publishes (`_sqlalchemy_cubrid_alembic`) | during `import alembic` |
+| 1.7.2 – 1.17.x | `sqlalchemy_cubrid/dialect.py` | when the CUBRID dialect is loaded (engine creation, or the dialect built from the URL in offline `--sql` mode) |
+
+Either way no imports or configuration are required in `env.py` or your
+migration files. Without Alembic, nothing is registered and nothing is
+logged.
+
+With Alembic 1.18 and later, loading the CUBRID dialect does not import
+Alembic, so applications that never run a migration no longer pay its import
+cost (with Alembic 1.20.0, SQLAlchemy 2.0.54 and Python 3.10, the first
+`create_engine("cubrid+pycubrid://...")` in a fresh process takes about 18 ms
+instead of about 80 ms). The dialect checks the installed package metadata for this, not
+Alembic itself. If Alembic has already been imported, the metadata cannot be
+read, or it does not belong to the `alembic` package that would be imported
+(for example an older copy earlier on `sys.path`), it falls back to the direct
+import, which is harmless.
+
+Importing Alembic 1.18 and later logs `INFO` lines from the
+`alembic.runtime.plugins` logger (`setup plugin alembic.autogenerate.schemas`,
+..., `setup plugin alembic.ext.checkconstraint_byname`), and with
+sqlalchemy-cubrid installed also `setup plugin sqlalchemy_cubrid`. They are
+Alembic's own messages. Since the dialect no longer imports Alembic on these
+versions, they appear only in processes that use Alembic, and only when the
+application routes `INFO` records to a handler, for example with
+`logging.basicConfig(level=logging.INFO)`. With Alembic 1.7.2 – 1.17.x the
+dialect still imports Alembic (about 0.1 s), but those releases log no such
+lines. The dialect leaves the `alembic` logger alone, since its level is the
+application's choice. To hide the lines, raise that logger's level in the
+application's logging setup:
+
+```python
+import logging
+
+logging.getLogger("alembic").setLevel(logging.WARNING)
+```
+
+Alembic 1.18.0 itself logs these lines from a logger literally named
+`__name__` (`logging.getLogger("__name__")`, fixed in 1.18.1), so the setting
+above does not hide them on that release. Upgrade to 1.18.1 or later, or also
+raise `logging.getLogger("__name__")` to `WARNING`.
+
+Alembic 1.18 – 1.20 load an `alembic.plugins` entry point with
+`for mod in entrypoint.load()`, while the Alembic documentation describes the
+entry point value as the plugin module itself; a plain module is not
+iterable, so the documented form fails every `import alembic` with
+`TypeError`. `_sqlalchemy_cubrid_alembic` works with both: it is a
+module that iterates to itself. Alembic does not guard the entry point load,
+so the plugin is a top-level module that imports only the standard library;
+loading it never imports the `sqlalchemy_cubrid` package, whose import can
+fail (for example after an unsupported SQLAlchemy is installed over it). Its
+`setup()` imports `sqlalchemy_cubrid.alembic_impl` and turns any failure into a
+`RuntimeWarning` (or, under `-W error`, a log record from the
+`sqlalchemy_cubrid.alembic_plugin` logger) instead of raising, so it cannot
+break `import alembic` for other projects in the same environment. If the
+registration still fails, Alembic reports `KeyError: 'cubrid'`; importing
+`sqlalchemy_cubrid.alembic_impl` in `env.py` registers `CubridImpl` directly.
+
+If Alembic is installed but fails to import (for example Alembic 1.7.0/1.7.1,
+which raise `NameError` on SQLAlchemy 2.x), the dialect still loads and emits a
+single `RuntimeWarning` saying the Alembic integration is disabled, with the
+original exception. If a warning filter turns that warning into an error
+(`-W error`), the message is logged through the `sqlalchemy_cubrid.dialect`
+logger instead, so the dialect still loads. Upgrading to
+`alembic>=1.7.2,<2.0` fixes it.
+
+Versions before this fix declared an `alembic.ddl` entry point that Alembic
+never read, so a default `env.py` failed with `KeyError: 'cubrid'` unless it
+imported `sqlalchemy_cubrid.alembic_impl` explicitly. That import is harmless
+and can stay.
 
 ### Implementation Details
 
 ```python
 class CubridImpl(DefaultImpl):
     __dialect__ = "cubrid"
-    transactional_ddl = False
+    transactional_ddl = True
+
+    def emit_begin(self):
+        # CUBRID has no BEGIN statement; offline scripts only emit COMMIT;
+        pass
 ```
 
 The implementation inherits all standard Alembic operations from `DefaultImpl`:
@@ -2802,6 +3199,11 @@ The implementation inherits all standard Alembic operations from `DefaultImpl`:
 ---
 
 ## Limitations & Workarounds
+
+Creating a UNIQUE index through Alembic requires a live connection so the dialect
+can inspect CUBRID's FK auto-indexes and detect collisions. Without a connection,
+the guard raises `CompileError` with a live-connection requirement; it does not
+silently skip validation. Non-unique index generation is unaffected.
 
 ### ✅ ALTER COLUMN TYPE (native)
 
@@ -2856,13 +3258,34 @@ def upgrade():
     op.alter_column("users", "old_name", new_column_name="new_name")
 ```
 
-### ⚠️ DDL Auto-Commit
+### ⚠️ Long migrations hold schema locks
 
-As noted above, DDL is auto-committed. Be aware:
+DDL is transactional (see [Transactional DDL](#transactional-ddl)), so a failed
+upgrade rolls back cleanly. The cost is that each DDL statement keeps its schema
+lock until the transaction commits. Be aware:
 
-- Keep migrations small (one logical change per migration)
+- By default the whole upgrade is one transaction, so every table it touches
+  stays locked until the last revision finishes
+- Use `transaction_per_migration=True` for long migrations or large tables
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
+
+### Foreign key referential actions in autogenerate
+
+CUBRID's default `ON DELETE` / `ON UPDATE` action is `RESTRICT`, and
+`SHOW CREATE TABLE` always prints it, so `inspect(...).get_foreign_keys()`
+reports a foreign key created without actions as
+`{"ondelete": "RESTRICT", "onupdate": "RESTRICT"}`. Reflection keeps reporting
+what the server says. For autogenerate, `CubridImpl` treats that reflected
+`RESTRICT` as equal to a model `ForeignKey` with no `ondelete` / `onupdate`
+(#597), so an unchanged foreign key produces no `drop_constraint` /
+`create_foreign_key` pair, whether the model leaves the action out or names
+`RESTRICT`. Adding `ondelete="CASCADE"` or `SET NULL`, removing it again, or
+switching between them is still detected. `NO ACTION` is different: CUBRID
+prints it as `NO ACTION`, but Alembic itself treats `NO ACTION` and no action
+as equal in both directions, so switching between them is not detected. CUBRID
+rejects `ON UPDATE CASCADE`; use `SET NULL`, `RESTRICT` or `NO ACTION` for
+`onupdate`.
 
 ### `alter_column()` behavior
 
@@ -2899,12 +3322,12 @@ so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 | `alter_column` (default) | ✅ | — |
 | `alter_column` (type) | ✅ | `batch_alter_table` for lossy conversions |
 | `alter_column` (rename) | ✅ | — |
-| `create_index` | ✅ | — |
-| `drop_index` | ✅ | — |
+| `create_index` | ✅ | `if_not_exists=True` raises `CompileError` (CUBRID has no `CREATE INDEX IF NOT EXISTS`); check `inspect(conn).has_index()` first instead |
+| `drop_index` | ✅ | Emits `DROP INDEX <name> ON <table>`, so `table_name` is required (`CompileError` without it); `if_exists=True` raises `CompileError` (CUBRID has no `DROP INDEX IF EXISTS`) |
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |
 | `bulk_insert` | ✅ | — |
-| Transactional DDL | ❌ | Small atomic migrations |
+| Transactional DDL | ✅ | `transaction_per_migration=True` for long or large-table migrations |
 
 ---
 
@@ -2989,6 +3412,15 @@ def downgrade():
 pip install sqlalchemy-cubrid[alembic]
 ```
 
+### `INFO` log lines `setup plugin ...`
+
+Alembic 1.18+ logs these while it is imported. Loading the CUBRID dialect no
+longer imports Alembic on those versions, so they only appear in processes
+that use Alembic. Set `logging.getLogger("alembic").setLevel(logging.WARNING)`
+in the application (on Alembic 1.18.0, which logs them from a logger named
+`__name__`, upgrade or quiet that logger too); see
+[Auto-Registration](#auto-registration).
+
 ### "Alembic is required for migration support"
 
 **Cause**: The `alembic_impl` module was imported directly without Alembic
@@ -2997,13 +3429,22 @@ installed.
 **Fix**:
 
 ```bash
-pip install "alembic>=1.7,<2.0"
+pip install "alembic>=1.7.2,<2.0"
 ```
 
 ### Migration partially applied
 
-**Cause**: A migration with multiple DDL statements failed partway through.
-Because CUBRID auto-commits DDL, some statements already took effect.
+**Cause**: CUBRID DDL is transactional, so a failed online upgrade does not leave
+a half-applied revision: the failing transaction is rolled back. By default that
+is the whole upgrade; with `transaction_per_migration=True` it is the failing
+revision, and the revisions before it stay committed and recorded in
+`alembic_version`. Partial state can still come from:
+
+- client autocommit, which commits every statement: driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501);
+- an offline (`--sql`) script run without `csql --no-auto-commit --no-single-line`
+  (csql's default single-line mode continues past a failing statement and still
+  runs the trailing `COMMIT;`);
+- a revision that calls `COMMIT` itself (for example through `op.execute`).
 
 **Fix**:
 1. Manually inspect the database state
@@ -3018,13 +3459,27 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 **Fix**: For genuinely lossy/unsupported conversions, use `batch_alter_table` — see [ALTER COLUMN TYPE (native)](#-alter-column-type-native).
 
+### `alembic revision --autogenerate` fails with a reflection error
+
+**Cause**: Foreign keys are read from `SHOW CREATE TABLE`. Since #589 a failure
+there (a dropped connection, an authorization error, a driver error) raises
+instead of being reported as "this table has no foreign keys", which made
+autogenerate propose `add_fk` for foreign keys that already exist.
+
+**Fix**: Fix the underlying error and run autogenerate again; set
+`pool_pre_ping=True` on the engine if the connection went stale. A `NoSuchTableError`
+for a table of another owner is expected since CUBRID 11.2, where an unqualified name
+resolves in the current user's schema; run autogenerate as the table owner.
+
 ---
 
 ## Migration Safety Checklist
 
-!!! warning "DDL is not transactional"
-    CUBRID auto-commits DDL. A failed migration can leave partial schema changes applied.
-    Prefer small revisions with one logical schema change each.
+!!! note "DDL is transactional"
+    CUBRID rolls back DDL with the transaction; only client autocommit commits it early.
+    By default a failed `alembic upgrade` leaves no partial schema and no version bump.
+    Uncommitted DDL holds schema locks, so use `transaction_per_migration=True` for
+    long or large-table migrations.
 
 !!! warning "Lossy type changes may be rejected by the server"
     `alter_column(type_=...)` and `alter_column(new_column_name=...)` emit native
@@ -3043,7 +3498,8 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 Before running migrations in production:
 
-- [ ] **One DDL operation per revision** — since each DDL auto-commits, a failure mid-revision leaves partial state. Split multi-DDL revisions.
+- [ ] **Plan lock duration** — DDL holds schema locks until commit, and by default the whole upgrade is one transaction. Use `transaction_per_migration=True` for long or large-table migrations.
+- [ ] **No client autocommit** — don't run migrations with client autocommit on (driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501)), and run offline scripts with `csql --no-auto-commit --no-single-line`, so a failure rolls back cleanly.
 - [ ] **Backup database** — `cubrid backupdb demodb` before destructive operations
 - [ ] **Test upgrade + downgrade cycle** — run `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` on staging
 - [ ] **Verify state after each step** — query `db_class` system table to confirm schema matches expectations
@@ -3061,15 +3517,28 @@ Before running migrations in production:
 
 ### Advisory CI Safety Check
 
-Add the following script to catch multi-DDL revisions early. This is advisory (warning-only)
-and does not block CI:
+Add the following script to list revisions with several DDL operations. This is advisory
+(warning-only) and does not block CI. Such revisions still roll back as a whole on failure,
+but they hold schema locks longer. The script counts calls to Alembic DDL operations, including
+constraint creation (`create_unique_constraint`, `create_foreign_key`, `create_check_constraint`,
+`create_primary_key`), in each `upgrade()` and `downgrade()` separately; bare references such as
+`op.drop_table` without a call are not counted. It is a heuristic, not a control-flow analysis:
 
 ```python
 #!/usr/bin/env python3
 """Check Alembic revisions for multiple DDL operations (advisory).
 
-Warns when a single revision contains multiple DDL calls, which is risky
-with CUBRID's non-transactional DDL.
+CUBRID DDL is transactional, so a failing revision is rolled back as a
+whole. Every DDL statement holds a schema lock on its table until the
+transaction commits, though, so this lists revisions with several DDL
+calls: they keep tables locked longer and are candidates for running with
+``transaction_per_migration=True`` or for splitting.
+
+Only calls such as ``op.create_table(...)`` or ``batch_op.add_column(...)``
+count; a bare reference like ``op.drop_table`` is not a DDL operation. This is
+a heuristic AST scan, not control-flow analysis: a call in a loop or branch
+counts once, as written, and DDL issued from helpers defined outside
+``upgrade()``/``downgrade()`` is not seen.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
@@ -3084,6 +3553,8 @@ DDL_CALLS = {
     "create_table", "drop_table", "add_column", "drop_column",
     "create_index", "drop_index", "alter_column",
     "add_constraint", "drop_constraint",
+    "create_unique_constraint", "create_foreign_key",
+    "create_check_constraint", "create_primary_key",
 }
 
 
@@ -3095,12 +3566,14 @@ def check_revision(path: Path) -> list[str]:
             continue
         ddl_count = sum(
             1 for node in ast.walk(func)
-            if isinstance(node, ast.Attribute) and node.attr in DDL_CALLS
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in DDL_CALLS
         )
         if ddl_count > 1:
             warnings.append(
                 f"{path.name}:{func.name}() has {ddl_count} DDL operations "
-                f"(recommended: 1 per revision for CUBRID)"
+                "(schema locks are held until the transaction commits)"
             )
     return warnings
 
@@ -3120,9 +3593,13 @@ def main() -> None:
         for w in all_warnings:
             print(f"  • {w}")
         print(f"\nTotal: {len(all_warnings)} warning(s)")
-        print("Tip: Split multi-DDL revisions to avoid partial migration state.")
+        print(
+            "Tip: these revisions roll back whole on failure but hold schema locks "
+            "until commit; use transaction_per_migration=True for long or "
+            "large-table migrations."
+        )
     else:
-        print("✓ All revisions have single DDL operations per function.")
+        print("✓ No revision has more than one DDL call per function.")
 
 
 if __name__ == "__main__":
@@ -3228,20 +3705,20 @@ High-level overview by feature category.
 | FOR UPDATE (row locking) | ✅ | ✅ | ✅ | ❌ |
 | UPDATE with LIMIT | ✅ | ✅ | ❌ | ❌ |
 | TRUNCATE TABLE | ✅ | ✅ | ✅ | ❌ |
-| IS DISTINCT FROM | ❌ | ❌ | ✅ | ❌ |
+| IS DISTINCT FROM | ✅ | ❌ | ✅ | ❌ |
 | Postfetch LASTROWID | ✅ | ✅ | ❌ | ✅ |
 
 ### Notes
 
 - **RETURNING**: CUBRID has no `RETURNING` clause. Auto-generated keys cannot be fetched in the same round-trip as the INSERT, so the dialect relies on `postfetch_lastrowid = True` instead (`get_last_insert_id()` / SQL fallback for the C driver; `cursor.lastrowid` for pycubrid).
 - **DEFAULT VALUES**: CUBRID supports `INSERT INTO t DEFAULT VALUES`. The dialect sets `supports_default_values = True`.
-- **ON DUPLICATE KEY UPDATE**: CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references (identical to MySQL pre-8.0 syntax). Use `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs) for usage examples.
+- **ON DUPLICATE KEY UPDATE**: CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. The dialect handles `stmt.inserted` references by re-emitting INSERT bind parameters (CUBRID does not support the `VALUES()` function). Use `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs) for usage examples.
 - **MERGE**: CUBRID supports the full SQL MERGE statement. Use `sqlalchemy_cubrid.dml.merge(target)` with `.using()`, `.on()`, `.when_matched_then_update()`, and `.when_not_matched_then_insert()`. See [CUBRID-Specific DML Constructs](#cubrid-specific-dml-constructs).
 - **FOR UPDATE**: CUBRID supports `SELECT … FOR UPDATE [OF col1, col2]`. NOWAIT and SKIP LOCKED are not supported.
 - **UPDATE with LIMIT**: CUBRID and MySQL both support `UPDATE … LIMIT n`. PostgreSQL and SQLite do not.
 - **Multi-table UPDATE**: SQLAlchemy's multi-table UPDATE pattern compiles to `UPDATE t1, t2 SET ... WHERE ...`, which matches the MySQL-style syntax accepted by CUBRID. The dialect intentionally keeps `update_from_clause()` disabled because no extra `FROM` clause is required.
-- **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. The dialect includes `TRUNCATE` in autocommit detection.
-- **IS DISTINCT FROM**: Not a CUBRID SQL operator. SQLAlchemy may emulate it with `CASE` expressions on dialects that lack native support.
+- **TRUNCATE**: CUBRID supports `TRUNCATE TABLE`. Like other statements, it runs inside the connection's transaction and takes effect only when committed (see [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit)).
+- **IS DISTINCT FROM**: CUBRID lacks the SQL-standard syntax but supports the null-safe equal `<=>`. The dialect emulates `a IS DISTINCT FROM b` as `(a <=> b) = 0` and `a IS NOT DISTINCT FROM b` as `a <=> b`, preserving NULL-safe semantics in predicates and SELECT projections (#344, #377). `IS`/`IS NOT` against a value, e.g. Boolean `col.is_(True)`, is rendered the same way (`col <=> 1`, `(col <=> 1) = 0`), because CUBRID's `IS` accepts only `NULL`, `TRUE` and `FALSE` (#465); see [Boolean predicates](TYPES.md#boolean-predicates).
 
 ---
 
@@ -3261,7 +3738,7 @@ High-level overview by feature category.
 
 - **ALTER TABLE**: CUBRID supports standard `ALTER TABLE` for adding/dropping columns and constraints. SQLite has limited ALTER support (add column only; no drop/rename column before 3.35).
 - **Comments**: CUBRID supports inline `COMMENT` syntax for both tables (e.g., `CREATE TABLE t (...) COMMENT = 'text'`) and columns (e.g., `col TYPE COMMENT 'text'`). The dialect implements `SetTableComment`, `DropTableComment`, and `SetColumnComment` DDL constructs. Comment reflection is supported via `get_table_comment()` and column comments in `get_columns()`.
-- **IF NOT EXISTS / IF EXISTS**: CUBRID supports `CREATE TABLE IF NOT EXISTS` and `DROP TABLE IF EXISTS`. The base SA compiler handles these natively.
+- **IF NOT EXISTS / IF EXISTS**: CUBRID supports `CREATE TABLE IF NOT EXISTS` and `DROP TABLE IF EXISTS`. The base SA compiler handles these natively. CUBRID has no `CREATE INDEX IF NOT EXISTS` or `DROP INDEX IF EXISTS`, so `CreateIndex(..., if_not_exists=True)` and `DropIndex(..., if_exists=True)` raise `CompileError` (#540, #533); use `checkfirst=True` or `inspect(conn).has_index()` instead.
 - **Temporary tables**: CUBRID does not support `CREATE TEMPORARY TABLE` or session-scoped tables.
 - **Multiple schemas**: CUBRID operates in a single-schema model. MySQL uses databases as schemas. SQLite can attach databases but does not have true schema support.
 
@@ -3291,7 +3768,7 @@ High-level overview by feature category.
 - **Window functions**: CUBRID supports `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()`, and other window functions with `OVER(PARTITION BY … ORDER BY …)`. The SA base compiler handles these natively.
 - **NULLS FIRST / NULLS LAST**: CUBRID supports `ORDER BY col ASC NULLS FIRST` and `ORDER BY col DESC NULLS LAST`. The SA base compiler handles these natively.
 - **GROUP_CONCAT**: CUBRID supports `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`. Use `sa.func.group_concat(column)`.
-- **LIMIT / OFFSET**: CUBRID uses MySQL-style `LIMIT [offset,] count` syntax. When only an offset is given, the dialect emits `LIMIT offset, 1073741823` (max int) as a workaround.
+- **LIMIT / OFFSET**: CUBRID uses MySQL-style `LIMIT [offset,] count` syntax. When only an offset is given, the dialect emits `LIMIT offset, 4611686018427387904` (2^62) as the "all remaining rows" sentinel — effectively unbounded, and small enough that CUBRID's internal `offset + count` addition never overflows the signed BIGINT range.
 - **Join variants**: INNER JOIN and LEFT OUTER JOIN compile normally. FULL OUTER JOIN and `LATERAL` are rejected during compilation because CUBRID does not support them.
 - **Lateral joins**: CUBRID does not support `LATERAL` subqueries. The `LATERAL` keyword causes a syntax error.
 - **Full-text search**: CUBRID does not support `MATCH … AGAINST` syntax or full-text indexes.
@@ -3328,7 +3805,7 @@ High-level overview by feature category.
 
 | Type | CUBRID | MySQL | PostgreSQL | SQLite |
 |------|--------|-------|------------|--------|
-| ENUM | ❌ | ✅ | ✅ | ❌ |
+| ENUM | ✅ | ✅ | ✅ | ❌ |
 | JSON | ✅ | ✅ | ✅ | ⚠️ |
 | ARRAY | ❌ | ❌ | ✅ | ❌ |
 | UUID | ❌ | ❌ | ✅ | ❌ |
@@ -3339,7 +3816,7 @@ High-level overview by feature category.
 
 - **BOOLEAN**: CUBRID maps `BOOLEAN` to `SMALLINT`. MySQL maps it to `TINYINT(1)`. SQLite stores booleans as integers. Only PostgreSQL has a native `BOOLEAN` type.
 - **NCHAR / NVARCHAR**: CUBRID has first-class national character types. MySQL handles national characters via column charset. PostgreSQL and SQLite have no separate national character types.
-- **JSON**: CUBRID 10.2+ has native JSON support (RFC 7159) with 25+ JSON functions. The dialect supports `JSON` type, `col["key"]` path expressions via `JSON_EXTRACT`, and typed access (`as_string()`, `as_integer()`, `as_float()`). MySQL (5.7+) and PostgreSQL also have native JSON support. SQLite has JSON functions but no dedicated column type.
+- **JSON**: CUBRID 10.2+ has native JSON support (RFC 7159) with 25+ JSON functions. The dialect supports `JSON` type, `col["key"]` path expressions via `JSON_EXTRACT`, and typed access (`as_string()`, `as_integer()`, `as_float()`, and `as_numeric(p, s)`, which casts to `NUMERIC(p,s)` and returns `Decimal`). `as_numeric()` accepts JSON numbers, plain-decimal numeric strings (`"15.5"`) and JSON `true`/`false` (`1.00`/`0.00`). A string in exponent notation (`"1e3"`) raises CUBRID error -181, and a value outside `NUMERIC(p,s)` raises -427; use `as_float()` for those. A non-numeric string (`"abc"`) raises -181 with both `as_numeric()` and `as_float()`, so validate or filter such values first. MySQL (5.7+) and PostgreSQL also have native JSON support. SQLite has JSON functions but no dedicated column type.
 - **ARRAY**: CUBRID uses collection types (`SET`, `MULTISET`, `SEQUENCE`) which serve a similar purpose but are not SQL-standard arrays. PostgreSQL has native `ARRAY[]` support.
 - **CLOB**: CUBRID and MySQL have explicit `CLOB` types. PostgreSQL uses `TEXT` (unlimited length). SQLite stores all text as `TEXT`.
 
@@ -3370,9 +3847,14 @@ High-level overview by feature category.
 
 - **Check constraints**: CUBRID parses CHECK constraint syntax but does not enforce it at runtime. To avoid reflecting misleading metadata, the dialect intentionally returns an empty list from `get_check_constraints()`.
 - **Table comments**: Reflected via `get_table_comment()` querying the `db_class.comment` system catalog column.
-- **Column comments**: Reflected via `get_columns()` querying the `_db_attribute.comment` system catalog column. Returned in the `"comment"` key of each column dict.
-- **has_index**: The CUBRID dialect implements `has_index()` by querying `_db_index`. The MySQL SA dialect does not provide a dedicated `has_index()` method.
-- **Reflection source**: Reflection is split across multiple sources: `SHOW COLUMNS IN` + `_db_attribute` for columns/comments, `SHOW COLUMNS IN` + optional `db_constraint` lookup for PK names, `SHOW CREATE TABLE` parsing for foreign keys and unique constraints, `SHOW INDEXES IN` + `_db_index` for indexes, `SHOW CREATE VIEW` for view definitions, and `db_class` for table/view names and table comments.
+- **Column comments**: Reflected via `get_columns()` querying the `db_attribute.comment` catalog view column. Returned in the `"comment"` key of each column dict.
+- **has_index**: The CUBRID dialect implements `has_index()` by querying `db_index`. The MySQL SA dialect does not provide a dedicated `has_index()` method. CUBRID stores identifiers in lower case, even quoted ones, so `has_table()` and `has_index()` also match a mixed-case name against its lower-case stored form (#543); `Index.drop(checkfirst=True)` therefore works for `Index("IX_Mixed", Table("Users", ...))`.
+- **Unique constraints and unique indexes**: CUBRID implements a `UNIQUE` constraint as a unique index and cannot tell it apart from `CREATE UNIQUE INDEX`, so, as with MySQL, each one is reported by both `get_indexes()` and `get_unique_constraints()`, and the unique-constraint entry carries `duplicates_index` naming the index. `Table` reflection (and Alembic autogenerate) uses that key to keep only the unique index. `get_indexes()` returns an empty list for a view.
+- **Missing tables and views**: `get_columns()`, `get_pk_constraint()`, `get_foreign_keys()`, `get_indexes()`, `get_unique_constraints()`, `get_table_comment()` and `get_view_definition()` raise `NoSuchTableError` for an object that does not exist, so the `get_multi_*()` variants leave it out; `get_view_definition()` also raises it for a table. For a view, `get_foreign_keys()` and `get_unique_constraints()` return an empty list without running `SHOW CREATE TABLE`.
+- **Reflection source**: Reflection is split across multiple sources: `SHOW COLUMNS IN` + `db_attribute` for columns/comments, `db_index` + `db_index_key` for the primary key (name and every column in key order), `SHOW CREATE TABLE` parsing for foreign keys, `db_index` + `SHOW INDEXES IN` for unique constraints (with `SHOW CREATE TABLE` parsing as the fallback only when `db_index` lists no index of the table at all or, since CUBRID 11.2, when the name resolves to another owner's class; any other table with a primary key, a foreign key or another index but no unique one is answered from the catalog, #610), `SHOW INDEXES IN` + `db_index` for indexes, `SHOW CREATE VIEW` for view definitions, and `db_class` for table/view names and table comments.
+- **Foreign-key DDL grammar**: `get_foreign_keys()` relies on the `SHOW CREATE TABLE` output of the supported servers (10.2, 11.0, 11.2 and 11.4), recorded in `test/fixtures/show_create_table/` and checked against the live server by `test/test_show_create_table_server_output.py` (#611): every identifier is printed in brackets with spaces, commas and parentheses kept verbatim; each foreign key prints both actions, `ON DELETE` before `ON UPDATE`, with the default printed as `RESTRICT`; the actions are `CASCADE`, `SET NULL`, `NO ACTION` and `RESTRICT` (the servers reject `ON UPDATE CASCADE` and have no `SET DEFAULT`); the referenced table is owner-qualified (`[dba.parent]`) from 11.2 and unqualified on 10.2 and 11.0, and the owner is dropped from `referred_table`. A `UNIQUE` constraint and a `CREATE UNIQUE INDEX` index both print as `UNIQUE KEY`.
+- **Reflection as a non-DBA user**: Reflection reads only the catalog views every user can read (`db_class`, `db_index`, `db_index_key`, `db_attribute`), never the DBA-only `_db_index`, `_db_index_key` or `_db_attribute` catalog tables, so a non-DBA user gets the same indexes, primary key, unique constraints, `has_index()` answer and column comments as DBA. The table name matches as given or folded to lower case, as in `SHOW COLUMNS IN <name>`. Since CUBRID 11.2 these views also list same-named classes of other owners, so the rows are limited to the owner of the reflected class (the current user's own class first, as for `db_class`). A failing catalog query raises instead of silently falling back to incomplete metadata.
+- **`SHOW CREATE TABLE` failures**: `get_foreign_keys()` (and the `SHOW CREATE TABLE` fallback of `get_unique_constraints()`) returns an empty list only when `SHOW CREATE TABLE` succeeds and the DDL has no such constraint. `Unknown class`, or no row for a table that the catalog listed, raises `NoSuchTableError`; any other failure (a disconnect, an authorization error, a driver error) propagates instead of being logged and reported as "no constraints", which made Alembic autogenerate emit `add_fk` for foreign keys that already exist (#589). CUBRID lists in `db_class` only the tables a user holds `SELECT` on, and `SHOW CREATE TABLE` on such a table does not fail with an authorization error (checked as a non-DBA user on CUBRID 10.2 and 11.4), so no failure is tolerated for non-DBA users either. Since CUBRID 11.2 an unqualified name resolves in the current user's schema, so another owner's table, even one granted to the current user, raises `NoSuchTableError` from `get_columns()` as well as here; `get_unique_constraints()` therefore keeps reading `SHOW CREATE TABLE` for such a table even when the catalog lists its indexes. For a table of the current user (any visible table before 11.2) whose catalog lists indexes but no unique one, `get_unique_constraints()` returns `[]` without running `SHOW CREATE TABLE` (#610).
 
 ---
 
@@ -3384,7 +3866,7 @@ High-level overview by feature category.
 | Savepoints | ✅ | ✅ | ✅ | ✅ |
 | Two-phase commit | ❌ | ✅ | ✅ | ❌ |
 | Server-side cursors | ❌ | ✅ | ✅ | ❌ |
-| Autocommit detection | ✅ | ✅ | ✅ | ✅ |
+| Autocommit detection from SQL text | ❌ | ❌ | ❌ | ❌ |
 | Connection-level encoding | ❌ | ✅ | ✅ | ❌ |
 
 ### CUBRID Isolation Levels
@@ -3397,11 +3879,13 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 | `REPEATABLE READ` (5) | Repeatable read within a transaction |
 | `READ COMMITTED` (4, default) | Reads see only committed data; non-repeatable reads possible |
 
+SQLAlchemy's `AUTOCOMMIT` level is also accepted on every driver; it switches the driver to autocommit mode. See [Isolation Levels](ISOLATION_LEVELS.md#autocommit).
+
 ### Notes
 
 - **Two-phase commit**: CUBRID does not support distributed transactions via `XA`.
 - **Server-side cursors**: The CUBRID Python driver does not expose server-side cursor functionality.
-- **Autocommit detection**: The CUBRID execution context uses a regex pattern matching `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, and `TRUNCATE` statements to determine when to enable autocommit.
+- **Autocommit detection from SQL text**: SQLAlchemy 2.x does not inspect statement text to decide when to commit, for any dialect. DML and DDL are committed only through `conn.commit()`, an `engine.begin()` block, or a `Session` commit. See [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit).
 - **Savepoints**: CUBRID supports `SAVEPOINT` and `ROLLBACK TO SAVEPOINT`. `RELEASE SAVEPOINT` is not supported — the dialect implements `do_release_savepoint()` as a no-op.
 
 ---
@@ -3411,7 +3895,7 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 | Feature | CUBRID | MySQL | PostgreSQL | SQLite |
 |---------|--------|-------|------------|--------|
 | Statement caching | ✅ | ✅ | ✅ | ✅ |
-| Native enum | ❌ | ✅ | ✅ | ❌ |
+| Native enum | ✅ | ✅ | ✅ | ❌ |
 | Native boolean | ❌ | ❌ | ✅ | ❌ |
 | Native decimal | ✅ | ✅ | ✅ | ❌ |
 | Sequences | ❌ | ❌ | ✅ | ❌ |
@@ -3425,8 +3909,9 @@ CUBRID's MVCC engine (10.0+) supports three isolation levels:
 ### Notes
 
 - **Statement caching**: `supports_statement_cache = True`. The dialect is fully compatible with SQLAlchemy 2.0's compiled cache.
-- **Name normalization**: CUBRID folds unquoted identifiers to lowercase. The dialect normalizes identifiers to match Python-side expectations (`requires_name_normalize = True`).
+- **Name normalization**: CUBRID folds unquoted identifiers to lowercase, which already matches SQLAlchemy's lowercase convention for case-insensitive names. The dialect therefore sets `requires_name_normalize = False` and does not apply SQLAlchemy's upper-case name normalization.
 - **Max identifier length**: CUBRID allows identifiers up to 254 characters — significantly longer than MySQL (64) or PostgreSQL (63).
+- **Result metadata (`cursor.description`)**: the dialect passes the driver's `cursor.description` through unchanged (`CursorResult.cursor.description`) and normalizes none of it. Verified live on CUBRID 10.2 and 11.4 for sync and async pycubrid and CUBRIDdb (#482): `Result.keys()` equals the description names, including `text()` aliases and expressions (`1 + 1` is named `1+1`); scalar type codes are the CUBRID codes on every driver (for example `VARCHAR` 2, `NUMERIC` 7, `INTEGER` 8, `DOUBLE` 12, `DATE` 13, `TIMESTAMP` 15, `BIGINT` 21); sync and async pycubrid report the same values. Driver differences: collection columns are `SET` 16 / `MULTISET` 17 / `SEQUENCE` 18 on pycubrid but CCI composite codes on CUBRIDdb (the kind in bits `0x60` plus the element type, so `SET(INTEGER)` is 40); `null_ok` is a `bool` on pycubrid and `0`/`1` on CUBRIDdb. Released pycubrid 1.7.1 reports `null_ok` inverted (cubrid-lab/pycubrid#431) and collection columns with their element type code (cubrid-lab/pycubrid#430); both are fixed in pycubrid 1.8.0, which the contract tests require. SQLAlchemy itself does not consume `null_ok`, and reflection (`Inspector.get_columns()`) reads nullability from the catalog, so it is unaffected.
 
 ---
 
@@ -3465,7 +3950,7 @@ The dialect provides custom SQLAlchemy constructs for CUBRID-specific DML featur
 
 ### ON DUPLICATE KEY UPDATE
 
-CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE` with `VALUES()` references (identical to MySQL pre-8.0 syntax).
+CUBRID supports `INSERT … ON DUPLICATE KEY UPDATE`. The dialect handles `stmt.inserted` references by re-emitting INSERT bind parameters (CUBRID does not support the `VALUES()` function).
 
 ```python
 from sqlalchemy_cubrid import insert
@@ -3478,7 +3963,7 @@ stmt = stmt.on_duplicate_key_update(name="updated_alice")
 # Reference the inserted value:
 stmt = insert(users).values(id=1, name="alice", email="alice@example.com")
 stmt = stmt.on_duplicate_key_update(name=stmt.inserted.name)
-# ON DUPLICATE KEY UPDATE name = VALUES(name)
+# ON DUPLICATE KEY UPDATE name = ?
 ```
 
 **Accepted argument forms:**
@@ -3626,17 +4111,17 @@ Features not currently supported that may be added in future releases, depending
 | JSON type | ✅ | Native JSON support (CUBRID 10.2+) with path expressions via `JSON_EXTRACT` |
 | Temporary tables | ❌ | CUBRID does not support `CREATE TEMPORARY TABLE` |
 | Multiple schemas | ❌ | CUBRID operates in a single-schema model |
-| IS DISTINCT FROM | ❌ | Not a CUBRID SQL operator |
+
 | Check constraint reflection | ❌ | CUBRID parses but ignores CHECK constraints |
 | Sequences | ❌ | CUBRID uses `AUTO_INCREMENT` instead |
 | Lateral joins | ❌ | `LATERAL` keyword causes syntax error in CUBRID |
 | Full-text search | ❌ | No `MATCH … AGAINST` syntax or full-text indexes |
 | Standard EXPLAIN | ❌ | CUBRID uses `SET TRACE ON` / `SHOW TRACE` instead (supported via `trace_query()`) |
-| Alembic migrations | ✅ | Supported via `CubridImpl` entry-point (`pip install sqlalchemy-cubrid[alembic]`) |
+| Alembic migrations | ✅ | Supported via `CubridImpl`, registered when the dialect loads (`pip install sqlalchemy-cubrid[alembic]`) |
 
 ---
 
-*Last updated: April 2026 · sqlalchemy-cubrid v1.4.0 Beta · SQLAlchemy 2.0–2.1*
+*Last updated: September 2026 · sqlalchemy-cubrid v1.8.0 · SQLAlchemy 2.0–2.1*
 
 ---
 
@@ -3653,7 +4138,7 @@ Compatibility and feature support for sqlalchemy-cubrid releases.
 | SQLAlchemy Version | Status | Notes |
 |---|---|---|
 | 2.0.x | ✅ Supported | Minimum required version |
-| 2.1.x | ✅ Supported | Latest tested pre-release until GA |
+| 2.1.x | ✅ Supported | CI-tested on SQLAlchemy 2.1.1 |
 | ≥ 2.2 | ❌ Not supported | Code uses private SA internals (see below) |
 | < 2.0 | ❌ Not supported | SA 1.x API removed |
 
@@ -3693,7 +4178,7 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` or `[cubriddb]` | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension) |
+| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension, v11.3.0.51+ only) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
 
@@ -3714,6 +4199,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Transaction management | ✅ | commit, rollback, savepoint (no RELEASE SAVEPOINT) |
 | Connection pooling | ✅ | SA pool with `pool_pre_ping`, disconnect detection |
 | Statement caching | ✅ | `supports_statement_cache = True` |
+| `executemany` (`text()`, UPDATE, DELETE) | ✅ | `None` binds as NULL and `rowcount` is the total across parameter sets on every driver (`supports_sane_multi_rowcount = True`). On `cubrid://`, the dialect runs each parameter set as its own `execute()` to work around a CUBRIDdb bug. This costs one extra statement prepare per row: about 2.9× slower than the driver's own `executemany` in a 1000-row UPDATE. pycubrid keeps its prepare-once `executemany`. A multi-row Core `insert()` that uses insertmanyvalues is unaffected. An INSERT into a table with a column whose type defines `bind_expression()` falls back to executemany (#421) and uses the per-row guard on `cubrid://`. See [Driver Compatibility, Known Issue 7](DRIVER_COMPAT.md#known-issues) |
 
 ### SQLAlchemy ORM
 
@@ -3722,6 +4208,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | Declarative models | ✅ | |
 | Relationships | ✅ | |
 | Session / Unit of Work | ✅ | |
+| Batched UPDATE / DELETE row checks | ✅ | Batched flushes check the matched-row count on every driver. On `cubrid://` this relies on the per-row `executemany` guard, see [Driver Compatibility, Known Issue 7](DRIVER_COMPAT.md#known-issues) |
 | Query API | ✅ | |
 | Hybrid properties | ✅ | |
 
@@ -3729,10 +4216,10 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Feature | Status | Notes |
 |---|---|---|
-| Auto-discovery | ✅ | `alembic.ddl` entry point |
+| Auto-registration | ✅ | Registered when the dialect loads (no `env.py` import) |
 | Schema migrations | ✅ | CREATE, ALTER, DROP |
 | Autogenerate | ✅ | Including collection types (SET, MULTISET, SEQUENCE) |
-| Transactional DDL | ❌ | CUBRID auto-commits DDL |
+| Transactional DDL | ✅ | DDL rolls back with the transaction; the whole upgrade is atomic by default (`transaction_per_migration=True` for per-revision commits) |
 
 ### DML Extensions
 
@@ -3742,7 +4229,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | `MERGE` statement | ✅ | Via `sqlalchemy_cubrid.merge()` |
 | `REPLACE INTO` | ✅ | Via `sqlalchemy_cubrid.replace()` |
 | `GROUP_CONCAT` | ✅ | |
-| `TRUNCATE TABLE` | ✅ | Autocommit detected |
+| `TRUNCATE TABLE` | ✅ | Committed with the enclosing transaction |
 | `FOR UPDATE` | ✅ | Including `OF` clause |
 | Recursive CTE | ✅ | `WITH RECURSIVE` (CUBRID 11.x+) |
 | Window functions | ✅ | ROW_NUMBER, RANK, LAG, LEAD, etc. |
@@ -3753,17 +4240,17 @@ helpers, so the direct private API surface is down to these three attributes.
 | Feature | Status | Notes |
 |---|---|---|
 | JSON type | ✅ | Since v1.2.0, requires CUBRID ≥ 10.2 |
-| Native Enum | ❌ | CUBRID lacks ENUM — use VARCHAR + CHECK constraint |
+| Native Enum | ✅ | Native `ENUM('a', 'b', ...)` — verified on 10.2–11.4 (#343) |
 | Interval type | ❌ | Not supported by CUBRID |
 | RETURNING clause | ❌ | `INSERT/UPDATE/DELETE ... RETURNING` not supported |
-| BOOLEAN | ⚠️ | Mapped to SMALLINT (0/1) — no native boolean |
+| BOOLEAN | ⚠️ | Mapped to SMALLINT (0/1) — no native boolean. `col.is_(True)` / `is_not(False)` etc. are emulated with null-safe `<=>` (`col <=> 1`, `(col <=> 1) = 0`) because CUBRID's `IS` accepts only `NULL`/`TRUE`/`FALSE` (#465); `IS [NOT] NULL`, `col == True` and `not_(col)` compile natively. CUBRID rejects `AND`/`OR`/`NOT` in a SELECT list — use them in `WHERE` or wrap them in `case()`. See [Boolean predicates](TYPES.md#boolean-predicates) |
 | Sequences | ❌ | CUBRID uses AUTO_INCREMENT only |
 | CHECK constraint reflection | ❌ | `get_check_constraints()` returns empty list |
 | Multi-schema | ❌ | CUBRID has single-schema model |
 | RELEASE SAVEPOINT | ❌ | No-op (CUBRID doesn't support it) |
 | Lateral joins | ❌ | CUBRID lacks LATERAL subquery support |
 | Full-text search | ❌ | No MATCH … AGAINST syntax |
-| Async DBAPI | ✅ | Via pycubrid.aio async driver (`cubrid+aiopycubrid://`), requires pycubrid >= 1.2.0,<2.0 |
+| Async DBAPI | ✅ | Via pycubrid.aio async driver (`cubrid+aiopycubrid://`), requires pycubrid >= 1.8.0,<2.0 |
 
 ---
 
@@ -3792,33 +4279,56 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
-| BIT | `BIT` | `bytes` | ✅ |
-| BLOB | `sa.LargeBinary` | `bytes` | ✅ |
-| CLOB | `CLOB` | `str` | ✅ |
+| TIMESTAMPTZ | `TIMESTAMPTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| TIMESTAMPLTZ | `TIMESTAMPLTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| DATETIMETZ | `DATETIMETZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
+| DATETIMELTZ | `DATETIMELTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
+| BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ Length and `VARYING` preserved |
+| BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ Reflects as `BIT(n*8)` |
+| BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ Reflects as `BIT VARYING(n*8)` |
+| CHAR(32) | `sa.Uuid` / `sa.UUID` | `uuid.UUID`; `str` with `as_uuid=False` | ✅ Reflects as `CHAR(32)` |
+| BLOB | `sa.LargeBinary` | `bytes` (documented); non-NULL reads currently return a driver LOB locator, see [Driver Compatibility, Known Issue 6](DRIVER_COMPAT.md#known-issues) | ✅ |
+| CLOB | `CLOB` | `str` (documented); non-NULL reads currently return a driver LOB locator, see [Driver Compatibility, Known Issue 6](DRIVER_COMPAT.md#known-issues) | ✅ |
 | SET | `SET` | Collection | ✅ |
 | MULTISET | `MULTISET` | Collection | ✅ |
 | SEQUENCE | `SEQUENCE` | Collection | ✅ |
 | OBJECT | `OBJECT` | OID reference | ❌ Declared/compiled only |
 
+CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINARY(n)` compile to bit strings sized in bits (`BIT(n*8)` / `BIT VARYING(n*8)`); `BINARY` pads shorter values with `\x00`. An empty `b""` is not preserved: it reads back as `None` (or as zero bytes from `BINARY(n)` on pycubrid). `sa.Uuid` and `sa.UUID` are stored as 32-character hex in `CHAR(32)`. Reflected BIT columns keep their length, so Alembic autogenerate reports no false type change for these columns. See [Standard SQL Types](TYPES.md#standard-sql-types).
+
 ---
 
 ## CI Matrix
 
-| Dimension | PR / push | Nightly + tag + dispatch |
-|---|---|---|
-| Offline tests | Python 3.10, 3.11, 3.12, 3.13, 3.14 | Same |
-| Integration tests | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8 jobs | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
+| Validation | Routine execution | Full compatibility |
+| --- | --- | --- |
+| Offline | PR smoke on Ubuntu/Python 3.12; main/changed-weekly full suite, 95% coverage | Local full tests remain available |
+| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
-The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on tagged releases, and on demand via `workflow_dispatch`.
+See [CI execution policy](CI_POLICY.md). Supported versions are unchanged;
+representative PR checks are not evidence for every supported combination.
+
+### SQLAlchemy compliance lanes
+
+The official SQLAlchemy compliance suite blocks merges for both drivers. Each lane has its own reviewed known-failure baseline in `test/known_failures.txt`; see [Development Guide](DEVELOPMENT.md#sqlalchemy-compliance-lanes).
+
+| Lane | Driver | SQLAlchemy | CUBRID (PR CI) | Known failures (11.4 / 10.2) |
+|---|---|---|---|---|
+| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 68 / 61 |
+| `pycubrid@sa2.0` | pycubrid 1.8.0 (recommended) | 2.0.53 | 10.2 | 54 (gated on 10.2 only) |
+| `pycubrid@sa2.1` | pycubrid 1.8.0 (recommended) | 2.1.1 | 11.4 | 58 / 51 |
+
+Most known failures are shared by both drivers: CUBRID backend rules (identifier case folding, `[ ]` identifier delimiters, no window frame clause, per-row foreign-key checks, single-precision `FLOAT`) and open dialect reflection/DDL bugs listed in `test/known_failures.txt`. Only the CUBRIDdb lane carries its NUMERIC truncation and integer-division entries.
 
 ## Test Coverage
 
+Offline and integration test counts grow with every PR; see the `offline-tests`
+/ `integration-tests` CI job output for current numbers instead of a pinned
+snapshot here.
+
 | Metric | Value |
 |---|---|
-| Offline tests | 619 |
-| Integration tests | 35 sync + 16 async |
-| Line coverage | ~98.26% offline |
-| Coverage threshold | 95% (CI-enforced) |
+| Coverage threshold | 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job) |
 
 ---
 
@@ -3837,6 +4347,14 @@ sqlalchemy-cubrid is designed to provide a robust, modern interface between SQLA
 *   Custom DML extensions (ON DUPLICATE KEY UPDATE, MERGE, REPLACE)
 *   Alembic migration support
 *   PEP 561 typed
+
+## Provenance
+
+sqlalchemy-cubrid is an independent implementation written for SQLAlchemy 2.0. It
+contains no code from, and is not a port of, the legacy CUBRID SQLAlchemy dialect
+that shipped inside the old `CUBRID-Python` driver distribution. The optional
+`[cubrid]`/`[cubriddb]` extras merely allow this dialect to *run on top of* that
+legacy driver; no source from it is included or derived.
 
 ## High-Level Flow
 
@@ -3938,7 +4456,7 @@ sequenceDiagram
       CAS-->>Dialect: FK constraints
       
       SA->>Dialect: get_indexes(connection, table_name)
-      Dialect->>CAS: SELECT ... FROM _db_index (batch PK/FK flags)
+      Dialect->>CAS: SELECT ... FROM db_index (batch PK/FK flags)
       Dialect->>CAS: SHOW INDEXES IN "table_name"
       CAS-->>Dialect: Non-PK/non-FK index definitions
     end
@@ -3998,10 +4516,10 @@ Defines the public API boundary, exporting CUBRID-specific types and DML extensi
 Contains the base `CubridDialect` class, implementing core logic for schema reflection, connection management, and transaction isolation levels. Reflection (`get_columns`, `get_indexes`, `get_foreign_keys`, `get_pk_constraint`, `get_unique_constraints`) is implemented here. It defaults to the C-extension driver `CUBRIDdb`.
 
 #### `pycubrid_dialect.py`
-Implements the `PyCubridDialect` variant, which uses the pure Python `pycubrid` driver. It overrides connection argument parsing and connection-time initialization logic.
+Implements the `PyCubridDialect` variant, which uses the pure Python `pycubrid` driver. It overrides connection argument parsing and connection-time initialization logic, and holds the pycubrid-specific driver policy: isolation-level re-apply after commit/rollback, the driver's own `executemany`, the `ping(False)` health check, and the pycubrid part of disconnect detection (its `errno` codes and client-side messages). `CubridDialect` keeps only the CUBRIDdb error shapes (an `int` code in `args[0]`).
 
 #### `aio_pycubrid_dialect.py`
-Implements `PyCubridAsyncDialect`, the async dialect variant used by `cubrid+aiopycubrid://`. It adapts `pycubrid.aio` for SQLAlchemy's async engine and `AsyncSession` APIs.
+Implements `PyCubridAsyncDialect`, the async dialect variant used by `cubrid+aiopycubrid://`. It adapts `pycubrid.aio` for SQLAlchemy's async engine and `AsyncSession` APIs, and inherits all driver policy (including `on_connect()` and `do_ping()`) from `PyCubridDialect` through the adapter connection.
 
 #### `compiler.py`
 Houses the SQL, DDL, and Type compilers. It translates SQLAlchemy's abstract syntax trees into CUBRID-specific SQL dialects, handling nuances like LIMIT/OFFSET and FOR UPDATE clauses.
@@ -4025,7 +4543,7 @@ Provides the `trace_query()` utility for enabling CUBRID query tracing around a 
 Defines feature flags used by the SQLAlchemy test suite to determine which behavioral tests should be executed against a CUBRID backend.
 
 #### `alembic_impl.py`
-Provides the `CubridImpl` class for Alembic, enabling DDL migration support and defining CUBRID's lack of transactional DDL capabilities.
+Provides the `CubridImpl` class for Alembic, enabling DDL migration support and declaring CUBRID's DDL transactional (`transactional_ddl = True`). Alembic 1.18+ imports it through the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic.py`); with older Alembic, `dialect.py` imports it.
 
 ## Dialect Discovery
 SQLAlchemy uses entry points to discover and load the appropriate dialect class based on the provided connection URL.
@@ -4048,8 +4566,7 @@ flowchart TD
     pycubrid_dialect --> import_py["import pycubrid"]
     aio_pycubrid_dialect --> import_aio["import pycubrid.aio"]
     
-    alembic_entry["Entry Point: alembic.ddl → cubrid"]
-    alembic_entry --> alembic_impl["CubridImpl<br/>transactional_ddl = False"]
+    cubrid_dialect -->|"imports with Alembic 1.7.2-1.17"| alembic_impl["CubridImpl<br/>transactional_ddl = True"]
 ```
 
 ## Driver Architecture
@@ -4059,7 +4576,7 @@ The dialect supports the legacy C-extension driver, the modern pure Python drive
 flowchart TD
     sa_default["sqlalchemy.engine.default<br/>DefaultDialect"]
     cubrid_base["CubridDialect<br/>dialect.py<br/>• reflection<br/>• isolation levels<br/>• type mapping<br/>• import_dbapi() → CUBRIDdb"]
-    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()"]
+    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()<br/>• is_disconnect(): errno, messages"]
     aio_variant["PyCubridAsyncDialect<br/>aio_pycubrid_dialect.py<br/>• is_async = True<br/>• import_dbapi() → pycubrid.aio adapter<br/>• async connection adaptation"]
     
     sa_default --> cubrid_base
@@ -4076,7 +4593,7 @@ flowchart TD
 *   **SQLAlchemy `<2.3` pin**: Uses three remaining private SA attributes (`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`) via `_compat.py` helpers at compiler.py:93, 104-105 — requires version pinning until public alternatives exist.
 *   **BOOLEAN → SMALLINT mapping**: CUBRID has no native BOOLEAN — dialect maps to `SMALLINT` (0/1).
 *   **JSON type support (v1.2.0+)**: Full JSON type mapping including `JSON`, `JSONIndexType`, `JSONPathType`, with path access via `json_getattr` and `json_getitem_op`. Requires CUBRID ≥ 10.2.
-*   **`transactional_ddl = False`**: CUBRID auto-commits DDL statements — Alembic cannot roll back failed migrations.
+*   **`transactional_ddl = True`**: CUBRID DDL rolls back with the transaction (only client autocommit, which the dialect turns off, commits it early), so a failed Alembic upgrade is rolled back whole by default. `CubridImpl.emit_begin()` emits nothing because CUBRID has no `BEGIN` statement; offline scripts end each transaction with `COMMIT;`.
 *   **`supports_statement_cache = True`**: Required for SA 2.0 performance — dialect is cache-safe.
 *   **Lowercase identifier folding**: CUBRID folds to lowercase (not SQL-standard uppercase) — `CubridIdentifierPreparer` handles this.
 *   **No RELEASE SAVEPOINT**: CUBRID doesn't support it — `do_release_savepoint()` is a no-op.
@@ -4294,6 +4811,8 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Authentication Failed](#authentication-failed)
   - [Stale Connections / Disconnections](#stale-connections--disconnections)
+  - [Errors After a cub_server Restart or Crash](#errors-after-a-cub_server-restart-or-crash)
+  - [Interrupted Query (-4)](#interrupted-query--4)
   - [Connection Pool Exhaustion](#connection-pool-exhaustion)
   - [Wrong URL Format](#wrong-url-format)
 - [SQL Compilation Issues](#sql-compilation-issues)
@@ -4328,11 +4847,11 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [No Implementation Found for Dialect 'cubrid'](#no-implementation-found-for-dialect-cubrid)
   - [ALTER COLUMN TYPE Rejected (lossy conversion)](#alter-column-type-rejected-lossy-conversion)
   - [RENAME COLUMN](#rename-column)
-  - [Partial Migration (DDL Auto-Commit)](#partial-migration-ddl-auto-commit)
+  - [Partial Migration After a Failure](#partial-migration-after-a-failure)
   - [Autogenerate Not Detecting Changes](#autogenerate-not-detecting-changes)
 - [Isolation Level Issues](#isolation-level-issues)
   - [Setting Isolation Levels](#setting-isolation-levels)
-  - [DDL Commits Current Transaction](#ddl-commits-current-transaction)
+  - [DDL Runs in the Current Transaction](#ddl-runs-in-the-current-transaction)
 - [Transaction Issues](#transaction-issues)
   - [Data Not Persisted](#data-not-persisted)
   - [Autocommit Conflicts](#autocommit-conflicts)
@@ -4361,13 +4880,12 @@ ImportError: No module named 'CUBRIDdb'
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Install the C-extension driver:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **Note:** This requires the CUBRID CCI library and a C compiler. See the [CUBRID Python driver docs](https://www.cubrid.org/manual/en/11.0/api/python.html) for platform-specific instructions.
+**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
+cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
+CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
+9.3.x release, see
+[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
@@ -4381,7 +4899,7 @@ Then change your connection URL:
 # Before (C-extension)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
-# After (pure Python — no C build needed)
+# After (pure Python driver — no CUBRID native libraries)
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
@@ -4407,14 +4925,14 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C Extension Build Failure
 
-**Symptom:** `pip install CUBRID-Python` fails with compilation errors.
+**Symptom:** building CUBRIDdb (cubrid-python) fails with compilation errors.
 
 **Common causes:**
 - Missing C compiler (`gcc` / `cl.exe`)
 - Missing CUBRID CCI headers
 - Incompatible platform
 
-**Fix:** Use pycubrid instead — it's pure Python and requires no build tools:
+**Fix:** Use the pure-Python pycubrid driver instead; it requires no CUBRID native libraries. The `[pycubrid]` extra also installs `greenlet`, which may need build tools if no compatible wheel is available:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
@@ -4499,6 +5017,43 @@ engine = create_engine(
 For `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, `pool_pre_ping=True` now uses pycubrid's native `CHECK_CAS` ping instead of issuing `SELECT 1`.
 
 See [Connection Guide — Pool Tuning](CONNECTION.md#connection-pool-tuning) for detailed recommendations.
+
+---
+
+### Errors After a cub_server Restart or Crash
+
+**Symptom:** A statement in an open transaction fails after `cub_server` was stopped, restarted or crashed:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**Cause:** The broker's CAS lost its session with `cub_server`. It reconnects only after the client ends the transaction, so until then the same connection fails every statement with -224, even after `cub_server` is back. `pool_pre_ping` cannot catch this: the connection is already checked out, and the CAS still answers the ping.
+
+**Behavior:** The dialect treats the codes for which the broker resets the CAS as disconnects on both drivers: -111 (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224 (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). SQLAlchemy invalidates the connection (`exc.connection_invalidated` is `True`) and the pool opens a new one. A pycubrid connection that fails to reconnect while `cub_server` is down (`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`) is also a disconnect. Releases up to 1.8.0 did not classify these errors, so the broken connection stayed in the pool.
+
+**Fix:** Nothing to configure. Roll back (leaving a `with engine.connect()` or `Session` block does this) and retry the transaction once `cub_server` accepts connections again.
+
+---
+
+### Interrupted Query (-4)
+
+**Symptom:** A running statement fails. The exact text is driver-specific:
+
+```
+# CUBRIDdb
+DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
+
+# pycubrid
+OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
+```
+
+**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid's `str()` describes -4 as `Communication error`, which is a pycubrid label, not the meaning of the server code.
+
+**Behavior:** The error is not a disconnect: SQLAlchemy keeps the connection (`exc.connection_invalidated` is `False`). Releases up to 1.8.0 treated -4 from CUBRIDdb as a disconnect and replaced the connection (#572).
+
+**Fix:** Roll back and retry the statement if it should run to completion.
 
 ---
 
@@ -4643,15 +5198,24 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **Symptom:** Unexpected query behavior with pagination.
 
-**CUBRID supports standard `LIMIT n OFFSET m` syntax.** The dialect generates this automatically:
+**The dialect emits MySQL-style `LIMIT [offset,] row_count`.** CUBRID accepts the standard
+`LIMIT row_count OFFSET offset` form as well, but the dialect never generates it — the `OFFSET`
+keyword does not appear in its output at all:
 
 ```python
-# SQLAlchemy generates correct CUBRID LIMIT/OFFSET
-stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 10 OFFSET 20
+select(users).limit(3)              # → SELECT ... FROM users LIMIT 3
+select(users).limit(10).offset(20)  # → SELECT ... FROM users LIMIT 20, 10
+select(users).offset(5)             # → SELECT ... FROM users LIMIT 5, 4611686018427387904
 ```
 
-**Note:** CUBRID does not support MySQL's `LIMIT offset, count` comma syntax. The dialect always uses `LIMIT n OFFSET m`.
+The comma form appears only when there is an offset, and the offset comes first. `LIMIT 20, 10`
+skips 20 rows and returns 10; it does not limit to 20 starting at 10.
+
+**Offset without limit.** CUBRID has no bare `OFFSET` (`SELECT ... OFFSET 5` is a syntax error), so
+`.offset(n)` with no `.limit()` still has to name a row count, and the dialect supplies an
+effectively unbounded one — the third line above. A very large second operand in a query log is
+that sentinel, not a bug. See [Feature Support](FEATURE_SUPPORT.md) for the exact value and why it
+is deliberately not the signed BIGINT maximum.
 
 ---
 
@@ -4926,6 +5490,10 @@ NoSuchTableError: table_name
 
 3. **Wrong database** — ensure your connection URL points to the correct database
 
+> **Note:** Reflection raises `NoSuchTableError` only for a missing object: the `db_class` lookup finds no such table or view, the server reports `Unknown class "<owner>.<name>"`, or a query that returns a row for every existing object (`SHOW CREATE TABLE`, `SHOW CREATE VIEW`) returns none (#589). A syntax error or any other failure of a reflection query propagates as the original exception (for example `sqlalchemy.exc.ProgrammingError`), even though CUBRID uses native error -493 for both (and pycubrid before 1.8.0 reports SQLSTATE `42S02`, `Table not found`, for every -493 error) (#454).
+
+> **Note:** `get_foreign_keys()` and `get_unique_constraints()` no longer turn a failed `SHOW CREATE TABLE` into an empty list (#589). A disconnect, an authorization error or a driver error during reflection now raises, so Alembic autogenerate stops with that error instead of proposing `add_fk` for foreign keys that already exist. Retry on a fresh connection (`pool_pre_ping=True` replaces stale pooled connections).
+
 ---
 
 ### Case Sensitivity in Table Names
@@ -4943,7 +5511,7 @@ conn.execute(text('CREATE TABLE "MyTable" (id INT)'))  # Stored as 'MyTable'
 conn.execute(text('SELECT * FROM "MyTable"'))          # Must use quotes
 ```
 
-The dialect's `CubridIdentifierPreparer` handles this automatically by setting `requires_name_normalize = True` and `initial_quote = '"'`.
+The dialect's `CubridIdentifierPreparer` quotes case-sensitive names with `initial_quote = '"'`. Because CUBRID already folds unquoted names to lowercase, which matches SQLAlchemy's convention, the dialect sets `requires_name_normalize = False`.
 
 ---
 
@@ -5153,7 +5721,7 @@ stmt = replace(users).values(id=1, name="Alice", email="alice@new.com")
 **Symptom:**
 
 ```
-CommandError: No implementation found for dialect 'cubrid'
+KeyError: 'cubrid'   (raised from alembic/ddl/impl.py, DefaultImpl.get_by_dialect)
 ```
 
 **Fix:** Install with the `alembic` extra:
@@ -5162,7 +5730,7 @@ CommandError: No implementation found for dialect 'cubrid'
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-The `CubridImpl` class is auto-discovered via the `alembic.ddl` entry point. No manual configuration needed.
+`CubridImpl` registers itself when the CUBRID dialect loads, provided Alembic is installed in the same environment. No manual configuration or `env.py` import is needed.
 
 ---
 
@@ -5218,17 +5786,24 @@ def upgrade():
 
 ---
 
-### Partial Migration (DDL Auto-Commit)
+### Partial Migration After a Failure
 
 **Symptom:** A migration fails partway through, leaving the database in an inconsistent state.
 
-**Cause:** CUBRID auto-commits every DDL statement (`CREATE`, `ALTER`, `DROP`). The `CubridImpl` sets `transactional_ddl = False`, meaning Alembic cannot roll back DDL operations.
+**Background:** CUBRID DDL is transactional: with client autocommit off, which the dialect always sets, `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `CREATE INDEX`, `RENAME` and the rest are undone by `ROLLBACK`. `CubridImpl` sets `transactional_ddl = True`, so by default a failed `alembic upgrade` rolls back every revision of that run, including the `alembic_version` update. With `transaction_per_migration=True`, the revisions that finished stay committed and only the failing one is rolled back.
+
+**Cause:** Something committed before the failure:
+
+- client autocommit — driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501) — commits every statement;
+- an offline (`--sql`) script ran without `csql --no-auto-commit --no-single-line`: in csql's default single-line mode, csql continues past a failing statement, still runs the trailing `COMMIT;` and exits 0;
+- a revision issued `COMMIT` itself, for example through `op.execute()`.
 
 **Prevention:**
 
-1. Keep migrations small — one logical change per migration
-2. Test migrations against a staging database first
-3. Back up the database before running migrations
+1. Run migrations without client autocommit, and run offline scripts with `csql --no-auto-commit --no-single-line` (it stops at the first error and exits 1, and the open transaction is rolled back)
+2. Use `transaction_per_migration=True` for long or large-table migrations: uncommitted DDL holds schema locks, so other sessions wait until the transaction ends
+3. Test migrations against a staging database first
+4. Back up the database before running migrations
 
 **Recovery:**
 
@@ -5287,27 +5862,31 @@ with engine.connect().execution_options(
 | `"SERIALIZABLE"` | 6 |
 | `"REPEATABLE READ"` | 5 |
 | `"READ COMMITTED"` *(default)* | 4 |
+| `"AUTOCOMMIT"` | driver autocommit mode (see [Autocommit Conflicts](#autocommit-conflicts)) |
 
 The legacy pre-MVCC levels (`READ UNCOMMITTED` and the granular
 class/instance combinations that resolved to numeric codes 1–3) were
-removed in CUBRID 10.0 and are no longer accepted; passing them raises
-`ValueError`. See [Isolation Levels](ISOLATION_LEVELS.md).
+removed in CUBRID 10.0 and are no longer accepted; passing them to
+`create_engine(isolation_level=...)` or `execution_options(isolation_level=...)`
+raises `sqlalchemy.exc.ArgumentError`. See [Isolation Levels](ISOLATION_LEVELS.md).
 
 ---
 
-### DDL Commits Current Transaction
+### DDL Runs in the Current Transaction
 
-**All DDL statements auto-commit in CUBRID.** This means:
+**CUBRID does not implicitly commit DDL.** With client autocommit off — the dialect turns it off on every connection — DDL is part of the current transaction, whatever the isolation level:
 
 ```python
 with engine.begin() as conn:
     conn.execute(text("INSERT INTO users (name) VALUES ('Alice')"))
-    conn.execute(text("CREATE TABLE temp (id INT)"))  # AUTO-COMMITS everything!
-    # The INSERT above is now committed, even if an error occurs below
+    conn.execute(text("CREATE TABLE temp (id INT)"))  # not committed yet
     conn.execute(text("INSERT INTO users (name) VALUES ('Bob')"))
+    raise RuntimeError("abort")  # rolls back both INSERTs and the CREATE TABLE
 ```
 
-**Best practice:** Never mix DML and DDL in the same transaction.
+The only auto-commit behavior is client autocommit (`CCI_DEFAULT_AUTOCOMMIT` / driver-level autocommit, csql's default mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501)), which commits after every statement, DDL or DML.
+
+**Watch out for schema locks:** uncommitted DDL holds a schema lock on its table until the transaction ends, so other sessions that use the table wait (`SCH_S_LOCK` waits; CUBRID's default `lock_timeout` is unlimited, so they wait until the transaction ends unless a lock timeout is set). Commit DDL promptly, and keep long DDL transactions out of busy periods.
 
 ---
 
@@ -5346,15 +5925,24 @@ with Session(engine) as session:
 
 **Background:** Both CUBRID drivers default to `autocommit=True`, but the dialect sets `autocommit=False` on each new connection so SQLAlchemy can manage transactions.
 
-**If you need true autocommit** (each statement commits immediately):
+**If you need true autocommit** (each statement commits immediately), use
+SQLAlchemy's `AUTOCOMMIT` isolation level. It works on all three drivers
+(`cubrid://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`):
 
 ```python
 with engine.connect().execution_options(
     isolation_level="AUTOCOMMIT"
 ) as conn:
     conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
-    # Committed immediately
+    # Committed immediately; conn.rollback() does not undo it
 ```
+
+`create_engine(..., isolation_level="AUTOCOMMIT")` and
+`engine.execution_options(isolation_level="AUTOCOMMIT")` work too. A connection
+switched to `AUTOCOMMIT` with `execution_options()` is transactional again when
+it goes back to the pool. Releases before #501 raised `ArgumentError`
+(`execution_options`) or `ValueError` (`create_engine`) for `AUTOCOMMIT`. See
+[Isolation Levels](ISOLATION_LEVELS.md#autocommit).
 
 ---
 
@@ -5503,7 +6091,7 @@ flowchart TD
     kind -->|Import / Module error| install[Check driver install]
     kind -->|Connection failure| conn[Validate URL, host, port, credentials]
     kind -->|SQL compile/runtime error| sql[Inspect generated SQL and unsupported feature]
-    kind -->|Migration failure| mig[Check Alembic limitations and DDL auto-commit]
+    kind -->|Migration failure| mig[Check Alembic limitations and client autocommit]
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
@@ -5553,7 +6141,7 @@ Output includes SQL statements, parameters, and execution times.
 
 ```python
 import sqlalchemy_cubrid
-print(sqlalchemy_cubrid.__version__)  # e.g., "1.4.0"
+print(sqlalchemy_cubrid.__version__)  # e.g., "1.8.0"
 
 from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
@@ -5652,8 +6240,7 @@ make install
 
 `make install` performs:
 1. `pip install -e ".[dev]"` — editable install with dev dependencies
-2. `pip install pytest-cov pre-commit tox` — test tooling
-3. `pre-commit install` — git hook setup
+2. `pre-commit install` — git hook setup
 
 ### Manual Setup
 
@@ -5666,11 +6253,7 @@ source venv/bin/activate  # Linux/macOS
 # Install in editable mode with dev dependencies
 pip install -e ".[dev]"
 
-# Install test coverage and multi-version tools
-pip install pytest-cov tox
-
-# (Optional) Install pre-commit hooks
-pip install pre-commit
+# Install pre-commit hooks
 pre-commit install
 ```
 
@@ -5743,10 +6326,14 @@ All common development tasks are available via `make`:
 make help          # Show all available targets
 make install       # Install in dev mode with all dependencies
 make lint          # Run ruff linter + format checks
+make check-tool-versions # Verify local/CI tool pins and type-check cells agree
+make typecheck     # Report versions and run strict mypy
 make format        # Auto-fix lint issues and format code
-make test          # Run offline tests with coverage (95% threshold)
+make test          # Run the fast offline tests with coverage (95% threshold)
+make test-repo     # Run the repository-tooling tests (Makefile, signal handling, repo scripts)
+make test-offline  # Run every offline test (fast + repository-tooling) with coverage
 make test-all      # Run tox across all Python versions
-make integration   # Start Docker → run integration tests → stop Docker
+make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
 make docker-down   # Stop and remove CUBRID Docker container
 make clean         # Remove build artifacts and caches
@@ -5756,7 +6343,27 @@ make clean         # Remove build artifacts and caches
 
 ## Running Tests
 
+### Strict Type Checking
+
+Run `make typecheck` in the development environment. It reports Python,
+SQLAlchemy, Alembic and mypy versions, then runs
+`python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`.
+The mypy version is pinned to `2.3.1` in the dev dependencies.
+
+CI runs the same Makefile target in two cells: Python 3.10 / SQLAlchemy 2.0.53
+and Python 3.13 / SQLAlchemy 2.1.1. Both cells are blocking: the required
+`matrix-result` check fails if the type-check job fails, is cancelled or is
+skipped. Ruff and the existing offline tests with 95% minimum coverage also
+remain required. To choose a virtualenv interpreter locally, use
+`make typecheck PYTHON=/path/to/venv/bin/python`.
+
 ### Offline Tests (No Database Required)
+
+Async adapter fixtures in synchronous unit tests consume their actual coroutine
+entry through the await bridge and assert that it was awaited. Patch both the
+connection bridge (SQLAlchemy 2.0) and module bridge (2.1) when applicable; a
+mock that simply returns a cursor can hide an invalid adapter and leak an
+unawaited coroutine into pytest's garbage-collection checks.
 
 The majority of the test suite runs without a live CUBRID instance:
 
@@ -5777,6 +6384,31 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
+### Property-Based Fuzz Tests (Hypothesis)
+
+`test/test_fuzz_*.py` use [Hypothesis](https://hypothesis.readthedocs.io/) to
+generate SELECT/INSERT/DDL combinations the hand-written suite never enumerated
+and assert dialect invariants (no unexpected compile exception, placeholder ==
+parameter count, LIMIT/OFFSET cardinality, DDL/reflection round-trip). The
+offline fuzz tests run in the normal offline suite; live-execution fuzz tests
+are `integration`-marked.
+
+```bash
+# Fast profile (default, ~50 examples/test) — runs with the offline suite
+pytest test/test_fuzz_select.py -v
+
+# Extended profile (2000 examples/test) — the nightly bug-hunt profile
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -v
+
+# Live-execution fuzzing (requires CUBRID)
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
+HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -m integration -v
+```
+
+Profiles (`dev`, `ci`, `nightly`) are registered in `test/conftest.py` and
+selected via `HYPOTHESIS_PROFILE`. PR CI uses the fast profile; explicit full
+validation and the release gate run the extended profile against live CUBRID.
+
 ### Integration Tests (Requires CUBRID)
 
 ```bash
@@ -5787,9 +6419,12 @@ docker compose up -d
 docker compose logs -f cubrid
 
 # Set the connection URL
-export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
 
-# Run integration tests
+# Run the regular tox profile (installs the existing pure-driver extra)
+tox -e integration
+
+# Run a focused sync file in an environment with pycubrid installed
 pytest test/test_integration.py -v
 
 # Run async integration tests
@@ -5799,12 +6434,106 @@ pytest test/test_aio_integration.py -v
 docker compose down -v
 ```
 
+The regular tox profile requires an explicit `cubrid+pycubrid` URL. It rejects
+missing URLs and legacy C-extension schemes, then probes both sync and derived
+async connections with bounded `SELECT 1` requests before pytest. Async suites
+derive `cubrid+aiopycubrid` with SQLAlchemy's URL API, retaining credentials,
+ports and query options; `CUBRID_TEST_AURL` remains an explicit async override.
+Failures do not print URL credentials. Without the optional native C-extension,
+the driver-differential comparisons are intentionally skipped;
+that profile does not claim to test CUBRIDdb. Formal CI's native-driver
+`--dburi` route remains separate and unchanged.
+
+#### Skip or fail: `CUBRID_TEST_URL` is the switch
+
+Whether an `integration`-marked test runs is decided in one place, a
+`pytest_runtest_setup` gate in `test/conftest.py` (#593). No test module probes
+the server at import time any more.
+
+| `CUBRID_TEST_URL` | Server answers `SELECT 1` through the URL's driver | Integration tests |
+| --- | --- | --- |
+| unset or empty | (not probed) | skipped locally; with `CI=true` the run exits 1 before any test runs |
+| set | yes | run |
+| set | no (down, wrong port, driver not installed, not a CUBRID URL with a database) | **error**, every one, with the same message |
+
+The gate probes the server once per session through the helpers in
+`scripts/integration_urls.py` (shared with `scripts/wait_for_cubrid.py`), using
+the driver the URL selects: `cubrid+pycubrid://` needs pycubrid and `cubrid://`
+needs the CUBRIDdb C extension, also for `test/test_aio_integration.py`, which
+connects through `cubrid+aiopycubrid://`. `CUBRID_TEST_URL` must be a
+`cubrid://`, `cubrid+cubriddb://` or `cubrid+pycubrid://` URL with a database, so
+the destructive test fixtures can never run against another database. When
+`CUBRID_TEST_AURL` overrides the async route, the gate probes that endpoint too,
+through `cubrid+aiopycubrid://`. The error names the URL with its password
+masked, for example:
+
+```text
+CUBRID_TEST_URL is set, but CUBRID at cubrid+pycubrid://dba:***@127.0.0.1:33599/testdb
+does not answer SELECT 1 through the driver the URL selects: OperationalError: ...
+```
+
+So a lane that believes it has a server can no longer turn green by skipping.
+Before #593, 421 of the 447 tests in `pytest test/ -m integration` skipped
+against an unreachable URL, even with `CI=true`. Now all 447 error and pytest exits 1.
+Unset `CUBRID_TEST_URL` to skip them on purpose, or deselect them with
+`-m "not integration"` (the offline suite does). The gate does not apply to the
+`--dburi` compliance runs: with `--dburi`, SQLAlchemy's plugin connects at
+session start and fails the run itself when the server is unreachable.
+
+After the gate passes, a few modules still skip for reasons of their own: the
+driver-differential and transactional-DDL tests need both drivers, and the
+server-restart tests need `CUBRID_TEST_DOCKER_CONTAINER`. Their CI steps turn
+those skips into failures with `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`,
+`CUBRID_REQUIRE_TRANSACTIONAL_DDL=1` and `CUBRID_REQUIRE_SERVER_RESTART=1`
+(#486, #503, #565).
+
+`test/test_integration.py` creates tables and database users with fixed names
+(for example `t583_fresh`, `alter_it_modify`, `u543`), so two runs against the
+same database interfere with each other. Run it against a dedicated database,
+one run at a time. `make integration` starts a run-owned server for this.
+
+The `TestIsDisconnect` KILL QUERY case (#634) also remains serialized: KILL is
+server-wide and takes only a numeric transaction index, not an atomic user
+predicate. The test creates one fresh `kq634_<16 hex>` database account, opens
+and warms its victim connection before starting a separate killer process
+(needed because CUBRIDdb holds the GIL during a query), and keeps that
+connection open until the killer has exited or been stopped. The killer uses
+`SHOW TRANSACTION TABLES` and selects only an active query with exactly that
+`Client_db_user` and a non-null `Query_start_time`; a missing column or more
+than one matching active query fails without issuing KILL. It never chooses a
+newly appeared DBA or other user's query by timing. Cleanup disposes the
+victim engine and drops only the account created by this run, through the
+verified user-drop helper. The victim URL explicitly clears the DBA password
+because the generated account has no password, even when `CUBRID_TEST_URL`
+contains a nonempty DBA password. Use a disposable DBA test database; another
+session sharing that dedicated account would make the test fail closed.
+
+`test/test_server_restart.py` (#565) stops and starts `cub_server` with
+`docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
+checks that the pool invalidates broken connections and recovers, through both
+drivers, with and without `pool_pre_ping`. It skips unless
+`CUBRID_TEST_DOCKER_CONTAINER` names the container that serves `CUBRID_TEST_URL`;
+point it at a disposable container, since the tests take the database down:
+
+```bash
+CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+  pytest test/test_server_restart.py -v -rs
+```
+
+CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
+which turns every skip into a failure.
+
 ### Full SA Test Suite
 
 ```bash
 # Requires a running CUBRID instance
-pytest --dburi cubrid://dba@localhost:33000/testdb
+pytest test/test_suite.py --dburi cubrid://dba@localhost:33000/testdb
+pytest test/test_suite.py --dburi cubrid+pycubrid://dba@localhost:33000/testdb
 ```
+
+Known failures are baselined per driver and SQLAlchemy version; see
+[SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes).
 
 ---
 
@@ -5854,9 +6583,90 @@ CUBRID_VERSION=10.2 docker compose up -d
 ### Quick Integration Workflow
 
 ```bash
-# One-command: start, test, stop
+# One-command: start, test, stop (pycubrid, the recommended driver)
 make integration
+
+# The same suite through the CUBRIDdb C extension (must be installed)
+make integration INTEGRATION_DRIVER=cubriddb
 ```
+
+`make integration` runs every `integration`-marked test in one pytest session.
+`INTEGRATION_DRIVER` selects the driver of `CUBRID_TEST_URL`: `pycubrid` (the
+default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
+CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
+"Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
+command. Several test files open connections through both drivers whichever one
+the URL selects, so install `.[dev,pycubrid]` for either driver. Main/weekly code CI runs
+`make integration` with the default driver on CUBRID 11.4; the full dispatch and release-gate
+`integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
+11.4.
+
+After `docker compose up -d`, the run waits until the new server answers
+`SELECT 1` through the selected driver (`scripts/wait_for_cubrid.py`), for up to
+`INTEGRATION_READY_TIMEOUT` seconds (default 180), and fails if it never does. A
+fresh container needs about 20 seconds to create its database and start the
+broker; a fixed 10-second sleep used before #575 let the suite start too early,
+so the first tests failed with CCI -20004 and the live test files that probed the
+server at import time skipped themselves. Since #593 no file probes at import
+time; the conftest gate errors every integration test when the server does not
+answer, so a server that is not ready fails the run instead of skipping it.
+
+`make integration` runs in its own Compose project, named
+`sqlalchemy-cubrid-it-<timestamp>-<pid>` by default. Its container, network and
+`cubrid-data` volume are therefore separate from every other run and from a stack
+started with `docker compose up -d` or `make docker-up`, whose project Compose
+names after the checkout directory (or `COMPOSE_PROJECT_NAME`).
+
+Before starting, it checks that the project has no containers, volumes or
+networks and that no volume named exactly `<project>_cubrid-data` exists. If
+anything is found, it refuses to run and neither starts nor removes anything. If
+the check itself fails (for example, the Docker daemon is unreachable), it prints
+`Ownership check ... failed; nothing was started` and stops. Only after the check
+passes does it register cleanup, so `docker compose -p <project> down -v` only
+removes resources that this run created.
+
+Cleanup runs on shell exit, including after failed startup, readiness waiting or
+tests, and when the run receives `SIGINT` (Ctrl-C), `SIGTERM` (for example from
+`timeout` or `kill`) or `SIGHUP` (a closed terminal):
+
+- If the signal arrives while `docker compose up -d` runs, cleanup first lets it
+  finish, for up to `INTEGRATION_STOP_GRACE` seconds (default 10). The Docker
+  daemon completes a container create even after the client is killed, so
+  stopping `up -d` halfway could leave a container, and a re-created volume, that
+  `down -v` had already missed. `up -d` runs in its own process group, so a
+  terminal Ctrl-C does not reach it. If it is still running after the grace period,
+  its group, including the Compose plugin process, is sent `SIGTERM`, and cleanup
+  waits for the whole group to exit.
+- Any other running step (the readiness wait or pytest) is sent `SIGTERM` at once
+  and killed if it is still running `INTEGRATION_STOP_GRACE` seconds later.
+- Cleanup runs once, and the command exits with 128 + the signal number (130, 143
+  or 129).
+- Further `SIGINT`, `SIGTERM` or `SIGHUP` signals are ignored until
+  `docker compose down -v` finishes, and `down -v` runs in its own session.
+  Neither a second Ctrl-C nor a signal sent to the whole process group (as GNU
+  `timeout` does) interrupts or repeats it. If `down -v` itself hangs, `SIGQUIT`
+  (`Ctrl-\`) stops `make` without waiting for it.
+- A signal that was already ignored when `make` started, such as `SIGINT` for a
+  background job of a non-interactive shell, cannot be handled.
+
+The original failure is preserved if cleanup also fails; cleanup failure after
+passing tests also makes the command fail. Cleanup errors are reported
+explicitly. Cleanup is not guaranteed after an untrappable termination such as
+`SIGKILL` or a host shutdown. Remove such a leftover project with
+`docker compose -p <project> down -v` after checking its name with
+`docker compose ls -a`.
+
+The container publishes CUBRID on host port 33000. If that port is already in
+use, pick another one with `make integration CUBRID_PORT=33999`; the test URL
+follows it. `INTEGRATION_PROJECT=<name>` fixes the project name. It must match
+`^[a-z0-9][a-z0-9_-]*$` (otherwise the command exits with status 2 before running
+any Docker command), and the same pre-existence check applies. Two concurrent
+runs with the same fixed `INTEGRATION_PROJECT` are not supported. pytest keeps the
+terminal's standard input, so `make integration PYTEST="python3 -m pytest --pdb"`
+can stop in the debugger; Ctrl-C there ends the run and cleans up.
+
+For an already-running server, set `CUBRID_TEST_URL` and use `make integration-local`.
+That target never starts or stops Docker and leaves the external server running.
 
 ---
 
@@ -5864,20 +6674,27 @@ make integration
 
 ### tox Configuration
 
-The `tox.ini` defines local environments for Python 3.10–3.13. GitHub Actions also runs the offline suite on Python 3.14.
+The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinned
+Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
+run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
+the existing pycubrid/Alembic extras and development test dependencies. Offline
+selection in the `py3xx` environments is `-m "not integration and not repo"`, and
+the `repo` environment runs the repository-tooling tests with `-m repo` (#594);
+the integration environment selects
+`-m integration` with `--ignore=test/test_suite.py`. The formal SQLAlchemy
+compliance suite requires the testing plugin enabled by `--dburi`; existing CI
+runs it separately with that argument and its known-failure baseline. Regular
+tox integration does not run the formal suite. The offline threshold remains 95%.
 
 ```ini
 [tox]
-envlist = lint, py310, py311, py312, py313
+envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
 ### Running tox
 
 ```bash
-# Install tox
-pip install tox
-
 # Run all environments
 tox
 
@@ -5886,19 +6703,21 @@ tox -e py312
 
 # Run lint checks only
 tox -e lint
+
+# Check both designated SQLAlchemy typing environments
+tox -e typecheck-sa20,typecheck-sa21
 ```
 
 ### CI Matrix
 
-The CI pipeline tests the following matrix:
-
-| | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.2** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.0** | ✅ | — | — | — | ✅ |
-| **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+Routine CI uses one Ubuntu/Python 3.12 offline lane and representative live
+combinations rather than the full matrix. PRs run smoke tests; main and changed
+weekly runs retain the full offline suite with 95% coverage. High-risk PRs select
+newest integration, while main/weekly use oldest/newest endpoints. Repository
+tooling is path-selected on one Linux lane. Full integration is explicit/manual
+and release-only. See [CI execution policy](CI_POLICY.md) for exact selection and
+validation requirements. Historical cost measurements below describe the earlier
+workflow, not current job counts or new savings.
 
 ---
 
@@ -5907,9 +6726,7 @@ The CI pipeline tests the following matrix:
 ### Requirements
 
 - **Minimum threshold**: 95% line coverage
-- **Current CI offline collection**: 603 tests (`pytest --collect-only` excluding `test_integration.py`, `test_suite.py`, and `test_aio_integration.py`, matching `.github/workflows/ci.yml` and `make test`)
-- **Current line coverage**: ~98.26% offline in the CI/make test configuration
-- CI enforces the threshold via `--cov-fail-under=95`
+- CI enforces the threshold via `--cov-fail-under=95` in the `offline-tests` job (`.github/workflows/ci.yml`); run `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` locally for current test counts and coverage rather than relying on a snapshot here, since both grow with every PR
 
 ### Running Coverage
 
@@ -5929,15 +6746,14 @@ make test
 
 ### Known Unreachable Lines
 
-Three lines in `compiler.py` and one in `dml.py` are verified unreachable by design (defensive fallbacks that
-cannot trigger through SA's public API):
-
-| File | Line | Description |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause` returning `""` |
-| `compiler.py` | 84 | `limit_clause` returning `""` |
-| `compiler.py` | 298--300 | Defensive branch in DDL compilation |
-| `dml.py` | 310 | `else` branch in type normalization |
+A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
+`for_update_clause`/`limit_clause` return, a DDL compilation default branch, an
+`else` arm in type normalization) that cannot trigger through SQLAlchemy's
+public API and so never execute under the offline suite. Their exact line
+numbers shift as the modules change; run `pytest test/ -m "not integration and
+not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test`)
+and check the `Missing` column for the current set instead of a pinned list
+here.
 
 ---
 
@@ -5958,20 +6774,11 @@ formatting.
 ### Running Checks
 
 ```bash
-# Lint check
-ruff check sqlalchemy_cubrid/ test/
-
-# Auto-fix lint issues
-ruff check --fix sqlalchemy_cubrid/ test/
-
-# Format check
-ruff format --check sqlalchemy_cubrid/ test/
-
-# Apply formatting
-ruff format sqlalchemy_cubrid/ test/
-
-# All checks via make
+# Check tooling consistency and lint/format all maintained Python sources
 make lint
+
+# Apply fixes and formatting over the same shared source paths
+make format
 ```
 
 ---
@@ -5980,12 +6787,51 @@ make lint
 
 Pre-commit hooks run lint and format checks automatically on `git commit`.
 
+Ruff and Mypy versions are single-sourced from the dev pins in `pyproject.toml`.
+The Ruff and Mypy pre-commit hooks are `repo: local` / `language: system` hooks
+that invoke `python3 -m ruff`/`python3 -m mypy` against the active `.[dev]`
+environment, so there is no separate hook revision to keep in sync: the pin in
+`pyproject.toml` is authoritative everywhere. The mypy hook checks
+`sqlalchemy_cubrid/` with the project's strict configuration using whatever
+SQLAlchemy/Alembic the active `.[dev,alembic]` environment already provides. It
+does not install stubs automatically or suppress missing imports. Ruff's
+explicit `include = ["*.py", "*.pyi"]` and the matching hook types keep CLI, CI
+and hooks on Python sources rather than rewriting documentation snippets.
+
+The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
+demos, samples and `docs/source` Python configuration. CI and tox invoke
+`make lint`; the hooks keep checking all tracked Python/pyi files. The drift
+checker rejects omitted maintained directories or a runner that bypasses this
+shared target.
+
+Only `pyproject.toml`'s dev pin needs updating when bumping Ruff or Mypy
+(Dependabot's `pip` ecosystem does exactly this): the pre-commit hooks and the
+`tox -e lint`/`typecheck-sa20`/`typecheck-sa21` environments install the
+project's own `dev` extra, so they always run whatever that pin resolves to.
+`tox -e typecheck-sa20`/`typecheck-sa21` additionally pin an exact SQLAlchemy
+release per Python version (2.0.53 on 3.10, 2.1.1 on 3.13) to match CI's
+type-check matrix; those pairs are read from CI by
+`scripts/check_tool_versions.py`. Run `make check-tool-versions`,
+`pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21`
+after a change. The consistency check runs through CI lint, tox lint and a
+local pre-commit hook, so a dependency-only update cannot silently leave old
+pins.
+
 ### Setup
 
+The Ruff and Mypy hooks run via `language: system`, invoking `python3 -m
+ruff`/`python3 -m mypy` from whatever environment is active when Git runs the
+hook. Install the project's `dev` extra (which pins Ruff and Mypy) into that
+same environment first, then install the hooks:
+
 ```bash
-pip install pre-commit
+pip install -e ".[dev]"
 pre-commit install
 ```
+
+Activate that environment (or a venv where it's installed) whenever a commit
+should run the hooks; otherwise Ruff/Mypy are missing or a stale/global
+version silently runs instead of the pinned one.
 
 ### Manual Run
 
@@ -6002,23 +6848,355 @@ pre-commit run --all-files
 
 | Workflow | File | Trigger |
 |---|---|---|
-| CI | `.github/workflows/ci.yml` | Push to main, PRs |
-| Publish | `.github/workflows/publish-pypi.yml` | GitHub Release |
+| CI | `.github/workflows/ci.yml` | PRs, main, weekly, manual |
+| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `release.yml` |
+| Prepare Release | `.github/workflows/release-please.yml` | Push to main or manual dispatch; prepares the reviewed release PR |
+| Release | `.github/workflows/release.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
-2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
-3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage
-4. **Coverage** — Enforces ≥ 95% threshold
+2. **Offline Tests** — one Ubuntu/Python 3.12 lane; PR smoke, main/weekly full offline coverage
+3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
+5. **Coverage** — Enforces ≥ 95% on the full main/weekly offline lane; PR smoke makes no coverage claim
 
-### Publish Pipeline
+### Driver-differential lane
 
-Triggered on GitHub Release creation. Builds and publishes the package to PyPI.
+`test/test_driver_differential.py` runs the same SQLAlchemy operations on
+pycubrid and the CUBRIDdb C-extension and asserts they agree. It covers basic
+CRUD plus the DB-API contract areas that already work on the released drivers:
+Core `executemany` with integer, UTF-8/CJK and NULL values, textual
+`executemany` with integer and UTF-8/CJK values, scalar binds, textual-SQL
+result column names, and commit/rollback visibility. It also compares
+constraint-violation exception classes (#480), results read across a
+rollback (#481), scalar `cursor.description` names, type codes and
+`null_ok` (#482), and `SET`/`MULTISET`/`SEQUENCE` round trips (#484, writing
+the collection literal directly in SQL since binding one is rejected by
+released pycubrid, then comparing values normalized to `str` elements). These
+checks require the fixed pycubrid behavior shipped in pycubrid 1.8.0 (NOT
+NULL/foreign-key classes, post-rollback results and `null_ok`) and run
+unconditionally. Every #479 contract area now has a case here except LOBs,
+which are covered separately by #485.
+
+The integration jobs in `ci.yml` and `integration-full.yml` run this module
+with both drivers installed and `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`. With
+that variable set, `test/conftest.py` fails the session when no differential
+case ran and passed, so a lane where both drivers fail to connect cannot
+report success. Before the tests, `python -m scripts.report_driver_versions`
+writes the exact Python, SQLAlchemy, pycubrid, CUBRIDdb (package version and
+source tag) and CUBRID server versions to the job log and the GitHub step
+summary. Local runs without the variable keep skipping cleanly when a driver
+is unavailable. An unreachable `CUBRID_TEST_URL` server errors instead, like
+every integration test (#593):
+
+```bash
+export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
+CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
+```
+
+### All-skipped lane guard
+
+A lane that silently skips every test it was meant to run still exits `0` in
+plain pytest, which hides a misconfigured lane (a stale `skipif`, a driver
+that stopped connecting, a copy-pasted file list) behind a green check. The
+required driver-differential, transactional-DDL (#503) and server-restart
+(#565) lanes already guard themselves with their own `CUBRID_REQUIRE_*` checks
+in `test/conftest.py`. For the plain `pytest`/`make integration` steps in
+`ci.yml`'s `integration-tests` and `make-integration` jobs and
+`integration-full.yml`'s `integration-full` and `make-integration` jobs,
+`scripts/check_not_all_skipped.py` reads the `tee`'d output of the preceding
+invocation and fails unless at least one summary line shows real execution
+(`passed`/`failed`/`error`/`xpassed`/`xfailed`); `skipped`/`deselected` alone,
+or zero tests collected, fails the step:
+
+```bash
+set -o pipefail
+python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
+```
+
+A cell that is deliberately all-skip passes `--allow-all-skipped "<reason>"`
+to report the reason and exit 0 instead of failing. `matrix-result` and
+`full-matrix-result` need no change: these checks run inside jobs they already
+depend on, so a step failing this guard already fails its job.
+
+### SQLAlchemy compliance lanes
+
+The official SQLAlchemy dialect compliance suite (`test/test_suite.py`, run
+with `--dburi`) blocks merges in two driver lanes. Both are steps of the
+`integration-tests` job in `ci.yml`, reuse that cell's CUBRID service, and
+therefore fail `matrix-result` when they fail:
+
+| Lane | URL | Pinned versions | CI cell |
+|---|---|---|---|
+| `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C-extension) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
+
+The two pycubrid lanes split SQLAlchemy 2.0 and 2.1 across the two PR cells,
+so each cell runs the suite for pycubrid only once (SQLAlchemy 2.1 needs
+Python 3.11+, so it runs in the 3.14 cell). Every lane baseline was captured on
+fresh CUBRID 10.2 and 11.4 databases. Each pycubrid step
+first runs `python -m scripts.report_driver_versions`, which records the exact
+Python, SQLAlchemy, pycubrid and CUBRID server versions in the job log and step
+summary. The CUBRIDdb suite in the CUBRID 10.2 cell stays non-gating.
+
+**Known failures are keyed per lane.** Every entry in `test/known_failures.txt`
+names the lanes it fails in, as `<driver>@sa<major.minor>`, or as
+`<driver>@sa<major.minor>@cubrid<major.minor>` when it fails on one CUBRID
+server version only:
+
+```text
+test/test_suite.py::DistinctOnTest::test_distinct_on  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
+```
+
+`test/conftest.py` derives the current lane from the `--dburi` dialect, the
+installed SQLAlchemy version and the connected server version, and applies a strict xfail only to the entries
+tagged for it. A CUBRIDdb-only failure therefore cannot hide a pycubrid
+regression, and vice versa. There is no wildcard tag, and an untagged entry or
+a lane CI does not gate (e.g. `pycubrid@sa2.2`) is a load error. With `CUBRID_STRICT_KNOWN_FAILURES=1` (set by every gating step)
+the run also fails when:
+
+- a listed test passes (strict XPASS): remove that lane's tag;
+- a listed entry for the lane matches no collected test (stale baseline);
+- a listed entry is skipped instead of xfailed, so it no longer proves
+  anything: drop it or fix the skip;
+- the lane has no entries at all, so a new driver or SQLAlchemy minor cannot
+  gate on an empty baseline by accident;
+- the installed SQLAlchemy is not the release the lane was captured with
+  (`_PINNED_SQLALCHEMY` in `test/conftest.py`).
+
+The manifest parser also rejects a node id listed twice, and a server-narrowed
+tag that is not one of the (lane, server) pairs CI gates
+(`_GATED_SERVER_LANES`: `cubrid@sa2.0@cubrid11.4`, `pycubrid@sa2.0@cubrid10.2`,
+`pycubrid@sa2.1@cubrid11.4`), so a typo'd or never-exercised server tag cannot
+slip in.
+
+Tests that cannot apply to CUBRID at all (for example seven-digit precision
+from the single-precision `FLOAT`, or non-ASCII identifiers on a non-UTF-8
+database) are excluded in `sqlalchemy_cubrid/requirements.py` with a reason
+instead of being listed. Every requirement property must return a **new**
+`exclusions.open()` / `exclusions.closed()` object: SQLAlchemy extends the
+first requirement of a stacked `@testing.requires` chain in place, so a shared
+object silently turns every other requirement closed and skips most of the
+suite (`test_stacked_requirements_do_not_leak_into_other_properties` guards
+this).
+
+**Updating a lane baseline** (a SQLAlchemy bump, a new pinned pycubrid, or a
+fix that makes a listed test pass):
+
+```bash
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
+pip install "pycubrid==1.8.0" "sqlalchemy[asyncio]==2.1.1"
+# 1. Capture: without strict mode, a missing lane just applies no xfails.
+pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" --maxfail=1000 -q -r fE
+# 2. Classify every failure (dialect bug, driver limitation, backend/suite
+#    limit), link its issue, and edit only this lane's tags.
+# 3. Verify exactly as CI does.
+CUBRID_STRICT_KNOWN_FAILURES=1 pytest test/test_suite.py --dburi="$CUBRID_TEST_URL" -q
+```
+
+Run the capture against both CUBRID 10.2 and 11.4 when adding a lane, then
+update the pinned versions in `ci.yml`, the header of
+`test/known_failures.txt`, and the `_GATED_LANES` set in
+`test/test_known_failures.py` in the same change.
+
+### pycubrid release-candidate adoption
+
+The weekly `upstream-canary.yml` run against `pycubrid@main` stays
+non-blocking: it warns about upcoming regressions, but an unreleased upstream
+HEAD must not block unrelated pull requests. Its failures are still reported:
+when a canary job fails on a scheduled or manually dispatched run of the
+default branch, the workflow
+opens an issue titled "Upstream canary failing against pycubrid@main" (label
+`ci`), or comments on it if it is already open, with the failing jobs, the run
+link and the pycubrid commit tested, and closes it once both jobs pass again.
+The dependency bound
+`pycubrid>=1.8.0,<2.0` is widened only after a **specific** pycubrid release
+candidate (or new major release), installed by exact version, passes the
+downstream contract suite: the regular and async integration tests, the
+required driver-differential lane above, and the SQLAlchemy compliance suite.
+Record the versions reported by `scripts/report_driver_versions.py` in the
+adoption pull request, and update `CHANGELOG.md` and the support documentation
+with the newly supported range in the same change.
+
+The `CUBRID_PYCUBRID_UPSTREAM` strict-xfail gating was removed once pycubrid 1.8.0
+shipped the fixes it covered (pycubrid#390, #395, #430, #431).
+
+### Documentation gates
+
+Documentation exceptions use a populated standalone physical source line
+`Docs: not needed - <reason>` outside code, quotes or template comments, or the existing maintainer-managed
+label. `make check-docs-reason` runs executable doctests and real event-JSON/workflow
+regressions; `make check-all` and the docs-sync job run those same checks.
+Translation help requests do not authorize a bypass: maintainers explicitly
+approve the existing `translations-deferred` label and record follow-up. The
+Korean-required and other-language advisory translation checks are unchanged.
+
+### Release Pipeline
+
+Releases are maintainer-only and follow [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md):
+`release-please.yml` opens a release PR (version bump + dated CHANGELOG section, checked
+with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `release.yml`
+runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
+automatically. Nobody pushes tags or publishes by hand.
 
 ---
 
 *See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
+
+---
+
+# CI execution policy
+
+Routine CI uses representative combinations instead of a Cartesian version/OS matrix.
+
+| Trigger | Runtime validation |
+| --- | --- |
+| Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
+| Ordinary code PR | One Ubuntu/Python 3.12 offline smoke lane; no full coverage claim |
+| High-risk PR | Same offline smoke plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
+| Code push to main | One Ubuntu/Python 3.12 full offline suite with the existing 95% coverage floor; oldest/newest live endpoints |
+| Monday 03:00 UTC | Same representative policy, comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests |
+| Explicit full dispatch or release | Existing full Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes |
+
+The PR smoke suite is deliberately bounded. Contributors must run the regression
+checks relevant to their change locally and record commands/results in the PR.
+Passing smoke is not evidence that the whole offline suite or coverage floor ran.
+`make test` and `make integration` remain available without changing their scope.
+
+Change selection is in `ci.yml`'s `detect-changes` job. Non-documentation paths
+are code by default, so new source/configuration files do not silently become docs.
+Connection/protocol/cursor/async/compatibility or dialect/compiler/reflection,
+dependency, build, script and workflow changes select representative pre-merge
+integration. Repository tooling tests run in one Linux lane when tooling changes.
+The static lint job continues on all events, including generated documentation checks.
+
+The aggregate required-check name stays stable and includes change detection.
+Selected jobs must succeed: skipped, failed or cancelled selected checks fail the
+gate. Only intentionally unselected jobs may skip. Keep branch protection on the
+aggregate gate; do not require every old matrix cell name after reducing matrices.
+Branch protection must be inspected before merge. No protection-setting change
+is part of this PR.
+
+Full verification has no automatic nightly schedule. `integration-full.yml`
+retains manual dispatch and the release `workflow_call` with the immutable candidate
+SHA. Dispatch the workflow on the exact candidate branch/commit and verify the
+run's head SHA before using it as PR evidence. A moved branch needs new evidence.
+The routine CI dispatch is path-sensitive; use the full workflow to request an
+unconditional compatibility run. No release publisher/generator is changed.
+
+Concurrency is isolated by event and ref, so main pushes, weekly schedules and
+manual dispatches cannot cancel each other. Superseded runs for the same PR still
+cancel within that PR group. Main pushes and PR merge refs are
+not assumed to have identical SHAs. Weekly change selection uses the previous
+seven days, not a persisted last-success cache; a failed weekly run must be
+rerun or followed by manual validation rather than treated as successful evidence.
+
+GitHub charges have not been attributed to a workflow or runner SKU. Reduced job
+counts establish less repeated work; they are not a measured monetary saving.
+Compare subsequent Actions jobs/runner minutes and the actual billing category
+before making a cost claim.
+
+Routine type checking uses Python 3.13/SQLAlchemy 2.1.1; Alembic checks use latest,
+and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retain
+SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Live smoke, make integration
+and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validation.
+
+---
+
+# Release-please migration validation
+
+Recorded 2026-10-03 against main `7432169960f486040ac6ef23c3e355b9f4bea01e`
+and these exact reviewed implementation snapshots:
+
+- #655 adapters: `9952967b12a6b06270710fb4e05a6b91199f7499`.
+- #656 configuration/workflows: `8b4dee606d7b556af55dc54a1d93c93d1d5106c7`.
+
+The recorded checks below apply to those immutable revisions; PR numbers alone
+are not validation evidence. Reruns must record their new tested SHAs. The migration changes no
+published package version: the repository remains 1.8.0 until a separate
+reviewed release PR is merged.
+
+## Executed checks
+
+- 109 focused offline tests passed: canonical composer, lifecycle reconciliation,
+  release workflow contracts, release detection, legacy preparer and summary.
+- Ruff check/format and `git diff --check` passed for changed Python files.
+- Configuration and manifest validated against installed release-please 17.6.0
+  schemas. Upstream action v5.0.0 SHA
+  `45996ed1f6d02564a971a2fa1b5860e934307cf7` bundles that core version.
+- Actual core Python strategy executed with synthetic commits and mocked local
+  SCM reads: fix→1.8.1, feat→1.9.0, breaking→2.0.0, docs→1.8.1,
+  chore-only→no candidate, Release-As override→1.9.0.
+- Actual generated feature output is captured in
+  `test/fixtures/release-please/17.6.0-feature.md`. It composed against current
+  main's full curated notes, preserving historical sections byte for byte.
+  The initial generated file must be empty: a nonempty heading-only seed is
+  demoted into an unsupported extra heading by the upstream first updater.
+- Isolated synthetic 1.9.0 candidate passed `make release-check VERSION=1.9.0`:
+  canonical version/notes checks, sdist/wheel build and twine check.
+- Fresh independent virtual environments installed the candidate wheel and
+  sdist; package import and distribution metadata both reported 1.9.0. The
+  wheel's SQLAlchemy dialect entry point was present. Nothing was uploaded.
+- Independent architecture and postimplementation agent reviews approved the
+  bounded migration, including regeneration freeze, lifecycle ownership,
+  unchanged publisher gates and explicit unverified paths.
+
+## Limits
+
+SCM data in upstream strategy execution was mocked. This is real pinned-core
+candidate generation, not a live GitHub API/bot PR rehearsal. No release PR,
+main merge, tag, GitHub Release, PyPI upload or credential creation occurred.
+No live database compatibility matrix or candidate cookbook run was executed.
+Existing publisher dry-run evidence in RELEASING.md covers unchanged publisher
+code; it installs a published package and does not prove the fresh candidate
+artifact's database/cookbook behavior. Required CI must pass at the final heads.
+
+## Reproduce the pinned-core scenarios
+
+Install the pinned core at the exact path used by this script:
+
+```bash
+npm install --prefix /tmp/release-please-tools --ignore-scripts release-please@17.6.0
+```
+
+The following script uses the real Python strategy and local file-backed mocked SCM reads.
+Save it outside the checkout, then run `node <script> <repository-path>`.
+Its output candidate lives in `/tmp/sa-rp-candidate`, not in the repository.
+
+```javascript
+const fs=require('fs'),path=require('path');
+const upstream='/tmp/release-please-tools/node_modules/release-please/build/src';
+require(upstream+'/index.js'); const {Python}=require(upstream+'/strategies/python.js');
+const {parseConventionalCommits}=require(upstream+'/commit.js');
+const {TagName}=require(upstream+'/util/tag-name.js');
+const {Version}=require(upstream+'/version.js');
+const root=process.argv[2];
+const github={repository:{owner:'cubrid-lab',repo:'sqlalchemy-cubrid'},findFilesByFilenameAndRef:async()=>[],getFileContentsOnBranch:async p=>({parsedContent:fs.readFileSync(path.join(root,p),'utf8')})};
+(async()=>{
+ const scenarios=[['fix: correct failure','1.8.1'],['feat: new optional API','1.9.0'],['feat!: remove old API\n\nBREAKING CHANGE: remove old API','2.0.0'],['docs: improve instructions','1.8.1'],['chore: housekeeping',null],['fix: explicit override\n\nRelease-As: 1.9.0','1.9.0']];
+ for(const [message,expected] of scenarios){
+ const strategy=new Python({github,targetBranch:'main',component:'sqlalchemy-cubrid',packageName:'sqlalchemy-cubrid',includeComponentInTag:false,changelogPath:'RELEASE_CHANGELOG.md'});
+ const commits=parseConventionalCommits([{sha:'a'.repeat(40),message,files:['sqlalchemy_cubrid/__init__.py']}]);
+ const candidate=await strategy.buildReleasePullRequest(commits,{tag:new TagName(Version.parse('1.8.0')),sha:'78bcbc7dbd70d8f2c756b25d3c271977ace42aa5',notes:''});
+ const actual=candidate?candidate.version.toString():null;
+ if(actual!==expected)throw new Error(`${message}: expected ${expected} got ${actual}`);
+ console.log(JSON.stringify({message,version:actual}));
+ if(candidate&&message.startsWith('feat:')){
+ const out='/tmp/sa-rp-candidate';fs.mkdirSync(out,{recursive:true});
+ for(const update of candidate.updates){
+ const file=path.join(root,update.path); if(!fs.existsSync(file)&&!update.createIfMissing) continue;
+ const content=update.updater.updateContent(fs.existsSync(file)?fs.readFileSync(file,'utf8'):undefined);
+ fs.mkdirSync(path.dirname(path.join(out,update.path)),{recursive:true}); fs.writeFileSync(path.join(out,update.path),content);
+ console.log('updated '+update.path);
+ }
+ }
+ }
+})().catch(err=>{console.error(err);process.exit(1)});
+```
 
 ---
 
@@ -6044,7 +7222,8 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 | Property | Value |
 |---|---|
-| PyPI package | `CUBRID-Python` |
+| Supported install | Built from source, [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later ([how](#building-cubriddb-from-source)) |
+| PyPI package | `CUBRID-Python`, newest release 9.3.x (2015): **untested, not supported** ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 | Import name | `CUBRIDdb` |
 | Type | C extension (CPython only) |
 | DBAPI level | DB-API 2.0 (PEP 249) |
@@ -6067,6 +7246,7 @@ Python driver and requires compilation against the CCI headers.
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ Tested |
+| any | PyPI `CUBRID-Python` 9.3.x | any | any | ❌ Not tested, not supported ([details](#pypi-cubrid-python-93x-is-not-supported)) |
 
 ### CUBRID Server Version Support
 
@@ -6092,7 +7272,8 @@ Python driver and requires compilation against the CCI headers.
 
 ## Exception Hierarchy
 
-CUBRIDdb exposes a **limited** exception hierarchy compared to PEP 249:
+CUBRIDdb 11.3.0.51 (module `_cubrid`) provides every PEP 249 exception class
+except `Warning`:
 
 ```mermaid
 graph TD
@@ -6100,19 +7281,30 @@ graph TD
     exc --> err["CUBRIDdb.Error (Base DBAPI error)"]
     err --> iface["CUBRIDdb.InterfaceError (Driver-level errors)"]
     err --> db["CUBRIDdb.DatabaseError (Server-level errors)"]
-    err --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
+    db --> data["CUBRIDdb.DataError"]
+    db --> op["CUBRIDdb.OperationalError"]
+    db --> integ["CUBRIDdb.IntegrityError"]
+    db --> internal["CUBRIDdb.InternalError"]
+    db --> prog["CUBRIDdb.ProgrammingError"]
+    db --> ns["CUBRIDdb.NotSupportedError (Unsupported operations)"]
 ```
 
-**Missing PEP 249 exceptions** (not provided by the driver):
-- `OperationalError` — subsumed by `DatabaseError`
-- `ProgrammingError` — subsumed by `DatabaseError`
-- `InternalError` — subsumed by `DatabaseError`
-- `DataError` — subsumed by `DatabaseError`
-- `IntegrityError` — subsumed by `DatabaseError`
+The class a server error gets comes from the driver's error-code mapping.
+Observed on CUBRID 11.4:
 
-This means all database-level errors (constraint violations, syntax errors, connection
-issues) are raised as `DatabaseError`. The `sqlalchemy-cubrid` dialect uses
-**string-based message matching** to distinguish disconnect errors from other failures.
+| Error (native code) | CUBRIDdb class |
+|---|---|
+| Syntax error or unknown table (-493) | `ProgrammingError` |
+| NOT NULL (-631), foreign key (-922), unique (-670) | `IntegrityError` |
+| Division by zero (-494) | `IntegrityError` |
+| Failed `CAST` (-181) | `DatabaseError` |
+| Reading a result after `rollback()` (CCI -20040) | `InterfaceError` |
+
+SQLAlchemy wraps the class it receives, so `cubrid://` raises
+`sqlalchemy.exc.IntegrityError` for constraint violations; see
+[Known Issue 9](#9-not-null--foreign-key-violations-on-pycubrid-171-and-earlier) for
+pycubrid. The `sqlalchemy-cubrid` dialect uses **string-based message matching**
+to distinguish disconnect errors from other failures.
 
 ---
 
@@ -6126,7 +7318,7 @@ The dialect relies on these driver-specific APIs:
 |---|---|---|
 | `conn.ping()` | Check connection liveness | `CubridDialect.do_ping()` |
 | `conn.get_last_insert_id()` | Get auto-increment value | `CubridExecutionContext.get_lastrowid()` |
-| `conn.set_autocommit(bool)` | Control autocommit | `CubridDialect.on_connect()` |
+| `conn.set_autocommit(bool)` / `conn.autocommit` | Control autocommit | `CubridDialect.on_connect()`, `set_isolation_level()` (`AUTOCOMMIT` and back), `detect_autocommit_setting()` |
 | `conn.cursor()` | Create cursor | Standard DB-API |
 
 ### Error Code Extraction
@@ -6136,28 +7328,62 @@ The dialect relies on these driver-specific APIs:
 try:
     cursor.execute("invalid sql")
 except CUBRIDdb.DatabaseError as e:
-    code = e.args[0]  # int or str
+    code = e.args[0]  # int
 ```
 
-The dialect's `_extract_error_code()` handles both integer codes and string-embedded
-codes (e.g., `"-21003 Cannot communicate with broker"`).
+The dialect's `_extract_error_code()` reads only an integer `args[0]`. A string
+`args[0]` never carries a code, even when it starts with a number (e.g.
+`"-20004 rows rejected ..."` quoted from application data); releases up to 1.8.0
+parsed such a leading number as a code and could invalidate a working connection
+(#608).
+
+pycubrid keeps only the message in `args` and the server error code in `errno`
+(and `code`). `is_disconnect()` reads `errno` for the server codes listed in
+[Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror). pycubrid's
+`str()` also appends a description of `errno` (for example `Communication error`
+for -4 and -671), so the message patterns are matched against `args[0]`, the
+driver's own message, instead.
 
 ---
 
 ## Known Issues
 
-### 1. No `OperationalError` for Disconnect Detection
+### 1. Disconnect detection does not use `OperationalError`
 
-Since the driver doesn't provide `OperationalError`, the dialect cannot use
-`isinstance(e, dbapi.OperationalError)` like MySQL dialects do. Instead, it uses:
-- String pattern matching against 15 known disconnect messages
-- Numeric error code matching for CCI communication errors
+CUBRIDdb 11.3.0.51 defines `OperationalError` (see
+[Exception Hierarchy](#exception-hierarchy)), but the dialect's
+`is_disconnect()` does not classify disconnects by exception class. Instead, it uses:
+- String pattern matching against 16 known disconnect messages
+- Numeric error code matching, on `args[0]` (CUBRIDdb only), for the CCI and CAS
+  codes of a dead or unusable connection: -20004 (`CCI_ER_COMMUNICATION`), -10003
+  (`CAS_ER_COMMUNICATION`; CCI treats both as communication errors), -20002
+  (`CCI_ER_CON_HANDLE`), -20016 (`CCI_ER_CONNECT`) and -10002
+  (`CAS_ER_NO_MORE_MEMORY`; the CAS closes the connection after sending it). Releases
+  up to 1.8.0 listed -4, -10005, -10007, -21003 and -21005 instead (#572): -4 is the
+  server's `ER_INTERRUPTED` (a query interrupted by `KILL QUERY`), so CUBRIDdb
+  invalidated a working connection; -10005 and -10007 are `CAS_ER_TRAN_TYPE` and
+  `CAS_ER_NUM_BIND`; -21003 and -21005 are CUBRID JDBC codes that neither Python
+  driver raises. -20004, which CUBRIDdb raises when its CAS dies mid-transaction, and
+  -10002 were missing (#578).
+- Numeric error code matching, on both drivers, for the server errors that make the
+  broker reset the CAS because its session with `cub_server` is gone: -111
+  (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224
+  (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). After `cub_server` stops or
+  crashes, a connection in a transaction gets -111 and then -224 on every statement
+  until the transaction ends, even after the server is back (#565). -671
+  (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
+  See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
+- Numeric error code matching, on pycubrid's `errno` only, for CAS codes as pycubrid
+  actually receives them: CUBRID's CAS legacy-renumbers `cas_error.h` codes (adds 9000)
+  for a driver, like pycubrid, that never advertises understanding the renewed
+  error-code protocol. -1002 (legacy `CAS_ER_NO_MORE_MEMORY`, i.e. -10002 + 9000) is
+  matched this way (#578).
 
 ### 2. CCI Library Dependency
 
 The driver requires the CCI library to be compiled from source. In CI, this is handled by:
 ```bash
-git clone --branch v11.3.0.51 --depth 1 https://github.com/CUBRID/cubrid-python.git
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules https://github.com/CUBRID/cubrid-python.git
 cd cubrid-python/cci-src && mkdir build_x86_64_release && cd build_x86_64_release
 cmake ../ && make -j$(nproc)
 ```
@@ -6168,6 +7394,12 @@ The standard DB-API `cursor.lastrowid` attribute is not implemented. The dialect
 uses `connection.get_last_insert_id()` instead, with a `SELECT LAST_INSERT_ID()`
 SQL fallback.
 
+The fallback opens a regular cursor on the active DBAPI connection and closes it
+after fetching the ID, including when execution, fetching, or integer conversion
+raises. It does not require server-side cursor support. The pycubrid execution
+context uses the same fallback when `cursor.lastrowid` is unavailable. A native
+driver result of `None` is returned directly without running the fallback query.
+
 ### 4. CUBRID 12.x Compatibility
 
 CUBRID 12 has not yet been released. When available, the driver and dialect will be
@@ -6176,34 +7408,265 @@ tested and the CI matrix updated. Potential concerns:
 - New SQL features may need compiler updates
 - New data types may need type mapping additions
 
+### 5. `NUMERIC` / `DECIMAL` fractional precision is lost
+
+The `CUBRIDdb` C-extension driver truncates the fractional part of
+`NUMERIC` / `DECIMAL` values *below* the DB-API layer: a column storing
+`15.7563` comes back as `15`. Because the digits are discarded inside the
+driver before SQLAlchemy receives the value, no dialect result processor can
+recover them. This is an upstream driver limitation, not a dialect bug.
+
+Use the pure-Python `cubrid+pycubrid://` driver for correct `Decimal`
+round-trips — it returns `Decimal` values natively with full precision
+(verified on CUBRID 11.4). This is one of the reasons `pycubrid` is the
+recommended driver for new projects.
+
+### 6. `BLOB` / `CLOB` reads return a LOB locator
+
+Verified live on CUBRID 10.2 and 11.4, Core and ORM, sync and async, with
+pycubrid 1.8.0 (the supported floor) and pycubrid main (#485;
+`test/test_lob_value_contract.py`, re-run whenever this is re-verified). With
+every released driver, binding `bytes` / `str` into a `BLOB` / `CLOB` column
+stores the full value and `NULL` round-trips as `None`. Selecting a non-NULL
+`BLOB` / `CLOB` column, however, returns the driver's LOB locator instead of
+`bytes` / `str`:
+
+| Driver URL | Non-NULL `BLOB` / `CLOB` read returns |
+|---|---|
+| `cubrid://` (`CUBRIDdb` 11.3) | server file-locator `str` (`'file:...'`) |
+| `cubrid+pycubrid://` (pycubrid 1.8.0 and main) | LOB-handle `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
+| `cubrid+aiopycubrid://` (pycubrid 1.8.0 and main) | the `file_locator` string (binding `LargeBinary` / `BLOB` values, including `None`, works since #500) |
+
+For `LargeBinary` / `BLOB`, SQLAlchemy's result processor then raises `TypeError`.
+To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`),
+or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
+`str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442:
+pycubrid main does not implement it yet either, so `test_lob_value_contract.py`
+xfails the same cases on both the released driver and pycubrid main, strictly —
+a future pycubrid release that fixes this turns the xfail into a failing XPASS
+instead of silently staying green. See also [Types](TYPES.md).
+
+### 7. `executemany` reuses the previous row's value for `None` (dialect guard)
+
+`CUBRIDdb` 11.3.0.51 (the `cubrid://` driver) has two `executemany()` bugs:
+
+- **Wrong data.** Its `_bind_params` skips `None`, and `executemany` prepares
+  the statement once. A `None` parameter therefore keeps the previous row's
+  bound value, so `[(1, 'a'), (2, None)]` stores `(2, 'a')`.
+- **Wrong rowcount.** `cursor.rowcount` reports only the last row's count.
+
+Through SQLAlchemy, these bugs made `text()` and Core `UPDATE`/`DELETE`
+executemany store wrong data. Batched ORM UPDATEs raised `StaleDataError`
+(`expected to update 3 row(s); 1 were matched`). The driver cannot be worked
+around from the outside because `bind_param(i, None)` raises `SystemError`.
+
+**Dialect guard (#502).** `CubridDialect.do_executemany` runs each parameter set
+with `cursor.execute()` and sets `cursor.rowcount` to the total. Each
+`execute()` prepares the statement again, so an unbound `None` becomes NULL. The
+guard always applies, not only when a row contains `None`, because the
+last-row rowcount is wrong for every statement. With the guard,
+`supports_sane_multi_rowcount` is accurate on both drivers. The cost is one
+statement prepare per row on plain executemany. A multi-row Core `insert()`
+that uses insertmanyvalues goes through `do_execute` and does not use the
+guard. An INSERT into a table with a column whose type defines
+`bind_expression()` falls back to executemany (#421), so on `cubrid://` it
+does use the per-row guard. Code that calls `CUBRIDdb`'s `cursor.executemany()` directly, without
+SQLAlchemy, is still affected.
+
+`cubrid+pycubrid://` and `cubrid+aiopycubrid://` bind `None` correctly and sum
+the rowcount, so they keep the driver's prepare-once `executemany`.
+
+The guard will be removed once a fixed `CUBRIDdb` release is the minimum
+supported version. An upstream report to CUBRID/cubrid-python is pending, and
+#502 tracks it.
+
+### 8. Unfinished results after `commit()` / `rollback()`
+
+Verified live on CUBRID 10.2 and 11.4 (#481) with a 500-row result that needs
+several FETCH round trips (pycubrid fetches 100 rows per batch; the broker's
+first response held 16 of these 1000-byte rows). Reading the rest of a sync
+`Result` after `Connection.commit()` / `rollback()` behaves differently per
+driver:
+
+| Driver | After `commit()` | After `rollback()` |
+|---|---|---|
+| `cubrid://` (`CUBRIDdb` 11.3) | all rows | `InterfaceError` (CCI -20040) |
+| `cubrid+pycubrid://` (pycubrid 1.7.1) | **silently returns only the rows already buffered** on a connection that completed an earlier query (the normal state of a pooled connection); `OperationalError` otherwise | same as commit |
+| `cubrid+aiopycubrid://` | all rows: `AsyncConnection.execute()` buffers the whole result before it returns | all rows |
+| raw `pycubrid.aio` cursor (pycubrid 1.7.1) | **silently returns only the buffered rows** | same as commit |
+
+**Fixed in pycubrid 1.8.0:** cubrid-lab/pycubrid#395 makes pycubrid raise
+`InterfaceError` instead of returning a partial result, and the contract tests
+require that behavior. With pycubrid 1.7.1 or earlier, fully consume a result
+before ending its transaction. `AsyncConnection.stream()` is not
+available because the dialect does not support server-side cursors.
+
+### 9. NOT NULL / foreign-key violations on pycubrid 1.7.1 and earlier
+
+Verified live on CUBRID 10.2 and 11.4 (#480). SQLAlchemy wraps the DB-API
+exception class it receives, so the SQLAlchemy exception class depends on the
+driver:
+
+| Violation (native code) | `cubrid://` (`CUBRIDdb` 11.3) | `cubrid+pycubrid://` / `cubrid+aiopycubrid://` (pycubrid 1.7.1) |
+|---|---|---|
+| NOT NULL (-631) | `IntegrityError` | `DatabaseError` |
+| Foreign key (-922) | `IntegrityError` | `DatabaseError` |
+| Unique / primary key (-670) | `IntegrityError` | `IntegrityError` |
+
+**Fixed in pycubrid 1.8.0:** cubrid-lab/pycubrid#390 raises `IntegrityError`
+for NOT NULL and foreign-key violations, matching `CUBRIDdb`, and the contract
+tests require that behavior. With pycubrid 1.7.1 or earlier, catch
+`sqlalchemy.exc.DatabaseError` (the base of `IntegrityError`) for NOT NULL and
+foreign-key failures through pycubrid. The dialect deliberately does not
+reclassify exceptions by message. On every driver the connection or `Session`
+remains usable after `rollback()`.
+
+### 10. pycubrid replaces the session after a CAS restart (dialect re-applies the isolation level)
+
+**Fixed in pycubrid 1.8.0** (cubrid-lab/pycubrid#468, #472), the minimum
+supported version. Before 1.8.0, pycubrid opened a new broker session after
+every driver `commit()` / `rollback()` (the broker reports the CAS as out of
+transaction then), so the level dropped to the server default (READ COMMITTED)
+and session variables were lost (#505). pycubrid 1.8.0 keeps the CAS session
+across `commit()` / `rollback()` and in autocommit mode: before the next request
+it probes an out-of-transaction CAS with `CHECK_CAS` and reconnects only when
+the CAS is gone. `CUBRIDdb` has always kept the same session.
+
+**Residual case: a replaced CAS.** When the CAS does go away (for example a CAS
+restart after a transaction, such as the `APPL_SERVER_MAX_SIZE` memory restart,
+or a broker reset), pycubrid 1.8.0 opens a new session. That session starts at
+the server default isolation level, pycubrid restores only `autocommit`, and
+session state set with raw SQL (`SET @var`, a `SET TRANSACTION` statement you
+run yourself) is lost. Set the level server-side (`isolation_level` in
+`cubrid.conf`) if it must survive this without the dialect.
+
+**Dialect re-apply.** `cubrid+pycubrid://` and `cubrid+aiopycubrid://`
+remember the isolation level they set on each connection and re-apply it
+(`SET TRANSACTION ISOLATION LEVEL` + `COMMIT`) after every commit and rollback,
+only on connections with a configured level. An engine-level
+`isolation_level` survives commits, rollbacks and pool checkins. A
+connection-level `execution_options(isolation_level=...)` survives commits and
+rollbacks while that `Connection` stays open; on checkin SQLAlchemy restores
+the engine level (or the server default when none is configured), and on an
+engine without a configured level checkin stops the re-apply for that
+connection. The re-apply is the first request after the end of the
+transaction, so when the CAS is replaced at that point, it runs on the new
+session and the level is kept (verified with pycubrid 1.8.0 on CUBRID 11.4 by
+killing the CAS right after `commit()`: the level stays SERIALIZABLE, and drops
+to READ COMMITTED without the re-apply). If the re-apply itself fails, the
+commit or rollback still reports success (or the rollback's original exception
+still propagates): the failure is logged as a warning and retried at the start
+of the next transaction, where a second failure raises before any statement
+runs.
+
+**Idle connections with a configured level.** The re-apply's SQL `COMMIT`
+leaves the CAS marked as in transaction, so the broker keeps that CAS bound to
+the pooled connection while it sits idle (`CLIENT_WAIT` in
+`cubrid broker status`; `CLOSE_WAIT` without a configured level). Size the
+broker's `MAX_NUM_APPL_SERVER` for the pool. It also means pycubrid does not
+reconnect such a connection by itself if its CAS is killed while idle: the next
+statement raises `OperationalError`, which the dialect reports as a disconnect,
+so SQLAlchemy discards the connection instead of silently running at the server
+default level. With `create_engine(..., pool_pre_ping=True)` the pool replaces
+it at checkout, and the new connection gets the engine level.
+
+**`AUTOCOMMIT` on pycubrid.** pycubrid 1.8.0 keeps the session in autocommit
+mode, so statements keep the server level that was in effect and session
+variables survive between statements, as on `CUBRIDdb`. The dialect stops
+re-applying a level once a connection is switched to `AUTOCOMMIT`.
+
+### 11. Collection parameters (SET, MULTISET, SEQUENCE)
+
+The drivers bind a Python `list`, `tuple` or `set` for a collection column
+differently (#484; verified on CUBRID 10.2 and 11.4):
+
+| Driver | Binding a `list` / `tuple` / `set` | Reading a collection |
+|---|---|---|
+| pycubrid main (typed collection parameters, cubrid-lab/pycubrid#567) | The dialect wraps the value in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type. `SET`, `MULTISET` and `SEQUENCE` semantics are kept. A `SEQUENCE` takes only a `list` or `tuple`: a `set`/`frozenset` raises `TypeError` ("SEQUENCE is ordered; pass a list or tuple"). | `frozenset` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) with `?decode_collections=true`; raw `bytes` without it |
+| pycubrid 1.8.0 (released) | `ProgrammingError`: pycubrid rejects collection parameters. A `set`/`frozenset` for a `SEQUENCE` raises the same `TypeError` as above, from the dialect. | Same as above |
+| CUBRIDdb 11.3.0.51 | CUBRIDdb binds the value itself, always as a SET host variable. A MULTISET loses its duplicates and a SEQUENCE its order (`[3, 1, 2, 1]` is stored as `{1, 2, 3}`). `None` elements are not supported: `[None]` fails inside the driver with an `UnboundLocalError`, and `[1, None]` with `-494 Cannot coerce host var to type sequence`. | `set` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) of `str` elements, whatever the element type |
+
+The dialect does not change what CUBRIDdb does. On CUBRIDdb, keep collections
+that need duplicates or order out of bound parameters: write the collection
+literal in SQL (`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`), or use
+`cubrid+pycubrid://`. See [Type Mapping, Collection values](TYPES.md#collection-values).
+
+### 12. Ordinary scalar execution never uses pycubrid's `compat.native` prepared core
+
+pycubrid 1.8.0 (the supported floor) added an additive, opt-in sync prepared/typed
+scalar-binding cursor under `pycubrid.compat.native` (INT32, UTF-8 `CHAR` and SQL
+`NULL` only; cubrid-lab/pycubrid#439). Neither `cubrid+pycubrid://` nor
+`cubrid+aiopycubrid://` import or call it: SQLAlchemy keeps using the ordinary
+PEP 249 `execute()` / `executemany()` path (FC41) for every scalar bind — integer,
+UTF-8/CJK string, `NULL`, repeated execution, `executemany`, Core and ORM — on
+every driver tested, with no behavior difference and no dialect change (#483;
+`test/test_scalar_execution_contract.py`, which also asserts the dialect source
+never references `pycubrid.compat` and that `pycubrid.compat.native.connect()` is
+never called by ordinary use). A SQLAlchemy/DB-API integration that uses typed
+prepared execution would be a separate, explicitly designed and released feature,
+not an automatic consequence of `compat.native` existing in the installed driver.
+
 ---
 
 ## Installation Notes
 
-For the pure Python pycubrid dialect variants, install `sqlalchemy-cubrid[pycubrid]` with `pycubrid>=1.3.2,<2.0`. That minimum version is required for native sync and async `ping(False)` support used by `pool_pre_ping`.
+For the pure Python pycubrid dialect variants, install `sqlalchemy-cubrid[pycubrid]` with `pycubrid>=1.8.0,<2.0`. pycubrid 1.8.0 is the minimum because it keeps the CAS session across `commit()` / `rollback()` and ships the fixes the contract tests require ([Known Issues 8 to 10](#8-unfinished-results-after-commit--rollback)); it also provides the native sync and async `ping(False)` used by `pool_pre_ping`.
 
-### From Source (Required for CI)
+The `[pycubrid]` extra supports both sync and async connections. It includes
+`SQLAlchemy[asyncio]`, which supplies `greenlet` on SQLAlchemy 2.0 and 2.1. The
+`[dev]` extra also includes this bridge for async test imports. Bare installation
+keeps its existing SQLAlchemy dependency. The pycubrid driver remains pure Python,
+but `greenlet` may require build tools when no compatible wheel is available.
+
+### PyPI `CUBRID-Python` 9.3.x is not supported
+
+The newest `CUBRID-Python` release on PyPI is 9.3.0.2 (sdist only, uploaded in 2015).
+There is no 11.x release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on
+`CUBRID-Python` without a version bound, so they install 9.3.x. That driver is not
+tested with this dialect. On CUBRID 11.4 it returns `BIGINT` values (including
+`COUNT(*)`) as `str` (#583) and fails parts of the integration suite: autocommit,
+large-object round-trips, fetch shapes, ping and recursive CTEs (#585).
+
+- **The `[cubrid]` and `[cubriddb]` extras are deprecated.** They are kept so that
+  existing installs keep resolving, but they cannot install a supported driver.
+- At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
+  driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
+  older than 11.3. It warns rather than refusing to connect, so existing deployments
+  keep working. To fail fast instead, turn the warning into an error:
+  `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
+- Supported paths: use the recommended pure-Python driver
+  (`pip install "sqlalchemy-cubrid[pycubrid]"`, `cubrid+pycubrid://`), or build CUBRIDdb
+  from source as shown below.
+
+### Building CUBRIDdb from Source
+
+This is the recipe CI uses:
 
 ```bash
-# Clone the driver
-git clone --branch v11.3.0.51 --depth 1 \
+# Clone the driver with its CCI submodule
+git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
   https://github.com/CUBRID/cubrid-python.git
+cd cubrid-python
 
-# Build CCI library
-cd cubrid-python/cci-src
-mkdir -p build_x86_64_release && cd build_x86_64_release
+# Build the CCI library
+mkdir -p cci-src/build_x86_64_release && cd cci-src/build_x86_64_release
 cmake ../ && make -j$(nproc)
+cd ../..
 
-# Install
-cd /path/to/cubrid-python
+# Skip setup.py's own CCI rebuild, then install
+printf '#!/bin/bash\nexit 0\n' > build_cci.sh
 pip install .
 ```
+
+A build from source installs the `cubrid_python` distribution. Its fourth version
+component is a git commit count, not the release tag, so a shallow clone of v11.3.0.51
+reports `11.3.0.0001`.
 
 ### Verify Installation
 
 ```python
 import CUBRIDdb
-print(CUBRIDdb.__version__)  # Should print version string
+print(CUBRIDdb._cubrid.__version__)  # b'11.3.0.0001' for a v11.3.0.51 build; b'9.3.0.0001' is the PyPI release
 ```
 
 ---

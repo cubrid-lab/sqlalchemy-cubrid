@@ -2,17 +2,90 @@ name: CI
 
 on:
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"
   push:
     branches: [main]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  # Determine whether DB-relevant code changed. Docs-only / metadata-only PRs
+  # skip the live integration matrix; anything touching the dialect, tests,
+  # driver setup, deps, or CI runs at least the reduced PR matrix.
+  detect-changes:
+    name: Detect changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+      docs: ${{ steps.filter.outputs.docs }}
+      tooling: ${{ steps.filter.outputs.tooling }}
+      live: ${{ steps.filter.outputs.code == 'true' && (github.event_name != 'pull_request' || steps.filter.outputs.risk == 'true') }}
+      extended: ${{ steps.filter.outputs.code == 'true' && github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - name: Select weekly comparison base
+        id: activity
+        if: github.event_name == 'schedule'
+        run: |
+          base=$(git rev-list -1 --before="7 days ago" HEAD)
+          echo "base=${base:-$(git rev-list --max-parents=0 HEAD)}" >> "$GITHUB_OUTPUT"
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
+        id: filter
+        with:
+          base: ${{ steps.activity.outputs.base || github.event.repository.default_branch }}
+          filters: |
+            docs:
+              - '**/*.md'
+              - 'docs/**'
+            code:
+              - '!{docs/**,*.md,**/*.md,LICENSE,LICENSE.*,NOTICE,llms.txt,.gitignore,.gitattributes}'
+            risk:
+              - 'sqlalchemy_cubrid/dialect.py'
+              - 'sqlalchemy_cubrid/base.py'
+              - 'sqlalchemy_cubrid/compiler.py'
+              - 'sqlalchemy_cubrid/alembic_impl.py'
+              - 'sqlalchemy_cubrid/requirements.py'
+              - 'pyproject.toml'
+              - 'setup.cfg'
+              - 'Makefile'
+              - 'docker-compose.yml'
+              - 'scripts/**'
+              - '.github/workflows/**'
+              - 'sqlalchemy_cubrid/aio_pycubrid_dialect.py'
+              - 'sqlalchemy_cubrid/pycubrid_dialect.py'
+              - 'sqlalchemy_cubrid/_compat.py'
+              - 'sqlalchemy_cubrid/dml.py'
+              - 'sqlalchemy_cubrid/types.py'
+              - 'sqlalchemy_cubrid/__init__.py'
+              - 'test/test_integration*.py'
+              - 'test/test_driver_differential.py'
+              - 'test/test_transactional_ddl.py'
+              - 'test/test_server_restart.py'
+              - 'test/fixtures/**'
+            tooling:
+              - 'scripts/**'
+              - '.github/**'
+              - 'Makefile'
+              - 'pyproject.toml'
+              - 'setup.cfg'
+              - 'test/test_*workflow*.py'
+              - 'test/test_ci_policy.py'
+
   doc-lint:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docs == 'true'
     name: Documentation lint
-    uses: cubrid-lab/.github/.github/workflows/doc-lint.yml@main
+    uses: cubrid-lab/.github/.github/workflows/doc-lint.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
     with:
       exclude: "node_modules/,vendor/"
       fail-on-issue: false  # advisory mode during initial rollout
@@ -23,29 +96,62 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install pinned ruff from pyproject.toml
         run: pip install -e ".[dev]"
-      - name: Ruff check
-        run: ruff check sqlalchemy_cubrid/ test/
-      - name: Ruff format check
-        run: ruff format --check sqlalchemy_cubrid/ test/
+      - name: Lint maintained Python sources
+        run: make lint
+      - name: Lint CHANGELOG structure
+        run: python scripts/lint_changelog.py
+      - name: llms-full.txt and root llms.txt are in sync with source docs
+        run: |
+          python scripts/generate_llms_full.py
+          # --porcelain also reports a generated file that was deleted from the
+          # commit and recreated untracked, which `git diff` would miss.
+          if [ -n "$(git status --porcelain -- docs/llms-full.txt llms.txt)" ]; then
+            echo "::error::docs/llms-full.txt or llms.txt is stale or missing. Edit docs/llms.txt (the canonical index), run 'python scripts/generate_llms_full.py' and commit the result."
+            git status --short -- docs/llms-full.txt llms.txt
+            git diff -- docs/llms-full.txt llms.txt
+            exit 1
+          fi
+
+  typecheck:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.13"
+            sqlalchemy-version: "2.1.1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install type-check dependencies
+        run: pip install -e ".[dev,alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
+      - name: Check strict typing and report dependency versions
+        run: make typecheck
 
   # ──────────────────────────────────────────
   # Job 2: Offline tests (no DB needed)
   # ──────────────────────────────────────────
   offline-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.12"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
@@ -53,31 +159,90 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install pytest-cov alembic tomli
+      - name: Run representative PR smoke tests
+        if: github.event_name == 'pull_request'
+        run: python -m pytest test/test_compiler.py test/test_types.py test/test_pycubrid_dialect.py -m "not integration and not repo" -q --tb=short
       - name: Run offline tests with coverage
+        if: github.event_name != 'pull_request'
         run: |
           python -m pytest \
             test/ \
-            --ignore=test/test_integration.py \
-            --ignore=test/test_suite.py \
-            --ignore=test/test_aio_integration.py \
-            --ignore=test/test_regression.py \
+            -m "not integration and not repo" \
             -v --tb=short \
             --cov=sqlalchemy_cubrid \
             --cov-report=term-missing \
             --cov-fail-under=95
       - name: Upload coverage
-        if: matrix.python-version == '3.12'
-        uses: actions/upload-artifact@v7
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: .coverage
 
+  # Repository-tooling tests (#594): the Makefile `integration` recipe with its
+  # sh/bash signal handling, and the repo scripts, all through subprocesses.
+  # They are kept out of the fast offline lane (`make test`) but stay required
+  # here on every PR and push, on every supported Python (matrix-result fails
+  # unless this job succeeds). Same selection as `make test-repo`.
+  repo-tests:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.tooling == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run repository-tooling tests
+        run: python -m pytest test/ -m repo -v --tb=short
+
+  # CubridImpl reaches Alembic through the alembic.plugins entry point on
+  # Alembic 1.18+ and through the dialect's eager import on 1.7.2-1.17 (#595).
+  # Offline tests pin one release per path; "latest" catches a loader change
+  # in a new Alembic release that could break ``import alembic``.
+  alembic-compat:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.live == 'true'
+    name: alembic-compat (${{ matrix.alembic }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        alembic: ["latest"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.10"
+      - name: Install dependencies
+        env:
+          ALEMBIC: ${{ matrix.alembic }}
+        run: |
+          python -m pip install --upgrade pip
+          if [ "$ALEMBIC" = latest ]; then spec="alembic<2.0"; else spec="alembic==$ALEMBIC"; fi
+          pip install -e ".[dev,pycubrid]" tomli "$spec"
+          python -c "import alembic; print('alembic', alembic.__version__)"
+      - name: Run Alembic registration tests
+        run: |
+          python -m pytest test/test_alembic_plugin.py test/test_alembic_registration.py \
+            test/test_alembic.py test/test_packaging.py -m "not integration" -v --tb=short -rs
+
   sqlalchemy-21-canary:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.extended == 'true'
     runs-on: ubuntu-latest
     continue-on-error: true  # Canary: warn, don't gate. SA pre-releases may break.
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install dependencies with SQLAlchemy pre-release
@@ -89,18 +254,20 @@ jobs:
         run: |
           python -m pytest \
             test/ \
-            --ignore=test/test_integration.py \
-            --ignore=test/test_suite.py \
-            --ignore=test/test_aio_integration.py \
-            --ignore=test/test_regression.py \
+            -m "not integration and not repo" \
             -v --tb=short
 
   packaging-smoke-test:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.live == 'true'
     runs-on: ubuntu-latest
-    needs: [offline-tests]
+    strategy:
+      fail-fast: false
+      matrix:
+        sqlalchemy-version: ["2.1.1"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
       - name: Install build tool
@@ -112,14 +279,21 @@ jobs:
       - name: Smoke test wheel install
         run: |
           python -m venv /tmp/test-wheel
-          /tmp/test-wheel/bin/pip install dist/*.whl
+          /tmp/test-wheel/bin/pip install dist/*.whl "SQLAlchemy==${{ matrix.sqlalchemy-version }}"
           cd /tmp
           /tmp/test-wheel/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
           /tmp/test-wheel/bin/python -c "from sqlalchemy_cubrid import insert, merge, JSON, SET"
-          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='sqlalchemy.dialects') if ep.name.startswith('cubrid')}; assert 'cubrid' in eps, f'Missing cubrid entry point, found: {list(eps.keys())}'; assert 'cubrid.cubrid' in eps; assert 'cubrid.pycubrid' in eps; assert 'cubrid.aiopycubrid' in eps; print(f'Found {len(eps)} dialect entry points'); [print(f'  {name} -> {ep.load().__module__}.{ep.load().__name__}') for name, ep in sorted(eps.items())]"
+          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='sqlalchemy.dialects') if ep.name.startswith('cubrid')}; assert 'cubrid' in eps, f'Missing cubrid entry point, found: {list(eps.keys())}'; assert 'cubrid.cubrid' in eps; assert 'cubrid.pycubrid' in eps; assert 'cubrid.aiopycubrid' in eps; print(f'Found {len(eps)} dialect entry points'); [print(f'  {name} -> {ep.load().__module__}.{ep.load().__name__}') for name, ep in sorted(eps.items()) if name != 'cubrid.aiopycubrid']"
           /tmp/test-wheel/bin/pip install alembic
-          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='alembic.ddl') if ep.name == 'cubrid'}; assert 'cubrid' in eps; cls = eps['cubrid'].load(); print(f'alembic.ddl cubrid -> {cls.__module__}.{cls.__name__}')"
+          /tmp/test-wheel/bin/python -c "from sqlalchemy.dialects import registry; from alembic.ddl.impl import _impls; names = [registry.load(n).name for n in ('cubrid', 'cubrid.pycubrid', 'cubrid.aiopycubrid')]; assert set(names) == {'cubrid'}, names; cls = _impls['cubrid']; print(f'alembic impl for cubrid -> {cls.__module__}.{cls.__name__}'); assert cls.__module__ == 'sqlalchemy_cubrid.alembic_impl'"
           /tmp/test-wheel/bin/python -c "import pathlib, sqlalchemy_cubrid; pkg_dir = pathlib.Path(sqlalchemy_cubrid.__file__).parent; assert (pkg_dir / 'py.typed').exists(), 'py.typed marker missing'; print('py.typed marker: OK')"
+      - name: Smoke test pycubrid wheel extra without ambient packages
+        run: |
+          python -m venv /tmp/test-wheel-pycubrid
+          wheels=(dist/*.whl)
+          /tmp/test-wheel-pycubrid/bin/pip install "${wheels[0]}[pycubrid]" "SQLAlchemy==${{ matrix.sqlalchemy-version }}"
+          cd /tmp
+          /tmp/test-wheel-pycubrid/bin/python -c "import asyncio, greenlet; from sqlalchemy.ext.asyncio import create_async_engine; engine = create_async_engine('cubrid+aiopycubrid://dba@localhost:33000/testdb'); assert engine.dialect.is_async; asyncio.run(engine.dispose()); print('Async engine creation: OK')"
       - name: Smoke test sdist install
         run: |
           python -m venv /tmp/test-sdist
@@ -127,14 +301,61 @@ jobs:
           cd /tmp
           /tmp/test-sdist/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
 
-  integration-tests:
+  live-smoke:
+    needs: [detect-changes, lint, typecheck, offline-tests]
+    if: needs.detect-changes.outputs.extended == 'true'
+    name: Live CUBRID smoke
+    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
+    with:
+      cubrid-version: "11.4"
+      python-version: "3.12"
+      cubrid-test-url: "cubrid+pycubrid://dba@localhost:33000/testdb"
+      setup-command: >-
+        python -m pip install --upgrade pip &&
+        pip install -e '.[pycubrid,alembic]' pytest
+      test-command: >-
+        python -m pytest test/test_integration.py test/test_regression.py
+        -v --tb=short
+
+  make-integration:
+    needs: [detect-changes, lint, typecheck, offline-tests]
+    if: needs.detect-changes.outputs.extended == 'true'
+    # `make integration` exactly as a contributor runs it with the default,
+    # recommended driver (#575): a run-owned Compose project, the readiness
+    # wait and every `integration`-marked test in one pytest session through
+    # cubrid+pycubrid://. The steps of integration-tests run chosen files
+    # separately and do not cover this session (capability probes, fuzz,
+    # metamorphic, dogfood ORM, pool stress and UUID contract tests). The
+    # INTEGRATION_DRIVER=cubriddb variant runs nightly and as the release gate in
+    # integration-full.yml.
+    name: make integration (pycubrid, CUBRID 11.4)
     runs-on: ubuntu-latest
-    needs: [lint, offline-tests, packaging-smoke-test]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - name: Install project
+        run: pip install -e ".[dev,pycubrid]"
+      - name: Run make integration
+        env:
+          CUBRID_VERSION: "11.4"
+        run: |
+          set -o pipefail
+          make integration INTEGRATION_DRIVER=pycubrid 2>&1 | tee make-integration.log
+      - name: Guard against an all-skipped make integration run (#486)
+        run: python -m scripts.check_not_all_skipped make-integration.log --label "make integration (pycubrid)"
+
+  integration-tests:
+    needs: [detect-changes, lint, typecheck, offline-tests]
+    if: needs.detect-changes.outputs.live == 'true'
+    # Explicit name: the pycubrid-compliance-sqlalchemy matrix value is only the
+    # pycubrid compliance lane's pin, not the SQLAlchemy version of the job.
+    name: integration-tests (${{ matrix.python-version }}, ${{ matrix.cubrid-version }})
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        python-version: ["3.10", "3.14"]
-        cubrid-version: ["11.4", "11.2", "11.0", "10.2"]
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"}]}' || '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"},{"python-version":"3.10","cubrid-version":"10.2","pycubrid-compliance-sqlalchemy":"2.0.53"}]}') }}
     services:
       cubrid:
         image: cubrid/cubrid:${{ matrix.cubrid-version }}
@@ -149,8 +370,8 @@ jobs:
           --health-retries 10
           --health-start-period 30s
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -211,19 +432,23 @@ jobs:
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          python -m pytest test/test_integration.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+          python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
 
       - name: Run async integration tests
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
           # Release-verification: install the released pycubrid within the declared
-          # support range ([pycubrid] extra = pycubrid>=1.3.2,<2.0) so async integration
+          # support range ([pycubrid] extra = pycubrid>=1.8.0,<2.0) so async integration
           # runs against a supported release (pytest-asyncio already comes from the [dev]
           # extra installed above). Testing against pycubrid@main (HEAD) is
           # handled separately by upstream-canary.yml.
           pip install -e ".[pycubrid]"
-          python -m pytest test/test_aio_integration.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_aio_integration.py test/test_lob_value_contract.py test/test_scalar_execution_contract.py -v --tb=short | tee async-integration.log
+          python -m scripts.check_not_all_skipped async-integration.log --label "Run async integration tests"
 
       - name: Run pycubrid sync integration tests
         env:
@@ -238,51 +463,147 @@ jobs:
           e.dispose()
           print('pycubrid sync: connected')
           "
-          python -m pytest test/test_integration.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_integration.py test/test_alembic_registration.py \
+            test/test_show_create_table_server_output.py \
+            test/test_unique_constraint_fallback.py test/test_lob_value_contract.py \
+            test/test_scalar_execution_contract.py -v --tb=short | tee pycubrid-sync-integration.log
+          python -m scripts.check_not_all_skipped pycubrid-sync-integration.log --label "Run pycubrid sync integration tests"
+
+      - name: Run driver-differential comparison (required)
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          # Fails the step when no comparison ran and passed (all skipped or
+          # none collected); see test/conftest.py and #486.
+          CUBRID_REQUIRE_DRIVER_DIFFERENTIAL: "1"
+          VERSION_REPORT_TITLE: "Driver-differential versions (Python ${{ matrix.python-version }}, CUBRID ${{ matrix.cubrid-version }})"
+        run: |
+          CUBRIDDB_SOURCE_REF="$(git -C /tmp/cubrid-python describe --tags --always)" \
+            python -m scripts.report_driver_versions
+          python -m pytest test/test_driver_differential.py -v --tb=short -rs
+
+      - name: Run transactional DDL tests (#503)
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          # Feeds Alembic's offline --sql output to csql inside the service container.
+          CUBRID_CSQL: "docker exec -i ${{ job.services.cubrid.id }} csql -u dba testdb"
+          # Fail instead of skip when a driver, the server or csql is unavailable.
+          CUBRID_REQUIRE_TRANSACTIONAL_DDL: "1"
+        run: |
+          python -m pytest test/test_transactional_ddl.py -v --tb=short -rs
 
       - name: Run regression tests
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
-          python -m pytest test/test_regression.py -v --tb=short
+          set -o pipefail
+          python -m pytest test/test_regression.py -v --tb=short | tee regression.log
+          python -m scripts.check_not_all_skipped regression.log --label "Run regression tests"
 
-      - name: Run SQLAlchemy dialect compliance suite
+      - name: Run SQLAlchemy dialect compliance suite (gating, CUBRIDdb)
+        if: matrix.python-version == '3.14' && matrix.cubrid-version == '11.4'
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          CUBRID_STRICT_KNOWN_FAILURES: "1"
+        run: |
+          # Lane cubrid@sa2.0 in test/known_failures.txt. The baseline is a
+          # SQLAlchemy-version-specific snapshot (suite parametrization changes
+          # between releases). Pin the gating run to the captured version; a
+          # SQLAlchemy bump requires recapturing the baseline.
+          pip install "sqlalchemy==2.0.53"
+          python -m pytest test/test_suite.py \
+            --dburi="$CUBRID_TEST_URL" \
+            -v --tb=short
+
+      - name: Run SQLAlchemy dialect compliance suite (non-gating, other cells)
+        if: matrix.python-version != '3.14' || matrix.cubrid-version != '11.4'
+        continue-on-error: true
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
         run: |
           python -m pytest test/test_suite.py \
             --dburi="$CUBRID_TEST_URL" \
-            -v --tb=short || true
+            -v --tb=short
+
+      - name: Run SQLAlchemy dialect compliance suite (gating, released pycubrid)
+        # Run even when an earlier step (e.g. the CUBRIDdb lane) failed, so one
+        # lane's failure cannot hide the other's result; the job still fails.
+        if: ${{ !cancelled() }}
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+          CUBRID_STRICT_KNOWN_FAILURES: "1"
+          VERSION_REPORT_TITLE: "pycubrid compliance lane versions (Python ${{ matrix.python-version }}, CUBRID ${{ matrix.cubrid-version }})"
+        run: |
+          # Lane pycubrid@sa<major.minor> in test/known_failures.txt (#463):
+          # only entries tagged for this lane are strict-xfailed, so the
+          # CUBRIDdb baseline cannot hide a pycubrid regression or vice versa.
+          # Both the recommended released pycubrid and SQLAlchemy are pinned to
+          # the versions the lane baseline was captured with; bumping either
+          # requires recapturing that lane (see docs/DEVELOPMENT.md).
+          pip install "pycubrid==1.8.0" "sqlalchemy[asyncio]==${{ matrix.pycubrid-compliance-sqlalchemy }}"
+          python -m scripts.report_driver_versions
+          python -m pytest test/test_suite.py \
+            --dburi="$CUBRID_TEST_URL" \
+            -v --tb=short
+
+      - name: Run cub_server stop/start pool recovery tests (#565)
+        # Last step: it stops and restarts cub_server in the service container.
+        if: ${{ !cancelled() }}
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          CUBRID_TEST_DOCKER_CONTAINER: ${{ job.services.cubrid.id }}
+          # Fail instead of skip when a driver or the container is unavailable.
+          CUBRID_REQUIRE_SERVER_RESTART: "1"
+        run: |
+          python -m pytest test/test_server_restart.py -v --tb=short -rs
 
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
-    needs: [lint, offline-tests, packaging-smoke-test, integration-tests]
+    needs: [detect-changes, lint, doc-lint, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, alembic-compat, live-smoke, make-integration]
     steps:
-      - name: Check results
+      - name: Check selected job results
+        env:
+          R_DETECT_CHANGES: ${{ needs.detect-changes.result }}
+          E_DETECT_CHANGES: 'true'
+          R_LINT: ${{ needs.lint.result }}
+          E_LINT: 'true'
+          R_DOC_LINT: ${{ needs.doc-lint.result }}
+          E_DOC_LINT: ${{ needs.detect-changes.outputs.docs }}
+          R_TYPECHECK: ${{ needs.typecheck.result }}
+          E_TYPECHECK: ${{ needs.detect-changes.outputs.code }}
+          R_OFFLINE_TESTS: ${{ needs.offline-tests.result }}
+          E_OFFLINE_TESTS: ${{ needs.detect-changes.outputs.code }}
+          R_PACKAGING_SMOKE_TEST: ${{ needs.packaging-smoke-test.result }}
+          E_PACKAGING_SMOKE_TEST: ${{ needs.detect-changes.outputs.live }}
+          R_INTEGRATION_TESTS: ${{ needs.integration-tests.result }}
+          E_INTEGRATION_TESTS: ${{ needs.detect-changes.outputs.live }}
+          R_REPO_TESTS: ${{ needs.repo-tests.result }}
+          E_REPO_TESTS: ${{ needs.detect-changes.outputs.tooling }}
+          R_ALEMBIC_COMPAT: ${{ needs.alembic-compat.result }}
+          E_ALEMBIC_COMPAT: ${{ needs.detect-changes.outputs.live }}
+          R_LIVE_SMOKE: ${{ needs.live-smoke.result }}
+          E_LIVE_SMOKE: ${{ needs.detect-changes.outputs.extended }}
+          R_MAKE_INTEGRATION: ${{ needs.make-integration.result }}
+          E_MAKE_INTEGRATION: ${{ needs.detect-changes.outputs.extended }}
         run: |
-          echo "## CI Matrix Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Lint | ${{ needs.lint.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Offline Tests | ${{ needs.offline-tests.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Packaging Smoke Test | ${{ needs.packaging-smoke-test.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Integration Tests | ${{ needs.integration-tests.result }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Compatibility Matrix" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|---|---|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 11.4** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 11.2** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 11.0** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
-          echo "| **CUBRID 10.2** | 🔄 | — | — | — | 🔄 |" >> $GITHUB_STEP_SUMMARY
-      - name: Fail if required jobs failed
-        if: >-
-          needs.lint.result == 'failure' ||
-          needs.offline-tests.result == 'failure' ||
-          needs.packaging-smoke-test.result == 'failure' ||
-          needs.integration-tests.result == 'failure'
-        run: exit 1
+          set -euo pipefail
+          check() {
+            local job="$1" result="$2" expected="$3"
+            if [[ "$expected" == "true" ]]; then
+              [[ "$result" == "success" ]] || { echo "::error::$job expected success, got $result"; return 1; }
+            else
+              [[ "$result" == "success" || "$result" == "skipped" ]] || { echo "::error::$job got $result"; return 1; }
+            fi
+          }
+          check detect-changes "$R_DETECT_CHANGES" "$E_DETECT_CHANGES"
+          check lint "$R_LINT" "$E_LINT"
+          check doc-lint "$R_DOC_LINT" "$E_DOC_LINT"
+          check typecheck "$R_TYPECHECK" "$E_TYPECHECK"
+          check offline-tests "$R_OFFLINE_TESTS" "$E_OFFLINE_TESTS"
+          check packaging-smoke-test "$R_PACKAGING_SMOKE_TEST" "$E_PACKAGING_SMOKE_TEST"
+          check integration-tests "$R_INTEGRATION_TESTS" "$E_INTEGRATION_TESTS"
+          check repo-tests "$R_REPO_TESTS" "$E_REPO_TESTS"
+          check alembic-compat "$R_ALEMBIC_COMPAT" "$E_ALEMBIC_COMPAT"
+          check live-smoke "$R_LIVE_SMOKE" "$E_LIVE_SMOKE"
+          check make-integration "$R_MAKE_INTEGRATION" "$E_MAKE_INTEGRATION"

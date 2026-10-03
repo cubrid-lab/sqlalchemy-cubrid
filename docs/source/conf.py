@@ -7,13 +7,16 @@ import sys
 
 sys.path.insert(0, os.path.abspath("../.."))
 
+from sqlalchemy_cubrid import __version__ as _package_version
+
 # -- Project information -----------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#project-information
 
 project = "sqlalchemy_cubrid"
 copyright = "2021-2026, Yeongseon Choe, Gyeongjun Paik"
 author = "Yeongseon Choe, Gyeongjun Paik"
-release = "0.3.1"
+release = _package_version
+version = ".".join(release.split(".")[:2])
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration

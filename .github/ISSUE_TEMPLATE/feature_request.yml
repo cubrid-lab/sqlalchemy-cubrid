@@ -1,8 +1,16 @@
 name: Feature Request
 description: Suggest a new feature or enhancement
-title: "[Feature]: "
+title: "feat: "
 labels: ["enhancement"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep the `feat:` title prefix. You do not need to apply labels;
+        maintainers assign priority and size after triage.
+        Keep this body as the current specification; put dated progress in comments.
+        Confirm availability and Assignee ownership before implementation.
+
   - type: textarea
     id: problem
     attributes:
@@ -36,5 +44,45 @@ body:
       label: Additional Context
       description: Add any other context about the feature request here
       placeholder: Related issues, code examples, documentation links, etc.
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: What is included in this issue? What is explicitly excluded?
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and starting point
+      description: Link the baseline commit, relevant files/tests and observed output. Separate source inspection from executed tests; say what is not verified.
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Completion criteria
+      description: Give observable outcomes that decide when this issue is done. For research, state the decision or report to deliver.
+    validations:
+      required: false
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Validation method
+      description: State offline/live needs, environment and the command or manual check if known. Reporters may write unknown; maintainers refine this before implementation.
+    validations:
+      required: false
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and related work
+      description: Link the specific unfinished prerequisite and existing PR/claim. Completed work is a reference, not a blocker.
     validations:
       required: false

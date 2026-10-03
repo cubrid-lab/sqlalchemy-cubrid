@@ -2,16 +2,16 @@
 
 ## Supported Versions
 
-The following versions of sqlalchemy-cubrid are currently supported for security updates:
+sqlalchemy-cubrid is released from a single rolling line on `main` (see
+[RELEASING.md](RELEASING.md)): there are no parallel long-term-maintenance
+branches for older minor/patch releases. Only the **latest published release**
+on [PyPI](https://pypi.org/project/sqlalchemy-cubrid/#history) receives
+security fixes; a report against an older release is evaluated and, if it
+still reproduces, fixed by releasing a new latest version rather than
+backporting to the version originally reported against.
 
-| Version | Status |
-|---------|--------|
-| 1.4.x (Beta) | ✅ Supported |
-| 1.3.x | ✅ Supported |
-| 1.2.x | ✅ Supported |
-| < 1.2 | ❌ Not Supported |
-
-Security patches will be applied to supported versions only. Users are strongly encouraged to upgrade to the latest version.
+Security patches will be applied to the latest version only. Users are
+strongly encouraged to always run the latest release.
 
 ## Reporting a Vulnerability
 

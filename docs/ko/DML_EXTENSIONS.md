@@ -74,6 +74,8 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
+> **제약 — `stmt.inserted.col`와 다중 행 `VALUES` (#371):** 삽입되는 값 참조는 **단일 행** `INSERT` 또는 **executemany**(행 목록을 `Connection.execute(stmt, [rows])`로 전달 — 각 실행이 논리적으로 단일 행)에서만 동작합니다. 인라인 다중 행 `insert(t).values([{...}, {...}])`에서는 지원되지 **않습니다**: CUBRID에는 `VALUES(col)` / 행 별칭 구문이 없어 충돌 행마다 바인딩할 단일 값이 존재하지 않으므로, dialect는 모든 충돌 행을 한 행의 값으로 조용히 갱신하는 대신 `CompileError`를 발생시킵니다. 다중 행 upsert가 필요하면 executemany를 쓰거나, 단일 행 문으로 분리하거나, (삽입 값을 참조하지 않는) 리터럴/표현식 갱신을 쓰거나, `MERGE`를 사용하세요.
+
 ### 인자 형태
 
 `on_duplicate_key_update()` 메서드는 세 가지 인자 형태를 받습니다:
@@ -143,6 +145,7 @@ VALUES (1, 'alice', 'alice@example.com')
 
 - `REPLACE INTO`는 모든 표준 INSERT 값 패턴(`values`, `from_select` 등)을 사용합니다
 - 중복 키 충돌 시 CUBRID는 기존 행을 새 행으로 교체합니다
+- `prefix_with()` 텍스트는 `insert()`와 똑같이 동사와 `INTO` 사이에 렌더링됩니다(`replace(users).prefix_with("/* audit */")`는 `REPLACE /* audit */ INTO users ...`로 렌더링). 접두사, 주석, 리터럴, 식별자는 `INSERT INTO` 텍스트를 포함하더라도 재작성되지 않습니다
 - `REPLACE INTO`는 `ON DUPLICATE KEY UPDATE`를 지원하지 않습니다. 제자리 갱신에는 `insert(...).on_duplicate_key_update(...)`를 사용하세요
 
 ---
@@ -346,7 +349,7 @@ with engine.begin() as conn:
     conn.execute(text("TRUNCATE TABLE temp_data"))
 ```
 
-방언은 `TRUNCATE`를 오토커밋 감지 패턴에 포함하므로, 오토커밋 활성화 상태로 실행됩니다 (CUBRID의 암시적 DDL 커밋 동작과 일치).
+`TRUNCATE`는 다른 문과 마찬가지로 연결의 트랜잭션 안에서 실행되며, 위의 `engine.begin()` 블록이 정상 종료 시 커밋합니다. 방언은 SQL 텍스트를 기준으로 오토커밋하지 않습니다 ([SQL 텍스트 기반 오토커밋 없음](CONNECTION.md#sql-텍스트-기반-오토커밋-없음) 참고).
 
 ---
 

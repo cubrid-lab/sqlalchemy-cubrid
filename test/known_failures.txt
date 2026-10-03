@@ -1,0 +1,238 @@
+# Known failures for the SQLAlchemy dialect compliance suite (test/test_suite.py)
+#
+# Purpose: this manifest lets the official SQLAlchemy suite GATE CI (see #380,
+# #463) while tolerating the documented set of currently-failing tests.
+# conftest.py reads this file and applies a strict xfail to each node id listed
+# for the CURRENT LANE: a listed test that FAILS is xfailed (tolerated), but a
+# listed test that PASSES becomes an XPASS -> a hard failure, forcing the entry
+# to be trimmed. Any NEW failure not listed for the lane fails CI.
+#
+# LANES. Every entry is keyed to the lanes it is known to fail in:
+#
+#   <node id>  <lane> [<lane> ...]
+#
+#   where <lane> = <driver>@sa<major.minor>, or
+#                  <driver>@sa<major.minor>@cubrid<major.minor> for a failure
+#                  that occurs on one CUBRID server version only. Only the
+#                  (lane, server) pairs CI gates are accepted:
+#                  cubrid@sa2.0@cubrid11.4, pycubrid@sa2.0@cubrid10.2 and
+#                  pycubrid@sa2.1@cubrid11.4 (test/conftest.py).
+#
+#   cubrid@sa2.0     cubrid://          CUBRIDdb (cubrid-python v11.3.0.51),
+#                                       SQLAlchemy 2.0.53, gated on CUBRID 11.4
+#   pycubrid@sa2.0   cubrid+pycubrid:// pycubrid 1.8.0, SQLAlchemy 2.0.53,
+#                                       gated on CUBRID 10.2
+#   pycubrid@sa2.1   cubrid+pycubrid:// pycubrid 1.8.0, SQLAlchemy 2.1.1,
+#                                       gated on CUBRID 11.4
+#
+# Every lane was captured on both CUBRID 10.2 and 11.4 (fresh databases).
+#
+# The driver comes from the --dburi dialect, the SQLAlchemy major.minor from
+# the installed SQLAlchemy and the server version from the connection, so an
+# entry only ever xfails in the lanes it names:
+# a pycubrid-only failure cannot hide a CUBRIDdb regression and vice versa.
+# There is no "all lanes" wildcard. A test that fails in several lanes lists
+# each one, and strictness is per lane: when a test starts passing on one
+# driver only, the XPASS in that lane forces removal of just that lane tag.
+# An entry without a lane tag, or with an unknown one, is a load error.
+#
+# In a gating cell (CUBRID_STRICT_KNOWN_FAILURES=1), conftest.py also fails
+# the run when the lane has no entries at all (no reviewed baseline, so a new
+# driver or SQLAlchemy minor cannot silently gate on an empty list), when an
+# entry for the lane matches no collected node (stale baseline), when a listed
+# entry is SKIPPED instead of xfailed, or when the installed SQLAlchemy is not
+# the release the lane was captured with. Each node id may appear only once.
+#
+# Node ids are version-agnostic w.r.t. the CUBRID server: the live suite
+# parametrizes class names with a server-version suffix (e.g.
+# ...Test_cubrid+pycubrid_11_4_6_1963); conftest.py strips that suffix before
+# matching, so entries here use the bare class name.
+#
+# BASELINES ARE SQLALCHEMY- AND DRIVER-VERSION-SPECIFIC. SQLAlchemy changes
+# suite parametrization between releases (e.g. the ObjectKind flag string
+# ordering in ComponentReflectionTest.test_get_multi_columns changed between
+# 2.0.36 and 2.0.53; 2.1 adds NameDenormalizeTest and fixes the HasTableTest
+# view DDL), so each lane is a snapshot of the exact versions above, and the
+# gating CI steps pin them. Bumping SQLAlchemy or the pinned pycubrid requires
+# recapturing the affected lane: run the suite for that lane without
+# CUBRID_STRICT_KNOWN_FAILURES, diff the failures, classify each one, and edit
+# only that lane's tags. See docs/DEVELOPMENT.md ("SQLAlchemy compliance
+# lanes").
+#
+# Each group links to the follow-up issue that tracks the real fix. Removing an
+# entry (fixing the bug) is the goal; adding one requires a linked reason.
+#
+# CLASSIFICATION (every group is exactly one of these — see the [CATEGORY] tag):
+#   [DIALECT BUG]          sqlalchemy-cubrid must fix this. Actively tracked.
+#   [DRIVER LIMITATION]    CUBRIDdb or pycubrid behaves differently below the
+#                          dialect; cannot be fixed in the dialect (the other
+#                          driver often passes). Documented, driver-qualified.
+#   [BACKEND / SUITE LIMIT] CUBRID does not support the feature, or the
+#                          SQLAlchemy compliance suite asserts backend-specific
+#                          behavior a third-party dialect cannot satisfy. Stable
+#                          by design; will not be "fixed" in the dialect.
+# Tests that are not applicable to CUBRID at all are excluded in
+# sqlalchemy_cubrid/requirements.py (with a reason) instead of listed here.
+#
+# RECAPTURED IN #463 after fixing requirements.py: every requirement property
+# returned the same shared exclusions.open()/closed() object, and SQLAlchemy's
+# stacked @requires decorators extend that object in place, so after
+# collection every "open" requirement was effectively closed and large parts of
+# the suite silently skipped. With fresh objects ~300 more tests run per lane;
+# the entries below classify the failures that surfaced. The same change opened
+# reflects_pk_names and implicitly_named_constraints (the suite reported
+# unexpected successes) and gated unicode_ddl on a UTF-8 database.
+#
+# As of this baseline (entries per lane, CUBRID 11.4 / 10.2):
+#   cubrid@sa2.0 68 / 61, pycubrid@sa2.0 (gated on 10.2 only) 54,
+#   pycubrid@sa2.1 58 / 51;
+# 0 XPASS, 0 unclassified. The 7 server-specific entries are
+# BizarroCharacterTest::test_reflect_comments on 11.4. The pycubrid lanes were
+# re-captured with pycubrid 1.8.0 on fresh CUBRID 10.2 and 11.4 databases
+# (#559): the results are identical to 1.7.1, so the fixes for
+# cubrid-lab/pycubrid#390, #395, #430 and #431 changed no compliance result
+# (the #480-#482 integration contract tests cover those fixes). Every
+# [DIALECT BUG] group found by the #463 recapture links its tracking issue
+# (#529-#535); the
+# #535 JSON as_numeric() group was removed when it was fixed.
+
+# [BACKEND / SUITE LIMIT] ComponentReflectionTest quoted names: CUBRID folds
+# every identifier, quoted or not, to lower case, so a constraint or index
+# created as "FK_users_id" / "mixedCaseIndex" reflects as fk_users_id /
+# mixedcaseindex. Server identifier rule (see NameDenormalizeTest).
+test/test_suite.py::ComponentReflectionTest::test_get_foreign_keys_quoted_name[FK_users_id]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_foreign_keys_quoted_name[mixedCaseName]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_indexes_quoted_name[IX_test_data]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_indexes_quoted_name[mixedCaseIndex]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_pk_constraint_quoted_name[PK_test_table]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_pk_constraint_quoted_name[mixedCasePK]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints_quoted_name[UQ_email]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ComponentReflectionTest::test_get_unique_constraints_quoted_name[mixedCaseUQ]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] BizarroCharacterTest bracket names: CUBRID also uses
+# [ ] as identifier delimiters, so a table or column named `[brackets]` /
+# `[brack]` cannot be expressed even when double-quoted, and the CREATE TABLE
+# fails with a syntax error. On CUBRID 11.4, reflect_comments also fails for
+# 7 of these names where 10.2 accepts the DDL; they carry server-narrowed tags
+# for the lanes CI gates on 11.4 (cubrid@sa2.0, pycubrid@sa2.1). pycubrid@sa2.0
+# is gated on 10.2 only, so its 11.4 failures are intentionally not listed.
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[(2)-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-(3)-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-(3)-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-col%p-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-col%p-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-plainname-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[[brackets]-plainname-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[per % cent-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-[brack]-not_use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_fk_ref[plain-[brack]-use_composite]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[(2)-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-(3)]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-col%p]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[[brackets]-plainname]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[per % cent-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+test/test_suite.py::BizarroCharacterTest::test_reflect_comments[plain-[brack]]  cubrid@sa2.0@cubrid11.4 pycubrid@sa2.1@cubrid11.4
+
+# [BACKEND / SUITE LIMIT] CTETest (all nodes): the harness deletes rows between
+# tests with one `DELETE FROM some_table`, but `some_table` references itself
+# and CUBRID checks the foreign key per row, so the delete fails with -924
+# ("restricted by the foreign key") and every later setup hits the leftover
+# rows (unique violation). (pycubrid 1.8.0 still raises -924 as DatabaseError
+# rather than IntegrityError: cubrid-lab/pycubrid#390 fixed only -631 and -922.
+# CUBRIDdb raises IntegrityError. The class does not change these failures.)
+test/test_suite.py::CTETest::test_delete_from_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_delete_scalar_subq_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_insert_from_select_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_select_nonrecursive_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_select_recursive_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_update_from_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-not_cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[literal_binds-not_cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-not_cte_named-not_values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::CTETest::test_values_named_via_cte[not_literal_binds-not_cte_named-values_named]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] JSONTest::test_round_trip_custom_json (SQLAlchemy
+# 2.0): CUBRID stores JSON in a normalized form, so the custom deserializer
+# receives '{"key1":"data1"}' rather than the serializer's exact text.
+test/test_suite.py::JSONTest::test_round_trip_custom_json  cubrid@sa2.0 pycubrid@sa2.0
+
+# [BACKEND / SUITE LIMIT] WindowFunctionTest ROWS BETWEEN: CUBRID window
+# functions have no frame clause, so `ROWS BETWEEN ...` is a syntax error. The
+# suite gates these only on window_functions (no frame requirement exists).
+test/test_suite.py::WindowFunctionTest::test_window_rows_between  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::WindowFunctionTest::test_window_rows_between_w_caching  pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] DistinctOnTest (1): CUBRID has no DISTINCT ON (PostgreSQL-only). The dialect
+# correctly renders `.distinct(col)` as plain `SELECT DISTINCT`, and
+# supports_distinct_on is already closed(), but SA's test additionally asserts a
+# PostgreSQL-only deprecation warning that third-party dialects do not emit, so
+# it fails rather than xfails. Stable non-capability, not a dialect bug — #388
+test/test_suite.py::DistinctOnTest::test_distinct_on  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] HasTableTest (8, SQLAlchemy 2.0 only): SQLAlchemy 2.0's define_views hardcodes unquoted `data` (a CUBRID reserved word) in raw CREATE VIEW DDL that bypasses dialect quoting — upstream test-suite limitation, not a dialect bug (#385, closed). SQLAlchemy 2.1 builds the view through CreateView (dialect quoting), so all 8 pass on the sa2.1 lane.
+test/test_suite.py::HasTableTest::test_has_table  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::HasTableTest::test_has_table_cache  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::HasTableTest::test_has_table_nonexistent_schema  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::HasTableTest::test_has_table_schema  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::HasTableTest::test_has_table_temp_table  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::HasTableTest::test_has_table_temp_view  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::HasTableTest::test_has_table_view  cubrid@sa2.0 pycubrid@sa2.0
+test/test_suite.py::HasTableTest::test_has_table_view_schema  cubrid@sa2.0 pycubrid@sa2.0
+
+# [BACKEND / SUITE LIMIT] NameDenormalizeTest (6, SQLAlchemy 2.1 only): the
+# test creates quoted `"ALL_UPPERCASE"` / `"MixedCase"` columns and expects
+# `SELECT *` to return them case-preserved. CUBRID folds every identifier,
+# quoted or not, to lower case, so cursor.description (and the row keys) say
+# `all_uppercase` / `mixedcase`. The Core-select variants, which key rows by the
+# Column objects, pass. A server identifier rule, not a driver or dialect bug.
+test/test_suite.py::NameDenormalizeTest::test_cols_driver_cols[not_use_driver_cols-driver_sql]  pycubrid@sa2.1
+test/test_suite.py::NameDenormalizeTest::test_cols_driver_cols[not_use_driver_cols-text_cols]  pycubrid@sa2.1
+test/test_suite.py::NameDenormalizeTest::test_cols_driver_cols[not_use_driver_cols-text_star]  pycubrid@sa2.1
+test/test_suite.py::NameDenormalizeTest::test_cols_driver_cols[use_driver_cols-driver_sql]  pycubrid@sa2.1
+test/test_suite.py::NameDenormalizeTest::test_cols_driver_cols[use_driver_cols-text_cols]  pycubrid@sa2.1
+test/test_suite.py::NameDenormalizeTest::test_cols_driver_cols[use_driver_cols-text_star]  pycubrid@sa2.1
+
+# [DRIVER LIMITATION] NumericTest (6, CUBRIDdb only): CUBRIDdb C-extension truncates fractional NUMERIC/DECIMAL
+# values below the DBAPI layer (returns 15 for 15.7563), so no dialect result
+# processor can recover them — an upstream C-driver limitation, not a dialect
+# bug. Use cubrid+pycubrid://, which returns Decimal correctly (all pass on the
+# pycubrid lanes). See #386. (test_float_custom_scale is excluded for both
+# drivers via requirements.precision_generic_float_type: CUBRID FLOAT is single
+# precision.)
+test/test_suite.py::NumericTest::test_decimal_coerce_round_trip  cubrid@sa2.0
+test/test_suite.py::NumericTest::test_enotation_decimal  cubrid@sa2.0
+test/test_suite.py::NumericTest::test_enotation_decimal_large  cubrid@sa2.0
+test/test_suite.py::NumericTest::test_float_as_decimal  cubrid@sa2.0
+test/test_suite.py::NumericTest::test_float_as_float  cubrid@sa2.0
+test/test_suite.py::NumericTest::test_float_coerce_round_trip  cubrid@sa2.0
+
+# [BACKEND / SUITE LIMIT] ReturningGuardsTest (6): CUBRID has no RETURNING and the dialect rejects it at
+# COMPILE time (CompileError) — earlier and cleaner than SA's guard test expects
+# (it expects a runtime DBAPIError/StatementError after the statement reaches the
+# DB). insert/update/delete_returning are already closed(); this is a stable
+# behavior difference, not a dialect bug — #388
+test/test_suite.py::ReturningGuardsTest::test_delete_many  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ReturningGuardsTest::test_delete_single  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ReturningGuardsTest::test_insert_many  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ReturningGuardsTest::test_insert_single  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ReturningGuardsTest::test_update_many  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+test/test_suite.py::ReturningGuardsTest::test_update_single  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [BACKEND / SUITE LIMIT] TrueDivTest::test_truediv_float (1): CUBRID FLOAT is
+# single precision, so `Float(5.52) / Float(2.4)` returns 2.299999952316284,
+# not 2.3 — a backend precision limit, not a dialect bug — #388
+test/test_suite.py::TrueDivTest::test_truediv_float[5.52-2.4-2.3]  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
+
+# [DRIVER LIMITATION] TrueDivTest::test_truediv_integer_bound (1, CUBRIDdb only):
+# `literal(15) / literal(10)` must yield 1.5. PASSES on cubrid+pycubrid://
+# (returns Decimal('1.5')); the C-extension gating cell reports it differently — #388
+test/test_suite.py::TrueDivTest::test_truediv_integer_bound  cubrid@sa2.0

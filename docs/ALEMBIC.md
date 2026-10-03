@@ -24,12 +24,12 @@ Install sqlalchemy-cubrid with the `alembic` extra:
 pip install sqlalchemy-cubrid[alembic]
 ```
 
-This pulls in Alembic ≥ 1.7 as a dependency. The CUBRID Alembic implementation
-(`CubridImpl`) is registered automatically via the `alembic.ddl` entry point —
+This pulls in Alembic ≥ 1.7.2 as a dependency. The CUBRID Alembic implementation
+(`CubridImpl`) is registered automatically when the CUBRID dialect loads —
 no manual configuration is needed.
 
-> **Note**: If you install Alembic separately (`pip install alembic`), it will
-> still auto-discover the CUBRID implementation as long as `sqlalchemy-cubrid`
+> **Note**: If you install Alembic separately (`pip install alembic`), the
+> CUBRID implementation is still registered as long as `sqlalchemy-cubrid`
 > is installed in the same environment.
 
 ---
@@ -72,8 +72,21 @@ def run_migrations_online():
 
 ### env.py Setup
 
-The standard Alembic `env.py` works without modification. The `CubridImpl`
-class is auto-discovered when the connection URL uses the `cubrid://` scheme.
+The `CubridImpl` class is registered as soon as any CUBRID URL loads the
+dialect, so `env.py` never needs a CUBRID import. Which template to start from
+depends on the driver:
+
+- **Synchronous URLs** (`cubrid://`, `cubrid+cubriddb://`,
+  `cubrid+pycubrid://`): the standard `env.py` from `alembic init` works
+  without modification.
+- **Async URL** (`cubrid+aiopycubrid://`): use Alembic's async template,
+  `alembic init -t async <dir>`. Its generated `env.py` also works without
+  modification. The standard template's online path calls the synchronous
+  `engine_from_config()`, which cannot drive the async driver and fails with
+  `sqlalchemy.exc.MissingGreenlet`; offline `--sql` mode works with either
+  template. Verified on CUBRID 11.4 with Alembic 1.7.2 and 1.20.0:
+  `upgrade head` / `downgrade base` through an unmodified async-template
+  `env.py` (covered by `test/test_alembic_registration.py`).
 
 A minimal `env.py` for online migrations:
 
@@ -145,38 +158,169 @@ alembic history --verbose
 
 ## CUBRID-Specific Behavior
 
-### DDL Auto-Commit
+### Transactional DDL
 
-CUBRID implicitly commits every DDL statement. The `CubridImpl` sets
-`transactional_ddl = False`, which tells Alembic:
+CUBRID DDL is transactional. With client autocommit off — the dialect turns it
+off on every connection — `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`,
+`TRUNCATE`, `CREATE INDEX` (including `WITH ONLINE [PARALLEL n]`),
+`CREATE VIEW`, `CREATE SERIAL` and `RENAME TABLE` run inside the current
+transaction: `ROLLBACK` undoes them, and they never commit DML issued earlier in
+the same transaction (see the
+[CUBRID manual](https://www.cubrid.org/manual/en/11.4/sql/transaction.html),
+where `ROLLBACK WORK` undoes an `ALTER TABLE … DROP`). The only auto-commit
+behavior in CUBRID is client autocommit (`CCI_DEFAULT_AUTOCOMMIT`, or csql's
+default auto-commit mode), which commits after every statement, DDL or DML.
 
-- **No transaction wrapping** around DDL statements
-- Each `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE` commits immediately
-- A failed migration may leave the database in a partially-migrated state
+`CubridImpl` therefore sets `transactional_ddl = True`, which tells Alembic:
 
-**Implication**: If a migration with multiple DDL operations fails halfway
-through, you cannot simply roll back — the earlier operations have already
-been committed. Write migrations with small, atomic steps.
+- **The whole `alembic upgrade` runs in one transaction** by default. If any
+  revision fails, every revision in that run is rolled back, including the
+  `alembic_version` update, so the database stays at its starting revision.
+- With `transaction_per_migration=True` in `context.configure()`, each
+  revision runs and commits in its own transaction instead: revisions that
+  finished stay applied, and the failing revision is rolled back as a whole.
+- `context.is_transactional_ddl()` returns `True`.
 
-### Auto-Discovery
+**Schema locks.** Uncommitted DDL keeps its schema lock on the table until the
+transaction ends, so other sessions that touch the table wait (as `SCH_S_LOCK`
+waits) for the whole transaction; CUBRID's default `lock_timeout` is unlimited,
+so they wait indefinitely rather than time out. For long migrations, or
+migrations on large tables, set `transaction_per_migration=True` so each revision commits and
+releases its locks as soon as it finishes:
 
-The dialect registers `CubridImpl` via the `alembic.ddl` entry point in
-`pyproject.toml`:
-
-```toml
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
+```python
+# env.py
+context.configure(
+    connection=connection,
+    target_metadata=target_metadata,
+    transaction_per_migration=True,
+)
 ```
 
-When Alembic detects a `cubrid://` connection URL, it automatically loads
-`CubridImpl`. No imports or configuration are required in your migration files.
+Alembic's `autocommit_block()` is not a way to commit part of an upgrade early on
+CUBRID: it switches the connection to the `AUTOCOMMIT` isolation level, which the
+dialect does not accept before #501, and it gives up the upgrade's atomicity.
+Use `transaction_per_migration=True` to commit between revisions instead.
+
+**Offline (`--sql`) scripts.** CUBRID has no `BEGIN` statement (csql rejects it
+with `Syntax error: unexpected 'BEGIN'`); a transaction starts implicitly. The
+CUBRID implementation therefore emits no `BEGIN;` and ends each transaction with
+`COMMIT;` (one per upgrade, or one per revision with
+`transaction_per_migration=True`). Run the script with both
+`--no-auto-commit` and `--no-single-line`:
+
+```bash
+csql -u dba demodb --no-auto-commit --no-single-line -i upgrade.sql
+```
+
+`--no-auto-commit` makes those `COMMIT;` lines the only commit points; in csql's
+default auto-commit mode every statement commits on its own. `--no-single-line`
+makes csql stop at the first failing statement and exit with status 1, so the
+open transaction is rolled back: nothing from the whole upgrade (or, with
+`transaction_per_migration=True`, from the failing revision) is kept. In csql's
+default single-line mode, csql reports the error, **continues with the next
+statements, runs the trailing `COMMIT;` and exits 0**, so a failed script can
+leave partial schema and a bumped `alembic_version`.
+
+!!! note "Changed in 1.8.0"
+    Earlier releases set `transactional_ddl = False`. Alembic still wrapped each
+    revision in its own transaction in online mode, so each revision was already
+    atomic, but a failed `upgrade` kept the revisions before it. Now the whole
+    upgrade is atomic by default; set `transaction_per_migration=True` to keep the
+    previous per-revision behavior.
+
+### Auto-Registration
+
+Alembic picks its migration implementation from a registry keyed by
+`dialect.name`; a `DefaultImpl` subclass adds itself to that registry when its
+module is imported (`CubridImpl.__dialect__ = "cubrid"`). Every CUBRID URL —
+`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://` and
+`cubrid+aiopycubrid://` — has `dialect.name == "cubrid"`. sqlalchemy-cubrid
+imports `sqlalchemy_cubrid.alembic_impl` before Alembic looks the name up, in
+one of two ways depending on the installed Alembic:
+
+| Alembic | Who imports `alembic_impl` | When |
+|---|---|---|
+| 1.18 and later | Alembic, through the `alembic.plugins` entry point that sqlalchemy-cubrid publishes (`_sqlalchemy_cubrid_alembic`) | during `import alembic` |
+| 1.7.2 – 1.17.x | `sqlalchemy_cubrid/dialect.py` | when the CUBRID dialect is loaded (engine creation, or the dialect built from the URL in offline `--sql` mode) |
+
+Either way no imports or configuration are required in `env.py` or your
+migration files. Without Alembic, nothing is registered and nothing is
+logged.
+
+With Alembic 1.18 and later, loading the CUBRID dialect does not import
+Alembic, so applications that never run a migration no longer pay its import
+cost (with Alembic 1.20.0, SQLAlchemy 2.0.54 and Python 3.10, the first
+`create_engine("cubrid+pycubrid://...")` in a fresh process takes about 18 ms
+instead of about 80 ms). The dialect checks the installed package metadata for this, not
+Alembic itself. If Alembic has already been imported, the metadata cannot be
+read, or it does not belong to the `alembic` package that would be imported
+(for example an older copy earlier on `sys.path`), it falls back to the direct
+import, which is harmless.
+
+Importing Alembic 1.18 and later logs `INFO` lines from the
+`alembic.runtime.plugins` logger (`setup plugin alembic.autogenerate.schemas`,
+..., `setup plugin alembic.ext.checkconstraint_byname`), and with
+sqlalchemy-cubrid installed also `setup plugin sqlalchemy_cubrid`. They are
+Alembic's own messages. Since the dialect no longer imports Alembic on these
+versions, they appear only in processes that use Alembic, and only when the
+application routes `INFO` records to a handler, for example with
+`logging.basicConfig(level=logging.INFO)`. With Alembic 1.7.2 – 1.17.x the
+dialect still imports Alembic (about 0.1 s), but those releases log no such
+lines. The dialect leaves the `alembic` logger alone, since its level is the
+application's choice. To hide the lines, raise that logger's level in the
+application's logging setup:
+
+```python
+import logging
+
+logging.getLogger("alembic").setLevel(logging.WARNING)
+```
+
+Alembic 1.18.0 itself logs these lines from a logger literally named
+`__name__` (`logging.getLogger("__name__")`, fixed in 1.18.1), so the setting
+above does not hide them on that release. Upgrade to 1.18.1 or later, or also
+raise `logging.getLogger("__name__")` to `WARNING`.
+
+Alembic 1.18 – 1.20 load an `alembic.plugins` entry point with
+`for mod in entrypoint.load()`, while the Alembic documentation describes the
+entry point value as the plugin module itself; a plain module is not
+iterable, so the documented form fails every `import alembic` with
+`TypeError`. `_sqlalchemy_cubrid_alembic` works with both: it is a
+module that iterates to itself. Alembic does not guard the entry point load,
+so the plugin is a top-level module that imports only the standard library;
+loading it never imports the `sqlalchemy_cubrid` package, whose import can
+fail (for example after an unsupported SQLAlchemy is installed over it). Its
+`setup()` imports `sqlalchemy_cubrid.alembic_impl` and turns any failure into a
+`RuntimeWarning` (or, under `-W error`, a log record from the
+`sqlalchemy_cubrid.alembic_plugin` logger) instead of raising, so it cannot
+break `import alembic` for other projects in the same environment. If the
+registration still fails, Alembic reports `KeyError: 'cubrid'`; importing
+`sqlalchemy_cubrid.alembic_impl` in `env.py` registers `CubridImpl` directly.
+
+If Alembic is installed but fails to import (for example Alembic 1.7.0/1.7.1,
+which raise `NameError` on SQLAlchemy 2.x), the dialect still loads and emits a
+single `RuntimeWarning` saying the Alembic integration is disabled, with the
+original exception. If a warning filter turns that warning into an error
+(`-W error`), the message is logged through the `sqlalchemy_cubrid.dialect`
+logger instead, so the dialect still loads. Upgrading to
+`alembic>=1.7.2,<2.0` fixes it.
+
+Versions before this fix declared an `alembic.ddl` entry point that Alembic
+never read, so a default `env.py` failed with `KeyError: 'cubrid'` unless it
+imported `sqlalchemy_cubrid.alembic_impl` explicitly. That import is harmless
+and can stay.
 
 ### Implementation Details
 
 ```python
 class CubridImpl(DefaultImpl):
     __dialect__ = "cubrid"
-    transactional_ddl = False
+    transactional_ddl = True
+
+    def emit_begin(self):
+        # CUBRID has no BEGIN statement; offline scripts only emit COMMIT;
+        pass
 ```
 
 The implementation inherits all standard Alembic operations from `DefaultImpl`:
@@ -190,6 +334,11 @@ The implementation inherits all standard Alembic operations from `DefaultImpl`:
 ---
 
 ## Limitations & Workarounds
+
+Creating a UNIQUE index through Alembic requires a live connection so the dialect
+can inspect CUBRID's FK auto-indexes and detect collisions. Without a connection,
+the guard raises `CompileError` with a live-connection requirement; it does not
+silently skip validation. Non-unique index generation is unaffected.
 
 ### ✅ ALTER COLUMN TYPE (native)
 
@@ -244,13 +393,34 @@ def upgrade():
     op.alter_column("users", "old_name", new_column_name="new_name")
 ```
 
-### ⚠️ DDL Auto-Commit
+### ⚠️ Long migrations hold schema locks
 
-As noted above, DDL is auto-committed. Be aware:
+DDL is transactional (see [Transactional DDL](#transactional-ddl)), so a failed
+upgrade rolls back cleanly. The cost is that each DDL statement keeps its schema
+lock until the transaction commits. Be aware:
 
-- Keep migrations small (one logical change per migration)
+- By default the whole upgrade is one transaction, so every table it touches
+  stays locked until the last revision finishes
+- Use `transaction_per_migration=True` for long migrations or large tables
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
+
+### Foreign key referential actions in autogenerate
+
+CUBRID's default `ON DELETE` / `ON UPDATE` action is `RESTRICT`, and
+`SHOW CREATE TABLE` always prints it, so `inspect(...).get_foreign_keys()`
+reports a foreign key created without actions as
+`{"ondelete": "RESTRICT", "onupdate": "RESTRICT"}`. Reflection keeps reporting
+what the server says. For autogenerate, `CubridImpl` treats that reflected
+`RESTRICT` as equal to a model `ForeignKey` with no `ondelete` / `onupdate`
+(#597), so an unchanged foreign key produces no `drop_constraint` /
+`create_foreign_key` pair, whether the model leaves the action out or names
+`RESTRICT`. Adding `ondelete="CASCADE"` or `SET NULL`, removing it again, or
+switching between them is still detected. `NO ACTION` is different: CUBRID
+prints it as `NO ACTION`, but Alembic itself treats `NO ACTION` and no action
+as equal in both directions, so switching between them is not detected. CUBRID
+rejects `ON UPDATE CASCADE`; use `SET NULL`, `RESTRICT` or `NO ACTION` for
+`onupdate`.
 
 ### `alter_column()` behavior
 
@@ -287,12 +457,12 @@ so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 | `alter_column` (default) | ✅ | — |
 | `alter_column` (type) | ✅ | `batch_alter_table` for lossy conversions |
 | `alter_column` (rename) | ✅ | — |
-| `create_index` | ✅ | — |
-| `drop_index` | ✅ | — |
+| `create_index` | ✅ | `if_not_exists=True` raises `CompileError` (CUBRID has no `CREATE INDEX IF NOT EXISTS`); check `inspect(conn).has_index()` first instead |
+| `drop_index` | ✅ | Emits `DROP INDEX <name> ON <table>`, so `table_name` is required (`CompileError` without it); `if_exists=True` raises `CompileError` (CUBRID has no `DROP INDEX IF EXISTS`) |
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |
 | `bulk_insert` | ✅ | — |
-| Transactional DDL | ❌ | Small atomic migrations |
+| Transactional DDL | ✅ | `transaction_per_migration=True` for long or large-table migrations |
 
 ---
 
@@ -377,6 +547,15 @@ def downgrade():
 pip install sqlalchemy-cubrid[alembic]
 ```
 
+### `INFO` log lines `setup plugin ...`
+
+Alembic 1.18+ logs these while it is imported. Loading the CUBRID dialect no
+longer imports Alembic on those versions, so they only appear in processes
+that use Alembic. Set `logging.getLogger("alembic").setLevel(logging.WARNING)`
+in the application (on Alembic 1.18.0, which logs them from a logger named
+`__name__`, upgrade or quiet that logger too); see
+[Auto-Registration](#auto-registration).
+
 ### "Alembic is required for migration support"
 
 **Cause**: The `alembic_impl` module was imported directly without Alembic
@@ -385,13 +564,22 @@ installed.
 **Fix**:
 
 ```bash
-pip install "alembic>=1.7,<2.0"
+pip install "alembic>=1.7.2,<2.0"
 ```
 
 ### Migration partially applied
 
-**Cause**: A migration with multiple DDL statements failed partway through.
-Because CUBRID auto-commits DDL, some statements already took effect.
+**Cause**: CUBRID DDL is transactional, so a failed online upgrade does not leave
+a half-applied revision: the failing transaction is rolled back. By default that
+is the whole upgrade; with `transaction_per_migration=True` it is the failing
+revision, and the revisions before it stay committed and recorded in
+`alembic_version`. Partial state can still come from:
+
+- client autocommit, which commits every statement: driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501);
+- an offline (`--sql`) script run without `csql --no-auto-commit --no-single-line`
+  (csql's default single-line mode continues past a failing statement and still
+  runs the trailing `COMMIT;`);
+- a revision that calls `COMMIT` itself (for example through `op.execute`).
 
 **Fix**:
 1. Manually inspect the database state
@@ -406,13 +594,27 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 **Fix**: For genuinely lossy/unsupported conversions, use `batch_alter_table` — see [ALTER COLUMN TYPE (native)](#-alter-column-type-native).
 
+### `alembic revision --autogenerate` fails with a reflection error
+
+**Cause**: Foreign keys are read from `SHOW CREATE TABLE`. Since #589 a failure
+there (a dropped connection, an authorization error, a driver error) raises
+instead of being reported as "this table has no foreign keys", which made
+autogenerate propose `add_fk` for foreign keys that already exist.
+
+**Fix**: Fix the underlying error and run autogenerate again; set
+`pool_pre_ping=True` on the engine if the connection went stale. A `NoSuchTableError`
+for a table of another owner is expected since CUBRID 11.2, where an unqualified name
+resolves in the current user's schema; run autogenerate as the table owner.
+
 ---
 
 ## Migration Safety Checklist
 
-!!! warning "DDL is not transactional"
-    CUBRID auto-commits DDL. A failed migration can leave partial schema changes applied.
-    Prefer small revisions with one logical schema change each.
+!!! note "DDL is transactional"
+    CUBRID rolls back DDL with the transaction; only client autocommit commits it early.
+    By default a failed `alembic upgrade` leaves no partial schema and no version bump.
+    Uncommitted DDL holds schema locks, so use `transaction_per_migration=True` for
+    long or large-table migrations.
 
 !!! warning "Lossy type changes may be rejected by the server"
     `alter_column(type_=...)` and `alter_column(new_column_name=...)` emit native
@@ -431,7 +633,8 @@ Because CUBRID auto-commits DDL, some statements already took effect.
 
 Before running migrations in production:
 
-- [ ] **One DDL operation per revision** — since each DDL auto-commits, a failure mid-revision leaves partial state. Split multi-DDL revisions.
+- [ ] **Plan lock duration** — DDL holds schema locks until commit, and by default the whole upgrade is one transaction. Use `transaction_per_migration=True` for long or large-table migrations.
+- [ ] **No client autocommit** — don't run migrations with client autocommit on (driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501)), and run offline scripts with `csql --no-auto-commit --no-single-line`, so a failure rolls back cleanly.
 - [ ] **Backup database** — `cubrid backupdb demodb` before destructive operations
 - [ ] **Test upgrade + downgrade cycle** — run `alembic upgrade head && alembic downgrade -1 && alembic upgrade head` on staging
 - [ ] **Verify state after each step** — query `db_class` system table to confirm schema matches expectations
@@ -449,15 +652,28 @@ Before running migrations in production:
 
 ### Advisory CI Safety Check
 
-Add the following script to catch multi-DDL revisions early. This is advisory (warning-only)
-and does not block CI:
+Add the following script to list revisions with several DDL operations. This is advisory
+(warning-only) and does not block CI. Such revisions still roll back as a whole on failure,
+but they hold schema locks longer. The script counts calls to Alembic DDL operations, including
+constraint creation (`create_unique_constraint`, `create_foreign_key`, `create_check_constraint`,
+`create_primary_key`), in each `upgrade()` and `downgrade()` separately; bare references such as
+`op.drop_table` without a call are not counted. It is a heuristic, not a control-flow analysis:
 
 ```python
 #!/usr/bin/env python3
 """Check Alembic revisions for multiple DDL operations (advisory).
 
-Warns when a single revision contains multiple DDL calls, which is risky
-with CUBRID's non-transactional DDL.
+CUBRID DDL is transactional, so a failing revision is rolled back as a
+whole. Every DDL statement holds a schema lock on its table until the
+transaction commits, though, so this lists revisions with several DDL
+calls: they keep tables locked longer and are candidates for running with
+``transaction_per_migration=True`` or for splitting.
+
+Only calls such as ``op.create_table(...)`` or ``batch_op.add_column(...)``
+count; a bare reference like ``op.drop_table`` is not a DDL operation. This is
+a heuristic AST scan, not control-flow analysis: a call in a loop or branch
+counts once, as written, and DDL issued from helpers defined outside
+``upgrade()``/``downgrade()`` is not seen.
 
 Usage:
     python scripts/alembic_safety_check.py alembic/versions/
@@ -472,6 +688,8 @@ DDL_CALLS = {
     "create_table", "drop_table", "add_column", "drop_column",
     "create_index", "drop_index", "alter_column",
     "add_constraint", "drop_constraint",
+    "create_unique_constraint", "create_foreign_key",
+    "create_check_constraint", "create_primary_key",
 }
 
 
@@ -483,12 +701,14 @@ def check_revision(path: Path) -> list[str]:
             continue
         ddl_count = sum(
             1 for node in ast.walk(func)
-            if isinstance(node, ast.Attribute) and node.attr in DDL_CALLS
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in DDL_CALLS
         )
         if ddl_count > 1:
             warnings.append(
                 f"{path.name}:{func.name}() has {ddl_count} DDL operations "
-                f"(recommended: 1 per revision for CUBRID)"
+                "(schema locks are held until the transaction commits)"
             )
     return warnings
 
@@ -508,9 +728,13 @@ def main() -> None:
         for w in all_warnings:
             print(f"  • {w}")
         print(f"\nTotal: {len(all_warnings)} warning(s)")
-        print("Tip: Split multi-DDL revisions to avoid partial migration state.")
+        print(
+            "Tip: these revisions roll back whole on failure but hold schema locks "
+            "until commit; use transaction_per_migration=True for long or "
+            "large-table migrations."
+        )
     else:
-        print("✓ All revisions have single DDL operations per function.")
+        print("✓ No revision has more than one DDL call per function.")
 
 
 if __name__ == "__main__":

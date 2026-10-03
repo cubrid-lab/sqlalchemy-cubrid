@@ -12,14 +12,12 @@
 
 - CUBRID 서버 (실행 중이고 도달 가능)
 - Python 3.10+
-- 지원되는 드라이버 구성 중 하나:
-  - CUBRID-Python(C 확장)을 통한 `cubrid://`
+- 권장 드라이버 구성:
   - pycubrid를 통한 `cubrid+pycubrid://`
   - pycubrid.aio를 통한 `cubrid+aiopycubrid://`
 
 ```bash
-pip install sqlalchemy-cubrid
-# 또는: pip install "sqlalchemy-cubrid[pycubrid]"
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
 
 ---
@@ -27,8 +25,17 @@ pip install sqlalchemy-cubrid
 ## 방언 설치
 
 ```bash
-pip install sqlalchemy-cubrid
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+### 대안: C 확장 드라이버
+
+CUBRIDdb가 꼭 필요한 경우 [DRIVER_COMPAT](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)에
+설명된 지원 대상 CUBRID-Python 11.3.0.51 이상을 소스에서 빌드하세요. 더 이상 지원되지
+않는 `[cubriddb]` extra / PyPI CUBRID-Python 9.3.x 설치 경로는 사용하지 마세요.
+
+그런 다음 `cubrid+cubriddb://`를 사용하세요. 기본 `cubrid://` URL도 같은 C 확장
+드라이버를 선택합니다.
 
 ---
 
@@ -37,9 +44,10 @@ pip install sqlalchemy-cubrid
 지원되는 URL 형식 중 하나를 사용하세요:
 
 ```text
-cubrid://user:password@host:port/database
 cubrid+pycubrid://user:password@host:port/database
 cubrid+aiopycubrid://user:password@host:port/database
+cubrid+cubriddb://user:password@host:port/database
+cubrid://user:password@host:port/database
 ```
 
 예:
@@ -47,7 +55,7 @@ cubrid+aiopycubrid://user:password@host:port/database
 ```python
 from sqlalchemy import create_engine
 
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 ---

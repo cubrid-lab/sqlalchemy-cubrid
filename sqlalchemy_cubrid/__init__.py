@@ -11,6 +11,18 @@ Each dialect provides the full set of typenames supported by that backend
 with its ``__all__`` collection.
 
 See: https://docs.sqlalchemy.org/en/20/core/type_basics.html#vendor-specific-types
+
+Connection URL forms::
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    # Pure-Python driver (recommended, no build tools):
+    create_engine("cubrid+pycubrid://dba:pw@localhost:33000/demodb")
+    # Legacy C-extension driver (bare `cubrid://` selects CUBRIDdb):
+    create_engine("cubrid+cubriddb://dba:pw@localhost:33000/demodb")
+    # Async pure-Python driver:
+    create_async_engine("cubrid+aiopycubrid://dba:pw@localhost:33000/demodb")
 """
 
 from __future__ import annotations
@@ -53,7 +65,7 @@ from sqlalchemy.sql.sqltypes import (
     TIMESTAMP,
 )
 
-__version__ = "1.7.0"
+__version__ = "1.8.0"
 
 __all__ = (
     "insert",

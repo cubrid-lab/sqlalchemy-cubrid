@@ -2,12 +2,6 @@
 
 Get a working SQLAlchemy + CUBRID application running in minutes.
 
-<video src="assets/videos/orm-demo.mp4" controls width="100%" style="max-width:800px">
-  Your browser does not support the video tag.
-</video>
-
-> To regenerate the demo video: `vhs demos/orm-demo-mp4.tape`
-
 ---
 
 ## Prerequisites
@@ -16,14 +10,12 @@ Before you start, make sure the following are available:
 
 - CUBRID server (running and reachable)
 - Python 3.10+
-- One supported driver configuration:
-  - `cubrid://` via CUBRID-Python (C-extension)
+- Recommended driver configuration:
   - `cubrid+pycubrid://` via pycubrid
   - `cubrid+aiopycubrid://` via pycubrid.aio
 
 ```bash
-pip install sqlalchemy-cubrid
-# or: pip install "sqlalchemy-cubrid[pycubrid]"
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
 
 ---
@@ -31,8 +23,16 @@ pip install sqlalchemy-cubrid
 ## Install the Dialect
 
 ```bash
-pip install sqlalchemy-cubrid
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+### Alternative: C-extension driver
+
+If you specifically need CUBRIDdb, use the supported CUBRID-Python 11.3.0.51+ source build
+described in [DRIVER_COMPAT](DRIVER_COMPAT.md#building-cubriddb-from-source). Do not use the
+deprecated `[cubriddb]` extra / PyPI CUBRID-Python 9.3.x path.
+
+Then use `cubrid+cubriddb://`; the bare `cubrid://` URL selects the same C-extension driver.
 
 ---
 
@@ -41,9 +41,10 @@ pip install sqlalchemy-cubrid
 Use one of the supported URL formats:
 
 ```text
-cubrid://user:password@host:port/database
 cubrid+pycubrid://user:password@host:port/database
 cubrid+aiopycubrid://user:password@host:port/database
+cubrid+cubriddb://user:password@host:port/database
+cubrid://user:password@host:port/database
 ```
 
 Example:
@@ -51,7 +52,7 @@ Example:
 ```python
 from sqlalchemy import create_engine
 
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 ---

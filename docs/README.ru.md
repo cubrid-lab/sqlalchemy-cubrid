@@ -11,7 +11,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -31,7 +30,7 @@ CUBRID — это высокопроизводительная реляцион�
 **sqlalchemy-cubrid** закрывает этот пробел:
 
 - Полноценный диалект SQLAlchemy 2.0–2.1 с **кэшированием выражений** и **типизацией PEP 561**
-- **619 офлайн-тестов** с **~98,26 % покрытия кода** — для запуска не требуется база данных
+- **Обширный набор офлайн-тестов** — для запуска не требуется база данных; CI обеспечивает минимум 95 % покрытия строк в задаче `offline-tests` (`--cov-fail-under=95`)
 - **Стресс-тесты конкурентности** — синхронные threaded-нагрузки `QueuePool` и `asyncio.gather` валидированы на реальном CUBRID
 - **Compat shim, готовый к SQLAlchemy 2.1** — доступ к приватным API обёрнут в `_compat.py` (пока остаётся ограничение `<2.3` до полной валидации SA 2.1)
 - Протестирован на **4 версиях CUBRID** (10.2, 11.0, 11.2, 11.4) и **Python 3.10 -- 3.14**
@@ -70,11 +69,15 @@ flowchart TD
 pip install sqlalchemy-cubrid
 ```
 
-С драйвером на чистом Python (без C-сборки):
+С драйвером на чистом Python (синхронным и асинхронным):
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+Дополнение `[pycubrid]` поддерживает `cubrid+pycubrid://` и `cubrid+aiopycubrid://`
+и включает дополнение SQLAlchemy `asyncio` (`greenlet`). Если совместимый wheel
+недоступен, для установки `greenlet` могут потребоваться инструменты сборки.
 
 С поддержкой Alembic:
 
@@ -153,9 +156,9 @@ async with AsyncSession(engine) as session:
 - **Нет `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` не поддерживается; используйте `cursor.lastrowid` или `LAST_INSERT_ID()`
 - **Нет последовательностей** — CUBRID использует только `AUTO_INCREMENT`
 - **Нет мультисхемности** — одна схема на базу данных
-- **DDL коммитится автоматически** — миграции не являются транзакционными (`transactional_ddl = False`)
+- **Незакоммиченный DDL удерживает блокировки схемы** — DDL в CUBRID транзакционный (`ROLLBACK` отменяет его; раньше времени его коммитит только клиентский autocommit, который диалект отключает), поэтому по умолчанию всё обновление Alembic — одна транзакция (`transactional_ddl = True`), и затронутые таблицы остаются заблокированными до коммита; для долгих миграций и больших таблиц используйте `transaction_per_migration=True`
 - **Только SQLAlchemy 2.0–2.1** — зафиксировано на `<2.3` из-за зависимости от внутренних API ([подробности](ARCHITECTURE.md))
-- **Async требует pycubrid >= 1.2.0,<2.0** — драйвер `cubrid+aiopycubrid://` требует async-совместимую линейку pycubrid, которую сейчас поддерживает этот проект
+- **Async требует pycubrid >= 1.8.0,<2.0** — драйвер `cubrid+aiopycubrid://` требует async-совместимую линейку pycubrid, которую сейчас поддерживает этот проект
 
 ## Документация
 
@@ -180,9 +183,9 @@ async with AsyncSession(engine) as session:
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
-| Alembic | >=1.7 |
-| pycubrid (sync) | >=1.2.0,<2.0 |
-| pycubrid (async) | >=1.2.0,<2.0 |
+| Alembic | >=1.7.2 |
+| pycubrid (sync) | >=1.8.0,<2.0 |
+| pycubrid (async) | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -193,7 +196,7 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 ```
 
-Для драйвера на чистом Python (без C-сборки): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
+Для драйвера на чистом Python (без нативных библиотек CUBRID): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`. Зависимость `greenlet` в extra `[pycubrid]` может потребовать инструменты сборки, если совместимый wheel недоступен.
 
 ### Поддерживает ли sqlalchemy-cubrid SQLAlchemy 2.0–2.1?
 
@@ -201,7 +204,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### Поддерживает ли sqlalchemy-cubrid миграции Alembic?
 
-Да. Установите пакет через `pip install "sqlalchemy-cubrid[alembic]"`. Диалект автоматически регистрируется через entry point. Учтите, что CUBRID автоматически коммитит DDL, поэтому миграции не являются транзакционными.
+Да. Установите пакет через `pip install "sqlalchemy-cubrid[alembic]"`. Реализация миграций CUBRID регистрируется сама при загрузке диалекта, поэтому стандартный `env.py` работает без изменений с синхронными URL; для `cubrid+aiopycubrid://` используйте асинхронный шаблон Alembic (`alembic init -t async`). DDL в CUBRID транзакционный, поэтому по умолчанию неудачный `alembic upgrade` откатывается целиком, включая обновление версии; для долгих миграций и больших таблиц задайте `transaction_per_migration=True`, чтобы коммитить после каждой ревизии.
 
 ### Какие версии Python поддерживаются?
 
@@ -220,11 +223,11 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### В чём разница между `cubrid://` и `cubrid+pycubrid://`?
 
-`cubrid://` использует драйвер C-расширения (CUBRIDdb), который требует компиляции. `cubrid+pycubrid://` использует драйвер на чистом Python, который устанавливается одним pip — без build tools. `cubrid+aiopycubrid://` использует асинхронный вариант драйвера на чистом Python для работы с `create_async_engine` и `AsyncSession`.
+`cubrid://` использует драйвер C-расширения (CUBRIDdb), который требует компиляции. `cubrid+pycubrid://` использует драйвер на чистом Python без нативных библиотек CUBRID. Extra `[pycubrid]` включает `greenlet`, для которого могут потребоваться инструменты сборки, если совместимый wheel недоступен. `cubrid+aiopycubrid://` использует асинхронный вариант драйвера на чистом Python для работы с `create_async_engine` и `AsyncSession`.
 
 ### Поддерживает ли sqlalchemy-cubrid async?
 
-Да. Используйте `create_async_engine("cubrid+aiopycubrid://...")` с async-драйвером pycubrid. Требуется `pycubrid>=1.3.2,<2.0`. Оба pycubrid-диалекта используют нативный `Connection.ping(False)` / `AsyncConnection.ping(False)` для `pool_pre_ping`, и все возможности Core и ORM работают с `AsyncSession`.
+Да. Используйте `create_async_engine("cubrid+aiopycubrid://...")` с async-драйвером pycubrid. Требуется `pycubrid>=1.8.0,<2.0`. Оба pycubrid-диалекта используют нативный `Connection.ping(False)` / `AsyncConnection.ping(False)` для `pool_pre_ping`, и все возможности Core и ORM работают с `AsyncSession`.
 
 
 ## Связанные проекты

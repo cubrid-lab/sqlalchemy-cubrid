@@ -16,6 +16,8 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [포트 33000 연결 거부](#포트-33000-연결-거부)
   - [인증 실패](#인증-실패)
   - [끊어진 연결 / 연결 해제](#끊어진-연결--연결-해제)
+  - [cub_server 재시작 또는 장애 후 오류](#cub_server-재시작-또는-장애-후-오류)
+  - [중단된 쿼리 (-4)](#중단된-쿼리--4)
   - [커넥션 풀 고갈](#커넥션-풀-고갈)
   - [잘못된 URL 형식](#잘못된-url-형식)
 - [SQL 컴파일 문제](#sql-컴파일-문제)
@@ -50,11 +52,11 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [방언 'cubrid'에 대한 구현을 찾을 수 없음](#방언-cubrid에-대한-구현을-찾을-수-없음)
   - [ALTER COLUMN TYPE 거부됨 (손실 변환)](#alter-column-type-거부됨-손실-변환)
   - [RENAME COLUMN](#rename-column)
-  - [부분 마이그레이션 (DDL 자동 커밋)](#부분-마이그레이션-ddl-자동-커밋)
+  - [실패 후 부분 마이그레이션](#실패-후-부분-마이그레이션)
   - [Autogenerate가 변경을 감지하지 못함](#autogenerate가-변경을-감지하지-못함)
 - [격리 수준 문제](#격리-수준-문제)
   - [격리 수준 설정](#격리-수준-설정)
-  - [DDL이 현재 트랜잭션 커밋](#ddl이-현재-트랜잭션-커밋)
+  - [DDL은 현재 트랜잭션 안에서 실행됨](#ddl은-현재-트랜잭션-안에서-실행됨)
 - [트랜잭션 문제](#트랜잭션-문제)
   - [데이터가 저장되지 않음](#데이터가-저장되지-않음)
   - [오토커밋 충돌](#오토커밋-충돌)
@@ -83,13 +85,11 @@ ImportError: No module named 'CUBRIDdb'
 
 **원인:** CUBRID C 확장 Python 드라이버가 설치되지 않음.
 
-**해결 — 옵션 A: C 확장 드라이버 설치:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **참고:** CUBRID CCI 라이브러리와 C 컴파일러가 필요합니다. 플랫폼별 지침은 [CUBRID Python 드라이버 문서](https://www.cubrid.org/manual/en/11.0/api/python.html)를 참고하세요.
+**해결 — 옵션 A: C 확장 드라이버를 소스에서 빌드:** cubrid-python v11.3.0.51 이상에서
+CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를
+참고하세요. CMake와 C 컴파일러가 필요합니다. `pip install CUBRID-Python`은 사용하지 마세요.
+PyPI에는 테스트되지 않은 9.3.x 릴리스만 있습니다.
+[PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
 
 **해결 — 옵션 B: 순수 Python 드라이버 사용 (권장):**
 
@@ -103,7 +103,7 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 # 이전 (C 확장)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
-# 이후 (순수 Python — C 빌드 불필요)
+# 이후 (순수 Python 드라이버 — CUBRID 네이티브 라이브러리 불필요)
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
@@ -129,14 +129,14 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C 확장 빌드 실패
 
-**증상:** `pip install CUBRID-Python`이 컴파일 오류로 실패.
+**증상:** CUBRIDdb(cubrid-python) 빌드가 컴파일 오류로 실패.
 
 **흔한 원인:**
 - C 컴파일러 누락 (`gcc` / `cl.exe`)
 - CUBRID CCI 헤더 누락
 - 호환되지 않는 플랫폼
 
-**해결:** 대신 pycubrid를 사용하세요 — 순수 Python이라 빌드 도구가 필요 없습니다:
+**해결:** 대신 순수 Python pycubrid 드라이버를 사용하세요. CUBRID 네이티브 라이브러리가 필요 없습니다. `[pycubrid]` extra는 `greenlet`도 설치하므로 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
@@ -221,6 +221,43 @@ engine = create_engine(
 `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`의 경우 `pool_pre_ping=True`는 이제 `SELECT 1`을 발행하는 대신 pycubrid의 네이티브 `CHECK_CAS` 핑을 사용합니다.
 
 자세한 권장사항은 [연결 가이드 — 풀 튜닝](CONNECTION.md#커넥션-풀-튜닝)을 참고하세요.
+
+---
+
+### cub_server 재시작 또는 장애 후 오류
+
+**증상:** `cub_server`가 중지, 재시작되거나 비정상 종료된 뒤 열린 트랜잭션의 문장이 실패합니다:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**원인:** 브로커의 CAS가 `cub_server`와의 세션을 잃었습니다. CAS는 클라이언트가 트랜잭션을 끝낸 뒤에만 다시 연결하므로, 그 전까지는 `cub_server`가 다시 올라와도 같은 연결의 모든 문장이 -224로 실패합니다. `pool_pre_ping`으로는 잡을 수 없습니다. 연결은 이미 체크아웃되어 있고, CAS는 여전히 핑에 응답하기 때문입니다.
+
+**동작:** 방언은 브로커가 CAS를 리셋하는 코드를 두 드라이버 모두에서 연결 끊김으로 취급합니다: -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). SQLAlchemy는 연결을 무효화하고(`exc.connection_invalidated`가 `True`) 풀은 새 연결을 엽니다. `cub_server`가 내려가 있는 동안 재연결에 실패한 pycubrid 연결(`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`)도 연결 끊김입니다. 1.8.0까지의 릴리스는 이 오류들을 분류하지 않아 망가진 연결이 풀에 남았습니다.
+
+**해결:** 설정할 것은 없습니다. 롤백하고(`with engine.connect()`나 `Session` 블록을 벗어나면 롤백됩니다) `cub_server`가 다시 연결을 받으면 트랜잭션을 재시도하세요.
+
+---
+
+### 중단된 쿼리 (-4)
+
+**증상:** 실행 중인 문장이 실패합니다. 정확한 문자열은 드라이버마다 다릅니다:
+
+```
+# CUBRIDdb
+DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
+
+# pycubrid
+OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
+```
+
+**원인:** 다른 세션이 이 문장에 `KILL QUERY <tran_index>`를 실행했습니다. -4는 서버의 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. pycubrid의 `str()`은 -4를 `Communication error`로 설명하지만, 이는 pycubrid의 라벨일 뿐 서버 코드의 의미가 아닙니다.
+
+**동작:** 이 오류는 연결 끊김이 아닙니다. SQLAlchemy는 연결을 유지합니다(`exc.connection_invalidated`가 `False`). 1.8.0까지의 릴리스는 CUBRIDdb의 -4를 연결 끊김으로 취급해 연결을 교체했습니다(#572).
+
+**해결:** 문장을 끝까지 실행해야 한다면 롤백하고 재시도하세요.
 
 ---
 
@@ -365,15 +402,24 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **증상:** 페이지네이션에서 예기치 않은 쿼리 동작.
 
-**CUBRID는 표준 `LIMIT n OFFSET m` 구문을 지원합니다.** 방언이 자동 생성합니다:
+**방언은 MySQL 스타일 `LIMIT [offset,] row_count`를 냅니다.** CUBRID는 표준
+`LIMIT row_count OFFSET offset` 형태도 받아들이지만 방언이 이를 생성하지는 않습니다. `OFFSET`
+키워드는 방언의 출력에 아예 나타나지 않습니다:
 
 ```python
-# SQLAlchemy가 올바른 CUBRID LIMIT/OFFSET 생성
-stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 10 OFFSET 20
+select(users).limit(3)              # → SELECT ... FROM users LIMIT 3
+select(users).limit(10).offset(20)  # → SELECT ... FROM users LIMIT 20, 10
+select(users).offset(5)             # → SELECT ... FROM users LIMIT 5, 4611686018427387904
 ```
 
-**참고:** CUBRID는 MySQL의 `LIMIT offset, count` 쉼표 구문을 지원하지 않습니다. 방언은 항상 `LIMIT n OFFSET m`을 사용합니다.
+쉼표 형태는 오프셋이 있을 때만 나오며, 이때 오프셋이 앞에 옵니다. `LIMIT 20, 10`은 20행을 건너뛰고
+10행을 반환하며, 10행부터 20행으로 제한한다는 뜻이 아닙니다.
+
+**LIMIT 없는 OFFSET.** CUBRID에는 단독 `OFFSET`이 없어서(`SELECT ... OFFSET 5`는 문법 오류입니다)
+`.limit()` 없이 `.offset(n)`만 준 경우에도 행 수를 반드시 명시해야 하며, 방언은 사실상 무제한에
+해당하는 값을 채워 넣습니다 — 위 세 번째 줄입니다. 쿼리 로그의 두 번째 피연산자가 아주 큰 수인 것은
+이 센티넬이며 버그가 아닙니다. 정확한 값과 부호 있는 BIGINT 최댓값을 의도적으로 피한 이유는
+[기능 지원](FEATURE_SUPPORT.md)을 참고하세요.
 
 ---
 
@@ -648,6 +694,10 @@ NoSuchTableError: table_name
 
 3. **잘못된 데이터베이스** — 연결 URL이 올바른 데이터베이스를 가리키는지 확인
 
+> **참고:** 리플렉션은 객체가 없을 때만 `NoSuchTableError`를 발생시킵니다: `db_class` 조회에서 해당 테이블이나 뷰를 찾지 못하거나, 서버가 `Unknown class "<owner>.<name>"`을 보고하거나, 존재하는 객체라면 항상 행을 반환하는 쿼리(`SHOW CREATE TABLE`, `SHOW CREATE VIEW`)가 행을 반환하지 않는 경우입니다 (#589). 구문 오류나 그 밖의 리플렉션 쿼리 실패는 원래 예외(예: `sqlalchemy.exc.ProgrammingError`)로 그대로 전파됩니다. CUBRID는 두 경우 모두 네이티브 오류 -493을 사용하며, 1.8.0 이전 pycubrid는 모든 -493 오류에 SQLSTATE `42S02`(`Table not found`)를 보고합니다 (#454).
+
+> **참고:** `get_foreign_keys()`와 `get_unique_constraints()`는 더 이상 실패한 `SHOW CREATE TABLE`을 빈 리스트로 바꾸지 않습니다 (#589). 리플렉션 중 연결 끊김, 권한 오류, 드라이버 오류가 발생하면 예외가 전파되므로, Alembic autogenerate는 이미 존재하는 외래 키에 대해 `add_fk`를 제안하는 대신 그 오류로 중단됩니다. 새 연결로 다시 시도하십시오(`pool_pre_ping=True`는 오래된 풀 연결을 교체합니다).
+
 ---
 
 ### 테이블 이름의 대소문자 구분
@@ -665,7 +715,7 @@ conn.execute(text('CREATE TABLE "MyTable" (id INT)'))  # 'MyTable'로 저장
 conn.execute(text('SELECT * FROM "MyTable"'))          # 반드시 인용 필요
 ```
 
-방언의 `CubridIdentifierPreparer`가 `requires_name_normalize = True`와 `initial_quote = '"'` 설정으로 이것을 자동 처리합니다.
+방언의 `CubridIdentifierPreparer`는 `initial_quote = '"'`로 대소문자를 구분하는 이름을 인용합니다. CUBRID는 인용되지 않은 이름을 이미 소문자로 폴딩하며 이는 SQLAlchemy의 규칙과 일치하므로, 방언은 `requires_name_normalize = False`로 설정합니다.
 
 ---
 
@@ -875,7 +925,7 @@ stmt = replace(users).values(id=1, name="Alice", email="alice@new.com")
 **증상:**
 
 ```
-CommandError: No implementation found for dialect 'cubrid'
+KeyError: 'cubrid'   (raised from alembic/ddl/impl.py, DefaultImpl.get_by_dialect)
 ```
 
 **해결:** `alembic` extra와 함께 설치:
@@ -884,7 +934,7 @@ CommandError: No implementation found for dialect 'cubrid'
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-`CubridImpl` 클래스는 `alembic.ddl` 엔트리 포인트로 자동 발견됩니다. 수동 구성이 필요 없습니다.
+Alembic이 같은 환경에 설치되어 있으면 `CubridImpl`은 CUBRID 방언이 로드될 때 스스로 등록됩니다. 수동 구성이나 `env.py` 임포트가 필요 없습니다.
 
 ---
 
@@ -934,17 +984,24 @@ def upgrade():
 
 ---
 
-### 부분 마이그레이션 (DDL 자동 커밋)
+### 실패 후 부분 마이그레이션
 
 **증상:** 마이그레이션이 중간에 실패해 데이터베이스가 불일치 상태로 남음.
 
-**원인:** CUBRID는 모든 DDL 문(`CREATE`, `ALTER`, `DROP`)을 자동 커밋합니다. `CubridImpl`은 `transactional_ddl = False`를 설정하므로 Alembic이 DDL 연산을 롤백할 수 없습니다.
+**배경:** CUBRID의 DDL은 트랜잭션으로 처리됩니다. 방언이 항상 설정하듯 클라이언트 자동 커밋이 꺼져 있으면 `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `CREATE INDEX`, `RENAME` 등은 `ROLLBACK`으로 되돌려집니다. `CubridImpl`은 `transactional_ddl = True`를 설정하므로, 기본적으로 실패한 `alembic upgrade`는 `alembic_version` 갱신을 포함해 그 실행의 모든 리비전을 롤백합니다. `transaction_per_migration=True`이면 끝난 리비전은 커밋된 채 남고 실패한 리비전만 롤백됩니다.
+
+**원인:** 실패 전에 무언가가 커밋했습니다:
+
+- 클라이언트 자동 커밋 — 드라이버 수준 자동 커밋, csql의 기본 자동 커밋 모드, 또는 방언이 지원하는 경우(#501) `isolation_level="AUTOCOMMIT"` — 은 문마다 커밋합니다
+- 오프라인(`--sql`) 스크립트를 `csql --no-auto-commit --no-single-line` 없이 실행했습니다. csql의 기본 단일 행 모드는 실패한 문 뒤에도 계속 실행하고, 마지막 `COMMIT;`까지 실행한 뒤 0으로 종료합니다
+- 리비전이 `op.execute()` 등으로 직접 `COMMIT`을 실행했습니다
 
 **예방:**
 
-1. 마이그레이션을 작게 유지 — 마이그레이션당 하나의 논리적 변경
-2. 먼저 스테이징 데이터베이스에서 마이그레이션 테스트
-3. 마이그레이션 실행 전 데이터베이스 백업
+1. 클라이언트 자동 커밋 없이 마이그레이션을 실행하고, 오프라인 스크립트는 `csql --no-auto-commit --no-single-line`으로 실행(첫 오류에서 멈추고 1로 종료하며, 열린 트랜잭션은 롤백됨)
+2. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True` 사용 — 커밋되지 않은 DDL은 스키마 잠금을 유지하므로 다른 세션이 트랜잭션이 끝날 때까지 기다립니다
+3. 먼저 스테이징 데이터베이스에서 마이그레이션 테스트
+4. 마이그레이션 실행 전 데이터베이스 백업
 
 **복구:**
 
@@ -1003,24 +1060,27 @@ with engine.connect().execution_options(
 | `"SERIALIZABLE"` | 6 |
 | `"REPEATABLE READ"` | 5 |
 | `"READ COMMITTED"` *(기본)* | 4 |
+| `"AUTOCOMMIT"` | 드라이버 오토커밋 모드([오토커밋 충돌](#오토커밋-충돌) 참고) |
 
-레거시 pre-MVCC 수준(`READ UNCOMMITTED`와 숫자 코드 1–3으로 해석되던 세분화된 class/instance 조합)은 CUBRID 10.0에서 제거되었으며 더 이상 받지 않습니다. 전달하면 `ValueError`가 발생합니다. [격리 수준](ISOLATION_LEVELS.md)을 참고하세요.
+레거시 pre-MVCC 수준(`READ UNCOMMITTED`와 숫자 코드 1–3으로 해석되던 세분화된 class/instance 조합)은 CUBRID 10.0에서 제거되었으며 더 이상 받지 않습니다. `create_engine(isolation_level=...)`이나 `execution_options(isolation_level=...)`에 전달하면 `sqlalchemy.exc.ArgumentError`가 발생합니다. [격리 수준](ISOLATION_LEVELS.md)을 참고하세요.
 
 ---
 
-### DDL이 현재 트랜잭션 커밋
+### DDL은 현재 트랜잭션 안에서 실행됨
 
-**모든 DDL 문은 CUBRID에서 자동 커밋됩니다.** 즉:
+**CUBRID는 DDL을 암묵적으로 커밋하지 않습니다.** 클라이언트 자동 커밋이 꺼져 있으면(방언은 모든 연결에서 이를 끕니다) 격리 수준과 관계없이 DDL은 현재 트랜잭션의 일부입니다:
 
 ```python
 with engine.begin() as conn:
     conn.execute(text("INSERT INTO users (name) VALUES ('Alice')"))
-    conn.execute(text("CREATE TABLE temp (id INT)"))  # 모든 것을 자동 커밋!
-    # 위의 INSERT는 이제 커밋됨. 아래에서 오류가 나도 롤백 안 됨
+    conn.execute(text("CREATE TABLE temp (id INT)"))  # 아직 커밋되지 않음
     conn.execute(text("INSERT INTO users (name) VALUES ('Bob')"))
+    raise RuntimeError("abort")  # 두 INSERT와 CREATE TABLE이 모두 롤백됨
 ```
 
-**모범 사례:** 같은 트랜잭션에서 DML과 DDL을 절대 혼용하지 마세요.
+자동 커밋이 일어나는 경우는 클라이언트 자동 커밋(`CCI_DEFAULT_AUTOCOMMIT` / 드라이버 수준 자동 커밋, csql의 기본 모드, 또는 방언이 지원하는 경우(#501) `isolation_level="AUTOCOMMIT"`)뿐이며, 이때는 DDL이든 DML이든 문마다 커밋됩니다.
+
+**스키마 잠금에 주의:** 커밋되지 않은 DDL은 트랜잭션이 끝날 때까지 테이블의 스키마 잠금을 유지하므로, 그 테이블을 사용하는 다른 세션은 기다립니다(`SCH_S_LOCK` 대기. CUBRID의 기본 `lock_timeout`은 무제한이므로, 잠금 타임아웃을 설정하지 않으면 트랜잭션이 끝날 때까지 기다립니다). DDL은 바로 커밋하고, 긴 DDL 트랜잭션은 바쁜 시간대를 피하세요.
 
 ---
 
@@ -1059,15 +1119,17 @@ with Session(engine) as session:
 
 **배경:** 두 CUBRID 드라이버 모두 기본적으로 `autocommit=True`이지만, 방언이 SQLAlchemy가 트랜잭션을 관리할 수 있도록 모든 새 연결에서 `autocommit=False`로 설정합니다.
 
-**진짜 오토커밋이 필요하면** (각 문장이 즉시 커밋):
+**진짜 오토커밋이 필요하면** (각 문장이 즉시 커밋) SQLAlchemy의 `AUTOCOMMIT` 격리 수준을 사용하세요. 세 드라이버(`cubrid://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`) 모두에서 동작합니다:
 
 ```python
 with engine.connect().execution_options(
     isolation_level="AUTOCOMMIT"
 ) as conn:
     conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
-    # 즉시 커밋됨
+    # 즉시 커밋됨; conn.rollback()으로 되돌릴 수 없음
 ```
+
+`create_engine(..., isolation_level="AUTOCOMMIT")`과 `engine.execution_options(isolation_level="AUTOCOMMIT")`도 동작합니다. `execution_options()`로 `AUTOCOMMIT`으로 바꾼 연결은 풀로 돌아가면 다시 트랜잭션 모드가 됩니다. #501 이전 릴리스는 `AUTOCOMMIT`에 대해 `ArgumentError`(`execution_options`) 또는 `ValueError`(`create_engine`)를 발생시켰습니다. [격리 수준](ISOLATION_LEVELS.md#autocommit)을 참고하세요.
 
 ---
 
@@ -1216,7 +1278,7 @@ flowchart TD
     kind -->|Import / Module error| install[Check driver install]
     kind -->|Connection failure| conn[Validate URL, host, port, credentials]
     kind -->|SQL compile/runtime error| sql[Inspect generated SQL and unsupported feature]
-    kind -->|Migration failure| mig[Check Alembic limitations and DDL auto-commit]
+    kind -->|Migration failure| mig[Check Alembic limitations and client autocommit]
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
@@ -1266,7 +1328,7 @@ logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)
 
 ```python
 import sqlalchemy_cubrid
-print(sqlalchemy_cubrid.__version__)  # 예: "1.4.0"
+print(sqlalchemy_cubrid.__version__)  # 예: "1.8.0"
 
 from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")

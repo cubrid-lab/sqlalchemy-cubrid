@@ -13,7 +13,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | SQLAlchemy 버전 | 상태 | 비고 |
 |---|---|---|
 | 2.0.x | ✅ 지원 | 최소 요구 버전 |
-| 2.1.x | ✅ 지원 | GA까지 최신 테스트 프리릴리스 |
+| 2.1.x | ✅ 지원 | GA 정식 릴리스이며 CI에서 2.1.1 테스트됨 |
 | ≥ 2.2 | ❌ 미지원 | 코드가 SA 비공개 내부를 사용 (아래 참고) |
 | < 2.0 | ❌ 미지원 | SA 1.x API 제거됨 |
 
@@ -52,7 +52,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
 | 드라이버 | 설치 | URL 스킴 | 상태 |
 |---|---|---|---|
-| CUBRID-Python (CCI) | `pip install "sqlalchemy-cubrid[cubrid]"` 또는 `[cubriddb]` | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원 (레거시 C 확장) |
+| CUBRIDdb (CCI) | cubrid-python v11.3.0.51+에서 빌드 ([방법](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)). `[cubrid]` / `[cubriddb]` extra는 폐기 예정이며 테스트되지 않은 PyPI 9.3.x를 설치 | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원 (레거시 C 확장, v11.3.0.51+만) |
 | pycubrid (순수 Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ 지원 |
 | pycubrid 비동기 | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ 지원 |
 
@@ -73,6 +73,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 트랜잭션 관리 | ✅ | 커밋, 롤백, 세이브포인트 (RELEASE SAVEPOINT 없음) |
 | 커넥션 풀링 | ✅ | `pool_pre_ping`, 연결 해제 감지를 갖춘 SA 풀 |
 | 문장 캐싱 | ✅ | `supports_statement_cache = True` |
+| `executemany` (`text()`, UPDATE, DELETE) | ✅ | 모든 드라이버에서 `None`은 NULL로 바인딩되고 `rowcount`는 모든 파라미터 세트의 합계입니다(`supports_sane_multi_rowcount = True`). `cubrid://`에서는 CUBRIDdb 버그를 피하기 위해 방언이 각 파라미터 세트를 별도의 `execute()`로 실행합니다. 이 때문에 행마다 문장 준비가 한 번 더 필요하며, 1000행 UPDATE 기준 드라이버 자체 `executemany`보다 약 2.9배 느립니다. pycubrid는 한 번만 준비하는 `executemany`를 그대로 사용합니다. insertmanyvalues를 사용하는 여러 행의 Core `insert()`는 영향이 없습니다. 타입이 `bind_expression()`을 정의하는 컬럼이 있는 테이블에 대한 INSERT는 executemany로 대체되므로(#421) `cubrid://`에서 행 단위 가드를 사용합니다. [드라이버 호환성, 알려진 문제 7](DRIVER_COMPAT.md#알려진-문제) 참고 |
 
 ### SQLAlchemy ORM
 
@@ -81,6 +82,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 선언형 모델 | ✅ | |
 | 릴레이션십 | ✅ | |
 | Session / Unit of Work | ✅ | |
+| 일괄 UPDATE / DELETE 행 수 검사 | ✅ | 모든 드라이버에서 일괄 flush가 일치한 행 수를 검사합니다. `cubrid://`에서는 행 단위 `executemany` 가드에 의존합니다. [드라이버 호환성, 알려진 문제 7](DRIVER_COMPAT.md#알려진-문제) 참고 |
 | Query API | ✅ | |
 | 하이브리드 속성 | ✅ | |
 
@@ -88,10 +90,10 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
 | 기능 | 상태 | 비고 |
 |---|---|---|
-| 자동 발견 | ✅ | `alembic.ddl` 엔트리 포인트 |
+| 자동 등록 | ✅ | 방언 로드 시 등록 (`env.py` 임포트 불필요) |
 | 스키마 마이그레이션 | ✅ | CREATE, ALTER, DROP |
 | Autogenerate | ✅ | 컬렉션 타입(SET, MULTISET, SEQUENCE) 포함 |
-| 트랜잭션 DDL | ❌ | CUBRID는 DDL을 자동 커밋 |
+| 트랜잭션 DDL | ✅ | DDL은 트랜잭션과 함께 롤백됨. 기본적으로 업그레이드 전체가 원자적 (리비전별 커밋은 `transaction_per_migration=True`) |
 
 ### DML 확장
 
@@ -101,7 +103,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | `MERGE` 문 | ✅ | `sqlalchemy_cubrid.merge()`를 통해 |
 | `REPLACE INTO` | ✅ | `sqlalchemy_cubrid.replace()`를 통해 |
 | `GROUP_CONCAT` | ✅ | |
-| `TRUNCATE TABLE` | ✅ | 오토커밋 감지 |
+| `TRUNCATE TABLE` | ✅ | 둘러싼 트랜잭션과 함께 커밋 |
 | `FOR UPDATE` | ✅ | `OF` 절 포함 |
 | 재귀 CTE | ✅ | `WITH RECURSIVE` (CUBRID 11.x+) |
 | 윈도우 함수 | ✅ | ROW_NUMBER, RANK, LAG, LEAD 등 |
@@ -112,17 +114,17 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 기능 | 상태 | 비고 |
 |---|---|---|
 | JSON 타입 | ✅ | v1.2.0부터, CUBRID ≥ 10.2 필요 |
-| 네이티브 Enum | ❌ | CUBRID에 ENUM 없음 — VARCHAR + CHECK 제약 사용 |
+| 네이티브 Enum | ✅ | 네이티브 `ENUM('a','b')` DDL (10.2+ 검증) |
 | Interval 타입 | ❌ | CUBRID 미지원 |
 | RETURNING 절 | ❌ | `INSERT/UPDATE/DELETE ... RETURNING` 미지원 |
-| BOOLEAN | ⚠️ | SMALLINT(0/1)로 매핑 — 네이티브 불리언 없음 |
+| BOOLEAN | ⚠️ | SMALLINT(0/1)로 매핑 — 네이티브 불리언 없음. CUBRID의 `IS`는 `NULL`/`TRUE`/`FALSE`만 받으므로 `col.is_(True)` / `is_not(False)` 등은 null-safe `<=>`로 에뮬레이트합니다(`col <=> 1`, `(col <=> 1) = 0`) (#465). `IS [NOT] NULL`, `col == True`, `not_(col)`은 그대로 컴파일됩니다. CUBRID는 SELECT 목록의 `AND`/`OR`/`NOT`을 거부하므로 `WHERE`에서 사용하거나 `case()`로 감싸세요. [불리언 조건식](TYPES.md#불리언-조건식) 참고 |
 | 시퀀스 | ❌ | CUBRID는 AUTO_INCREMENT만 사용 |
 | CHECK 제약 리플렉션 | ❌ | `get_check_constraints()`가 빈 리스트 반환 |
 | 멀티 스키마 | ❌ | CUBRID는 단일 스키마 모델 |
 | RELEASE SAVEPOINT | ❌ | no-op (CUBRID 미지원) |
 | Lateral 조인 | ❌ | CUBRID에 LATERAL 서브쿼리 지원 없음 |
 | 전문 검색 | ❌ | MATCH … AGAINST 구문 없음 |
-| 비동기 DBAPI | ✅ | pycubrid.aio 비동기 드라이버 경유(`cubrid+aiopycubrid://`), pycubrid >= 1.2.0,<2.0 필요 |
+| 비동기 DBAPI | ✅ | pycubrid.aio 비동기 드라이버 경유(`cubrid+aiopycubrid://`), pycubrid >= 1.8.0,<2.0 필요 |
 
 ---
 
@@ -149,34 +151,58 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
-| BIT | `BIT` | `bytes` | ✅ |
-| BLOB | `sa.LargeBinary` | `bytes` | ✅ |
-| CLOB | `CLOB` | `str` | ✅ |
+| TIMESTAMPTZ | `TIMESTAMPTZ` (`timezone=True`) | `datetime.datetime` | ✅ `TIMESTAMP`로 합쳐지지 않는 별도 리플렉트 타입 |
+| TIMESTAMPLTZ | `TIMESTAMPLTZ` (`timezone=True`) | `datetime.datetime` | ✅ `TIMESTAMP`로 합쳐지지 않는 별도 리플렉트 타입 |
+| DATETIMETZ | `DATETIMETZ` (`timezone=True`) | `datetime.datetime` | ✅ `DATETIME`으로 합쳐지지 않는 별도 리플렉트 타입 |
+| DATETIMELTZ | `DATETIMELTZ` (`timezone=True`) | `datetime.datetime` | ✅ `DATETIME`으로 합쳐지지 않는 별도 리플렉트 타입 |
+| BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ 길이와 `VARYING` 유지 |
+| BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ `BIT(n*8)`로 리플렉트 |
+| BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ `BIT VARYING(n*8)`로 리플렉트 |
+| CHAR(32) | `sa.Uuid` / `sa.UUID` | `uuid.UUID`, `as_uuid=False`이면 `str` | ✅ `CHAR(32)`로 리플렉트 |
+| BLOB | `sa.LargeBinary` | `bytes` (문서상). NULL이 아닌 값 조회는 현재 드라이버 LOB 로케이터를 반환합니다. [드라이버 호환성, 알려진 문제 6](DRIVER_COMPAT.md#알려진-문제) 참고 | ✅ |
+| CLOB | `CLOB` | `str` (문서상). NULL이 아닌 값 조회는 현재 드라이버 LOB 로케이터를 반환합니다. [드라이버 호환성, 알려진 문제 6](DRIVER_COMPAT.md#알려진-문제) 참고 | ✅ |
 | SET | `SET` | 컬렉션 | ✅ |
 | MULTISET | `MULTISET` | 컬렉션 | ✅ |
 | SEQUENCE | `SEQUENCE` | 컬렉션 | ✅ |
 | OBJECT | `OBJECT` | OID 참조 | ❌ 선언/컴파일 전용 |
 
+CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)` / `sa.VARBINARY(n)`은 비트 단위 길이의 비트 문자열(`BIT(n*8)` / `BIT VARYING(n*8)`)로 컴파일되며, `BINARY`는 더 짧은 값을 `\x00`으로 채웁니다. 빈 `b""`는 보존되지 않고 `None`(pycubrid의 `BINARY(n)`은 0 바이트)으로 조회됩니다. `sa.Uuid`와 `sa.UUID`는 `CHAR(32)`에 32자 16진 문자열로 저장됩니다. 리플렉트된 BIT 컬럼은 길이를 유지하므로 Alembic autogenerate가 이 컬럼들에 대해 잘못된 타입 변경을 보고하지 않습니다. [표준 SQL 타입](TYPES.md#표준-sql-타입) 참고.
+
 ---
 
 ## CI 매트릭스
 
-| 차원 | PR / push | 나이틀리 + 태그 + dispatch |
-|---|---|---|
-| 오프라인 테스트 | Python 3.10, 3.11, 3.12, 3.13, 3.14 | 동일 |
-| 통합 테스트 | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8잡 | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20잡 |
+일반 PR은 Ubuntu/Python 3.12 대표 스모크 검사, 고위험 PR은 최신 CUBRID 조합을
+추가합니다. main 및 최근 변경이 있는 주간 실행은 전체 오프라인 커버리지와
+최저·최신 대표 통합 검사를 수행합니다. 전체 Python/CUBRID 매트릭스는 릴리즈와
+명시적 수동 실행에서 유지합니다. [CI 실행 정책](CI_POLICY.md)을 참고하세요.
 
-5 × 4 전체 통합 매트릭스는 `.github/workflows/integration-full.yml`이 나이틀리 일정, 태그 릴리스, `workflow_dispatch` 요청 시 실행합니다.
+### SQLAlchemy 컴플라이언스 레인
+
+공식 SQLAlchemy 컴플라이언스 스위트는 두 드라이버 모두에서 병합을 차단합니다. 각 레인은 `test/known_failures.txt`에 검토된 자체 알려진 실패 기준선을 가집니다. [개발 가이드](DEVELOPMENT.md#sqlalchemy-컴플라이언스-레인)를 참고하세요.
+
+| 레인 | 드라이버 | SQLAlchemy | CUBRID (PR CI) | 알려진 실패 (11.4 / 10.2) |
+|---|---|---|---|---|
+| `cubrid@sa2.0` | CUBRIDdb (cubrid-python v11.3.0.51) | 2.0.53 | 11.4 | 68 / 61 |
+| `pycubrid@sa2.0` | pycubrid 1.8.0 (권장) | 2.0.53 | 10.2 | 54 (10.2에서만 게이트) |
+| `pycubrid@sa2.1` | pycubrid 1.8.0 (권장) | 2.1.1 | 11.4 | 58 / 51 |
+
+알려진 실패 대부분은 두 드라이버에 공통입니다. CUBRID 백엔드 규칙(식별자 소문자 변환, `[ ]` 식별자 구분자, 윈도 프레임 절 미지원, 행 단위 외래 키 검사, 단정밀도 `FLOAT`)과 `test/known_failures.txt`에 기록된 미해결 방언 리플렉션/DDL 버그입니다. NUMERIC 절단과 정수 나눗셈 항목은 CUBRIDdb 레인에만 있습니다.
 
 ## 테스트 커버리지
 
+오프라인 및 통합 테스트 개수는 PR마다 늘어나므로, 여기에 고정된 스냅샷 대신
+`offline-tests` / `integration-tests` CI 작업 출력에서 현재 수치를 확인하세요.
+
 | 지표 | 값 |
 |---|---|
-| 오프라인 테스트 | 619 |
-| 통합 테스트 | 동기 35 + 비동기 16 |
-| 라인 커버리지 | 오프라인 ~98.26% |
-| 커버리지 하한 | 95% (CI 강제) |
+| 커버리지 하한 | 95% (CI 강제, `offline-tests` 작업의 `--cov-fail-under=95`) |
 
 ---
 
 *참고: [연결 가이드](CONNECTION.md) · [타입 시스템](TYPES.md) · [기능 지원](FEATURE_SUPPORT.md) · [드라이버 호환성](DRIVER_COMPAT.md) · [변경 이력](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md)*
+
+## CI 실행 범위
+
+일반 PR은 최소 대표 검사를 사용합니다. 전체 호환성은 릴리즈와 명시적 수동 실행에서
+확인합니다. 자세한 내용은 [CI 실행 정책](CI_POLICY.md)을 참고하세요.

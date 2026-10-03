@@ -3,8 +3,8 @@
 ## 1. Overview
 
 **Project**: sqlalchemy-cubrid
-**Current Version**: 1.4.0
-**Status**: Beta (actively maintained; async + JSON shipped)
+**Current Version**: 1.8.0
+**Status**: Production/Stable (actively maintained; async + JSON shipped)
 **Repository**: [github.com/cubrid-lab/sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 **License**: MIT
 
@@ -26,8 +26,8 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 - **Schema reflection** — tables, views, columns, PKs, FKs, indexes, unique constraints, comments
 - **DML extensions** — ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT, TRUNCATE
 - **DDL support** — COMMENT, IF NOT EXISTS / IF EXISTS, AUTO_INCREMENT
-- **Alembic migration support** via auto-discovered entry point
-- **~98.26% offline coverage** (619 offline tests, 35 sync integration tests, 16 async integration tests)
+- **Alembic migration support** via `CubridImpl`, registered when the dialect loads
+- **Extensive offline and integration test suites** — CI enforces a minimum 95% line-coverage gate on the offline suite (`--cov-fail-under=95`); see CI job output for current test counts
 - **CI/CD** — Python 3.10–3.14 × CUBRID 10.2–11.4 matrix
 - **17 English documentation files** in `docs/` covering the dialect
 
@@ -37,12 +37,12 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 |---|---|---|
 | Installable on Python 3.10+ | ✅ | ✅ `pip install sqlalchemy-cubrid` |
 | SQLAlchemy 2.0 – 2.1 compatible | ✅ | ✅ Full API compliance |
-| Offline tests (no live DB) | ✅ | ✅ 619 tests, ~98.26% coverage |
+| Offline tests (no live DB) | ✅ | ✅ Extensive suite, coverage ≥ 95% CI-enforced |
 | All dialect methods implemented | ✅ | ✅ Reflection, compilation, types |
 | CI/CD with version matrix | ✅ | ✅ Py 3.10–3.14 × CUBRID 10.2–11.4 |
 | Publishable to PyPI | ✅ | ✅ Release workflow on tag |
-| Alembic support | ✅ | ✅ CubridImpl auto-discovered + autogenerate |
-| ≥ 95% code coverage | ✅ | ✅ ~98.26% (CI-enforced) |
+| Alembic support | ✅ | ✅ CubridImpl auto-registered + autogenerate |
+| ≥ 95% code coverage | ✅ | ✅ CI-enforced via `--cov-fail-under=95` |
 | Comprehensive documentation | ✅ | ✅ 17 English docs files + README |
 
 ---
@@ -90,7 +90,7 @@ graph TD
 | SQLAlchemy | ≥ 2.0, < 2.3 | Core ORM/engine framework |
 | Python | ≥ 3.10 | Runtime |
 | CUBRID-Python | any | DBAPI driver (optional extra) |
-| Alembic | ≥ 1.7 | Migration support (optional extra) |
+| Alembic | ≥ 1.7.2 | Migration support (optional extra) |
 | pytest | ≥ 7.0 | Testing (dev) |
 | ruff | ≥ 0.4 | Lint + format (dev) |
 
@@ -103,8 +103,6 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
 
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 ```
 
 ---
@@ -125,8 +123,8 @@ cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 | `Numeric(p, s)` | `NUMERIC(p, s)` | Exact numeric, up to 38 digits |
 | `String(n)` | `VARCHAR(n)` | Variable-length |
 | `Text` | `STRING` | VARCHAR(1,073,741,823) |
-| `Unicode(n)` | `NVARCHAR(n)` | National character set |
-| `UnicodeText` | `NVARCHAR` | Max-length national |
+| `Unicode(n)` | `VARCHAR(n)` | Database charset |
+| `UnicodeText` | `STRING` | Same as `Text` (CUBRID has no `TEXT`) |
 | `LargeBinary` | `BLOB` | Binary Large Object |
 | `Boolean` | `SMALLINT` | Emulated 0/1 |
 | `Date` / `Time` / `DateTime` / `TIMESTAMP` | Native | Direct mapping |
@@ -186,19 +184,19 @@ class CubridDialect(default.DefaultDialect):
     name = "cubrid"
     supports_statement_cache = True
     supports_native_boolean = False       # Emulated via SMALLINT
-    supports_native_enum = False
+    supports_native_enum = True            # Native ENUM('a','b') DDL
     supports_native_decimal = True
     supports_sequences = False            # Uses AUTO_INCREMENT
     supports_default_values = True        # INSERT ... DEFAULT VALUES
     supports_empty_insert = True
     supports_multivalues_insert = True
     supports_comments = True              # Table + column comments
-    supports_is_distinct_from = False
+    supports_is_distinct_from = True      # Emulated via null-safe <=>
     insert_returning = False              # No RETURNING clause
     update_returning = False
     delete_returning = False
     postfetch_lastrowid = True
-    requires_name_normalize = True        # Lowercase folding
+    requires_name_normalize = False       # CUBRID already folds to lowercase
     max_identifier_length = 254
     default_paramstyle = "qmark"
 ```
@@ -212,23 +210,23 @@ class CubridDialect(default.DefaultDialect):
 | `get_table_names()` | `db_class` (`class_type = 'CLASS'`, non-system tables) |
 | `get_view_names()` | `db_class` (`class_type = 'VCLASS'`) |
 | `get_view_definition()` | `SHOW CREATE VIEW` |
-| `get_columns()` | `SHOW COLUMNS IN` + `_db_attribute.comment` |
-| `get_pk_constraint()` | `SHOW COLUMNS IN` (+ optional `db_constraint` lookup for PK name) |
+| `get_columns()` | `SHOW COLUMNS IN` + `db_attribute.comment` |
+| `get_pk_constraint()` | `db_index` + `db_index_key` (falls back to `SHOW COLUMNS IN` when no PK row is found) |
 | `get_foreign_keys()` | `SHOW CREATE TABLE` parsing |
-| `get_indexes()` | `SHOW INDEXES IN` + `_db_index` flags |
-| `get_unique_constraints()` | `SHOW CREATE TABLE` parsing |
+| `get_indexes()` | `SHOW INDEXES IN` + `db_index` flags |
+| `get_unique_constraints()` | `db_index` + `SHOW INDEXES IN` (falls back to `SHOW CREATE TABLE` parsing only when `db_index` lists no index of the table or, on 11.2+, the name resolves to another owner's class) |
 | `get_table_comment()` | `db_class.comment` |
 | `get_check_constraints()` | Returns `[]` (CUBRID ignores CHECK) |
 | `get_schema_names()` | Returns `[]` (no schema objects) |
 | `has_table()` | Parameterized query on `db_class` |
-| `has_index()` | Query on `_db_index` |
+| `has_index()` | Query on `db_index` |
 | `has_sequence()` | Returns `False` always |
 
 #### Connection & Isolation
 
 - **URL translation**: `cubrid://user:pass@host:port/db` → `CUBRID:host:port:db:::`
 - **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
-- **Autocommit detection**: `SET`, `ALTER`, `CREATE`, `DROP`, `GRANT`, `REVOKE`, `TRUNCATE`
+- **No statement-text autocommit**: DML and DDL are committed only through the SQLAlchemy 2.x Connection API (`commit()`, `begin()`, `Session`)
 - **Savepoints**: Supported; `RELEASE SAVEPOINT` is a no-op
 
 ### 3.4 DML Extensions (`dml.py` — 267 lines)
@@ -260,8 +258,8 @@ stmt = (
 
 ### 3.5 Alembic Support (`alembic_impl.py` — 141 lines)
 
-- `CubridImpl(DefaultImpl)` with `transactional_ddl = False`
-- Auto-discovered via `alembic.ddl` entry point
+- `CubridImpl(DefaultImpl)` with `transactional_ddl = True` (CUBRID DDL is transactional); `emit_begin()` is a no-op because CUBRID has no `BEGIN` statement, so offline scripts only emit `COMMIT;`
+- Registered with Alembic when the dialect module loads
 - Autogenerate: `render_type()` for SET/MULTISET/SEQUENCE rendering in migration scripts
 - Autogenerate: `compare_type()` for semantic comparison of collection types
 - Native `alter_column`: type change (`MODIFY`), rename (`RENAME COLUMN`), combined (`CHANGE`); `batch_alter_table` only for lossy conversions (`alter_table_change_type_strict`)
@@ -271,35 +269,33 @@ stmt = (
 
 ### 4.1 Test Matrix
 
-| Test File | Tests | Coverage Area |
-|---|---|---|
-| `test_compiler.py` | 70 | SQL compilation (SELECT, JOIN, CAST, LIMIT, DML, DDL) |
-| `test_types.py` | 53 | Type compilation, reflection, collection, MONETARY, OBJECT |
-| `test_requirements.py` | 46 | SA 2.0 requirement flags (parametrized) |
-| `test_dialect_offline.py` | 24 | Reflection stubs, connection, isolation, savepoint |
-| `test_base.py` | 15 | ExecutionContext, IdentifierPreparer |
-| `test_dml.py` | ~80 | ON DUPLICATE KEY UPDATE, MERGE, REPLACE compilation |
-| `test_alembic.py` | 21 | Import, registry, entry-point, autogenerate |
-| `test_dialects.py` | ~23 | Edge cases, dialect config |
-| `test_trace.py` | 7 | Query trace utility |
-| **Total** | **619 offline tests** | **~98.26% coverage** |
+The offline suite spans `test/test_compiler.py`, `test_types.py`,
+`test_requirements.py`, `test_dialect_offline.py`, `test_base.py`,
+`test_dml.py`, `test_alembic*.py`, `test_dialects.py`, `test_trace.py`, and
+many more modules covering reflection, collections, Alembic plugin
+registration, driver contracts and repository tooling. Per-file and total test
+counts shift with nearly every PR; run `pytest test/ -m "not integration and
+not repo" --collect-only` or check the `offline-tests` CI job output for
+current numbers instead of a pinned snapshot here. CI enforces a minimum 95%
+line-coverage gate (`--cov-fail-under=95`).
 
-### 4.2 Unreachable Lines (4 entries)
+### 4.2 Unreachable Lines
 
-| File | Line | Reason |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause` returning `""` — SA always calls with valid state |
-| `compiler.py` | 84 | `limit_clause` returning `""` — SA always provides limit context |
-| `compiler.py` | 298-300 | DDL type compilation fallback — all types covered |
-| `dml.py` | 310 | `else` branch in type normalization — all input types covered |
+A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
+`for_update_clause`/`limit_clause` return, a DDL type-compilation fallback, an
+`else` branch in type normalization) that cannot trigger through SQLAlchemy's
+public API. Their exact line numbers shift as the modules change; run
+`pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid
+--cov-report=term-missing` (or `make test`) and check the `Missing` column for
+the current set.
 
 ### 4.3 CI Matrix
 
 | Workflow | Python versions | CUBRID versions | Source |
 |---|---|---|---|
 | PR/push offline tests | 3.10, 3.11, 3.12, 3.13, 3.14 | N/A (offline) | `.github/workflows/ci.yml` |
-| PR/push integration tests | 3.10, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/ci.yml` |
-| Nightly / tagged / manual full integration matrix | 3.10, 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
+| PR/push integration tests | Reduced matrix: 3.14 (with 11.4), 3.10 (with 10.2) | 11.4, 10.2 — 2 combinations only, not a cross product | `.github/workflows/ci.yml` |
+| Nightly / release-gate / manual full integration matrix | 3.10, 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
 
 ---
 
@@ -463,7 +459,7 @@ table-recreate strategy when they need full control over data migration.
 
 ---
 
-*Last updated: April 2026 · sqlalchemy-cubrid v1.4.0 Beta*
+*Last updated: September 2026 · sqlalchemy-cubrid v1.8.0*
 
 ---
 

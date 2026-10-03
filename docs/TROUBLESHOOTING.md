@@ -14,6 +14,8 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Authentication Failed](#authentication-failed)
   - [Stale Connections / Disconnections](#stale-connections--disconnections)
+  - [Errors After a cub_server Restart or Crash](#errors-after-a-cub_server-restart-or-crash)
+  - [Interrupted Query (-4)](#interrupted-query--4)
   - [Connection Pool Exhaustion](#connection-pool-exhaustion)
   - [Wrong URL Format](#wrong-url-format)
 - [SQL Compilation Issues](#sql-compilation-issues)
@@ -48,11 +50,11 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [No Implementation Found for Dialect 'cubrid'](#no-implementation-found-for-dialect-cubrid)
   - [ALTER COLUMN TYPE Rejected (lossy conversion)](#alter-column-type-rejected-lossy-conversion)
   - [RENAME COLUMN](#rename-column)
-  - [Partial Migration (DDL Auto-Commit)](#partial-migration-ddl-auto-commit)
+  - [Partial Migration After a Failure](#partial-migration-after-a-failure)
   - [Autogenerate Not Detecting Changes](#autogenerate-not-detecting-changes)
 - [Isolation Level Issues](#isolation-level-issues)
   - [Setting Isolation Levels](#setting-isolation-levels)
-  - [DDL Commits Current Transaction](#ddl-commits-current-transaction)
+  - [DDL Runs in the Current Transaction](#ddl-runs-in-the-current-transaction)
 - [Transaction Issues](#transaction-issues)
   - [Data Not Persisted](#data-not-persisted)
   - [Autocommit Conflicts](#autocommit-conflicts)
@@ -81,13 +83,12 @@ ImportError: No module named 'CUBRIDdb'
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Install the C-extension driver:**
-
-```bash
-pip install CUBRID-Python
-```
-
-> **Note:** This requires the CUBRID CCI library and a C compiler. See the [CUBRID Python driver docs](https://www.cubrid.org/manual/en/11.0/api/python.html) for platform-specific instructions.
+**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
+cubrid-python v11.3.0.51 or later, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
+CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
+9.3.x release, see
+[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
@@ -101,7 +102,7 @@ Then change your connection URL:
 # Before (C-extension)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
-# After (pure Python — no C build needed)
+# After (pure Python driver — no CUBRID native libraries)
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
@@ -127,14 +128,14 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ### C Extension Build Failure
 
-**Symptom:** `pip install CUBRID-Python` fails with compilation errors.
+**Symptom:** building CUBRIDdb (cubrid-python) fails with compilation errors.
 
 **Common causes:**
 - Missing C compiler (`gcc` / `cl.exe`)
 - Missing CUBRID CCI headers
 - Incompatible platform
 
-**Fix:** Use pycubrid instead — it's pure Python and requires no build tools:
+**Fix:** Use the pure-Python pycubrid driver instead; it requires no CUBRID native libraries. The `[pycubrid]` extra also installs `greenlet`, which may need build tools if no compatible wheel is available:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
@@ -219,6 +220,43 @@ engine = create_engine(
 For `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, `pool_pre_ping=True` now uses pycubrid's native `CHECK_CAS` ping instead of issuing `SELECT 1`.
 
 See [Connection Guide — Pool Tuning](CONNECTION.md#connection-pool-tuning) for detailed recommendations.
+
+---
+
+### Errors After a cub_server Restart or Crash
+
+**Symptom:** A statement in an open transaction fails after `cub_server` was stopped, restarted or crashed:
+
+```
+DatabaseError: (-111) Your transaction has been aborted by the system due to server failure or mode change.
+DatabaseError: (-224) A database has not been restarted.
+```
+
+**Cause:** The broker's CAS lost its session with `cub_server`. It reconnects only after the client ends the transaction, so until then the same connection fails every statement with -224, even after `cub_server` is back. `pool_pre_ping` cannot catch this: the connection is already checked out, and the CAS still answers the ping.
+
+**Behavior:** The dialect treats the codes for which the broker resets the CAS as disconnects on both drivers: -111 (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199 (`ER_NET_SERVER_CRASHED`), -224 (`ER_OBJ_NO_CONNECT`) and -677 (`ER_BO_CONNECT_FAILED`). SQLAlchemy invalidates the connection (`exc.connection_invalidated` is `True`) and the pool opens a new one. A pycubrid connection that fails to reconnect while `cub_server` is down (`CAS did not answer CHECK_CAS out of transaction and reconnecting failed`) is also a disconnect. Releases up to 1.8.0 did not classify these errors, so the broken connection stayed in the pool.
+
+**Fix:** Nothing to configure. Roll back (leaving a `with engine.connect()` or `Session` block does this) and retry the transaction once `cub_server` accepts connections again.
+
+---
+
+### Interrupted Query (-4)
+
+**Symptom:** A running statement fails. The exact text is driver-specific:
+
+```
+# CUBRIDdb
+DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
+
+# pycubrid
+OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
+```
+
+**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid's `str()` describes -4 as `Communication error`, which is a pycubrid label, not the meaning of the server code.
+
+**Behavior:** The error is not a disconnect: SQLAlchemy keeps the connection (`exc.connection_invalidated` is `False`). Releases up to 1.8.0 treated -4 from CUBRIDdb as a disconnect and replaced the connection (#572).
+
+**Fix:** Roll back and retry the statement if it should run to completion.
 
 ---
 
@@ -363,15 +401,24 @@ conn.execute(text("SELECT * FROM users WHERE is_active = 1"))
 
 **Symptom:** Unexpected query behavior with pagination.
 
-**CUBRID supports standard `LIMIT n OFFSET m` syntax.** The dialect generates this automatically:
+**The dialect emits MySQL-style `LIMIT [offset,] row_count`.** CUBRID accepts the standard
+`LIMIT row_count OFFSET offset` form as well, but the dialect never generates it — the `OFFSET`
+keyword does not appear in its output at all:
 
 ```python
-# SQLAlchemy generates correct CUBRID LIMIT/OFFSET
-stmt = select(users).limit(10).offset(20)
-# → SELECT ... FROM users LIMIT 10 OFFSET 20
+select(users).limit(3)              # → SELECT ... FROM users LIMIT 3
+select(users).limit(10).offset(20)  # → SELECT ... FROM users LIMIT 20, 10
+select(users).offset(5)             # → SELECT ... FROM users LIMIT 5, 4611686018427387904
 ```
 
-**Note:** CUBRID does not support MySQL's `LIMIT offset, count` comma syntax. The dialect always uses `LIMIT n OFFSET m`.
+The comma form appears only when there is an offset, and the offset comes first. `LIMIT 20, 10`
+skips 20 rows and returns 10; it does not limit to 20 starting at 10.
+
+**Offset without limit.** CUBRID has no bare `OFFSET` (`SELECT ... OFFSET 5` is a syntax error), so
+`.offset(n)` with no `.limit()` still has to name a row count, and the dialect supplies an
+effectively unbounded one — the third line above. A very large second operand in a query log is
+that sentinel, not a bug. See [Feature Support](FEATURE_SUPPORT.md) for the exact value and why it
+is deliberately not the signed BIGINT maximum.
 
 ---
 
@@ -646,6 +693,10 @@ NoSuchTableError: table_name
 
 3. **Wrong database** — ensure your connection URL points to the correct database
 
+> **Note:** Reflection raises `NoSuchTableError` only for a missing object: the `db_class` lookup finds no such table or view, the server reports `Unknown class "<owner>.<name>"`, or a query that returns a row for every existing object (`SHOW CREATE TABLE`, `SHOW CREATE VIEW`) returns none (#589). A syntax error or any other failure of a reflection query propagates as the original exception (for example `sqlalchemy.exc.ProgrammingError`), even though CUBRID uses native error -493 for both (and pycubrid before 1.8.0 reports SQLSTATE `42S02`, `Table not found`, for every -493 error) (#454).
+
+> **Note:** `get_foreign_keys()` and `get_unique_constraints()` no longer turn a failed `SHOW CREATE TABLE` into an empty list (#589). A disconnect, an authorization error or a driver error during reflection now raises, so Alembic autogenerate stops with that error instead of proposing `add_fk` for foreign keys that already exist. Retry on a fresh connection (`pool_pre_ping=True` replaces stale pooled connections).
+
 ---
 
 ### Case Sensitivity in Table Names
@@ -663,7 +714,7 @@ conn.execute(text('CREATE TABLE "MyTable" (id INT)'))  # Stored as 'MyTable'
 conn.execute(text('SELECT * FROM "MyTable"'))          # Must use quotes
 ```
 
-The dialect's `CubridIdentifierPreparer` handles this automatically by setting `requires_name_normalize = True` and `initial_quote = '"'`.
+The dialect's `CubridIdentifierPreparer` quotes case-sensitive names with `initial_quote = '"'`. Because CUBRID already folds unquoted names to lowercase, which matches SQLAlchemy's convention, the dialect sets `requires_name_normalize = False`.
 
 ---
 
@@ -873,7 +924,7 @@ stmt = replace(users).values(id=1, name="Alice", email="alice@new.com")
 **Symptom:**
 
 ```
-CommandError: No implementation found for dialect 'cubrid'
+KeyError: 'cubrid'   (raised from alembic/ddl/impl.py, DefaultImpl.get_by_dialect)
 ```
 
 **Fix:** Install with the `alembic` extra:
@@ -882,7 +933,7 @@ CommandError: No implementation found for dialect 'cubrid'
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-The `CubridImpl` class is auto-discovered via the `alembic.ddl` entry point. No manual configuration needed.
+`CubridImpl` registers itself when the CUBRID dialect loads, provided Alembic is installed in the same environment. No manual configuration or `env.py` import is needed.
 
 ---
 
@@ -938,17 +989,24 @@ def upgrade():
 
 ---
 
-### Partial Migration (DDL Auto-Commit)
+### Partial Migration After a Failure
 
 **Symptom:** A migration fails partway through, leaving the database in an inconsistent state.
 
-**Cause:** CUBRID auto-commits every DDL statement (`CREATE`, `ALTER`, `DROP`). The `CubridImpl` sets `transactional_ddl = False`, meaning Alembic cannot roll back DDL operations.
+**Background:** CUBRID DDL is transactional: with client autocommit off, which the dialect always sets, `CREATE`, `ALTER`, `DROP`, `TRUNCATE`, `CREATE INDEX`, `RENAME` and the rest are undone by `ROLLBACK`. `CubridImpl` sets `transactional_ddl = True`, so by default a failed `alembic upgrade` rolls back every revision of that run, including the `alembic_version` update. With `transaction_per_migration=True`, the revisions that finished stay committed and only the failing one is rolled back.
+
+**Cause:** Something committed before the failure:
+
+- client autocommit — driver-level autocommit, csql's default auto-commit mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501) — commits every statement;
+- an offline (`--sql`) script ran without `csql --no-auto-commit --no-single-line`: in csql's default single-line mode, csql continues past a failing statement, still runs the trailing `COMMIT;` and exits 0;
+- a revision issued `COMMIT` itself, for example through `op.execute()`.
 
 **Prevention:**
 
-1. Keep migrations small — one logical change per migration
-2. Test migrations against a staging database first
-3. Back up the database before running migrations
+1. Run migrations without client autocommit, and run offline scripts with `csql --no-auto-commit --no-single-line` (it stops at the first error and exits 1, and the open transaction is rolled back)
+2. Use `transaction_per_migration=True` for long or large-table migrations: uncommitted DDL holds schema locks, so other sessions wait until the transaction ends
+3. Test migrations against a staging database first
+4. Back up the database before running migrations
 
 **Recovery:**
 
@@ -1007,27 +1065,31 @@ with engine.connect().execution_options(
 | `"SERIALIZABLE"` | 6 |
 | `"REPEATABLE READ"` | 5 |
 | `"READ COMMITTED"` *(default)* | 4 |
+| `"AUTOCOMMIT"` | driver autocommit mode (see [Autocommit Conflicts](#autocommit-conflicts)) |
 
 The legacy pre-MVCC levels (`READ UNCOMMITTED` and the granular
 class/instance combinations that resolved to numeric codes 1–3) were
-removed in CUBRID 10.0 and are no longer accepted; passing them raises
-`ValueError`. See [Isolation Levels](ISOLATION_LEVELS.md).
+removed in CUBRID 10.0 and are no longer accepted; passing them to
+`create_engine(isolation_level=...)` or `execution_options(isolation_level=...)`
+raises `sqlalchemy.exc.ArgumentError`. See [Isolation Levels](ISOLATION_LEVELS.md).
 
 ---
 
-### DDL Commits Current Transaction
+### DDL Runs in the Current Transaction
 
-**All DDL statements auto-commit in CUBRID.** This means:
+**CUBRID does not implicitly commit DDL.** With client autocommit off — the dialect turns it off on every connection — DDL is part of the current transaction, whatever the isolation level:
 
 ```python
 with engine.begin() as conn:
     conn.execute(text("INSERT INTO users (name) VALUES ('Alice')"))
-    conn.execute(text("CREATE TABLE temp (id INT)"))  # AUTO-COMMITS everything!
-    # The INSERT above is now committed, even if an error occurs below
+    conn.execute(text("CREATE TABLE temp (id INT)"))  # not committed yet
     conn.execute(text("INSERT INTO users (name) VALUES ('Bob')"))
+    raise RuntimeError("abort")  # rolls back both INSERTs and the CREATE TABLE
 ```
 
-**Best practice:** Never mix DML and DDL in the same transaction.
+The only auto-commit behavior is client autocommit (`CCI_DEFAULT_AUTOCOMMIT` / driver-level autocommit, csql's default mode, or `isolation_level="AUTOCOMMIT"` where the dialect accepts it (#501)), which commits after every statement, DDL or DML.
+
+**Watch out for schema locks:** uncommitted DDL holds a schema lock on its table until the transaction ends, so other sessions that use the table wait (`SCH_S_LOCK` waits; CUBRID's default `lock_timeout` is unlimited, so they wait until the transaction ends unless a lock timeout is set). Commit DDL promptly, and keep long DDL transactions out of busy periods.
 
 ---
 
@@ -1066,15 +1128,24 @@ with Session(engine) as session:
 
 **Background:** Both CUBRID drivers default to `autocommit=True`, but the dialect sets `autocommit=False` on each new connection so SQLAlchemy can manage transactions.
 
-**If you need true autocommit** (each statement commits immediately):
+**If you need true autocommit** (each statement commits immediately), use
+SQLAlchemy's `AUTOCOMMIT` isolation level. It works on all three drivers
+(`cubrid://`, `cubrid+pycubrid://`, `cubrid+aiopycubrid://`):
 
 ```python
 with engine.connect().execution_options(
     isolation_level="AUTOCOMMIT"
 ) as conn:
     conn.execute(text("INSERT INTO logs (msg) VALUES ('event')"))
-    # Committed immediately
+    # Committed immediately; conn.rollback() does not undo it
 ```
+
+`create_engine(..., isolation_level="AUTOCOMMIT")` and
+`engine.execution_options(isolation_level="AUTOCOMMIT")` work too. A connection
+switched to `AUTOCOMMIT` with `execution_options()` is transactional again when
+it goes back to the pool. Releases before #501 raised `ArgumentError`
+(`execution_options`) or `ValueError` (`create_engine`) for `AUTOCOMMIT`. See
+[Isolation Levels](ISOLATION_LEVELS.md#autocommit).
 
 ---
 
@@ -1223,7 +1294,7 @@ flowchart TD
     kind -->|Import / Module error| install[Check driver install]
     kind -->|Connection failure| conn[Validate URL, host, port, credentials]
     kind -->|SQL compile/runtime error| sql[Inspect generated SQL and unsupported feature]
-    kind -->|Migration failure| mig[Check Alembic limitations and DDL auto-commit]
+    kind -->|Migration failure| mig[Check Alembic limitations and client autocommit]
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
@@ -1273,7 +1344,7 @@ Output includes SQL statements, parameters, and execution times.
 
 ```python
 import sqlalchemy_cubrid
-print(sqlalchemy_cubrid.__version__)  # e.g., "1.4.0"
+print(sqlalchemy_cubrid.__version__)  # e.g., "1.8.0"
 
 from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")

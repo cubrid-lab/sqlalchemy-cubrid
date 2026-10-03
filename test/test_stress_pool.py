@@ -3,7 +3,8 @@
 Exercises QueuePool concurrent checkouts (threading + asyncio), pool
 overflow under burst load, and pool_recycle behavior.
 
-Skipped automatically when no CUBRID instance is available.
+Skipped when ``CUBRID_TEST_URL`` is unset; an unreachable server errors
+instead (the shared gate in ``test/conftest.py``, #593).
 """
 
 from __future__ import annotations
@@ -20,35 +21,25 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import QueuePool
+from sqlalchemy.engine import URL
+
+from scripts.integration_urls import async_url
 
 
 _DEFAULT_URL = "cubrid+pycubrid://dba@localhost:33000/testdb"
-_DEFAULT_AURL = "cubrid+aiopycubrid://dba@localhost:33000/testdb"
 
 
 def _sync_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
-def _async_url() -> str:
-    return os.environ.get("CUBRID_TEST_AURL", _DEFAULT_AURL)
+def _async_url() -> URL:
+    return async_url(_sync_url(), os.environ.get("CUBRID_TEST_AURL"))
 
 
-def _can_connect() -> bool:
-    try:
-        engine = create_engine(_sync_url())
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        engine.dispose()
-        return True
-    except Exception:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _can_connect(),
-    reason="CUBRID instance not available (set CUBRID_TEST_URL)",
-)
+# The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
+# unset and errors them when its server is unreachable (#593).
+pytestmark = pytest.mark.integration
 
 
 def _table() -> str:

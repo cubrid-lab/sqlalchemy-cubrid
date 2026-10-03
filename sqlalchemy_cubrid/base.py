@@ -10,16 +10,12 @@
 from __future__ import annotations
 
 import logging
-import re
 from typing import Any
 
 from sqlalchemy.engine import default
 from sqlalchemy.sql import compiler
 
 log = logging.getLogger(__name__)
-AUTOCOMMIT_REGEXP = re.compile(
-    r"\s*(?:UPDATE|INSERT|CREATE|DELETE|DROP|ALTER|MERGE|TRUNCATE)", re.I | re.UNICODE
-)
 
 # CUBRID Reserved words
 # https://www.cubrid.org/manual/en/11.0/sql/keyword.html
@@ -395,9 +391,6 @@ class CubridIdentifierPreparer(compiler.IdentifierPreparer):
 class CubridExecutionContext(default.DefaultExecutionContext):
     """Execution context for CUBRID connections."""
 
-    def should_autocommit_text(self, statement: str) -> Any:
-        return AUTOCOMMIT_REGEXP.match(statement)
-
     def get_lastrowid(self) -> int | None:  # type: ignore[override]
         """Return the last inserted row ID.
 
@@ -416,7 +409,7 @@ class CubridExecutionContext(default.DefaultExecutionContext):
             log.debug("get_last_insert_id via driver failed, falling back to SQL", exc_info=True)
 
         # Fallback: use SQL function
-        cursor = self.create_server_side_cursor()
+        cursor = self._dbapi_connection.cursor()
         try:
             cursor.execute("SELECT LAST_INSERT_ID()")
             row = cursor.fetchone()

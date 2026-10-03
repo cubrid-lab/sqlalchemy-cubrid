@@ -118,7 +118,7 @@ sequenceDiagram
       CAS-->>Dialect: FK constraints
 
       SA->>Dialect: get_indexes(connection, table_name)
-      Dialect->>CAS: SELECT ... FROM _db_index (batch PK/FK flags)
+      Dialect->>CAS: SELECT ... FROM db_index (batch PK/FK flags)
       Dialect->>CAS: SHOW INDEXES IN "table_name"
       CAS-->>Dialect: Non-PK/non-FK index definitions
     end
@@ -179,10 +179,10 @@ flowchart TD
 기본 `CubridDialect` 클래스를 포함하며, 스키마 리플렉션, 연결 관리, 트랜잭션 격리 수준의 핵심 로직을 구현합니다. 리플렉션(`get_columns`, `get_indexes`, `get_foreign_keys`, `get_pk_constraint`, `get_unique_constraints`)이 여기 구현됩니다. 기본적으로 C 확장 드라이버 `CUBRIDdb`를 사용합니다.
 
 #### `pycubrid_dialect.py`
-순수 Python `pycubrid` 드라이버를 사용하는 `PyCubridDialect` 변형을 구현합니다. 연결 인자 파싱과 연결 시점 초기화 로직을 오버라이드합니다.
+순수 Python `pycubrid` 드라이버를 사용하는 `PyCubridDialect` 변형을 구현합니다. 연결 인자 파싱과 연결 시점 초기화 로직을 오버라이드하며, pycubrid 전용 드라이버 정책을 담습니다: commit/rollback 후 격리 수준 재적용, 드라이버 자체 `executemany`, `ping(False)` 상태 확인, 그리고 연결 끊김 감지 중 pycubrid 부분(`errno` 코드와 클라이언트 측 메시지). `CubridDialect`는 CUBRIDdb의 오류 형태(`args[0]`의 `int` 코드)만 다룹니다.
 
 #### `aio_pycubrid_dialect.py`
-`cubrid+aiopycubrid://`가 사용하는 비동기 방언 변형 `PyCubridAsyncDialect`를 구현합니다. SQLAlchemy의 비동기 엔진과 `AsyncSession` API에 `pycubrid.aio`를 적용합니다.
+`cubrid+aiopycubrid://`가 사용하는 비동기 방언 변형 `PyCubridAsyncDialect`를 구현합니다. SQLAlchemy의 비동기 엔진과 `AsyncSession` API에 `pycubrid.aio`를 적용하며, `on_connect()`와 `do_ping()`을 포함한 모든 드라이버 정책을 어댑터 연결을 통해 `PyCubridDialect`에서 상속합니다.
 
 #### `compiler.py`
 SQL, DDL, 타입 컴파일러를 담습니다. SQLAlchemy의 추상 구문 트리를 CUBRID 전용 SQL 방언으로 번역하며, LIMIT/OFFSET과 FOR UPDATE 절 같은 미묘함을 처리합니다.
@@ -206,7 +206,7 @@ CUBRID 전용 타입 시스템을 구현하며, SQLAlchemy의 일반 타입을 `
 SQLAlchemy 테스트 스위트가 CUBRID 백엔드에서 어떤 동작 테스트를 실행할지 결정하는 기능 플래그를 정의합니다.
 
 #### `alembic_impl.py`
-Alembic용 `CubridImpl` 클래스를 제공해 DDL 마이그레이션 지원을 가능하게 하고, CUBRID에 트랜잭션 DDL 기능이 없음을 정의합니다.
+Alembic용 `CubridImpl` 클래스를 제공해 DDL 마이그레이션 지원을 가능하게 하고, CUBRID의 DDL이 트랜잭션으로 처리됨을 선언합니다(`transactional_ddl = True`). Alembic 1.18+는 `alembic.plugins` 엔트리 포인트(`_sqlalchemy_cubrid_alembic.py`)를 통해 이를 임포트하고, 이전 Alembic에서는 `dialect.py`가 임포트합니다.
 
 ## 방언 발견
 
@@ -230,8 +230,7 @@ flowchart TD
     pycubrid_dialect --> import_py["import pycubrid"]
     aio_pycubrid_dialect --> import_aio["import pycubrid.aio"]
 
-    alembic_entry["Entry Point: alembic.ddl → cubrid"]
-    alembic_entry --> alembic_impl["CubridImpl<br/>transactional_ddl = False"]
+    cubrid_dialect -->|"Alembic 1.7.2-1.17에서 임포트"| alembic_impl["CubridImpl<br/>transactional_ddl = True"]
 ```
 
 ## 드라이버 아키텍처
@@ -242,7 +241,7 @@ flowchart TD
 flowchart TD
     sa_default["sqlalchemy.engine.default<br/>DefaultDialect"]
     cubrid_base["CubridDialect<br/>dialect.py<br/>• reflection<br/>• isolation levels<br/>• type mapping<br/>• import_dbapi() → CUBRIDdb"]
-    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()"]
+    pycubrid_variant["PyCubridDialect<br/>pycubrid_dialect.py<br/>• import_dbapi() → pycubrid<br/>• create_connect_args()<br/>• on_connect()<br/>• do_ping()<br/>• is_disconnect(): errno, messages"]
     aio_variant["PyCubridAsyncDialect<br/>aio_pycubrid_dialect.py<br/>• is_async = True<br/>• import_dbapi() → pycubrid.aio adapter<br/>• async connection adaptation"]
 
     sa_default --> cubrid_base
@@ -259,7 +258,7 @@ flowchart TD
 *   **SQLAlchemy `<2.3` 핀**: `_compat.py` 헬퍼를 통해 남은 세 개의 비공개 SA 속성(`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`)을 compiler.py:93, 104-105에서 사용 — 공개 대안이 나올 때까지 버전 고정 필요.
 *   **BOOLEAN → SMALLINT 매핑**: CUBRID에는 네이티브 BOOLEAN이 없음 — 방언이 `SMALLINT`(0/1)로 매핑.
 *   **JSON 타입 지원 (v1.2.0+)**: `JSON`, `JSONIndexType`, `JSONPathType`를 포함한 완전한 JSON 타입 매핑. `json_getattr`과 `json_getitem_op`를 통한 경로 접근. CUBRID ≥ 10.2 필요.
-*   **`transactional_ddl = False`**: CUBRID는 DDL 문을 자동 커밋 — Alembic이 실패한 마이그레이션을 롤백할 수 없음.
+*   **`transactional_ddl = True`**: CUBRID의 DDL은 트랜잭션과 함께 롤백됨(DDL을 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) — 실패한 Alembic 업그레이드는 기본적으로 통째로 롤백됨. CUBRID에는 `BEGIN` 문이 없으므로 `CubridImpl.emit_begin()`은 아무것도 내지 않으며, 오프라인 스크립트는 각 트랜잭션을 `COMMIT;`으로 끝냄.
 *   **`supports_statement_cache = True`**: SA 2.0 성능에 필요 — 방언은 캐시 안전.
 *   **소문자 식별자 폴딩**: CUBRID는 (SQL 표준의 대문자가 아니라) 소문자로 폴딩 — `CubridIdentifierPreparer`가 처리.
 *   **RELEASE SAVEPOINT 없음**: CUBRID가 미지원 — `do_release_savepoint()`는 no-op.

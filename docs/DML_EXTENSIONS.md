@@ -72,6 +72,8 @@ VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = ?, email = ?
 ```
 
+> **Limitation — `stmt.inserted.col` and multi-row `VALUES` (#371):** referencing the inserted value only works for a **single-row** `INSERT` or for **executemany** (passing the row list to `Connection.execute(stmt, [rows])`, where each execution is logically single-row). It is **not** supported for an inline multi-row `insert(t).values([{...}, {...}])`: CUBRID has no `VALUES(col)` / row-alias syntax, so there is no single value to bind per conflicting row, and the dialect raises a `CompileError` rather than silently updating every conflicting row with one row's value. For a multi-row upsert, use executemany, split into single-row statements, use a literal/expression update (which does not reference the inserted value), or use `MERGE`.
+
 ### Argument Forms
 
 The `on_duplicate_key_update()` method accepts three argument forms:
@@ -141,6 +143,7 @@ VALUES (1, 'alice', 'alice@example.com')
 
 - `REPLACE INTO` uses all standard INSERT value patterns (`values`, `from_select`, etc.)
 - On duplicate key conflicts, CUBRID replaces the existing row with the new row
+- `prefix_with()` text is rendered between the verb and `INTO` (`replace(users).prefix_with("/* audit */")` renders `REPLACE /* audit */ INTO users ...`), exactly as for `insert()`; prefixes, comments, literals and identifiers are never rewritten, even when they contain the text `INSERT INTO`
 - `REPLACE INTO` does not support `ON DUPLICATE KEY UPDATE`; use `insert(...).on_duplicate_key_update(...)` for in-place updates
 
 ---
@@ -344,7 +347,7 @@ with engine.begin() as conn:
     conn.execute(text("TRUNCATE TABLE temp_data"))
 ```
 
-The dialect includes `TRUNCATE` in its autocommit detection pattern, so it will be executed with autocommit enabled (matching CUBRID's implicit DDL commit behavior).
+`TRUNCATE` runs inside the connection's transaction like any other statement; the `engine.begin()` block above commits it on successful exit. The dialect does not autocommit based on SQL text (see [No Statement-Text Autocommit](CONNECTION.md#no-statement-text-autocommit)).
 
 ---
 

@@ -1,53 +1,74 @@
 # sqlalchemy-cubrid
 
-> SQLAlchemy 2.0 dialect for the CUBRID relational database. Provides SQL compilation, type mapping, schema reflection, DDL/DML extensions, Alembic migration support, and PEP 561 typing for Python 3.10+.
+> SQLAlchemy 2.0/2.1 dialect for the CUBRID database: SQL and DDL compilation, type mapping (including native JSON and collection types), schema reflection, CUBRID-specific DML constructs, Alembic migrations, and sync plus async driver support for Python 3.10+ (PEP 561 typed).
 
-sqlalchemy-cubrid enables Python developers to use CUBRID with SQLAlchemy's full feature set — Core, ORM, and Alembic migrations. It supports two driver backends: the C-extension `CUBRIDdb` driver and the pure Python `pycubrid` driver.
+sqlalchemy-cubrid lets Python applications use CUBRID with SQLAlchemy Core, the ORM, the asyncio extension, and Alembic. It registers three driver variants: the pure-Python `pycubrid` driver, its asyncio counterpart `pycubrid.aio`, and the legacy `CUBRIDdb` C extension.
 
 Key facts:
-- Connection URL: `cubrid://user:password@host:33000/dbname` (C-extension) or `cubrid+pycubrid://user:password@host:33000/dbname` (pure Python)
-- CUBRID uses `AUTO_INCREMENT` instead of sequences, `SMALLINT` for booleans, and collection types (`SET`, `MULTISET`, `SEQUENCE`) instead of arrays
-- CUBRID does not support `RETURNING`, JSON, or multi-schema — this dialect handles all differences transparently
-- DDL is auto-committed (`transactional_ddl = False`)
-- Identifier folding is lowercase (not uppercase like SQL standard)
-- 6 isolation levels with dual-granularity (class-level + instance-level)
-- Install: `pip install sqlalchemy-cubrid` or `pip install "sqlalchemy-cubrid[pycubrid]"` for the pure Python driver
+- Driver variants (URL scheme, install extra):
+  - `cubrid+pycubrid://user:password@host:33000/dbname` — pure-Python pycubrid, recommended for new projects; `pip install "sqlalchemy-cubrid[pycubrid]"` (pycubrid>=1.8.0,<2.0)
+  - `cubrid+aiopycubrid://user:password@host:33000/dbname` — async pycubrid for `create_async_engine`; same `[pycubrid]` extra, which also pulls in `sqlalchemy[asyncio]`
+  - `cubrid://` (also `cubrid+cubrid://`, `cubrid+cubriddb://`) — legacy CUBRIDdb C extension; build it from cubrid-python v11.3.0.51 or later. The `[cubrid]`/`[cubriddb]` extras are deprecated: they install PyPI `CUBRID-Python` 9.3.x, which is untested, and the dialect emits a `SAWarning` at first connect for a CUBRIDdb older than 11.3
+- A bare `pip install sqlalchemy-cubrid` installs no DB-API driver; choose an extra above
+- Isolation levels: the three CUBRID MVCC levels `READ COMMITTED` (4, server default), `REPEATABLE READ` (5) and `SERIALIZABLE` (6), plus `AUTOCOMMIT` (driver autocommit). `CURSOR STABILITY` and the two long `... SCHEMA, ... INSTANCES` spellings are accepted only as aliases of levels 4 and 5; the pre-MVCC levels 1–3 are rejected
+- Native `JSON` type (CUBRID 10.2+) with `col["key"]` / path indexing compiled to `JSON_EXTRACT`
+- No `RETURNING`: get auto-increment keys from `session.flush()` (ORM) or `SELECT LAST_INSERT_ID()` (Core)
+- No sequences (`AUTO_INCREMENT` instead); `Boolean` is stored as `SMALLINT`; collection types `SET`, `MULTISET`, `SEQUENCE` instead of arrays
+- Collection values: on `cubrid+pycubrid://` / `cubrid+aiopycubrid://` a `list`/`tuple` (and, for `SET`/`MULTISET` only, a `set`/`frozenset`) bound to a `SET`/`MULTISET`/`SEQUENCE` column is sent as a pycubrid typed collection (`pycubrid.types.Set`/`Multiset`/`Sequence`, on pycubrid main and not yet released; released pycubrid 1.8.0 rejects collection parameters). Read them back with `?decode_collections=true` as `frozenset` (SET) or `list` (MULTISET/SEQUENCE). A `SEQUENCE` needs a `list` or `tuple`: a `set`/`frozenset` raises `TypeError` with every pycubrid version. Collections cannot be rendered with `literal_binds`. CUBRIDdb binds every collection as a SET, losing MULTISET duplicates and SEQUENCE order
+- Single-schema reflection: only the connection's default schema is recognised; other `schema=` values reflect as missing
+- DDL is transactional: `ROLLBACK` undoes it and it never commits earlier DML; only client autocommit (off by default in the dialect) commits it early. Alembic runs a whole upgrade in one transaction (`transactional_ddl = True`); use `transaction_per_migration=True` for long or large-table migrations
+- Alembic finds the CUBRID implementation with an unmodified `env.py`: Alembic 1.18+ loads it through the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic`), so the dialect does not import Alembic; with Alembic 1.7.2–1.17 the dialect imports it when loaded
+- Unquoted identifiers fold to lowercase (not uppercase like the SQL standard)
+- CUBRID does not enforce `CHECK` constraints; reflection returns none
+- Tested against CUBRID 10.2, 11.0, 11.2 and 11.4
 
 ## Docs
 
-- [Connection Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/CONNECTION.md): Connection strings, URL format, driver setup, connection pool tuning
-- [Type Mapping](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TYPES.md): Full type mapping between Python/SQLAlchemy and CUBRID types, including collection types
-- [DML Extensions](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DML_EXTENSIONS.md): ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, GROUP_CONCAT, TRUNCATE
-- [Isolation Levels](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ISOLATION_LEVELS.md): All 6 CUBRID isolation levels and how to configure them
-- [Alembic Migrations](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ALEMBIC.md): Setup, configuration, limitations, batch workarounds
-- [Feature Support](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/FEATURE_SUPPORT.md): Feature comparison with MySQL, PostgreSQL, SQLite
-- [ORM Cookbook](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ORM_COOKBOOK.md): Practical ORM usage examples with CUBRID
-- [Driver Compatibility](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md): Driver versions and known issues
-- [Troubleshooting](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TROUBLESHOOTING.md): Common issues, error solutions, debugging techniques
-- [Development Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DEVELOPMENT.md): Dev setup, testing, Docker, coverage, CI/CD
+- [Quick Start](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/): Installation, URL formats, first Core and ORM example
+- [Connection Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/CONNECTION/): URL schemes and entry points, pycubrid URL query options (`?connect_timeout=`, `?charset=`, ...), async engine, connection options, autocommit, connection pool tuning
+- [Driver Compatibility](https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/): CUBRIDdb C-extension versions, exception hierarchy, known driver issues
+- [ORM Cookbook](https://cubrid-lab.github.io/sqlalchemy-cubrid/ORM_COOKBOOK/): Models, relationships, CRUD, collections, LOBs, CUBRID-specific gotchas
+- [DML Extensions](https://cubrid-lab.github.io/sqlalchemy-cubrid/DML_EXTENSIONS/): ON DUPLICATE KEY UPDATE, REPLACE INTO, MERGE, GROUP_CONCAT, FOR UPDATE, UPDATE ... LIMIT, index hints, TRUNCATE
+- [Type Mapping](https://cubrid-lab.github.io/sqlalchemy-cubrid/TYPES/): SQLAlchemy/CUBRID type mapping, collection, LOB and JSON types, boolean handling, reflection
+- [Isolation Levels](https://cubrid-lab.github.io/sqlalchemy-cubrid/ISOLATION_LEVELS/): The three MVCC levels, accepted aliases, AUTOCOMMIT, engine/connection/execution-option configuration
+- [Alembic Migrations](https://cubrid-lab.github.io/sqlalchemy-cubrid/ALEMBIC/): Setup, autogenerate, transactional DDL, limitations and batch workarounds
+
+## Reference
+
+- [Feature Support](https://cubrid-lab.github.io/sqlalchemy-cubrid/FEATURE_SUPPORT/): Feature comparison with MySQL, PostgreSQL and SQLite
+- [Support Matrix](https://cubrid-lab.github.io/sqlalchemy-cubrid/SUPPORT_MATRIX/): Python, SQLAlchemy, CUBRID and driver version compatibility
+- [Architecture](https://cubrid-lab.github.io/sqlalchemy-cubrid/ARCHITECTURE/): Dialect internals, compiler pipeline, reflection, module boundaries
+- [Source — dialect.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/dialect.py): Main dialect class with reflection, connection handling, isolation levels
+- [Source — compiler.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/compiler.py): SQL, DDL and type compilers
+- [Source — dml.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/dml.py): `insert()` with ON DUPLICATE KEY UPDATE, `replace()`, `merge()`
+- [Source — types.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/types.py): CUBRID type system
 
 ## Examples
 
-- [Quick Start — Core](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md#quick-start): Basic connection-level usage with `create_engine` and `text()`
-- [Quick Start — ORM](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md#orm-session-level): Declarative ORM model definition and CRUD operations
-- [CUBRID Cookbook — SQLAlchemy](https://github.com/cubrid-lab/cubrid-cookbook/tree/main/python/sqlalchemy): Production-ready SQLAlchemy examples with CUBRID
-- [CUBRID Cookbook — FastAPI](https://github.com/cubrid-lab/cubrid-cookbook/tree/main/python/fastapi): FastAPI REST API using sqlalchemy-cubrid
-
-## API Reference
-
-- [Source — dialect.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/dialect.py): Main dialect class with reflection, connection, isolation levels
-- [Source — compiler.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/compiler.py): SQL/DDL/Type compilers
-- [Source — dml.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/dml.py): Custom DML constructs (insert with ODKU, merge)
-- [Source — types.py](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/sqlalchemy_cubrid/types.py): CUBRID type system
+- [Quick Start — Core](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md#core-connection-level): Connection-level usage with `create_engine` and `text()`
+- [Quick Start — ORM](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md#orm-session-level): Declarative ORM model definition and CRUD
+- [Quick Start — Async](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md#async): `create_async_engine` with `cubrid+aiopycubrid://`
+- [Cookbook — 5-minute SQLAlchemy](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/quickstart/5min-sqlalchemy): SQLAlchemy ORM quickstart against CUBRID in Docker
+- [Cookbook — SQLAlchemy fundamentals](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/fundamentals/sqlalchemy): Numbered SQLAlchemy ORM examples
+- [Cookbook — Async](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/fundamentals/async): pycubrid.aio and the SQLAlchemy async engine
+- [Cookbook — Alembic](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/fundamentals/alembic): Programmatic Alembic migrations with sqlalchemy-cubrid
+- [Cookbook — FastAPI service](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/templates/api-service-fastapi): REST API template with FastAPI and SQLAlchemy
 
 ## Ecosystem
 
-- [pycubrid](https://github.com/cubrid-lab/pycubrid): Pure Python DB-API 2.0 driver for CUBRID (recommended driver)
-- [cubrid-cookbook](https://github.com/cubrid-lab/cubrid-cookbook): Production-ready examples across Python, Node.js, and Go
+- [pycubrid](https://github.com/cubrid-lab/pycubrid): Pure-Python DB-API 2.0 driver for CUBRID (recommended driver)
+- [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python): Runnable Python examples for CUBRID
 - [CUBRID](https://www.cubrid.org/): The CUBRID database
 
 ## Optional
 
-- [Product Requirements](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/PRD.md): Product requirements document with Example-first Design Philosophy
+- [Performance Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/PERFORMANCE/): Benchmarks, performance characteristics, optimization tips
+- [Troubleshooting](https://cubrid-lab.github.io/sqlalchemy-cubrid/TROUBLESHOOTING/): Common errors by area and debugging techniques
+- [Development Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/DEVELOPMENT/): Dev setup, tests, Docker integration, CI
+- [Full documentation in one file](https://cubrid-lab.github.io/sqlalchemy-cubrid/llms-full.txt): All user docs concatenated for LLM context
+- [Product Requirements](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/PRD.md): Product requirements document
 - [Contributing Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md): Contribution guidelines
 - [Changelog](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md): Release history
+
+- [CI execution policy](https://cubrid-lab.github.io/sqlalchemy-cubrid/CI_POLICY/): minimum PR checks and representative validation.
+- [Release-please validation](https://cubrid-lab.github.io/sqlalchemy-cubrid/RELEASE_PLEASE_VALIDATION/): pinned migration revisions, executed evidence and reproduction.

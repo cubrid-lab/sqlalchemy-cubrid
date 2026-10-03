@@ -45,10 +45,9 @@ class TestPyCubridDialectLogging:
         assert "33000" in log_text or "mydb" in log_text
         assert "secret" not in log_text
 
-    def test_on_connect_logs_isolation_level(self, caplog: pytest.LogCaptureFixture) -> None:
-        """on_connect() should log isolation level setting."""
+    def test_on_connect_logs_autocommit(self, caplog: pytest.LogCaptureFixture) -> None:
+        """on_connect() should log the autocommit setting (SQLAlchemy applies isolation_level)."""
         dialect = PyCubridDialect()
-        dialect._isolation_level = "SERIALIZABLE"
 
         fn = dialect.on_connect()
         assert fn is not None
@@ -57,7 +56,7 @@ class TestPyCubridDialectLogging:
         with caplog.at_level(logging.DEBUG, logger="sqlalchemy_cubrid.pycubrid_dialect"):
             fn(mock_conn)
 
-        assert any("isolation_level" in m for m in caplog.messages)
+        assert any("autocommit=False" in m for m in caplog.messages)
 
 
 class TestCubridDialectLogging:

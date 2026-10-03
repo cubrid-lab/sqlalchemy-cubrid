@@ -2,17 +2,26 @@ from __future__ import annotations
 
 import sys
 import types
+import warnings
+from decimal import Decimal
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
 from sqlalchemy import types as sqltypes
-from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy.exc import (
+    ArgumentError,
+    NoSuchTableError,
+    OperationalError,
+    ProgrammingError,
+    SAWarning,
+)
 from sqlalchemy.engine import url
 from sqlalchemy.sql.elements import quoted_name
 
 from sqlalchemy_cubrid.dialect import CubridDialect
 from sqlalchemy_cubrid.dialect import _split_collection_members
+from sqlalchemy_cubrid.types import TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ
 
 
 class TestSplitCollectionMembers:
@@ -42,6 +51,13 @@ class TestSplitCollectionMembers:
         assert _split_collection_members("INT)") == ["INT)"]
 
 
+def _class_type_result(class_type):
+    """Result of the ``db_class`` class-type lookup (``None``: no such object)."""
+    result = MagicMock()
+    result.first.return_value = (class_type, "DBA") if class_type else None
+    return result
+
+
 def _invoke_reflection(dialect, method_name, connection, *args, **kwargs):
     method = getattr(dialect, method_name)
     if hasattr(method, "__wrapped__"):
@@ -57,10 +73,42 @@ class TestDialectBasics:
         custom_dialect = CubridDialect(isolation_level="SERIALIZABLE")
         assert custom_dialect.isolation_level == "SERIALIZABLE"
 
+    @pytest.mark.parametrize(
+        ("given", "expected"),
+        [
+            ("SERIALIZABLE", "SERIALIZABLE"),
+            ("serializable", "SERIALIZABLE"),
+            ("repeatable_read", "REPEATABLE READ"),
+            ("CURSOR STABILITY", "READ COMMITTED"),
+            ("REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES", "REPEATABLE READ"),
+            ("autocommit", "AUTOCOMMIT"),
+            ("BOGUS", "BOGUS"),
+        ],
+    )
+    def test_isolation_level_is_passed_to_default_dialect(self, given, expected):
+        """SQLAlchemy owns the engine-level level; aliases become the canonical name (#501)."""
+        dialect = CubridDialect(isolation_level=given)
+        assert dialect._on_connect_isolation_level == expected
+        assert dialect.isolation_level == expected
+        assert dialect._builtin_onconnect() is not None
+
     def test_supports_twophase_commit_is_false(self):
         """CUBRID does not support two-phase commit."""
         dialect = CubridDialect()
         assert dialect.supports_twophase_commit is False
+
+    def test_insert_returning_is_the_returning_switch(self):
+        # Regression for #396: `insert_returning = False` is the SQLAlchemy 2.x
+        # switch that disables implicit INSERT...RETURNING. The legacy 1.x
+        # `implicit_returning` attribute is dead — 2.x's DefaultDialect does not
+        # define it and the CRUD compiler no longer consults it.
+        from sqlalchemy.engine.default import DefaultDialect
+
+        assert CubridDialect.insert_returning is False
+        assert CubridDialect.update_returning is False
+        assert CubridDialect.delete_returning is False
+        assert not hasattr(DefaultDialect, "implicit_returning")
+        assert "implicit_returning" not in CubridDialect.__dict__
 
     def test_import_dbapi_success(self):
         fake_module = types.ModuleType("CUBRIDdb")
@@ -81,12 +129,6 @@ class TestDialectBasics:
         with patch("builtins.__import__", side_effect=_fake_import):
             with pytest.raises(ImportError, match="Could not import CUBRIDdb"):
                 CubridDialect.import_dbapi()
-
-    def test_legacy_dbapi_method_calls_import_dbapi(self):
-        fake_module = object()
-        with patch.object(CubridDialect, "import_dbapi", return_value=fake_module) as mocked:
-            assert CubridDialect.dbapi() is fake_module
-        mocked.assert_called_once_with()
 
     def test_create_connect_args_full_url(self):
         dialect = CubridDialect()
@@ -123,7 +165,22 @@ class TestDialectBasics:
         dbapi_conn.set_autocommit.assert_called_once_with(False)
         dialect.set_isolation_level.assert_not_called()
 
-    def test_on_connect_with_isolation_level(self):
+    @pytest.mark.parametrize("level", [6, b"SERIALIZABLE", 4.0])
+    def test_non_string_isolation_level_raises_argument_error(self, level):
+        with pytest.raises(ArgumentError, match="isolation_level must be a string"):
+            CubridDialect(isolation_level=level)
+
+    @pytest.mark.parametrize("level", ["AUTOCOMMIT", "SERIALIZABLE"])
+    def test_connection_without_autocommit_property_fails_loudly(self, level):
+        """A DBAPI connection lacking ``autocommit`` is a driver mismatch, not 'off'."""
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock(spec=["cursor"])
+        with pytest.raises(AttributeError, match="autocommit"):
+            dialect.set_isolation_level(dbapi_conn, level)
+        dbapi_conn.cursor.assert_not_called()
+
+    def test_on_connect_leaves_isolation_level_to_sqlalchemy(self):
+        """SQLAlchemy's built-in connect hook applies it, with ArgumentError validation (#501)."""
         dialect = CubridDialect(isolation_level="SERIALIZABLE")
         dialect.set_isolation_level = MagicMock()
 
@@ -132,7 +189,7 @@ class TestDialectBasics:
         hook(dbapi_conn)
 
         dbapi_conn.set_autocommit.assert_called_once_with(False)
-        dialect.set_isolation_level.assert_called_once_with(dbapi_conn, "SERIALIZABLE")
+        dialect.set_isolation_level.assert_not_called()
 
     def test_server_version_info_match_and_non_match(self):
         dialect = CubridDialect()
@@ -184,6 +241,89 @@ class TestDialectBasics:
         init_super.assert_called_once_with(connection)
 
 
+def _fake_cubriddb(version: object) -> types.ModuleType:
+    """A stand-in CUBRIDdb module whose ``_cubrid.__version__`` is *version*."""
+    ext = types.ModuleType("_cubrid")
+    if version is not None:
+        ext.__version__ = version  # type: ignore[attr-defined]
+    module = types.ModuleType("CUBRIDdb")
+    module._cubrid = ext  # type: ignore[attr-defined]
+    return module
+
+
+class TestCubriddbVersionGuard:
+    """Warn at first connect when CUBRIDdb is older than the tested 11.3 line (#585)."""
+
+    @pytest.mark.parametrize(
+        "version",
+        [
+            b"9.3.0.0001",  # PyPI CUBRID-Python 9.3.0.1
+            b"9.3.0.0002",  # PyPI CUBRID-Python 9.3.0.2
+            "8.4.3.0004",
+            b"11.2.0.0100",
+            "10.2.0.0001",
+        ],
+    )
+    def test_older_driver_warns(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+        raw = version.decode() if isinstance(version, bytes) else version
+
+        with pytest.warns(SAWarning, match=r"CUBRIDdb .* is older than the CUBRIDdb 11\.3") as rec:
+            dialect._warn_if_untested_cubriddb()
+
+        message = str(rec[0].message)
+        assert raw in message
+        assert "cubrid+pycubrid://" in message
+        assert "v11.3.0.51" in message
+
+    @pytest.mark.parametrize(
+        "version", [b"11.3.0.0001", "11.3.0.0051", b"11.4.0.0001", "12.0.0.0001"]
+    )
+    def test_tested_or_newer_driver_does_not_warn(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    @pytest.mark.parametrize("version", [None, b"unknown", "", 11])
+    def test_unknown_version_does_not_warn(self, version: object) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(version)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_module_without_extension_does_not_warn(self) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = types.ModuleType("CUBRIDdb")  # type: ignore[assignment]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_pycubrid_dialect_skips_check(self) -> None:
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        dialect = PyCubridDialect()
+        dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            dialect._warn_if_untested_cubriddb()
+
+    def test_initialize_runs_the_check(self) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
+
+        with patch("sqlalchemy.engine.default.DefaultDialect.initialize"):
+            with pytest.warns(SAWarning, match="CUBRIDdb 9.3.0.0001 is older"):
+                dialect.initialize(MagicMock())
+
+
 class TestIsolationLevelMethods:
     def test_get_isolation_level_string(self):
         dialect = CubridDialect()
@@ -233,7 +373,8 @@ class TestIsolationLevelMethods:
         dialect = CubridDialect()
         levels = dialect.get_isolation_level_values()
 
-        assert len(levels) == 6
+        assert len(levels) == 7
+        assert "AUTOCOMMIT" in levels
         assert "SERIALIZABLE" in levels
         assert "READ COMMITTED" in levels
         assert "REPEATABLE READ" in levels
@@ -249,7 +390,8 @@ class TestIsolationLevelMethods:
         }
         for level_name, expected_num in expected_map.items():
             cursor = MagicMock()
-            dbapi_conn = MagicMock(spec=[])
+            dbapi_conn = MagicMock(spec=["cursor", "autocommit"])
+            dbapi_conn.autocommit = False
             dbapi_conn.cursor = MagicMock(return_value=cursor)
 
             dialect.set_isolation_level(dbapi_conn, level_name)
@@ -263,6 +405,8 @@ class TestIsolationLevelMethods:
         cursor = MagicMock()
 
         class PlainDBAPIConnection:
+            autocommit = False
+
             def cursor(self):
                 return cursor
 
@@ -305,17 +449,90 @@ class TestIsolationLevelMethods:
         assert set(dialect._ISOLATION_LEVEL_MAP.values()) == {4, 5, 6}
         assert set(dialect._ISOLATION_LEVEL_REVERSE) == {4, 5, 6}
 
-    def test_reset_isolation_level(self):
-        dialect = CubridDialect()
+    def test_reset_isolation_level_is_sqlalchemys(self):
+        """No override: checkin restores the engine level, not always READ COMMITTED (#501)."""
+        assert "reset_isolation_level" not in vars(CubridDialect)
+        dialect = CubridDialect(isolation_level="SERIALIZABLE")
+        dialect.default_isolation_level = "SERIALIZABLE"
         cursor = MagicMock()
-        # Use spec=[] to prevent MagicMock from auto-creating
-        # a .connection attribute, which would cause set_isolation_level
-        # to unwrap to a different mock object.
-        dbapi_conn = MagicMock(spec=[])
-        dbapi_conn.cursor = MagicMock(return_value=cursor)
+        dbapi_conn = MagicMock(spec=["cursor", "autocommit"])
+        dbapi_conn.autocommit = False
+        dbapi_conn.cursor.return_value = cursor
 
         dialect.reset_isolation_level(dbapi_conn)
-        cursor.execute.assert_any_call("SET TRANSACTION ISOLATION LEVEL 4")
+
+        cursor.execute.assert_any_call("SET TRANSACTION ISOLATION LEVEL 6")
+
+    def test_set_autocommit_enables_driver_autocommit_without_sql(self):
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock(spec=["cursor", "autocommit"])
+        dbapi_conn.autocommit = False
+
+        dialect.set_isolation_level(dbapi_conn, "AUTOCOMMIT")
+
+        assert dbapi_conn.autocommit is True
+        dbapi_conn.cursor.assert_not_called()
+
+    def test_other_level_turns_driver_autocommit_off_first(self):
+        dialect = CubridDialect()
+        events: list[str] = []
+
+        class Conn:
+            _autocommit = True
+
+            @property
+            def autocommit(self):
+                return self._autocommit
+
+            @autocommit.setter
+            def autocommit(self, value):
+                events.append(f"autocommit={value}")
+                self._autocommit = value
+
+            def cursor(self):
+                cursor = MagicMock()
+                cursor.execute.side_effect = events.append
+                return cursor
+
+        conn = Conn()
+        dialect.set_isolation_level(conn, "SERIALIZABLE")
+
+        assert events == ["autocommit=False", "SET TRANSACTION ISOLATION LEVEL 6", "COMMIT"]
+
+    def test_driver_autocommit_is_not_toggled_when_already_set(self):
+        """Toggling costs round trips (and a reconnect on pycubrid); skip no-ops."""
+        dialect = CubridDialect()
+        writes: list[bool] = []
+
+        class Conn:
+            autocommit = property(lambda self: self._value, lambda self, v: writes.append(v))
+
+            def __init__(self, value):
+                self._value = value
+
+            def cursor(self):
+                return MagicMock()
+
+        dialect.set_isolation_level(Conn(False), "READ COMMITTED")
+        dialect.set_isolation_level(Conn(True), "AUTOCOMMIT")
+
+        assert writes == []
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_detect_autocommit_setting(self, value):
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock(spec=["autocommit"])
+        dbapi_conn.autocommit = value
+        assert dialect.detect_autocommit_setting(dbapi_conn) is value
+
+    @pytest.mark.parametrize("level", ["BOGUS", "READ UNCOMMITTED", ""])
+    def test_invalid_level_raises_argument_error_through_sqlalchemy(self, level):
+        """Engine-, connection- and execution-option levels are validated by SQLAlchemy (#501)."""
+        dialect = CubridDialect()
+        dbapi_conn = MagicMock()
+        with pytest.raises(ArgumentError, match="Invalid value"):
+            dialect._assert_and_set_isolation_level(dbapi_conn, level)
+        dbapi_conn.cursor.assert_not_called()
 
     def test_isolation_level_set_get_roundtrip(self):
         """Every accepted input name round-trips to the same numeric code.
@@ -325,6 +542,8 @@ class TestIsolationLevelMethods:
         """
         dialect = CubridDialect()
         for name in dialect.get_isolation_level_values():
+            if name == "AUTOCOMMIT":  # driver mode, not a server level
+                continue
             code = dialect._ISOLATION_LEVEL_MAP[name.upper()]
             canonical = dialect._ISOLATION_LEVEL_REVERSE[code]
             # get_isolation_level() returns a value SA recognizes ...
@@ -354,6 +573,41 @@ class TestExistenceChecks:
         connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_table(connection, "users") is False
 
+    @pytest.mark.parametrize(
+        ("count", "expected"),
+        [
+            (0, False),
+            (1, True),
+            ("0", False),
+            ("1", True),
+            ("2", True),
+            (Decimal("0"), False),
+            (Decimal("1"), True),
+            (None, False),
+        ],
+    )
+    def test_has_table_and_has_index_coerce_count_type(self, count, expected):
+        """PyPI CUBRID-Python 9.3 fetches the BIGINT COUNT(*) as str (#583)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.execute.return_value.scalar.return_value = count
+
+        assert dialect.has_table(connection, "users") is expected
+        assert dialect.has_index(connection, "users", "ix_users_name") is expected
+
+    def test_has_table_honors_inspector_info_cache(self):
+        """Inspector.has_table() is cached until clear_cache() (SA HasTableTest)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        info_cache: dict = {}
+
+        connection.execute.return_value.scalar.return_value = 0
+        assert dialect.has_table(connection, "t", info_cache=info_cache) is False
+        connection.execute.return_value.scalar.return_value = 1
+        assert dialect.has_table(connection, "t", info_cache=info_cache) is False
+        assert connection.execute.call_count == 1
+        assert dialect.has_table(connection, "t", info_cache={}) is True
+
     def test_has_table_recognizes_views(self):
         dialect = CubridDialect()
         connection = MagicMock()
@@ -361,21 +615,36 @@ class TestExistenceChecks:
         connection.execute.return_value.scalar.return_value = 1
         assert dialect.has_table(connection, "active_users") is True
 
-    def test_has_index_true_false_and_exception(self):
+    def test_has_table_matches_lower_case_stored_name(self):
+        """CUBRID stores quoted mixed-case names in lower case (#543)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+
+        connection.execute.return_value.scalar.return_value = 1
+        assert dialect.has_table(connection, "Users543") is True
+        sql = str(connection.execute.call_args[0][0])
+        assert "class_name IN (:name, LOWER(:name))" in sql
+        assert connection.execute.call_args[0][1] == {"name": "Users543"}
+
+    def test_has_index_true_false_and_error_propagates(self):
         dialect = CubridDialect()
         connection = MagicMock()
 
         connection.execute.return_value.scalar.return_value = 2
         assert dialect.has_index(connection, "users", "ix_users_name") is True
         call_args = connection.execute.call_args
+        assert "FROM db_index" in str(call_args[0][0])
         bound_params = call_args[0][1]
         assert bound_params == {"table": "users", "name": "ix_users_name"}
 
+        # No matching db_index row: a missing index or table.
         connection.execute.return_value.scalar.return_value = 0
         assert dialect.has_index(connection, "users", "ix_users_name") is False
 
+        # A failing catalog query propagates instead of being cached as False (#444).
         connection.execute.side_effect = RuntimeError("metadata unavailable")
-        assert dialect.has_index(connection, "users", "ix_users_name") is False
+        with pytest.raises(RuntimeError, match="metadata unavailable"):
+            dialect.has_index(connection, "users", "ix_users_name")
 
     def test_has_index_filters_by_table(self):
         dialect = CubridDialect()
@@ -386,6 +655,42 @@ class TestExistenceChecks:
         call_args = connection.execute.call_args
         bound_params = call_args[0][1]
         assert bound_params["table"] == "orders"
+
+    def test_has_index_matches_lower_case_names_and_prefers_own_class(self):
+        """Mixed-case names match their stored lower-case form (#543); since
+        11.2 the index must belong to the owner the db_class lookup prefers."""
+        dialect = CubridDialect()
+        dialect.server_version_info = (11, 4, 6, 1963)
+        connection = MagicMock()
+        count = MagicMock()
+        count.scalar.return_value = 1
+        connection.execute.side_effect = [_class_type_result("CLASS"), count]
+
+        assert dialect.has_index(connection, "Users543", "IX_Mixed543") is True
+        lookup_sql = str(connection.execute.call_args_list[0][0][0])
+        assert "owner_name = CURRENT_USER THEN 0" in lookup_sql
+        sql, params = connection.execute.call_args_list[1][0]
+        assert "class_name IN (:table, LOWER(:table))" in str(sql)
+        assert "index_name IN (:name, LOWER(:name))" in str(sql)
+        assert "owner_name = :owner" in str(sql)
+        assert params == {"table": "Users543", "name": "IX_Mixed543", "owner": "DBA"}
+
+    def test_has_index_is_cached_per_info_cache(self):
+        """An Inspector answers has_index from its cache until clear_cache() (#533)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        info_cache: dict = {}
+
+        connection.execute.return_value.scalar.return_value = 0
+        assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
+        connection.execute.return_value.scalar.return_value = 1
+        assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is False
+        assert connection.execute.call_count == 1
+        info_cache.clear()
+        assert dialect.has_index(connection, "t", "ix", info_cache=info_cache) is True
+        # Without an info_cache (e.g. Index.drop(checkfirst=True)) nothing is cached.
+        assert dialect.has_index(connection, "t", "ix") is True
+        assert connection.execute.call_count == 3
 
     def test_has_sequence_always_false(self):
         dialect = CubridDialect()
@@ -501,6 +806,31 @@ class TestReflectionMethods:
         assert columns[1]["type"].length == 20
         assert columns[1]["nullable"] is False
 
+    def test_get_columns_bit_keeps_length_and_varying(self):
+        """#545: BIT(n) / BIT VARYING(n) reflect with their length, so they compile back unchanged."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        rows = [
+            ("bit_col", "BIT(32)", "YES", "", None, ""),
+            ("varbit_col", "BIT VARYING(128)", "YES", "", None, ""),
+            ("varbit_max_col", "BIT VARYING(1073741823)", "YES", "", None, ""),
+            ("bare_col", "BIT VARYING", "YES", "", None, ""),
+        ]
+        connection.execute.side_effect = [rows, []]
+
+        columns = _invoke_reflection(dialect, "get_columns", connection, "bit_table")
+
+        compiled = [dialect.type_compiler_instance.process(c["type"]) for c in columns]
+        assert compiled == [
+            "BIT(32)",
+            "BIT VARYING(128)",
+            "BIT VARYING(1073741823)",
+            "BIT VARYING",
+        ]
+
     def test_get_columns_collection_with_precision_scale_member(self):
         """Regression: SET(NUMERIC(10,2)) must not split on the inner comma. (#204)"""
         dialect = CubridDialect()
@@ -533,17 +863,162 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        show_columns_rows = [
-            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
-            ("name", "VARCHAR(50)", "YES", "", None, ""),
-        ]
-        constraint_result = MagicMock()
-        constraint_result.fetchone.return_value = ("pk_users",)
-        connection.execute.side_effect = [show_columns_rows, constraint_result]
+        # db_index_key catalog rows: (key_attr_name, index_name), ordered.
+        catalog_rows = [("id", "pk_users")]
+        connection.execute.side_effect = [catalog_rows]
 
         pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 
         assert pk == {"name": "pk_users", "constrained_columns": ["id"]}
+
+    def test_get_pk_constraint_composite_key_keeps_all_columns(self):
+        """#426: a composite PK must reflect every column in key order."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        catalog_rows = [("a", "pk_t_a_b"), ("b", "pk_t_a_b")]
+        connection.execute.side_effect = [catalog_rows]
+
+        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "t")
+
+        assert pk == {"name": "pk_t_a_b", "constrained_columns": ["a", "b"]}
+
+    def test_get_pk_constraint_falls_back_to_show_columns(self):
+        """If the catalog has no PK row, fall back to SHOW COLUMNS (single PK)."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+
+        show_columns_rows = [
+            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
+            ("name", "VARCHAR(50)", "YES", "", None, ""),
+        ]
+        connection.execute.side_effect = [[], show_columns_rows]
+
+        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
+
+        assert pk == {"name": None, "constrained_columns": ["id"]}
+
+    def test_unknown_class_error_detection(self):
+        """#387, #454: only CUBRID's ``Unknown class`` message marks a missing table.
+
+        pycubrid before 1.8.0 reports every native -493 (including plain syntax
+        errors) with SQLSTATE 42S02 and a ``Table not found`` description, so neither the
+        code, the SQLSTATE nor that description identifies a missing table.
+        """
+        from sqlalchemy import exc
+
+        from sqlalchemy_cubrid.dialect import _is_unknown_class_error
+
+        class _PycubridError(Exception):
+            # Shape of pycubrid < 1.8.0's ProgrammingError for any native -493.
+            errno = -493
+            sqlstate = "42S02"
+
+        syntax = _PycubridError(
+            "Syntax: Syntax error: unexpected 'SELEC' (errno=-493, "
+            "sqlstate='42S02', description='Table not found')"
+        )
+        missing = _PycubridError(
+            'Syntax: Unknown class "dba.missing". show columns from [missing] '
+            "(errno=-493, sqlstate='42S02', description='Table not found')"
+        )
+
+        # Native -493, SQLSTATE 42S02 or "Table not found" alone: not missing.
+        assert _is_unknown_class_error(syntax) is False
+        assert _is_unknown_class_error(exc.ProgrammingError("SELEC 1", {}, syntax)) is False
+        assert _is_unknown_class_error(Exception(-493, "Syntax error: unexpected 'SELEC'")) is False
+        assert _is_unknown_class_error(Exception("Table not found")) is False
+        assert _is_unknown_class_error(Exception("some other error")) is False
+        # The SQLAlchemy wrapper's text (the SQL statement) is not inspected.
+        assert (
+            _is_unknown_class_error(
+                exc.ProgrammingError(
+                    "SHOW COLUMNS IN [Unknown class]",
+                    {},
+                    Exception(-494, "Authorization failure"),
+                )
+            )
+            is False
+        )
+
+        # The server's "Unknown class" message, in pycubrid and CUBRIDdb shapes.
+        assert _is_unknown_class_error(missing) is True
+        assert _is_unknown_class_error(exc.ProgrammingError("SHOW", {}, missing)) is True
+        assert _is_unknown_class_error(Exception(-493, 'Unknown class "dba.x".')) is True
+        assert _is_unknown_class_error(Exception('Unknown class "dba.x"')) is True
+
+    @pytest.mark.parametrize("method", ["get_columns", "get_indexes"])
+    def test_syntax_error_is_not_no_such_table(self, method):
+        """#454: a pycubrid -493 / 42S02 syntax error from SHOW COLUMNS or SHOW
+        INDEXES propagates unchanged instead of becoming NoSuchTableError."""
+        from sqlalchemy import exc
+
+        class _PycubridError(Exception):
+            errno = -493
+            sqlstate = "42S02"
+
+        orig = _PycubridError(
+            "Syntax: unterminated identifier (errno=-493, sqlstate='42S02', "
+            "description='Table not found')"
+        )
+        failure = exc.ProgrammingError("SHOW ...", {}, orig)
+
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        if method == "get_columns":
+            connection.execute.side_effect = failure
+        else:
+            # db_class lookup, the index-flag catalog query, then SHOW INDEXES.
+            connection.execute.side_effect = [_class_type_result("CLASS"), [], failure]
+
+        with pytest.raises(exc.ProgrammingError) as exc_info:
+            _invoke_reflection(dialect, method, connection, "t")
+        assert exc_info.value is failure
+
+    def test_get_columns_missing_table_raises_no_such_table(self):
+        """#387: get_columns on a missing table raises NoSuchTableError."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = Exception('Unknown class "dba.missing"')
+
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_columns", connection, "missing")
+
+    def test_get_columns_other_error_propagates(self):
+        """#387: a non-not-found error from SHOW COLUMNS is not swallowed."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = RuntimeError("connection reset")
+
+        with pytest.raises(RuntimeError):
+            _invoke_reflection(dialect, "get_columns", connection, "t")
+
+    def test_get_indexes_missing_table_raises_no_such_table(self):
+        """#387: get_indexes on a missing table raises NoSuchTableError."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        # db_class lookup (no such object), the batch index-flag catalog
+        # query, then SHOW INDEXES.
+        connection.execute.side_effect = [
+            _class_type_result(None),
+            [],
+            Exception('Syntax: Unknown class "dba.missing".'),
+        ]
+
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_indexes", connection, "missing")
 
     def test_get_foreign_keys_success_and_exception(self):
         dialect = CubridDialect()
@@ -567,8 +1042,8 @@ class TestReflectionMethods:
         success_conn.info_cache = {}
         success_conn.dialect_options = {}
         success_result = MagicMock()
-        success_result.fetchone.return_value = ("orders", ddl)
-        success_conn.execute.return_value = success_result
+        success_result.first.return_value = ("orders", ddl)
+        success_conn.execute.side_effect = [_class_type_result("CLASS"), success_result]
 
         fks = _invoke_reflection(
             dialect,
@@ -590,12 +1065,22 @@ class TestReflectionMethods:
         assert second["referred_table"] == "legacy"
         assert second["referred_columns"] == ["id"]
 
+        # SHOW CREATE TABLE lists fk_order_user first; the result is sorted
+        # by constraint name (#531).
+        assert [fk["name"] for fk in fks] == ["fk_order_legacy", "fk_order_user"]
+
         failed_conn = MagicMock()
         failed_conn.info_cache = {}
         failed_conn.dialect_options = {}
-        failed_conn.execute.side_effect = RuntimeError("fk lookup failed")
+        # Any SHOW CREATE TABLE failure other than a missing table propagates
+        # instead of reporting "no foreign keys" (#589).
+        failed_conn.execute.side_effect = [
+            _class_type_result("CLASS"),
+            RuntimeError("fk lookup failed"),
+        ]
 
-        assert _invoke_reflection(dialect, "get_foreign_keys", failed_conn, "orders") == []
+        with pytest.raises(RuntimeError, match="fk lookup failed"):
+            _invoke_reflection(dialect, "get_foreign_keys", failed_conn, "orders")
 
     def test_get_table_names(self):
         dialect = CubridDialect()
@@ -609,6 +1094,8 @@ class TestReflectionMethods:
             "users",
             "orders",
         ]
+        statement = connection.execute.call_args[0][0]
+        assert "is_system_class = 'NO' ORDER BY class_name" in str(statement)
 
     def test_get_view_names(self):
         dialect = CubridDialect()
@@ -619,6 +1106,8 @@ class TestReflectionMethods:
 
         views = _invoke_reflection(dialect, "get_view_names", connection)
         assert views == ["active_users", "recent_orders"]
+        statement = connection.execute.call_args[0][0]
+        assert "is_system_class = 'NO' ORDER BY class_name" in str(statement)
 
     def test_get_view_names_rejects_non_default_schema(self):
         dialect = CubridDialect()
@@ -675,17 +1164,19 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
         result = MagicMock()
-        result.fetchone.return_value = ("view_name", "SELECT * FROM users")
+        result.first.return_value = ("view_name", "SELECT * FROM users")
         connection.execute.return_value = result
         assert (
             _invoke_reflection(dialect, "get_view_definition", connection, "user_view")
             == "SELECT * FROM users"
         )
 
+        # SHOW CREATE VIEW on a table returns no row: not a view (#530).
         empty_result = MagicMock()
-        empty_result.fetchone.return_value = None
+        empty_result.first.return_value = None
         connection.execute.return_value = empty_result
-        assert _invoke_reflection(dialect, "get_view_definition", connection, "user_view") == ""
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_view_definition", connection, "users")
 
     def test_get_indexes_with_primary_key_and_exception_paths(self):
         dialect = CubridDialect()
@@ -697,9 +1188,9 @@ class TestReflectionMethods:
         # tuples for every index on the table.  PK and FK auto-indexes are
         # filtered from the SHOW INDEXES output.
         flag_rows = [
-            ("uq_name", 0, 0),
-            ("pk_users", 1, 0),
-            ("idx_email", 0, 0),
+            ("uq_name", "NO", "NO"),
+            ("pk_users", "YES", "NO"),
+            ("idx_email", "NO", "NO"),
         ]
 
         show_indexes_rows = [
@@ -710,7 +1201,8 @@ class TestReflectionMethods:
         ]
 
         connection.execute.side_effect = [
-            flag_rows,  # batch _db_index query
+            _class_type_result("CLASS"),  # db_class lookup
+            flag_rows,  # batch db_index query
             show_indexes_rows,  # SHOW INDEXES
         ]
 
@@ -722,31 +1214,24 @@ class TestReflectionMethods:
         ]
 
     def test_get_indexes_batch_pk_query_failure(self):
-        """When the batch catalog query fails, all indexes are returned."""
+        """#549: a failing batch catalog query raises instead of reporting the
+        PK and FK auto-indexes as ordinary indexes."""
         dialect = CubridDialect()
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        show_indexes_rows = [
-            (None, 0, "uq_name", None, "first_name"),
-            (None, 0, "pk_users", None, "id"),
-        ]
-
         connection.execute.side_effect = [
+            _class_type_result("CLASS"),  # db_class lookup
             RuntimeError("catalog unavailable"),  # batch flag query fails
-            show_indexes_rows,  # SHOW INDEXES
         ]
 
-        indexes = _invoke_reflection(dialect, "get_indexes", connection, "users")
-
-        # Both indexes returned since PK/FK detection failed gracefully.
-        assert len(indexes) == 2
-        assert indexes[0]["name"] == "uq_name"
-        assert indexes[1]["name"] == "pk_users"
+        with pytest.raises(RuntimeError, match="catalog unavailable"):
+            _invoke_reflection(dialect, "get_indexes", connection, "users")
+        assert connection.execute.call_count == 2
 
     def test_get_indexes_excludes_fk_auto_indexes(self):
-        """FK auto-indexes (``_db_index.is_foreign_key`` true) are filtered.
+        """FK auto-indexes (``db_index.is_foreign_key = 'YES'``) are filtered.
 
         See cubrid-lab/sqlalchemy-cubrid#120 — otherwise Alembic
         autogenerate emits spurious drop_index/create_index diffs.
@@ -757,12 +1242,13 @@ class TestReflectionMethods:
         connection.dialect_options = {}
 
         flag_rows = [
-            ("fk_orders_user", 0, 1),
-            ("fk_orders_product", 0, 1),
-            ("idx_orders_status", 0, 0),
+            ("fk_orders_user", "NO", "YES"),
+            ("fk_orders_product", "NO", "YES"),
+            ("idx_orders_status", "NO", "NO"),
         ]
 
         connection.execute.side_effect = [
+            _class_type_result("CLASS"),
             flag_rows,
             [
                 (None, 1, "fk_orders_user", None, "user_id"),
@@ -776,6 +1262,111 @@ class TestReflectionMethods:
         assert indexes == [
             {"name": "idx_orders_status", "column_names": ["status"], "unique": False},
         ]
+
+    def test_get_indexes_on_view_returns_empty(self):
+        """#529: a view has no indexes of its own; SHOW INDEXES IN <view>
+        would list the base table's indexes, so it is not run."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = [_class_type_result("VCLASS")]
+
+        assert _invoke_reflection(dialect, "get_indexes", connection, "users_v") == []
+        assert connection.execute.call_count == 1
+
+    def test_class_type_lookup_closes_result_prefers_own_class_and_is_cached(self):
+        """#529 review: the db_class lookup must close its result (an open one
+        holds a server query entry until -830), prefer the current user's
+        class over a same-named class of another owner, and run once per
+        name per Inspector."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        result = _class_type_result("CLASS")
+        connection.execute.return_value = result
+        info_cache: dict = {}
+
+        assert dialect._get_class_type(connection, "Users", info_cache=info_cache) == "CLASS"
+        assert dialect._get_class_type(connection, "Users", info_cache=info_cache) == "CLASS"
+
+        assert connection.execute.call_count == 1
+        result.first.assert_called_once_with()
+        result.fetchone.assert_not_called()
+        statement, params = connection.execute.call_args.args
+        sql = str(statement)
+        assert "class_name IN (:name, LOWER(:name))" in sql
+        assert "ORDER BY CASE WHEN owner_name = CURRENT_USER THEN 0" in sql
+        assert "WHEN is_system_class = 'YES' THEN 1 ELSE 2 END" in sql
+        assert params == {"name": "Users"}
+
+    @pytest.mark.parametrize(
+        ("version", "owner_filtered"),
+        [
+            (None, False),
+            ((10, 2, 18, 9024), False),
+            ((11, 0, 16, 419), False),
+            ((11, 2, 9, 866), True),
+        ],
+    )
+    def test_catalog_views_filter_owner_since_11_2(self, version, owner_filtered):
+        """#549: reflection reads the public catalog views (``_db_index`` and
+        friends are DBA-only). Since 11.2 they list same-named classes of other
+        owners, so the rows are limited to the owner ``_get_class_info``
+        prefers; before 11.2 the views have no ``owner_name`` column."""
+        dialect = CubridDialect()
+        dialect.server_version_info = version
+        connection = MagicMock()
+        info_cache: dict = {}
+
+        def execute(statement, params=None):
+            sql = str(statement)
+            if "FROM db_class" in sql:
+                return _class_type_result("CLASS")
+            result = MagicMock()
+            result.__iter__.return_value = iter([])
+            result.scalar.return_value = 1
+            return result
+
+        connection.execute.side_effect = execute
+        dialect.get_pk_constraint(connection, "t", info_cache=info_cache)
+        dialect.get_unique_constraints(connection, "t", info_cache=info_cache)
+        dialect.has_index(connection, "t", "ix", info_cache=info_cache)
+        dialect.get_columns(connection, "t", info_cache=info_cache)
+        dialect.get_indexes(connection, "t", info_cache=info_cache)
+
+        catalog_calls = [
+            (str(call.args[0]), call.args[1])
+            for call in connection.execute.call_args_list
+            if " db_index" in str(call.args[0]) or "db_attribute" in str(call.args[0])
+        ]
+        assert len(catalog_calls) == 5
+        for sql, params in catalog_calls:
+            assert "_db_" not in sql
+            # Matched as given or lower-cased, like the db_class lookup.
+            assert "class_name IN (:table, LOWER(:table))" in sql
+            assert params["table"] == "t"
+            assert ("owner_name = :owner" in sql) is owner_filtered
+            assert (params.get("owner") == "DBA") is owner_filtered
+        pk_sql = catalog_calls[0][0]
+        assert "FROM db_index i, db_index_key k" in pk_sql
+        if owner_filtered:
+            assert "AND i.owner_name = :owner AND k.owner_name = :owner" in pk_sql
+        # The db_class lookup runs at most once per name per Inspector.
+        class_lookups = [
+            call for call in connection.execute.call_args_list if "db_class" in str(call.args[0])
+        ]
+        assert len(class_lookups) == 1
+
+    def test_catalog_class_filter_missing_class_has_no_owner_filter(self):
+        dialect = CubridDialect()
+        dialect.server_version_info = (11, 4, 6, 1963)
+        connection = MagicMock()
+        connection.execute.return_value = _class_type_result(None)
+
+        assert dialect._catalog_class_filter(connection, "Missing", info_cache={}) == (
+            "class_name IN (:table, LOWER(:table))",
+            {"table": "Missing"},
+        )
 
     def test_get_unique_constraints_success_and_exception(self):
         dialect = CubridDialect()
@@ -793,8 +1384,9 @@ class TestReflectionMethods:
         success_conn.info_cache = {}
         success_conn.dialect_options = {}
         success_result = MagicMock()
-        success_result.fetchone.return_value = ("users", ddl)
-        success_conn.execute.return_value = success_result
+        success_result.first.return_value = ("users", ddl)
+        # class-type lookup, empty unique-index catalog, SHOW CREATE TABLE
+        success_conn.execute.side_effect = [_class_type_result("CLASS"), [], success_result]
 
         unique_constraints = _invoke_reflection(
             dialect,
@@ -804,19 +1396,32 @@ class TestReflectionMethods:
         )
 
         assert unique_constraints == [
-            {"name": "uq_users_email", "column_names": ["email", "tenant_id"]},
-            {"name": "uq_users_name", "column_names": ["name"]},
+            {
+                "name": "uq_users_email",
+                "column_names": ["email", "tenant_id"],
+                "duplicates_index": "uq_users_email",
+            },
+            {
+                "name": "uq_users_name",
+                "column_names": ["name"],
+                "duplicates_index": "uq_users_name",
+            },
         ]
 
         failed_conn = MagicMock()
         failed_conn.info_cache = {}
         failed_conn.dialect_options = {}
-        failed_conn.execute.side_effect = RuntimeError("uc lookup failed")
+        failed_conn.execute.side_effect = [
+            _class_type_result("CLASS"),
+            RuntimeError("catalog unavailable"),
+        ]
 
-        assert _invoke_reflection(dialect, "get_unique_constraints", failed_conn, "users") == []
+        # A failing catalog query raises (#549).
+        with pytest.raises(RuntimeError, match="catalog unavailable"):
+            _invoke_reflection(dialect, "get_unique_constraints", failed_conn, "users")
 
     def test_get_unique_constraints_from_catalog_success(self):
-        """Primary path: _db_index catalog query returns unique index names,
+        """Primary path: db_index catalog query returns unique index names,
         SHOW INDEXES resolves column names."""
         dialect = CubridDialect()
 
@@ -824,11 +1429,13 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        # First execute: _db_index returns unique index names (excluding PK/FK)
+        # First execute: db_index returns each index with its unique, PK and
+        # FK flags; only unique non-PK, non-FK ones are kept (#610).
         # Second execute: SHOW INDEXES returns column details
         unique_name_rows = [
-            ("uq_users_email",),
-            ("uq_users_name",),
+            ("pk_users", "YES", "YES", "NO"),
+            ("uq_users_email", "YES", "NO", "NO"),
+            ("uq_users_name", "YES", "NO", "NO"),
         ]
         show_indexes_rows = [
             (None, 0, "uq_users_email", 1, "email"),
@@ -836,17 +1443,29 @@ class TestReflectionMethods:
             (None, 0, "uq_users_name", 1, "name"),
             (None, 1, "pk_users", 1, "id"),  # PK — should be excluded
         ]
-        connection.execute.side_effect = [unique_name_rows, show_indexes_rows]
+        connection.execute.side_effect = [
+            _class_type_result("CLASS"),
+            unique_name_rows,
+            show_indexes_rows,
+        ]
 
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
         assert uqs == [
-            {"name": "uq_users_email", "column_names": ["email", "tenant_id"]},
-            {"name": "uq_users_name", "column_names": ["name"]},
+            {
+                "name": "uq_users_email",
+                "column_names": ["email", "tenant_id"],
+                "duplicates_index": "uq_users_email",
+            },
+            {
+                "name": "uq_users_name",
+                "column_names": ["name"],
+                "duplicates_index": "uq_users_name",
+            },
         ]
 
     def test_get_unique_constraints_catalog_empty_falls_back_to_ddl(self):
-        """When _db_index returns no unique indexes, fall back to DDL regex."""
+        """When db_index lists no index of the table, fall back to DDL regex."""
         dialect = CubridDialect()
 
         ddl = (
@@ -860,76 +1479,77 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        # First execute: _db_index returns empty list (no unique indexes found)
+        # First execute: db_index lists no index of the table at all
         # Second execute: SHOW CREATE TABLE for DDL fallback
         ddl_result = MagicMock()
-        ddl_result.fetchone.return_value = ("users", ddl)
-        connection.execute.side_effect = [[], ddl_result]
+        ddl_result.first.return_value = ("users", ddl)
+        connection.execute.side_effect = [_class_type_result("CLASS"), [], ddl_result]
 
         uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
-        assert uqs == [{"name": "uq_users_email", "column_names": ["email"]}]
+        assert uqs == [
+            {
+                "name": "uq_users_email",
+                "column_names": ["email"],
+                "duplicates_index": "uq_users_email",
+            }
+        ]
 
-    def test_get_unique_constraints_catalog_exception_falls_back_to_ddl(self):
-        """When _db_index query raises an exception, fall back to DDL regex."""
+    def test_get_unique_constraints_catalog_missing_table_raises(self):
+        """SHOW INDEXES failing with ``Unknown class`` after the catalog found
+        unique indexes (e.g. another owner's class) raises NoSuchTableError."""
         dialect = CubridDialect()
-
-        ddl = (
-            "CREATE TABLE [users] (\n"
-            "  [id] INTEGER NOT NULL,\n"
-            "  CONSTRAINT [uq_users_email] UNIQUE KEY ([email])\n"
-            ")"
-        )
 
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
+        connection.execute.side_effect = [
+            _class_type_result("CLASS"),
+            [("uq_users_email", "YES", "NO", "NO")],
+            Exception('Unknown class "dba.users"'),
+        ]
 
-        # First execute: _db_index raises an exception
-        # Second execute: SHOW CREATE TABLE for DDL fallback
-        ddl_result = MagicMock()
-        ddl_result.fetchone.return_value = ("users", ddl)
-        connection.execute.side_effect = [RuntimeError("catalog unavailable"), ddl_result]
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
 
-        uqs = _invoke_reflection(dialect, "get_unique_constraints", connection, "users")
-
-        assert uqs == [{"name": "uq_users_email", "column_names": ["email"]}]
+        other_error = MagicMock()
+        other_error.info_cache = {}
+        other_error.dialect_options = {}
+        other_error.execute.side_effect = [
+            _class_type_result("CLASS"),
+            [("uq_users_email", "YES", "NO", "NO")],
+            RuntimeError("connection reset"),
+        ]
+        with pytest.raises(RuntimeError, match="connection reset"):
+            _invoke_reflection(dialect, "get_unique_constraints", other_error, "users")
 
     def test_get_pk_constraint_name_from_index(self):
-        """PK constraint name is fetched from _db_index (not the phantom db_constraint)."""
+        """PK columns and name come from the db_index_key catalog (#426)."""
         dialect = CubridDialect()
 
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
 
-        show_columns_rows = [
-            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
-        ]
-        index_result = MagicMock()
-        index_result.fetchone.return_value = ("pk_users",)
-        connection.execute.side_effect = [show_columns_rows, index_result]
+        catalog_rows = [("id", "pk_users")]
+        connection.execute.side_effect = [catalog_rows]
 
         pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 
         assert pk == {"name": "pk_users", "constrained_columns": ["id"]}
 
-    def test_get_pk_constraint_name_query_failure_returns_none(self):
-        """When _db_index query fails, PK name should be None but columns still returned."""
+    def test_get_pk_constraint_catalog_failure_raises(self):
+        """#549: a failing catalog query raises; falling back to SHOW COLUMNS
+        would lose the PK name and every composite column after the first."""
         dialect = CubridDialect()
 
         connection = MagicMock()
         connection.info_cache = {}
         connection.dialect_options = {}
+        connection.execute.side_effect = [RuntimeError("index query failed")]
 
-        show_columns_rows = [
-            ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
-        ]
-        connection.execute.side_effect = [show_columns_rows, RuntimeError("index query failed")]
-
-        pk = _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
-
-        assert pk == {"name": None, "constrained_columns": ["id"]}
+        with pytest.raises(RuntimeError, match="index query failed"):
+            _invoke_reflection(dialect, "get_pk_constraint", connection, "users")
 
     def test_get_check_constraints_get_table_comment_and_schema_names(self):
         dialect = CubridDialect()
@@ -937,7 +1557,7 @@ class TestReflectionMethods:
         connection.info_cache = {}
         connection.dialect_options = {}
         table_comment_result = MagicMock()
-        table_comment_result.fetchone.return_value = ("users table comment",)
+        table_comment_result.first.return_value = ("users table comment",)
         connection.execute.return_value = table_comment_result
 
         checks = _invoke_reflection(dialect, "get_check_constraints", connection, "users")
@@ -946,6 +1566,202 @@ class TestReflectionMethods:
         assert checks == []
         assert comment == {"text": "users table comment"}
         assert dialect.get_schema_names(connection) == []
+
+
+class TestMissingObjectReflection:
+    """#530: reflecting a table or view that does not exist raises
+    NoSuchTableError, and a view skips the table-only SHOW CREATE TABLE."""
+
+    @staticmethod
+    def _connection(*side_effect):
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = list(side_effect)
+        return connection
+
+    @staticmethod
+    def _unknown_class(name="missing"):
+        return Exception(f'Syntax: Unknown class "dba.{name}".')
+
+    @staticmethod
+    def _syntax_error():
+        """A generic -493 error that is not a missing object.
+
+        pycubrid reports syntax errors with the same native code and SQLSTATE
+        (42S02) as a missing class (#454), so only the message tells them
+        apart.
+        """
+        from sqlalchemy import exc
+
+        orig = Exception("Syntax: syntax error, unexpected 'SELEC'")
+        orig.errno = -493  # type: ignore[attr-defined]
+        orig.sqlstate = "42S02"  # type: ignore[attr-defined]
+        return exc.ProgrammingError("SHOW ...", {}, orig)
+
+    @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
+    def test_missing_table_raises_before_show_create_table(self, method_name):
+        connection = self._connection(_class_type_result(None))
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), method_name, connection, "missing")
+        assert connection.execute.call_count == 1
+
+    @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
+    def test_view_returns_empty_without_show_create_table(self, method_name, caplog):
+        connection = self._connection(_class_type_result("VCLASS"))
+        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
+            assert _invoke_reflection(CubridDialect(), method_name, connection, "v") == []
+        assert connection.execute.call_count == 1
+        assert not caplog.records
+
+    def test_foreign_keys_ddl_missing_table_raises(self):
+        """A table dropped between the lookup and SHOW CREATE TABLE."""
+        connection = self._connection(_class_type_result("CLASS"), self._unknown_class())
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_foreign_keys", connection, "missing")
+
+    def test_unique_constraints_ddl_fallback_does_not_swallow_missing_table(self):
+        connection = self._connection(_class_type_result("CLASS"), [], self._unknown_class())
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_unique_constraints", connection, "missing")
+
+    @pytest.mark.parametrize("method_name", ["get_foreign_keys", "get_unique_constraints"])
+    def test_ddl_fallback_syntax_error_is_not_a_missing_table(self, method_name):
+        from sqlalchemy.exc import ProgrammingError
+
+        side_effect = [_class_type_result("CLASS")]
+        if method_name == "get_unique_constraints":
+            side_effect.append([])  # empty unique-index catalog
+        connection = self._connection(*side_effect, self._syntax_error())
+        with pytest.raises(ProgrammingError) as excinfo:
+            _invoke_reflection(CubridDialect(), method_name, connection, "t")
+        assert not isinstance(excinfo.value, NoSuchTableError)
+
+    def test_table_comment_missing_table_raises(self):
+        result = MagicMock()
+        result.first.return_value = None
+        connection = self._connection(result)
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_table_comment", connection, "missing")
+
+    def test_table_comment_prefers_own_class_and_closes_result(self):
+        result = MagicMock()
+        result.first.return_value = (None,)
+        connection = self._connection(result)
+        assert _invoke_reflection(CubridDialect(), "get_table_comment", connection, "T") == {
+            "text": None
+        }
+        result.first.assert_called_once_with()
+        sql = str(connection.execute.call_args.args[0])
+        assert "class_name IN (:name, LOWER(:name))" in sql
+        assert "ORDER BY CASE WHEN owner_name = CURRENT_USER THEN 0" in sql
+
+    def test_pk_constraint_missing_table_raises(self):
+        # Empty PK catalog, then SHOW COLUMNS fails with "Unknown class".
+        connection = self._connection([], self._unknown_class())
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_pk_constraint", connection, "missing")
+
+    def test_pk_constraint_syntax_error_propagates(self):
+        from sqlalchemy.exc import ProgrammingError
+
+        connection = self._connection([], self._syntax_error())
+        with pytest.raises(ProgrammingError):
+            _invoke_reflection(CubridDialect(), "get_pk_constraint", connection, "t")
+
+    def test_view_definition_missing_view_raises(self):
+        connection = self._connection(self._unknown_class("missing_v"))
+        with pytest.raises(NoSuchTableError):
+            _invoke_reflection(CubridDialect(), "get_view_definition", connection, "missing_v")
+
+    def test_view_definition_syntax_error_propagates(self):
+        from sqlalchemy.exc import ProgrammingError
+
+        connection = self._connection(self._syntax_error())
+        with pytest.raises(ProgrammingError):
+            _invoke_reflection(CubridDialect(), "get_view_definition", connection, "v")
+
+
+class _DriverError(Exception):
+    pass
+
+
+_SHOW_CREATE_TABLE_ERRORS = [
+    OperationalError(
+        "SHOW CREATE TABLE",
+        {},
+        _DriverError("Cannot communicate with the broker"),
+        connection_invalidated=True,
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Syntax: select is not authorized on t.")
+    ),
+    ProgrammingError(
+        "SHOW CREATE TABLE", {}, _DriverError("Semantic: SELECT is not authorized on dba.t.")
+    ),
+    RuntimeError("boom"),
+]
+_SHOW_CREATE_TABLE_ERROR_IDS = ["disconnect", "not-authorized-493", "not-authorized-494", "runtime"]
+
+
+class TestShowCreateTableErrorsPropagate:
+    """#589: ``get_foreign_keys`` and ``get_unique_constraints`` read
+    ``SHOW CREATE TABLE``. A failure there must not be reported as "no
+    constraints", which Alembic autogenerate would turn into spurious
+    ``add_fk`` / ``add_constraint`` operations."""
+
+    METHODS = ["get_foreign_keys", "get_unique_constraints"]
+
+    @staticmethod
+    def _connection(method_name, show_create_table):
+        side_effect = [_class_type_result("CLASS")]
+        if method_name == "get_unique_constraints":
+            side_effect.append([])  # empty unique-index catalog: DDL fallback
+        side_effect.append(show_create_table)
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = side_effect
+        return connection
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    @pytest.mark.parametrize("error", _SHOW_CREATE_TABLE_ERRORS, ids=_SHOW_CREATE_TABLE_ERROR_IDS)
+    def test_show_create_table_failure_propagates(self, method_name, error, caplog):
+        connection = self._connection(method_name, error)
+        with caplog.at_level("WARNING", logger="sqlalchemy_cubrid.dialect"):
+            with pytest.raises(type(error)) as excinfo:
+                _invoke_reflection(CubridDialect(), method_name, connection, "t")
+        assert excinfo.value is error
+        assert not isinstance(excinfo.value, NoSuchTableError)
+        assert not caplog.records
+
+    def test_disconnect_keeps_connection_invalidated(self):
+        error = _SHOW_CREATE_TABLE_ERRORS[0]
+        connection = self._connection("get_foreign_keys", error)
+        with pytest.raises(type(error)) as excinfo:
+            _invoke_reflection(CubridDialect(), "get_foreign_keys", connection, "t")
+        assert excinfo.value.connection_invalidated
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    def test_no_show_create_table_row_raises_no_such_table(self, method_name):
+        """The class lookup found the table but SHOW CREATE TABLE returned no
+        row (e.g. it was dropped in between): the table is gone, not
+        constraint-free."""
+        result = MagicMock()
+        result.first.return_value = None
+        connection = self._connection(method_name, result)
+        with pytest.raises(NoSuchTableError, match="t"):
+            _invoke_reflection(CubridDialect(), method_name, connection, "t")
+
+    @pytest.mark.parametrize("method_name", METHODS)
+    def test_successful_query_without_constraints_returns_empty(self, method_name):
+        result = MagicMock()
+        result.first.return_value = (
+            "t",
+            "CREATE TABLE [t] ([id] INTEGER NOT NULL, CONSTRAINT [pk_t_id] PRIMARY KEY ([id]))",
+        )
+        connection = self._connection(method_name, result)
+        assert _invoke_reflection(CubridDialect(), method_name, connection, "t") == []
 
 
 class TestDoReleaseSavepoint:
@@ -957,6 +1773,69 @@ class TestDoReleaseSavepoint:
         result = dialect.do_release_savepoint(connection, "sp_test")
         assert result is None
         connection.execute.assert_not_called()
+
+
+class _RowcountCursor:
+    """Fake DB-API cursor whose ``execute`` reports a scripted rowcount."""
+
+    def __init__(self, rowcounts: list[int]) -> None:
+        self._rowcounts = iter(rowcounts)
+        self.executed: list[tuple[str, Any]] = []
+        self.executemany_calls: list[tuple[str, Any]] = []
+        self.rowcount = -1
+
+    def execute(self, statement: str, params: Any) -> None:
+        self.executed.append((statement, params))
+        self.rowcount = next(self._rowcounts)
+
+    def executemany(self, statement: str, params: Any) -> None:
+        self.executemany_calls.append((statement, params))
+
+
+class TestDoExecutemany:
+    """CUBRIDdb executemany guard (#502) and its pycubrid opt-out."""
+
+    _ROWS = [(1, "a"), (2, None), (3, "c")]
+
+    def test_cubriddb_executes_each_row_and_sums_rowcount(self) -> None:
+        cursor = _RowcountCursor([1, 0, 2])
+        CubridDialect().do_executemany(cursor, "UPDATE t SET v = ? WHERE id = ?", self._ROWS)
+        assert cursor.executed == [("UPDATE t SET v = ? WHERE id = ?", row) for row in self._ROWS]
+        assert cursor.executemany_calls == []
+        assert cursor.rowcount == 3
+
+    def test_cubriddb_unknown_row_rowcount_makes_total_unknown(self) -> None:
+        cursor = _RowcountCursor([1, -1, 2])
+        CubridDialect().do_executemany(cursor, "UPDATE t SET v = ?", self._ROWS)
+        assert len(cursor.executed) == 3
+        assert cursor.rowcount == -1
+
+    @pytest.mark.parametrize(
+        "dialect_path",
+        [
+            "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect",
+            "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect",
+        ],
+    )
+    def test_pycubrid_dialects_keep_driver_executemany(self, dialect_path: str) -> None:
+        import importlib
+
+        module_name, class_name = dialect_path.split(":")
+        dialect_cls = getattr(importlib.import_module(module_name), class_name)
+        cursor = _RowcountCursor([])
+        dialect_cls().do_executemany(cursor, "INSERT INTO t VALUES (?, ?)", self._ROWS)
+        assert cursor.executemany_calls == [("INSERT INTO t VALUES (?, ?)", self._ROWS)]
+        assert cursor.executed == []
+        assert dialect_cls.supports_sane_multi_rowcount is True
+
+    def test_cubriddb_supports_sane_multi_rowcount(self) -> None:
+        assert CubridDialect.supports_sane_multi_rowcount is True
+
+
+def _with_errno(exc: Exception, errno: int) -> Exception:
+    """Attach a pycubrid-style ``errno`` to *exc*."""
+    setattr(exc, "errno", errno)
+    return exc
 
 
 class TestIsDisconnect:
@@ -1008,7 +1887,6 @@ class TestIsDisconnect:
             "Connection refused on port 33000",
             "connection was killed by admin",
             "Failed to connect to host",
-            "connection lost during receive",  # pycubrid sync clean-EOF (#322)
         ],
     )
     def test_disconnect_message_patterns(self, dialect_with_dbapi, message):
@@ -1033,20 +1911,48 @@ class TestIsDisconnect:
         exc = dbapi.DatabaseError(message)
         assert dialect.is_disconnect(exc, None, None) is False
 
-    @pytest.mark.parametrize(
-        "error_code",
-        [
-            -21003,  # CAS_ER_COMMUNICATION
-            -21005,  # CAS_ER_COMMUNICATION (alternate)
-            -10005,  # ER_NET_CANT_CONNECT
-            -10007,  # ER_NET_SERVER_COMM_ERROR
-        ],
-    )
-    def test_disconnect_by_error_code(self, dialect_with_dbapi, error_code):
-        """is_disconnect() returns True for known disconnect error codes."""
+    # CUBRIDdb client-side codes for a dead or unusable connection (#572, #578).
+    _CUBRIDDB_DISCONNECT = [
+        (-10002, "ERROR: CAS, -10002, No more memory"),
+        (-10003, "ERROR: CAS, -10003, Cannot receive data from client"),
+        (-20002, "ERROR: CCI, -20002, Invalid connection handle"),
+        (-20004, "ERROR: CCI, -20004, Cannot communicate with server"),
+        (-20016, "ERROR: CCI, -20016, Cannot connect to CUBRID CAS"),
+    ]
+
+    # Codes the old table listed that are not disconnects (#572).
+    _NOT_DISCONNECT = [
+        -4,  # ER_INTERRUPTED: an interrupted query (e.g. KILL QUERY)
+        -10005,  # CAS_ER_TRAN_TYPE
+        -10007,  # CAS_ER_NUM_BIND
+        -21003,  # CUBRID JDBC's ER_COMMUNICATION; no Python driver raises it
+        -21005,  # CUBRID JDBC's ER_TYPE_CONVERSION
+    ]
+
+    @pytest.mark.parametrize(("error_code", "message"), _CUBRIDDB_DISCONNECT)
+    def test_disconnect_by_error_code(self, dialect_with_dbapi, error_code, message):
+        """CUBRIDdb ``(code, message)`` errors with a disconnect code disconnect."""
         dialect, dbapi = dialect_with_dbapi
-        exc = dbapi.DatabaseError(error_code)
+        exc = dbapi.InterfaceError(error_code, message)
         assert dialect.is_disconnect(exc, None, None) is True
+        # Wording-independent: the code alone decides.
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code), None, None) is True
+
+    @pytest.mark.parametrize("error_code", _NOT_DISCONNECT)
+    def test_removed_codes_are_not_disconnect_cubriddb(self, dialect_with_dbapi, error_code):
+        """CUBRIDdb errors carrying a code the old table wrongly listed do not disconnect."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(error_code, f"ERROR: DBMS, {error_code}, opaque message")
+        assert dialect.is_disconnect(exc, None, None) is False
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code), None, None) is False
+
+    def test_interrupted_query_is_not_disconnect_cubriddb(self, dialect_with_dbapi):
+        """CUBRIDdb's error for a query interrupted by KILL QUERY keeps the connection."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(
+            -4, "ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44]."
+        )
+        assert dialect.is_disconnect(exc, None, None) is False
 
     def test_disconnect_with_interface_error(self, dialect_with_dbapi):
         """is_disconnect() works with InterfaceError subclass."""
@@ -1060,11 +1966,64 @@ class TestIsDisconnect:
         exc = RuntimeError("connection is closed")
         assert dialect.is_disconnect(exc, None, None) is False
 
-    def test_disconnect_error_code_in_string_arg(self, dialect_with_dbapi):
-        """is_disconnect() extracts numeric code from string like '-21003 msg'."""
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-20002 opaque",
+            "-10003 opaque",
+            "-111 opaque",
+            "-224 opaque",
+            "-1002 opaque",
+            "-4 opaque",
+        ],
+    )
+    def test_numeric_message_prefix_is_not_a_code(self, dialect_with_dbapi, message):
+        """A leading number in a message is text, not an error code (#608).
+
+        Neither driver puts a code at the start of its message: CUBRIDdb
+        passes the code as an ``int`` ``args[0]`` and pycubrid in ``errno``.
+        """
         dialect, dbapi = dialect_with_dbapi
-        exc = dbapi.DatabaseError("-21003 Cannot communicate with the broker")
+        assert dialect.is_disconnect(dbapi.DatabaseError(message), None, None) is False
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-224 rejected",
+        ],
+    )
+    def test_numeric_server_text_does_not_override_cubriddb_code(self, dialect_with_dbapi, message):
+        """A number at the start of CUBRIDdb's server text is not a code (#608)."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(-495, f"ERROR: DBMS, -495, {message}")
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_server_connect_failure_keeps_message_fallback_cubriddb(self, dialect_with_dbapi):
+        """-191 "Failed to connect to database server" (cub_server down) disconnects.
+
+        The code is not in the tables; the message fallback decides, as on a
+        live cub_server stop (test_server_restart.py).
+        """
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(
+            -191,
+            "ERROR: DBMS, -191, Failed to connect to database server, 'testdb', "
+            "on the following host(s): localhost[CAS INFO-127.0.0.1:33000,1,426].",
+        )
         assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_cci_code_outside_table_keeps_message_fallback(self, dialect_with_dbapi):
+        """CCI/CAS messages are fixed driver text, so they still match patterns."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.InterfaceError(-20038, "ERROR: CCI, -20038, Connection timed out")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_bool_arg_is_not_a_code(self, dialect_with_dbapi):
+        """``True``/``False`` in ``args[0]`` are not error codes."""
+        dialect, dbapi = dialect_with_dbapi
+        assert dialect.is_disconnect(dbapi.DatabaseError(True), None, None) is False
 
     def test_disconnect_with_empty_args(self, dialect_with_dbapi):
         """is_disconnect() handles exception with no args gracefully."""
@@ -1076,8 +2035,10 @@ class TestIsDisconnect:
 
     @pytest.fixture()
     def pycubrid_dialect(self):
-        """Dialect with a pycubrid-style dbapi (full PEP 249 hierarchy)."""
-        dialect = CubridDialect()
+        """pycubrid dialect with a pycubrid-style dbapi (full PEP 249 hierarchy)."""
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        dialect = PyCubridDialect()
         dbapi = MagicMock()
 
         class Error(Exception):
@@ -1100,11 +2061,57 @@ class TestIsDisconnect:
         dialect.dbapi = dbapi
         return dialect, dbapi
 
-    def test_disconnect_by_communication_code_minus_four(self, pycubrid_dialect):
-        """is_disconnect() returns True for pycubrid ER_COMMUNICATION (-4)."""
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "connection lost during receive",  # pycubrid sync clean-EOF (#322)
+            "CAS did not answer CHECK_CAS out of transaction and reconnecting failed",  # #565
+        ],
+    )
+    def test_pycubrid_message_patterns(self, pycubrid_dialect, message):
+        """pycubrid's own client-side messages disconnect on the pycubrid dialects."""
         dialect, dbapi = pycubrid_dialect
-        exc = dbapi.OperationalError(-4, "communication error")
-        assert dialect.is_disconnect(exc, None, None) is True
+        assert dialect.is_disconnect(dbapi.OperationalError(message), None, None) is True
+
+    @pytest.mark.parametrize(
+        "make_error",
+        [
+            pytest.param(
+                lambda dbapi: _with_errno(dbapi.DatabaseError("opaque"), -224), id="errno"
+            ),
+            pytest.param(
+                lambda dbapi: _with_errno(dbapi.DatabaseError("opaque"), -1002), id="legacy-cas"
+            ),
+            pytest.param(
+                lambda dbapi: dbapi.DatabaseError("connection lost during receive"),
+                id="connection-lost",
+            ),
+            pytest.param(
+                lambda dbapi: dbapi.DatabaseError("reconnecting failed"), id="reconnecting-failed"
+            ),
+        ],
+    )
+    def test_pycubrid_policy_stays_out_of_cubriddb_dialect(self, dialect_with_dbapi, make_error):
+        """The CUBRIDdb dialect reads only CUBRIDdb's error shapes (#596).
+
+        pycubrid's ``errno`` and client-side messages are pycubrid policy;
+        CUBRIDdb's exceptions carry neither (its code is ``args[0]``).
+        """
+        dialect, dbapi = dialect_with_dbapi
+        assert dialect.is_disconnect(make_error(dbapi), None, None) is False
+
+    @pytest.mark.parametrize("error_code", [-20004, -10002, -224])
+    def test_pycubrid_dialect_keeps_args_code_matching(self, pycubrid_dialect, error_code):
+        """The pycubrid dialects still match an ``int`` ``args[0]`` code, as before #596."""
+        dialect, dbapi = pycubrid_dialect
+        assert dialect.is_disconnect(dbapi.DatabaseError(error_code, "opaque"), None, None) is True
+
+    def test_interrupted_query_is_not_disconnect_pycubrid(self, pycubrid_dialect):
+        """pycubrid's errno -4 is the server's ER_INTERRUPTED, not a lost connection (#572)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.OperationalError("Has been interrupted.")
+        exc.code = exc.errno = -4
+        assert dialect.is_disconnect(exc, None, None) is False
 
     def test_operational_error_without_code_or_cause_is_not_disconnect(self, pycubrid_dialect):
         """OperationalError with a non-disconnect message is not a disconnect."""
@@ -1157,19 +2164,206 @@ class TestIsDisconnect:
         exc = dbapi.InterfaceError("Cursor is closed")
         assert dialect.is_disconnect(exc, None, None) is False
 
+    # ----- cub_server crash / stop: broker CAS-reset codes (#565) -----
+
+    _SERVER_SESSION_LOST = [
+        -111,  # ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED
+        -199,  # ER_NET_SERVER_CRASHED
+        -224,  # ER_OBJ_NO_CONNECT
+        -677,  # ER_BO_CONNECT_FAILED
+    ]
+
+    @pytest.mark.parametrize("error_code", _SERVER_SESSION_LOST)
+    def test_server_session_lost_code_cubriddb(self, dialect_with_dbapi, error_code):
+        """CUBRIDdb ``(code, message)`` errors for a lost server session disconnect."""
+        dialect, dbapi = dialect_with_dbapi
+        # Wording-independent: the code alone decides.
+        exc = dbapi.DatabaseError(error_code, "opaque server message")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @staticmethod
+    def _pycubrid_error(dbapi, message: str, errno: int | None):
+        """Mimic pycubrid: ``args`` hold only the message, the code is in ``errno``."""
+        exc = dbapi.DatabaseError(message)
+        exc.errno = errno
+        return exc
+
+    @pytest.mark.parametrize("error_code", _SERVER_SESSION_LOST)
+    def test_server_session_lost_code_pycubrid(self, pycubrid_dialect, error_code):
+        """pycubrid errors carrying a lost-server-session ``errno`` disconnect."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", error_code)
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    # CAS codes (cas_error.h) as pycubrid actually receives them: legacy-
+    # renumbered by CAS_CONV_ERROR_TO_OLD (+9000), since pycubrid never
+    # advertises understanding the renewed error-code protocol (#578).
+    _PYCUBRID_LEGACY_CAS = [
+        -1002,  # legacy CAS_ER_NO_MORE_MEMORY (-10002 + 9000)
+    ]
+
+    @pytest.mark.parametrize("error_code", _PYCUBRID_LEGACY_CAS)
+    def test_pycubrid_legacy_cas_code_is_disconnect(self, pycubrid_dialect, error_code):
+        """pycubrid errors carrying a legacy-renumbered CAS disconnect code disconnect (#578)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", error_code)
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @pytest.mark.parametrize(
+        "errno",
+        [
+            *_NOT_DISCONNECT,
+            -493,  # ER_PT_SYNTAX
+            -671,  # ER_CSS_RECV_OR_SEND: evaluated and not added (#564)
+            None,
+        ],
+    )
+    def test_other_pycubrid_errno_is_not_disconnect(self, pycubrid_dialect, errno):
+        """Only the server-session codes are matched against pycubrid ``errno``."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "opaque server message", errno)
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    def test_decorated_str_does_not_decide_message_match(self, pycubrid_dialect):
+        """Only the driver's own message is matched, not a decorated ``str()``.
+
+        pycubrid's ``str()`` appends a description looked up from ``errno``
+        (``Communication error`` for -4 and -671).
+        """
+        dialect, dbapi = pycubrid_dialect
+
+        class DecoratedError(dbapi.OperationalError):
+            def __str__(self) -> str:
+                return f"{self.args[0]} (errno=-4, description='Communication error')"
+
+        assert dialect.is_disconnect(DecoratedError("opaque"), None, None) is False
+        assert dialect.is_disconnect(DecoratedError("connection is closed"), None, None) is True
+
+    @pytest.mark.parametrize(
+        ("errno", "expected"),
+        [
+            *((code, False) for code in _NOT_DISCONNECT),
+            (-671, False),
+            (-493, False),
+            *((code, True) for code in _SERVER_SESSION_LOST),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_errors(self, variant, errno, expected):
+        """Real pycubrid exceptions through both pycubrid dialects."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = pycubrid.OperationalError("opaque server message", code=errno, errno=errno)
+        assert dialect.is_disconnect(exc, None, None) is expected
+
+    @pytest.mark.parametrize(
+        "message",
+        [
+            "-20004 rows rejected by application validation",
+            "-111 opaque",
+            "-1002 opaque",
+        ],
+    )
+    def test_numeric_server_text_does_not_override_pycubrid_errno(self, pycubrid_dialect, message):
+        """A number at the start of pycubrid's message is not a code (#608)."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, message, -495)
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    @pytest.mark.parametrize(
+        ("exc_name", "message", "errno", "expected"),
+        [
+            # Issue #608's reproduction: structured errno, numeric-prefixed text.
+            ("DataError", "-20004 rows rejected by application validation", -495, False),
+            ("OperationalError", "-224 opaque", -495, False),
+            # Real disconnects keep being detected, including a server code
+            # outside the tables whose message matches (cub_server down).
+            (
+                "DatabaseError",
+                "Failed to connect to database server, 'testdb', on the following host(s): h",
+                -191,
+                True,
+            ),
+            ("OperationalError", "opaque server message", -224, True),
+            ("OperationalError", "connection lost during receive", None, True),
+            ("InterfaceError", "connection is closed", None, True),
+            (
+                "OperationalError",
+                "CAS did not answer CHECK_CAS out of transaction and reconnecting failed",
+                None,
+                True,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_message_classification(
+        self, variant, exc_name, message, errno, expected
+    ):
+        """Real pycubrid exceptions: a numeric message prefix is never a code (#608)."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc_cls = getattr(pycubrid, exc_name)
+        if errno is None:
+            exc = exc_cls(message)
+        else:
+            exc = exc_cls(message, code=errno, errno=errno)
+        assert dialect.is_disconnect(exc, None, None) is expected
+
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_oserror_cause_is_disconnect(self, variant):
+        """A real pycubrid error raised from a socket error disconnects."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = pycubrid.OperationalError("-20004 opaque")
+        exc.__cause__ = ConnectionResetError(104, "reset")
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_pycubrid_failed_reconnect_is_disconnect(self, pycubrid_dialect):
+        """pycubrid's failed CHECK_CAS reconnect leaves the connection closed."""
+        dialect, dbapi = pycubrid_dialect
+        exc = dbapi.OperationalError(
+            "CAS did not answer CHECK_CAS out of transaction and reconnecting failed"
+        )
+        assert dialect.is_disconnect(exc, None, None) is True
+
 
 class TestExtractErrorCode:
     """Tests for CubridDialect._extract_error_code()."""
 
     def test_integer_arg(self):
         """Extracts integer error code from args[0]."""
-        exc = Exception(-21003)
-        assert CubridDialect._extract_error_code(exc) == -21003
+        exc = Exception(-20004)
+        assert CubridDialect._extract_error_code(exc) == -20004
 
-    def test_string_with_embedded_code(self):
-        """Extracts error code from string like '-21003 message'."""
-        exc = Exception("-21003 Cannot communicate")
-        assert CubridDialect._extract_error_code(exc) == -21003
+    def test_string_with_leading_number_is_not_a_code(self):
+        """A message that starts with a number carries no code (#608)."""
+        exc = Exception("-20004 Cannot communicate")
+        assert CubridDialect._extract_error_code(exc) is None
+
+    def test_bool_arg_is_not_a_code(self):
+        """``bool`` is an ``int`` subclass but never an error code."""
+        assert CubridDialect._extract_error_code(Exception(True)) is None
 
     def test_string_without_code(self):
         """Returns None for string without leading number."""
@@ -1258,7 +2452,8 @@ class TestPostfetchLastRowId:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = (99,)
-        ctx.create_server_side_cursor = MagicMock(return_value=cursor)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = cursor
 
         assert ctx.get_lastrowid() == 99
         cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
@@ -1277,7 +2472,8 @@ class TestPostfetchLastRowId:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = None
-        ctx.create_server_side_cursor = MagicMock(return_value=cursor)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = cursor
 
         assert ctx.get_lastrowid() is None
 
@@ -1295,7 +2491,8 @@ class TestPostfetchLastRowId:
 
         cursor = MagicMock()
         cursor.fetchone.return_value = (77,)
-        ctx.create_server_side_cursor = MagicMock(return_value=cursor)
+        ctx._dbapi_connection = MagicMock()
+        ctx._dbapi_connection.cursor.return_value = cursor
 
         assert ctx.get_lastrowid() == 77
 
@@ -1436,3 +2633,9 @@ class TestSchemaNameNormalization:
         dialect = self._dialect("dba")
         quoted = quoted_name("dba", quote=True)
         assert dialect._schema_is_default(quoted) is True
+
+    def test_timezone_aware_types_instance_attribute(self):
+        assert TIMESTAMPTZ().timezone is True
+        assert TIMESTAMPLTZ().timezone is True
+        assert DATETIMETZ().timezone is True
+        assert DATETIMELTZ().timezone is True

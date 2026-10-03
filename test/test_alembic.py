@@ -8,7 +8,7 @@
 """Tests for Alembic migration support (sqlalchemy_cubrid.alembic_impl).
 
 These tests verify that the CubridImpl class is correctly configured and
-can be discovered by Alembic via the entry-point mechanism.
+is registered with Alembic when the CUBRID dialect module is imported.
 """
 
 from __future__ import annotations
@@ -58,6 +58,18 @@ def _load_pyproject():
 class _AutogenContext:
     def __init__(self):
         self.imports: set[str] = set()
+
+
+def test_unique_index_requires_live_connection_for_fk_guard():
+    from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+    table = sa.Table("child", sa.MetaData(), sa.Column("parent_id", sa.Integer))
+    index = sa.Index("ux_child_parent", table.c.parent_id, unique=True)
+    impl = object.__new__(CubridImpl)
+    impl.connection = None
+
+    with pytest.raises(sa.exc.CompileError, match="live connection"):
+        impl.create_index(index)
 
 
 class _MockInspector:
@@ -190,11 +202,106 @@ class TestCubridImpl:
 
         assert CubridImpl.__dialect__ == "cubrid"
 
-    def test_transactional_ddl_false(self):
-        """CUBRID auto-commits DDL, so transactional_ddl must be False."""
+    def test_transactional_ddl_true(self):
+        """CUBRID DDL is rolled back with the transaction (#503).
+
+        Only client autocommit commits DDL early, and the dialect turns it
+        off, so Alembic may run the whole upgrade in one transaction.
+        """
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
-        assert CubridImpl.transactional_ddl is False
+        assert CubridImpl.transactional_ddl is True
+
+    def test_offline_sql_has_commit_but_no_begin(self):
+        """``--sql`` output must run in csql, which rejects ``BEGIN`` (#503)."""
+        import io
+
+        from alembic.operations import Operations
+
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        buf = io.StringIO()
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": buf},
+        )
+        assert isinstance(context.impl, CubridImpl)
+        assert context.impl.transactional_ddl is True
+        with context.begin_transaction():
+            Operations(context).create_table("t503", sa.Column("id", sa.Integer))
+
+        lines = [ln.strip().upper() for ln in buf.getvalue().splitlines() if ln.strip()]
+        assert "CREATE TABLE T503 (" in lines
+        assert "BEGIN;" not in lines
+        assert lines[-1] == "COMMIT;"
+
+    def test_offline_sql_drop_index_names_table(self):
+        """``op.drop_index`` in ``--sql`` mode emits ``DROP INDEX ... ON <table>`` (#533)."""
+        import io
+
+        from alembic.operations import Operations
+
+        buf = io.StringIO()
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": buf},
+        )
+        with context.begin_transaction():
+            Operations(context).drop_index("ix_users_email", table_name="users")
+
+        lines = [ln.strip() for ln in buf.getvalue().splitlines() if ln.strip()]
+        assert "DROP INDEX ix_users_email ON users;" in lines
+
+    def test_offline_sql_drop_index_if_exists_rejected(self):
+        """CUBRID has no DROP INDEX IF EXISTS, so the op fails at compile time (#533)."""
+        import io
+
+        import inspect
+
+        from alembic.operations import Operations
+
+        if "if_exists" not in inspect.signature(Operations.drop_index).parameters:
+            pytest.skip("drop_index(if_exists=...) needs Alembic 1.12+")
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": io.StringIO()},
+        )
+        with pytest.raises(sa.exc.CompileError, match="DROP INDEX IF EXISTS"):
+            Operations(context).drop_index("ix_users_email", table_name="users", if_exists=True)
+
+    def test_offline_sql_create_index_if_not_exists_rejected(self):
+        """CUBRID has no CREATE INDEX IF NOT EXISTS, so the op fails at compile time (#540)."""
+        import io
+
+        import inspect
+
+        from alembic.operations import Operations
+
+        if "if_not_exists" not in inspect.signature(Operations.create_index).parameters:
+            pytest.skip("create_index(if_not_exists=...) needs Alembic 1.12+")
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": io.StringIO()},
+        )
+        with pytest.raises(sa.exc.CompileError, match="CREATE INDEX IF NOT EXISTS"):
+            Operations(context).create_index(
+                "ix_users_email", "users", ["email"], if_not_exists=True
+            )
+
+    def test_offline_sql_drop_index_without_table_name_rejected(self):
+        """Alembic's ``no_table`` placeholder must not reach the SQL (#533)."""
+        import io
+
+        from alembic.operations import Operations
+
+        buf = io.StringIO()
+        context = MigrationContext.configure(
+            dialect_name="cubrid",
+            opts={"as_sql": True, "output_buffer": buf},
+        )
+        with pytest.raises(sa.exc.CompileError, match="pass table_name"):
+            Operations(context).drop_index("ix_users_email")
+        assert "no_table" not in buf.getvalue()
 
     def test_subclass_of_default_impl(self):
         """CubridImpl inherits from alembic.ddl.impl.DefaultImpl."""
@@ -215,15 +322,28 @@ class TestCubridImpl:
         assert "cubrid" in _impls
         assert _impls["cubrid"] is CubridImpl
 
-    def test_entry_point_registered(self):
-        """Verify the entry point is declared in pyproject.toml."""
+    def test_no_alembic_ddl_entry_point(self):
+        """Alembic never reads an ``alembic.ddl`` entry-point group (#504).
+
+        Registration happens through the ``alembic.plugins`` entry point or
+        the dialect module, so a dead entry point must not come back.
+        """
         config = _load_pyproject()
 
-        entry_points = config["project"]["entry-points"]
-        assert "alembic.ddl" in entry_points
-        assert entry_points["alembic.ddl"]["cubrid"] == (
-            "sqlalchemy_cubrid.alembic_impl:CubridImpl"
-        )
+        assert "alembic.ddl" not in config["project"]["entry-points"]
+
+    def test_dialect_module_registers_impl(self):
+        """Alembic finds CubridImpl for the CUBRID dialect (#504).
+
+        The dialect module or, on Alembic 1.18+, the ``alembic.plugins``
+        entry point registers it (#595); test_alembic_registration.py and
+        test_alembic_plugin.py check each path in a fresh interpreter.
+        """
+        from alembic.ddl.impl import DefaultImpl
+
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        assert DefaultImpl.get_by_dialect(CubridDialect()) is CubridImpl
 
     def test_optional_dependency_declared(self):
         """Verify the [alembic] optional dependency is declared in pyproject.toml."""
@@ -535,7 +655,12 @@ class TestCubridImplAutogenerate:
 
         impl = object.__new__(CubridImpl)
         inspector_column = sa.Column("v", cubrid_types.VARCHAR(1073741823))
-        for metadata_type in (sa.Text(), cubrid_types.CLOB(), cubrid_types.STRING()):
+        for metadata_type in (
+            sa.Text(),
+            sa.UnicodeText(),
+            cubrid_types.CLOB(),
+            cubrid_types.STRING(),
+        ):
             metadata_column = sa.Column("v", metadata_type)
             assert impl.compare_type(inspector_column, metadata_column) is False
             # Reverse direction must also hold.
@@ -548,6 +673,32 @@ class TestCubridImplAutogenerate:
         impl = object.__new__(CubridImpl)
         inspector_column = sa.Column("v", cubrid_types.VARCHAR(1073741823))
         metadata_column = sa.Column("v", sa.String())
+        assert impl.compare_type(inspector_column, metadata_column) is False
+
+    @pytest.mark.parametrize(
+        "metadata_type",
+        [sa.String(10), sa.Unicode(10), sa.String(1073741822)],
+        ids=["String(10)", "Unicode(10)", "String(1073741822)"],
+    )
+    def test_compare_type_string_with_length_vs_varchar_max_is_diff(self, metadata_type):
+        """#544: generic String(n) is not the dialect's unbounded STRING."""
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        impl.dialect = CubridDialect()
+        inspector_column = sa.Column("v", cubrid_types.VARCHAR(1073741823))
+        metadata_column = sa.Column("v", metadata_type)
+        assert impl._is_unbounded_string_match(inspector_column.type, metadata_type) is False
+        assert impl.compare_type(inspector_column, metadata_column) is True
+        assert impl.compare_type(metadata_column, inspector_column) is True
+
+    def test_compare_type_cubrid_string_with_length_vs_varchar_max_no_diff(self):
+        """#544: the dialect STRING always compiles to STRING, whatever its length."""
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        inspector_column = sa.Column("v", cubrid_types.VARCHAR(1073741823))
+        metadata_column = sa.Column("v", cubrid_types.STRING(10))
         assert impl.compare_type(inspector_column, metadata_column) is False
 
     def test_compare_type_varchar_bounded_still_compared(self):

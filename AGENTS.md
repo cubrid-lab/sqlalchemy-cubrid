@@ -11,7 +11,7 @@ Alembic migration support, and PEP 561 typing.
 - **Language**: Python 3.10+
 - **Framework**: SQLAlchemy 2.0 – 2.1
 - **License**: MIT
-- **Version**: 1.4.3.dev0 (Production/Stable)
+- **Version**: single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__` (Production/Stable); see [CHANGELOG.md](CHANGELOG.md) for the current release
 
 ## Architecture
 
@@ -52,15 +52,15 @@ graph TD
 | Module | Role |
 |---|---|
 | `dialect.py` | Main dialect class. Handles `create_connect_args`, reflection (`get_columns`, `get_pk_constraint`, `get_foreign_keys`, `get_indexes`, `get_table_comment`, etc.), isolation levels, `import_dbapi()`. |
-| `pycubrid_dialect.py` | `PyCubridDialect` — subclasses `CubridDialect` for the pycubrid pure Python driver. Overrides `import_dbapi()`, `create_connect_args()`, `on_connect()`, `do_ping()`. |
-| `aio_pycubrid_dialect.py` | `PyCubridAsyncDialect` — async pycubrid variant for `create_async_engine()` / `AsyncSession`, registered as `cubrid.aiopycubrid`. |
+| `pycubrid_dialect.py` | `PyCubridDialect` — subclasses `CubridDialect` for the pycubrid pure Python driver. Overrides `import_dbapi()`, `create_connect_args()`, `on_connect()`, `do_ping()`, `do_executemany()`, isolation re-apply, and the pycubrid part of disconnect detection (`errno`, client-side messages). |
+| `aio_pycubrid_dialect.py` | `PyCubridAsyncDialect` — async pycubrid variant for `create_async_engine()` / `AsyncSession`, registered as `cubrid.aiopycubrid`. Inherits all driver policy from `PyCubridDialect`; adds only the async adapter, pool class and `get_driver_connection()`. |
 | `compiler.py` | SQL compilation. `visit_cast`, `limit_clause`, `for_update_clause`, `update_limit_clause`, DDL (`get_column_specification`, `AUTO_INCREMENT`, `COMMENT`), type compilation for all CUBRID types. |
 | `dml.py` | Custom DML constructs: `insert()` with `.on_duplicate_key_update()`, `merge()` with `.using()`, `.on()`, `.when_matched_then_update()`, `.when_not_matched_then_insert()`. |
 | `types.py` | Type classes: `STRING`, `BIT`, `CLOB`, `SET`, `MULTISET`, `SEQUENCE`, `MONETARY`, `OBJECT`, plus standard type overrides. |
 | `base.py` | Execution context (`get_lastrowid`), identifier preparer (lowercase folding, 254-char max, reserved words). |
 | `trace.py` | `trace_query()` helper that enables CUBRID tracing around a statement and returns trace output. |
 | `requirements.py` | Test requirement flags — marks what CUBRID does/doesn't support for SA's test suite. |
-| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = False`. Auto-discovered via `alembic.ddl` entry point. |
+| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = True` (CUBRID DDL rolls back with the transaction); `emit_begin()` emits nothing because CUBRID has no `BEGIN`. Registered by the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic.py`) on Alembic 1.18+, or by `dialect.py` importing it on Alembic 1.7.2-1.17 (#595). |
 | `_compat.py` | Internal compatibility helpers that wrap SQLAlchemy private APIs used by the dialect/compiler. |
 
 ### Entry Points (pyproject.toml)
@@ -71,8 +71,6 @@ cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.cubrid" = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
-[project.entry-points."alembic.ddl"]
-cubrid = "sqlalchemy_cubrid.alembic_impl:CubridImpl"
 ```
 
 ## Development
@@ -88,19 +86,24 @@ make install          # pip install -e ".[dev]" + pytest-cov + pre-commit + tox
 ### Key Commands
 
 ```bash
-make test             # Offline tests with 95% coverage threshold
+make test             # Fast offline tests with 95% coverage threshold (-m "not integration and not repo")
+make test-repo        # Repository-tooling tests (Makefile, signal handling, repo scripts; -m repo)
+make test-offline     # Every offline test (fast + repo) with coverage
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
-make integration      # Docker → integration tests → cleanup
+make integration      # Run-owned Docker project → integration tests → cleanup
 make test-all         # tox across Python 3.10–3.14
 ```
 
 ### Test Commands (manual)
 
 ```bash
-# Offline (no DB needed) — this is the primary test command
-pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py \
+# Offline (no DB needed) — this is the primary test command (same as `make test`)
+pytest test/ -v -m "not integration and not repo" \
   --cov=sqlalchemy_cubrid --cov-report=term-missing --cov-fail-under=95
+
+# Repository-tooling tests (Makefile, signal handling, repo scripts; same as `make test-repo`)
+pytest test/ -v -m repo
 
 # Integration (requires Docker)
 docker compose up -d
@@ -150,7 +153,7 @@ docker compose down -v                        # Cleanup
 
 ## Development Workflow (cubrid-lab org standard)
 
-All non-trivial work across cubrid-lab repositories MUST follow this 4-phase cycle:
+Maintainers coordinate this 4-phase cycle for non-trivial project work:
 
 1. **Oracle Design Review** — Consult Oracle before implementation to validate architecture, API surface, and approach. Raise concerns early.
 2. **Implementation** — Build the feature/fix with tests. Follow existing codebase patterns.
@@ -159,7 +162,35 @@ All non-trivial work across cubrid-lab repositories MUST follow this 4-phase cyc
 
 Skipping any phase requires explicit justification. Trivial changes (typos, single-line fixes) may skip phases 1 and 4.
 
+Outside contributors follow `CONTRIBUTING.md`: explain the change, implement tests
+and matching documentation, and open a PR with executed checks and gaps.
+Maintainers arrange project-specific Oracle/Codex reviews, integration and release
+classification. Contributors do not need a particular agent/tool installation,
+repository secrets, release access or label-write permissions. An AI review is
+review evidence; report commands actually executed separately.
+Use English for GitHub issues, pull requests and comments; localized documentation contributions remain welcome.
+
 5. **All changes to `main` MUST go through a Pull Request** with at least one review. No direct pushes.
+
+## Agent PR scope and review guardrails
+
+- Before editing, record one acceptance contract, affected files, explicit non-goals
+  and the validation plan. Keep each PR to one independently reviewable change.
+  Separate contributor guidance, CI configuration and new validator behavior.
+- Triage AI findings against that contract, a supported-environment reproduction
+  and impact. AI severity is not authority to add capabilities or widen the contract;
+  obtain explicit maintainer direction or defer out-of-scope work to a separate issue.
+- Batch accepted fixes locally and run relevant checks before publishing a review
+  head. Deduplicate agent-initiated review requests by head SHA and review purpose.
+- Default to two published AI review rounds total per scoped PR/task: the initial
+  review and one corrective re-review. New commits do not reset this budget.
+  Further rounds or scope expansion require explicit maintainer direction.
+- If unresolved work needs another round at the limit, stop automatic revisions;
+  keep the PR Draft and report incomplete work, blockers and a proposed split.
+  Never merge with unresolved critical/security defects or failed required CI.
+- Maintain one editable, agent-owned English status comment. Avoid bot mentions in
+  routine updates, per-finding progress replies and repeated review requests.
+  Preserve contributor history; revisit external PRs only after an author-updated head SHA.
 
 ## Test Structure
 
@@ -181,9 +212,9 @@ test/
 
 ### Test Stats
 
-- **619 offline tests + 35 sync integration tests + 16 async integration tests**, **~98.26% offline coverage**
-- Coverage threshold: 95% (CI-enforced)
-- 6 unreachable lines (defensive fallbacks): `compiler.py:72`, `compiler.py:84`, `compiler.py:298-300`, `dml.py:310`
+- Large and growing offline and integration suites; exact counts shift with every PR, so see the `offline-tests` / `integration-tests` CI job output for current numbers rather than a hardcoded snapshot here
+- Coverage threshold: 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job)
+- A handful of defensive fallback branches are intentionally unreachable in normal operation (SA-version-specific compatibility shims, exhaustive-but-unreachable `else` arms); see `--cov=sqlalchemy_cubrid --cov-report=term-missing` output (or `make test`) for current line numbers instead of a pinned list
 
 ### Running Tests
 
@@ -202,7 +233,7 @@ type mapping, and reflection logic without a database. Only `test_integration.py
 - **No Sequences** — uses `AUTO_INCREMENT`
 - **No multi-schema** — single-schema model
 - **No RELEASE SAVEPOINT** — `do_release_savepoint()` is a no-op
-- **DDL auto-commits** — `transactional_ddl = False`
+- **DDL is transactional** — `ROLLBACK` undoes DDL and DDL never commits earlier DML; only client autocommit (turned off by the dialect) commits it early. `transactional_ddl = True`, so a whole Alembic upgrade is one transaction by default; recommend `transaction_per_migration=True` for long or large-table migrations (uncommitted DDL holds schema locks)
 - **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
 - **Identifier folding** — lowercase (not uppercase like SQL standard)
 - **Max identifier length** — 254 characters
@@ -224,21 +255,24 @@ The dialect translates automatically in `create_connect_args()`.
 
 | File | Trigger | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | Push to main, PRs | Lint + offline tests (Py 3.10–3.14) + regular integration matrix |
-| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), tag push, manual dispatch | Full Python × CUBRID compatibility matrix |
-| `.github/workflows/publish-pypi.yml` | GitHub Release | Build and publish to PyPI |
+| `.github/workflows/ci.yml` | PR, main, weekly, manual | Minimum PR smoke and representative integration; see docs/CI_POLICY.md |
+| `.github/workflows/integration-full.yml` | Manual dispatch, release workflow_call | Full supported compatibility matrix |
+| `.github/workflows/release-please.yml` | Push to main, manual dispatch | Prepare the release PR; compose generated and curated notes; never publish |
+| `.github/workflows/release.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
 
 ### CI Matrix
 
-- **Offline (every PR/push)**: Python 3.10, 3.11, 3.12, 3.13, 3.14
-- **Integration (every PR/push)**: Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 8 jobs
-- **Integration full (nightly + tag push + dispatch)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
+- PR runtime smoke: Ubuntu/Python 3.12 only, selected for code changes.
+- High-risk PR integration: Python 3.14/CUBRID 11.4; targeted extra lanes.
+- main and changed-weekly: one full offline coverage lane, oldest/newest live endpoints.
+- Full integration: manual and every release; no automatic nightly full matrix.
+- Details, change classification and gate requirements: [CI policy](docs/CI_POLICY.md).
 
 ## Documentation Map
 
 | File | Content |
 |---|---|
-| `README.md` | Concise landing page (~80 lines) |
+| `README.md` | Concise landing page |
 | `docs/CONNECTION.md` | Connection strings, URL format, driver setup |
 | `docs/TYPES.md` | Full type mapping, CUBRID-specific types |
 | `docs/ISOLATION_LEVELS.md` | The three CUBRID MVCC isolation levels |
@@ -254,15 +288,123 @@ The dialect translates automatically in `create_connect_args()`.
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 
+## Issue specification and ownership
+
+An issue body is the current work specification, not a session transcript.
+Before implementation, maintainers/agents must ensure it states the problem
+and impact, evidence with a revision/environment, reproducible steps or the
+investigation question, expected behavior, scope/non-goals, relevant files,
+verifiable completion criteria, validation method and actual dependencies.
+Say "not verified" when evidence is missing; never invent a reproduction,
+server result, release availability or test command. Small docs tasks need
+only the applicable fields. Research issues close on a recorded decision;
+implementation follows the agreed contract.
+
+- Keep priority/size in canonical labels and execution order in the backlog
+  tracker. Do not prepend repeated triage banners to individual issue bodies.
+- Put dated progress, pause/resume instructions and review outcomes in issue
+  comments. Keep historical reproductions and source links in the body with
+  their original revision/date and clear evidence limits.
+- Reconcile completed work and closed dependencies when scope changes, a
+  related PR merges, work is handed over or the issue is closed. Closed work
+  is reference evidence, not a blocker. A merged upstream PR is not proof
+  that a compatible release is available.
+- Set the actual implementer in GitHub Assignees before implementation.
+  Comments alone do not replace assignment. Preserve existing contributor
+  claims and open PRs; agree a handoff before changing ownership. If assignment
+  permission is missing, request maintainer assignment before starting.
+- On handoff, update Assignees; unassign when returning unfinished work.
+  Preserve a contributor's evidence and scope when editing their issue.
+- Before saving an issue edit, check for contradictory current statuses,
+  stale dependency/checklist entries, duplicate criteria and unproven claims.
+  Re-read the issue after saving. Never mark a tracker complete just because
+  its children merged; confirm its integration acceptance separately.
+
+## Issue Labeling (cubrid-lab org standard)
+
+For maintainer/agent-managed issue creation in **any cubrid-lab repository**, assign exactly one
+`priority: <value>` label and exactly one `size: <value>` label at creation time,
+alongside a type label (`bug`/`enhancement`/`documentation`/`chore`/`ci`/…) and an
+`area:` label when applicable. These must be GitHub labels, not just text in the
+issue title or body.
+
+Maintainers or triagers assign/create the canonical GitHub labels. Outside
+reporters can describe urgency and effort without label permissions; those
+descriptions help triage but do not themselves assign a label.
+
+Issue titles use the same `type(scope): description` format as pull request
+titles (see [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-and-commit-titles)).
+`.github/workflows/issue-triage.yml` flags incomplete human-submitted issue
+titles or labels as `status: needs triage` without posting a comment or
+guessing priority/size. Maintainers remove that label once triage is complete.
+Agents and workflows creating issues through CLI/API must supply canonical
+metadata at creation; `GITHUB_TOKEN`-created issues do not retrigger this guard.
+
+Use the following exact names, with **one space after the colon**:
+
+- Priority: `priority: critical`, `priority: high`, `priority: medium`, `priority: low`.
+- Size: `size: XS`, `size: S`, `size: M`, `size: L`, `size: XL`.
+
+Do not introduce variants such as `priority:high`, `priority-high`, `P1`, or
+`size:S`. Reuse the repository's canonical labels; if a required label is missing,
+create it with the exact name above before filing the issue. This policy governs
+new issue creation, not bulk renaming or relabeling existing issues unless
+explicitly requested.
+
+Priority reflects urgency and impact; size estimates implementation effort and
+helps contributors pick appropriately scoped work.
+
+| Label | Meaning | Rough guide |
+|-------|---------|-------------|
+| `size: XS` | Trivial change | < ~10 lines; single-file typo/config/one-liner |
+| `size: S` | Small change | One file or one focused function; a single test or doc page |
+| `size: M` | Medium change | A few files; a new test module, a bug fix with tests, a CI job |
+| `size: L` | Large change | Cross-cutting change across many files; multi-artifact (e.g. demo GIF + video + docs) |
+| `size: XL` | Very large | Consider splitting into smaller issues before starting |
+
+Rules:
+
+1. **Size reflects effort, not importance** — a one-line fix for a critical bug is still `size: XS`.
+2. **Maintainers and agents assign both `priority:` and `size:` when filing.** If scope or impact
+   is uncertain, use a provisional estimate, explain the uncertainty in the body,
+   and add `status: needs triage`. External reports may start with that label;
+   refine estimates during maintainer triage.
+3. **`good first issue` should be `size: XS` or `size: S`.** If a good-first-issue grows
+   past `size: S`, re-scope it or drop the `good first issue` label.
+4. **`size: XL` is a signal to split**, not a green light to start a sprawling change.
+
+### Good first issue lifecycle
+
+- Unclaimed: `good first issue`.
+- A PR is opened for it: remove `good first issue`, add `status: in progress`.
+- PR merged: the issue closes.
+- PR closed without merging: first check that no other open PR still addresses the issue. Only if none remains, remove `status: in progress` and restore `good first issue`; otherwise keep it in progress.
+- Keep 3–5 genuinely unclaimed good first issues per repository; a good first issue should have a small blast radius and an existing pattern or reference PR to follow, not just a small diff.
+
 ## Documentation definition of done
 
 Any change that affects public behavior, compatibility, installation, configuration, APIs, supported versions, error handling, or SQL/dialect behavior MUST update the matching documentation in the **same PR**. At minimum keep in sync: `CHANGELOG.md`, the relevant files under `docs/` (e.g. `FEATURE_SUPPORT.md`, `ISOLATION_LEVELS.md`, `TYPES.md`), the `SUPPORT_MATRIX.md`, and version/compatibility claims in `README*`.
 
 If no documentation change is needed, state the reason explicitly in the PR body as `Docs: not needed - <reason>` or apply the `docs-not-needed` label. This is enforced by the `docs-sync` CI check.
 
+The body reason must be a populated standalone physical source line, not a placeholder or an
+example in quoted/code/comment text. Maintainers control GitHub label exceptions.
+Requesting translation help in a PR body grants no exemption: the existing
+`translations-deferred` label requires explicit maintainer approval and a recorded
+follow-up. Korean-required checks and other-language advisory checks remain intact.
+
 Do not mark work complete until code, tests, and documentation are consistent.
 
 ## Commit Convention
+
+Issue titles, pull request titles and commit subjects follow
+[CONTRIBUTING.md - Pull request and commit titles](CONTRIBUTING.md#pull-request-and-commit-titles):
+`type(scope)!: description` with types `feat`, `fix`, `docs`, `test`, `perf`,
+`refactor`, `ci`, `build`, `chore`, `style`, `revert`; English, lowercase start
+unless the first word is an API name, acronym, or proper noun; no trailing
+period, no issue numbers in pull request titles (use `Closes #N` /
+`Refs #N` in the body). Pull requests are squash-merged and the pull request
+title becomes the commit title. The `PR title` check enforces it.
 
 ### Format
 
@@ -278,18 +420,9 @@ Ultraworked with [Sisyphus](https://github.com/code-yeongyu/oh-my-opencode)
 Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 ```
 
-### Types
-
-| Type | When to use |
-|------|-------------|
-| `feat` | New user-facing capability (new DML construct, new type, new dialect flag) |
-| `fix` | Bug fix — corrects wrong behavior |
-| `refactor` | Internal restructuring with no behavior change |
-| `test` | Add/update tests only |
-| `docs` | Documentation only |
-| `chore` | Tooling, deps, CI config, version bumps |
-| `ci` | CI workflow changes |
-| `perf` | Performance improvement with measurable impact |
+The tool-attribution example applies only to work produced with that tool.
+Preserve actual contributor authorship and real coauthors; outside contributions
+do not require a named agent, tool credit or a blanket coauthor trailer.
 
 ### Rules (MANDATORY)
 
@@ -308,29 +441,28 @@ Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
    - Don't label a fix as `feat` or a mixed bag as `feat`
 6. **Body bullets reference issue numbers** (`#135`, `#136`) for traceability.
 7. **Scope is optional** but use it for module-specific changes: `fix(compiler):`, `feat(types):`.
-8. **Version in commit message must match actual project version.** Never reference "1.0" when project is v1.4.x.
+8. **Version in commit message must match actual project version.** Check `sqlalchemy_cubrid/__init__.py` → `__version__`; never reference a stale or placeholder version.
 
 ## Release Process
 
-1. Bump the version in `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`.
-   `pyproject.toml` derives it dynamically (`dynamic = ["version"]` +
-   `version = {attr = "sqlalchemy_cubrid.__version__"}`), so it is the single source of truth.
-2. Add a dated changelog entry in `CHANGELOG.md` (`## [x.y.z] - YYYY-MM-DD`)
-3. Open a PR and merge to `main` (direct pushes are not allowed)
-4. Push the tag `v{major}.{minor}.{patch}` on the merged commit:
-   `git tag vx.y.z <merged-sha> && git push origin vx.y.z` (tag pushes are allowed; only
-   direct branch pushes to `main` are forbidden).
-5. The tag push triggers `.github/workflows/create-release.yml`, which extracts the
-   `## [x.y.z] - YYYY-MM-DD` section from `CHANGELOG.md` (fail-closed — no fallback) and
-   creates the GitHub Release titled `vx.y.z` with that body, after verifying the tag is
-   an ancestor of `origin/main`.
-6. Publishing the GitHub Release triggers `.github/workflows/publish-pypi.yml`,
-   which rebuilds, verifies (tag == version, dated CHANGELOG, tag on main, smoke tests),
-   and publishes to PyPI via Trusted Publisher (OIDC).
+Maintainers own release/tag/publication actions and repository credentials.
+Contributors provide the change and validation evidence through the normal PR path.
 
-Release notes are never hand-written: `CHANGELOG.md` is the single source of truth and
-`scripts/extract_release_notes.py` renders the Release body. To re-create a release body,
-re-run `create-release.yml` via `workflow_dispatch` with `update_existing: true`.
+Version is single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`
+(`pyproject.toml` reads it dynamically). Merging a reviewed release PR is the only
+normal way to release: `release-please.yml` opens it (dated CHANGELOG section +
+version bump, checked by `make release-check VERSION=x.y.z`), and after the
+squash-merge `release.yml` detects the version change and runs consistency → full
+matrix → build → tag/Release/PyPI → cookbook verification (the cookbook smoke test
+called as a pinned reusable workflow, no token) → summary on its own.
+Freeze release PRs with `autorelease: review` before editing candidate notes; wait
+for preparation to finish and start required PR CI on the final head. Curated
+main Unreleased notes are preserved during regeneration; branch-only edits
+require the freeze.
+Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
+tags or publish by hand; the only manual entry point is the narrow recovery
+dispatch of `release.yml`. Procedure, failure matrix and recovery:
+[`RELEASING.md`](RELEASING.md).
 
 ## Project Context — Performance Loop System
 

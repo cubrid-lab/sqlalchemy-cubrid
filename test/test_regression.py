@@ -19,7 +19,6 @@ from sqlalchemy import (
     Table,
     create_engine,
     select,
-    text,
 )
 from sqlalchemy.orm import Session
 
@@ -30,30 +29,9 @@ def _cubrid_url() -> str:
     return os.environ.get("CUBRID_TEST_URL", _DEFAULT_URL)
 
 
-def _can_connect() -> bool:
-    try:
-        engine = create_engine(_cubrid_url())
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        engine.dispose()
-        return True
-    except Exception:
-        return False
-
-
-_in_ci = os.environ.get("CI", "").lower() in ("true", "1")
-_available = _can_connect()
-if _in_ci and not _available:
-    pytest.fail(
-        "CUBRID instance is NOT reachable but CI=true — "
-        "regression tests must not be silently skipped in CI.",
-        pytrace=False,
-    )
-
-pytestmark = pytest.mark.skipif(
-    not _available,
-    reason="CUBRID instance not available (set CUBRID_TEST_URL)",
-)
+# The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
+# unset and errors them when its server is unreachable (#593).
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture()
@@ -126,6 +104,56 @@ class TestIssue356ODKUValues:
         with Session(engine) as s:
             row = s.execute(select(t).where(t.c.id == 1)).one()
             assert row.val == "updated"
+
+
+class TestIssue371ODKUMultiRow:
+    """#371: ODKU with multi-row INSERT."""
+
+    def test_multi_row_with_literal_odku(self, engine, metadata):
+        """Multi-row INSERT + literal ODKU value works."""
+        from sqlalchemy_cubrid.dml import insert
+
+        t = Table(
+            "test_371_lit",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("val", String(50)),
+        )
+        metadata.create_all(engine)
+
+        with Session(engine) as s:
+            s.execute(t.insert().values(id=1, val="original"))
+            s.commit()
+
+        with Session(engine) as s:
+            stmt = insert(t).values([{"id": 1, "val": "A"}, {"id": 2, "val": "B"}])
+            stmt = stmt.on_duplicate_key_update(val="overwritten")
+            s.execute(stmt)
+            s.commit()
+
+        with Session(engine) as s:
+            rows = {r.id: r.val for r in s.execute(select(t).order_by(t.c.id)).all()}
+            assert rows[1] == "overwritten"
+            assert rows[2] == "B"
+
+    def test_multi_row_with_inserted_ref_raises(self, engine, metadata):
+        """Multi-row INSERT + stmt.inserted raises CompileError."""
+        from sqlalchemy.exc import CompileError
+        from sqlalchemy_cubrid.dml import insert
+
+        t = Table(
+            "test_371_ref",
+            metadata,
+            Column("id", Integer, primary_key=True),
+            Column("val", String(50)),
+        )
+        metadata.create_all(engine)
+
+        stmt = insert(t).values([{"id": 1, "val": "A"}])
+        stmt = stmt.on_duplicate_key_update(val=stmt.inserted.val)
+        with pytest.raises(CompileError, match="single-row INSERT"):
+            with Session(engine) as s:
+                s.execute(stmt)
 
 
 class TestIssue355FKIndexCollision:

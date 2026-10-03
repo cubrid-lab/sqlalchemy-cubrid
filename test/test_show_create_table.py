@@ -12,6 +12,14 @@ foreign key and unique constraint metadata.  This test module provides a
 comprehensive fixture corpus to lock the parsing behaviour against
 regressions.
 
+The golden cases are run through the real dialect parsing entry points --
+``CubridDialect._get_foreign_keys_from_ddl`` / ``_get_unique_constraints_from_ddl``,
+which both call ``_get_show_create_table_ddl`` (#598) -- via a stub connection
+that only answers ``SHOW CREATE TABLE`` with the fixture's DDL string, instead
+of a separately maintained mirror implementation. A mirror can drift from the
+dialect it is meant to represent (#590); calling the real parser closes that
+gap and the fixtures still lock the parsing behaviour against regressions.
+
 Addresses: https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/125
 """
 
@@ -22,53 +30,73 @@ from typing import Any
 import pytest
 
 # Import the internal regexes used by the dialect
-from sqlalchemy_cubrid.dialect import _RE_BRACKET_IDENT, _RE_FOREIGN_KEY, _RE_UNIQUE_KEY
+from sqlalchemy_cubrid.dialect import (
+    CubridDialect,
+    _RE_BRACKET_IDENT,
+    _RE_FOREIGN_KEY,
+    _RE_UNIQUE_KEY,
+)
 
 
 # ---------------------------------------------------------------------------
-# Helpers — mirror the parsing logic in dialect.py so we test the regexes
-# directly without needing a mock connection.
+# Helpers — call the real dialect parsing entry points through a stub
+# connection that only serves SHOW CREATE TABLE (#590).
 # ---------------------------------------------------------------------------
 
 
-def parse_foreign_keys(ddl: str) -> list[dict[str, Any]]:
-    """Parse FK constraints from a DDL string (same logic as dialect.get_foreign_keys)."""
-    foreign_keys: list[dict[str, Any]] = []
-    for fk_match in _RE_FOREIGN_KEY.finditer(ddl):
-        constraint_name = fk_match.group("name")
-        constrained_columns = [
-            col.strip() for col in _RE_BRACKET_IDENT.findall(fk_match.group("cols"))
-        ]
-        ref_table_raw = fk_match.group("ref_table")
-        ref_table = ref_table_raw.split(".", 1)[-1]
-        referred_columns = [
-            col.strip() for col in _RE_BRACKET_IDENT.findall(fk_match.group("ref_cols"))
-        ]
-        options: dict[str, str] = {}
-        if fk_match.group("ondelete"):
-            options["ondelete"] = fk_match.group("ondelete").upper()
-        if fk_match.group("onupdate"):
-            options["onupdate"] = fk_match.group("onupdate").upper()
-        foreign_keys.append(
-            {
-                "name": constraint_name,
-                "constrained_columns": constrained_columns,
-                "options": options,
-                "referred_table": ref_table,
-                "referred_columns": referred_columns,
-            }
-        )
-    return foreign_keys
+class _ShowCreateTableStub:
+    """A connection stub that answers ``SHOW CREATE TABLE`` with a fixed DDL
+    string, in the two-column ``(name, ddl)`` shape
+    ``_get_show_create_table_ddl`` reads (``row[1]``).
+
+    Enforces its documented ``SHOW CREATE TABLE``-only contract (like
+    ``test_reflection_golden.py``'s ``_MockConnection``): any other
+    statement raises, so a regression that made ``_get_show_create_table_ddl``
+    issue the wrong query would fail these tests instead of silently passing.
+    """
+
+    def __init__(self, ddl: str) -> None:
+        self._ddl = ddl
+
+    def execute(self, statement: Any) -> "_ShowCreateTableStub":
+        sql = str(statement)
+        if not sql.startswith("SHOW CREATE TABLE"):
+            raise AssertionError(f"Unexpected SQL: {sql!r}")
+        return self
+
+    def first(self) -> tuple[str, str]:
+        return ("table", self._ddl)
 
 
-def parse_unique_constraints(ddl: str) -> list[dict[str, Any]]:
-    """Parse UNIQUE constraints from a DDL string (same logic as dialect.get_unique_constraints)."""
-    unique_constraints: list[dict[str, Any]] = []
-    for uc_match in _RE_UNIQUE_KEY.finditer(ddl):
-        constraint_name = uc_match.group("name")
-        column_names = [col.strip() for col in _RE_BRACKET_IDENT.findall(uc_match.group("cols"))]
-        unique_constraints.append({"name": constraint_name, "column_names": column_names})
-    return unique_constraints
+@pytest.fixture
+def dialect() -> CubridDialect:
+    return CubridDialect()
+
+
+def _with_schema(foreign_keys: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The real FK parser also returns ``referred_schema`` (the *schema*
+    argument, always ``None`` here); the golden fixtures omit it since it is
+    constant across every case."""
+    return [{**fk, "referred_schema": None} for fk in foreign_keys]
+
+
+def _with_duplicates_index(unique_constraints: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The real UNIQUE parser also returns ``duplicates_index`` (always equal
+    to ``name``: CUBRID implements UNIQUE as a unique index, see
+    ``get_unique_constraints``); the golden fixtures omit it."""
+    return [{**uc, "duplicates_index": uc["name"]} for uc in unique_constraints]
+
+
+def parse_foreign_keys(dialect: CubridDialect, ddl: str) -> list[dict[str, Any]]:
+    """Parse FK constraints from *ddl* via the real dialect parser (#590)."""
+    connection = _ShowCreateTableStub(ddl)
+    return [dict(fk) for fk in dialect._get_foreign_keys_from_ddl(connection, "table", None)]
+
+
+def parse_unique_constraints(dialect: CubridDialect, ddl: str) -> list[dict[str, Any]]:
+    """Parse UNIQUE constraints from *ddl* via the real dialect parser (#590)."""
+    connection = _ShowCreateTableStub(ddl)
+    return [dict(uc) for uc in dialect._get_unique_constraints_from_ddl(connection, "table")]
 
 
 # ---------------------------------------------------------------------------
@@ -223,18 +251,22 @@ FK_FIXTURES: list[tuple[str, str, list[dict[str, Any]]]] = [
             ")"
         ),
         [
-            {
-                "name": "fk_enroll_student",
-                "constrained_columns": ["student_id"],
-                "options": {},
-                "referred_table": "students",
-                "referred_columns": ["id"],
-            },
+            # Sorted by constraint name (#531), not DDL declaration order:
+            # the DDL declares fk_enroll_student before fk_enroll_course.
+            # The previous mirror parser did not sort and so drifted from
+            # this real, documented behavior (#590).
             {
                 "name": "fk_enroll_course",
                 "constrained_columns": ["course_id"],
                 "options": {},
                 "referred_table": "courses",
+                "referred_columns": ["id"],
+            },
+            {
+                "name": "fk_enroll_student",
+                "constrained_columns": ["student_id"],
+                "options": {},
+                "referred_table": "students",
                 "referred_columns": ["id"],
             },
         ],
@@ -357,6 +389,73 @@ FK_FIXTURES: list[tuple[str, str, list[dict[str, Any]]]] = [
                 "options": {"ondelete": "NO ACTION", "onupdate": "CASCADE"},
                 "referred_table": "users",
                 "referred_columns": ["id"],
+            }
+        ],
+    ),
+    # Names containing ( ) , and spaces (#532), as printed by CUBRID 11.4:
+    # the column lists must not stop at the first ")".
+    (
+        "fk_bracketed_names_with_parens_commas_spaces",
+        (
+            "CREATE TABLE [c532] ([id] INTEGER NOT NULL, [r(1)] INTEGER, [r, 2] INTEGER,  "
+            "CONSTRAINT [pk_c532_id] PRIMARY KEY  ([id]),  "
+            "CONSTRAINT [fk (odd), name] FOREIGN KEY  ([r(1)], [r, 2]) "
+            "REFERENCES [dba.p532] ([(3)], [a, b]) ON DELETE CASCADE ON UPDATE RESTRICT"
+            ") REUSE_OID, COLLATE iso88591_bin"
+        ),
+        [
+            {
+                "name": "fk (odd), name",
+                "constrained_columns": ["r(1)", "r, 2"],
+                "options": {"ondelete": "CASCADE", "onupdate": "RESTRICT"},
+                "referred_table": "p532",
+                "referred_columns": ["(3)", "a, b"],
+            }
+        ],
+    ),
+    (
+        "fk_whitespace_inside_parentheses",
+        "CONSTRAINT [fk_ws] FOREIGN KEY (  [c (1)], [d] ) REFERENCES [dba.p] ( [(3)] ,[e] )",
+        [
+            {
+                "name": "fk_ws",
+                "constrained_columns": ["c (1)", "d"],
+                "options": {},
+                "referred_table": "p",
+                "referred_columns": ["(3)", "e"],
+            }
+        ],
+    ),
+    (
+        "fk_referred_column_is_parenthesized",
+        (
+            "CREATE TABLE [c] ([id] INTEGER NOT NULL, [plain] INTEGER,  "
+            "CONSTRAINT [fk_c_plain] FOREIGN KEY  ([plain]) REFERENCES [dba.p] ([(3)]) "
+            "ON DELETE RESTRICT ON UPDATE RESTRICT)"
+        ),
+        [
+            {
+                "name": "fk_c_plain",
+                "constrained_columns": ["plain"],
+                "options": {"ondelete": "RESTRICT", "onupdate": "RESTRICT"},
+                "referred_table": "p",
+                "referred_columns": ["(3)"],
+            }
+        ],
+    ),
+    (
+        "fk_constrained_column_has_closing_paren_and_percent",
+        (
+            "CONSTRAINT [fk_x] FOREIGN KEY ([x ) y], [per % cent]) "
+            "REFERENCES [dba.p] ([(2)], [two words])"
+        ),
+        [
+            {
+                "name": "fk_x",
+                "constrained_columns": ["x ) y", "per % cent"],
+                "options": {},
+                "referred_table": "p",
+                "referred_columns": ["(2)", "two words"],
             }
         ],
     ),
@@ -483,6 +582,35 @@ UNIQUE_FIXTURES: list[tuple[str, str, list[dict[str, Any]]]] = [
         ),
         [{"name": "uq_multiline", "column_names": ["a", "b"]}],
     ),
+    # Names containing ( ) , and spaces (#532), as printed by CUBRID 11.4.
+    (
+        "unique_bracketed_names_with_parens_commas_spaces",
+        (
+            "CREATE TABLE [p532] ([(3)] INTEGER NOT NULL, [a, b] INTEGER NOT NULL, "
+            "[x ) y] INTEGER, [per % cent] INTEGER,  "
+            "CONSTRAINT [pk_p532_(3)_a, b] PRIMARY KEY  ([(3)], [a, b]),  "
+            "CONSTRAINT [uq (w), z] UNIQUE KEY  ([x ) y], [per % cent])"
+            ") REUSE_OID, COLLATE iso88591_bin"
+        ),
+        [{"name": "uq (w), z", "column_names": ["x ) y", "per % cent"]}],
+    ),
+    (
+        "unique_whitespace_inside_parentheses",
+        "CONSTRAINT [uq_ws] UNIQUE KEY ( [a (1)] ,  [b] DESC )",
+        [{"name": "uq_ws", "column_names": ["a (1)", "b"]}],
+    ),
+    (
+        "unique_parenthesized_name_with_descending_key_order",
+        (
+            "CREATE TABLE [d532] ([a] INTEGER, [b (x)] CHARACTER VARYING(20),  "
+            "CONSTRAINT [u1] UNIQUE KEY  ([a] DESC, [b (x)]),  "
+            "CONSTRAINT [u3] UNIQUE KEY  ([b (x)] DESC, [a])) REUSE_OID, COLLATE iso88591_bin"
+        ),
+        [
+            {"name": "u1", "column_names": ["a", "b (x)"]},
+            {"name": "u3", "column_names": ["b (x)", "a"]},
+        ],
+    ),
 ]
 
 
@@ -520,9 +648,11 @@ class TestForeignKeyParsing:
         [(ddl, exp) for _, ddl, exp in FK_FIXTURES],
         ids=[fid for fid, _, _ in FK_FIXTURES],
     )
-    def test_parse_foreign_keys(self, ddl: str, expected: list[dict[str, Any]]) -> None:
-        result = parse_foreign_keys(ddl)
-        assert result == expected
+    def test_parse_foreign_keys(
+        self, dialect: CubridDialect, ddl: str, expected: list[dict[str, Any]]
+    ) -> None:
+        result = parse_foreign_keys(dialect, ddl)
+        assert result == _with_schema(expected)
 
     def test_fk_regex_does_not_match_unique(self) -> None:
         """Ensure FK regex doesn't accidentally match UNIQUE KEY constraints."""
@@ -543,9 +673,11 @@ class TestUniqueConstraintParsing:
         [(ddl, exp) for _, ddl, exp in UNIQUE_FIXTURES],
         ids=[fid for fid, _, _ in UNIQUE_FIXTURES],
     )
-    def test_parse_unique_constraints(self, ddl: str, expected: list[dict[str, Any]]) -> None:
-        result = parse_unique_constraints(ddl)
-        assert result == expected
+    def test_parse_unique_constraints(
+        self, dialect: CubridDialect, ddl: str, expected: list[dict[str, Any]]
+    ) -> None:
+        result = parse_unique_constraints(dialect, ddl)
+        assert result == _with_duplicates_index(expected)
 
     def test_unique_regex_does_not_match_fk(self) -> None:
         """Ensure UNIQUE regex doesn't match FK constraints."""
@@ -566,8 +698,8 @@ class TestMalformedDDL:
         [ddl for _, ddl in MALFORMED_FIXTURES],
         ids=[mid for mid, _ in MALFORMED_FIXTURES],
     )
-    def test_fk_parsing_no_crash(self, ddl: str) -> None:
-        result = parse_foreign_keys(ddl)
+    def test_fk_parsing_no_crash(self, dialect: CubridDialect, ddl: str) -> None:
+        result = parse_foreign_keys(dialect, ddl)
         assert isinstance(result, list)
 
     @pytest.mark.parametrize(
@@ -575,8 +707,8 @@ class TestMalformedDDL:
         [ddl for _, ddl in MALFORMED_FIXTURES],
         ids=[mid for mid, _ in MALFORMED_FIXTURES],
     )
-    def test_unique_parsing_no_crash(self, ddl: str) -> None:
-        result = parse_unique_constraints(ddl)
+    def test_unique_parsing_no_crash(self, dialect: CubridDialect, ddl: str) -> None:
+        result = parse_unique_constraints(dialect, ddl)
         assert isinstance(result, list)
 
 

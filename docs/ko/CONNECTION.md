@@ -27,7 +27,7 @@
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID 서버        | 10.2 – 11.4     |
-| CUBRID Python 드라이버 | pycubrid (권장) 또는 CUBRID-Python (레거시) |
+| CUBRID Python 드라이버 | pycubrid (권장) 또는 cubrid-python v11.3.0.51+에서 빌드한 CUBRIDdb (레거시) |
 
 ---
 
@@ -35,11 +35,15 @@
 
 ### 권장: 순수 Python 드라이버 (pycubrid)
 
-새 프로젝트에는 순수 Python [pycubrid](https://github.com/cubrid-lab/pycubrid) 드라이버를 사용하세요 — pip만으로 설치되고, C 빌드 도구 체인이 필요 없고, Python이 돌아가는 어디서든 동작합니다:
+새 프로젝트에는 순수 Python [pycubrid](https://github.com/cubrid-lab/pycubrid) 드라이버를 사용하세요. 드라이버는 CUBRID 네이티브 라이브러리가 필요 없습니다. 권장 extra를 설치하세요:
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+이 extra는 pycubrid의 동기·비동기 URL을 모두 지원하고 SQLAlchemy의
+`asyncio` 의존성(`greenlet`)을 포함합니다. 드라이버 자체는 순수 Python이며,
+호환 wheel이 없으면 `greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 
 또는 따로 설치:
 
@@ -53,23 +57,17 @@ pip install sqlalchemy-cubrid pycubrid
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
-> **팁**: `pycubrid`는 순수 Python 구현입니다 — 네이티브 라이브러리 의존성 없이 Python이 돌아가는 어디서든 동작합니다. [GitHub의 pycubrid](https://github.com/cubrid-lab/pycubrid)를 참고하세요.
+> **팁**: `pycubrid` 드라이버 자체는 순수 Python이며 네이티브 라이브러리가 필요 없습니다. `[pycubrid]` extra에 포함된 `greenlet`은 설치 시 빌드 도구가 필요할 수 있습니다. [GitHub의 pycubrid](https://github.com/cubrid-lab/pycubrid)를 참고하세요.
 
-### 레거시: C 확장 드라이버 (CUBRID-Python)
+### 레거시: C 확장 드라이버 (CUBRIDdb)
 
-레거시 [CUBRID-Python](https://github.com/CUBRID/cubrid-python) C 확장 드라이버는 `cubrid://` URL에 묶여 있습니다. `[cubriddb]` extra로 설치하고 `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택하세요:
-
-```bash
-pip install "sqlalchemy-cubrid[cubriddb]"
-```
-
-또는 드라이버를 직접 설치:
+[cubrid-python](https://github.com/CUBRID/cubrid-python)의 레거시 CUBRIDdb C 확장 드라이버는 `cubrid://` URL에 묶여 있으며, `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택할 수 있습니다. 지원되는 설치 방법은 cubrid-python v11.3.0.51 이상을 소스에서 빌드하는 것입니다. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고한 뒤 방언만 설치하세요:
 
 ```bash
-pip install sqlalchemy-cubrid CUBRID-Python
+pip install sqlalchemy-cubrid
 ```
 
-> **참고**: `CUBRID-Python`은 C 확장 드라이버입니다. 일부 플랫폼에서는 CUBRID CCI 라이브러리가 필요할 수 있습니다. 플랫폼별 지침은 [CUBRID Python 드라이버 문서](https://www.cubrid.org/manual/en/11.0/api/python.html)를 참고하세요.
+> **경고**: 드라이버를 PyPI에서 설치하지 마세요(`pip install CUBRID-Python` 또는 폐기 예정인 `[cubrid]` / `[cubriddb]` extra). PyPI에는 `CUBRID-Python` 9.3.x만 있으며, 이 방언과 함께 테스트되지 않았습니다. `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패합니다. `cubrid://` 엔진은 로드된 CUBRIDdb가 11.3보다 오래되었으면 첫 연결 시 `SAWarning`을 냅니다. [PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
 
 ---
 
@@ -109,6 +107,40 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `port`     | `33000`       | CUBRID 브로커 포트                     |
 | `database` | *(필수)*      | 데이터베이스 이름                      |
 
+### URL 쿼리 옵션
+
+`cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 다음 URL 쿼리 옵션을 쿼리 문자열에서
+pycubrid가 기대하는 타입으로 변환해 `pycubrid.connect()` / `pycubrid.aio.connect()`에
+전달합니다:
+
+```python
+engine = create_engine(
+    "cubrid+pycubrid://dba@localhost:33000/demodb?connect_timeout=5&read_timeout=30"
+)
+```
+
+| 옵션 | 값 | 설명 |
+|------|----|------|
+| `connect_timeout` | 양수 초 | 브로커 연결을 여는 동안의 타임아웃 |
+| `read_timeout` | 양수 초 | 연결 후 소켓 읽기 타임아웃 |
+| `fetch_size` | 1 이상의 정수 | 서버 측 fetch 배치 크기 (pycubrid 기본값 `100`) |
+| `charset` | 코덱 이름 | Python 코덱 또는 CUBRID `utf8` / `euckr` / `iso88591`. 데이터베이스 문자셋으로 설정합니다. 1.8.0보다 새로운 pycubrid 릴리스가 필요합니다 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)). pycubrid 1.8.0에서는 `create_engine()`이 설치된 버전을 알려 주는 `ArgumentError`를 발생시킵니다 |
+| `ssl` | 불리언 | `true`이면 pycubrid 기본 컨텍스트(TLS 1.2+)로 TLS를 사용합니다. 그 밖의 설정은 `connect_args`로 `ssl.SSLContext`를 전달합니다 |
+| `decode_collections` | 불리언 | `SET` / `MULTISET` / `SEQUENCE` 값을 Python 컬렉션으로 디코딩 |
+| `no_backslash_escapes` | 불리언 | pycubrid 자체의 문자열 이스케이프 모드 (생략하면 자동 감지). `literal_binds` 렌더링을 제어하는 [아래](#백슬래시-이스케이프-no_backslash_escapes)의 `create_engine(no_backslash_escapes=...)` 방언 옵션과는 별개입니다 |
+| `enable_timing` | 불리언 | pycubrid 타이밍 통계 |
+
+불리언은 `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`을 받습니다. 잘못된 값, 반복된 옵션,
+`host` / `port` / `database` / `user` / `password` (URL 자체에 지정), `autocommit`
+(`isolation_level="AUTOCOMMIT"` 사용), `json_deserializer` (`connect_args`로 전달)는
+`create_engine()`에서 `sqlalchemy.exc.ArgumentError`를 발생시킵니다. 그 밖의 키는 가장 가까운
+지원 옵션을 제안하는 pycubrid의 `UnknownConnectionOptionWarning`과 함께 무시됩니다.
+`warnings.simplefilter("error", pycubrid.UnknownConnectionOptionWarning)`로 오류로 바꿀 수
+있습니다. `connect_args` 값이 URL 쿼리 옵션보다 우선합니다.
+
+`cubrid://` / `cubrid+cubriddb://` (CUBRIDdb) 방언은 URL 쿼리 문자열을 읽지 않습니다.
+CUBRIDdb의 `connect(url, user, password)`는 키워드 옵션을 받지 않으며, 쿼리 옵션은 무시됩니다.
+
 ---
 
 ## 엔트리 포인트
@@ -120,16 +152,19 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 | `cubrid://`          | CUBRIDdb    | 기본 레거시 C 확장 드라이버           |
 | `cubrid+cubrid://`   | CUBRIDdb    | 명시적 레거시 C 확장 드라이버         |
 | `cubrid+cubriddb://` | CUBRIDdb    | 명시적 레거시 C 확장 드라이버         |
-| `cubrid+pycubrid://` | pycubrid    | 순수 Python 드라이버 (C 빌드 불필요)  |
+| `cubrid+pycubrid://` | pycubrid    | 순수 Python 드라이버 (CUBRID 네이티브 라이브러리 불필요) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | 비동기 순수 Python 드라이버        |
 
-새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python, 설치 가장 쉬움, 네이티브 빌드 단계 없음). `cubrid://` URL은 레거시 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `[cubriddb]` 설치 extra와 함께 `cubrid+cubriddb://`를 사용하세요.
+새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 cubrid-python v11.3.0.51 이상에서 빌드한 레거시 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `cubrid+cubriddb://`를 사용하세요.
 
 ---
 
 ## 비동기 연결
 
-비동기 애플리케이션에서는 `create_async_engine`과 함께 `cubrid+aiopycubrid://` URL 스킴을 사용하세요. `pycubrid>=1.3.2,<2.0`이 필요합니다.
+비동기 애플리케이션에서는 `create_async_engine`과 함께 `cubrid+aiopycubrid://` URL 스킴을 사용하세요. `pycubrid>=1.8.0,<2.0`이 필요합니다.
+
+`sqlalchemy-cubrid[pycubrid]`를 설치하면 드라이버와 SQLAlchemy의 비동기 브리지가
+포함됩니다. 패키지를 따로 설치한다면 `SQLAlchemy[asyncio]`도 설치하세요.
 
 ```python
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -204,6 +239,8 @@ kwargs = {"host": host, "port": port, "database": database, "user": user, "passw
 # → pycubrid.connect(host="myhost", port=33000, database="mydb", user="dba", password="password")
 ```
 
+[URL 쿼리 옵션](#url-쿼리-옵션)이 이 키워드 인자에 추가됩니다.
+
 ---
 
 ## 연결 옵션
@@ -268,16 +305,13 @@ engine = create_engine(
 
 두 CUBRID Python 드라이버 모두 기본적으로 `autocommit=True`입니다. 방언은 SQLAlchemy가 트랜잭션을 올바르게 관리할 수 있도록 모든 새 연결에서 이를 오버라이드합니다. CUBRIDdb는 `conn.set_autocommit(False)`를, pycubrid는 속성 세터 `conn.autocommit = False`를 사용합니다.
 
-### DDL 오토커밋 감지
+### SQL 텍스트 기반 오토커밋 없음
 
-CUBRID는 DDL 문을 암시적으로 커밋합니다. 방언은 DDL 패턴을 감지해 다음에 대해 오토커밋을 활성화합니다:
-
-- `CREATE`, `ALTER`, `DROP`
-- `GRANT`, `REVOKE`
-- `TRUNCATE`
-- `MERGE`
-
-이것은 정규식 패턴을 사용하는 `CubridExecutionContext.should_autocommit_text()` 메서드가 처리합니다.
+방언은 SQL 텍스트를 검사해 커밋 여부를 결정하지 않습니다. SQLAlchemy 2.x는
+1.x 시절의 `should_autocommit_text()` 훅을 호출하지 않으므로, DML과 DDL
+(`INSERT`, `REPLACE`, `MERGE`, `CREATE`, `DROP` 포함)은 연결의 트랜잭션 안에서
+실행되며 SQLAlchemy 2.x Connection API(`conn.commit()`, `engine.begin()` 블록,
+`Session` 커밋)를 통해서만 커밋됩니다. 커밋하지 않고 닫은 연결은 롤백됩니다.
 
 ---
 
@@ -299,11 +333,13 @@ SELECT VERSION()
 
 #### `ImportError: No module named 'CUBRIDdb'`
 
-CUBRID Python 드라이버가 설치되지 않았습니다:
+`cubrid://` URL이 사용하는 CUBRIDdb C 확장 드라이버가 설치되지 않았습니다. 권장 순수 Python 드라이버로 전환하세요:
 
 ```bash
-pip install CUBRID-Python
+pip install "sqlalchemy-cubrid[pycubrid]"   # 이후 cubrid+pycubrid:// 사용
 ```
+
+또는 cubrid-python v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요. PyPI의 `CUBRID-Python` 9.3.x 릴리스는 이 방언과 함께 테스트되지 않았습니다.
 
 #### 포트 33000에서 `Connection refused`
 
@@ -424,9 +460,9 @@ engine = create_engine(
 
 방언은 드라이버 오류 메시지 문구 변경에 강건한 계층적 전략으로 연결 실패를 감지하는 `is_disconnect()`를 구현합니다:
 
-1. **숫자 오류 코드 매칭 (주)** — `ER_COMMUNICATION`(-4, pycubrid), `CAS_ER_COMMUNICATION`(-21003/-21005), `ER_NET_CANT_CONNECT`(-10005), `ER_NET_SERVER_COMM_ERROR`(-10007) 등 안정적인 CUBRID/CCI 코드를 검사.
+1. **숫자 오류 코드 매칭 (주)** — CUBRIDdb가 끊겼거나 쓸 수 없는 연결에 대해 내는 CCI·CAS 코드 `CCI_ER_COMMUNICATION`(-20004), `CAS_ER_COMMUNICATION`(-10003), `CCI_ER_CON_HANDLE`(-20002), `CCI_ER_CONNECT`(-20016), `CAS_ER_NO_MORE_MEMORY`(-10002; CAS가 이 코드를 보낸 뒤 연결을 닫음)와, CAS의 `cub_server` 세션이 사라져 CUBRID 브로커가 CAS를 리셋하는 서버 코드 `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`(-111), `ER_NET_SERVER_CRASHED`(-199), `ER_OBJ_NO_CONNECT`(-224), `ER_BO_CONNECT_FAILED`(-677)를 검사. CUBRIDdb는 코드를 `args[0]`에, pycubrid는 `errno`에 담으며, `errno`는 이 네 서버 코드에 더해 -1002(pycubrid가 실제로 받는 `CAS_ER_NO_MORE_MEMORY`의 레거시 번호. pycubrid처럼 갱신된 오류 코드 프로토콜을 이해한다고 알리지 않는 드라이버에게 CUBRID의 CAS는 CAS 코드에 9000을 더해 보냅니다)와도 비교합니다. 코드는 이 구조화된 필드에서만 읽고 메시지 텍스트에서는 읽지 않습니다. 애플리케이션 데이터를 인용하는 서버 오류(`-20004 rows rejected ...`)처럼 숫자로 시작하는 메시지에는 코드가 없습니다(#608). 다른 서버 코드는 연결 끊김이 아닙니다. -4는 `KILL QUERY`로 중단된 쿼리를 뜻하는 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. [문제 해결 — cub_server 재시작 또는 장애 후 오류](TROUBLESHOOTING.md#cub_server-재시작-또는-장애-후-오류) 참고.
 2. **명시적 `OSError` 원인 체인 (문구 무관)** — 예외의 명시적 `__cause__` 체인(`raise ... from`)에 `OSError`(예: 소켓 오류)이 있으면 메시지 문구와 무관하게 연결이 끊긴 것으로 간주. 무관한 진행 중 `OSError`가 살아있는 연결을 오탐 무효화하지 않도록 암시적 `__context__`는 의도적으로 무시.
-3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. `OperationalError`가 없는 레거시 CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive")를 커버.
+3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. 레거시 CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive", pycubrid가 잃어버린 CAS 세션을 교체하지 못했을 때의 "reconnecting failed")를 커버. 패턴은 드라이버 자체 메시지(pycubrid의 `args[0]`)와 비교하며, -4(서버의 `ER_INTERRUPTED`)와 -671에 `Communication error` 같은 `errno` 설명을 덧붙이는 pycubrid의 `str()`과는 비교하지 않습니다.
 
 감지는 의도적으로 보수적입니다: 해제 코드도, `OSError` 원인도, 해제 메시지도 아닌 데이터베이스 오류(예: 잘못된 격리 수준 오류, 닫힌 커서 오용)는 연결 해제로 취급하지 **않아** 오탐 풀 무효화를 피합니다.
 
@@ -434,16 +470,21 @@ engine = create_engine(
 
 ### 오류 코드 매핑
 
-CUBRID 드라이버 예외는 적절한 SQLAlchemy 예외 타입으로 매핑됩니다. 드라이버는 제한된 예외 계층을 노출합니다:
+CUBRID 드라이버 예외는 적절한 SQLAlchemy 예외 타입으로 매핑됩니다. 두 드라이버 모두 PEP 249 예외 계층 전체를 노출합니다:
 
 | CUBRID 드라이버 예외 | SA 예외 매핑 |
 |---|---|
 | `Error` (기본) | `DBAPIError` |
 | `InterfaceError` | `InterfaceError` |
 | `DatabaseError` | `DatabaseError` |
+| `DataError` | `DataError` |
+| `OperationalError` | `OperationalError` |
+| `IntegrityError` | `IntegrityError` |
+| `InternalError` | `InternalError` |
+| `ProgrammingError` | `ProgrammingError` |
 | `NotSupportedError` | `NotSupportedError` |
 
-> **참고**: CUBRIDdb는 `OperationalError`, `ProgrammingError`, `InternalError`, `DataError`를 제공하지 않습니다. 모든 데이터베이스 수준 오류는 `DatabaseError`로 발생합니다.
+> **참고**: CUBRIDdb 11.3.0.51과 pycubrid는 위의 모든 PEP 249 예외 클래스를 제공하며, SQLAlchemy는 드라이버가 발생시킨 클래스를 감쌉니다. 특정 서버 오류가 어떤 클래스가 되는지는 드라이버에 따라 다릅니다. 예를 들어 릴리스된 pycubrid의 NOT NULL 및 외래 키 위반이 그렇습니다. [드라이버 호환성](DRIVER_COMPAT.md#예외-계층)을 참고하세요.
 
 ### 풀 구성 권장사항
 

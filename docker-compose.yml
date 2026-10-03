@@ -5,7 +5,7 @@ services:
     environment:
       CUBRID_DB: testdb
     ports:
-      - "33000:33000"
+      - "${CUBRID_PORT:-33000}:33000"
     healthcheck:
       test: ["CMD", "csql", "-u", "dba", "testdb", "-c", "SELECT 1"]
       interval: 15s

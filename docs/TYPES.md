@@ -34,16 +34,25 @@ The dialect maps standard SQLAlchemy types to CUBRID SQL types:
 | `Numeric(p, s)`      | `NUMERIC(p, s)`   | Exact numeric, up to 38 digits             |
 | `String(n)`          | `VARCHAR(n)`      | Variable-length character data             |
 | `Text`               | `STRING`          | Alias for `VARCHAR(1,073,741,823)`         |
-| `Unicode(n)`         | `NVARCHAR(n)`     | National character set                     |
-| `UnicodeText`        | `NVARCHAR`        | National character, max length             |
+| `Unicode(n)`         | `VARCHAR(n)`      | Database charset (no `NCHAR` needed)       |
+| `UnicodeText`        | `STRING`          | Same as `Text`; CUBRID has no `TEXT` type  |
 | `LargeBinary`        | `BLOB`            | Binary Large Object                        |
+| `BINARY(n)`          | `BIT(n*8)`        | Fixed-length bytes; CUBRID has no `BINARY` |
+| `VARBINARY(n)`       | `BIT VARYING(n*8)`| Variable-length bytes; no `VARBINARY`      |
+| `Uuid` / `UUID`      | `CHAR(32)`        | No native UUID; stored as 32-char hex      |
 | `Boolean`            | `SMALLINT`        | ⚠️ No native boolean — mapped to 0/1      |
 | `Date`               | `DATE`            | Calendar date                              |
 | `Time`               | `TIME`            | Time of day                                |
 | `DateTime`           | `DATETIME`        | Date and time combined                     |
 | `TIMESTAMP`          | `TIMESTAMP`       | Timestamp with auto-update behavior        |
 
-> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`.
+> **VARCHAR default length**: When `String()` is used without a length, the dialect defaults to `VARCHAR(4096)`. An explicit non-positive length (`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) is not a valid CUBRID length and raises `CompileError` instead of being widened to the default.
+
+> **BINARY / VARBINARY**: CUBRID has no `BINARY` or `VARBINARY` type, so the dialect stores them as bit strings, whose length is in bits: `BINARY(n)` compiles to `BIT(n*8)` (`BINARY()` to `BIT(8)`), `VARBINARY(n)` to `BIT VARYING(n*8)` and `VARBINARY()` to `BIT VARYING` (up to 1,073,741,823 bits). Values bind and return as `bytes` on both drivers. `BINARY` is fixed-length, so a shorter value comes back padded with `\x00` bytes. An empty `b""` is not preserved: depending on the driver it reads back as `None` (or as zero bytes for `BINARY` on pycubrid). A non-positive length (`BINARY(0)`, `VARBINARY(0)`) raises `CompileError`. These columns reflect as `BIT(n*8)` / `BIT VARYING(n*8)`, so Alembic autogenerate reports no type change for them.
+
+> **UUID**: CUBRID has no `UUID` type. `sa.Uuid` and `sa.UUID` both compile to `CHAR(32)` and use SQLAlchemy's non-native UUID handling: values are stored as 32-character hex strings, and read back as `uuid.UUID` (default) or as a hyphenated `str` with `as_uuid=False`. The column reflects as `CHAR(32)`.
+
+> **Character set and collation**: the dialect does not render a column-level `CHARSET` or `COLLATE` clause for string and text types. A `collation=` argument (for example `String(50, collation="utf8_bin")`, `Text(collation=...)` or `UnicodeText(collation=...)`) is dropped, and the column uses the database charset and collation. `Unicode` / `UnicodeText` do not select a different charset either: they compile to `VARCHAR(n)` / `STRING` like `String` / `Text`, so non-ASCII text (for example Korean, Japanese, Chinese or emoji) round-trips only when the database was created with a UTF-8 charset (for example `cubrid createdb testdb en_US.utf8`).
 
 ---
 
@@ -198,6 +207,74 @@ CREATE TABLE tagged_items (
 > no separate `LIST` type, since a type compiling to `LIST(...)` would produce
 > spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`.
 
+#### Collection values
+
+Bind a `SET` or `MULTISET` column's value as a Python `list`, `tuple`, `set`
+or `frozenset`. A `SEQUENCE` is ordered, so bind it as a `list` or `tuple`: on
+the pycubrid drivers a `set` or `frozenset` for a `SEQUENCE` column raises
+`TypeError` ("SEQUENCE is ordered; pass a list or tuple", wrapped in
+SQLAlchemy's `StatementError`) whatever the pycubrid version, and the dialect
+never sorts it for you. What happens next depends on the driver:
+
+| | `cubrid+pycubrid://`, `cubrid+aiopycubrid://` with typed collection parameters (pycubrid main) | Released pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
+|---|---|---|---|
+| Binding a `list`/`tuple` (and a `set`/`frozenset` for `SET`/`MULTISET`) | Wrapped in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type and sent as a `SET{...}`, `MULTISET{...}` or `SEQUENCE{...}` literal | `ProgrammingError` (pycubrid rejects collection parameters) | Bound by CUBRIDdb itself, always as a SET: a MULTISET loses duplicates and a SEQUENCE loses its order ([Driver Compatibility, Known Issue 11](DRIVER_COMPAT.md#11-collection-parameters-set-multiset-sequence)) |
+| Reading `SET` | `frozenset` with `?decode_collections=true`, raw `bytes` without it | Same | `set` of `str` |
+| Reading `MULTISET` / `SEQUENCE` | `list` with `?decode_collections=true`, raw `bytes` without it | Same | `list` of `str` |
+
+```python
+from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
+from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET
+
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/demodb?decode_collections=true")
+items = Table(
+    "items", MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("tags", SET(String(20))),
+    Column("scores", MULTISET(Integer())),
+    Column("history", SEQUENCE(Integer())),
+)
+
+with engine.begin() as conn:
+    conn.execute(items.insert(), {"id": 1, "tags": {"a", "b"}, "scores": [2, 2, 1], "history": [3, 1, 3]})
+    row = conn.execute(select(items)).one()
+    # row.tags == frozenset({"a", "b"}); sorted(row.scores) == [1, 2, 2]; row.history == [3, 1, 3]
+    conn.execute(select(items.c.id).where(items.c.history == [3, 1, 3]))  # SEQUENCE{3, 1, 3}
+```
+
+On pycubrid:
+
+- The typed parameters (cubrid-lab/pycubrid#567) are on pycubrid main and are
+  not in a pycubrid release yet. The dialect detects them
+  (`pycubrid.types.Set`, `Multiset` and `Sequence`); with an older pycubrid it
+  passes values to the driver unchanged, so a collection parameter fails as
+  before.
+- Each element must be a value pycubrid can bind on its own: `None`, `bool`,
+  `int`, `float`, `Decimal`, `str`, `bytes`, `bytearray`, `date`, `time` or
+  `datetime`. Nested collections are rejected.
+- A value that is already a `pycubrid.types.Set`, `Multiset` or `Sequence`,
+  `None` and any other value (for example a `str`) are passed to the driver
+  unchanged.
+- The server keeps the collection semantics, and the dialect does not change
+  them: a `SET` drops duplicates, a `MULTISET` keeps duplicates but not their
+  order (compare `sorted(...)`), and a `SEQUENCE` keeps both. An empty
+  collection reads back as `frozenset()` or `[]`, a `NULL` column as `None`,
+  and a `NULL` element as `None` inside the collection.
+- The dialect does not convert values read back: they are what pycubrid
+  decodes. Without `decode_collections=true` pycubrid returns the raw
+  collection bytes.
+- A `set`/`frozenset` bound to a `SEQUENCE` column raises `TypeError` (see
+  above), with every pycubrid version.
+- Collection values cannot be rendered inline: `literal_binds` and
+  `literal_execute` raise `CompileError` for a non-`NULL` collection value
+  (a `NULL` renders as `NULL`). Bind collections as parameters.
+- In the ORM, assign a new collection to change a column
+  (`obj.history = [*obj.history, 4]`). SQLAlchemy does not track in-place
+  changes to a `list` or `set` attribute.
+
+The round trips are tested live on CUBRID 10.2 and 11.4 with pycubrid main
+(Core and ORM, sync and async; `test/test_collection_roundtrip.py`).
+
 ### JSON Type
 
 CUBRID 10.2+ supports native JSON (RFC 7159). The dialect provides full JSON type support:
@@ -260,14 +337,20 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `DATE`              | `DATE`             |
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
+| `TIMESTAMPTZ`       | `TIMESTAMPTZ` (`timezone=True`) |
+| `TIMESTAMPLTZ`      | `TIMESTAMPLTZ` (`timezone=True`) |
 | `DATETIME`          | `DATETIME`         |
-| `BIT`               | `BIT`              |
-| `BIT VARYING`       | `BIT`              |
+| `DATETIMETZ`        | `DATETIMETZ` (`timezone=True`) |
+| `DATETIMELTZ`       | `DATETIMELTZ` (`timezone=True`) |
+| `BIT(n)`            | `BIT(n)`           |
+| `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
 | `VARCHAR`           | `VARCHAR`          |
 | `NCHAR`             | `NCHAR`            |
-| `CHAR VARYING`      | `NVARCHAR`         |
+| `CHAR VARYING`      | `VARCHAR`          |
+| `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
+| `ENUM('a', ...)`    | `ENUM('a', ...)` (DBA; otherwise `NullType` + warning) |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
 | `SET`               | `SET`              |
@@ -275,6 +358,14 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**TZ/LTZ reflection** (#181, #442). `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as their own dedicated dialect classes rather than collapsing into plain `TIMESTAMP`/`DATETIME`, and each sets `timezone=True`, so a round-tripped `datetime` keeps its timezone awareness and `metadata.reflect()` + `create_all()` reproduces the original column type. The dialect does not otherwise distinguish explicit-timezone (`TZ`) from local-timezone (`LTZ`) *value* semantics in Python — both are represented as an aware `datetime` — only the reflected SQLAlchemy type class differs.
+
+**ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
+
+`SHOW COLUMNS` prints collections as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member modifiers and sometimes in a different order. The public `db_attr_setdomain_elm` view supplies each member's precision, scale and object-domain class. The dialect uses those rows only when they account for every reported member family; missing or inconsistent rows warn and yield `NullType` instead of silently changing the DDL. An OBJECT member whose class was dropped (listed without its class) and a member type the dialect cannot express warn and yield `NullType`; the rest of the table still reflects. `MONETARY` members reflect as `MONETARY`. A column name that `SHOW COLUMNS` lists twice (a `CLASS ATTRIBUTE` of the same name) warns and yields `NullType` for ENUM and collection columns, and the catalog lookups read instance attributes only. On CUBRID 11.2+ an OBJECT member whose class belongs to another owner than the table reflects as `owner.class`. An `ENUM` member (`SET(ENUM('x', 'y'))`, listed without its values) warns and yields `NullType`. Members keep the order the view lists them in, which is the declaration order on the supported servers. A member's collation (`VARCHAR(10) COLLATE utf8_bin`) is not in the view and is not reflected. An untyped collection takes its kind from `db_attribute` and reflects as `SET()` / `MULTISET()` / `SEQUENCE()`. With authorized ENUM metadata and complete collection-domain rows, `metadata.reflect()` followed by `create_all()` reproduced the tested DDL on CUBRID 10.2, 11.2 and 11.4; 11.0 remains in the nightly matrix. This is not a claim of full ENUM reflection for non-DBA users.
+
+On CUBRID 11.2+, an OBJECT member also warns and yields `NullType` when either its domain owner or the reflected table owner is unavailable; rendering an unqualified class could resolve to a different owner's class.
 
 ---
 
@@ -293,6 +384,23 @@ class User(Base):
 - `True` is stored as `1`
 - `False` is stored as `0`
 - The `supports_native_boolean = False` flag tells SQLAlchemy to handle the conversion automatically
+
+### Boolean predicates
+
+CUBRID's `IS` accepts only `[NOT] NULL` and `[NOT] TRUE/FALSE`, and since CUBRID 11.2 `IS TRUE`/`IS FALSE` needs a logical operand (`b IS TRUE` fails for a `SMALLINT` column). SQLAlchemy renders `col.is_(True)` for a non-native Boolean as `col IS 1`, which CUBRID rejects on every version, so the dialect renders `IS`/`IS NOT` against a value with the null-safe equal `<=>`, like `IS [NOT] DISTINCT FROM`:
+
+| SQLAlchemy | SQL | Value for `1` / `0` / `NULL` |
+|---|---|---|
+| `col.is_(True)` | `col <=> 1` | true / false / false |
+| `col.is_(False)` | `col <=> 0` | false / true / false |
+| `col.is_not(True)` | `(col <=> 1) = 0` | false / true / true |
+| `col.is_not(False)` | `(col <=> 0) = 0` | true / false / true |
+| `col.is_(None)` / `col == None` | `col IS NULL` | false / false / true |
+| `col == True` / `col` | `col = 1` | true / false / NULL |
+| `col == False` / `not_(col)` | `col = 0` | false / true / NULL |
+| `true()` / `false()` | `1 = 1` / `0 = 1` (`1` / `0` in a SELECT list) | constant |
+
+`IS TRUE`/`IS FALSE` never yield `NULL`, and `IS NOT TRUE`/`IS NOT FALSE` are their exact complements, so SQLAlchemy's three-valued semantics are kept in `WHERE` clauses and in SELECT lists alike; the same applies to any expression, e.g. `(col == 5).is_(True)` renders `(col = 5) <=> 1`. One limitation is CUBRID's, not the dialect's: logical operators are not allowed in a SELECT list, so `select(and_(a, b))`, `select(or_(a, b))` or a projected `NOT (...)` fail; use them in `WHERE`, or wrap them in `case()` (a `NULL` condition then takes the `else_` branch).
 
 ---
 
@@ -384,18 +492,23 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | Time of day only. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | Date + time in one value. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID timestamp semantics may auto-update depending on schema defaults. |
-| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` | `bytes` / `str` | Representation may vary by DBAPI driver. |
-| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` | `bytes` / `str` | Variable-length bit string. |
+| `TIMESTAMPTZ` | `sqlalchemy_cubrid.TIMESTAMPTZ` | `datetime.datetime` (aware) | Explicit-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `TIMESTAMPLTZ` | `sqlalchemy_cubrid.TIMESTAMPLTZ` | `datetime.datetime` (aware) | Local-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `DATETIMETZ` | `sqlalchemy_cubrid.DATETIMETZ` | `datetime.datetime` (aware) | Explicit-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `DATETIMELTZ` | `sqlalchemy_cubrid.DATETIMELTZ` | `datetime.datetime` (aware) | Local-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | Fixed-length bit string; `sa.BINARY(n)` compiles to `BIT(n*8)`. |
+| `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | Variable-length bit string; `sa.VARBINARY(n)` compiles to `BIT VARYING(n*8)`. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | Fixed-length character data. |
 | `VARCHAR(n)` | `sqlalchemy_cubrid.VARCHAR` / `sqlalchemy.String` | `str` | Variable-length string. |
 | `NCHAR(n)` | `sqlalchemy_cubrid.NCHAR` | `str` | National character set type. |
-| `CHAR VARYING(n)` | `sqlalchemy_cubrid.NVARCHAR` | `str` | Reflected to NVARCHAR by this dialect. |
+| `CHAR VARYING(n)` | `sqlalchemy_cubrid.VARCHAR` | `str` | Synonym of `VARCHAR(n)`; reflected to VARCHAR. |
+| `CHAR(32)` (UUID) | `sqlalchemy.Uuid` / `sqlalchemy.UUID` | `uuid.UUID` / `str` | No native UUID; 32-char hex. Reflects as `CHAR(32)`. |
 | `STRING` | `sqlalchemy_cubrid.STRING` / `sqlalchemy.Text` | `str` | Equivalent to very large `VARCHAR`. |
-| `CLOB` | `sqlalchemy_cubrid.CLOB` / `sqlalchemy.Text` | `str` | Character LOB; large text payloads. |
-| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` | Binary LOB storage. |
-| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent collection payload | CUBRID-specific collection; unique unordered members. |
-| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent collection payload | CUBRID-specific collection; duplicates allowed. |
-| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent collection payload | CUBRID-specific collection; ordered with duplicates. |
+| `CLOB` | `sqlalchemy_cubrid.CLOB` | `str` (documented) | Character LOB. Current drivers return a LOB locator on read; see the warning below. |
+| `BLOB` | `sqlalchemy_cubrid.BLOB` / `sqlalchemy.LargeBinary` | `bytes` (documented) | Binary LOB. Current drivers return a LOB locator on read; see the warning below. |
+| `SET(...)` | `sqlalchemy_cubrid.SET` | Driver-dependent; `frozenset` on pycubrid with `decode_collections=true` | CUBRID-specific collection; unique unordered members. See [Collection values](#collection-values). |
+| `MULTISET(...)` | `sqlalchemy_cubrid.MULTISET` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; duplicates allowed. See [Collection values](#collection-values). |
+| `SEQUENCE(...)` | `sqlalchemy_cubrid.SEQUENCE` | Driver-dependent; `list` on pycubrid with `decode_collections=true` | CUBRID-specific collection; ordered with duplicates. See [Collection values](#collection-values). |
 | `OBJECT` | `sqlalchemy_cubrid.OBJECT` | Driver-dependent object reference | OID reference type; database-specific. Declared/compiled only; not auto-reflected. |
 | `BOOLEAN` (emulated) | `sqlalchemy.Boolean` -> `SMALLINT` | `bool` | Stored as `1` / `0`; `supports_native_boolean=False`. |
 
@@ -414,6 +527,10 @@ flowchart LR
 
 !!! warning "Character set and national string columns"
     `NCHAR`/`NVARCHAR` use national character semantics. Keep application encoding and database collation aligned to avoid unexpected comparisons/sorting.
+
+!!! warning "Reading BLOB/CLOB returns a driver LOB locator"
+    Verified live on CUBRID 10.2 and 11.4, Core and ORM, sync and async, with pycubrid 1.8.0 (the supported floor), pycubrid main, and CUBRIDdb 11.3 (#485, `test/test_lob_value_contract.py`): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on sync pycubrid, the `file_locator` string on `cubrid+aiopycubrid://`, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. Binding `LargeBinary`/`BLOB` values (including `None`) through `cubrid+aiopycubrid://` works since #500.
+    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442; pycubrid main does not implement it yet, so the strict xfail applies there too and turns into a failing XPASS the moment it does.
 
 !!! warning "LOB and collection payload shape can differ by driver"
     `CUBRIDdb` and `pycubrid` can expose `BLOB`/`CLOB` and collection values differently.

@@ -7,13 +7,18 @@ a database connection.
 
 from __future__ import annotations
 
+import operator
+import re
+
 import pytest
 import sqlalchemy as sa
 from typing import Any, cast
 from sqlalchemy import Column, Integer, MetaData, String, Table, select
 from sqlalchemy.exc import CompileError
 
+from sqlalchemy_cubrid import types as cubrid_types
 from sqlalchemy_cubrid._compat import bind_with_type, is_literal_value
+from sqlalchemy_cubrid.compiler import _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT
 from sqlalchemy_cubrid.dialect import CubridDialect
 
 
@@ -22,6 +27,26 @@ def _compile(stmt, dialect=None):
     if dialect is None:
         dialect = CubridDialect()
     return stmt.compile(dialect=dialect, compile_kwargs={"literal_binds": True}).string
+
+
+def _norm(sql: str) -> str:
+    return " ".join(sql.split())
+
+
+@pytest.mark.parametrize("operation", ["insert", "update", "delete"])
+def test_dml_visitors_accept_framework_positional_arguments(operation):
+    dialect = CubridDialect()
+    compiler = dialect.statement_compiler(dialect, sa.select(sa.literal(1)))
+    if operation == "insert":
+        statement = sa.insert(users).values(id=1)
+        actual = compiler.visit_insert(statement, None, None, literal_binds=True)
+    elif operation == "update":
+        statement = sa.update(users).values(name="updated")
+        actual = compiler.visit_update(statement, None, literal_binds=True)
+    else:
+        statement = sa.delete(users)
+        actual = compiler.visit_delete(statement, None, literal_binds=True)
+    assert _norm(actual) == _norm(_compile(statement, dialect))
 
 
 metadata = MetaData()
@@ -54,12 +79,26 @@ class TestSelectCompilation:
         assert "LIMIT" in sql
         assert "10" in sql
 
+    def test_select_limit_exact_clause(self):
+        stmt = select(users.c.id).limit(10)
+        assert _norm(_compile(stmt)) == "SELECT users.id FROM users LIMIT 10"
+
     def test_select_offset(self):
         stmt = select(users).offset(5)
         sql = _compile(stmt)
         assert "LIMIT" in sql
         assert "5" in sql
-        assert "1073741823" in sql
+        assert str(_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT) in sql
+
+    def test_select_offset_does_not_cap_at_varchar_length(self):
+        # Regression for #414: offset-without-limit must not reuse the CUBRID
+        # VARCHAR-length constant (2^30-1) as the row_count, which silently
+        # caps result sets at ~1.07B rows. It must also stay below 2^63-1 so
+        # CUBRID's internal offset+row_count addition does not overflow.
+        stmt = select(users).offset(5)
+        sql = _compile(stmt)
+        assert "1073741823" not in sql
+        assert _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT == 4611686018427387904
 
     def test_select_limit_offset(self):
         stmt = select(users).limit(10).offset(5)
@@ -68,6 +107,20 @@ class TestSelectCompilation:
         # CUBRID uses LIMIT offset, count
         assert "5" in sql
         assert "10" in sql
+
+    def test_select_limit_offset_exact_clause(self):
+        # CUBRID renders `LIMIT <offset>, <count>` (offset first). Exact match
+        # guards the operand order and the comma-separated two-argument form.
+        stmt = select(users.c.id).limit(10).offset(5)
+        assert _norm(_compile(stmt)) == "SELECT users.id FROM users LIMIT 5, 10"
+
+    def test_select_offset_only_exact_clause(self):
+        # Offset without limit still emits the two-argument form, with the
+        # sentinel row_count as the second operand.
+        stmt = select(users.c.id).offset(7)
+        assert _norm(_compile(stmt)) == (
+            f"SELECT users.id FROM users LIMIT 7, {_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT}"
+        )
 
     def test_select_no_limit(self):
         stmt = select(users)
@@ -132,6 +185,43 @@ class TestInsertCompilation:
         sql = _compile(stmt)
         assert "INSERT INTO" in sql
         assert "users" in sql
+
+    def test_insertmanyvalues_dropped_for_bind_expression_column(self):
+        """#421: a column type with a bind_expression() disables insertmanyvalues.
+
+        SQLAlchemy's insertmanyvalues row-expansion miscounts parameters when a
+        bind is wrapped in a bind_expression (e.g. CAST(? AS ...)), so the CUBRID
+        dialect drops the plan (in visit_insert) and falls back to ordinary
+        executemany. The detection helper distinguishes the two cases.
+        """
+        from sqlalchemy import Integer, String, TypeDecorator, cast, insert, type_coerce
+        from sqlalchemy.schema import MetaData, Table
+
+        from sqlalchemy_cubrid.compiler import CubridCompiler
+
+        class StringAsInt(TypeDecorator):
+            impl = String(50)
+            cache_ok = True
+
+            def bind_expression(self, col):
+                return cast(type_coerce(col, Integer), String(50))
+
+        m = MetaData()
+        with_expr = Table(
+            "t_bindexpr",
+            m,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("x", StringAsInt()),
+        )
+        plain = Table(
+            "t_plain",
+            m,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("x", String(50)),
+        )
+
+        assert CubridCompiler._insert_has_bind_expression(insert(with_expr)) is True
+        assert CubridCompiler._insert_has_bind_expression(insert(plain)) is False
 
 
 class TestWindowFunctionCompilation:
@@ -414,6 +504,50 @@ class TestTypeCompilation:
         result = self._compile_type(VARCHAR())
         assert result == "VARCHAR(4096)"
 
+    def test_string_no_length_uses_default(self):
+        result = self._compile_type(sa.String())
+        assert result == "VARCHAR(4096)"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.String(0), id="String"),
+            pytest.param(sa.Unicode(0), id="Unicode"),
+            pytest.param(sa.VARCHAR(0), id="sa.VARCHAR"),
+            pytest.param(cubrid_types.VARCHAR(length=0), id="cubrid.VARCHAR"),
+        ],
+    )
+    def test_varchar_zero_length_raises(self, type_):
+        """Regression (#440): explicit length=0 must not become VARCHAR(4096)."""
+        with pytest.raises(CompileError, match=r"VARCHAR\(0\)"):
+            self._compile_type(type_)
+
+    @pytest.mark.parametrize(
+        ("type_", "expected"),
+        [
+            pytest.param(sa.String(-1), "VARCHAR(-1)", id="String"),
+            pytest.param(sa.Unicode(-1), "VARCHAR(-1)", id="Unicode"),
+            pytest.param(sa.VARCHAR(-1), "VARCHAR(-1)", id="sa.VARCHAR"),
+            pytest.param(cubrid_types.VARCHAR(length=-1), "VARCHAR(-1)", id="cubrid.VARCHAR"),
+            pytest.param(sa.CHAR(-1), "CHAR(-1)", id="sa.CHAR"),
+            pytest.param(cubrid_types.CHAR(length=-1), "CHAR(-1)", id="cubrid.CHAR"),
+            pytest.param(cubrid_types.NVARCHAR(length=-1), "NCHAR VARYING(-1)", id="NVARCHAR"),
+            pytest.param(cubrid_types.NCHAR(length=-1), "NCHAR(-1)", id="NCHAR"),
+            pytest.param(cubrid_types.BIT(length=-1), "BIT(-1)", id="BIT"),
+            pytest.param(
+                cubrid_types.BIT(length=-1, varying=True),
+                "BIT VARYING(-1)",
+                id="BIT-VARYING",
+            ),
+            pytest.param(sa.BINARY(-1), "BINARY(-1)", id="BINARY"),
+            pytest.param(sa.VARBINARY(-1), "VARBINARY(-1)", id="VARBINARY"),
+        ],
+    )
+    def test_character_and_bit_types_reject_negative_length(self, type_, expected):
+        """Regression (#491): negative lengths fail locally instead of reaching CUBRID."""
+        with pytest.raises(CompileError, match=rf"{re.escape(expected)}"):
+            self._compile_type(type_)
+
     def test_char_with_length(self):
         from sqlalchemy_cubrid.types import CHAR
 
@@ -425,6 +559,18 @@ class TestTypeCompilation:
 
         result = self._compile_type(CHAR())
         assert result == "CHAR"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.CHAR(0), id="sa.CHAR"),
+            pytest.param(cubrid_types.CHAR(length=0), id="cubrid.CHAR"),
+        ],
+    )
+    def test_char_zero_length_raises(self, type_):
+        """Regression (#476): explicit length=0 must not become bare CHAR."""
+        with pytest.raises(CompileError, match=r"CHAR\(0\)"):
+            self._compile_type(type_)
 
     def test_nchar(self):
         from sqlalchemy_cubrid.types import NCHAR
@@ -445,6 +591,51 @@ class TestTypeCompilation:
     def test_text(self):
         result = self._compile_type(sa.Text())
         assert result == "STRING"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [sa.UnicodeText(), sa.UnicodeText(length=100), sa.TEXT(), sa.Text(length=100)],
+        ids=["UnicodeText", "UnicodeText(100)", "TEXT", "Text(100)"],
+    )
+    def test_text_family_compiles_to_string(self, type_):
+        """#534: CUBRID has no TEXT; every Text variant compiles like Text."""
+        assert self._compile_type(type_) == "STRING"
+
+    def test_unicode_text_column_ddl(self):
+        from sqlalchemy.schema import CreateTable
+
+        t = Table("ut", MetaData(), Column("body", sa.UnicodeText()))
+        ddl = CreateTable(t).compile(dialect=CubridDialect()).string
+        assert "body STRING" in ddl
+        assert "TEXT" not in ddl
+
+    @pytest.mark.parametrize(
+        ("type_", "expected"),
+        [
+            (sa.BINARY(), "BIT(8)"),
+            (sa.BINARY(4), "BIT(32)"),
+            (sa.VARBINARY(), "BIT VARYING"),
+            (sa.VARBINARY(16), "BIT VARYING(128)"),
+        ],
+        ids=["BINARY", "BINARY(4)", "VARBINARY", "VARBINARY(16)"],
+    )
+    def test_binary_types_compile_to_bit_strings(self, type_, expected):
+        """#545: CUBRID has no BINARY/VARBINARY; lengths are bytes -> bits."""
+        assert self._compile_type(type_) == expected
+
+    @pytest.mark.parametrize("type_", [sa.BINARY(0), sa.VARBINARY(0)], ids=["BINARY", "VARBINARY"])
+    def test_binary_types_reject_zero_length(self, type_):
+        with pytest.raises(CompileError, match=r"BINARY\(0\)"):
+            self._compile_type(type_)
+
+    @pytest.mark.parametrize(
+        "type_",
+        [sa.UUID(), sa.UUID(as_uuid=False), sa.Uuid(), sa.Uuid(as_uuid=False)],
+        ids=["UUID", "UUID(as_uuid=False)", "Uuid", "Uuid(as_uuid=False)"],
+    )
+    def test_uuid_types_compile_to_char32(self, type_):
+        """#545: CUBRID has no UUID; sa.UUID is stored like sa.Uuid."""
+        assert self._compile_type(type_) == "CHAR(32)"
 
     def test_float(self):
         from sqlalchemy_cubrid.types import FLOAT
@@ -469,6 +660,24 @@ class TestTypeCompilation:
 
         result = self._compile_type(BIT(length=256, varying=True))
         assert result == "BIT VARYING(256)"
+
+    def test_bit_unspecified_length_defaults_to_one(self):
+        from sqlalchemy_cubrid.types import BIT
+
+        result = self._compile_type(BIT())
+        assert result == "BIT(1)"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(cubrid_types.BIT(length=0), id="BIT"),
+            pytest.param(cubrid_types.BIT(length=0, varying=True), id="BIT-VARYING"),
+        ],
+    )
+    def test_bit_zero_length_raises(self, type_):
+        """Regression (#441): explicit length=0 must not become BIT(1)."""
+        with pytest.raises(CompileError, match=r"BIT"):
+            self._compile_type(type_)
 
     def test_datetime(self):
         result = self._compile_type(sa.DateTime())
@@ -602,6 +811,13 @@ class TestTypeCompilation:
         for cls in (TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ):
             assert cls.timezone is True, f"{cls.__name__}.timezone should be True"
 
+    @pytest.mark.parametrize("timezone", [False, True])
+    def test_tz_constructor_keyword_preserves_timezone(self, timezone):
+        from sqlalchemy_cubrid.types import TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ
+
+        for cls in (TIMESTAMPTZ, TIMESTAMPLTZ, DATETIMETZ, DATETIMELTZ):
+            assert cls(timezone=timezone).timezone is True
+
     def test_tz_types_reflection_mapping(self):
         """ischema_names maps TZ type strings to distinct classes."""
         from sqlalchemy_cubrid.dialect import ischema_names
@@ -635,12 +851,40 @@ class TestTypeCompilation:
         result = self._compile_type(NVARCHAR())
         assert result == "NCHAR VARYING(4096)"
 
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.NVARCHAR(0), id="sa.NVARCHAR"),
+            pytest.param(cubrid_types.NVARCHAR(length=0), id="cubrid.NVARCHAR"),
+            pytest.param(
+                cubrid_types.VARCHAR(length=0, national=True), id="cubrid.VARCHAR-national"
+            ),
+        ],
+    )
+    def test_nvarchar_zero_length_raises(self, type_):
+        """Regression (#440): explicit length=0 must not become NCHAR VARYING(4096)."""
+        with pytest.raises(CompileError, match=r"NCHAR VARYING\(0\)"):
+            self._compile_type(type_)
+
     def test_nchar_no_length(self):
         """Test NCHAR() without length."""
         from sqlalchemy_cubrid.types import NCHAR
 
         result = self._compile_type(NCHAR())
         assert result == "NCHAR"
+
+    @pytest.mark.parametrize(
+        "type_",
+        [
+            pytest.param(sa.NCHAR(0), id="sa.NCHAR"),
+            pytest.param(cubrid_types.NCHAR(length=0), id="cubrid.NCHAR"),
+            pytest.param(cubrid_types.CHAR(length=0, national=True), id="cubrid.CHAR-national"),
+        ],
+    )
+    def test_nchar_zero_length_raises(self, type_):
+        """Regression (#476): explicit length=0 must not become bare NCHAR."""
+        with pytest.raises(CompileError, match=r"NCHAR\(0\)"):
+            self._compile_type(type_)
 
     def test_bit_varying_no_length(self):
         """Test BIT VARYING without explicit length."""
@@ -719,6 +963,160 @@ class TestTypeCompilation:
         assert result == 200
 
 
+# Column types CUBRID rejects in CREATE TABLE, and the ones it accepts.
+# Both lists come from live ``CREATE TABLE t (x <type>)`` attempts on CUBRID
+# 10.2 and 11.4 (#545); the two versions agree.
+_CUBRID_REJECTED_TYPE_NAMES = {
+    "ARRAY",
+    "BINARY",
+    "BOOL",
+    "BOOLEAN",
+    "BYTEA",
+    "DATETIME2",
+    "IMAGE",
+    "INTERVAL",
+    "JSONB",
+    "LONG",
+    "LONGBLOB",
+    "LONGTEXT",
+    "MEDIUMBLOB",
+    "MEDIUMTEXT",
+    "MONEY",
+    "NTEXT",
+    "NUMBER",
+    "NVARCHAR",
+    "NVARCHAR2",
+    "RAW",
+    "SERIAL",
+    "TEXT",
+    "TIME WITH TIME ZONE",
+    "TINYBLOB",
+    "TINYTEXT",
+    "UNIQUEIDENTIFIER",
+    "UUID",
+    "VARBINARY",
+    "VARCHAR2",
+    "YEAR",
+}
+_CUBRID_ACCEPTED_TYPE_NAMES = {
+    "BIGINT",
+    "BIT",
+    "BIT VARYING",
+    "BLOB",
+    "CHAR",
+    "CLOB",
+    "DATE",
+    "DATETIME",
+    "DATETIMELTZ",
+    "DATETIMETZ",
+    "DECIMAL",
+    "DOUBLE",
+    "DOUBLE PRECISION",
+    "ENUM",
+    "FLOAT",
+    "INTEGER",
+    "JSON",
+    "NCHAR",
+    "NCHAR VARYING",
+    "NUMERIC",
+    "REAL",
+    "SMALLINT",
+    "STRING",
+    "TIME",
+    "TIMESTAMP",
+    "TIMESTAMPLTZ",
+    "TIMESTAMPTZ",
+    "VARCHAR",
+}
+# Not column types in their own right (abstract bases, wrappers, tuples).
+_NON_COLUMN_TYPE_NAMES = {
+    "NullType",
+    "TupleType",
+    "TypeDecorator",
+    "TypeEngine",
+    "UserDefinedType",
+    "Variant",
+}
+
+
+def _generic_type_instances():
+    """Every public generic SQLAlchemy type, plus common argument variants."""
+    import inspect
+
+    instances = []
+    for name in sorted(dir(sa.types)):
+        cls = getattr(sa.types, name)
+        if (
+            name.startswith("_")
+            or name in _NON_COLUMN_TYPE_NAMES
+            or not inspect.isclass(cls)
+            or not issubclass(cls, sa.types.TypeEngine)
+        ):
+            continue
+        if issubclass(cls, sa.Enum):
+            instances.append(cls("a", "b"))
+        elif issubclass(cls, sa.ARRAY):
+            instances.append(cls(sa.Integer()))
+        else:
+            instances.append(cls())
+    instances += [
+        sa.String(10),
+        sa.Unicode(10),
+        sa.VARCHAR(10),
+        sa.NVARCHAR(10),
+        sa.CHAR(5),
+        sa.NCHAR(5),
+        sa.Text(100),
+        sa.UnicodeText(100),
+        sa.BINARY(4),
+        sa.VARBINARY(4),
+        sa.LargeBinary(100),
+        sa.Numeric(10, 2),
+        sa.DECIMAL(10, 2),
+        sa.Float(10),
+        sa.DateTime(timezone=True),
+        sa.DATETIME(timezone=True),
+        sa.TIMESTAMP(timezone=True),
+        sa.Time(timezone=True),
+        sa.TIME(timezone=True),
+        sa.Uuid(as_uuid=False),
+        sa.Uuid(native_uuid=False),
+        sa.UUID(as_uuid=False),
+        sa.Enum("a", "b", native_enum=False),
+        sa.Boolean(create_constraint=True),
+        sa.Interval(native=True),
+    ]
+    return instances
+
+
+def _type_name(ddl: str) -> str:
+    """``NCHAR VARYING(10)`` -> ``NCHAR VARYING``; ``ENUM('a')`` -> ``ENUM``."""
+    return ddl.split("(", 1)[0].strip().upper()
+
+
+def test_rejected_and_accepted_type_names_are_disjoint():
+    assert not _CUBRID_REJECTED_TYPE_NAMES & _CUBRID_ACCEPTED_TYPE_NAMES
+
+
+@pytest.mark.parametrize("type_", _generic_type_instances(), ids=repr)
+def test_generic_types_never_compile_to_a_type_cubrid_rejects(type_):
+    """#545: sweep every generic SQLAlchemy type through the type compiler.
+
+    A type either compiles to a column type CUBRID accepts, or raises
+    ``CompileError`` (e.g. ``ARRAY``) -- never DDL the server rejects.
+    A new SQLAlchemy type whose DDL is in neither list fails here, so its
+    CUBRID mapping gets checked live before it is added to the allowlist.
+    """
+    try:
+        ddl = CubridDialect().type_compiler_instance.process(type_)
+    except CompileError:
+        assert isinstance(type_, sa.ARRAY)
+        return
+    name = _type_name(ddl)
+    assert name not in _CUBRID_REJECTED_TYPE_NAMES, ddl
+    assert name in _CUBRID_ACCEPTED_TYPE_NAMES, ddl
+
+
 class TestDDLCompilation:
     """Test DDL (CREATE TABLE) compilation."""
 
@@ -752,6 +1150,26 @@ class TestDDLCompilation:
         )
         ddl = self._compile_ddl(t)
         assert "AUTO_INCREMENT" not in ddl
+
+    def test_identity_maps_to_autoincrement(self):
+        """#388: Identity() is CUBRID's AUTO_INCREMENT, not a DEFAULT.
+
+        SQLAlchemy stores an ``Identity()`` as ``column.server_default``; the
+        DDL compiler must still emit AUTO_INCREMENT for the autoincrement column
+        rather than suppressing it as if a literal DEFAULT were present.
+        """
+        from sqlalchemy import Identity
+
+        m = MetaData()
+        t = Table(
+            "test_identity_ai",
+            m,
+            Column("id", Integer, Identity(), primary_key=True, autoincrement=True),
+            Column("name", String(100)),
+        )
+        ddl = self._compile_ddl(t)
+        assert "AUTO_INCREMENT" in ddl
+        assert "DEFAULT" not in ddl
 
     def test_not_null_in_ddl(self):
         """NOT NULL columns should emit NOT NULL."""
@@ -943,6 +1361,13 @@ class TestUpdateCompilation:
         assert "LIMIT" in sql
         assert "10" in sql
 
+    def test_update_with_limit_exact_clause(self):
+        from sqlalchemy import update
+
+        stmt = update(users).values(name="x")
+        stmt.kwargs["cubrid_limit"] = 3
+        assert _norm(_compile(stmt)) == "UPDATE users SET name='x' LIMIT 3"
+
     def test_update_without_limit(self):
         """Test UPDATE without limit - no LIMIT clause."""
         from sqlalchemy import update
@@ -1030,6 +1455,52 @@ class TestOnDuplicateKeyUpdateCompilation:
             f"'name' should appear twice in positiontup, got {compiled.positiontup}"
         )
 
+    def test_on_duplicate_key_update_multirow_inserted_ref_raises(self):
+        """#371: inline multi-row VALUES + stmt.inserted.col must fail closed.
+
+        Not expressible on CUBRID (no VALUES(col) / row-alias), so it must raise
+        rather than silently bind one row's value for every conflicting row.
+        """
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@example.com"},
+                {"id": 2, "name": "b", "email": "b@example.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name=stmt.inserted.name)
+        with pytest.raises(CompileError, match="multi-row VALUES INSERT"):
+            _compile(stmt)
+
+    def test_on_duplicate_key_update_multirow_nested_inserted_ref_raises(self):
+        """#371: the inserted-value ref is unsupported even nested in an expression."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@example.com"},
+                {"id": 2, "name": "b", "email": "b@example.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name=sa.func.coalesce(stmt.inserted.name, "x"))
+        with pytest.raises(CompileError, match="multi-row VALUES INSERT"):
+            _compile(stmt)
+
+    def test_on_duplicate_key_update_multirow_literal_update_compiles(self):
+        """#371: multi-row VALUES + a literal update needs no inserted value and compiles."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(
+            [
+                {"id": 1, "name": "a", "email": "a@example.com"},
+                {"id": 2, "name": "b", "email": "b@example.com"},
+            ]
+        )
+        stmt = stmt.on_duplicate_key_update(name="fixed")
+        sql = _compile(stmt)
+        assert "ON DUPLICATE KEY UPDATE" in sql
+
     def test_on_duplicate_key_update_dict_arg(self):
         """ON DUPLICATE KEY UPDATE with dict argument."""
         from sqlalchemy_cubrid.dml import insert
@@ -1069,6 +1540,46 @@ class TestOnDuplicateKeyUpdateCompilation:
         sql = _compile(stmt)
         assert "ON DUPLICATE KEY UPDATE" in sql
         assert "'prefix_' || name" in sql
+
+    def test_on_duplicate_key_update_basic_nonliteral_binding_order(self):
+        """#613: INSERT binds precede the ODKU update bind, in column order."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="test", email="test@example.com")
+        stmt = stmt.on_duplicate_key_update(email="updated@example.com")
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup[:3] == ["id", "name", "email"]
+        assert len(compiled.positiontup) == 4
+        update_bind = compiled.positiontup[3]
+        assert compiled.params["id"] == 1
+        assert compiled.params["name"] == "test"
+        assert compiled.params["email"] == "test@example.com"
+        assert compiled.params[update_bind] == "updated@example.com"
+
+    def test_on_duplicate_key_update_dict_arg_nonliteral_binding_order(self):
+        """#613: dict-arg ODKU binds in the dict's iteration order."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="test", email="test@example.com")
+        stmt = stmt.on_duplicate_key_update({"name": "updated", "email": "new@example.com"})
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup[:3] == ["id", "name", "email"]
+        update_binds = compiled.positiontup[3:]
+        assert len(update_binds) == 2
+        assert [compiled.params[b] for b in update_binds] == ["updated", "new@example.com"]
+
+    def test_on_duplicate_key_update_ordered_list_nonliteral_binding_order(self):
+        """#613: ordered-list ODKU binds in the given list order."""
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="test", email="test@example.com")
+        stmt = stmt.on_duplicate_key_update([("email", "new@example.com"), ("name", "updated")])
+        compiled = stmt.compile(dialect=CubridDialect())
+        update_binds = compiled.positiontup[3:]
+        assert len(update_binds) == 2
+        # The list gave email before name; the bind order must follow it,
+        # not alphabetical or declared-column order.
+        assert [compiled.params[b] for b in update_binds] == ["new@example.com", "updated"]
 
 
 class TestReplaceCompilation:
@@ -1123,6 +1634,168 @@ class TestReplaceCompilation:
         assert issubclass(Replace, StandardInsert)
 
 
+class TestReplaceKeywordIsStructural:
+    """REPLACE is emitted as the statement verb, never by rewriting SQL text (#591)."""
+
+    target = sa.table("t", sa.column("id", Integer), sa.column("s", String))
+    source = sa.table("src", sa.column("id", Integer), sa.column("s", String))
+
+    def test_issue_repro_prefix_and_literal_in_from_select(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .from_select(
+                ["id", "s"],
+                select(self.source.c.id, sa.literal("INSERT INTO", String)),
+            )
+        )
+        sql = _compile(stmt)
+        assert _norm(sql) == _norm(
+            "REPLACE /* c */ INTO t (id, s) SELECT src.id, 'INSERT INTO' AS anon_1 FROM src"
+        )
+
+    def test_prefix_and_literal_column_value(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .values(id=1, s=sa.literal_column("'INSERT INTO'"))
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == "REPLACE /* c */ INTO t (id, s) VALUES (?, 'INSERT INTO')"
+        assert compiled.positiontup == ["id"]
+        assert compiled.params == {"id": 1}
+
+    def test_prefix_and_bound_value_untouched(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = replace(self.target).prefix_with("/* c */").values(id=1, s="INSERT INTO")
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == "REPLACE /* c */ INTO t (id, s) VALUES (?, ?)"
+        assert compiled.positiontup == ["id", "s"]
+        assert compiled.params == {"id": 1, "s": "INSERT INTO"}
+
+    def test_prefix_comment_containing_insert_into(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = replace(self.target).prefix_with("/* INSERT INTO audit */").values(id=1, s="x")
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == ("REPLACE /* INSERT INTO audit */ INTO t (id, s) VALUES (?, ?)")
+        assert compiled.positiontup == ["id", "s"]
+
+    def test_identifier_spelled_insert_into(self):
+        from sqlalchemy_cubrid import replace
+
+        tbl = sa.table(
+            "insert_into", sa.column("INSERT INTO", Integer), sa.column("insert_into", Integer)
+        )
+        stmt = replace(tbl).prefix_with("/* c */").values({"INSERT INTO": 1, "insert_into": 2})
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == (
+            'REPLACE /* c */ INTO insert_into ("INSERT INTO", insert_into) VALUES (?, ?)'
+        )
+        assert list(compiled.params.values()) == [1, 2]
+
+    def test_multi_values_with_prefix(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .values([{"id": 1, "s": "INSERT INTO"}, {"id": 2, "s": "b"}])
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == ("REPLACE /* c */ INTO t (id, s) VALUES (?, ?), (?, ?)")
+        assert compiled.positiontup == ["id_m0", "s_m0", "id_m1", "s_m1"]
+        assert list(compiled.params.values()) == [1, "INSERT INTO", 2, "b"]
+
+    def test_prefix_for_other_dialect_is_not_rendered(self):
+        from sqlalchemy_cubrid import replace
+
+        stmt = replace(self.target).prefix_with("IGNORE", dialect="mysql").values(id=1)
+        assert _compile(stmt) == "REPLACE INTO t (id) VALUES (1)"
+
+    def test_cte_with_literal_and_prefix(self):
+        from sqlalchemy_cubrid import replace
+
+        cte = select(self.source.c.id, sa.literal("INSERT INTO", String).label("s")).cte("c")
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .from_select(["id", "s"], select(cte.c.id, cte.c.s))
+        )
+        sql = _norm(_compile(stmt))
+        assert sql == _norm(
+            "WITH c AS (SELECT src.id AS id, 'INSERT INTO' AS s FROM src) "
+            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c"
+        )
+
+    def test_cte_from_select_with_bound_values_and_prefix(self):
+        """A REPLACE CTE keeps SELECT binds in their emitted placeholder order."""
+        from sqlalchemy_cubrid import replace
+
+        cte = (
+            select(self.source.c.id, self.source.c.s)
+            .where(self.source.c.id > sa.bindparam("low", 2))
+            .cte("c")
+        )
+        stmt = (
+            replace(self.target)
+            .prefix_with("/* c */")
+            .from_select(
+                ["id", "s"],
+                select(cte.c.id, cte.c.s).where(cte.c.id < sa.bindparam("high", 9)),
+            )
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+
+        assert _norm(compiled.string) == _norm(
+            "WITH c AS (SELECT src.id AS id, src.s AS s FROM src WHERE src.id > ?) "
+            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c WHERE c.id < ?"
+        )
+        assert compiled.string.count("?") == 2
+        assert compiled.positiontup == ["low", "high"]
+        assert [compiled.params[name] for name in compiled.positiontup] == [2, 9]
+
+    def test_cte_without_prefix(self):
+        from sqlalchemy_cubrid import replace
+
+        cte = select(self.source.c.id, self.source.c.s).cte("c")
+        stmt = replace(self.target).from_select(["id", "s"], select(cte.c.id, cte.c.s))
+        sql = _norm(_compile(stmt))
+        assert sql == _norm(
+            "WITH c AS (SELECT src.id AS id, src.s AS s FROM src) "
+            "REPLACE INTO t (id, s) SELECT c.id, c.s FROM c"
+        )
+
+    def test_insert_is_unchanged(self):
+        stmt = sa.insert(self.target).prefix_with("/* c */").values(id=1, s="INSERT INTO")
+        assert _compile(stmt) == "INSERT /* c */ INTO t (id, s) VALUES (1, 'INSERT INTO')"
+
+    def test_executemany_uses_replace(self):
+        from sqlalchemy_cubrid import replace
+
+        compiled = (
+            replace(users)
+            .prefix_with("/* c */")
+            .compile(dialect=CubridDialect(), column_keys=["id", "name"])
+        )
+        assert compiled.string == "REPLACE /* c */ INTO users (id, name) VALUES (?, ?)"
+        assert compiled.positiontup == ["id", "name"]
+
+    def test_unexpected_insert_text_raises(self, monkeypatch):
+        from sqlalchemy.sql import compiler as sa_compiler
+
+        from sqlalchemy_cubrid import replace
+
+        monkeypatch.setattr(sa_compiler.SQLCompiler, "visit_insert", lambda *a, **kw: "BOGUS")
+        with pytest.raises(CompileError, match="Could not locate the INSERT verb"):
+            _compile(replace(self.target).values(id=1))
+
+
 class TestTruncateCompilation:
     """Test TRUNCATE TABLE compilation."""
 
@@ -1143,6 +1816,12 @@ class TestGroupConcatCompilation:
         sql = _compile(stmt)
         assert "GROUP_CONCAT" in sql
         assert "users.name" in sql
+
+    def test_group_concat_basic_exact(self):
+        stmt = select(sa.func.group_concat(users.c.name))
+        assert _norm(_compile(stmt)) == (
+            "SELECT GROUP_CONCAT((users.name)) AS group_concat_1 FROM users"
+        )
 
     def test_group_concat_with_separator(self):
         """GROUP_CONCAT with separator literal."""
@@ -1571,6 +2250,62 @@ class TestMergeCompilation:
         assert "db_col" in sql
         assert "py_attr" not in sql
 
+    def test_merge_when_matched_literal_value_binding(self):
+        """#613: a literal UPDATE SET value binds; a column reference does not."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_matched_then_update({"name": "fixed_name", "email": self.source.c.email})
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["param_1"]
+        assert compiled.params["param_1"] == "fixed_name"
+        assert "source_data.email" in compiled.string
+
+    def test_merge_when_not_matched_literal_value_binding(self):
+        """#613: same rule for WHEN NOT MATCHED THEN INSERT values."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_not_matched_then_insert(
+            {"id": self.source.c.id, "name": "default_name", "email": self.source.c.email}
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["param_1"]
+        assert compiled.params["param_1"] == "default_name"
+
+    def test_merge_both_clauses_binding_order(self):
+        """#613: the matched-update bind precedes the not-matched-insert bind,
+        matching the WHEN MATCHED ... WHEN NOT MATCHED clause order in the SQL."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_matched_then_update({"name": "matched_name"})
+        stmt = stmt.when_not_matched_then_insert(
+            {"id": self.source.c.id, "name": "inserted_name", "email": self.source.c.email}
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert len(compiled.positiontup) == 2
+        matched_bind, insert_bind = compiled.positiontup
+        assert compiled.params[matched_bind] == "matched_name"
+        assert compiled.params[insert_bind] == "inserted_name"
+        assert compiled.string.index("WHEN MATCHED") < compiled.string.index("WHEN NOT MATCHED")
+
+    def test_merge_when_matched_where_binding_order(self):
+        """#613: the UPDATE SET bind precedes the WHERE predicate's bind,
+        matching their order in the rendered SQL."""
+        from sqlalchemy_cubrid.dml import merge
+
+        stmt = merge(users).using(self.source).on(users.c.id == self.source.c.id)
+        stmt = stmt.when_matched_then_update(
+            {"name": "fixed"}, where=self.source.c.name == sa.bindparam("wpred", "alice")
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert len(compiled.positiontup) == 2
+        set_bind, where_bind = compiled.positiontup
+        assert compiled.params[set_bind] == "fixed"
+        assert where_bind == "wpred"
+        assert compiled.params["wpred"] == "alice"
+
 
 class TestCoverageEdgeCases:
     """Tests for compiler.py uncovered edge-case branches."""
@@ -1928,10 +2663,10 @@ class TestDmlCoverage:
 
 
 class TestDialectReflectionExceptionPaths:
-    """Tests for dialect.py exception fallback paths."""
+    """Tests for dialect.py reflection exception paths."""
 
     def test_get_columns_comment_query_exception(self):
-        """dialect.py lines 270-271: Exception in comment query falls back to empty dict."""
+        """A failing comment query raises (#549)."""
         from unittest.mock import MagicMock
 
         dialect = CubridDialect()
@@ -1958,19 +2693,19 @@ class TestDialectReflectionExceptionPaths:
 
         conn.execute = MagicMock(side_effect=side_effect)
 
-        result = dialect.get_columns(conn, "test_table", None)
-        assert len(result) == 1
-        assert result[0]["name"] == "id"
-        assert result[0].get("comment") is None
+        # A failing comment query raises instead of silently dropping every
+        # column comment (#549).
+        with pytest.raises(Exception, match="comment query failed"):
+            dialect.get_columns(conn, "test_table", None)
 
     def test_get_pk_constraint_exception(self):
-        """dialect.py lines 303-304: Exception in constraint query is caught."""
+        """A failing catalog query raises; no silent SHOW COLUMNS fallback (#549)."""
         from unittest.mock import MagicMock
 
         dialect = CubridDialect()
         conn = MagicMock()
 
-        # First call: SHOW COLUMNS returns PRI column
+        # SHOW COLUMNS fallback returns the single PRI column.
         columns_result = MagicMock()
         columns_result.__iter__ = MagicMock(
             return_value=iter(
@@ -1985,16 +2720,16 @@ class TestDialectReflectionExceptionPaths:
         def side_effect(*args, **kwargs):
             call_count[0] += 1
             if call_count[0] == 1:
-                return columns_result
-            else:
-                raise Exception("constraint query failed")
+                # First call is the db_index_key catalog query — make it fail.
+                raise Exception("catalog query failed")
+            return columns_result
 
         conn.execute = MagicMock(side_effect=side_effect)
 
-        result = dialect.get_pk_constraint(conn, "test_table", None)
-        assert result["constrained_columns"] == ["id"]
-        # constraint_name should be None because the second query failed
-        assert result["name"] is None
+        # Falling back would lose the PK name and trailing composite columns.
+        with pytest.raises(Exception, match="catalog query failed"):
+            dialect.get_pk_constraint(conn, "test_table", None)
+        assert call_count[0] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -2035,18 +2770,8 @@ class TestEnumCompilation:
         assert "t_enum4.e" in sql
 
 
-class TestEnumReflectionParse:
-    """Unit tests for the ENUM(...) type-string parser (no DB needed)."""
-
-    def test_parse_simple(self):
-        from sqlalchemy_cubrid.dialect import _parse_enum_elements
-
-        assert _parse_enum_elements("'a', 'b', 'c'") == ["a", "b", "c"]
-
-    def test_parse_escaped_quote(self):
-        from sqlalchemy_cubrid.dialect import _parse_enum_elements
-
-        assert _parse_enum_elements("'it''s', 'b'") == ["it's", "b"]
+class TestEnumTypeDetection:
+    """ENUM type detection stays separate from exact catalog label reading."""
 
     def test_regex_matches_show_columns_form(self):
         from sqlalchemy_cubrid.dialect import _RE_ENUM
@@ -2063,12 +2788,12 @@ class TestEnumReflectionParse:
 
 
 class TestIsDistinctFromCompilation:
-    """a IS DISTINCT FROM b renders as NOT (a <=> b) — CUBRID has no native
-    IS [NOT] DISTINCT FROM but supports the null-safe equal operator <=>."""
+    """CUBRID emulates IS [NOT] DISTINCT FROM with null-safe ``<=>``."""
 
     def test_is_distinct_from(self):
         sql = _compile(select(users.c.name).where(users.c.name.is_distinct_from("Alice")))
-        assert "NOT (users.name" in sql
+        assert "(users.name" in sql
+        assert ") = 0" in sql
         assert "<=>" in sql
         assert "'Alice'" in sql
 
@@ -2076,9 +2801,127 @@ class TestIsDistinctFromCompilation:
         sql = _compile(select(users.c.name).where(users.c.name.is_not_distinct_from("Alice")))
         assert "users.name <=> 'Alice'" in sql
 
+    def test_is_distinct_from_in_projection(self):
+        expr = users.c.name.is_distinct_from(users.c.email).label("is_distinct")
+        sql = _compile(select(expr))
+        assert "(users.name <=> users.email) = 0 AS is_distinct" in sql
+
     def test_null_safe_on_both_sides(self):
         sql = _compile(select(users.c.id).where(users.c.name.is_distinct_from(users.c.email)))
-        assert "NOT (users.name <=> users.email)" in sql
+        assert "(users.name <=> users.email) = 0" in sql
+
+
+# ---------------------------------------------------------------------------
+# Boolean IS / IS NOT predicates (#465)
+# ---------------------------------------------------------------------------
+
+_flags = Table(
+    "flags",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("b", sa.Boolean),
+    Column("x", Integer),
+)
+
+
+class TestBooleanIsCompilation:
+    """CUBRID's ``IS`` only takes ``[NOT] NULL`` / ``[NOT] TRUE/FALSE`` (and
+    since 11.2 ``IS TRUE`` needs a logical operand), so ``IS 1`` / ``IS NOT 0``
+    from SQLAlchemy's non-native Boolean is rendered with null-safe ``<=>``."""
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b.is_(True), "flags.b <=> 1"),
+            (_flags.c.b.is_(False), "flags.b <=> 0"),
+            (_flags.c.b.is_not(True), "(flags.b <=> 1) = 0"),
+            (_flags.c.b.is_not(False), "(flags.b <=> 0) = 0"),
+            (_flags.c.b.is_(sa.true()), "flags.b <=> 1"),
+            (_flags.c.b.is_not(sa.false()), "(flags.b <=> 0) = 0"),
+            (~_flags.c.b.is_(True), "(flags.b <=> 1) = 0"),
+            ((_flags.c.x == 5).is_(True), "(flags.x = 5) <=> 1"),
+            ((_flags.c.x == 5).is_not(False), "((flags.x = 5) <=> 0) = 0"),
+            (_flags.c.b.is_(sa.literal(True)), "flags.b <=> 1"),
+            (
+                sa.and_(_flags.c.x == 5, _flags.c.b.is_(True)),
+                "flags.x = 5 AND flags.b <=> 1",
+            ),
+        ],
+    )
+    def test_is_with_a_value_uses_null_safe_equality(self, expr, expected):
+        where = _compile(select(_flags.c.id).where(expr))
+        assert where.endswith("WHERE " + expected)
+        assert " IS 1" not in where and " IS 0" not in where
+        assert " IS NOT 1" not in where and " IS NOT 0" not in where
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b.is_(True), "flags.b <=> 1 AS v"),
+            (_flags.c.b.is_not(True), "(flags.b <=> 1) = 0 AS v"),
+        ],
+    )
+    def test_is_with_a_value_in_projection(self, expr, expected):
+        # ``NOT (a <=> b)`` and ``x IS NOT TRUE`` are rejected in a SELECT list.
+        assert expected in _compile(select(expr.label("v")))
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b.is_(None), "flags.b IS NULL"),
+            (_flags.c.b.is_not(None), "flags.b IS NOT NULL"),
+            # SQLAlchemy's ``== None`` / ``!= None`` operator path, which builds
+            # IS [NOT] NULL; operator.eq/ne avoid a Python None comparison.
+            (operator.eq(_flags.c.b, None), "flags.b IS NULL"),
+            (operator.ne(_flags.c.b, None), "flags.b IS NOT NULL"),
+            (_flags.c.b.is_(sa.null()), "flags.b IS NULL"),
+        ],
+    )
+    def test_is_null_keeps_its_syntax(self, expr, expected):
+        assert _compile(select(_flags.c.id).where(expr)).endswith("WHERE " + expected)
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (sa.null().is_(_flags.c.b), "NULL <=> flags.b"),
+            (_flags.c.b.is_(sa.literal(None, sa.Boolean)), "flags.b <=> NULL"),
+            (_flags.c.b.is_(_flags.c.x), "flags.b <=> flags.x"),
+            (_flags.c.b.is_not(_flags.c.x), "(flags.b <=> flags.x) = 0"),
+            (_flags.c.b.is_(True) == False, "(flags.b <=> 1) = 0"),  # noqa: E712
+            (
+                sa.case((_flags.c.b.is_(True), 1), else_=0) == 1,
+                "CASE WHEN (flags.b <=> 1) THEN 1 ELSE 0 END = 1",
+            ),
+        ],
+    )
+    def test_is_grouping_and_other_operands(self, expr, expected):
+        # ``<=> NULL`` has the meaning of ``IS NULL``.
+        assert _compile(select(_flags.c.id).where(expr)).endswith("WHERE " + expected)
+
+    def test_is_in_order_by(self):
+        stmt = select(_flags.c.id).order_by(_flags.c.b.is_(True).desc(), _flags.c.b.is_not(False))
+        assert _compile(stmt).endswith("ORDER BY flags.b <=> 1 DESC, (flags.b <=> 0) = 0")
+
+    def test_is_with_a_bound_parameter(self):
+        stmt = select(_flags.c.id).where(_flags.c.b.is_(sa.bindparam("flag", type_=sa.Boolean)))
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert str(compiled).endswith("WHERE flags.b <=> ?")
+
+    @pytest.mark.parametrize(
+        ("expr", "expected"),
+        [
+            (_flags.c.b == True, "flags.b = 1"),  # noqa: E712
+            (_flags.c.b == False, "flags.b = 0"),  # noqa: E712
+            (_flags.c.b, "flags.b = 1"),
+            (sa.not_(_flags.c.b), "flags.b = 0"),
+            (sa.true(), "1 = 1"),
+            (sa.and_(_flags.c.b, sa.true()), "flags.b = 1"),
+            (sa.or_(_flags.c.b, sa.false()), "flags.b = 1"),
+            (_flags.c.b.is_distinct_from(True), "(flags.b <=> 1) = 0"),
+        ],
+    )
+    def test_other_boolean_forms_unchanged(self, expr, expected):
+        assert _compile(select(_flags.c.id).where(expr)).endswith("WHERE " + expected)
 
 
 class TestFKIndexCollisionDDL:
@@ -2153,3 +2996,250 @@ class TestFKIndexCollisionDDL:
         idx = [i for i in child.indexes if i.name == "idx_ba"][0]
         ddl = schema.CreateIndex(idx).compile(dialect=CubridDialect())
         assert "CREATE INDEX" in ddl.string
+
+
+class TestDropIndexDDL533:
+    """#533: CUBRID requires ``DROP INDEX <name> ON <table>``."""
+
+    @staticmethod
+    def _drop(index, **kw):
+        return sa.schema.DropIndex(index, **kw).compile(dialect=CubridDialect()).string.strip()
+
+    def test_drop_index_names_its_table(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        assert self._drop(sa.Index("ix_users_email", t.c.email)) == (
+            "DROP INDEX ix_users_email ON users"
+        )
+
+    def test_drop_index_quotes_name_and_table_and_keeps_schema(self):
+        t = Table("Users", MetaData(), Column("email", String(50)), schema="dba")
+        assert self._drop(sa.Index("IX_Mixed", t.c.email)) == (
+            'DROP INDEX "IX_Mixed" ON dba."Users"'
+        )
+
+    def test_drop_unique_index(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        assert self._drop(sa.Index("ux_email", t.c.email, unique=True)) == (
+            "DROP INDEX ux_email ON users"
+        )
+
+    def test_drop_index_if_exists_is_rejected(self):
+        """CUBRID has no DROP INDEX IF EXISTS (10.2-11.4 answer a syntax error)."""
+        t = Table("users", MetaData(), Column("email", String(50)))
+        with pytest.raises(CompileError, match="does not support DROP INDEX IF EXISTS"):
+            self._drop(sa.Index("ix_users_email", t.c.email), if_exists=True)
+
+    def test_drop_index_without_table_is_rejected(self):
+        with pytest.raises(CompileError, match="requires the index's table"):
+            self._drop(sa.Index("ix_orphan"))
+
+    def test_drop_index_without_name_is_rejected(self):
+        with pytest.raises(CompileError, match="requires that the index have a name"):
+            self._drop(sa.Index(None))
+
+
+class TestCreateIndexIfNotExists540:
+    """#540: CUBRID has no CREATE INDEX IF NOT EXISTS (10.2-11.4 answer a syntax error)."""
+
+    def test_create_index_if_not_exists_is_rejected(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        idx = sa.Index("ix_users_email", t.c.email)
+        with pytest.raises(CompileError, match="does not support CREATE INDEX IF NOT EXISTS"):
+            sa.schema.CreateIndex(idx, if_not_exists=True).compile(dialect=CubridDialect())
+
+    def test_unique_create_index_if_not_exists_is_rejected(self):
+        t = Table("users", MetaData(), Column("email", String(50)))
+        idx = sa.Index("ux_users_email", t.c.email, unique=True)
+        with pytest.raises(CompileError, match="has_index"):
+            sa.schema.CreateIndex(idx, if_not_exists=True).compile(dialect=CubridDialect())
+
+    def test_plain_create_index_is_unchanged(self):
+        t = Table("Users", MetaData(), Column("email", String(50)))
+        idx = sa.Index("IX_Mixed", t.c.email)
+        ddl = sa.schema.CreateIndex(idx).compile(dialect=CubridDialect()).string.strip()
+        assert ddl == 'CREATE INDEX "IX_Mixed" ON "Users" (email)'
+
+
+class TestNumericBindCast386:
+    """#386: scaled numeric binds are cast so CUBRID keeps their scale; a
+    FROM-less SELECT with WHERE gets a synthetic FROM db_root."""
+
+    def test_scaled_numeric_bind_renders_cast(self):
+        from decimal import Decimal
+
+        t = Table("nb1", MetaData(), Column("x", sa.Numeric(8, 4)))
+        stmt = select(sa.type_coerce(t.c.x + Decimal("37.12"), sa.Numeric(8, 4)))
+        sql = stmt.compile(dialect=CubridDialect()).string
+        assert "CAST(? AS NUMERIC(8, 4))" in sql or "CAST(:" in sql
+
+    def test_unconstrained_numeric_bind_not_cast(self):
+        from decimal import Decimal
+
+        t = Table("nb2", MetaData(), Column("y", sa.Numeric()))
+        stmt = select(sa.type_coerce(t.c.y + Decimal("1.5"), sa.Numeric()))
+        sql = stmt.compile(dialect=CubridDialect()).string
+        assert "CAST(" not in sql
+
+    def test_fromless_select_with_where_gets_default_from(self):
+        stmt = select(sa.literal(1)).where(sa.bindparam("a", 1) == sa.bindparam("b", 1))
+        sql = stmt.compile(dialect=CubridDialect()).string
+        assert "FROM db_root" in sql
+
+
+class TestPositionalBindOrderAcrossConstructs:
+    """#613: assert the emitted ``?`` placeholder order and the ordered values
+    (``[compiled.params[name] for name in compiled.positiontup]``) for
+    constructs not already covered by ``TestReplaceKeywordIsStructural`` --
+    CTEs, correlated subqueries, INSERT ... SELECT, multi-row VALUES and
+    LIMIT/OFFSET -- plus a metamorphic invariant: reordering selected columns
+    must not change the bind order of WHERE predicates.
+
+    Deliberately does not assert ``len(params) == len(positiontup)``: a
+    repeated name (ODKU's VALUES() re-use, REPLACE's multi-row ``_mN``
+    suffixes) makes ``params`` the smaller, deduplicated mapping while
+    ``positiontup`` lists every placeholder occurrence.
+    """
+
+    def _ordered_values(self, compiled):
+        return [compiled.params[name] for name in compiled.positiontup]
+
+    def test_cte_binding_order(self):
+        """A bind inside the CTE body precedes a bind in the outer query."""
+        cte = select(users.c.id, users.c.name).where(users.c.name == sa.bindparam("n1", "alice"))
+        cte = cte.cte("c")
+        stmt = select(cte.c.id).where(cte.c.id > sa.bindparam("minid", 10))
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["n1", "minid"]
+        assert self._ordered_values(compiled) == ["alice", 10]
+        assert compiled.string.count("?") == 2
+
+    def test_recursive_cte_binding_order(self):
+        """Anchor bind precedes the recursive term's increment and limit binds."""
+        anchor = select(sa.bindparam("start", 1).label("n"))
+        cte = anchor.cte(name="counter", recursive=True)
+        cte_alias = cte.alias()
+        cte = cte.union_all(
+            select((cte_alias.c.n + sa.bindparam("step", 1)).label("n")).where(
+                cte_alias.c.n < sa.bindparam("stop", 5)
+            )
+        )
+        stmt = select(cte)
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["start", "step", "stop"]
+        assert self._ordered_values(compiled) == [1, 1, 5]
+
+    def test_correlated_subquery_binding_order(self):
+        """A bind inside a scalar subquery precedes a bind in the outer WHERE."""
+        subq = (
+            select(sa.func.max(users.c.id))
+            .where(users.c.name == sa.bindparam("n2", "bob"))
+            .scalar_subquery()
+        )
+        stmt = (
+            select(users.c.id)
+            .where(users.c.id == subq)
+            .where(users.c.email == sa.bindparam("e2", "x@y"))
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["n2", "e2"]
+        assert self._ordered_values(compiled) == ["bob", "x@y"]
+
+    def test_insert_select_binding_order(self):
+        """INSERT ... SELECT binds only the binds inside the SELECT, in order."""
+        src = Table("src_613", metadata, Column("id", Integer), Column("name", String(50)))
+        stmt = sa.insert(users).from_select(
+            ["id", "name"],
+            select(src.c.id, src.c.name).where(src.c.name == sa.bindparam("srcname", "c")),
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.positiontup == ["srcname"]
+        assert self._ordered_values(compiled) == ["c"]
+        assert "VALUES" not in compiled.string
+
+    def test_multirow_insert_binding_order(self):
+        """Plain multi-row INSERT VALUES binds row-major, left to right (#613).
+
+        Mirrors ``TestReplaceKeywordIsStructural.test_multi_values_with_prefix``
+        for ordinary ``INSERT`` (REPLACE already covers this combination).
+        """
+        stmt = sa.insert(users).values([{"id": 1, "name": "a"}, {"id": 2, "name": "b"}])
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert compiled.string == "INSERT INTO users (id, name) VALUES (?, ?), (?, ?)"
+        assert compiled.positiontup == ["id_m0", "name_m0", "id_m1", "name_m1"]
+        assert self._ordered_values(compiled) == [1, "a", 2, "b"]
+
+    def test_limit_offset_binding_order(self):
+        """CUBRID's ``LIMIT <offset>, <count>`` binds offset before count.
+
+        Regression guard: the dialect's ``limit_clause`` processes the offset
+        clause before the limit clause (matching the rendered operand order);
+        swapping that order would silently bind the row count where the
+        offset belongs (and vice versa) without changing the SQL text shape.
+        """
+        stmt = select(users.c.id).where(users.c.name == sa.bindparam("n3", "z")).limit(5).offset(2)
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert _norm(compiled.string).endswith("LIMIT ?, ?")
+        assert compiled.positiontup[0] == "n3"
+        offset_name, count_name = compiled.positiontup[1], compiled.positiontup[2]
+        assert compiled.params[offset_name] == 2
+        assert compiled.params[count_name] == 5
+
+    def test_postcompile_expansion_binding_order(self):
+        """#613: an expanding ``IN`` bind renders one ``?`` per element, in
+        list order, and the following bind still comes after all of them.
+
+        Unexpanded (``render_postcompile=False``, the default -- what a
+        ``CompileState``-cached statement looks like before execution), the
+        bind stays a single ``__[POSTCOMPILE_names]`` placeholder in
+        ``positiontup``, with its whole list as the one value; the real
+        per-element names and values only appear once
+        ``render_postcompile=True`` processes it (what the DBAPI driver
+        actually receives at execution time).
+        """
+        stmt = select(users.c.id).where(
+            users.c.name.in_(sa.bindparam("names", value=["a", "b", "c"], expanding=True))
+        )
+        stmt = stmt.where(users.c.email == sa.bindparam("e", "z@example.com"))
+
+        unexpanded = stmt.compile(dialect=CubridDialect())
+        assert "__[POSTCOMPILE_names]" in unexpanded.string
+        assert unexpanded.positiontup == ["names", "e"]
+        assert unexpanded.params["names"] == ["a", "b", "c"]
+
+        expanded = stmt.compile(
+            dialect=CubridDialect(), compile_kwargs={"render_postcompile": True}
+        )
+        assert _norm(expanded.string) == _norm(
+            "SELECT users.id FROM users WHERE users.name IN (?, ?, ?) AND users.email = ?"
+        )
+        assert expanded.positiontup == ["names_1", "names_2", "names_3", "e"]
+        assert self._ordered_values(expanded) == ["a", "b", "c", "z@example.com"]
+
+    def test_postcompile_expansion_after_a_preceding_bind(self):
+        """#613: a bind before an expanding ``IN`` keeps its position; the
+        expanded elements are inserted in place, not appended at the end."""
+        stmt = select(users.c.id).where(users.c.email == sa.bindparam("e", "z@example.com"))
+        stmt = stmt.where(users.c.name.in_(sa.bindparam("names", value=["a", "b"], expanding=True)))
+
+        expanded = stmt.compile(
+            dialect=CubridDialect(), compile_kwargs={"render_postcompile": True}
+        )
+        assert expanded.positiontup == ["e", "names_1", "names_2"]
+        assert self._ordered_values(expanded) == ["z@example.com", "a", "b"]
+
+    def test_metamorphic_select_column_order_does_not_reorder_where_binds(self):
+        """Reordering the SELECT list leaves WHERE bind order unchanged."""
+        stmt_a = (
+            select(users.c.id, users.c.name)
+            .where(users.c.email == sa.bindparam("e", "x"))
+            .where(users.c.id > sa.bindparam("minid", 1))
+        )
+        stmt_b = (
+            select(users.c.name, users.c.id)
+            .where(users.c.email == sa.bindparam("e", "x"))
+            .where(users.c.id > sa.bindparam("minid", 1))
+        )
+        c_a = stmt_a.compile(dialect=CubridDialect())
+        c_b = stmt_b.compile(dialect=CubridDialect())
+        assert c_a.positiontup == c_b.positiontup == ["e", "minid"]
+        assert self._ordered_values(c_a) == self._ordered_values(c_b) == ["x", 1]

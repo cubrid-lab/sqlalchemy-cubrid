@@ -11,7 +11,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -31,7 +30,7 @@ unterstützt.
 **sqlalchemy-cubrid** schließt diese Lücke:
 
 - Vollständiger SQLAlchemy-2.0–2.1-Dialekt mit **Statement-Caching** und **PEP-561-Typisierung**
-- **619 Offline-Tests** mit **~98,26 % Codeabdeckung** — zum Ausführen ist keine Datenbank erforderlich
+- **Umfangreiche Offline-Testsuite** — zum Ausführen ist keine Datenbank erforderlich; CI erzwingt im `offline-tests`-Job eine Mindestabdeckung von 95 % (`--cov-fail-under=95`)
 - **Nebenläufigkeits-Stresstests** — `QueuePool`-basierte synchrone Threads + `asyncio.gather`-Workloads gegen echtes CUBRID validiert
 - **SQLAlchemy-2.1-fähiger Compat-Shim** — Zugriff auf private APIs in `_compat.py` gekapselt (bis zur vollständigen SA-2.1-Validierung weiterhin auf `<2.3` festgelegt)
 - Gegen **4 CUBRID-Versionen** (10.2, 11.0, 11.2, 11.4) auf **Python 3.10 -- 3.14** getestet
@@ -70,11 +69,15 @@ flowchart TD
 pip install sqlalchemy-cubrid
 ```
 
-Mit dem Pure-Python-Treiber (kein C-Build erforderlich):
+Mit dem Pure-Python-Treiber (synchron und asynchron):
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+Das Extra `[pycubrid]` unterstützt `cubrid+pycubrid://` und `cubrid+aiopycubrid://`
+und enthält SQLAlchemys `asyncio`-Extra (`greenlet`). Wenn kein kompatibles Wheel
+verfügbar ist, benötigt die Installation von `greenlet` möglicherweise Build-Werkzeuge.
 
 Mit Alembic-Unterstützung:
 
@@ -144,7 +147,7 @@ async with AsyncSession(engine) as session:
 - DML-Erweiterungen -- `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`, `FOR UPDATE`, `TRUNCATE`
 - DDL-Unterstützung -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - Schema-Reflexion -- Tabellen, Views, Spalten, PKs, FKs, Indizes, Unique-Constraints, Kommentare
-- Alembic-Migrationen über `CubridImpl` (automatisch erkannter Entry-Point)
+- Alembic-Migrationen über `CubridImpl` (wird beim Laden des Dialekts automatisch registriert)
 - Drei CUBRID-MVCC-Isolationsstufen — `READ COMMITTED` (Standard), `REPEATABLE READ`, `SERIALIZABLE`
 - Async-Unterstützung — `create_async_engine("cubrid+aiopycubrid://...")` über pycubrid.aio
 
@@ -153,9 +156,9 @@ async with AsyncSession(engine) as session:
 - **Kein `RETURNING`** — `INSERT/UPDATE/DELETE ... RETURNING` wird nicht unterstützt; stattdessen `cursor.lastrowid` oder `LAST_INSERT_ID()` verwenden
 - **Keine Sequenzen** — CUBRID verwendet ausschließlich `AUTO_INCREMENT`
 - **Kein Multi-Schema** — ein einzelnes Schema pro Datenbank
-- **DDL committet automatisch** — Migrationen sind nicht transaktional (`transactional_ddl = False`)
+- **Nicht committetes DDL hält Schemasperren** — DDL ist in CUBRID transaktional (`ROLLBACK` macht es rückgängig; vorzeitig committet es nur das Client-Autocommit, das der Dialekt abschaltet), daher ist ein Alembic-Upgrade standardmäßig eine einzige Transaktion (`transactional_ddl = True`) und hält die betroffenen Tabellen bis zum Commit gesperrt; für lange Migrationen oder große Tabellen `transaction_per_migration=True` verwenden
 - **Nur SQLAlchemy 2.0–2.1** — wegen interner API-Abhängigkeiten auf `<2.3` festgelegt ([Details](ARCHITECTURE.md))
-- **Async erfordert pycubrid >= 1.2.0,<2.0** — der Treiber `cubrid+aiopycubrid://` benötigt die von diesem Projekt aktuell unterstützte async-fähige pycubrid-Paketlinie
+- **Async erfordert pycubrid >= 1.8.0,<2.0** — der Treiber `cubrid+aiopycubrid://` benötigt die von diesem Projekt aktuell unterstützte async-fähige pycubrid-Paketlinie
 
 ## Dokumentation
 
@@ -180,9 +183,9 @@ async with AsyncSession(engine) as session:
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
-| Alembic | >=1.7 |
-| pycubrid (sync) | >=1.2.0,<2.0 |
-| pycubrid (async) | >=1.2.0,<2.0 |
+| Alembic | >=1.7.2 |
+| pycubrid (sync) | >=1.8.0,<2.0 |
+| pycubrid (async) | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -193,7 +196,7 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 ```
 
-Für den Pure-Python-Treiber (kein C-Build erforderlich): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
+Für den Pure-Python-Treiber (keine nativen CUBRID-Bibliotheken erforderlich): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`. Die `greenlet`-Abhängigkeit des `[pycubrid]`-Extras benötigt möglicherweise Build-Werkzeuge, wenn kein kompatibles Wheel verfügbar ist.
 
 ### Unterstützt sqlalchemy-cubrid SQLAlchemy 2.0–2.1?
 
@@ -201,7 +204,7 @@ Ja. sqlalchemy-cubrid wurde für SQLAlchemy 2.0–2.1 entwickelt und unterstütz
 
 ### Unterstützt sqlalchemy-cubrid Alembic-Migrationen?
 
-Ja. Installieren Sie mit `pip install "sqlalchemy-cubrid[alembic]"`. Der Dialekt registriert sich automatisch über einen Entry-Point. Beachten Sie, dass CUBRID DDL automatisch committet, daher sind Migrationen nicht transaktional.
+Ja. Installieren Sie mit `pip install "sqlalchemy-cubrid[alembic]"`. Die CUBRID-Migrationsimplementierung registriert sich beim Laden des Dialekts selbst, daher funktioniert die Standard-`env.py` mit synchronen URLs unverändert; für `cubrid+aiopycubrid://` verwenden Sie Alembics async-Vorlage (`alembic init -t async`). DDL ist in CUBRID transaktional, daher wird ein fehlgeschlagenes `alembic upgrade` standardmäßig vollständig zurückgerollt, einschließlich der Versionsänderung; für lange Migrationen oder große Tabellen setzen Sie `transaction_per_migration=True`, um nach jeder Revision zu committen.
 
 ### Welche Python-Versionen werden unterstützt?
 
@@ -220,11 +223,11 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### Was ist der Unterschied zwischen `cubrid://` und `cubrid+pycubrid://`?
 
-`cubrid://` verwendet den C-Erweiterungstreiber (CUBRIDdb), der eine Kompilierung erfordert. `cubrid+pycubrid://` verwendet den Pure-Python-Treiber, der allein mit pip installiert wird — ohne Build-Werkzeuge. `cubrid+aiopycubrid://` verwendet die asynchrone Variante des Pure-Python-Treibers für die Verwendung mit `create_async_engine` und `AsyncSession`.
+`cubrid://` verwendet den C-Erweiterungstreiber (CUBRIDdb), der eine Kompilierung erfordert. `cubrid+pycubrid://` verwendet den Pure-Python-Treiber ohne native CUBRID-Bibliotheken. Das `[pycubrid]`-Extra enthält `greenlet`; ohne kompatibles Wheel werden möglicherweise Build-Werkzeuge benötigt. `cubrid+aiopycubrid://` verwendet die asynchrone Variante des Pure-Python-Treibers für die Verwendung mit `create_async_engine` und `AsyncSession`.
 
 ### Unterstützt sqlalchemy-cubrid Async?
 
-Ja. Verwenden Sie `create_async_engine("cubrid+aiopycubrid://...")` mit dem pycubrid-Async-Treiber. Erfordert `pycubrid>=1.3.2,<2.0`. Beide pycubrid-Dialekte verwenden für `pool_pre_ping` das native `Connection.ping(False)` / `AsyncConnection.ping(False)`, und alle Core- und ORM-Funktionen arbeiten mit `AsyncSession`.
+Ja. Verwenden Sie `create_async_engine("cubrid+aiopycubrid://...")` mit dem pycubrid-Async-Treiber. Erfordert `pycubrid>=1.8.0,<2.0`. Beide pycubrid-Dialekte verwenden für `pool_pre_ping` das native `Connection.ping(False)` / `AsyncConnection.ping(False)`, und alle Core- und ORM-Funktionen arbeiten mit `AsyncSession`.
 
 
 ## Verwandte Projekte

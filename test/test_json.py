@@ -16,6 +16,10 @@ def _compile(stmt, dialect=None):
     return stmt.compile(dialect=dialect, compile_kwargs={"literal_binds": True}).string
 
 
+def _norm(sql: str) -> str:
+    return " ".join(sql.split())
+
+
 metadata = MetaData()
 json_table = Table(
     "json_test",
@@ -119,11 +123,94 @@ class TestJSONPathExpressionCompilation:
         sql = _compile(stmt)
         assert "JSON_EXTRACT" in sql
 
+    def test_raw_json_getitem_is_bare_extract(self):
+        stmt = select(json_table.c.data["obj"])
+        sql = _norm(_compile(stmt))
+        assert 'JSON_EXTRACT(json_test."data", \'$."obj"\') AS anon_1' in sql
+        assert "CASE" not in sql
+
     def test_json_getitem_in_where(self):
         stmt = select(json_table).where(json_table.c.data["status"].as_string() == "active")
         sql = _compile(stmt)
         assert "JSON_EXTRACT" in sql
         assert "JSON_UNQUOTE" in sql
+
+    def test_as_string_full_expression(self):
+        stmt = select(json_table.c.data["name"].as_string())
+        sql = _norm(_compile(stmt))
+        assert (
+            "CASE JSON_EXTRACT(json_test.\"data\", '$.\"name\"') WHEN 'null' THEN NULL "
+            'ELSE JSON_UNQUOTE(JSON_EXTRACT(json_test."data", \'$."name"\')) END'
+        ) in sql
+
+    def test_as_integer_full_expression(self):
+        stmt = select(json_table.c.data["count"].as_integer())
+        sql = _norm(_compile(stmt))
+        assert (
+            "CASE JSON_EXTRACT(json_test.\"data\", '$.\"count\"') WHEN 'null' THEN NULL "
+            'ELSE CAST(JSON_EXTRACT(json_test."data", \'$."count"\') AS INTEGER) END'
+        ) in sql
+
+    def test_as_float_full_expression(self):
+        stmt = select(json_table.c.data["score"].as_float())
+        sql = _norm(_compile(stmt))
+        assert (
+            "CASE JSON_EXTRACT(json_test.\"data\", '$.\"score\"') WHEN 'null' THEN NULL "
+            'ELSE CAST(JSON_EXTRACT(json_test."data", \'$."score"\') AS DOUBLE) END'
+        ) in sql
+
+    def test_as_numeric_full_expression(self):
+        # #535: as_numeric(p, s) must cast to NUMERIC(p,s), not DOUBLE, so the
+        # driver returns a Decimal.
+        stmt = select(json_table.c.data["price"].as_numeric(10, 2))
+        sql = _norm(_compile(stmt))
+        assert (
+            "CASE JSON_EXTRACT(json_test.\"data\", '$.\"price\"') WHEN 'null' THEN NULL "
+            'ELSE CAST(JSON_EXTRACT(json_test."data", \'$."price"\') AS NUMERIC(10,2)) END'
+        ) in sql
+        assert "DOUBLE" not in sql
+
+    def test_json_path_as_numeric(self):
+        stmt = select(json_table.c.data[("a", 1)].as_numeric(38, 10))
+        sql = _norm(_compile(stmt))
+        assert "AS NUMERIC(38,10)) END" in sql
+        assert "DOUBLE" not in sql
+
+    def test_as_numeric_zero_scale(self):
+        stmt = select(json_table.c.data["n"].as_numeric(5, 0))
+        assert "AS NUMERIC(5,0)) END" in _norm(_compile(stmt))
+
+    def test_as_numeric_asdecimal_false_keeps_numeric_cast(self):
+        stmt = select(json_table.c.data["n"].as_numeric(10, 2, asdecimal=False))
+        assert "AS NUMERIC(10,2)) END" in _norm(_compile(stmt))
+
+    @pytest.mark.parametrize(
+        "numeric_type",
+        [sa.Numeric(), sa.Numeric(10), sa.Numeric(scale=2)],
+        ids=["no-precision-no-scale", "precision-only", "scale-only"],
+    )
+    def test_numeric_without_precision_and_scale_falls_back_to_double(self, numeric_type):
+        # A bare CUBRID NUMERIC is NUMERIC(15,0) and would truncate; like
+        # MySQL, only an explicit (precision, scale) pair gets the exact cast.
+        expr = json_table.c.data["n"]._binary_w_type(numeric_type, "as_numeric")
+        sql = _norm(_compile(select(expr)))
+        assert "AS DOUBLE) END" in sql
+        assert "NUMERIC" not in sql
+
+    def test_float_with_precision_stays_double(self):
+        expr = json_table.c.data["n"]._binary_w_type(sa.Float(10), "as_float")
+        sql = _norm(_compile(select(expr)))
+        assert "AS DOUBLE) END" in sql
+        assert "NUMERIC" not in sql
+
+    def test_as_boolean_full_expression(self):
+        stmt = select(json_table.c.data["active"].as_boolean())
+        sql = _norm(_compile(stmt))
+        assert (
+            "CASE JSON_EXTRACT(json_test.\"data\", '$.\"active\"') WHEN 'null' THEN NULL "
+            "WHEN 'true' THEN 1 WHEN 'false' THEN 0 "
+            'ELSE CAST(JSON_EXTRACT(json_test."data", \'$."active"\') AS INTEGER) END'
+        ) in sql
 
     def test_json_getitem_as_integer(self):
         stmt = select(json_table).where(json_table.c.data["count"].as_integer() > 5)

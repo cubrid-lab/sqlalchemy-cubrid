@@ -11,7 +11,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -30,7 +29,7 @@ CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공�
 **sqlalchemy-cubrid**는 이 공백을 메웁니다:
 
 - **statement caching**과 **PEP 561 타입 지원**을 갖춘 완전한 SQLAlchemy 2.0–2.1 방언
-- **오프라인 테스트 619개**, **약 98.26% 코드 커버리지** — 데이터베이스 없이도 실행 가능
+- **방대한 오프라인 테스트 스위트** — 데이터베이스 없이도 실행 가능; CI가 `offline-tests` 작업에서 최소 95% 라인 커버리지를 강제합니다 (`--cov-fail-under=95`)
 - **동시성 스트레스 테스트** — `QueuePool` 기반 동기 스레드 + `asyncio.gather` 워크로드를 실 CUBRID에서 검증
 - **SQLAlchemy 2.1 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.1 검증 전까지는 `<2.3`로 고정
 - **Python 3.10 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
@@ -61,7 +60,7 @@ flowchart TD
 
 - Python 3.10+
 - SQLAlchemy 2.0 – 2.1
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C 확장) **또는** [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python)
+- [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상에서 빌드한 레거시 CUBRIDdb C 확장
 
 ## 설치
 
@@ -69,17 +68,31 @@ flowchart TD
 pip install sqlalchemy-cubrid
 ```
 
-순수 Python 드라이버 사용 시(C 빌드 불필요):
+순수 Python 드라이버 사용 시(동기 및 비동기):
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+`[pycubrid]` extra는 `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`를 모두 지원하며,
+SQLAlchemy의 `asyncio` extra(`greenlet`)를 포함합니다. 호환 wheel이 없으면
+`greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 
 Alembic 지원 포함:
 
 ```bash
 pip install "sqlalchemy-cubrid[alembic]"
 ```
+
+레거시 CUBRIDdb C 확장 드라이버(`cubrid://` URL)를 쓰려면 [cubrid-python](https://github.com/CUBRID/cubrid-python)
+v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko/DRIVER_COMPAT.md#소스에서-cubriddb-빌드)을 참고하세요.
+
+> **`[cubrid]`와 `[cubriddb]` extra는 폐기 예정(deprecated)입니다.** 이 extra는 PyPI의
+> `CUBRID-Python` 패키지를 설치하는데, 최신 릴리스가 9.3.x(2015년)입니다. 이 릴리스는 이 방언과
+> 함께 테스트되지 않았습니다. `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패합니다. 방언은
+> 첫 연결 시 11.3보다 오래된 CUBRIDdb를 발견하면 경고(`SAWarning`)를 냅니다. 새 프로젝트에는
+> 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요. 레거시 C 확장
+> 드라이버를 명시적으로 선택하려면 `cubrid+cubriddb://` URL을 사용하세요.
 
 <img src="https://github.com/cubrid-lab/sqlalchemy-cubrid/raw/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>
 
@@ -145,7 +158,7 @@ async with AsyncSession(engine) as session:
 - DML 확장 -- `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`, `FOR UPDATE`, `TRUNCATE`
 - DDL 지원 -- `COMMENT`, `IF NOT EXISTS` / `IF EXISTS`, `AUTO_INCREMENT`
 - 스키마 리플렉션 -- 테이블, 뷰, 컬럼, PK, FK, 인덱스, 유니크 제약 조건, 코멘트
-- `CubridImpl`을 통한 Alembic 마이그레이션 (자동 탐색 엔트리 포인트)
+- `CubridImpl`을 통한 Alembic 마이그레이션 (방언 로드 시 자동 등록)
 - CUBRID의 세 가지 MVCC 격리 수준 — `READ COMMITTED`(기본값), `REPEATABLE READ`, `SERIALIZABLE`
 - Async 지원 — pycubrid.aio 기반 `create_async_engine("cubrid+aiopycubrid://...")`
 
@@ -154,9 +167,9 @@ async with AsyncSession(engine) as session:
 - **`RETURNING` 미지원** — `INSERT/UPDATE/DELETE ... RETURNING`은 지원되지 않으며, 대신 `cursor.lastrowid` 또는 `LAST_INSERT_ID()`를 사용해야 합니다
 - **시퀀스 없음** — CUBRID는 `AUTO_INCREMENT`만 사용합니다
 - **멀티 스키마 미지원** — 데이터베이스당 단일 스키마 모델입니다
-- **DDL 자동 커밋** — 마이그레이션은 트랜잭션 처리되지 않습니다(`transactional_ddl = False`)
+- **커밋되지 않은 DDL은 스키마 잠금을 유지** — CUBRID의 DDL은 트랜잭션으로 처리되므로(`ROLLBACK`이 되돌리며, 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) 기본적으로 Alembic 업그레이드 전체가 하나의 트랜잭션(`transactional_ddl = True`)이고, 커밋할 때까지 건드린 테이블을 잠급니다. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True`를 사용하세요
 - **SQLAlchemy 2.0–2.1만 지원** — 내부 API 의존성 때문에 `<2.3`로 고정되어 있습니다([자세한 내용](ARCHITECTURE.md))
-- **Async는 pycubrid >= 1.2.0,<2.0 필요** — `cubrid+aiopycubrid://` 드라이버는 현재 이 프로젝트가 지원하는 async 가능 pycubrid 패키지 라인이 필요합니다
+- **Async는 pycubrid >= 1.8.0,<2.0 필요** — `cubrid+aiopycubrid://` 드라이버는 현재 이 프로젝트가 지원하는 async 가능 pycubrid 패키지 라인이 필요합니다
 
 ## 문서
 
@@ -181,9 +194,9 @@ async with AsyncSession(engine) as session:
 | Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
-| Alembic | >=1.7 |
-| pycubrid (sync) | >=1.2.0,<2.0 |
-| pycubrid (async) | >=1.2.0,<2.0 |
+| Alembic | >=1.7.2 |
+| pycubrid (sync) | >=1.8.0,<2.0 |
+| pycubrid (async) | >=1.8.0,<2.0 |
 
 ## FAQ
 
@@ -194,7 +207,7 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 ```
 
-순수 Python 드라이버(C 빌드 불필요)를 쓰려면: `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`
+순수 Python 드라이버(CUBRID 네이티브 라이브러리 불필요)를 쓰려면: `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`. `[pycubrid]` extra의 `greenlet`은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다.
 
 ### sqlalchemy-cubrid는 SQLAlchemy 2.0–2.1을 지원하나요?
 
@@ -202,7 +215,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### sqlalchemy-cubrid는 Alembic 마이그레이션을 지원하나요?
 
-예. `pip install "sqlalchemy-cubrid[alembic]"`로 설치하세요. 방언은 entry point를 통해 자동 등록됩니다. 단, CUBRID는 DDL을 자동 커밋하므로 마이그레이션은 트랜잭션 처리되지 않습니다.
+예. `pip install "sqlalchemy-cubrid[alembic]"`로 설치하세요. CUBRID 마이그레이션 구현은 방언이 로드될 때 스스로 등록되므로 동기 URL에서는 기본 `env.py`를 수정 없이 사용할 수 있습니다. `cubrid+aiopycubrid://`에는 Alembic의 async 템플릿(`alembic init -t async`)을 사용하세요. CUBRID의 DDL은 트랜잭션으로 처리되므로 기본적으로 실패한 `alembic upgrade`는 버전 갱신까지 포함해 통째로 롤백됩니다. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True`로 리비전마다 커밋하세요.
 
 ### 어떤 Python 버전을 지원하나요?
 
@@ -221,11 +234,11 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ### `cubrid://`와 `cubrid+pycubrid://`의 차이는 무엇인가요?
 
-`cubrid://`는 컴파일이 필요한 C 확장 드라이버(CUBRIDdb)를 사용합니다. `cubrid+pycubrid://`는 pip만으로 설치되는 순수 Python 드라이버를 사용하므로 빌드 도구가 필요 없습니다. `cubrid+aiopycubrid://`는 `create_async_engine` 및 `AsyncSession`과 함께 사용하는 순수 Python 드라이버의 비동기 변형입니다.
+`cubrid://`는 컴파일이 필요한 C 확장 드라이버(CUBRIDdb)를 사용합니다. `cubrid+pycubrid://`는 CUBRID 네이티브 라이브러리가 필요 없는 순수 Python 드라이버를 사용합니다. `[pycubrid]` extra는 `greenlet`을 포함하므로 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid+aiopycubrid://`는 `create_async_engine` 및 `AsyncSession`과 함께 사용하는 순수 Python 드라이버의 비동기 변형입니다.
 
 ### sqlalchemy-cubrid는 async를 지원하나요?
 
-예. pycubrid async 드라이버와 함께 `create_async_engine("cubrid+aiopycubrid://...")`를 사용하세요. `pycubrid>=1.3.2,<2.0`이 필요합니다. 두 pycubrid 방언 모두 `pool_pre_ping`에서 네이티브 `Connection.ping(False)` / `AsyncConnection.ping(False)`를 사용하며, Core와 ORM 기능 모두 `AsyncSession`에서 동작합니다.
+예. pycubrid async 드라이버와 함께 `create_async_engine("cubrid+aiopycubrid://...")`를 사용하세요. `pycubrid>=1.8.0,<2.0`이 필요합니다. 두 pycubrid 방언 모두 `pool_pre_ping`에서 네이티브 `Connection.ping(False)` / `AsyncConnection.ping(False)`를 사용하며, Core와 ORM 기능 모두 `AsyncSession`에서 동작합니다.
 
 
 ## 관련 프로젝트
@@ -243,6 +256,18 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 가이드라인은 [CONTRIBUTING.md](../CONTRIBUTING.md), 개발 환경 설정은 [docs/DEVELOPMENT.md](DEVELOPMENT.md)를 참고하세요.
 
+### 첫 기여
+
+CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선택하세요:
+
+- 문서와 실행 가능한 예제: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
+- 순수 Python 드라이버 수정: [pycubrid](https://github.com/cubrid-lab/pycubrid)
+- SQLAlchemy 방언 수정: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+
+대부분의 첫 이슈는 CONTRIBUTING.md의 오프라인 검사만으로 개발하고 테스트할 수 있습니다 — Docker나 CUBRID 서버가 필요 없습니다. 실제 CUBRID 검증은 CI와 메인테이너가 완료할 수 있습니다.
+
+열려 있는 [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) 작업을 둘러보세요.
+
 ## 보안
 
 취약점은 이메일로 제보해 주세요 -- 자세한 내용은 [SECURITY.md](../SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
@@ -250,3 +275,9 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 ## 라이선스
 
 MIT -- [LICENSE](../LICENSE) 참조.
+
+## PR 검증 범위
+
+일반 PR은 Ubuntu/Python 3.12 대표 스모크 검사, 고위험 변경은 최신 CUBRID
+통합 검사를 추가합니다. 전체 매트릭스는 릴리즈와 수동 실행에 유지합니다.
+[CI 실행 정책](ko/CI_POLICY.md)을 참고하세요.
