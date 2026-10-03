@@ -48,9 +48,9 @@
 | `DateTime`           | `DATETIME`        | 날짜와 시간 결합                            |
 | `TIMESTAMP`          | `TIMESTAMP`       | 자동 갱신 동작을 갖는 타임스탬프            |
 
-> **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다. 길이를 명시적으로 0으로 지정하면(`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) CUBRID에서 유효한 길이가 아니므로 기본값으로 바뀌지 않고 `CompileError`가 발생합니다.
+> **VARCHAR 기본 길이**: 길이 없이 `String()`을 사용하면 방언은 기본적으로 `VARCHAR(4096)`을 사용합니다. 길이를 명시적으로 0 이하로 지정하면(`String(0)`, `VARCHAR(0)`, `NVARCHAR(0)`) CUBRID에서 유효한 길이가 아니므로 기본값으로 바뀌지 않고 `CompileError`가 발생합니다.
 
-> **BINARY / VARBINARY**: CUBRID에는 `BINARY`나 `VARBINARY` 타입이 없으므로 방언은 이를 비트 단위 길이를 갖는 비트 문자열로 저장합니다. `BINARY(n)`은 `BIT(n*8)`(`BINARY()`는 `BIT(8)`), `VARBINARY(n)`은 `BIT VARYING(n*8)`, `VARBINARY()`는 `BIT VARYING`(최대 1,073,741,823비트)으로 컴파일됩니다. 값은 두 드라이버 모두에서 `bytes`로 바인딩되고 반환됩니다. `BINARY`는 고정 길이이므로 더 짧은 값은 `\x00` 바이트로 채워져 반환됩니다. 빈 `b""`는 보존되지 않으며, 드라이버에 따라 `None`(pycubrid의 `BINARY`는 0 바이트)으로 조회됩니다. 길이 0(`BINARY(0)`, `VARBINARY(0)`)은 `CompileError`를 발생시킵니다. 이 컬럼은 `BIT(n*8)` / `BIT VARYING(n*8)`로 리플렉트되므로 Alembic autogenerate가 타입 변경을 보고하지 않습니다.
+> **BINARY / VARBINARY**: CUBRID에는 `BINARY`나 `VARBINARY` 타입이 없으므로 방언은 이를 비트 단위 길이를 갖는 비트 문자열로 저장합니다. `BINARY(n)`은 `BIT(n*8)`(`BINARY()`는 `BIT(8)`), `VARBINARY(n)`은 `BIT VARYING(n*8)`, `VARBINARY()`는 `BIT VARYING`(최대 1,073,741,823비트)으로 컴파일됩니다. 값은 두 드라이버 모두에서 `bytes`로 바인딩되고 반환됩니다. `BINARY`는 고정 길이이므로 더 짧은 값은 `\x00` 바이트로 채워져 반환됩니다. 빈 `b""`는 보존되지 않으며, 드라이버에 따라 `None`(pycubrid의 `BINARY`는 0 바이트)으로 조회됩니다. 0 이하의 길이(`BINARY(0)`, `VARBINARY(0)`)은 `CompileError`를 발생시킵니다. 이 컬럼은 `BIT(n*8)` / `BIT VARYING(n*8)`로 리플렉트되므로 Alembic autogenerate가 타입 변경을 보고하지 않습니다.
 
 > **UUID**: CUBRID에는 `UUID` 타입이 없습니다. `sa.Uuid`와 `sa.UUID`는 모두 `CHAR(32)`로 컴파일되며 SQLAlchemy의 비네이티브 UUID 처리를 사용합니다. 값은 32자 16진 문자열로 저장되고, 기본값에서는 `uuid.UUID`로, `as_uuid=False`에서는 하이픈이 포함된 `str`로 조회됩니다. 컬럼은 `CHAR(32)`로 리플렉트됩니다.
 

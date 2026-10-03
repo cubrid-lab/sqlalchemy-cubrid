@@ -8,6 +8,7 @@ a database connection.
 from __future__ import annotations
 
 import operator
+import re
 
 import pytest
 import sqlalchemy as sa
@@ -519,6 +520,32 @@ class TestTypeCompilation:
     def test_varchar_zero_length_raises(self, type_):
         """Regression (#440): explicit length=0 must not become VARCHAR(4096)."""
         with pytest.raises(CompileError, match=r"VARCHAR\(0\)"):
+            self._compile_type(type_)
+
+    @pytest.mark.parametrize(
+        ("type_", "expected"),
+        [
+            pytest.param(sa.String(-1), "VARCHAR(-1)", id="String"),
+            pytest.param(sa.Unicode(-1), "VARCHAR(-1)", id="Unicode"),
+            pytest.param(sa.VARCHAR(-1), "VARCHAR(-1)", id="sa.VARCHAR"),
+            pytest.param(cubrid_types.VARCHAR(length=-1), "VARCHAR(-1)", id="cubrid.VARCHAR"),
+            pytest.param(sa.CHAR(-1), "CHAR(-1)", id="sa.CHAR"),
+            pytest.param(cubrid_types.CHAR(length=-1), "CHAR(-1)", id="cubrid.CHAR"),
+            pytest.param(cubrid_types.NVARCHAR(length=-1), "NCHAR VARYING(-1)", id="NVARCHAR"),
+            pytest.param(cubrid_types.NCHAR(length=-1), "NCHAR(-1)", id="NCHAR"),
+            pytest.param(cubrid_types.BIT(length=-1), "BIT(-1)", id="BIT"),
+            pytest.param(
+                cubrid_types.BIT(length=-1, varying=True),
+                "BIT VARYING(-1)",
+                id="BIT-VARYING",
+            ),
+            pytest.param(sa.BINARY(-1), "BINARY(-1)", id="BINARY"),
+            pytest.param(sa.VARBINARY(-1), "VARBINARY(-1)", id="VARBINARY"),
+        ],
+    )
+    def test_character_and_bit_types_reject_negative_length(self, type_, expected):
+        """Regression (#491): negative lengths fail locally instead of reaching CUBRID."""
+        with pytest.raises(CompileError, match=rf"{re.escape(expected)}"):
             self._compile_type(type_)
 
     def test_char_with_length(self):
