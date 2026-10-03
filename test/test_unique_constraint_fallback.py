@@ -16,6 +16,12 @@ constraint and parsing ``SHOW CREATE TABLE`` cannot find one: the request is
 skipped. The fallback is kept when the catalog lists no index of the table at
 all, which it cannot tell apart from a catalog that does not show them.
 
+On CUBRID 11.2+ the catalog can also resolve the name to another owner's
+class. ``SHOW ...`` resolves an unqualified name in the current user's schema,
+so that class raises ``NoSuchTableError`` either way: from ``SHOW INDEXES``
+when the catalog shows a unique index of it, from the kept fallback when it
+does not.
+
 The stub below answers the catalog queries from per-index flags the way the
 server does, so the tests describe the requests and results, not the SQL text.
 """

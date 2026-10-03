@@ -1020,9 +1020,11 @@ class CubridDialect(default.DefaultDialect):
         the table but no unique one, the table has none and ``SHOW CREATE
         TABLE`` is not read (#610). ``SHOW CREATE TABLE`` DDL output is parsed
         via regex only when the catalog lists no index of the table at all, or
-        (CUBRID 11.2+) when the name resolves to another owner's class, which
-        keeps raising :class:`NoSuchTableError` there. A failing catalog query
-        raises (#549).
+        (CUBRID 11.2+) when the name resolves to another owner's class that
+        shows no unique index, which keeps raising :class:`NoSuchTableError`
+        there. If that class shows a unique index, ``SHOW INDEXES`` raises
+        :class:`NoSuchTableError` before the DDL is read. A failing catalog
+        query raises (#549).
 
         Raises :class:`NoSuchTableError` when *table_name* does not exist; a
         view has no unique constraints.

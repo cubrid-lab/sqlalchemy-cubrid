@@ -214,7 +214,7 @@ class CubridDialect(default.DefaultDialect):
 | `get_pk_constraint()` | `db_index` + `db_index_key` (falls back to `SHOW COLUMNS IN` when no PK row is found) |
 | `get_foreign_keys()` | `SHOW CREATE TABLE` parsing |
 | `get_indexes()` | `SHOW INDEXES IN` + `db_index` flags |
-| `get_unique_constraints()` | `db_index` + `SHOW INDEXES IN` (falls back to `SHOW CREATE TABLE` parsing only when `db_index` lists no index of the table or, on 11.2+, the name resolves to another owner's class) |
+| `get_unique_constraints()` | `db_index` + `SHOW INDEXES IN` (falls back to `SHOW CREATE TABLE` parsing only when `db_index` lists no index of the table or, on 11.2+, the name resolves to another owner's class with no unique index; with one, `SHOW INDEXES IN` raises `NoSuchTableError` first) |
 | `get_table_comment()` | `db_class.comment` |
 | `get_check_constraints()` | Returns `[]` (CUBRID ignores CHECK) |
 | `get_schema_names()` | Returns `[]` (no schema objects) |
