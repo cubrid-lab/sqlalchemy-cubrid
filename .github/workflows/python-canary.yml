@@ -1,0 +1,76 @@
+name: Python 3.15 Preview
+
+# One manually requested compatibility lane; not a supported-version declaration.
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Full commit SHA; dispatch the branch at this exact commit"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: python315-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      REQUESTED_SHA: ${{ inputs.sha }}
+    steps:
+      - name: Validate immutable requested commit
+        run: |
+          [[ "$REQUESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$REQUESTED_SHA" = "$GITHUB_SHA"
+          printf 'Requested commit: %s\n' "$REQUESTED_SHA"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.15"
+          allow-prereleases: true
+      - name: Record interpreter and verify version
+        run: |
+          python -VV
+          python -c "import sys, sysconfig; assert sys.version_info[:2] == (3, 15); assert not sysconfig.get_config_var('Py_GIL_DISABLED')"
+      - name: Install test and packaging dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[pycubrid,alembic]" pytest pytest-asyncio hypothesis build twine
+          python -m pip freeze
+      - name: Run offline regressions
+        run: python -m pytest test/ -m "not integration and not repo" -q
+      - name: Build and validate distributions
+        run: |
+          python -m build
+          python -m twine check dist/*
+      - name: Check fresh wheel and sdist installations outside the source tree
+        run: |
+          for artifact in "$GITHUB_WORKSPACE"/dist/*.whl "$GITHUB_WORKSPACE"/dist/*.tar.gz; do
+            env_dir=$(mktemp -d)
+            python -m venv "$env_dir/venv"
+            "$env_dir/venv/bin/python" -m pip install --upgrade pip
+            "$env_dir/venv/bin/python" -m pip install "$artifact[pycubrid,alembic]"
+            (
+              cd "$env_dir"
+              "$env_dir/venv/bin/python" -c "import pathlib, sys, importlib.metadata as m, sqlalchemy_cubrid, sqlalchemy; from sqlalchemy.ext.asyncio import create_async_engine; assert pathlib.Path(sqlalchemy_cubrid.__file__).is_relative_to(sys.prefix); assert sqlalchemy_cubrid.__version__ == m.version('sqlalchemy-cubrid'); sqlalchemy.create_engine('cubrid+pycubrid://dba@localhost/testdb').dispose(); create_async_engine('cubrid+aiopycubrid://dba@localhost/testdb')"
+            )
+          done
+      - name: Record evidence status
+        if: always()
+        env:
+          PREVIEW_STATUS: ${{ job.status }}
+        run: |
+          {
+            printf '## Python 3.15 preview\n\n'
+            printf 'Commit: %s\n\n' "$REQUESTED_SHA"
+            printf 'Result: %s\n\n' "$PREVIEW_STATUS"
+            printf 'Manual Ubuntu/standard-GIL offline and packaging preview only. No live DB or official 3.15 support claim.\n'
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -35,6 +35,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | 3.12 | ✅ Supported |
 | 3.13 | ✅ Supported |
 | 3.14 | ✅ Supported |
+| 3.15 | 🧪 Preview preparation (not officially supported) |
 | < 3.10 | ❌ Not supported |
 
 **Python 3.10 support retirement:** Python 3.10 reached upstream end of life on
@@ -45,6 +46,14 @@ The current 1.8.x line and the upcoming 1.9.x advance-notice release retain Pyth
 recreate your virtual environment and validate your application before upgrading
 to that release. This notice does not change the current installation requirement
 or add a runtime warning.
+
+**Python 3.15 preparation:** As of 2026-10-03, Python 3.15 is a preview
+([3.15.0rc3](https://www.python.org/downloads/release/python-3150rc3/)); final
+is scheduled for 2026-10-09. A manual-only Ubuntu/standard-GIL preview workflow
+checks offline regressions and fresh wheel/sdist installs at an immutable commit.
+A configured lane is not a passing result. Python 3.15 is not yet officially
+supported. Promote it only after final-release dependency, packaging, offline
+and live CUBRID validation; free-threaded builds are outside this preparation.
 
 ### CUBRID Server
 
