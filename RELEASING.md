@@ -265,3 +265,11 @@ cookbook.
   workflow inside the release run.
 - No tag protection rule that blocks `github-actions[bot]` from creating
   `v*` tags.
+
+## Routine CI selection
+
+The [CI execution policy](docs/CI_POLICY.md) reduces routine execution frequency
+and representative matrix cells. This CI-only maintenance changes no runtime API,
+supported-version declaration or release publisher; it does not require a MINOR
+version by itself. Candidate releases still invoke the full compatibility workflow
+at their immutable SHA before publication.

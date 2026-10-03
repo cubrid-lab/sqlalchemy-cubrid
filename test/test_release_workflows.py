@@ -310,7 +310,7 @@ def test_prepare_release_composes_checked_notes_with_freeze() -> None:
 
 def test_integration_full_is_callable_at_a_sha_and_keeps_its_triggers() -> None:
     on = FULL["on"]
-    assert set(on) == {"schedule", "workflow_dispatch", "workflow_call"}
+    assert set(on) == {"workflow_dispatch", "workflow_call"}
     assert on["workflow_call"]["inputs"]["sha"]["required"] is True
     for name, job in FULL["jobs"].items():
         for checkout in checkouts(job):

@@ -40,7 +40,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 
 - **Status**: Production/Stable [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
 - Supported matrix: SQLAlchemy `>=2.0,<2.3`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.10`–`3.14`
-- Integration CI runs a reduced matrix on every PR — Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest); the full Python 3.10–3.14 × CUBRID 10.2–11.4 matrix runs nightly, on demand, and as the release gate ([integration-full.yml](.github/workflows/integration-full.yml)). Intermediate Python versions (3.11–3.13) are supported and validated via the offline test suite on every PR
+- Ordinary PRs run one Ubuntu/Python 3.12 offline smoke lane; high-risk changes add newest live integration. Main/changed-weekly runs use oldest/newest endpoints. The full supported integration matrix remains manual and release-gated. See [CI execution policy](docs/CI_POLICY.md).
 - SQLAlchemy 2.1 pre-releases are exercised by a non-gating `--pre` canary CI job
 - See [Known Limitations](#known-limitations) for behavior boundaries and unsupported features
 
