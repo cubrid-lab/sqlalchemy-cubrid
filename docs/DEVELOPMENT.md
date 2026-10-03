@@ -215,8 +215,8 @@ HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -m integration -v
 ```
 
 Profiles (`dev`, `ci`, `nightly`) are registered in `test/conftest.py` and
-selected via `HYPOTHESIS_PROFILE`. PR CI uses the fast profile; the nightly
-`integration-full` workflow runs the extended profile against live CUBRID.
+selected via `HYPOTHESIS_PROFILE`. PR CI uses the fast profile; explicit full
+validation and the release gate run the extended profile against live CUBRID.
 
 ### Integration Tests (Requires CUBRID)
 
@@ -662,7 +662,7 @@ pre-commit run --all-files
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | PRs, main, weekly, manual |
 | Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `release.yml` |
-| Prepare Release | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`); opens the `chore: release vX.Y.Z` PR |
+| Prepare Release | `.github/workflows/release-please.yml` | Push to main or manual dispatch; prepares the reviewed release PR |
 | Release | `.github/workflows/release.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
@@ -850,7 +850,7 @@ Korean-required and other-language advisory translation checks are unchanged.
 ### Release Pipeline
 
 Releases are maintainer-only and follow [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md):
-`prepare-release.yml` opens a release PR (version bump + dated CHANGELOG section, checked
+`release-please.yml` opens a release PR (version bump + dated CHANGELOG section, checked
 with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `release.yml`
 runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
 automatically. Nobody pushes tags or publishes by hand.
