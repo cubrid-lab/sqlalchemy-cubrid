@@ -69,3 +69,6 @@ Key facts:
 - [Product Requirements](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/PRD.md): Product requirements document
 - [Contributing Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md): Contribution guidelines
 - [Changelog](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md): Release history
+
+- [CI execution policy](https://cubrid-lab.github.io/sqlalchemy-cubrid/CI_POLICY/): minimum PR checks and representative validation.
+- [Release-please validation](https://cubrid-lab.github.io/sqlalchemy-cubrid/RELEASE_PLEASE_VALIDATION/): pinned migration revisions, executed evidence and reproduction.

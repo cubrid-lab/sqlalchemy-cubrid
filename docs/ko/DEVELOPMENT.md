@@ -203,7 +203,7 @@ export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"
 HYPOTHESIS_PROFILE=nightly pytest test/test_fuzz_select.py -m integration -v
 ```
 
-프로파일(`dev`, `ci`, `nightly`)은 `test/conftest.py`에 등록되며 `HYPOTHESIS_PROFILE`로 선택합니다. PR CI는 빠른 프로파일을 사용하고, nightly `integration-full` 워크플로는 라이브 CUBRID에 대해 확장 프로파일을 실행합니다.
+프로파일(`dev`, `ci`, `nightly`)은 `test/conftest.py`에 등록되며 `HYPOTHESIS_PROFILE`로 선택합니다. PR CI는 빠른 프로파일을 사용하고, 명시적 전체 검증과 릴리스 게이트는 라이브 CUBRID에 대해 확장 프로파일을 실행합니다.
 
 ### 통합 테스트 (CUBRID 필요)
 
@@ -392,7 +392,7 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 참고하세요)입니다. 다른 값을 주면 Docker 명령을 실행하기 전에 상태 2로
 종료합니다. 여러 테스트 파일이 URL이 선택한 드라이버와 관계없이 두 드라이버로
 연결하므로, 어느 드라이버를 쓰든 `.[dev,pycubrid]`를 설치하세요. PR CI는 기본
-드라이버로 CUBRID 11.4에서 `make integration`을 실행하고, 야간 및 릴리스 게이트
+드라이버로 CUBRID 11.4에서 `make integration`을 실행하는 레인은 PR 이후 코드 검증에 유지합니다. 수동 전체 검증 및 릴리스 게이트
 `integration-full.yml` 워크플로는 두 드라이버로 CUBRID 10.2와 11.4에서 실행합니다.
 
 `docker compose up -d` 후에는 새 서버가 선택한 드라이버로 `SELECT 1`에 응답할
@@ -497,29 +497,15 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI 매트릭스
 
-CI 파이프라인은 모든 PR/push에서 다음 매트릭스를 테스트합니다. 통합 테스트
-행은 모든 Python × CUBRID 조합이 아니라 정확히 2개 조합(최신 Python ×
-최신 CUBRID, 최저 × 최저)으로 축소된 매트릭스입니다. 전체 5×4 조합은
-나이틀리, 수동 실행, 그리고 `integration-full.yml`을 통한 릴리스 게이트에서
-실행됩니다:
-
-| | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **오프라인 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **저장소 도구 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | — | — | — | — | ✅ |
-| **CUBRID 11.2** | — | — | — | — | — |
-| **CUBRID 11.0** | — | — | — | — | — |
-| **CUBRID 10.2** | ✅ | — | — | — | — |
-
-`make test`는 `repo` 마커를 제외합니다. 이 마커는 `test/conftest.py`가
-`REPO_TOOLING_MODULES`에 나열된 모듈(`test_make_integration.py`,
-`test_docs_reason.py`, `test_release_detect.py`)에 붙입니다. 이 테스트들은
-Makefile `integration` 레시피와 그 sh/bash 시그널 처리, 저장소 스크립트를
-서브프로세스로 실행하며, 1,677개 오프라인 테스트 실행 103초 중 약 85초를
-차지했습니다(#594). 여전히 필수입니다. `repo-tests` CI 잡이 지원하는 모든
-Python에서 `-m repo`를 실행하고, 이 잡이 성공하지 않으면 `matrix-result`가
-실패합니다. `tox`는 `repo` 환경에서 실행합니다.
+일상 CI는 Ubuntu/Python 3.12 오프라인 단일 레인과 대표 통합 조합을 사용합니다.
+PR은 스모크 검사를, main과 최근 변경이 있는 주간 실행은 전체 오프라인
+검사와 95% 커버리지를 유지합니다. 고위험 PR은 최신 통합 조합을 선택하고,
+main/주간 실행은 최저·최신 조합을 사용합니다. 저장소 도구 검사는 관련 경로에
+따라 Linux 단일 레인에서 실행하며, 선택된 필수 잡은 성공해야 합니다.
+전체 통합 검사는 명시적 수동 실행과 릴리스에서 유지합니다.
+정확한 선택 조건과 검증 요건은 [CI 실행 정책](CI_POLICY.md)을 참고하세요.
+과거 비용 측정은 이전 워크플로의 이력이며, 현재 잡 수나 새로운 절감액을
+의미하지 않습니다.
 
 ---
 
@@ -644,18 +630,18 @@ pre-commit run --all-files
 
 | 워크플로 | 파일 | 트리거 |
 |---|---|---|
-| CI | `.github/workflows/ci.yml` | main 푸시, PR |
-| Integration Full | `.github/workflows/integration-full.yml` | 야간, 수동 실행, `release.yml`에서 호출 |
-| Prepare Release | `.github/workflows/prepare-release.yml` | 수동 실행 (`-f version=X.Y.Z`); `chore: release vX.Y.Z` PR 생성 |
+| CI | `.github/workflows/ci.yml` | PR, main, 주간, 수동 실행 |
+| Integration Full | `.github/workflows/integration-full.yml` | 수동 실행, `release.yml`에서 호출 |
+| Prepare Release | `.github/workflows/release-please.yml` | main 푸시 또는 수동 실행; 검토할 릴리스 PR 생성 |
 | Release | `.github/workflows/release.yml` | main 푸시 (병합된 릴리스 PR만 릴리스), 복구용 수동 실행 |
 
 ### CI 파이프라인 단계
 
 1. **Lint** — Ruff check + 포맷 검증
-2. **오프라인 테스트** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × 오프라인 테스트 스위트
-3. **통합 테스트** — 축소된 매트릭스, 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
-4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 야간 및 릴리스 게이트에서 `integration-full.yml`로 실행)
-5. **커버리지** — ≥ 95% 임계값 강제
+2. **오프라인 테스트** — Ubuntu/Python 3.12 단일 레인; PR 스모크, main/주간 전체 오프라인 커버리지
+3. **통합 테스트** — 고위험 PR은 최신 조합; main/주간은 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
+4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 수동 전체 검증 및 릴리스 게이트에서 `integration-full.yml`로 실행)
+5. **커버리지** — main/주간 전체 오프라인 레인에서 ≥ 95% 임계값 강제; PR 스모크는 커버리지 검증을 주장하지 않음
 
 ### 드라이버 차분 레인
 
@@ -818,7 +804,7 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 ### 릴리스 파이프라인
 
 릴리스는 유지보수자 전용이며 [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md)를 따릅니다:
-`prepare-release.yml`이 릴리스 PR(버전 갱신 + 날짜가 있는 CHANGELOG 섹션, `make release-check VERSION=X.Y.Z`로 확인)을
+`release-please.yml`이 릴리스 PR(버전 갱신 + 날짜가 있는 CHANGELOG 섹션, `make release-check VERSION=X.Y.Z`로 확인)을
 엽니다. 검토 후 squash 병합하면 `release.yml`이 전체 매트릭스, 한 번의 빌드, 태그, PyPI 게시, cookbook 검증을
 자동으로 수행합니다. 태그 푸시나 게시를 수동으로 하지 않습니다.
 

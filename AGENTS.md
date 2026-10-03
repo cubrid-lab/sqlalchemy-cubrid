@@ -255,16 +255,18 @@ The dialect translates automatically in `create_connect_args()`.
 
 | File | Trigger | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | Push to main, PRs | Lint + offline tests (Py 3.10–3.14) + regular integration matrix |
-| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), manual dispatch, `workflow_call` from `release.yml` | Full Python × CUBRID compatibility matrix |
-| `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`) | Open the `chore: release vX.Y.Z` PR (dated CHANGELOG section + version bump) |
+| `.github/workflows/ci.yml` | PR, main, weekly, manual | Minimum PR smoke and representative integration; see docs/CI_POLICY.md |
+| `.github/workflows/integration-full.yml` | Manual dispatch, release workflow_call | Full supported compatibility matrix |
+| `.github/workflows/release-please.yml` | Push to main, manual dispatch | Prepare the release PR; compose generated and curated notes; never publish |
 | `.github/workflows/release.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
 
 ### CI Matrix
 
-- **Offline (every PR/push)**: Python 3.10, 3.11, 3.12, 3.13, 3.14
-- **Integration (every PR/push)**: reduced matrix, 2 combinations — Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest)
-- **Integration full (nightly + dispatch + every release)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
+- PR runtime smoke: Ubuntu/Python 3.12 only, selected for code changes.
+- High-risk PR integration: Python 3.14/CUBRID 11.4; targeted extra lanes.
+- main and changed-weekly: one full offline coverage lane, oldest/newest live endpoints.
+- Full integration: manual and every release; no automatic nightly full matrix.
+- Details, change classification and gate requirements: [CI policy](docs/CI_POLICY.md).
 
 ## Documentation Map
 
@@ -285,6 +287,38 @@ The dialect translates automatically in `create_connect_args()`.
 | `SECURITY.md` | Security vulnerability reporting |
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
+
+## Issue specification and ownership
+
+An issue body is the current work specification, not a session transcript.
+Before implementation, maintainers/agents must ensure it states the problem
+and impact, evidence with a revision/environment, reproducible steps or the
+investigation question, expected behavior, scope/non-goals, relevant files,
+verifiable completion criteria, validation method and actual dependencies.
+Say "not verified" when evidence is missing; never invent a reproduction,
+server result, release availability or test command. Small docs tasks need
+only the applicable fields. Research issues close on a recorded decision;
+implementation follows the agreed contract.
+
+- Keep priority/size in canonical labels and execution order in the backlog
+  tracker. Do not prepend repeated triage banners to individual issue bodies.
+- Put dated progress, pause/resume instructions and review outcomes in issue
+  comments. Keep historical reproductions and source links in the body with
+  their original revision/date and clear evidence limits.
+- Reconcile completed work and closed dependencies when scope changes, a
+  related PR merges, work is handed over or the issue is closed. Closed work
+  is reference evidence, not a blocker. A merged upstream PR is not proof
+  that a compatible release is available.
+- Set the actual implementer in GitHub Assignees before implementation.
+  Comments alone do not replace assignment. Preserve existing contributor
+  claims and open PRs; agree a handoff before changing ownership. If assignment
+  permission is missing, request maintainer assignment before starting.
+- On handoff, update Assignees; unassign when returning unfinished work.
+  Preserve a contributor's evidence and scope when editing their issue.
+- Before saving an issue edit, check for contradictory current statuses,
+  stale dependency/checklist entries, duplicate criteria and unproven claims.
+  Re-read the issue after saving. Never mark a tracker complete just because
+  its children merged; confirm its integration acceptance separately.
 
 ## Issue Labeling (cubrid-lab org standard)
 
@@ -416,11 +450,15 @@ Contributors provide the change and validation evidence through the normal PR pa
 
 Version is single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__ = "x.y.z"`
 (`pyproject.toml` reads it dynamically). Merging a reviewed release PR is the only
-normal way to release: `prepare-release.yml` opens it (dated CHANGELOG section +
+normal way to release: `release-please.yml` opens it (dated CHANGELOG section +
 version bump, checked by `make release-check VERSION=x.y.z`), and after the
 squash-merge `release.yml` detects the version change and runs consistency → full
 matrix → build → tag/Release/PyPI → cookbook verification (the cookbook smoke test
 called as a pinned reusable workflow, no token) → summary on its own.
+Freeze release PRs with `autorelease: review` before editing candidate notes; wait
+for preparation to finish and start required PR CI on the final head. Curated
+main Unreleased notes are preserved during regeneration; branch-only edits
+require the freeze.
 Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
 tags or publish by hand; the only manual entry point is the narrow recovery
 dispatch of `release.yml`. Procedure, failure matrix and recovery:
