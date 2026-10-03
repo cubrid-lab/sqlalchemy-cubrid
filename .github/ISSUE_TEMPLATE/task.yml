@@ -9,6 +9,8 @@ body:
         Use this template for maintenance tasks, refactoring, or other chores.
         Keep the `chore:` title prefix. You do not need to apply labels;
         maintainers assign priority and size after triage.
+        Keep this body as the current specification; put dated progress in comments.
+        Confirm availability and Assignee ownership before implementation.
 
   - type: textarea
     id: problem
@@ -44,8 +46,8 @@ body:
   - type: textarea
     id: expected-outcome
     attributes:
-      label: Expected Outcome
-      description: What should be the result when this is complete?
+      label: Expected Outcome and Completion Criteria
+      description: State verifiable outcomes that decide completion; for research, name the decision or report to deliver.
     validations:
       required: true
 
@@ -54,5 +56,37 @@ body:
     attributes:
       label: References
       description: Any related files, documentation, or resources
+    validations:
+      required: false
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope and non-goals
+      description: What is included in this issue? What is explicitly excluded?
+    validations:
+      required: false
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and starting point
+      description: Link the baseline commit, relevant files/tests and observed output. Separate source inspection from executed tests; say what is not verified.
+    validations:
+      required: false
+
+  - type: textarea
+    id: verification
+    attributes:
+      label: Validation method
+      description: State offline/live needs, environment and the command or manual check if known. Reporters may write unknown; maintainers refine this before implementation.
+    validations:
+      required: false
+
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: Dependencies and related work
+      description: Link the specific unfinished prerequisite and existing PR/claim. Completed work is a reference, not a blocker.
     validations:
       required: false

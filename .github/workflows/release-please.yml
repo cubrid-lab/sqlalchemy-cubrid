@@ -1,0 +1,94 @@
+name: Prepare release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Freeze reviewed release PRs
+        id: freeze
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then
+            echo '::error::Stale generator run; wait for current main'; exit 1
+          fi
+          count=$(gh pr list --state open --base main --limit 100 --label 'autorelease: review' --json number --jq 'length')
+          if [ "$count" != 0 ]; then
+            echo 'frozen=true' >> "$GITHUB_OUTPUT"
+            echo 'Release preparation frozen: remove autorelease: review only when regeneration is safe.'
+          else
+            echo 'frozen=false' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Reconcile completed external releases
+        if: steps.freeze.outputs.frozen == 'false'
+        run: python scripts/reconcile_release_labels.py
+      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        id: release
+        if: steps.freeze.outputs.frozen == 'false'
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          skip-github-release: true
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        if: steps.release.outputs.pr != ''
+        with:
+          python-version: '3.12'
+      - name: Compose and validate reviewed release notes
+        if: steps.release.outputs.pr != ''
+        env:
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          branch=$(python -c 'import json,os; print(json.loads(os.environ["RELEASE_PR"])["headBranchName"])')
+          case "$branch" in release-please--branches--main*) ;; *) echo '::error::Unexpected release branch'; exit 1 ;; esac
+          git fetch origin main
+          if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then
+            echo '::error::Main changed during generation; wait for the queued run'; exit 1
+          fi
+          git show "$GITHUB_SHA:CHANGELOG.md" > /tmp/base-changelog.md
+          cp scripts/compose_release_changelog.py /tmp/compose-release.py
+          git fetch origin "refs/heads/$branch"
+          git checkout -B "$branch" FETCH_HEAD
+          version=$(python -c 'import json; print(json.load(open(".release-please-manifest.json"))["."])')
+          python /tmp/compose-release.py --base-changelog /tmp/base-changelog.md --generated-changelog RELEASE_CHANGELOG.md --version "$version"
+          python -m pip install build twine packaging
+          make release-check VERSION="$version"
+          rm -rf dist build ./*.egg-info
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add CHANGELOG.md
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: curate release notes for v$version"
+            git fetch origin main
+            if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then
+              echo '::error::Main changed before push; refusing stale notes'; exit 1
+            fi
+            count=$(gh pr list --state open --base main --limit 100 --label 'autorelease: review' --json number --jq 'length')
+            if [ "$count" != 0 ]; then echo '::error::Review freeze applied; refusing push'; exit 1; fi
+            auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$branch"
+          fi
