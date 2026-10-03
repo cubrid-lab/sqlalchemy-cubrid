@@ -290,6 +290,22 @@ pytest는 종료 코드 1로 끝납니다. 의도적으로 건너뛰려면 `CUBR
 실행은 서로 간섭합니다. 전용 데이터베이스에서 한 번에 하나씩 실행하세요.
 `make integration`은 이를 위해 실행 전용 서버를 시작합니다.
 
+`TestIsDisconnect`의 KILL QUERY 사례(#634)도 직렬 실행을 유지합니다. KILL은
+서버 전체에 작용하며 사용자 조건 없이 숫자 트랜잭션 인덱스만 받으므로
+원자적인 사용자 확인과 종료는 할 수 없습니다. 테스트는 새로운
+`kq634_<16자리 16진수>` 데이터베이스 계정을 하나 만들고, 피해 연결을 먼저
+열어 준비한 뒤 별도 종료 프로세스를 시작합니다(CUBRIDdb가 쿼리 중 GIL을
+점유하므로 필요). 종료 프로세스가 끝나거나 중지될 때까지 피해 연결을
+유지합니다. 종료 프로세스는 `SHOW TRANSACTION TABLES`에서 정확히 그
+`Client_db_user`이고 `Query_start_time`이 NULL이 아닌 활성 쿼리만 고릅니다.
+열이 없거나 해당 활성 쿼리가 여러 개면 KILL을 보내지 않고 실패합니다.
+새로 나타난 DBA나 다른 사용자의 쿼리를 시간으로 추측하지 않습니다. 정리 시
+피해 엔진을 폐기하고 확인 절차를 거쳐 이 실행이 만든 계정만 삭제합니다.
+생성된 계정에는 비밀번호가 없으므로 피해 연결 URL은 DBA 비밀번호를 명시적으로
+지웁니다. `CUBRID_TEST_URL`에 비어 있지 않은 DBA 비밀번호가 있어도 동일합니다.
+버려도 되는 DBA 테스트 데이터베이스를 사용하세요. 다른 세션이 그 전용
+계정을 공유하면 테스트는 안전하게 실패합니다.
+
 `test/test_server_restart.py`(#565)는
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"`로
 `cub_server`를 중지·시작하고, 두 드라이버 모두에서 `pool_pre_ping` 사용 여부와
@@ -489,16 +505,20 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI 매트릭스
 
-CI 파이프라인은 다음 매트릭스를 테스트합니다:
+CI 파이프라인은 모든 PR/push에서 다음 매트릭스를 테스트합니다. 통합 테스트
+행은 모든 Python × CUBRID 조합이 아니라 정확히 2개 조합(최신 Python ×
+최신 CUBRID, 최저 × 최저)으로 축소된 매트릭스입니다. 전체 5×4 조합은
+나이틀리, 수동 실행, 그리고 `integration-full.yml`을 통한 릴리스 게이트에서
+실행됩니다:
 
 | | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
 |---|:---:|:---:|:---:|:---:|:---:|
 | **오프라인 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
 | **저장소 도구 테스트** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.2** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.0** | ✅ | — | — | — | ✅ |
-| **CUBRID 10.2** | ✅ | — | — | — | ✅ |
+| **CUBRID 11.4** | — | — | — | — | ✅ |
+| **CUBRID 11.2** | — | — | — | — | — |
+| **CUBRID 11.0** | — | — | — | — | — |
+| **CUBRID 10.2** | ✅ | — | — | — | — |
 
 `make test`는 `repo` 마커를 제외합니다. 이 마커는 `test/conftest.py`가
 `REPO_TOOLING_MODULES`에 나열된 모듈(`test_make_integration.py`,
@@ -516,9 +536,7 @@ Python에서 `-m repo`를 실행하고, 이 잡이 성공하지 않으면 `matri
 ### 요구사항
 
 - **최소 임계값**: 라인 커버리지 95%
-- **현재 CI 오프라인 수집**: 603개 테스트 (`test_integration.py`, `test_suite.py`, `test_aio_integration.py` 제외한 `pytest --collect-only` — `.github/workflows/ci.yml` 및 `make test`와 일치)
-- **현재 라인 커버리지**: CI/make test 구성에서 오프라인 ~98.26%
-- CI는 `--cov-fail-under=95`로 임계값을 강제
+- CI는 `offline-tests` 작업(`.github/workflows/ci.yml`)에서 `--cov-fail-under=95`로 임계값을 강제합니다. 현재 테스트 개수와 커버리지는 여기 고정된 스냅샷 대신 `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing`을 로컬에서 실행해 확인하세요 — 둘 다 PR마다 변합니다
 
 ### 커버리지 실행
 
@@ -538,14 +556,13 @@ make test
 
 ### 알려진 도달 불가능 라인
 
-`compiler.py`의 세 라인과 `dml.py`의 한 라인은 설계상 도달 불가능으로 검증되어 있습니다 (SA 공개 API로는 발동할 수 없는 방어적 폴백):
-
-| 파일 | 라인 | 설명 |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause`가 `""` 반환 |
-| `compiler.py` | 84 | `limit_clause`가 `""` 반환 |
-| `compiler.py` | 298--300 | DDL 컴파일의 방어적 분기 |
-| `dml.py` | 310 | 타입 정규화의 `else` 분기 |
+`compiler.py`와 `dml.py`의 일부 라인(`for_update_clause`/`limit_clause`의 빈
+반환, DDL 컴파일의 기본 분기, 타입 정규화의 `else` 분기 등 방어적 폴백)은
+SQLAlchemy 공개 API로는 발동할 수 없어 오프라인 스위트에서 절대 실행되지
+않습니다. 정확한 라인 번호는 모듈이 바뀔 때마다 변하므로, 여기 고정된
+목록 대신 `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid
+--cov-report=term-missing`(또는 `make test`)을 실행해 `Missing` 열에서
+현재 목록을 확인하세요.
 
 ---
 
@@ -644,7 +661,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + 포맷 검증
 2. **오프라인 테스트** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × 오프라인 테스트 스위트
-3. **통합 테스트** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
+3. **통합 테스트** — 축소된 매트릭스, 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
 4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 야간 및 릴리스 게이트에서 `integration-full.yml`로 실행)
 5. **커버리지** — ≥ 95% 임계값 강제
 
@@ -655,10 +672,13 @@ CUBRIDdb C 확장에서 실행하고 결과가 일치하는지 확인합니다. 
 릴리스된 드라이버에서 이미 동작하는 DB-API 계약 영역을 다룹니다. 정수·UTF-8/CJK·NULL
 값을 사용하는 Core `executemany`, 정수·UTF-8/CJK 값을 사용하는 텍스트 `executemany`, 스칼라 바인드, 텍스트 SQL 결과 컬럼 이름,
 커밋/롤백 가시성이 해당합니다. 또한 제약 조건 위반 예외 클래스(#480), 롤백 이후 읽은
-결과(#481), 스칼라 `cursor.description`의 이름·타입 코드·`null_ok`(#482)도 비교합니다.
+결과(#481), 스칼라 `cursor.description`의 이름·타입 코드·`null_ok`(#482), 그리고
+`SET`/`MULTISET`/`SEQUENCE` 왕복(#484, 릴리스된 pycubrid는 컬렉션을 매개변수로 바인딩하는
+것을 거부하므로 컬렉션 리터럴을 SQL에 직접 작성한 뒤 각 드라이버가 돌려준 값을 `str`
+원소로 정규화해 비교)도 비교합니다.
 이 검사들은 pycubrid 1.8.0에 포함된 수정 동작(NOT NULL/외래 키 예외 클래스, 롤백 이후 결과,
-`null_ok`)을 요구하며 조건 없이 실행됩니다. 업스트림에 막힌
-영역은 별도로 추적하며(#483–#484), LOB 값은 #485에서 다룹니다.
+`null_ok`)을 요구하며 조건 없이 실행됩니다. 이제 #479의 모든 계약 영역이 LOB(별도로
+#485에서 다룸)을 제외하고 이 모듈에 차분 케이스를 갖습니다.
 
 `ci.yml`과 `integration-full.yml`의 통합 잡은 두 드라이버를 모두 설치하고
 `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`로 이 모듈을 실행합니다. 이 변수가 설정되면
@@ -674,6 +694,30 @@ CUBRIDdb(패키지 버전과 소스 태그), CUBRID 서버 버전을 잡 로그�
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
 ```
+
+### 전부 건너뛴 레인 가드
+
+실행하려던 테스트를 전부 건너뛴 레인도 일반 pytest에서는 `0`으로 종료되어,
+잘못 구성된 레인(오래된 `skipif`, 더 이상 연결되지 않는 드라이버, 더 이상 맞지 않는
+파일 목록)이 녹색 체크 뒤에 숨어버립니다. 필수 드라이버 차분, 트랜잭션 DDL(#503),
+서버 재시작(#565) 레인은 이미 `test/conftest.py`의 자체 `CUBRID_REQUIRE_*` 검사로
+스스로를 보호합니다. `ci.yml`의 `integration-tests`, `make-integration` 잡과
+`integration-full.yml`의 `integration-full`, `make-integration` 잡에 있는 일반
+`pytest`/`make integration` 단계에서는 `scripts/check_not_all_skipped.py`가 직전
+실행의 `tee` 출력을 읽어, 최소 하나의 요약 줄이 실제 실행
+(`passed`/`failed`/`error`/`xpassed`/`xfailed`)을 보여주지 않으면 실패시킵니다.
+`skipped`/`deselected`만 있거나 수집된 테스트가 0개면 해당 단계가 실패합니다:
+
+```bash
+set -o pipefail
+python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
+```
+
+특정 셀이 의도적으로 전부 건너뛰도록 되어 있다면 `--allow-all-skipped "<이유>"`를
+전달해 실패 대신 이유를 출력하고 0으로 종료하게 합니다. `matrix-result`와
+`full-matrix-result`는 변경이 필요 없습니다: 이 검사는 이미 그 잡들이 의존하는 잡
+내부에서 실행되므로, 이 가드에 걸린 단계는 이미 해당 잡을 실패시킵니다.
 
 ### SQLAlchemy 컴플라이언스 레인
 

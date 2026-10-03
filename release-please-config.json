@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "78bcbc7dbd70d8f2c756b25d3c271977ace42aa5",
+  "packages": {
+    ".": {
+      "release-type": "python",
+      "package-name": "sqlalchemy-cubrid",
+      "include-component-in-tag": false,
+      "include-v-in-tag": true,
+      "skip-github-release": true,
+      "changelog-path": "RELEASE_CHANGELOG.md"
+    }
+  },
+  "always-update": true
+}

@@ -151,6 +151,10 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
+| TIMESTAMPTZ | `TIMESTAMPTZ` (`timezone=True`) | `datetime.datetime` | ✅ `TIMESTAMP`로 합쳐지지 않는 별도 리플렉트 타입 |
+| TIMESTAMPLTZ | `TIMESTAMPLTZ` (`timezone=True`) | `datetime.datetime` | ✅ `TIMESTAMP`로 합쳐지지 않는 별도 리플렉트 타입 |
+| DATETIMETZ | `DATETIMETZ` (`timezone=True`) | `datetime.datetime` | ✅ `DATETIME`으로 합쳐지지 않는 별도 리플렉트 타입 |
+| DATETIMELTZ | `DATETIMELTZ` (`timezone=True`) | `datetime.datetime` | ✅ `DATETIME`으로 합쳐지지 않는 별도 리플렉트 타입 |
 | BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ 길이와 `VARYING` 유지 |
 | BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ `BIT(n*8)`로 리플렉트 |
 | BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ `BIT VARYING(n*8)`로 리플렉트 |
@@ -168,12 +172,10 @@ CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)
 
 ## CI 매트릭스
 
-| 차원 | PR / push | 나이틀리 + dispatch + 릴리스 |
-|---|---|---|
-| 오프라인 테스트 | Python 3.10, 3.11, 3.12, 3.13, 3.14 | 동일 |
-| 통합 테스트 | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8잡 | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20잡 |
-
-5 × 4 전체 통합 매트릭스는 `.github/workflows/integration-full.yml`이 나이틀리 일정, `workflow_dispatch` 요청 시, 그리고 모든 릴리스에서 `release.yml`이 호출하는 릴리스 게이트로 실행합니다.
+일반 PR은 Ubuntu/Python 3.12 대표 스모크 검사, 고위험 PR은 최신 CUBRID 조합을
+추가합니다. main 및 최근 변경이 있는 주간 실행은 전체 오프라인 커버리지와
+최저·최신 대표 통합 검사를 수행합니다. 전체 Python/CUBRID 매트릭스는 릴리즈와
+명시적 수동 실행에서 유지합니다. [CI 실행 정책](CI_POLICY.md)을 참고하세요.
 
 ### SQLAlchemy 컴플라이언스 레인
 
@@ -189,13 +191,18 @@ CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)
 
 ## 테스트 커버리지
 
+오프라인 및 통합 테스트 개수는 PR마다 늘어나므로, 여기에 고정된 스냅샷 대신
+`offline-tests` / `integration-tests` CI 작업 출력에서 현재 수치를 확인하세요.
+
 | 지표 | 값 |
 |---|---|
-| 오프라인 테스트 | 619 |
-| 통합 테스트 | 동기 35 + 비동기 16 |
-| 라인 커버리지 | 오프라인 ~98.26% |
-| 커버리지 하한 | 95% (CI 강제) |
+| 커버리지 하한 | 95% (CI 강제, `offline-tests` 작업의 `--cov-fail-under=95`) |
 
 ---
 
 *참고: [연결 가이드](CONNECTION.md) · [타입 시스템](TYPES.md) · [기능 지원](FEATURE_SUPPORT.md) · [드라이버 호환성](DRIVER_COMPAT.md) · [변경 이력](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md)*
+
+## CI 실행 범위
+
+일반 PR은 최소 대표 검사를 사용합니다. 전체 호환성은 릴리즈와 명시적 수동 실행에서
+확인합니다. 자세한 내용은 [CI 실행 정책](CI_POLICY.md)을 참고하세요.

@@ -15,7 +15,11 @@ DDL; this module pins what the supported servers actually print.
 ``test/fixtures/show_create_table/cubrid-<major>.<minor>.json`` holds, for each
 supported version, the server build, the generating SQL (:data:`SETUP_SQL`) and,
 per table, the ``SHOW CREATE TABLE`` row, the table's ``db_index`` flags and
-its ``SHOW INDEXES`` rows. The files contain no credentials or host names.
+its ``SHOW INDEXES`` rows. Since #631 they also hold the column sources of
+``get_columns`` (``SHOW COLUMNS``, ``db_attribute`` and the collection member
+types in ``db_attr_setdomain_elm``), with the native ``ENUM`` and collection
+columns of ``sct_types``; ``test/test_reflection_enum_collection.py`` reflects
+them. The files contain no credentials or host names.
 
 * Offline, every recorded ``SHOW CREATE TABLE`` row goes through the real
   dialect parsers via the #590 adapter in ``test/test_show_create_table.py``
@@ -91,10 +95,19 @@ SETUP_SQL: tuple[str, ...] = (
     ' REFERENCES "sct ref, (x)" (id) ON DELETE NO ACTION ON UPDATE NO ACTION,'
     " CONSTRAINT fk_sct_child_self FOREIGN KEY (self_id)"
     " REFERENCES sct_child (id) ON DELETE RESTRICT)",
+    # Column types whose SHOW COLUMNS form get_columns parses (#631): native
+    # ENUM and every collection spelling, with and without member types.
+    "CREATE TABLE sct_types ("
+    " id INT PRIMARY KEY, e_plain ENUM('x', 'y', 'z'), e_punct ENUM('it''s', 'a, b', 'c (d)'),"
+    " s_one SET(INT), s_many SET(NUMERIC(10,2), VARCHAR(20)), s_of SET OF CHAR(3),"
+    " m_many MULTISET(INT, DOUBLE), m_str MULTISET(VARCHAR(50)),"
+    " q_seq SEQUENCE(DATE, SMALLINT), q_list LIST(NUMERIC, NCHAR VARYING(5)),"
+    " q_bits SEQUENCE(BIT(8), BIT VARYING(16)),"
+    " s_empty SET, m_empty MULTISET, q_empty LIST)",
 )
 
 #: Tables created by :data:`SETUP_SQL`, in drop order.
-TABLES = ("sct_child", "sct ref, (x)", "sct_parent")
+TABLES = ("sct_types", "sct_child", "sct ref, (x)", "sct_parent")
 
 
 def _fk(
@@ -118,6 +131,7 @@ def _fk(
 #: Reflected foreign keys per table, sorted by name (#531). A key declared
 #: without actions reflects as RESTRICT / RESTRICT, as the server prints it.
 EXPECTED_FOREIGN_KEYS: dict[str, list[dict[str, Any]]] = {
+    "sct_types": [],
     "sct_parent": [],
     "sct ref, (x)": [],
     "sct_child": [
@@ -158,6 +172,7 @@ EXPECTED_UNIQUE_CONSTRAINTS: dict[str, list[dict[str, Any]]] = {
     ],
     "sct ref, (x)": [{"name": "uq sct odd, (name)", "column_names": ["odd col, (y)"]}],
     "sct_child": [],
+    "sct_types": [],
 }
 for _constraints in EXPECTED_UNIQUE_CONSTRAINTS.values():
     for _constraint in _constraints:
@@ -184,8 +199,12 @@ def _drop_tables(connection: sa.Connection) -> None:
 
 def _capture(connection: sa.Connection) -> dict[str, dict[str, list[Any]]]:
     """Return, per table, its ``SHOW CREATE TABLE`` row, ``db_index`` flags
-    (sorted by index name) and ``SHOW INDEXES`` key columns (Table, Non_unique,
-    Key_name, Seq_in_index, Column_name, Collation; sorted)."""
+    (sorted by index name), ``SHOW INDEXES`` key columns (Table, Non_unique,
+    Key_name, Seq_in_index, Column_name, Collation; sorted), and the column
+    sources of ``get_columns`` (#631): the ``SHOW COLUMNS`` rows, the
+    ``db_attribute`` name / type / comment (by ``def_order``) and the
+    ``db_attr_setdomain_elm`` collection member types and object domains (in
+    server order)."""
     captured: dict[str, dict[str, list[Any]]] = {}
     for table in TABLES:
         quoted = _quote(connection, table)
@@ -198,10 +217,28 @@ def _capture(connection: sa.Connection) -> dict[str, dict[str, list[Any]]]:
             {"name": table},
         ).all()
         show_indexes = connection.exec_driver_sql(f"SHOW INDEXES IN {quoted}").all()
+        show_columns = connection.exec_driver_sql(f"SHOW COLUMNS IN {quoted}").all()
+        db_attribute = connection.execute(
+            sa.text(
+                "SELECT attr_name, data_type, comment FROM db_attribute "
+                "WHERE class_name = :name ORDER BY def_order"
+            ),
+            {"name": table},
+        ).all()
+        set_domains = connection.execute(
+            sa.text(
+                "SELECT attr_name, data_type, prec, scale, domain_class_name "
+                "FROM db_attr_setdomain_elm WHERE class_name = :name"
+            ),
+            {"name": table},
+        ).all()
         captured[table] = {
             "show_create_table": [str(value) for value in show_create],
             "db_index": [list(row) for row in db_index],
             "show_indexes": sorted([list(row[:6]) for row in show_indexes], key=repr),
+            "show_columns": [list(row[:6]) for row in show_columns],
+            "db_attribute": [list(row) for row in db_attribute],
+            "set_domains": [list(row) for row in set_domains],
         }
     return captured
 
@@ -274,8 +311,11 @@ class _CatalogStub:
     plus ``SHOW INDEXES`` / ``SHOW CREATE TABLE``. Any other statement fails.
     """
 
-    def __init__(self, recorded: dict[str, list[Any]]) -> None:
+    def __init__(
+        self, recorded: dict[str, list[Any]], enum_values: dict[str, list[str]] | None = None
+    ) -> None:
         self._recorded = recorded
+        self._enum_values = enum_values or {}
         self.statements: list[str] = []
 
     def execute(self, statement: Any, params: Any = None) -> _Rows:
@@ -296,6 +336,32 @@ class _CatalogStub:
             rows = [tuple(row) for row in self._recorded["show_indexes"]]
         elif sql.startswith("SHOW CREATE TABLE"):
             rows = [tuple(self._recorded["show_create_table"])]
+        elif sql.startswith("SHOW COLUMNS IN"):
+            rows = [tuple(row) for row in self._recorded["show_columns"]]
+        elif sql.startswith("SELECT a.attr_name, e.*, ROWNUM FROM _db_class "):
+            attr_name = params["attr_name"]
+            rows = [
+                (attr_name, value, position)
+                for position, value in enumerate(self._enum_values.get(attr_name, []), 1)
+            ]
+        elif sql.startswith("SELECT attr_name, comment FROM db_attribute WHERE "):
+            rows = [(row[0], row[2]) for row in self._recorded["db_attribute"]]
+        elif sql.startswith("SELECT attr_name, data_type FROM db_attribute WHERE "):
+            rows = [
+                (row[0], row[1])
+                for row in self._recorded["db_attribute"]
+                if row[1] in ("SET", "MULTISET", "SEQUENCE")
+            ]
+        elif sql.startswith(
+            "SELECT attr_name, data_type, prec, scale, domain_class_name FROM db_attr_setdomain_elm "
+        ):
+            rows = [tuple(row) for row in self._recorded["set_domains"]]
+        elif sql.startswith(
+            "SELECT attr_name, data_type, prec, scale, domain_class_name, domain_owner_name "
+            "FROM db_attr_setdomain_elm "
+        ):
+            # 11.2+ query; the recorded tables have no object-domain member.
+            rows = [(*row, None) for row in self._recorded["set_domains"]]
         else:
             raise AssertionError(f"Unexpected SQL: {sql!r}")
         return _Rows(rows)
@@ -412,7 +478,7 @@ def test_live_output_matches_recording(live_engine: sa.Engine) -> None:
                 )
             )
             pytest.fail(f"SHOW CREATE TABLE {table!r} output drifted:\n{diff}")
-        for key in ("db_index", "show_indexes"):
+        for key in ("db_index", "show_indexes", "show_columns", "db_attribute", "set_domains"):
             assert actual[table][key] == recorded[table][key], f"{key} of {table!r} drifted"
 
 

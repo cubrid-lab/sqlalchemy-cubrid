@@ -301,6 +301,22 @@ those skips into failures with `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`,
 same database interfere with each other. Run it against a dedicated database,
 one run at a time. `make integration` starts a run-owned server for this.
 
+The `TestIsDisconnect` KILL QUERY case (#634) also remains serialized: KILL is
+server-wide and takes only a numeric transaction index, not an atomic user
+predicate. The test creates one fresh `kq634_<16 hex>` database account, opens
+and warms its victim connection before starting a separate killer process
+(needed because CUBRIDdb holds the GIL during a query), and keeps that
+connection open until the killer has exited or been stopped. The killer uses
+`SHOW TRANSACTION TABLES` and selects only an active query with exactly that
+`Client_db_user` and a non-null `Query_start_time`; a missing column or more
+than one matching active query fails without issuing KILL. It never chooses a
+newly appeared DBA or other user's query by timing. Cleanup disposes the
+victim engine and drops only the account created by this run, through the
+verified user-drop helper. The victim URL explicitly clears the DBA password
+because the generated account has no password, even when `CUBRID_TEST_URL`
+contains a nonempty DBA password. Use a disposable DBA test database; another
+session sharing that dedicated account would make the test fail closed.
+
 `test/test_server_restart.py` (#565) stops and starts `cub_server` with
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
 checks that the pool invalidates broken connections and recovers, through both
@@ -389,8 +405,8 @@ default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
 CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
 "Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
 command. Several test files open connections through both drivers whichever one
-the URL selects, so install `.[dev,pycubrid]` for either driver. PR CI runs
-`make integration` with the default driver on CUBRID 11.4; the nightly and release-gate
+the URL selects, so install `.[dev,pycubrid]` for either driver. Main/weekly code CI runs
+`make integration` with the default driver on CUBRID 11.4; the full dispatch and release-gate
 `integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
 11.4.
 
@@ -506,25 +522,14 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI Matrix
 
-The CI pipeline tests the following matrix:
-
-| | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.2** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.0** | ✅ | — | — | — | ✅ |
-| **CUBRID 10.2** | ✅ | — | — | — | ✅ |
-
-`make test` deselects the `repo` marker, which `test/conftest.py` applies to the
-modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
-`test_docs_reason.py`, `test_release_detect.py`). These tests drive the Makefile
-`integration` recipe and its sh/bash signal handling and the repository scripts
-through subprocesses; on a 1,677-test offline run they took about 85 of 103
-seconds (#594). They stay required: the `repo-tests` CI job runs `-m repo` on
-every supported Python, and `matrix-result` fails unless it succeeds. `tox`
-runs them in its `repo` environment.
+Routine CI uses one Ubuntu/Python 3.12 offline lane and representative live
+combinations rather than the full matrix. PRs run smoke tests; main and changed
+weekly runs retain the full offline suite with 95% coverage. High-risk PRs select
+newest integration, while main/weekly use oldest/newest endpoints. Repository
+tooling is path-selected on one Linux lane. Full integration is explicit/manual
+and release-only. See [CI execution policy](CI_POLICY.md) for exact selection and
+validation requirements. Historical cost measurements below describe the earlier
+workflow, not current job counts or new savings.
 
 ---
 
@@ -533,9 +538,7 @@ runs them in its `repo` environment.
 ### Requirements
 
 - **Minimum threshold**: 95% line coverage
-- **Current CI offline collection**: 603 tests (`pytest --collect-only` excluding `test_integration.py`, `test_suite.py`, and `test_aio_integration.py`, matching `.github/workflows/ci.yml` and `make test`)
-- **Current line coverage**: ~98.26% offline in the CI/make test configuration
-- CI enforces the threshold via `--cov-fail-under=95`
+- CI enforces the threshold via `--cov-fail-under=95` in the `offline-tests` job (`.github/workflows/ci.yml`); run `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` locally for current test counts and coverage rather than relying on a snapshot here, since both grow with every PR
 
 ### Running Coverage
 
@@ -555,15 +558,14 @@ make test
 
 ### Known Unreachable Lines
 
-Three lines in `compiler.py` and one in `dml.py` are verified unreachable by design (defensive fallbacks that
-cannot trigger through SA's public API):
-
-| File | Line | Description |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause` returning `""` |
-| `compiler.py` | 84 | `limit_clause` returning `""` |
-| `compiler.py` | 298--300 | Defensive branch in DDL compilation |
-| `dml.py` | 310 | `else` branch in type normalization |
+A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
+`for_update_clause`/`limit_clause` return, a DDL compilation default branch, an
+`else` arm in type normalization) that cannot trigger through SQLAlchemy's
+public API and so never execute under the offline suite. Their exact line
+numbers shift as the modules change; run `pytest test/ -m "not integration and
+not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test`)
+and check the `Missing` column for the current set instead of a pinned list
+here.
 
 ---
 
@@ -658,18 +660,18 @@ pre-commit run --all-files
 
 | Workflow | File | Trigger |
 |---|---|---|
-| CI | `.github/workflows/ci.yml` | Push to main, PRs |
-| Integration Full | `.github/workflows/integration-full.yml` | Nightly, manual dispatch, called by `release.yml` |
+| CI | `.github/workflows/ci.yml` | PRs, main, weekly, manual |
+| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `release.yml` |
 | Prepare Release | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`); opens the `chore: release vX.Y.Z` PR |
 | Release | `.github/workflows/release.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
-2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
-3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
-4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and in the release gate in `integration-full.yml`)
-5. **Coverage** — Enforces ≥ 95% threshold
+2. **Offline Tests** — one Ubuntu/Python 3.12 lane; PR smoke, main/weekly full offline coverage
+3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
+5. **Coverage** — Enforces ≥ 95% on the full main/weekly offline lane; PR smoke makes no coverage claim
 
 ### Driver-differential lane
 
@@ -680,12 +682,14 @@ Core `executemany` with integer, UTF-8/CJK and NULL values, textual
 `executemany` with integer and UTF-8/CJK values, scalar binds, textual-SQL
 result column names, and commit/rollback visibility. It also compares
 constraint-violation exception classes (#480), results read across a
-rollback (#481), and scalar `cursor.description` names, type codes and
-`null_ok` (#482). These checks require the fixed pycubrid behavior shipped in
-pycubrid 1.8.0 (NOT NULL/foreign-key classes, post-rollback results and
-`null_ok`) and run unconditionally.
-Areas still blocked upstream are tracked separately (#483–#484); LOB values are
-covered by #485.
+rollback (#481), scalar `cursor.description` names, type codes and
+`null_ok` (#482), and `SET`/`MULTISET`/`SEQUENCE` round trips (#484, writing
+the collection literal directly in SQL since binding one is rejected by
+released pycubrid, then comparing values normalized to `str` elements). These
+checks require the fixed pycubrid behavior shipped in pycubrid 1.8.0 (NOT
+NULL/foreign-key classes, post-rollback results and `null_ok`) and run
+unconditionally. Every #479 contract area now has a case here except LOBs,
+which are covered separately by #485.
 
 The integration jobs in `ci.yml` and `integration-full.yml` run this module
 with both drivers installed and `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`. With
@@ -702,6 +706,32 @@ every integration test (#593):
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
 ```
+
+### All-skipped lane guard
+
+A lane that silently skips every test it was meant to run still exits `0` in
+plain pytest, which hides a misconfigured lane (a stale `skipif`, a driver
+that stopped connecting, a copy-pasted file list) behind a green check. The
+required driver-differential, transactional-DDL (#503) and server-restart
+(#565) lanes already guard themselves with their own `CUBRID_REQUIRE_*` checks
+in `test/conftest.py`. For the plain `pytest`/`make integration` steps in
+`ci.yml`'s `integration-tests` and `make-integration` jobs and
+`integration-full.yml`'s `integration-full` and `make-integration` jobs,
+`scripts/check_not_all_skipped.py` reads the `tee`'d output of the preceding
+invocation and fails unless at least one summary line shows real execution
+(`passed`/`failed`/`error`/`xpassed`/`xfailed`); `skipped`/`deselected` alone,
+or zero tests collected, fails the step:
+
+```bash
+set -o pipefail
+python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
+```
+
+A cell that is deliberately all-skip passes `--allow-all-skipped "<reason>"`
+to report the reason and exit 0 instead of failing. `matrix-result` and
+`full-matrix-result` need no change: these checks run inside jobs they already
+depend on, so a step failing this guard already fails its job.
 
 ### SQLAlchemy compliance lanes
 

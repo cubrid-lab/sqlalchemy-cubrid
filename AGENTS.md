@@ -11,7 +11,7 @@ Alembic migration support, and PEP 561 typing.
 - **Language**: Python 3.10+
 - **Framework**: SQLAlchemy 2.0 – 2.1
 - **License**: MIT
-- **Version**: 1.4.3.dev0 (Production/Stable)
+- **Version**: single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__` (Production/Stable); see [CHANGELOG.md](CHANGELOG.md) for the current release
 
 ## Architecture
 
@@ -212,9 +212,9 @@ test/
 
 ### Test Stats
 
-- **619 offline tests + 35 sync integration tests + 16 async integration tests**, **~98.26% offline coverage**
-- Coverage threshold: 95% (CI-enforced)
-- 6 unreachable lines (defensive fallbacks): `compiler.py:72`, `compiler.py:84`, `compiler.py:298-300`, `dml.py:310`
+- Large and growing offline and integration suites; exact counts shift with every PR, so see the `offline-tests` / `integration-tests` CI job output for current numbers rather than a hardcoded snapshot here
+- Coverage threshold: 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job)
+- A handful of defensive fallback branches are intentionally unreachable in normal operation (SA-version-specific compatibility shims, exhaustive-but-unreachable `else` arms); see `--cov=sqlalchemy_cubrid --cov-report=term-missing` output (or `make test`) for current line numbers instead of a pinned list
 
 ### Running Tests
 
@@ -255,22 +255,24 @@ The dialect translates automatically in `create_connect_args()`.
 
 | File | Trigger | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | Push to main, PRs | Lint + offline tests (Py 3.10–3.14) + regular integration matrix |
-| `.github/workflows/integration-full.yml` | Nightly (03:00 UTC), manual dispatch, `workflow_call` from `release.yml` | Full Python × CUBRID compatibility matrix |
+| `.github/workflows/ci.yml` | PR, main, weekly, manual | Minimum PR smoke and representative integration; see docs/CI_POLICY.md |
+| `.github/workflows/integration-full.yml` | Manual dispatch, release workflow_call | Full supported compatibility matrix |
 | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`) | Open the `chore: release vX.Y.Z` PR (dated CHANGELOG section + version bump) |
 | `.github/workflows/release.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
 
 ### CI Matrix
 
-- **Offline (every PR/push)**: Python 3.10, 3.11, 3.12, 3.13, 3.14
-- **Integration (every PR/push)**: Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 8 jobs
-- **Integration full (nightly + dispatch + every release)**: Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} — 20 jobs
+- PR runtime smoke: Ubuntu/Python 3.12 only, selected for code changes.
+- High-risk PR integration: Python 3.14/CUBRID 11.4; targeted extra lanes.
+- main and changed-weekly: one full offline coverage lane, oldest/newest live endpoints.
+- Full integration: manual and every release; no automatic nightly full matrix.
+- Details, change classification and gate requirements: [CI policy](docs/CI_POLICY.md).
 
 ## Documentation Map
 
 | File | Content |
 |---|---|
-| `README.md` | Concise landing page (~80 lines) |
+| `README.md` | Concise landing page |
 | `docs/CONNECTION.md` | Connection strings, URL format, driver setup |
 | `docs/TYPES.md` | Full type mapping, CUBRID-specific types |
 | `docs/ISOLATION_LEVELS.md` | The three CUBRID MVCC isolation levels |
@@ -407,7 +409,7 @@ do not require a named agent, tool credit or a blanket coauthor trailer.
    - Don't label a fix as `feat` or a mixed bag as `feat`
 6. **Body bullets reference issue numbers** (`#135`, `#136`) for traceability.
 7. **Scope is optional** but use it for module-specific changes: `fix(compiler):`, `feat(types):`.
-8. **Version in commit message must match actual project version.** Never reference "1.0" when project is v1.4.x.
+8. **Version in commit message must match actual project version.** Check `sqlalchemy_cubrid/__init__.py` → `__version__`; never reference a stale or placeholder version.
 
 ## Release Process
 

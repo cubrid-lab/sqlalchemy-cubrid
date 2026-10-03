@@ -11,7 +11,6 @@
 [![python version](https://img.shields.io/pypi/pyversions/sqlalchemy-cubrid)](https://www.python.org)
 [![ci workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml)
 [![integration-full workflow](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml/badge.svg)](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/integration-full.yml)
-[![coverage](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid/branch/main/graph/badge.svg)](https://codecov.io/gh/cubrid-lab/sqlalchemy-cubrid)
 [![license](https://img.shields.io/github/license/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/cubrid-lab/sqlalchemy-cubrid)](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 [![docs](https://img.shields.io/badge/docs-GitHub%20Pages-blue)](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
@@ -29,7 +28,7 @@ CUBRID 是一款高性能开源关系型数据库，在韩国公共部门和企�
 **sqlalchemy-cubrid** 填补了这一空白：
 
 - 完整的 SQLAlchemy 2.0–2.1 方言，支持**语句缓存**和 **PEP 561 类型标注**
-- **619 个离线测试**，**约 98.26% 代码覆盖率** —— 无需数据库即可运行
+- **庞大的离线测试套件** —— 无需数据库即可运行；CI 在 `offline-tests` 任务中强制执行至少 95% 的行覆盖率（`--cov-fail-under=95`）
 - **并发压力测试** —— 已在真实 CUBRID 上验证 `QueuePool` 同步线程和 `asyncio.gather` 工作负载
 - **面向 SQLAlchemy 2.1 的兼容垫片** —— 私有 API 访问被封装在 `_compat.py` 中（在完成 SA 2.1 全面验证前仍固定为 `<2.3`）
 - 在 **Python 3.10 -- 3.14** 上测试 **4 个 CUBRID 版本**（10.2、11.0、11.2、11.4）

@@ -20,6 +20,7 @@ Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
 
 from __future__ import annotations
 
+from collections import Counter
 import importlib
 import importlib.metadata
 import importlib.util
@@ -75,6 +76,7 @@ from sqlalchemy_cubrid.types import (
     JSON,
     JSONIndexType,
     JSONPathType,
+    MONETARY,
     MULTISET,
     NCHAR,
     NUMERIC,
@@ -161,18 +163,21 @@ def _is_unknown_class_error(error: BaseException) -> bool:
 # ``NUMERIC(10, 2)`` is looked up as ``NUMERIC`` like ``NUMERIC(10,2)`` (#609).
 _RE_TYPE_PARAMS = re.compile(r"\(\d+(?:\s*,\s*\d+)*\)")
 _RE_ENUM = re.compile(r"^ENUM\s*\((.*)\)\s*$", re.IGNORECASE)
-
-
-def _parse_enum_elements(raw: str) -> list[str]:
-    """Extract quoted element strings from an ENUM(...) type string.
-
-    Handles doubled single-quote escaping inside elements
-    (e.g. ENUM('it''s', 'b') -> ["it's", "b"]).
-    """
-    return [m.replace("''", "'") for m in re.findall(r"'((?:[^']|'')*)'", raw)]
-
-
-_RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*\((.+)\)$", re.IGNORECASE)
+# ``SET(INT)`` or the form the servers print, ``SET OF INTEGER,VARCHAR`` (#631).
+_RE_COLLECTION = re.compile(r"^(SET|MULTISET|SEQUENCE)\s*(?:\((.+)\)|\s+OF\s+(.+))$", re.IGNORECASE)
+_RE_COLLECTION_OF = re.compile(r"^(?:SET|MULTISET|SEQUENCE)\s+OF\s", re.IGNORECASE)
+#: ``db_attr_setdomain_elm`` type names that differ from the DDL names.
+_CATALOG_MEMBER_TYPE_NAMES = {
+    "STRING": "VARCHAR",
+    "VARNCHAR": "NCHAR VARYING",
+    "VARBIT": "BIT VARYING",
+    "SHORT": "SMALLINT",
+}
+_CATALOG_SHOW_MEMBER_NAMES = {
+    "STRING": "VARCHAR",
+    "VARNCHAR": "NCHAR VARYING",
+    "VARBIT": "BIT VARYING",
+}
 _RE_LENGTH = re.compile(r"\((\d+)\)")
 
 
@@ -543,7 +548,15 @@ class CubridDialect(default.DefaultDialect):
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
             raise
-        for row in result:
+        rows = list(result)
+        enum_values = self._enum_catalog(connection, table_name, rows, **kw)
+        member_types, member_families, collection_kinds = self._collection_catalog(
+            connection, table_name, rows, **kw
+        )
+        # The catalog lookups are by column name; a CLASS ATTRIBUTE of the
+        # same name is also listed by SHOW COLUMNS (#631).
+        name_counts = Counter(row[0] for row in rows)
+        for row in rows:
             colname = row[0]
             coltype_raw = row[1]
             nullable = row[2] == "YES"
@@ -551,20 +564,58 @@ class CubridDialect(default.DefaultDialect):
             autoincrement = "auto_increment" in row[5] if row[5] else False
 
             # Strip length/precision from type string for lookup
-            coltype_key = _RE_TYPE_PARAMS.sub("", coltype_raw).strip()
+            coltype_key = _RE_TYPE_PARAMS.sub("", coltype_raw or "").strip()
 
             coltype: Any  # noqa: F842 — type varies per branch below
 
-            # ENUM('a', 'b', ...) — native enum with its element list
-            enum_match = _RE_ENUM.match(coltype_raw.strip())
-            if enum_match:
-                coltype = ENUM(*_parse_enum_elements(enum_match.group(1)))
+            # ENUM('a', 'b', ...) — exact values must come from the domain
+            # catalog; SHOW COLUMNS loses quote escaping (#631).
+            enum_match = _RE_ENUM.match(coltype_raw.strip()) if coltype_raw else None
+            # Collection types: SET(VARCHAR(100)), SET OF NUMERIC,VARCHAR, etc.
+            collection_match = _RE_COLLECTION.match(coltype_raw) if coltype_raw else None
 
-            # Collection types: SET(VARCHAR(100)), MULTISET(INT), etc.
-            collection_match = None if enum_match else _RE_COLLECTION.match(coltype_raw)
-            if collection_match:
+            if name_counts[colname] > 1 and (
+                coltype_raw is None
+                or enum_match
+                or (collection_match and collection_match.group(3))
+            ):
+                util.warn(
+                    f"Could not safely reflect column '{colname}': SHOW COLUMNS lists the "
+                    "name more than once"
+                )
+                coltype = sqltypes.NULLTYPE
+            elif coltype_raw is None and colname in collection_kinds:
+                # A collection declared without member types (#631).
+                coltype = self.ischema_names[collection_kinds[colname]]()
+            elif enum_match:
+                values = enum_values.get(colname) if enum_values is not None else None
+                if values:
+                    coltype = ENUM(*values)
+                else:
+                    util.warn(f"Could not safely reflect ENUM values of column '{colname}'")
+                    coltype = sqltypes.NULLTYPE
+            elif collection_match and collection_match.group(3) is not None:
+                # SHOW COLUMNS drops member modifiers and may reorder members.
+                # The catalog must account for every reported type family;
+                # otherwise constructing a collection would silently change
+                # its domain (#631).
+                shown = Counter(
+                    member.strip().upper()
+                    for member in _split_collection_members(collection_match.group(3))
+                )
+                catalog = Counter(member_families.get(colname, []))
+                # An ENUM member is listed without its values, and ENUM() is
+                # not valid DDL, so it cannot be reflected either (#631).
+                if catalog and catalog == shown and "ENUM" not in catalog:
+                    coltype = self.ischema_names[collection_match.group(1).upper()](
+                        *member_types[colname]
+                    )
+                else:
+                    util.warn(f"Could not safely reflect collection type of column '{colname}'")
+                    coltype = sqltypes.NULLTYPE
+            elif collection_match:
                 coll_name = collection_match.group(1).upper()
-                inner_raw = collection_match.group(2)
+                inner_raw = collection_match.group(2) or ""
                 coll_cls = self.ischema_names[coll_name]
                 members: list[Any] = []
                 for member_str in _split_collection_members(inner_raw):
@@ -584,6 +635,14 @@ class CubridDialect(default.DefaultDialect):
                             )  # pyright: ignore[reportCallIssue]
                         else:
                             members.append(self.ischema_names[member_key]())
+                    elif member_key in ("BIT", "BIT VARYING"):
+                        length_match = _RE_LENGTH.search(member_str)
+                        members.append(
+                            BIT(
+                                length=int(length_match.group(1)) if length_match else None,
+                                varying=member_key == "BIT VARYING",
+                            )
+                        )
                     elif member_key in self.ischema_names:
                         cls = self.ischema_names[member_key]
                         members.append(cls() if callable(cls) else cls)
@@ -616,8 +675,6 @@ class CubridDialect(default.DefaultDialect):
                     # Some ischema entries are classes, some are instances
                     coltype = coltype_cls() if callable(coltype_cls) else coltype_cls
                 except KeyError:
-                    from sqlalchemy import util
-
                     util.warn("Did not recognize type '%s' of column '%s'" % (coltype_raw, colname))
                     coltype = sqltypes.NULLTYPE
 
@@ -1246,6 +1303,209 @@ class CubridDialect(default.DefaultDialect):
             return condition, params
         condition += "".join(f" AND {prefix}owner_name = :owner" for prefix in (first, *others))
         return condition, {**params, "owner": info[1]}
+
+    def _enum_catalog(
+        self, connection: Any, table_name: str, rows: list[Any], **kw: Any
+    ) -> dict[str, list[str]] | None:
+        """Read exact ENUM labels, never the ambiguous SHOW COLUMNS rendering.
+
+        CUBRID prints an element containing ``', '`` exactly like two
+        elements. The internal domain sequence retains each original string;
+        ``TABLE`` exposes it as SQL rows and ``ROWNUM`` records its order.
+        A non-DBA user cannot read ``_db_domain``; only that specific -494
+        authorization failure returns ``None`` so get_columns warns and uses
+        NullType. Other failures propagate rather than guessing labels.
+        """
+        enum_columns = [
+            row[0] for row in rows if isinstance(row[1], str) and _RE_ENUM.match(row[1].strip())
+        ]
+        if not enum_columns:
+            return {}
+
+        if self.server_version_info is not None and self.server_version_info >= (11, 2):
+            info = self._get_class_info(connection, table_name, **kw)
+            if info is None:
+                raise NoSuchTableError(table_name)
+            class_name = f"{info[1].lower()}.{str(table_name).lower()}"
+            query = text(
+                "SELECT a.attr_name, e.*, ROWNUM "
+                "FROM _db_class c, _db_attribute a, _db_domain d, "
+                "TABLE(d.enumeration) e WHERE c.unique_name = :class_name "
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name "
+                # Instance attributes only: a CLASS ATTRIBUTE may share the
+                # name and would add its values (#631).
+                "AND a.attr_type = 0"
+            )
+        else:
+            class_name = str(table_name)
+            query = text(
+                "SELECT a.attr_name, e.*, ROWNUM "
+                "FROM _db_class c, _db_attribute a, _db_domain d, "
+                "TABLE(d.enumeration) e WHERE "
+                "c.class_name IN (:class_name, LOWER(:class_name)) "
+                "AND a.class_of = c AND d.object_of = a AND a.attr_name = :attr_name "
+                # Instance attributes only: a CLASS ATTRIBUTE may share the
+                # name and would add its values (#631).
+                "AND a.attr_type = 0"
+            )
+        values: dict[str, list[str]] = {}
+        for attr_name in enum_columns:
+            try:
+                result = connection.execute(
+                    query, {"class_name": class_name, "attr_name": attr_name}
+                )
+                numbered = [(row[2], row[1]) for row in result if row[0] == attr_name]
+            except Exception as error:
+                original = getattr(error, "orig", error)
+                code = getattr(original, "errno", None)
+                if code is None and original.args and isinstance(original.args[0], int):
+                    code = original.args[0]
+                denied_catalogs = ("_db_class", "_db_attribute", "_db_domain")
+                message = str(original).lower()
+                if code == -494 and any(
+                    f"select is not authorized on {catalog}" in message
+                    for catalog in denied_catalogs
+                ):
+                    return None
+                raise
+            if numbered:
+                numbered.sort(key=lambda item: item[0])
+                if [position for position, _ in numbered] != list(range(1, len(numbered) + 1)):
+                    raise ValueError(f"ENUM catalog order is incomplete for column {attr_name!r}")
+                if not all(isinstance(value, str) for _, value in numbered):
+                    raise ValueError(f"ENUM catalog returned a non-string for column {attr_name!r}")
+                values[attr_name] = [value for _, value in numbered]
+        return values
+
+    def _collection_catalog(
+        self, connection: Any, table_name: str, rows: list[Any], **kw: Any
+    ) -> tuple[dict[str, list[Any]], dict[str, list[str]], dict[str, str]]:
+        """Return member types, reported families and collection kinds.
+
+        ``SHOW COLUMNS`` prints a collection as ``SET OF NUMERIC,VARCHAR``,
+        without the member lengths or precision and in its own member order,
+        and prints no type at all for a collection declared without member
+        types (#631). For such *rows* (``SHOW COLUMNS`` rows) this reads the
+        public ``db_attr_setdomain_elm`` view, which lists each member type
+        with its precision and scale in declaration order, and the kind of
+        each untyped collection from ``db_attribute``. The reported families
+        let get_columns reject missing or inconsistent member-domain rows
+        instead of guessing from SHOW COLUMNS' lossy text.
+
+        Members are kept in the order the view returns them, which is the
+        declaration order on 10.2, 11.0, 11.2 and 11.4 (the view scans the
+        column's domain list; the recorded fixtures and the live round trip in
+        ``test/test_reflection_enum_collection.py`` pin it). A member's
+        collation is not in the view and is not reflected. From 11.2 the
+        view also gives an object-domain member's owner; a class of another
+        owner than the table is reflected as ``owner.class``.
+        """
+        member_types: dict[str, list[Any]] = {}
+        member_families: dict[str, list[str]] = {}
+        kinds: dict[str, str] = {}
+        has_of_form = any(row[1] and _RE_COLLECTION_OF.match(row[1]) for row in rows)
+        has_untyped = any(row[1] is None for row in rows)
+        if not (has_of_form or has_untyped):
+            return member_types, member_families, kinds
+        class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
+        if has_of_form:
+            version = self.server_version_info
+            owner_aware = version is not None and version >= (11, 2)
+            result = connection.execute(
+                text(
+                    "SELECT attr_name, data_type, prec, scale, domain_class_name"  # nosec B608
+                    + (", domain_owner_name" if owner_aware else "")
+                    + " FROM db_attr_setdomain_elm WHERE "
+                    + class_filter
+                    + " AND attr_type = 'INSTANCE'"
+                ),
+                filter_params,
+            )
+            catalog_rows = [tuple(row) for row in result]
+            table_owner = None
+            if owner_aware and any(row[5] for row in catalog_rows):
+                info = self._get_class_info(connection, table_name, **kw)
+                table_owner = info[1] if info else None
+            unsafe: set[str] = set()
+            for row in catalog_rows:
+                name, data_type, precision, scale, domain_class = row[:5]
+                domain_owner = row[5] if len(row) > 5 else None
+                member = self._collection_member_type(
+                    data_type, precision, scale, domain_class, domain_owner, table_owner
+                )
+                if member is None:
+                    unsafe.add(name)
+                member_types.setdefault(name, []).append(member)
+                member_families.setdefault(name, []).append(
+                    _CATALOG_SHOW_MEMBER_NAMES.get(data_type, data_type)
+                )
+            # A member the dialect cannot express leaves the column without
+            # catalog families, so get_columns warns and uses NullType.
+            for name in unsafe:
+                member_types.pop(name, None)
+                member_families.pop(name, None)
+        if has_untyped:
+            result = connection.execute(
+                text(
+                    "SELECT attr_name, data_type FROM db_attribute "  # nosec B608 - constant clause
+                    "WHERE " + class_filter + " AND attr_type = 'INSTANCE' "
+                    "AND data_type IN ('SET', 'MULTISET', 'SEQUENCE')"
+                ),
+                filter_params,
+            )
+            kinds = {name: data_type for name, data_type in result}
+        return member_types, member_families, kinds
+
+    def _collection_member_type(
+        self,
+        data_type: str,
+        precision: Any,
+        scale: Any,
+        domain_class: str | None = None,
+        domain_owner: str | None = None,
+        table_owner: str | None = None,
+    ) -> Any:
+        """Return the type of a ``db_attr_setdomain_elm`` member row.
+
+        The view uses the internal type names (``STRING``, ``VARNCHAR``,
+        ``VARBIT``, ``SHORT``). An object domain (``OBJECT`` with its
+        ``domain_class_name``) is kept as the quoted class name, which the
+        collection DDL emits verbatim (``SET(t_ref)``). An incomplete object
+        domain (its class or required owner is missing) or a type the dialect cannot express
+        returns ``None``, so the column warns and reflects as ``NullType``
+        rather than with a changed DDL.
+        From 11.2 a class whose owner (*domain_owner*) differs from the
+        table's (*table_owner*) is qualified as ``owner.class``, so the DDL
+        does not resolve it in the table owner's schema.
+        """
+        if data_type == "OBJECT":
+            if not domain_class:
+                return None
+            if self.server_version_info is not None and self.server_version_info >= (11, 2):
+                if not domain_owner or not table_owner:
+                    return None
+            quoted = self.identifier_preparer.quote(domain_class)
+            if domain_owner and table_owner and domain_owner.upper() != table_owner.upper():
+                return self.identifier_preparer.quote(domain_owner.lower()) + "." + quoted
+            return quoted
+        name = _CATALOG_MEMBER_TYPE_NAMES.get(data_type, data_type)
+        string_types: dict[str, type[sqltypes.String]] = {
+            "CHAR": CHAR,
+            "VARCHAR": VARCHAR,
+            "NCHAR": NCHAR,
+            "NCHAR VARYING": NVARCHAR,
+        }
+        if name in string_types:
+            return string_types[name](length=int(precision))
+        if name in ("BIT", "BIT VARYING"):
+            return BIT(length=int(precision), varying=name == "BIT VARYING")
+        if name == "NUMERIC":
+            return NUMERIC(precision=int(precision), scale=int(scale))
+        if name == "MONETARY":
+            return MONETARY()
+        if name in self.ischema_names and name != "ENUM":
+            return self.ischema_names[name]()
+        return None
 
     @reflection.cache
     def has_table(

@@ -247,7 +247,10 @@ Use English for GitHub issues, pull requests and comments; localized documentati
 
 Update matching behavior documentation. If none is needed, use a populated
 standalone physical source line `Docs: not needed - <reason>` rather than leaving the placeholder;
-the `docs-not-needed` label remains maintainer-controlled. For translation help,
+the explanation must contain visible text. Empty emphasized link captions such as
+`[**<!-- empty -->**](/issue)` or `[**![](/img)**](/issue)` do not supply a reason,
+while `[**tests only**](/issue)` does. The `docs-not-needed` label remains
+maintainer-controlled. For translation help,
 state missing languages and a reason in the PR body. That is a request, not
 permission: only explicit maintainer approval via the existing
 `translations-deferred` label defers the translation gate, with follow-up recorded.
@@ -373,3 +376,9 @@ not need label-write access.
 
 Open a [GitHub Discussion](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)
 or file an [issue](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues).
+
+## Minimum PR validation
+
+Follow the [CI execution policy](docs/CI_POLICY.md). PR smoke is representative,
+not full-suite/coverage evidence. Run relevant regression tests locally and report
+commands/results; request exact-head full validation where compatibility requires it.

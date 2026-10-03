@@ -69,14 +69,12 @@ Before you start, make sure the following are available:
 
 - CUBRID server (running and reachable)
 - Python 3.10+
-- One supported driver configuration:
-  - `cubrid://` via CUBRIDdb (C-extension, built from cubrid-python v11.3.0.51+; see [DRIVER_COMPAT](DRIVER_COMPAT.md#building-cubriddb-from-source))
+- Recommended driver configuration:
   - `cubrid+pycubrid://` via pycubrid
   - `cubrid+aiopycubrid://` via pycubrid.aio
 
 ```bash
-pip install sqlalchemy-cubrid
-# or: pip install "sqlalchemy-cubrid[pycubrid]"
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
 
 ---
@@ -84,8 +82,16 @@ pip install sqlalchemy-cubrid
 ## Install the Dialect
 
 ```bash
-pip install sqlalchemy-cubrid
+pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+### Alternative: C-extension driver
+
+If you specifically need CUBRIDdb, use the supported CUBRID-Python 11.3.0.51+ source build
+described in [DRIVER_COMPAT](DRIVER_COMPAT.md#building-cubriddb-from-source). Do not use the
+deprecated `[cubriddb]` extra / PyPI CUBRID-Python 9.3.x path.
+
+Then use `cubrid+cubriddb://`; the bare `cubrid://` URL selects the same C-extension driver.
 
 ---
 
@@ -94,9 +100,10 @@ pip install sqlalchemy-cubrid
 Use one of the supported URL formats:
 
 ```text
-cubrid://user:password@host:port/database
 cubrid+pycubrid://user:password@host:port/database
 cubrid+aiopycubrid://user:password@host:port/database
+cubrid+cubriddb://user:password@host:port/database
+cubrid://user:password@host:port/database
 ```
 
 Example:
@@ -104,7 +111,7 @@ Example:
 ```python
 from sqlalchemy import create_engine
 
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 ---
@@ -2389,7 +2396,11 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `DATE`              | `DATE`             |
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
+| `TIMESTAMPTZ`       | `TIMESTAMPTZ` (`timezone=True`) |
+| `TIMESTAMPLTZ`      | `TIMESTAMPLTZ` (`timezone=True`) |
 | `DATETIME`          | `DATETIME`         |
+| `DATETIMETZ`        | `DATETIMETZ` (`timezone=True`) |
+| `DATETIMELTZ`       | `DATETIMELTZ` (`timezone=True`) |
 | `BIT(n)`            | `BIT(n)`           |
 | `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
@@ -2398,6 +2409,7 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `CHAR VARYING`      | `VARCHAR`          |
 | `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
+| `ENUM('a', ...)`    | `ENUM('a', ...)` (DBA; otherwise `NullType` + warning) |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
 | `SET`               | `SET`              |
@@ -2405,6 +2417,14 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**TZ/LTZ reflection** (#181, #442). `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as their own dedicated dialect classes rather than collapsing into plain `TIMESTAMP`/`DATETIME`, and each sets `timezone=True`, so a round-tripped `datetime` keeps its timezone awareness and `metadata.reflect()` + `create_all()` reproduces the original column type. The dialect does not otherwise distinguish explicit-timezone (`TZ`) from local-timezone (`LTZ`) *value* semantics in Python — both are represented as an aware `datetime` — only the reflected SQLAlchemy type class differs.
+
+**ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
+
+`SHOW COLUMNS` prints collections as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member modifiers and sometimes in a different order. The public `db_attr_setdomain_elm` view supplies each member's precision, scale and object-domain class. The dialect uses those rows only when they account for every reported member family; missing or inconsistent rows warn and yield `NullType` instead of silently changing the DDL. An OBJECT member whose class was dropped (listed without its class) and a member type the dialect cannot express warn and yield `NullType`; the rest of the table still reflects. `MONETARY` members reflect as `MONETARY`. A column name that `SHOW COLUMNS` lists twice (a `CLASS ATTRIBUTE` of the same name) warns and yields `NullType` for ENUM and collection columns, and the catalog lookups read instance attributes only. On CUBRID 11.2+ an OBJECT member whose class belongs to another owner than the table reflects as `owner.class`. An `ENUM` member (`SET(ENUM('x', 'y'))`, listed without its values) warns and yields `NullType`. Members keep the order the view lists them in, which is the declaration order on the supported servers. A member's collation (`VARCHAR(10) COLLATE utf8_bin`) is not in the view and is not reflected. An untyped collection takes its kind from `db_attribute` and reflects as `SET()` / `MULTISET()` / `SEQUENCE()`. With authorized ENUM metadata and complete collection-domain rows, `metadata.reflect()` followed by `create_all()` reproduced the tested DDL on CUBRID 10.2, 11.2 and 11.4; 11.0 remains in the nightly matrix. This is not a claim of full ENUM reflection for non-DBA users.
+
+On CUBRID 11.2+, an OBJECT member also warns and yields `NullType` when either its domain owner or the reflected table owner is unavailable; rendering an unqualified class could resolve to a different owner's class.
 
 ---
 
@@ -2531,6 +2551,10 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | Time of day only. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | Date + time in one value. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID timestamp semantics may auto-update depending on schema defaults. |
+| `TIMESTAMPTZ` | `sqlalchemy_cubrid.TIMESTAMPTZ` | `datetime.datetime` (aware) | Explicit-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `TIMESTAMPLTZ` | `sqlalchemy_cubrid.TIMESTAMPLTZ` | `datetime.datetime` (aware) | Local-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `DATETIMETZ` | `sqlalchemy_cubrid.DATETIMETZ` | `datetime.datetime` (aware) | Explicit-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `DATETIMELTZ` | `sqlalchemy_cubrid.DATETIMELTZ` | `datetime.datetime` (aware) | Local-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
 | `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | Fixed-length bit string; `sa.BINARY(n)` compiles to `BIT(n*8)`. |
 | `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | Variable-length bit string; `sa.VARBINARY(n)` compiles to `BIT VARYING(n*8)`. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | Fixed-length character data. |
@@ -2564,8 +2588,8 @@ flowchart LR
     `NCHAR`/`NVARCHAR` use national character semantics. Keep application encoding and database collation aligned to avoid unexpected comparisons/sorting.
 
 !!! warning "Reading BLOB/CLOB returns a driver LOB locator"
-    Verified live on CUBRID 10.2 and 11.4 with pycubrid 1.3.2 and 1.7.1 and CUBRIDdb 11.3 (#485): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on pycubrid, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. The same applies to `cubrid+aiopycubrid://`, where binding `LargeBinary`/`BLOB` values (including `None`) works since #500.
-    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441.
+    Verified live on CUBRID 10.2 and 11.4, Core and ORM, sync and async, with pycubrid 1.8.0 (the supported floor), pycubrid main, and CUBRIDdb 11.3 (#485, `test/test_lob_value_contract.py`): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on sync pycubrid, the `file_locator` string on `cubrid+aiopycubrid://`, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. Binding `LargeBinary`/`BLOB` values (including `None`) through `cubrid+aiopycubrid://` works since #500.
+    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442; pycubrid main does not implement it yet, so the strict xfail applies there too and turns into a failing XPASS the moment it does.
 
 !!! warning "LOB and collection payload shape can differ by driver"
     `CUBRIDdb` and `pycubrid` can expose `BLOB`/`CLOB` and collection values differently.
@@ -4255,6 +4279,10 @@ present in `dialect.ischema_names`, so reflection will not auto-map them back.
 | TIME | `sa.Time` | `datetime.time` | ✅ |
 | DATETIME | `sa.DateTime` | `datetime.datetime` | ✅ |
 | TIMESTAMP | `sa.TIMESTAMP` | `datetime.datetime` | ✅ |
+| TIMESTAMPTZ | `TIMESTAMPTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| TIMESTAMPLTZ | `TIMESTAMPLTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `TIMESTAMP` |
+| DATETIMETZ | `DATETIMETZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
+| DATETIMELTZ | `DATETIMELTZ` (`timezone=True`) | `datetime.datetime` | ✅ Distinct reflected type, not collapsed into `DATETIME` |
 | BIT(n) / BIT VARYING(n) | `BIT(n)` / `BIT(n, varying=True)` | `bytes` | ✅ Length and `VARYING` preserved |
 | BIT(n\*8) | `sa.BINARY(n)` (`BINARY()` → `BIT(8)`) | `bytes` | ✅ Reflects as `BIT(n*8)` |
 | BIT VARYING(n\*8) | `sa.VARBINARY(n)` (`VARBINARY()` → `BIT VARYING`) | `bytes` | ✅ Reflects as `BIT VARYING(n*8)` |
@@ -4272,12 +4300,13 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 
 ## CI Matrix
 
-| Dimension | PR / push | Nightly + dispatch + release |
-|---|---|---|
-| Offline tests | Python 3.10, 3.11, 3.12, 3.13, 3.14 | Same |
-| Integration tests | Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 8 jobs | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
+| Validation | Routine execution | Full compatibility |
+| --- | --- | --- |
+| Offline | PR smoke on Ubuntu/Python 3.12; main/changed-weekly full suite, 95% coverage | Local full tests remain available |
+| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
-The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on demand via `workflow_dispatch`, and as the release gate that `release.yml` calls for every release.
+See [CI execution policy](CI_POLICY.md). Supported versions are unchanged;
+representative PR checks are not evidence for every supported combination.
 
 ### SQLAlchemy compliance lanes
 
@@ -4293,12 +4322,13 @@ Most known failures are shared by both drivers: CUBRID backend rules (identifier
 
 ## Test Coverage
 
+Offline and integration test counts grow with every PR; see the `offline-tests`
+/ `integration-tests` CI job output for current numbers instead of a pinned
+snapshot here.
+
 | Metric | Value |
 |---|---|
-| Offline tests | 619 |
-| Integration tests | 35 sync + 16 async |
-| Line coverage | ~98.26% offline |
-| Coverage threshold | 95% (CI-enforced) |
+| Coverage threshold | 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job) |
 
 ---
 
@@ -6467,6 +6497,22 @@ those skips into failures with `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`,
 same database interfere with each other. Run it against a dedicated database,
 one run at a time. `make integration` starts a run-owned server for this.
 
+The `TestIsDisconnect` KILL QUERY case (#634) also remains serialized: KILL is
+server-wide and takes only a numeric transaction index, not an atomic user
+predicate. The test creates one fresh `kq634_<16 hex>` database account, opens
+and warms its victim connection before starting a separate killer process
+(needed because CUBRIDdb holds the GIL during a query), and keeps that
+connection open until the killer has exited or been stopped. The killer uses
+`SHOW TRANSACTION TABLES` and selects only an active query with exactly that
+`Client_db_user` and a non-null `Query_start_time`; a missing column or more
+than one matching active query fails without issuing KILL. It never chooses a
+newly appeared DBA or other user's query by timing. Cleanup disposes the
+victim engine and drops only the account created by this run, through the
+verified user-drop helper. The victim URL explicitly clears the DBA password
+because the generated account has no password, even when `CUBRID_TEST_URL`
+contains a nonempty DBA password. Use a disposable DBA test database; another
+session sharing that dedicated account would make the test fail closed.
+
 `test/test_server_restart.py` (#565) stops and starts `cub_server` with
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
 checks that the pool invalidates broken connections and recovers, through both
@@ -6555,8 +6601,8 @@ default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
 CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
 "Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
 command. Several test files open connections through both drivers whichever one
-the URL selects, so install `.[dev,pycubrid]` for either driver. PR CI runs
-`make integration` with the default driver on CUBRID 11.4; the nightly and release-gate
+the URL selects, so install `.[dev,pycubrid]` for either driver. Main/weekly code CI runs
+`make integration` with the default driver on CUBRID 11.4; the full dispatch and release-gate
 `integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
 11.4.
 
@@ -6672,25 +6718,14 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI Matrix
 
-The CI pipeline tests the following matrix:
-
-| | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.2** | ✅ | — | — | — | ✅ |
-| **CUBRID 11.0** | ✅ | — | — | — | ✅ |
-| **CUBRID 10.2** | ✅ | — | — | — | ✅ |
-
-`make test` deselects the `repo` marker, which `test/conftest.py` applies to the
-modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
-`test_docs_reason.py`, `test_release_detect.py`). These tests drive the Makefile
-`integration` recipe and its sh/bash signal handling and the repository scripts
-through subprocesses; on a 1,677-test offline run they took about 85 of 103
-seconds (#594). They stay required: the `repo-tests` CI job runs `-m repo` on
-every supported Python, and `matrix-result` fails unless it succeeds. `tox`
-runs them in its `repo` environment.
+Routine CI uses one Ubuntu/Python 3.12 offline lane and representative live
+combinations rather than the full matrix. PRs run smoke tests; main and changed
+weekly runs retain the full offline suite with 95% coverage. High-risk PRs select
+newest integration, while main/weekly use oldest/newest endpoints. Repository
+tooling is path-selected on one Linux lane. Full integration is explicit/manual
+and release-only. See [CI execution policy](CI_POLICY.md) for exact selection and
+validation requirements. Historical cost measurements below describe the earlier
+workflow, not current job counts or new savings.
 
 ---
 
@@ -6699,9 +6734,7 @@ runs them in its `repo` environment.
 ### Requirements
 
 - **Minimum threshold**: 95% line coverage
-- **Current CI offline collection**: 603 tests (`pytest --collect-only` excluding `test_integration.py`, `test_suite.py`, and `test_aio_integration.py`, matching `.github/workflows/ci.yml` and `make test`)
-- **Current line coverage**: ~98.26% offline in the CI/make test configuration
-- CI enforces the threshold via `--cov-fail-under=95`
+- CI enforces the threshold via `--cov-fail-under=95` in the `offline-tests` job (`.github/workflows/ci.yml`); run `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` locally for current test counts and coverage rather than relying on a snapshot here, since both grow with every PR
 
 ### Running Coverage
 
@@ -6721,15 +6754,14 @@ make test
 
 ### Known Unreachable Lines
 
-Three lines in `compiler.py` and one in `dml.py` are verified unreachable by design (defensive fallbacks that
-cannot trigger through SA's public API):
-
-| File | Line | Description |
-|---|---|---|
-| `compiler.py` | 72 | `for_update_clause` returning `""` |
-| `compiler.py` | 84 | `limit_clause` returning `""` |
-| `compiler.py` | 298--300 | Defensive branch in DDL compilation |
-| `dml.py` | 310 | `else` branch in type normalization |
+A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
+`for_update_clause`/`limit_clause` return, a DDL compilation default branch, an
+`else` arm in type normalization) that cannot trigger through SQLAlchemy's
+public API and so never execute under the offline suite. Their exact line
+numbers shift as the modules change; run `pytest test/ -m "not integration and
+not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test`)
+and check the `Missing` column for the current set instead of a pinned list
+here.
 
 ---
 
@@ -6824,18 +6856,18 @@ pre-commit run --all-files
 
 | Workflow | File | Trigger |
 |---|---|---|
-| CI | `.github/workflows/ci.yml` | Push to main, PRs |
-| Integration Full | `.github/workflows/integration-full.yml` | Nightly, manual dispatch, called by `release.yml` |
+| CI | `.github/workflows/ci.yml` | PRs, main, weekly, manual |
+| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `release.yml` |
 | Prepare Release | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`); opens the `chore: release vX.Y.Z` PR |
 | Release | `.github/workflows/release.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
-2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
-3. **Integration Tests** — Python {3.10, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4}, plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
-4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and in the release gate in `integration-full.yml`)
-5. **Coverage** — Enforces ≥ 95% threshold
+2. **Offline Tests** — one Ubuntu/Python 3.12 lane; PR smoke, main/weekly full offline coverage
+3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
+5. **Coverage** — Enforces ≥ 95% on the full main/weekly offline lane; PR smoke makes no coverage claim
 
 ### Driver-differential lane
 
@@ -6846,12 +6878,14 @@ Core `executemany` with integer, UTF-8/CJK and NULL values, textual
 `executemany` with integer and UTF-8/CJK values, scalar binds, textual-SQL
 result column names, and commit/rollback visibility. It also compares
 constraint-violation exception classes (#480), results read across a
-rollback (#481), and scalar `cursor.description` names, type codes and
-`null_ok` (#482). These checks require the fixed pycubrid behavior shipped in
-pycubrid 1.8.0 (NOT NULL/foreign-key classes, post-rollback results and
-`null_ok`) and run unconditionally.
-Areas still blocked upstream are tracked separately (#483–#484); LOB values are
-covered by #485.
+rollback (#481), scalar `cursor.description` names, type codes and
+`null_ok` (#482), and `SET`/`MULTISET`/`SEQUENCE` round trips (#484, writing
+the collection literal directly in SQL since binding one is rejected by
+released pycubrid, then comparing values normalized to `str` elements). These
+checks require the fixed pycubrid behavior shipped in pycubrid 1.8.0 (NOT
+NULL/foreign-key classes, post-rollback results and `null_ok`) and run
+unconditionally. Every #479 contract area now has a case here except LOBs,
+which are covered separately by #485.
 
 The integration jobs in `ci.yml` and `integration-full.yml` run this module
 with both drivers installed and `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`. With
@@ -6868,6 +6902,32 @@ every integration test (#593):
 export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
 CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1 pytest test/test_driver_differential.py -v -rs
 ```
+
+### All-skipped lane guard
+
+A lane that silently skips every test it was meant to run still exits `0` in
+plain pytest, which hides a misconfigured lane (a stale `skipif`, a driver
+that stopped connecting, a copy-pasted file list) behind a green check. The
+required driver-differential, transactional-DDL (#503) and server-restart
+(#565) lanes already guard themselves with their own `CUBRID_REQUIRE_*` checks
+in `test/conftest.py`. For the plain `pytest`/`make integration` steps in
+`ci.yml`'s `integration-tests` and `make-integration` jobs and
+`integration-full.yml`'s `integration-full` and `make-integration` jobs,
+`scripts/check_not_all_skipped.py` reads the `tee`'d output of the preceding
+invocation and fails unless at least one summary line shows real execution
+(`passed`/`failed`/`error`/`xpassed`/`xfailed`); `skipped`/`deselected` alone,
+or zero tests collected, fails the step:
+
+```bash
+set -o pipefail
+python -m pytest test/test_integration.py -v --tb=short | tee integration.log
+python -m scripts.check_not_all_skipped integration.log --label "Run integration tests"
+```
+
+A cell that is deliberately all-skip passes `--allow-all-skipped "<reason>"`
+to report the reason and exit 0 instead of failing. `matrix-result` and
+`full-matrix-result` need no change: these checks run inside jobs they already
+depend on, so a step failing this guard already fails its job.
 
 ### SQLAlchemy compliance lanes
 
@@ -6994,6 +7054,64 @@ automatically. Nobody pushes tags or publishes by hand.
 ---
 
 *See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
+
+---
+
+# CI execution policy
+
+Routine CI uses representative combinations instead of a Cartesian version/OS matrix.
+
+| Trigger | Runtime validation |
+| --- | --- |
+| Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
+| Ordinary code PR | One Ubuntu/Python 3.12 offline smoke lane; no full coverage claim |
+| High-risk PR | Same offline smoke plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
+| Code push to main | One Ubuntu/Python 3.12 full offline suite with the existing 95% coverage floor; oldest/newest live endpoints |
+| Monday 03:00 UTC | Same representative policy, comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests |
+| Explicit full dispatch or release | Existing full Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes |
+
+The PR smoke suite is deliberately bounded. Contributors must run the regression
+checks relevant to their change locally and record commands/results in the PR.
+Passing smoke is not evidence that the whole offline suite or coverage floor ran.
+`make test` and `make integration` remain available without changing their scope.
+
+Change selection is in `ci.yml`'s `detect-changes` job. Non-documentation paths
+are code by default, so new source/configuration files do not silently become docs.
+Connection/protocol/cursor/async/compatibility or dialect/compiler/reflection,
+dependency, build, script and workflow changes select representative pre-merge
+integration. Repository tooling tests run in one Linux lane when tooling changes.
+The static lint job continues on all events, including generated documentation checks.
+
+The aggregate required-check name stays stable and includes change detection.
+Selected jobs must succeed: skipped, failed or cancelled selected checks fail the
+gate. Only intentionally unselected jobs may skip. Keep branch protection on the
+aggregate gate; do not require every old matrix cell name after reducing matrices.
+Branch protection must be inspected before merge. No protection-setting change
+is part of this PR.
+
+Full verification has no automatic nightly schedule. `integration-full.yml`
+retains manual dispatch and the release `workflow_call` with the immutable candidate
+SHA. Dispatch the workflow on the exact candidate branch/commit and verify the
+run's head SHA before using it as PR evidence. A moved branch needs new evidence.
+The routine CI dispatch is path-sensitive; use the full workflow to request an
+unconditional compatibility run. No release publisher/generator is changed.
+
+Concurrency is isolated by event and ref, so main pushes, weekly schedules and
+manual dispatches cannot cancel each other. Superseded runs for the same PR still
+cancel within that PR group. Main pushes and PR merge refs are
+not assumed to have identical SHAs. Weekly change selection uses the previous
+seven days, not a persisted last-success cache; a failed weekly run must be
+rerun or followed by manual validation rather than treated as successful evidence.
+
+GitHub charges have not been attributed to a workflow or runner SKU. Reduced job
+counts establish less repeated work; they are not a measured monetary saving.
+Compare subsequent Actions jobs/runner minutes and the actual billing category
+before making a cost claim.
+
+Routine type checking uses Python 3.13/SQLAlchemy 2.1.1; Alembic checks use latest,
+and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retain
+SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Live smoke, make integration
+and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validation.
 
 ---
 
@@ -7220,22 +7338,28 @@ recommended driver for new projects.
 
 ### 6. `BLOB` / `CLOB` reads return a LOB locator
 
-Verified live on CUBRID 10.2 and 11.4 (#485). With every released driver, binding
-`bytes` / `str` into a `BLOB` / `CLOB` column stores the full value and `NULL`
-round-trips as `None`. Selecting a non-NULL `BLOB` / `CLOB` column, however,
-returns the driver's LOB locator instead of `bytes` / `str`:
+Verified live on CUBRID 10.2 and 11.4, Core and ORM, sync and async, with
+pycubrid 1.8.0 (the supported floor) and pycubrid main (#485;
+`test/test_lob_value_contract.py`, re-run whenever this is re-verified). With
+every released driver, binding `bytes` / `str` into a `BLOB` / `CLOB` column
+stores the full value and `NULL` round-trips as `None`. Selecting a non-NULL
+`BLOB` / `CLOB` column, however, returns the driver's LOB locator instead of
+`bytes` / `str`:
 
 | Driver URL | Non-NULL `BLOB` / `CLOB` read returns |
 |---|---|
 | `cubrid://` (`CUBRIDdb` 11.3) | server file-locator `str` (`'file:...'`) |
-| `cubrid+pycubrid://` (pycubrid 1.3.2 to 1.7.1) | LOB-handle `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
-| `cubrid+aiopycubrid://` (pycubrid 1.7.1) | LOB-handle `dict` (binding `LargeBinary` / `BLOB` values, including `None`, works since #500) |
+| `cubrid+pycubrid://` (pycubrid 1.8.0 and main) | LOB-handle `dict` (`lob_type`, `lob_length`, `file_locator`, ...) |
+| `cubrid+aiopycubrid://` (pycubrid 1.8.0 and main) | the `file_locator` string (binding `LargeBinary` / `BLOB` values, including `None`, works since #500) |
 
 For `LargeBinary` / `BLOB`, SQLAlchemy's result processor then raises `TypeError`.
 To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`),
 or store large text in `sqlalchemy.Text` (CUBRID `STRING`), which round-trips as
-`str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441. See also
-[Types](TYPES.md).
+`str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442:
+pycubrid main does not implement it yet either, so `test_lob_value_contract.py`
+xfails the same cases on both the released driver and pycubrid main, strictly —
+a future pycubrid release that fixes this turns the xfail into a failing XPASS
+instead of silently staying green. See also [Types](TYPES.md).
 
 ### 7. `executemany` reuses the previous row's value for `None` (dialect guard)
 
@@ -7381,6 +7505,21 @@ The dialect does not change what CUBRIDdb does. On CUBRIDdb, keep collections
 that need duplicates or order out of bound parameters: write the collection
 literal in SQL (`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`), or use
 `cubrid+pycubrid://`. See [Type Mapping, Collection values](TYPES.md#collection-values).
+
+### 12. Ordinary scalar execution never uses pycubrid's `compat.native` prepared core
+
+pycubrid 1.8.0 (the supported floor) added an additive, opt-in sync prepared/typed
+scalar-binding cursor under `pycubrid.compat.native` (INT32, UTF-8 `CHAR` and SQL
+`NULL` only; cubrid-lab/pycubrid#439). Neither `cubrid+pycubrid://` nor
+`cubrid+aiopycubrid://` import or call it: SQLAlchemy keeps using the ordinary
+PEP 249 `execute()` / `executemany()` path (FC41) for every scalar bind — integer,
+UTF-8/CJK string, `NULL`, repeated execution, `executemany`, Core and ORM — on
+every driver tested, with no behavior difference and no dialect change (#483;
+`test/test_scalar_execution_contract.py`, which also asserts the dialect source
+never references `pycubrid.compat` and that `pycubrid.compat.native.connect()` is
+never called by ordinary use). A SQLAlchemy/DB-API integration that uses typed
+prepared execution would be a separate, explicitly designed and released feature,
+not an automatic consequence of `compat.native` existing in the installed driver.
 
 ---
 

@@ -337,7 +337,11 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `DATE`              | `DATE`             |
 | `TIME`              | `TIME`             |
 | `TIMESTAMP`         | `TIMESTAMP`        |
+| `TIMESTAMPTZ`       | `TIMESTAMPTZ` (`timezone=True`) |
+| `TIMESTAMPLTZ`      | `TIMESTAMPLTZ` (`timezone=True`) |
 | `DATETIME`          | `DATETIME`         |
+| `DATETIMETZ`        | `DATETIMETZ` (`timezone=True`) |
+| `DATETIMELTZ`       | `DATETIMELTZ` (`timezone=True`) |
 | `BIT(n)`            | `BIT(n)`           |
 | `BIT VARYING(n)`    | `BIT(n, varying=True)` |
 | `CHAR`              | `CHAR`             |
@@ -346,6 +350,7 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `CHAR VARYING`      | `VARCHAR`          |
 | `NCHAR VARYING`     | `NVARCHAR`         |
 | `STRING`            | `STRING`           |
+| `ENUM('a', ...)`    | `ENUM('a', ...)` (DBA; otherwise `NullType` + warning) |
 | `BLOB`              | `BLOB`             |
 | `CLOB`              | `CLOB`             |
 | `SET`               | `SET`              |
@@ -353,6 +358,14 @@ When reflecting existing tables, the dialect maps only the CUBRID type names pre
 | `SEQUENCE`          | `SEQUENCE`         |
 
 The following dialect types are **declared/compiled** but **not auto-reflected** because they are not present in `dialect.ischema_names`: `REAL`, `MONETARY`, and `OBJECT`.
+
+**TZ/LTZ reflection** (#181, #442). `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as their own dedicated dialect classes rather than collapsing into plain `TIMESTAMP`/`DATETIME`, and each sets `timezone=True`, so a round-tripped `datetime` keeps its timezone awareness and `metadata.reflect()` + `create_all()` reproduces the original column type. The dialect does not otherwise distinguish explicit-timezone (`TZ`) from local-timezone (`LTZ`) *value* semantics in Python — both are represented as an aware `datetime` — only the reflected SQLAlchemy type class differs.
+
+**ENUM and collection columns** (#631). `SHOW COLUMNS` prints native ENUM values without escaping: one legal value containing `', '` can be byte-identical to two separate values. For a user authorized to read `_db_domain` (normally DBA), the dialect reads the exact, ordered labels from the domain catalog rather than splitting that ambiguous text. A non-DBA user's specific `-494` denial is reported as a warning and `NullType`; unrelated catalog failures propagate. Such users must declare the ENUM type in their model until an authorized public metadata source is available.
+
+`SHOW COLUMNS` prints collections as `SET OF NUMERIC,VARCHAR` (also `MULTISET OF ...` and `SEQUENCE OF ...`; `LIST` is printed as `SEQUENCE`) without member modifiers and sometimes in a different order. The public `db_attr_setdomain_elm` view supplies each member's precision, scale and object-domain class. The dialect uses those rows only when they account for every reported member family; missing or inconsistent rows warn and yield `NullType` instead of silently changing the DDL. An OBJECT member whose class was dropped (listed without its class) and a member type the dialect cannot express warn and yield `NullType`; the rest of the table still reflects. `MONETARY` members reflect as `MONETARY`. A column name that `SHOW COLUMNS` lists twice (a `CLASS ATTRIBUTE` of the same name) warns and yields `NullType` for ENUM and collection columns, and the catalog lookups read instance attributes only. On CUBRID 11.2+ an OBJECT member whose class belongs to another owner than the table reflects as `owner.class`. An `ENUM` member (`SET(ENUM('x', 'y'))`, listed without its values) warns and yields `NullType`. Members keep the order the view lists them in, which is the declaration order on the supported servers. A member's collation (`VARCHAR(10) COLLATE utf8_bin`) is not in the view and is not reflected. An untyped collection takes its kind from `db_attribute` and reflects as `SET()` / `MULTISET()` / `SEQUENCE()`. With authorized ENUM metadata and complete collection-domain rows, `metadata.reflect()` followed by `create_all()` reproduced the tested DDL on CUBRID 10.2, 11.2 and 11.4; 11.0 remains in the nightly matrix. This is not a claim of full ENUM reflection for non-DBA users.
+
+On CUBRID 11.2+, an OBJECT member also warns and yields `NullType` when either its domain owner or the reflected table owner is unavailable; rendering an unqualified class could resolve to a different owner's class.
 
 ---
 
@@ -479,6 +492,10 @@ The table below is designed for copy/paste into tooling pipelines and architectu
 | `TIME` | `sqlalchemy.Time` / `sqlalchemy_cubrid.TIME` | `datetime.time` | Time of day only. |
 | `DATETIME` | `sqlalchemy.DateTime` / `sqlalchemy_cubrid.DATETIME` | `datetime.datetime` | Date + time in one value. |
 | `TIMESTAMP` | `sqlalchemy.TIMESTAMP` / `sqlalchemy_cubrid.TIMESTAMP` | `datetime.datetime` | CUBRID timestamp semantics may auto-update depending on schema defaults. |
+| `TIMESTAMPTZ` | `sqlalchemy_cubrid.TIMESTAMPTZ` | `datetime.datetime` (aware) | Explicit-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `TIMESTAMPLTZ` | `sqlalchemy_cubrid.TIMESTAMPLTZ` | `datetime.datetime` (aware) | Local-timezone timestamp; `timezone=True`. Reflects as its own type, not `TIMESTAMP` (#181). |
+| `DATETIMETZ` | `sqlalchemy_cubrid.DATETIMETZ` | `datetime.datetime` (aware) | Explicit-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
+| `DATETIMELTZ` | `sqlalchemy_cubrid.DATETIMELTZ` | `datetime.datetime` (aware) | Local-timezone datetime; `timezone=True`. Reflects as its own type, not `DATETIME` (#442). |
 | `BIT(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=False)` / `sqlalchemy.BINARY(n/8)` | `bytes` | Fixed-length bit string; `sa.BINARY(n)` compiles to `BIT(n*8)`. |
 | `BIT VARYING(n)` | `sqlalchemy_cubrid.BIT(length=n, varying=True)` / `sqlalchemy.VARBINARY(n/8)` | `bytes` | Variable-length bit string; `sa.VARBINARY(n)` compiles to `BIT VARYING(n*8)`. |
 | `CHAR(n)` | `sqlalchemy_cubrid.CHAR` | `str` | Fixed-length character data. |
@@ -512,8 +529,8 @@ flowchart LR
     `NCHAR`/`NVARCHAR` use national character semantics. Keep application encoding and database collation aligned to avoid unexpected comparisons/sorting.
 
 !!! warning "Reading BLOB/CLOB returns a driver LOB locator"
-    Verified live on CUBRID 10.2 and 11.4 with pycubrid 1.3.2 and 1.7.1 and CUBRIDdb 11.3 (#485): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on pycubrid, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. The same applies to `cubrid+aiopycubrid://`, where binding `LargeBinary`/`BLOB` values (including `None`) works since #500.
-    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441.
+    Verified live on CUBRID 10.2 and 11.4, Core and ORM, sync and async, with pycubrid 1.8.0 (the supported floor), pycubrid main, and CUBRIDdb 11.3 (#485, `test/test_lob_value_contract.py`): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on sync pycubrid, the `file_locator` string on `cubrid+aiopycubrid://`, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. Binding `LargeBinary`/`BLOB` values (including `None`) through `cubrid+aiopycubrid://` works since #500.
+    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442; pycubrid main does not implement it yet, so the strict xfail applies there too and turns into a failing XPASS the moment it does.
 
 !!! warning "LOB and collection payload shape can differ by driver"
     `CUBRIDdb` and `pycubrid` can expose `BLOB`/`CLOB` and collection values differently.
