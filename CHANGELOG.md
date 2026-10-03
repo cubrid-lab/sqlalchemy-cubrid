@@ -72,6 +72,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only; no dialect behavior changed.
 
 ### Deprecated
+- **Python 3.10 support** — advance notice for the 1.9.x release. Python
+  3.10 reached upstream end of life on 2026-10-01 ([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
+  The current 1.8.x line and 1.9.x retain Python 3.10 support. After this notice
+  ships in 1.9.0, the following minor release (planned 1.10.0) will require
+  Python >=3.11. Upgrade Python, recreate your virtual environment and validate
+  your application before upgrading. Current package metadata, CI coverage and
+  runtime behavior remain unchanged; see [support matrix](docs/SUPPORT_MATRIX.md)
+  and [roadmap](ROADMAP.md).
 - **The `[cubrid]` and `[cubriddb]` extras (#585)** — both depend on an unbounded
   `CUBRID-Python`, and PyPI has no release newer than 9.3.0.2 (sdist only, 2015), so
   they install a driver this dialect has never tested: on CUBRID 11.4 it returns

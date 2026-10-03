@@ -65,6 +65,15 @@ flowchart TD
 
 ## Requirements
 
+**Python 3.10 support retirement:** Python 3.10 reached upstream end of life on
+2026-10-01 ([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
+The current 1.8.x line and the upcoming 1.9.x advance-notice release retain Python
+3.10 support. The following minor release (planned 1.10.0) will require Python
+3.11 or newer, after the 1.9.0 notice has shipped. Upgrade your interpreter,
+recreate your virtual environment and validate your application before upgrading
+to that release. This notice does not change the current installation requirement
+or add a runtime warning.
+
 - Python 3.10+
 - SQLAlchemy 2.0 – 2.1
 - [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, recommended) **or** the legacy CUBRIDdb C extension built from [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later
