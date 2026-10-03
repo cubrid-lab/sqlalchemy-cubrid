@@ -542,7 +542,7 @@ flowchart LR
 
 !!! warning "Reading BLOB/CLOB returns a driver LOB locator"
     Verified live on CUBRID 10.2 and 11.4, Core and ORM, sync and async, with pycubrid 1.8.0 (the supported floor), pycubrid main, and CUBRIDdb 11.3 (#485, `test/test_lob_value_contract.py`): binding `bytes`/`str` stores the full value and `NULL` round-trips as `None`, but selecting a non-NULL `BLOB`/`CLOB` column returns the driver's LOB locator (a `dict` handle on sync pycubrid, the `file_locator` string on `cubrid+aiopycubrid://`, a `'file:...'` string on CUBRIDdb) instead of `bytes`/`str`. For `LargeBinary`/`BLOB` SQLAlchemy's result processor then raises `TypeError`. Binding `LargeBinary`/`BLOB` values (including `None`) through `cubrid+aiopycubrid://` works since #500.
-    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. Official pycubrid LOB fetch is tracked in cubrid-lab/pycubrid#441/#442; pycubrid main does not implement it yet, so the strict xfail applies there too and turns into a failing XPASS the moment it does.
+    To read content, convert on the server (`CLOB_TO_CHAR(col)`, `BLOB_TO_BIT(col)`), or store large text in `Text` (CUBRID `STRING`), which round-trips as `str`. pycubrid's LOB handles (cubrid-lab/pycubrid#441/#442) are explicit calls on `pycubrid.compat.native`, which the dialect does not use; ordinary fetch on pycubrid main still returns the locator, so the strict xfail applies there too and turns into a failing XPASS if that changes.
 
 !!! warning "LOB and collection payload shape can differ by driver"
     `CUBRIDdb` and `pycubrid` can expose `BLOB`/`CLOB` and collection values differently.

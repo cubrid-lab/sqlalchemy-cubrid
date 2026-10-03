@@ -1,8 +1,9 @@
 """Live SQLAlchemy-facing BLOB/CLOB value contract (#485), independent of any
 pycubrid LOB-handle API.
 
-pycubrid is adding official LOB-handle binding/fetch operations and stateful
-LOB semantics (cubrid-lab/pycubrid#441, #442). SQLAlchemy users interact with
+pycubrid provides LOB-handle binding/fetch operations and stateful LOB
+semantics under ``pycubrid.compat.native`` (cubrid-lab/pycubrid#441, #442,
+both closed). SQLAlchemy users interact with
 BLOB/CLOB through ``LargeBinary``/``BLOB``/``Text``/``CLOB`` *values*, never
 driver handles, and that value contract must stay verified independently of
 whatever pycubrid exposes at the cursor/handle level.
@@ -13,19 +14,22 @@ every released driver (writes are verified below with ``BLOB_TO_BIT``/
 written). What does **not** round-trip yet is a plain ``SELECT`` read: every
 currently released pycubrid (and CUBRIDdb) hands back a driver-specific LOB
 locator instead of the documented Python value for a non-``NULL`` BLOB/CLOB
-column, so those read cases are strict xfails here, tied to the pycubrid
-feature that would fix them (cubrid-lab/pycubrid#441) rather than to a pinned
-driver/version string: if a future pycubrid release (or CUBRIDdb update)
+column, so those read cases are strict xfails here, tied to the observed
+ordinary-fetch behavior rather than to a pinned driver/version string: if a
+future pycubrid release (or CUBRIDdb update)
 starts returning the real value, the ``strict=True`` xfail flips to an XPASS
 and fails the suite, which is the signal to delete the xfail. ``NULL`` and
 ``Text``/``STRING`` values are unaffected by the locator and are asserted
 directly on every driver.
 
-As of pycubrid 1.8.0 (the supported floor) and pycubrid main, ordinary-cursor
-BLOB/CLOB fetch behaves identically: the low-level ``pycubrid.lob.Lob``
-handle class pycubrid now ships is not wired into ordinary ``execute()``/
-fetch at all (cubrid-lab/pycubrid#441/#442 are still open upstream), so there
-is currently nothing to gate behind a pycubrid-main-only code path. The
+As of pycubrid 1.8.0 (the supported floor) and pycubrid main after
+cubrid-lab/pycubrid#441/#442 were completed (checked at 9fbbc05 on CUBRID
+10.2 and 11.4), ordinary-cursor BLOB/CLOB fetch behaves identically: the
+upstream LOB handles are explicit calls on ``pycubrid.compat.native``
+(``connection.lob()``, ``cursor.fetch_lob()``, ``cursor.bind_lob()``, sync
+only) and are not wired into ordinary ``execute()``/fetch, which is the path
+SQLAlchemy uses. So there is nothing to gate behind a pycubrid-main-only code
+path, and the dialect keeps the documented locator limitation. The
 module docstring and ``docs/DRIVER_COMPAT.md`` are the place to record it if
 that changes.
 
@@ -104,8 +108,9 @@ _LOB_CASES = [
 _PYCUBRID_LOCATOR_REASON = (
     "released pycubrid (and pycubrid main) fetches BLOB/CLOB columns as a raw "
     "LOB-handle dict/locator (sync: lob_type/lob_length/file_locator; async: the "
-    "file_locator string) instead of bytes/str; official LOB fetch is "
-    "cubrid-lab/pycubrid#441"
+    "file_locator string) instead of bytes/str; the LOB handles from "
+    "cubrid-lab/pycubrid#441/#442 are explicit pycubrid.compat.native calls, "
+    "not ordinary fetch"
 )
 _LOB_LOCATOR_XFAIL = {
     "pycubrid": _PYCUBRID_LOCATOR_REASON,
