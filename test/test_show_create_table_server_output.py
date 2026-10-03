@@ -329,6 +329,12 @@ class _CatalogStub:
         ):
             rows = [tuple(f) for f in flags]
         elif sql.startswith(
+            "SELECT index_name, is_unique, is_primary_key, is_foreign_key, CURRENT_USER "
+            "FROM db_index WHERE "
+        ):
+            # 11.2+ query; the recordings were captured as the owner, DBA.
+            rows = [(*f, "DBA") for f in flags]
+        elif sql.startswith(
             "SELECT index_name, is_primary_key, is_foreign_key FROM db_index WHERE "
         ):
             rows = [(f[0], f[2], f[3]) for f in flags]
@@ -404,8 +410,17 @@ def test_recorded_unique_constraints_from_ddl(
 def test_recorded_catalog_matches_ddl(dialect: CubridDialect, version: str, table: str) -> None:
     """The catalog path gives the DDL path's unique constraints, and each one
     is also reflected as a unique index of the same name and columns."""
-    recorded = _load(version)["tables"][table]
-    uniques = dialect.get_unique_constraints(_CatalogStub(recorded), table)
+    recording = _load(version)
+    recorded = recording["tables"][table]
+    # Use the recorded server's version, so 11.2+ recordings go through the
+    # owner-scoped catalog queries the dialect sends to those servers.
+    dialect.server_version_info = tuple(
+        int(part) for part in recording["cubrid_version"].split(".")[:3]
+    )
+    stub = _CatalogStub(recorded)
+    uniques = dialect.get_unique_constraints(stub, table)
+    owner_scoped = dialect.server_version_info >= (11, 2)
+    assert any("CURRENT_USER FROM db_index" in sql for sql in stub.statements) is owner_scoped
     assert _by_name(uniques) == EXPECTED_UNIQUE_CONSTRAINTS[table]
     unique_indexes = [
         {"name": index["name"], "column_names": index["column_names"]}

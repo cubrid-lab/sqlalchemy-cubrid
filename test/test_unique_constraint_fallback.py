@@ -209,6 +209,9 @@ def test_missing_table_raises(dialect: CubridDialect) -> None:
 # Live: requests issued by get_unique_constraints on the server under test
 # ---------------------------------------------------------------------------
 
+# The ``ucf_*`` tables and the ``ucf610`` user have fixed names, so these live
+# tests are not safe to run in parallel against one database (pytest-xdist).
+# The integration lanes run them serially.
 _LIVE_SETUP = (
     "CREATE TABLE ucf_pk (id INT PRIMARY KEY, v INT)",
     "CREATE TABLE ucf_fk (id INT PRIMARY KEY, pid INT,"
