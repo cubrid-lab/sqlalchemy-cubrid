@@ -82,3 +82,27 @@ def test_ci_repo_job_is_required():
     needs = re.search(r"needs: \[(.*?)\]", result)
     assert needs and "repo-tests" in [n.strip() for n in needs.group(1).split(",")]
     assert "needs.repo-tests.result != 'success'" in result
+
+
+class _Item:
+    """Minimal stand-in for a collected pytest item."""
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.markers: list[str] = []
+
+    def add_marker(self, marker) -> None:
+        self.markers.append(marker.name)
+
+
+def test_repo_marker_needs_the_module_in_the_test_directory():
+    """A same-named module in a subdirectory is not a repository-tooling module (#624)."""
+    from test.conftest import pytest_itemcollected
+
+    name = sorted(REPO_TOOLING_MODULES)[0]
+    listed = _Item(ROOT / "test" / name)
+    nested = _Item(ROOT / "test" / "integration" / name)
+    for item in (listed, nested):
+        pytest_itemcollected(item)
+    assert listed.markers == ["repo"]
+    assert nested.markers == []

@@ -74,7 +74,12 @@ def pytest_itemcollected(item):  # noqa: ANN001
     Runs before ``-m`` deselection, so ``-m repo`` and ``-m "not repo"`` see
     the marker for pytest-style and ``unittest`` tests alike.
     """
-    if item.path.name in REPO_TOOLING_MODULES:
+    # Compare the directory too: the list names modules of this directory, so
+    # a same-named module in a subdirectory is not repository tooling (#624).
+    if (
+        item.path.name in REPO_TOOLING_MODULES
+        and item.path.parent.resolve() == Path(__file__).resolve().parent
+    ):
         import pytest
 
         item.add_marker(pytest.mark.repo)
