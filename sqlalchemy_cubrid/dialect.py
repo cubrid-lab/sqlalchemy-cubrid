@@ -1058,7 +1058,8 @@ class CubridDialect(default.DefaultDialect):
 
         Returns ``None`` (the caller then parses the DDL) when it finds no
         unique index and cannot vouch for the result: when ``db_index`` lists
-        no index of the table at all, or, since CUBRID 11.2, when the class
+        no index of the table at all, when the server version is unknown, or,
+        since CUBRID 11.2, when the class
         the name resolves to is another owner's. ``SHOW ...`` resolves an
         unqualified name in the current user's schema, so for that class the
         DDL path keeps raising :class:`NoSuchTableError` as before #610.
@@ -1077,9 +1078,13 @@ class CubridDialect(default.DefaultDialect):
             ),
             filter_params,
         )
+        # Rows of a server whose version is unknown cannot be tied to an owner:
+        # on 11.2+ they may be another owner's class, so they are not vouched
+        # for and the DDL path decides (#624).
+        owner_known = owner is not None or self.server_version_info is not None
         verified = False
         for row in flag_result:
-            verified = owner is None or row[4] == owner
+            verified = owner_known and (owner is None or row[4] == owner)
             if row[1] == "YES" and row[2] == "NO" and row[3] == "NO":
                 unique_names.add(row[0])
         if not unique_names:
