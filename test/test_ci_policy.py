@@ -126,3 +126,50 @@ def test_pr_smoke_paths_exist() -> None:
     paths = [word for word in shlex.split(smoke["run"]) if word.endswith(".py")]
     assert paths
     assert all((ROOT / path).is_file() for path in paths)
+
+
+def test_ci_event_groups_do_not_cancel_each_other() -> None:
+    group = workflow("ci.yml")["concurrency"]["group"]
+
+    def render(event: str, ref: str) -> str:
+        result = group.replace("${{ github.event_name }}", event).replace("${{ github.ref }}", ref)
+        assert "${{" not in result
+        return result
+
+    main_groups = {
+        render(event, "refs/heads/main") for event in ("push", "schedule", "workflow_dispatch")
+    }
+    assert len(main_groups) == 3
+    # New commits retain the same event/ref group and still replace the old PR run.
+    assert "github.sha" not in group
+    assert "github.run_id" not in group
+    assert render("pull_request", "refs/pull/659/merge") != render(
+        "pull_request", "refs/pull/660/merge"
+    )
+    assert workflow("ci.yml")["concurrency"]["cancel-in-progress"] is True
+
+
+def test_documentation_generator_includes_policy_and_preserves_index(tmp_path: Path) -> None:
+    import shutil
+    import sys
+
+    docs = tmp_path / "docs"
+    scripts = tmp_path / "scripts"
+    docs.mkdir()
+    scripts.mkdir()
+    shutil.copyfile(ROOT / "scripts/generate_llms_full.py", scripts / "generate_llms_full.py")
+    policy = "# CI policy regression fixture\n\nEvent-isolated representative validation.\n"
+    (docs / "CI_POLICY.md").write_text(policy)
+    index = (ROOT / "docs/llms.txt").read_bytes()
+    (docs / "llms.txt").write_bytes(index)
+    subprocess.run(
+        [sys.executable, str(scripts / "generate_llms_full.py")],
+        check=True,
+        capture_output=True,
+        timeout=10,
+    )
+    assert policy.strip() in (docs / "llms-full.txt").read_text()
+    assert (tmp_path / "llms.txt").read_bytes() == index
+    assert (
+        b"[CI execution policy](https://cubrid-lab.github.io/sqlalchemy-cubrid/CI_POLICY/)" in index
+    )

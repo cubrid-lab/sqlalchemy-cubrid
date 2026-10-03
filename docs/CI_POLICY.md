@@ -37,7 +37,9 @@ run's head SHA before using it as PR evidence. A moved branch needs new evidence
 The routine CI dispatch is path-sensitive; use the full workflow to request an
 unconditional compatibility run. No release publisher/generator is changed.
 
-Concurrency still cancels superseded PR runs. Main pushes and PR merge refs are
+Concurrency is isolated by event and ref, so main pushes, weekly schedules and
+manual dispatches cannot cancel each other. Superseded runs for the same PR still
+cancel within that PR group. Main pushes and PR merge refs are
 not assumed to have identical SHAs. Weekly change selection uses the previous
 seven days, not a persisted last-success cache; a failed weekly run must be
 rerun or followed by manual validation rather than treated as successful evidence.
