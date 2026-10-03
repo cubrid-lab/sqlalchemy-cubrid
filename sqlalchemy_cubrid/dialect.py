@@ -1808,6 +1808,26 @@ class CubridDialect(default.DefaultDialect):
         }
     )
 
+    # Server error codes whose own message is matched by the message fallback.
+    # A server message can echo application data (an identifier, a literal, a
+    # stored procedure's RAISE_APPLICATION_ERROR text), so for any other server
+    # code the message is not evidence of a disconnect (#624). These are the
+    # codes whose fixed text in the CUBRID 11.4.6 message catalog contains a
+    # disconnect pattern, or that the CAS was observed to report with one:
+    _server_connect_failure_codes = frozenset(
+        {
+            # Both observed with cub_server stopped, carrying the text "Failed
+            # to connect to database server, '<db>', on the following host(s)".
+            -190,
+            -191,
+            -368,  # catalog text: "Communication error during connect for ..."
+        }
+    )
+
+    # Codes above this bound in ``args[0]`` are the server's own
+    # (``error_code.h``); CUBRIDdb's CAS and CCI codes are -10xxx and -20xxx.
+    _server_code_floor = -10000
+
     def is_disconnect(self, e: Exception, connection: Any, cursor: Any) -> bool:
         """Return True if *e* indicates a dropped connection.
 
@@ -1833,7 +1853,10 @@ class CubridDialect(default.DefaultDialect):
 
         The message fallback reads the driver's own message (``args[0]``
         when it is a string), not pycubrid's ``str()`` with its code
-        description.
+        description. It is skipped for an error that carries a server error
+        code other than the catalogued connect failures
+        (``_server_connect_failure_codes``): server text can echo application
+        data, so a pattern in it does not mean the connection is gone (#624).
         """
         dbapi_module = getattr(self, "dbapi", None)
         if dbapi_module is None or not hasattr(dbapi_module, "Error"):
@@ -1864,6 +1887,9 @@ class CubridDialect(default.DefaultDialect):
         #    outcome. For any exception that does not
         #    override ``__str__`` a single string arg *is* ``str(e)``, and
         #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
+        server_code = self._server_error_code(e)
+        if server_code is not None and server_code not in self._server_connect_failure_codes:
+            return False
         if len(e.args) == 1 and isinstance(e.args[0], str):
             msg = e.args[0].lower()
         else:
@@ -1883,6 +1909,20 @@ class CubridDialect(default.DefaultDialect):
             error_code in self._disconnect_error_codes
             or error_code in self._server_session_lost_codes
         )
+
+    def _server_error_code(self, e: Exception) -> Optional[int]:
+        """Return *e*'s code when it is certainly a server error code.
+
+        CUBRIDdb puts the code in ``args[0]``: a server code
+        (``error_code.h``) lies above ``_server_code_floor``, a CAS or CCI
+        client code below it. :class:`PyCubridDialect` reads ``errno``.
+        """
+        return self._as_server_code(self._extract_error_code(e))
+
+    def _as_server_code(self, code: Optional[int]) -> Optional[int]:
+        if code is not None and self._server_code_floor < code < 0:
+            return code
+        return None
 
     @staticmethod
     def _has_oserror_cause(exception: BaseException) -> bool:
