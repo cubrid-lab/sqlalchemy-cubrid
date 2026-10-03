@@ -26,6 +26,7 @@ DOC_FILES: list[str] = [
     "PERFORMANCE.md",
     "TROUBLESHOOTING.md",
     "DEVELOPMENT.md",
+    "CI_POLICY.md",
     "DRIVER_COMPAT.md",
 ]
 

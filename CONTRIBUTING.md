@@ -392,3 +392,9 @@ Confirm availability and have the actual implementer set in GitHub Assignees
 before starting. If you cannot assign yourself, ask a maintainer. Coordinate
 with existing claimants/open PRs; update assignments on handoff or return.
 A reviewer does not need to be an issue assignee.
+
+## Minimum PR validation
+
+Follow the [CI execution policy](docs/CI_POLICY.md). PR smoke is representative,
+not full-suite/coverage evidence. Run relevant regression tests locally and report
+commands/results; request exact-head full validation where compatibility requires it.

@@ -33,7 +33,7 @@ See CONTRIBUTING.md#pull-request-and-commit-titles.
 - [ ] The linked issue has current scope, verifiable completion criteria and validation instructions; completed dependencies are not still blockers
 
 - [ ] My code follows the project's code style
-- [ ] I have recorded executed `make check-all` / `make test` results and reasons for any unexecuted checks
+- [ ] I have recorded executed `make check-all` / `make test` / `make test-repo` / `make test-offline` results and reasons for any unexecuted checks
 - [ ] I have added tests for new functionality (if applicable)
 - [ ] I have updated matching behavior/API/version/config documentation, or provided a populated standalone physical source line `Docs: not needed - <reason>` when none is required
 - [ ] I have recorded known warnings, limitations and follow-up work

@@ -173,12 +173,13 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 
 ## CI Matrix
 
-| Dimension | PR / push | Nightly + dispatch + release |
-|---|---|---|
-| Offline tests | Python 3.10, 3.11, 3.12, 3.13, 3.14 | Same |
-| Integration tests | Reduced matrix, 2 combinations: Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest) | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
+| Validation | Routine execution | Full compatibility |
+| --- | --- | --- |
+| Offline | PR smoke on Ubuntu/Python 3.12; main/changed-weekly full suite, 95% coverage | Local full tests remain available |
+| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
-The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on demand via `workflow_dispatch`, and as the release gate that `release.yml` calls for every release.
+See [CI execution policy](CI_POLICY.md). Supported versions are unchanged;
+representative PR checks are not evidence for every supported combination.
 
 ### SQLAlchemy compliance lanes
 
