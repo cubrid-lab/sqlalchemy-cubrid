@@ -58,6 +58,14 @@ flowchart TD
 
 ## 요구 사항
 
+**Python 3.10 지원 종료 예고:** Python 3.10은 2026-10-01에 공식 지원이
+종료됐습니다([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
+현재 1.8.x와 예고를 포함할 1.9.x 릴리스는 Python 3.10 지원을 유지합니다.
+1.9.0에 이 안내가 게시된 뒤, 그 다음 마이너 릴리스(예정: 1.10.0)부터
+Python 3.11 이상을 요구합니다. 해당 릴리스로 업그레이드하기 전에 Python을
+업그레이드하고 가상 환경을 새로 만든 뒤 애플리케이션을 검증하세요.
+이번 안내는 현재 설치 요구 사항을 바꾸거나 실행 시 경고를 추가하지 않습니다.
+
 - Python 3.10+
 - SQLAlchemy 2.0 – 2.1
 - [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상에서 빌드한 레거시 CUBRIDdb C 확장
