@@ -376,3 +376,19 @@ not need label-write access.
 
 Open a [GitHub Discussion](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)
 or file an [issue](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues).
+
+## Keeping issue descriptions actionable
+
+Before coding, agree the issue's problem, expected behavior, scope, completion
+criteria and validation method. Keep the body as the current specification;
+record dated progress in comments. Maintainers reconcile closed dependencies
+and completed checklist items after a related merge or handoff. Preserve the
+original reproduction's revision and limits: older evidence is not proof of
+current behavior. Priorities/sizes belong in labels, execution order in the
+backlog tracker. Research closes on a documented decision, not an implied
+promise to implement every proposed option.
+
+Confirm availability and have the actual implementer set in GitHub Assignees
+before starting. If you cannot assign yourself, ask a maintainer. Coordinate
+with existing claimants/open PRs; update assignments on handoff or return.
+A reviewer does not need to be an issue assignee.

@@ -286,6 +286,38 @@ The dialect translates automatically in `create_connect_args()`.
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 
+## Issue specification and ownership
+
+An issue body is the current work specification, not a session transcript.
+Before implementation, maintainers/agents must ensure it states the problem
+and impact, evidence with a revision/environment, reproducible steps or the
+investigation question, expected behavior, scope/non-goals, relevant files,
+verifiable completion criteria, validation method and actual dependencies.
+Say "not verified" when evidence is missing; never invent a reproduction,
+server result, release availability or test command. Small docs tasks need
+only the applicable fields. Research issues close on a recorded decision;
+implementation follows the agreed contract.
+
+- Keep priority/size in canonical labels and execution order in the backlog
+  tracker. Do not prepend repeated triage banners to individual issue bodies.
+- Put dated progress, pause/resume instructions and review outcomes in issue
+  comments. Keep historical reproductions and source links in the body with
+  their original revision/date and clear evidence limits.
+- Reconcile completed work and closed dependencies when scope changes, a
+  related PR merges, work is handed over or the issue is closed. Closed work
+  is reference evidence, not a blocker. A merged upstream PR is not proof
+  that a compatible release is available.
+- Set the actual implementer in GitHub Assignees before implementation.
+  Comments alone do not replace assignment. Preserve existing contributor
+  claims and open PRs; agree a handoff before changing ownership. If assignment
+  permission is missing, request maintainer assignment before starting.
+- On handoff, update Assignees; unassign when returning unfinished work.
+  Preserve a contributor's evidence and scope when editing their issue.
+- Before saving an issue edit, check for contradictory current statuses,
+  stale dependency/checklist entries, duplicate criteria and unproven claims.
+  Re-read the issue after saving. Never mark a tracker complete just because
+  its children merged; confirm its integration acceptance separately.
+
 ## Issue Labeling (cubrid-lab org standard)
 
 For maintainer/agent-managed issue creation in **any cubrid-lab repository**, assign exactly one

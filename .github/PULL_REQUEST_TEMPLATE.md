@@ -29,6 +29,9 @@ See CONTRIBUTING.md#pull-request-and-commit-titles.
 
 ## Checklist
 
+- [ ] The implementation issue has the actual owner in Assignees; existing claims and PRs were coordinated
+- [ ] The linked issue has current scope, verifiable completion criteria and validation instructions; completed dependencies are not still blockers
+
 - [ ] My code follows the project's code style
 - [ ] I have recorded executed `make check-all` / `make test` results and reasons for any unexecuted checks
 - [ ] I have added tests for new functionality (if applicable)
