@@ -4300,12 +4300,13 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 
 ## CI Matrix
 
-| Dimension | PR / push | Nightly + dispatch + release |
-|---|---|---|
-| Offline tests | Python 3.10, 3.11, 3.12, 3.13, 3.14 | Same |
-| Integration tests | Reduced matrix, 2 combinations: Python 3.14 × CUBRID 11.4 (newest) and Python 3.10 × CUBRID 10.2 (oldest) | Python {3.10, 3.11, 3.12, 3.13, 3.14} × CUBRID {10.2, 11.0, 11.2, 11.4} = 20 jobs |
+| Validation | Routine execution | Full compatibility |
+| --- | --- | --- |
+| Offline | PR smoke on Ubuntu/Python 3.12; main/changed-weekly full suite, 95% coverage | Local full tests remain available |
+| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
-The 5 × 4 full integration matrix is run by `.github/workflows/integration-full.yml` on a nightly schedule, on demand via `workflow_dispatch`, and as the release gate that `release.yml` calls for every release.
+See [CI execution policy](CI_POLICY.md). Supported versions are unchanged;
+representative PR checks are not evidence for every supported combination.
 
 ### SQLAlchemy compliance lanes
 
@@ -6600,8 +6601,8 @@ default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
 CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
 "Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
 command. Several test files open connections through both drivers whichever one
-the URL selects, so install `.[dev,pycubrid]` for either driver. PR CI runs
-`make integration` with the default driver on CUBRID 11.4; the nightly and release-gate
+the URL selects, so install `.[dev,pycubrid]` for either driver. Main/weekly code CI runs
+`make integration` with the default driver on CUBRID 11.4; the full dispatch and release-gate
 `integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
 11.4.
 
@@ -6717,29 +6718,14 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI Matrix
 
-The CI pipeline tests the following matrix on every PR/push. The integration
-rows are a reduced matrix of exactly 2 combinations (newest Python × newest
-CUBRID, oldest × oldest), not every Python × CUBRID cell; the full 5×4 cross
-product runs nightly, on demand, and as the release gate via
-`integration-full.yml`:
-
-| | Python 3.10 | Python 3.11 | Python 3.12 | Python 3.13 | Python 3.14 |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Offline Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Repository-Tooling Tests** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **CUBRID 11.4** | — | — | — | — | ✅ |
-| **CUBRID 11.2** | — | — | — | — | — |
-| **CUBRID 11.0** | — | — | — | — | — |
-| **CUBRID 10.2** | ✅ | — | — | — | — |
-
-`make test` deselects the `repo` marker, which `test/conftest.py` applies to the
-modules in `REPO_TOOLING_MODULES` (`test_make_integration.py`,
-`test_docs_reason.py`, `test_release_detect.py`). These tests drive the Makefile
-`integration` recipe and its sh/bash signal handling and the repository scripts
-through subprocesses; on a 1,677-test offline run they took about 85 of 103
-seconds (#594). They stay required: the `repo-tests` CI job runs `-m repo` on
-every supported Python, and `matrix-result` fails unless it succeeds. `tox`
-runs them in its `repo` environment.
+Routine CI uses one Ubuntu/Python 3.12 offline lane and representative live
+combinations rather than the full matrix. PRs run smoke tests; main and changed
+weekly runs retain the full offline suite with 95% coverage. High-risk PRs select
+newest integration, while main/weekly use oldest/newest endpoints. Repository
+tooling is path-selected on one Linux lane. Full integration is explicit/manual
+and release-only. See [CI execution policy](CI_POLICY.md) for exact selection and
+validation requirements. Historical cost measurements below describe the earlier
+workflow, not current job counts or new savings.
 
 ---
 
@@ -6870,18 +6856,18 @@ pre-commit run --all-files
 
 | Workflow | File | Trigger |
 |---|---|---|
-| CI | `.github/workflows/ci.yml` | Push to main, PRs |
-| Integration Full | `.github/workflows/integration-full.yml` | Nightly, manual dispatch, called by `release.yml` |
+| CI | `.github/workflows/ci.yml` | PRs, main, weekly, manual |
+| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `release.yml` |
 | Prepare Release | `.github/workflows/prepare-release.yml` | Manual dispatch (`-f version=X.Y.Z`); opens the `chore: release vX.Y.Z` PR |
 | Release | `.github/workflows/release.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
-2. **Offline Tests** — Python 3.10, 3.11, 3.12, 3.13, 3.14 × offline test suite
-3. **Integration Tests** — reduced matrix, 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
-4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 nightly and in the release gate in `integration-full.yml`)
-5. **Coverage** — Enforces ≥ 95% threshold
+2. **Offline Tests** — one Ubuntu/Python 3.12 lane; PR smoke, main/weekly full offline coverage
+3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
+5. **Coverage** — Enforces ≥ 95% on the full main/weekly offline lane; PR smoke makes no coverage claim
 
 ### Driver-differential lane
 

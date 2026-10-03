@@ -376,3 +376,9 @@ not need label-write access.
 
 Open a [GitHub Discussion](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)
 or file an [issue](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues).
+
+## Minimum PR validation
+
+Follow the [CI execution policy](docs/CI_POLICY.md). PR smoke is representative,
+not full-suite/coverage evidence. Run relevant regression tests locally and report
+commands/results; request exact-head full validation where compatibility requires it.
