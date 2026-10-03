@@ -422,5 +422,17 @@ class PyCubridDialect(CubridDialect):
             return False
         return errno in self._server_session_lost_codes or errno in self._pycubrid_legacy_cas_codes
 
+    # pycubrid receives CAS codes legacy-renumbered to -1xxx (see above), which
+    # overlaps the server codes below -1000, so only codes above -1000 are
+    # certainly the server's.
+    _server_code_floor = -1000
+
+    def _server_error_code(self, e: Exception) -> int | None:
+        """Read the code from pycubrid's ``errno`` (its ``args`` hold only text)."""
+        errno = getattr(e, "errno", None)
+        if not isinstance(errno, int) or isinstance(errno, bool):
+            return None
+        return self._as_server_code(errno)
+
 
 dialect = PyCubridDialect

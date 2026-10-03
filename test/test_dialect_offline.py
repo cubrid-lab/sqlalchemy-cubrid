@@ -2323,6 +2323,74 @@ class TestIsDisconnect:
             exc = exc_cls(message, code=errno, errno=errno)
         assert dialect.is_disconnect(exc, None, None) is expected
 
+    # Recorded on CUBRID 11.4.6 with pycubrid: server errors whose text echoes
+    # application data that happens to contain a disconnect pattern. The
+    # connection stayed usable in every case (#624).
+    @pytest.mark.parametrize(
+        ("exc_name", "message", "errno"),
+        [
+            (
+                "DatabaseError",
+                "Stored procedure execute error: \n  (line 1, column 49) "
+                "connection refused by policy",
+                -889,
+            ),
+            (
+                "ProgrammingError",
+                'Syntax: Unknown class "dba.connection refused". '
+                "select 1 from [dba.connection refused]",
+                -493,
+            ),
+            (
+                "ProgrammingError",
+                "Semantic: before '  + 1 FROM db_root'\nCannot coerce 'lost connection' "
+                "to type double. select  cast('lost connection' as double)+ cast(1 as double)...",
+                -494,
+            ),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_server_text_is_not_a_disconnect(self, variant, exc_name, message, errno):
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = getattr(pycubrid, exc_name)(message, code=errno, errno=errno)
+        assert dialect.is_disconnect(exc, None, None) is False
+
+    @pytest.mark.parametrize(
+        ("errno", "message"),
+        [
+            # Recorded on CUBRID 11.4.6 with cub_server stopped.
+            (-190, "Failed to connect to database server, 'testdb', on the following host(s): h"),
+            # Message 368 of the CUBRID 11.4.6 catalog.
+            (-368, "Communication error during connect for testdb."),
+            # A legacy CAS code (-1xxx) is not a server code: its text is the CAS's own.
+            (-1003, "Cannot communicate with the broker"),
+        ],
+    )
+    def test_pycubrid_connect_failure_codes_keep_message_fallback(
+        self, pycubrid_dialect, errno, message
+    ):
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, message, errno)
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    def test_cubriddb_server_text_is_not_a_disconnect(self, dialect_with_dbapi):
+        """CUBRIDdb puts the server code in ``args[0]``; the same rule applies (#624)."""
+        dialect, dbapi = dialect_with_dbapi
+        exc = dbapi.DatabaseError(
+            -493,
+            'ERROR: DBMS, -493, Syntax: Unknown class "dba.connection refused". '
+            "select 1 from [dba.connection refused]",
+        )
+        assert dialect.is_disconnect(exc, None, None) is False
+
     @pytest.mark.parametrize("variant", ["sync", "async"])
     def test_real_pycubrid_oserror_cause_is_disconnect(self, variant):
         """A real pycubrid error raised from a socket error disconnects."""
