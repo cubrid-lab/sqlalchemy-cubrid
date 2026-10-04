@@ -20,15 +20,21 @@ SPEC.loader.exec_module(MODULE)
 
 
 @pytest.mark.parametrize(
-    "draft,published,tag_sha,expected",
+    "draft,published,tag_sha,run_sha,run_conclusion,job_names,expected",
     [
-        (False, "2026-10-03", "abc", True),
-        (True, "2026-10-03", "abc", False),
-        (False, None, "abc", False),
-        (False, "2026-10-03", "different", False),
+        (False, "2026-10-03", "abc", "abc", "success", "complete", True),
+        (True, "2026-10-03", "abc", "abc", "success", "complete", False),
+        (False, None, "abc", "abc", "success", "complete", False),
+        (False, "2026-10-03", "different", "abc", "success", "complete", False),
+        (False, "2026-10-03", "abc", "different", "success", "complete", False),
+        (False, "2026-10-03", "abc", "abc", "failure", "complete", False),
+        (False, "2026-10-03", "abc", "abc", "success", "publish-only", False),
+        (False, "2026-10-03", "abc", "abc", "success", "legacy", False),
     ],
 )
-def test_pending_transition_requires_completed_publication(draft, published, tag_sha, expected):
+def test_pending_transition_requires_completed_publication(
+    draft, published, tag_sha, run_sha, run_conclusion, job_names, expected
+):
     def api(*args):
         endpoint = args[1]
         if "/contents/" in endpoint:
@@ -40,13 +46,21 @@ def test_pending_transition_requires_completed_publication(draft, published, tag
         if "/git/tags/" in endpoint:
             return {"object": {"type": "commit", "sha": tag_sha}}
         if "/workflows/" in endpoint:
-            return {"workflow_runs": [{"head_sha": "abc", "conclusion": "success", "id": 123}]}
-        return {
-            "jobs": [
-                {"name": name, "conclusion": "success"}
-                for name in ["Tag, GitHub Release and PyPI", "Require a verified release"]
-            ]
-        }
+            assert endpoint == (
+                "repos/cubrid-lab/pycubrid/actions/workflows/publish-pypi.yml/runs"
+                "?head_sha=abc&per_page=100"
+            )
+            return {
+                "workflow_runs": [{"head_sha": run_sha, "conclusion": run_conclusion, "id": 123}]
+            }
+        assert endpoint == "repos/cubrid-lab/pycubrid/actions/runs/123/jobs?per_page=100"
+        names = {
+            "complete": ["Tag, GitHub Release and PyPI", "Require a verified release"],
+            "publish-only": ["Tag, GitHub Release and PyPI"],
+            # This filename was used by the old publish-only workflow too.
+            "legacy": ["Publish to PyPI"],
+        }[job_names]
+        return {"jobs": [{"name": name, "conclusion": "success"} for name in names]}
 
     assert MODULE.ready("cubrid-lab/pycubrid", "abc", api) is expected
 

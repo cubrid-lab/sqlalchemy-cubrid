@@ -39,7 +39,7 @@ def ready(repository: str, sha: str, api=gh) -> bool:
             return False
         runs = api(
             "api",
-            f"repos/{repository}/actions/workflows/release.yml/runs?head_sha={sha}&per_page=100",
+            f"repos/{repository}/actions/workflows/publish-pypi.yml/runs?head_sha={sha}&per_page=100",
         )
         for run in runs["workflow_runs"]:
             if run.get("head_sha") != sha or run.get("conclusion") != "success":

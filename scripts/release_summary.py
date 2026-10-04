@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the single run summary of release.yml and name its final state.
+"""Render the single run summary of publish-pypi.yml and name its final state.
 
 The ``summary`` job always runs and passes ``toJSON(needs)`` in ``NEEDS``. This
 script renders one Markdown table (SHA, tag, version, artifact hashes, matrix
