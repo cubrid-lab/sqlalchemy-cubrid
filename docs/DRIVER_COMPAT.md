@@ -151,7 +151,7 @@ driver's own message, instead.
 CUBRIDdb 11.3.0.51 defines `OperationalError` (see
 [Exception Hierarchy](#exception-hierarchy)), but the dialect's
 `is_disconnect()` does not classify disconnects by exception class. Instead, it uses:
-- String pattern matching against 16 known disconnect messages
+- String pattern matching against 17 known disconnect messages (14 shared, 3 from pycubrid)
 - Numeric error code matching, on `args[0]` (CUBRIDdb only), for the CCI and CAS
   codes of a dead or unusable connection: -20004 (`CCI_ER_COMMUNICATION`), -10003
   (`CAS_ER_COMMUNICATION`; CCI treats both as communication errors), -20002

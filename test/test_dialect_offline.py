@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import struct
 import sys
 import types
 import warnings
@@ -2089,6 +2090,10 @@ class TestIsDisconnect:
             pytest.param(
                 lambda dbapi: dbapi.DatabaseError("reconnecting failed"), id="reconnecting-failed"
             ),
+            pytest.param(
+                lambda dbapi: dbapi.DatabaseError("malformed response from broker"),
+                id="malformed-response",
+            ),
         ],
     )
     def test_pycubrid_policy_stays_out_of_cubriddb_dialect(self, dialect_with_dbapi, make_error):
@@ -2431,6 +2436,31 @@ class TestIsDisconnect:
             "read timeout: no complete round trip within read_timeout=1.0s"
         )
         exc.__cause__ = asyncio.TimeoutError()
+        assert dialect.is_disconnect(exc, None, None) is True
+
+    @pytest.mark.parametrize(
+        "cause",
+        [
+            ValueError("bad"),
+            struct.error("unpack requires a buffer of 4 bytes"),
+            IndexError("short"),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "x"),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_real_pycubrid_malformed_reply_is_disconnect(self, variant, cause):
+        """pycubrid drops the connection before raising a malformed-reply error (#680)."""
+        pycubrid = pytest.importorskip("pycubrid")
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        exc = pycubrid.OperationalError("malformed response from broker")
+        exc.__cause__ = cause
         assert dialect.is_disconnect(exc, None, None) is True
 
     def test_pycubrid_failed_reconnect_is_disconnect(self, pycubrid_dialect):

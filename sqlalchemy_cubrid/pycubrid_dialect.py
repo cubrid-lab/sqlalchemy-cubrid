@@ -383,6 +383,9 @@ class PyCubridDialect(CubridDialect):
         # ("CAS did not answer CHECK_CAS out of transaction and reconnecting
         # failed"), e.g. an idle connection while cub_server is down (#565).
         "reconnecting failed",
+        # pycubrid drops the connection before it raises this for a reply it
+        # cannot parse, sync and async (#680).
+        "malformed response from broker",
     )
 
     # pycubrid doesn't negotiate CUBRID's renewed CAS/CCI error-code protocol
