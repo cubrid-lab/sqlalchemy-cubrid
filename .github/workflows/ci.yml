@@ -221,7 +221,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - name: Install dependencies
         env:
           ALEMBIC: ${{ matrix.alembic }}
@@ -355,7 +355,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"}]}' || '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"},{"python-version":"3.10","cubrid-version":"10.2","pycubrid-compliance-sqlalchemy":"2.0.53"}]}') }}
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"}]}' || '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"},{"python-version":"3.11","cubrid-version":"10.2","pycubrid-compliance-sqlalchemy":"2.0.53"}]}') }}
     services:
       cubrid:
         image: cubrid/cubrid:${{ matrix.cubrid-version }}

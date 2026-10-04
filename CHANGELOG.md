@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+- **Python 3.11 or newer is required (#686).** Python 3.10 reached upstream end
+  of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10
+  `pip` keeps installing 1.9.x, the last line that supports it; only the latest
+  release line receives fixes, so 1.9.x gets no further releases. Upgrade Python,
+  recreate your virtual environment and validate your application before upgrading.
+
+### Removed
+- **Python 3.10 support (#686)** — `requires-python` is `>=3.11` and the 3.10
+  classifier is gone. CI no longer tests 3.10: the oldest integration cell is
+  Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python
+  3.11–3.14 and the Alembic compatibility job runs on 3.11. No dialect behavior
+  changes on Python 3.11 or newer.
+
 ## [1.9.0] - 2026-10-04
 
 ### Release tooling

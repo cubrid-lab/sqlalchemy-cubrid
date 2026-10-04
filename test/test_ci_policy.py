@@ -71,7 +71,7 @@ def test_full_release_call_is_preserved_without_automatic_schedule() -> None:
     assert set(events) == {"workflow_dispatch", "workflow_call"}
     assert events["workflow_call"]["inputs"]["sha"]["required"] is True
     matrix = full["jobs"]["integration-full"]["strategy"]["matrix"]
-    assert len(matrix["python-version"]) == 5
+    assert matrix["python-version"] == ["3.11", "3.12", "3.13", "3.14"]
     assert len(matrix["cubrid-version"]) == 4
 
 

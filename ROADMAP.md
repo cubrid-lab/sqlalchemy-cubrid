@@ -8,12 +8,13 @@
 ## Python 3.10 retirement schedule
 
 - Upstream Python 3.10 support ended on 2026-10-01 ([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
-- Current 1.8.x: Python >=3.10 remains the installation requirement.
-- Upcoming 1.9.0: publish advance notice in CHANGELOG Deprecated and the support
-  matrix; keep Python 3.10 supported throughout the 1.9.x line.
-- Following minor release (planned 1.10.0): require Python >=3.11 only after the
-  advance-notice minor has shipped. Align package metadata, classifiers, tooling,
-  CI matrices and English/Korean support documentation in a separate change.
+- 1.8.x and 1.9.x: Python >=3.10 is the installation requirement.
+- 1.9.0 (published 2026-10-04): carried the advance notice in CHANGELOG Deprecated
+  and the support matrix; Python 3.10 stays supported throughout the 1.9.x line.
+- Done on `main` for the next minor release (planned 1.10.0): package metadata
+  requires Python >=3.11, the 3.10 classifier is removed and CI matrices start at
+  3.11 (#686). Tooling targets and the remaining documentation follow in the
+  child issues of #685.
 - Users should migrate Python and recreate/test their virtual environment before
   upgrading to the removal release. No release date or publication is claimed.
 
