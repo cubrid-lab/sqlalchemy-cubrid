@@ -405,6 +405,13 @@ jobs:
           pip install -e ".[dev]"
           pip install pytest-cov
 
+      # SQLAlchemy 2.0.x is the minimum supported line. Python 3.10 used to select
+      # it by itself (SQLAlchemy 2.1 needs Python 3.11); on 3.11 pip resolves 2.1,
+      # so the oldest cell pins 2.0 for every step, not only the compliance lane.
+      - name: Pin the minimum SQLAlchemy line in the oldest cell
+        if: matrix.python-version == '3.11' && matrix.cubrid-version == '10.2'
+        run: pip install "sqlalchemy[asyncio]>=2.0,<2.1"
+
       - name: Wait for CUBRID to be ready
         run: |
           for i in $(seq 1 30); do

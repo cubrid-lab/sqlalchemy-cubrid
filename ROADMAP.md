@@ -51,7 +51,7 @@
 
 ## Compatibility
 
-Python 3.10+, SQLAlchemy 2.0–2.1, CUBRID 10.2–11.4
+Python 3.11+ (3.10 until 1.9.x), SQLAlchemy 2.0–2.1, CUBRID 10.2–11.4
 
 ## Completed
 

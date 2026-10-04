@@ -18,8 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Python 3.10 support (#686)** — `requires-python` is `>=3.11` and the 3.10
   classifier is gone. CI no longer tests 3.10: the oldest integration cell is
   Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python
-  3.11–3.14 and the Alembic compatibility job runs on 3.11. No dialect behavior
-  changes on Python 3.11 or newer.
+  3.11–3.14 and the Alembic compatibility job runs on 3.11. Python 3.10 used to
+  select SQLAlchemy 2.0 by itself (SQLAlchemy 2.1 needs Python 3.11), so the
+  oldest CI cell and the Python 3.11 row of the full matrix now pin
+  `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary
+  integration tests on the minimum supported SQLAlchemy line. No dialect
+  behavior changes on Python 3.11 or newer.
 
 ## [1.9.0] - 2026-10-04
 
