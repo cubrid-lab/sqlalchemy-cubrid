@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
         cubrid-version: ["10.2", "11.0", "11.2", "11.4"]
     services:
       cubrid:
@@ -78,6 +78,12 @@ jobs:
         run: |
           pip install -e ".[dev]"
           pip install pytest-cov
+
+      # The oldest Python row keeps the minimum supported SQLAlchemy line (2.0.x),
+      # which Python 3.10 selected by itself before it was retired.
+      - name: Pin the minimum SQLAlchemy line in the oldest Python row
+        if: matrix.python-version == '3.11'
+        run: pip install "sqlalchemy[asyncio]>=2.0,<2.1"
 
       - name: Wait for CUBRID to be ready
         run: |

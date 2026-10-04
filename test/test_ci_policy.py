@@ -71,8 +71,38 @@ def test_full_release_call_is_preserved_without_automatic_schedule() -> None:
     assert set(events) == {"workflow_dispatch", "workflow_call"}
     assert events["workflow_call"]["inputs"]["sha"]["required"] is True
     matrix = full["jobs"]["integration-full"]["strategy"]["matrix"]
-    assert len(matrix["python-version"]) == 5
+    assert matrix["python-version"] == ["3.11", "3.12", "3.13", "3.14"]
     assert len(matrix["cubrid-version"]) == 4
+
+
+def test_oldest_cells_use_python_311_and_keep_the_sqlalchemy_20_line() -> None:
+    ci = workflow("ci.yml")["jobs"]
+    alembic = next(s for s in ci["alembic-compat"]["steps"] if "setup-python" in s.get("uses", ""))
+    assert alembic["with"]["python-version"] == "3.11"
+    cells = ci["integration-tests"]["strategy"]["matrix"]
+    assert (
+        '{"python-version":"3.11","cubrid-version":"10.2",'
+        '"pycubrid-compliance-sqlalchemy":"2.0.53"}' in cells
+    )
+    assert '"3.10"' not in cells
+    # Python 3.11 resolves SQLAlchemy 2.1 by itself; the oldest cell and the
+    # oldest full-matrix row must pin the minimum supported 2.0 line.
+    pins = {
+        "ci.yml": (
+            ci["integration-tests"],
+            "matrix.python-version == '3.11' && matrix.cubrid-version == '10.2'",
+        ),
+        "integration-full.yml": (
+            workflow("integration-full.yml")["jobs"]["integration-full"],
+            "matrix.python-version == '3.11'",
+        ),
+    }
+    for name, (job, condition) in pins.items():
+        names = [s.get("name", "") for s in job["steps"]]
+        pin = next(s for s in job["steps"] if s.get("name", "").startswith("Pin the minimum"))
+        assert pin["if"] == condition, name
+        assert pin["run"] == 'pip install "sqlalchemy[asyncio]>=2.0,<2.1"', name
+        assert names.index(pin["name"]) == names.index("Install project") + 1, name
 
 
 def test_pr_smoke_is_separate_from_main_coverage_and_single_linux_lane() -> None:

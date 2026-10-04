@@ -221,7 +221,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.10"
+          python-version: "3.11"
       - name: Install dependencies
         env:
           ALEMBIC: ${{ matrix.alembic }}
@@ -355,7 +355,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"}]}' || '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"},{"python-version":"3.10","cubrid-version":"10.2","pycubrid-compliance-sqlalchemy":"2.0.53"}]}') }}
+      matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"}]}' || '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"},{"python-version":"3.11","cubrid-version":"10.2","pycubrid-compliance-sqlalchemy":"2.0.53"}]}') }}
     services:
       cubrid:
         image: cubrid/cubrid:${{ matrix.cubrid-version }}
@@ -404,6 +404,13 @@ jobs:
         run: |
           pip install -e ".[dev]"
           pip install pytest-cov
+
+      # SQLAlchemy 2.0.x is the minimum supported line. Python 3.10 used to select
+      # it by itself (SQLAlchemy 2.1 needs Python 3.11); on 3.11 pip resolves 2.1,
+      # so the oldest cell pins 2.0 for every step, not only the compliance lane.
+      - name: Pin the minimum SQLAlchemy line in the oldest cell
+        if: matrix.python-version == '3.11' && matrix.cubrid-version == '10.2'
+        run: pip install "sqlalchemy[asyncio]>=2.0,<2.1"
 
       - name: Wait for CUBRID to be ready
         run: |

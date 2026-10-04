@@ -4169,22 +4169,22 @@ helpers, so the direct private API surface is down to these three attributes.
 
 | Python Version | Status |
 |---|---|
-| 3.10 | ✅ Supported (retirement planned after 1.9.x) |
 | 3.11 | ✅ Supported |
 | 3.12 | ✅ Supported |
 | 3.13 | ✅ Supported |
 | 3.14 | ✅ Supported |
 | 3.15 | 🧪 Preview preparation (not officially supported) |
+| 3.10 | ❌ Not supported from 1.10.0 (last supported in 1.9.x) |
 | < 3.10 | ❌ Not supported |
 
 **Python 3.10 support retirement:** Python 3.10 reached upstream end of life on
 2026-10-01 ([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
-The current 1.8.x line and the upcoming 1.9.x advance-notice release retain Python
-3.10 support. The following minor release (planned 1.10.0) will require Python
-3.11 or newer, after the 1.9.0 notice has shipped. Upgrade your interpreter,
-recreate your virtual environment and validate your application before upgrading
-to that release. This notice does not change the current installation requirement
-or add a runtime warning.
+The 1.8.x and 1.9.x lines support Python 3.10; 1.9.0 carried the advance notice.
+From 1.10.0 the package requires Python 3.11 or newer (`requires-python =
+">=3.11"`), so `pip` on Python 3.10 keeps installing 1.9.x. Only the latest
+release line receives fixes, so 1.9.x gets no further releases. Upgrade your
+interpreter, recreate your virtual environment and validate your application
+before upgrading.
 
 **Python 3.15 preparation:** As of 2026-10-03, Python 3.15 is a preview
 ([3.15.0rc3](https://www.python.org/downloads/release/python-3150rc3/)); final
@@ -4333,10 +4333,11 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 | Validation | Routine execution | Full compatibility |
 | --- | --- | --- |
 | Offline | PR smoke on Ubuntu/Python 3.12; main/changed-weekly full suite, 95% coverage | Local full tests remain available |
-| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
+| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
-See [CI execution policy](CI_POLICY.md). Supported versions are unchanged;
-representative PR checks are not evidence for every supported combination.
+See [CI execution policy](CI_POLICY.md). That policy selects what each run tests; it does
+not define the supported versions listed above, and representative PR checks are not
+evidence for every supported combination.
 
 ### SQLAlchemy compliance lanes
 
@@ -7090,7 +7091,7 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | High-risk PR | Same offline smoke plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
 | Code push to main | One Ubuntu/Python 3.12 full offline suite with the existing 95% coverage floor; oldest/newest live endpoints |
 | Monday 03:00 UTC | Same representative policy, comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests |
-| Explicit full dispatch or release | Existing full Python 3.10–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes |
+| Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes |
 
 The PR smoke suite is deliberately bounded. Contributors must run the regression
 checks relevant to their change locally and record commands/results in the PR.
