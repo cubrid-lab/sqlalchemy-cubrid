@@ -2219,7 +2219,9 @@ class TestIsDisconnect:
         [
             *_NOT_DISCONNECT,
             -493,  # ER_PT_SYNTAX
-            -671,  # ER_CSS_RECV_OR_SEND: evaluated and not added (#564)
+            # ER_CSS_RECV_OR_SEND: evaluated and not added (#564). The broker does
+            # not reset the CAS for it (docs/DRIVER_COMPAT.md).
+            -671,
             None,
         ],
     )
