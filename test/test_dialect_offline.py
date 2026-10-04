@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import struct
 import sys
 import types
 import warnings
@@ -2439,7 +2440,12 @@ class TestIsDisconnect:
 
     @pytest.mark.parametrize(
         "cause",
-        [ValueError("bad"), IndexError("short"), UnicodeDecodeError("utf-8", b"\xff", 0, 1, "x")],
+        [
+            ValueError("bad"),
+            struct.error("unpack requires a buffer of 4 bytes"),
+            IndexError("short"),
+            UnicodeDecodeError("utf-8", b"\xff", 0, 1, "x"),
+        ],
     )
     @pytest.mark.parametrize("variant", ["sync", "async"])
     def test_real_pycubrid_malformed_reply_is_disconnect(self, variant, cause):
