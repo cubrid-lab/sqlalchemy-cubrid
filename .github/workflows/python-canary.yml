@@ -48,7 +48,12 @@ jobs:
           python -m pip install -e ".[pycubrid,alembic]" pytest pytest-asyncio hypothesis PyYAML build twine
           python -m pip freeze
       - name: Run offline regressions
-        run: python -m pytest test/ -m "not integration and not repo" -q
+        # The deselected test checks that the pinned Ruff and Mypy of the dev
+        # extra are installed; this lane installs the runtime and test
+        # dependencies only, so that check does not apply here.
+        run: |
+          python -m pytest test/ -m "not integration and not repo" -q \
+            --deselect test/test_tool_versions.py::test_declared_pins_and_active_environment_agree
       - name: Build and validate distributions
         run: |
           python -m build
