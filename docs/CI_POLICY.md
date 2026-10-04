@@ -53,3 +53,18 @@ Routine type checking uses Python 3.13/SQLAlchemy 2.1.1; Alembic checks use late
 and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retain
 SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Live smoke, make integration
 and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validation.
+
+## Python 3.15 preview preparation
+
+`python-canary.yml` is manual-only: supply the full SHA and dispatch the branch
+at that commit. One Ubuntu/standard-GIL lane selects Python 3.15 with prereleases
+allowed, prints the actual interpreter/dependency versions, runs full offline
+regressions and validates fresh wheel/sdist installs. Failed setup/install/tests
+fail the run normally. It is separate from required PR checks and release gates;
+there is no new schedule, PR matrix cell or CUBRID provisioning. This lane alone
+does not establish official support, live database or free-threaded compatibility.
+
+GitHub dispatches a manual workflow only after its file is on the default
+branch, so the lane cannot run before it is merged. Its first run is made at
+the merged commit and recorded on the tracking issue; ordinary PR CI is not
+Python 3.15 evidence.
