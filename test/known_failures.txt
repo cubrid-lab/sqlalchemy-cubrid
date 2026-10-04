@@ -142,9 +142,10 @@ test/test_suite.py::BizarroCharacterTest::test_reflect_comments[plain-[brack]]  
 # tests with one `DELETE FROM some_table`, but `some_table` references itself
 # and CUBRID checks the foreign key per row, so the delete fails with -924
 # ("restricted by the foreign key") and every later setup hits the leftover
-# rows (unique violation). (pycubrid 1.8.0 still raises -924 as DatabaseError
-# rather than IntegrityError: cubrid-lab/pycubrid#390 fixed only -631 and -922.
-# CUBRIDdb raises IntegrityError. The class does not change these failures.)
+# rows (unique violation). (pycubrid 1.8.0 raises -924 as DatabaseError:
+# cubrid-lab/pycubrid#390 fixed only -631 and -922. pycubrid 1.9.0 raises
+# IntegrityError for it (cubrid-lab/pycubrid#493), as CUBRIDdb does. The
+# class does not change these failures.)
 test/test_suite.py::CTETest::test_delete_from_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_delete_scalar_subq_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_insert_from_select_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
