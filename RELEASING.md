@@ -17,7 +17,7 @@ Key invariants:
 
 ## Normal flow
 
-`release-please.yml` → reviewed release PR → squash merge → `release.yml`.
+`release-please.yml` → reviewed release PR → squash merge → `publish-pypi.yml`.
 
 ### 1. Prepare the release PR
 
@@ -29,7 +29,7 @@ as tested legacy transformation code, without an active workflow caller.
 
 Before proposing another release, the preparer reconciles merged
 `autorelease: pending` PRs only when their manifest version, tag commit,
-published non-draft GitHub Release and a successful `release.yml` run at the
+published non-draft GitHub Release and a successful `publish-pypi.yml` run at the
 merge SHA all agree. That run must include successful publication and cookbook
 verification jobs. It then transitions pending to `autorelease: tagged`.
 Partial publication remains pending and blocks the next release. Recovery runs
@@ -81,7 +81,7 @@ composed notes. The candidate must pass `make release-check VERSION=X.Y.Z`.
 Merge only the reviewed, fully validated release PR. Version selection is
 release-please's proposal; maintainer approval remains the publication decision.
 
-### 4. Automatic release (`release.yml`)
+### 4. Automatic release (`publish-pypi.yml`)
 
 Every push to `main` runs the cheap **detect** job
 (`scripts/release_detect.py`). It is a release only when all of these hold at
@@ -185,7 +185,7 @@ completes the release; a mismatch is a broken release.
 
 ### Recovery dispatch (the only manual entry point)
 
-`release.yml` has one `workflow_dispatch` with an `action` input. It never
+`publish-pypi.yml` has one `workflow_dispatch` with an `action` input. It never
 creates a new version, never moves a tag and never deletes anything.
 
 | `action` | Allowed when | Runs |
@@ -195,16 +195,16 @@ creates a new version, never moves a tag and never deletes anything.
 | `dry-run` | Any branch; `X.Y.Z` must equal `__version__` at the dispatched commit and have a dated CHANGELOG section. | consistency → matrix → build → verify-cookbook → require-cookbook, **no** tag, Release or upload. The cookbook jobs verify the already-published `X.Y.Z`. |
 
 ```bash
-gh workflow run release.yml -f action=resume -f version=X.Y.Z
-gh workflow run release.yml -f action=verify-only -f version=X.Y.Z
-gh workflow run release.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
+gh workflow run publish-pypi.yml -f action=resume -f version=X.Y.Z
+gh workflow run publish-pypi.yml -f action=verify-only -f version=X.Y.Z
+gh workflow run publish-pypi.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
 ```
 
 ### Dry-run evidence
 
-Before dispatching, audit `gh run list -R cubrid-lab/sqlalchemy-cubrid --workflow=release.yml`
+Before dispatching, audit `gh run list -R cubrid-lab/sqlalchemy-cubrid --workflow=publish-pypi.yml`
 for an existing `dry-run`/`resume`/`verify-only` run at the current
-`release.yml` revision (including `scripts/release_detect.py`,
+`publish-pypi.yml` revision (including `scripts/release_detect.py`,
 `scripts/release_summary.py` and the other scripts the jobs check out from
 the workflow's own commit): a run against an older revision of those scripts
 does not cover code paths changed since. An ordinary push whose `detect`
@@ -259,8 +259,11 @@ cookbook.
 - Settings → Actions → General: "Allow GitHub Actions to create and approve
   pull requests" (for `release-please.yml`).
 - Environment `pypi`: deployment branches limited to `main`; PyPI Trusted
-  Publisher for `cubrid-lab/sqlalchemy-cubrid`, workflow `release.yml`, environment
+  Publisher for `cubrid-lab/sqlalchemy-cubrid`, workflow `publish-pypi.yml`, environment
   `pypi` (<https://pypi.org/manage/project/sqlalchemy-cubrid/settings/publishing/>).
+  The workflow filename is part of the publisher identity: renaming the file
+  without changing the PyPI registration makes the upload fail with
+  `invalid-publisher`, after the tag and the draft Release were created.
 - No secret for the cookbook verification: the smoke test runs as a reusable
   workflow inside the release run.
 - No tag protection rule that blocks `github-actions[bot]` from creating

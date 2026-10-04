@@ -3,7 +3,7 @@ name: Integration Full Matrix
 # Full Python x CUBRID compatibility validation.
 # Routine CI uses representative combinations; see docs/CI_POLICY.md.
 # Full verification runs only on explicit dispatch or a release workflow call.
-# (workflow_dispatch), and as the release gate: release.yml calls it through
+# (workflow_dispatch), and as the release gate: publish-pypi.yml calls it through
 # workflow_call with the release commit SHA.
 
 on:
@@ -11,7 +11,7 @@ on:
   workflow_call:
     inputs:
       sha:
-        description: "Full commit SHA to test (release.yml passes the release commit)"
+        description: "Full commit SHA to test (publish-pypi.yml passes the release commit)"
         required: true
         type: string
 

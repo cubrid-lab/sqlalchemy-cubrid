@@ -1,8 +1,8 @@
 """Static contract checks for the automated release workflows (#601).
 
-Parses release.yml, release-please.yml and integration-full.yml offline (PyYAML
-comes with pre-commit in the dev extra). Kept identical across pycubrid,
-sqlalchemy-cubrid and cubrid-mcp-server.
+Parses publish-pypi.yml, release-please.yml and integration-full.yml offline (PyYAML
+comes with pre-commit in the dev extra). Shared release behavior across pycubrid,
+sqlalchemy-cubrid and cubrid-mcp-server; this repo retains its registered publisher filename.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ def load(name: str) -> dict[str, Any]:
     return dict(data)
 
 
-RELEASE = load("release.yml")
+RELEASE = load("publish-pypi.yml")
 PREPARE = load("release-please.yml")
 FULL = load("integration-full.yml")
 
@@ -47,12 +47,25 @@ def checkouts(job: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
-def test_manual_publish_path_is_gone() -> None:
-    assert not (WORKFLOWS / "publish-pypi.yml").exists()
+def test_registered_publisher_is_the_only_release_path() -> None:
+    assert (WORKFLOWS / "publish-pypi.yml").exists()
+    assert not (WORKFLOWS / "release.yml").exists()
     assert not (WORKFLOWS / "create-release.yml").exists()
     for path in WORKFLOWS.glob("*.yml"):
         text = path.read_text()
-        assert "publish-pypi.yml" not in text and "create-release.yml" not in text, path.name
+        assert "create-release.yml" not in text, path.name
+        for job in load(path.name).get("jobs", {}).values():
+            if job.get("permissions", {}).get("id-token") == "write":
+                assert path.name == "publish-pypi.yml"
+                assert job["environment"]["name"] == "pypi"
+            for step in steps(job):
+                if str(step.get("uses", "")).startswith("pypa/gh-action-pypi-publish@"):
+                    assert path.name == "publish-pypi.yml"
+                    assert job["environment"]["name"] == "pypi"
+                    assert job["permissions"]["id-token"] == "write"
+    publish = load("publish-pypi.yml")["jobs"]["publish"]
+    assert publish["permissions"]["id-token"] == "write"
+    assert publish["environment"]["name"] == "pypi"
 
 
 def test_release_triggers() -> None:
@@ -77,7 +90,9 @@ def test_prepare_release_is_pr_only() -> None:
     assert action["if"] == "steps.freeze.outputs.frozen == 'false'"
 
 
-@pytest.mark.parametrize("workflow", ["release.yml", "release-please.yml", "integration-full.yml"])
+@pytest.mark.parametrize(
+    "workflow", ["publish-pypi.yml", "release-please.yml", "integration-full.yml"]
+)
 def test_actions_are_sha_pinned(workflow: str) -> None:
     data = load(workflow)
     for name, job in data["jobs"].items():
@@ -90,7 +105,7 @@ def test_actions_are_sha_pinned(workflow: str) -> None:
                 assert PINNED.match(step["uses"]), (name, step["uses"])
 
 
-@pytest.mark.parametrize("workflow", ["release.yml", "release-please.yml"])
+@pytest.mark.parametrize("workflow", ["publish-pypi.yml", "release-please.yml"])
 def test_no_expression_interpolation_in_run(workflow: str) -> None:
     # Inputs, outputs and secrets reach shell code only through env:.
     for name, job in load(workflow)["jobs"].items():
@@ -215,7 +230,7 @@ def test_publish_order_tag_draft_pypi_undraft() -> None:
     # An API error must fail the step, never read as "no Release yet".
     assert "2>/dev/null" not in body["Create the draft GitHub Release with the SBOM"]
     assert body["Publish the GitHub Release"] == 'gh release edit "$TAG" --draft=false'
-    text = (WORKFLOWS / "release.yml").read_text()
+    text = (WORKFLOWS / "publish-pypi.yml").read_text()
     assert (
         "gh release delete" not in text
         and "git push --delete" not in text
@@ -243,7 +258,7 @@ def test_cookbook_is_verified_through_the_pinned_reusable_workflow() -> None:
     assert COOKBOOK_SMOKE.match(verify["uses"]), verify["uses"]
     line = next(
         line
-        for line in (WORKFLOWS / "release.yml").read_text().splitlines()
+        for line in (WORKFLOWS / "publish-pypi.yml").read_text().splitlines()
         if "cubrid-cookbook-python/.github/workflows/smoke-test.yml@" in line
     )
     assert line.endswith(" # main"), line
@@ -279,7 +294,7 @@ def test_cookbook_is_verified_through_the_pinned_reusable_workflow() -> None:
 
 
 def test_no_secrets_or_dispatch_token() -> None:
-    text = (WORKFLOWS / "release.yml").read_text()
+    text = (WORKFLOWS / "publish-pypi.yml").read_text()
     assert "secrets." not in text and "secrets: inherit" not in text
     assert "COOKBOOK_DISPATCH_TOKEN" not in text
     assert "cookbook_wait" not in text

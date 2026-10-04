@@ -631,9 +631,9 @@ pre-commit run --all-files
 | 워크플로 | 파일 | 트리거 |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | PR, main, 주간, 수동 실행 |
-| Integration Full | `.github/workflows/integration-full.yml` | 수동 실행, `release.yml`에서 호출 |
+| Integration Full | `.github/workflows/integration-full.yml` | 수동 실행, `publish-pypi.yml`에서 호출 |
 | Prepare Release | `.github/workflows/release-please.yml` | main 푸시 또는 수동 실행; 검토할 릴리스 PR 생성 |
-| Release | `.github/workflows/release.yml` | main 푸시 (병합된 릴리스 PR만 릴리스), 복구용 수동 실행 |
+| Release | `.github/workflows/publish-pypi.yml` | main 푸시 (병합된 릴리스 PR만 릴리스), 복구용 수동 실행 |
 
 ### CI 파이프라인 단계
 
@@ -805,7 +805,7 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 
 릴리스는 유지보수자 전용이며 [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md)를 따릅니다:
 `release-please.yml`이 릴리스 PR(버전 갱신 + 날짜가 있는 CHANGELOG 섹션, `make release-check VERSION=X.Y.Z`로 확인)을
-엽니다. 검토 후 squash 병합하면 `release.yml`이 전체 매트릭스, 한 번의 빌드, 태그, PyPI 게시, cookbook 검증을
+엽니다. 검토 후 squash 병합하면 `publish-pypi.yml`이 전체 매트릭스, 한 번의 빌드, 태그, PyPI 게시, cookbook 검증을
 자동으로 수행합니다. 태그 푸시나 게시를 수동으로 하지 않습니다.
 
 ---

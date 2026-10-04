@@ -23,13 +23,14 @@
 #   summary      one table; always runs
 #
 # Recovery dispatch (main only for resume/verify-only; see RELEASING.md):
-#   gh workflow run release.yml -f action=resume -f version=X.Y.Z
-#   gh workflow run release.yml -f action=verify-only -f version=X.Y.Z
-#   gh workflow run release.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
+#   gh workflow run publish-pypi.yml -f action=resume -f version=X.Y.Z
+#   gh workflow run publish-pypi.yml -f action=verify-only -f version=X.Y.Z
+#   gh workflow run publish-pypi.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
 # It never creates a new version, never moves a tag and never deletes PyPI files.
 #
 # Canonical cubrid-lab release workflow, kept identical across pycubrid,
-# sqlalchemy-cubrid and cubrid-mcp-server except for the `env:` block below and
+# sqlalchemy-cubrid and cubrid-mcp-server except for the filename (this repo
+# keeps the registered PyPI publisher identity), the `env:` block below and
 # the smoke-test steps of the build job and the package name in the `with:`
 # inputs of verify-cookbook.
 name: Release

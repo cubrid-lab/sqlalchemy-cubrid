@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Decide from verifiable repository facts whether a commit is a release.
 
-``release.yml`` runs this in its ``detect`` job. The decision never depends on
+``publish-pypi.yml`` runs this in its ``detect`` job. The decision never depends on
 a PR title or commit message, only on git objects:
 
 ``--mode push`` (every push to main, ``--sha`` = the pushed commit)

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Release tooling
 - Release preparation moves to SHA-pinned release-please in PR-only mode. Generated Conventional Commit notes are composed with curated Upgrade notes; reviewed candidates still use the existing guarded publisher. Maintainers freeze candidate edits and explicitly start final-head PR CI; see RELEASING.md.
+- **PyPI Trusted Publisher filename** — the sole guarded release orchestrator is renamed from `release.yml` back to `publish-pypi.yml` (environment `pypi`), the filename that published 1.8.0 and that the PyPI Trusted Publisher is bound to. Under `release.yml` the first publication would have been refused with `invalid-publisher`, as happened in pycubrid (cubrid-lab/pycubrid#681). Release, full-matrix, artifact, tag and cookbook gates are unchanged; recovery commands and the successful-publication label reconciliation use the new filename, and a run of the former publish-only workflow of the same name does not count as a completed release. No dialect behavior, version, dependency or support change.
 
 ### Added
 - **Python 3.15 preview preparation** — add a manual-only Ubuntu/standard-GIL
@@ -218,9 +219,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Samples use the recommended pycubrid driver (#498)** — `samples/create_engine.py` and `samples/cubrid_datatypes.py` connected with `cubrid://`, the CUBRID-Python C-extension dialect, which a plain install does not provide. They now use `cubrid+pycubrid://` and name the install command `pip install "sqlalchemy-cubrid[pycubrid]"` in their docstrings.
 
 ### Changed
-- Release workflow unified with the sibling repos: new `RELEASING.md`; `make release`
-  replaced by the read-only `make release-check VERSION=x.y.z`; `publish-pypi.yml` is
-  manual-dispatch only and now dispatches the cookbook smoke test after a successful
+- Earlier release workflow unification with the sibling repos: new `RELEASING.md`; `make release`
+  replaced by the read-only `make release-check VERSION=x.y.z`; `publish-pypi.yml` was
+  manual-dispatch only and then dispatched the cookbook smoke test after a successful
   publish (replacing `notify-cookbook.yml`); CI lints `CHANGELOG.md`.
 - **PyPI publish fails closed on duplicate files (#566)** — `publish-pypi.yml` no longer
   passes `skip-existing: true`. The new stdlib-only `scripts/pypi_duplicate_guard.py`
@@ -231,7 +232,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI: releases happen automatically when a reviewed release PR is merged (#601)** —
   `prepare-release.yml` opens the `chore: release vX.Y.Z` PR (moves `[Unreleased]` into a
   dated section, bumps `__version__`, runs `make release-check`). On every push to `main`,
-  the new `release.yml` decides from git facts only (`scripts/release_detect.py`: version
+  the guarded workflow introduced as `release.yml` decides from git facts only (`scripts/release_detect.py`: version
   changed against the first parent, dated CHANGELOG section, tag absent or at the same
   commit) and then runs, pinned to the merge SHA: release check, the full
   `integration-full.yml` matrix (now also a `workflow_call` workflow, no longer run on tag
@@ -240,8 +241,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact version, with one run summary. The cookbook smoke test runs inside the release run
   as a reusable workflow pinned to a cookbook commit, so it needs no cross-repository token
   or secret; the release fails unless it reports the requested version installed (#605). `create-release.yml` and the manual
-  `publish-pypi.yml` are removed; a narrow recovery dispatch (`resume`, `verify-only`,
-  `dry-run`) remains. The CHANGELOG stays hand-curated. Ported from
+  `publish-pypi.yml` were removed; a narrow recovery dispatch (`resume`, `verify-only`,
+  `dry-run`) remains. The guarded workflow now uses `publish-pypi.yml` to match the
+  PyPI publisher identity; the former manual publisher is not restored. Ported from
   cubrid-lab/pycubrid#540.
 
 ## [1.8.0] - 2026-09-29

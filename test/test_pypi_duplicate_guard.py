@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "publish-pypi.yml"
 _spec = importlib.util.spec_from_file_location(
     "_pypi_duplicate_guard", ROOT / "scripts" / "pypi_duplicate_guard.py"
 )
