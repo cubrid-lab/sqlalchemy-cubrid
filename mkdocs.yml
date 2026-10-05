@@ -47,12 +47,15 @@ nav:
       - Feature Support: FEATURE_SUPPORT.md
       - Support Matrix: SUPPORT_MATRIX.md
       - Architecture: ARCHITECTURE.md
+      - SQLAlchemy Internal API Compatibility: SA_COMPAT.md
   - Operations:
       - Performance: PERFORMANCE.md
       - Troubleshooting: TROUBLESHOOTING.md
   - Project:
       - Development: DEVELOPMENT.md
       - CI Execution Policy: CI_POLICY.md
+      - Product Requirements: PRD.md
+      - Release-please Validation: RELEASE_PLEASE_VALIDATION.md
       - Translations:
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
@@ -76,6 +79,7 @@ nav:
           - 기능 지원 비교: ko/FEATURE_SUPPORT.md
           - 지원 매트릭스: ko/SUPPORT_MATRIX.md
           - 아키텍처: ko/ARCHITECTURE.md
+          - SQLAlchemy 내부 API 호환성: ko/SA_COMPAT.md
       - 운영:
           - 성능 가이드: ko/PERFORMANCE.md
           - 문제 해결: ko/TROUBLESHOOTING.md
@@ -83,6 +87,8 @@ nav:
           - 개발 가이드: ko/DEVELOPMENT.md
           - CI 실행 정책: ko/CI_POLICY.md
           - 기여 가이드: CONTRIBUTING.ko.md
+          - 제품 요구사항: ko/PRD.md
+          - Release-please 검증: ko/RELEASE_PLEASE_VALIDATION.md
           - README: README.ko.md
 
 markdown_extensions:
