@@ -1,6 +1,6 @@
 # 격리 수준 (한국어)
 
-> 🌐 [ISOLATION_LEVELS.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ISOLATION_LEVELS.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [ISOLATION_LEVELS.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ISOLATION_LEVELS.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 CUBRID 10.0(MVCC 엔진)부터 CUBRID는 **세 가지** 트랜잭션 격리 수준을 지원합니다: `READ COMMITTED`, `REPEATABLE READ`, `SERIALIZABLE`. 이 문서는 각 수준, 구성 방법, 다른 데이터베이스와의 비교를 설명합니다.
 

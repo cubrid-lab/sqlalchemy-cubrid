@@ -1,6 +1,6 @@
 # 기능 지원 비교 (한국어)
 
-> 🌐 [FEATURE_SUPPORT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/FEATURE_SUPPORT.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [FEATURE_SUPPORT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/FEATURE_SUPPORT.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 **sqlalchemy-cubrid**의 역량을 MySQL, PostgreSQL, SQLite의 성숙한 SQLAlchemy 방언과 종합 비교합니다.
 
@@ -76,7 +76,7 @@
 
 - **RETURNING**: CUBRID에는 `RETURNING` 절이 없습니다. 자동 생성 키를 INSERT와 같은 왕복에서 가져올 수 없어, 방언은 대신 `postfetch_lastrowid = True`에 의존합니다 (C 드라이버는 `get_last_insert_id()` / SQL 폴백, pycubrid는 `cursor.lastrowid`).
 - **DEFAULT VALUES**: CUBRID는 `INSERT INTO t DEFAULT VALUES`를 지원합니다. 방언은 `supports_default_values = True`를 설정합니다.
-- **ON DUPLICATE KEY UPDATE**: CUBRID는 `INSERT … ON DUPLICATE KEY UPDATE`를 지원합니다. `VALUES()` 함수는 지원하지 않으며, dialect가 INSERT 바인드 파라미터를 재사용하여 처리합니다. `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`를 사용하세요. 사용 예는 [CUBRID 전용 DML 구성](#cubrid-전용-dml-구성) 참고.
+- **ON DUPLICATE KEY UPDATE**: CUBRID는 `INSERT … ON DUPLICATE KEY UPDATE`를 지원합니다. 방언은 `stmt.inserted` 참조를 INSERT 바인드 파라미터를 다시 내보내는 방식으로 처리합니다(CUBRID는 `VALUES()` 함수를 지원하지 않습니다). `sqlalchemy_cubrid.insert(table).on_duplicate_key_update(col=value)`를 사용하세요. 사용 예는 [CUBRID 전용 DML 구성](#cubrid-전용-dml-구성) 참고.
 - **MERGE**: CUBRID는 완전한 SQL MERGE 문을 지원합니다. `.using()`, `.on()`, `.when_matched_then_update()`, `.when_not_matched_then_insert()`와 함께 `sqlalchemy_cubrid.dml.merge(target)`을 사용하세요. [CUBRID 전용 DML 구성](#cubrid-전용-dml-구성) 참고.
 - **FOR UPDATE**: CUBRID는 `SELECT … FOR UPDATE [OF col1, col2]`를 지원합니다. NOWAIT와 SKIP LOCKED는 미지원.
 - **LIMIT를 가진 UPDATE**: CUBRID와 MySQL 모두 `UPDATE … LIMIT n`을 지원합니다. PostgreSQL과 SQLite는 미지원.
@@ -315,7 +315,7 @@ SEQUENCE(DOUBLE)
 
 ### ON DUPLICATE KEY UPDATE
 
-CUBRID는 `INSERT … ON DUPLICATE KEY UPDATE`를 지원합니다. `VALUES()` 함수는 지원하지 않으며, dialect가 INSERT 바인드 파라미터를 재사용하여 처리합니다.
+CUBRID는 `INSERT … ON DUPLICATE KEY UPDATE`를 지원합니다. 방언은 `stmt.inserted` 참조를 INSERT 바인드 파라미터를 다시 내보내는 방식으로 처리합니다(CUBRID는 `VALUES()` 함수를 지원하지 않습니다).
 
 ```python
 from sqlalchemy_cubrid import insert

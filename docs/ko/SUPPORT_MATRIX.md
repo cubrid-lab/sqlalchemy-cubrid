@@ -1,6 +1,6 @@
 # 지원 매트릭스 (한국어)
 
-> 🌐 [SUPPORT_MATRIX.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/SUPPORT_MATRIX.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [SUPPORT_MATRIX.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/SUPPORT_MATRIX.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 
@@ -131,7 +131,7 @@ Python을 업그레이드하고 가상 환경을 새로 만든 뒤 애플리케�
 | 기능 | 상태 | 비고 |
 |---|---|---|
 | JSON 타입 | ✅ | v1.2.0부터, CUBRID ≥ 10.2 필요 |
-| 네이티브 Enum | ✅ | 네이티브 `ENUM('a','b')` DDL (10.2+ 검증) |
+| 네이티브 Enum | ✅ | 네이티브 `ENUM('a', 'b', ...)` — 10.2–11.4에서 검증 (#343) |
 | Interval 타입 | ❌ | CUBRID 미지원 |
 | RETURNING 절 | ❌ | `INSERT/UPDATE/DELETE ... RETURNING` 미지원 |
 | BOOLEAN | ⚠️ | SMALLINT(0/1)로 매핑 — 네이티브 불리언 없음. CUBRID의 `IS`는 `NULL`/`TRUE`/`FALSE`만 받으므로 `col.is_(True)` / `is_not(False)` 등은 null-safe `<=>`로 에뮬레이트합니다(`col <=> 1`, `(col <=> 1) = 0`) (#465). `IS [NOT] NULL`, `col == True`, `not_(col)`은 그대로 컴파일됩니다. CUBRID는 SELECT 목록의 `AND`/`OR`/`NOT`을 거부하므로 `WHERE`에서 사용하거나 `case()`로 감싸세요. [불리언 조건식](TYPES.md#불리언-조건식) 참고 |

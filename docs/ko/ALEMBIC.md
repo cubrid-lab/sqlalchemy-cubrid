@@ -1,6 +1,6 @@
 # Alembic 마이그레이션 지원 (한국어)
 
-> 🌐 [ALEMBIC.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ALEMBIC.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [ALEMBIC.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ALEMBIC.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 CUBRID 방언과 함께 [Alembic](https://alembic.sqlalchemy.org/) 데이터베이스 마이그레이션을 사용하는 가이드.
 

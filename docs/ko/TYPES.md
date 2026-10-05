@@ -1,6 +1,6 @@
 # 타입 매핑 (한국어)
 
-> 🌐 [TYPES.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TYPES.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [TYPES.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TYPES.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 이 문서는 SQLAlchemy 타입과 CUBRID SQL 타입, 그리고 이 방언이 제공하는 CUBRID 전용 타입 확장 간의 완전한 매핑을 다룹니다.
 

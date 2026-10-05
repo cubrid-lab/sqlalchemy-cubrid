@@ -1,6 +1,6 @@
 # CUBRID-Python 드라이버 호환성 (한국어)
 
-> 🌐 [DRIVER_COMPAT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [DRIVER_COMPAT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 이 문서는 `sqlalchemy-cubrid`와 CUBRID Python 드라이버(`CUBRIDdb`), CUBRID 서버 버전 간의 테스트된 호환성 매트릭스를 설명합니다.
 
@@ -151,6 +151,8 @@ cmake ../ && make -j$(nproc)
 ### 3. `cursor.lastrowid` 사용 불가
 
 표준 DB-API의 `cursor.lastrowid` 속성이 구현되어 있지 않습니다. 방언은 `connection.get_last_insert_id()`를 대신 사용하며, `SELECT LAST_INSERT_ID()` SQL 폴백을 둡니다.
+
+폴백은 활성 DBAPI 연결에서 일반 커서를 열고, ID를 가져온 뒤 커서를 닫습니다. 실행, fetch, 정수 변환에서 예외가 나도 닫습니다. 서버 측 커서 지원이 필요하지 않습니다. pycubrid 실행 컨텍스트도 `cursor.lastrowid`를 쓸 수 없을 때 같은 폴백을 사용합니다. 네이티브 드라이버 결과가 `None`이면 폴백 쿼리를 실행하지 않고 그대로 반환합니다.
 
 ### 4. CUBRID 12.x 호환성
 

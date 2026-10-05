@@ -1,8 +1,8 @@
 # SQLAlchemy 내부 API 호환성 (한국어)
 
-> 🌐 [SA_COMPAT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/SA_COMPAT.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [SA_COMPAT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/SA_COMPAT.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
-이 문서는 `sqlalchemy-cubrid`가 사용하는 모든 SQLAlchemy 내부 또는 준비공개(semi-private)
+이 문서는 `sqlalchemy-cubrid`가 사용하는 모든 SQLAlchemy 내부 또는 반(半)비공개(semi-private)
 API와 그 사용 이유, 테스트로 검증된 SQLAlchemy 버전 범위, 그리고 SQLAlchemy가 해당 API를
 변경하면 무엇이 깨지는지를 추적합니다.
 
@@ -40,7 +40,7 @@ API와 그 사용 이유, 테스트로 검증된 SQLAlchemy 버전 범위, 그�
   이들에 의존하기 때문입니다.
 - 중간 위험: `_generative`와 `_exclusive_against`. 사용자 정의 DML 빌더의 동작을
   제어하기 때문입니다.
-- 낮은 런타임 위험: `_DMLTableArgument`와 `Self` (대부분 타이핑 표면).
+- 낮은 런타임 위험: `_DMLTableArgument`와 `Self` (대부분 타이핑에만 관련된 부분).
 
 ## 검증 계획
 
