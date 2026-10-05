@@ -26,7 +26,7 @@
 
 | 요구사항 | 버전 |
 |---|---|
-| Python | 3.10+ |
+| Python | 3.11+ |
 | Git | 아무 버전 |
 | Docker | 아무 버전 (통합 테스트용) |
 | Docker Compose | v2+ |
@@ -155,7 +155,7 @@ mypy 버전을 출력한 다음
 `python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`를 실행합니다.
 개발 의존성은 mypy `2.3.1`을 고정합니다.
 
-CI는 Python 3.10 / SQLAlchemy 2.0.53과 Python 3.13 / SQLAlchemy 2.1.1의 두 셀에서
+CI는 Python 3.11 / SQLAlchemy 2.0.53과 Python 3.13 / SQLAlchemy 2.1.1의 두 셀에서
 같은 Makefile 타깃을 실행합니다. 두 셀 모두 필수입니다. 타입 검사 잡이 실패하거나
 취소되거나 건너뛰어지면 필수 `matrix-result` 검사가 실패합니다. Ruff와 95% 최소
 커버리지의 기존 오프라인 테스트도 계속 필수입니다. 로컬 가상 환경 인터프리터를
@@ -463,7 +463,7 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 
 ### tox 구성
 
-`tox.ini`는 Python 3.10–3.14의 로컬 오프라인 환경, 고정된 Ruff 린트 환경,
+`tox.ini`는 Python 3.11–3.14의 로컬 오프라인 환경, 고정된 Ruff 린트 환경,
 CI와 같은 Makefile 타깃 및 SQLAlchemy/Python 조합을 쓰는 `typecheck-sa20` /
 `typecheck-sa21` 환경을 정의합니다. 기존 pycubrid/Alembic extra와 개발 테스트
 의존성을 사용합니다. `py3xx` 환경의 오프라인 선택은 `-m "not integration and not repo"`이고,
@@ -553,7 +553,7 @@ SQLAlchemy 공개 API로는 발동할 수 없어 오프라인 스위트에서 �
 | 설정 | 값 |
 |---|---|
 | 행 길이 | 100자 |
-| 대상 Python | 3.10+ |
+| 대상 Python | 3.11+ |
 | 린터 | `ruff check` |
 | 포매터 | `ruff format` |
 
@@ -592,7 +592,7 @@ Ruff나 Mypy를 올릴 때는 `pyproject.toml`의 dev 핀만 갱신하면 됩니
 `tox -e lint`/`typecheck-sa20`/`typecheck-sa21` 환경 모두 프로젝트 자체의 `dev`
 extra를 설치하므로 그 핀이 가리키는 버전을 그대로 사용합니다.
 `tox -e typecheck-sa20`/`typecheck-sa21`은 CI의 타입 검사 매트릭스에 맞추기 위해
-Python 버전별 정확한 SQLAlchemy 릴리스(3.10엔 2.0.53, 3.13엔 2.1.1)를 추가로
+Python 버전별 정확한 SQLAlchemy 릴리스(3.11엔 2.0.53, 3.13엔 2.1.1)를 추가로
 고정하며, 이 조합은 `scripts/check_tool_versions.py`가 CI에서 읽습니다. 갱신 후
 `make check-tool-versions`, `pre-commit run --all-files`,
 `tox -e lint,typecheck-sa20,typecheck-sa21`을 실행하세요. 일관성 검사는 CI 린트,
@@ -639,7 +639,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + 포맷 검증
 2. **오프라인 테스트** — Ubuntu/Python 3.12 단일 레인; PR 스모크, main/주간 전체 오프라인 커버리지
-3. **통합 테스트** — 고위험 PR은 최신 조합; main/주간은 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
+3. **통합 테스트** — 고위험 PR은 최신 조합; main/주간은 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
 4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 수동 전체 검증 및 릴리스 게이트에서 `integration-full.yml`로 실행)
 5. **커버리지** — main/주간 전체 오프라인 레인에서 ≥ 95% 임계값 강제; PR 스모크는 커버리지 검증을 주장하지 않음
 
@@ -707,7 +707,7 @@ python -m scripts.check_not_all_skipped integration.log --label "Run integration
 | 레인 | URL | 고정 버전 | CI 셀 |
 |---|---|---|---|
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C 확장) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.11 × CUBRID 10.2 |
 | `pycubrid@sa2.1` | `cubrid+pycubrid://` (권장) | pycubrid 1.8.0, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
 
 두 pycubrid 레인은 SQLAlchemy 2.0과 2.1을 두 PR 셀에 나누어 실행하므로 각 셀은

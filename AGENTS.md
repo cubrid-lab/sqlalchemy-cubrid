@@ -8,7 +8,7 @@ Project knowledge base for AI coding agents.
 It provides SQL compilation, type mapping, schema reflection, DDL/DML extensions,
 Alembic migration support, and PEP 561 typing.
 
-- **Language**: Python 3.10+
+- **Language**: Python 3.11+
 - **Framework**: SQLAlchemy 2.0 – 2.1
 - **License**: MIT
 - **Version**: single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__` (Production/Stable); see [CHANGELOG.md](CHANGELOG.md) for the current release
@@ -92,7 +92,7 @@ make test-offline     # Every offline test (fast + repo) with coverage
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
 make integration      # Run-owned Docker project → integration tests → cleanup
-make test-all         # tox across Python 3.10–3.14
+make test-all         # tox across Python 3.11–3.14
 ```
 
 ### Test Commands (manual)
@@ -125,7 +125,7 @@ docker compose down -v                        # Cleanup
 
 - **Linter/Formatter**: Ruff
 - **Line length**: 100 characters
-- **Target Python**: 3.10+
+- **Target Python**: 3.11+
 - **Imports**: `from __future__ import annotations` in every module
 - **Type hints**: Full typing; PEP 561 compliant (`py.typed`)
 - **super()**: Always `super().__init__()`, never `super(ClassName, self)`

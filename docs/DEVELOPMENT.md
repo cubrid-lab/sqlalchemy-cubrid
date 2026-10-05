@@ -25,7 +25,7 @@ contribute to sqlalchemy-cubrid.
 
 | Requirement | Version |
 |---|---|
-| Python | 3.10+ |
+| Python | 3.11+ |
 | Git | any |
 | Docker | any (for integration tests) |
 | Docker Compose | v2+ |
@@ -154,7 +154,7 @@ SQLAlchemy, Alembic and mypy versions, then runs
 `python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`.
 The mypy version is pinned to `2.3.1` in the dev dependencies.
 
-CI runs the same Makefile target in two cells: Python 3.10 / SQLAlchemy 2.0.53
+CI runs the same Makefile target in two cells: Python 3.11 / SQLAlchemy 2.0.53
 and Python 3.13 / SQLAlchemy 2.1.1. Both cells are blocking: the required
 `matrix-result` check fails if the type-check job fails, is cancelled or is
 skipped. Ruff and the existing offline tests with 95% minimum coverage also
@@ -478,7 +478,7 @@ That target never starts or stops Docker and leaves the external server running.
 
 ### tox Configuration
 
-The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinned
+The `tox.ini` defines local offline environments for Python 3.11–3.14, a pinned
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
 run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
 the existing pycubrid/Alembic extras and development test dependencies. Offline
@@ -571,7 +571,7 @@ formatting.
 | Setting | Value |
 |---|---|
 | Line length | 100 characters |
-| Target Python | 3.10+ |
+| Target Python | 3.11+ |
 | Linter | `ruff check` |
 | Formatter | `ruff format` |
 
@@ -613,7 +613,7 @@ Only `pyproject.toml`'s dev pin needs updating when bumping Ruff or Mypy
 `tox -e lint`/`typecheck-sa20`/`typecheck-sa21` environments install the
 project's own `dev` extra, so they always run whatever that pin resolves to.
 `tox -e typecheck-sa20`/`typecheck-sa21` additionally pin an exact SQLAlchemy
-release per Python version (2.0.53 on 3.10, 2.1.1 on 3.13) to match CI's
+release per Python version (2.0.53 on 3.11, 2.1.1 on 3.13) to match CI's
 type-check matrix; those pairs are read from CI by
 `scripts/check_tool_versions.py`. Run `make check-tool-versions`,
 `pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21`
@@ -661,7 +661,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — one Ubuntu/Python 3.12 lane; PR smoke, main/weekly full offline coverage
-3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
 5. **Coverage** — Enforces ≥ 95% on the full main/weekly offline lane; PR smoke makes no coverage claim
 
@@ -735,7 +735,7 @@ therefore fail `matrix-result` when they fail:
 | Lane | URL | Pinned versions | CI cell |
 |---|---|---|---|
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C-extension) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.11 × CUBRID 10.2 |
 | `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
 
 The two pycubrid lanes split SQLAlchemy 2.0 and 2.1 across the two PR cells,
