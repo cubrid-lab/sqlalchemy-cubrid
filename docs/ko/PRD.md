@@ -1,6 +1,6 @@
 # PRD: sqlalchemy-cubrid — SQLAlchemy 2.0–2.1용 CUBRID 방언 (한국어)
 
-> 🌐 [PRD.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/PRD.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [PRD.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/PRD.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 ## 1. 개요
 
@@ -377,11 +377,11 @@ not repo" --collect-only`를 실행하거나 `offline-tests` CI job 출력에서
 
 | 항목 | 설명 | 우선순위 | 상태 |
 |---|---|---|---|
-| `REPLACE` 문 | CUBRID는 `REPLACE INTO`를 지원 — 커스텀 DML 구성으로 추가 | 중간 | ✅ 완료 |
+| `REPLACE` 문 | CUBRID는 `REPLACE INTO`를 지원 — 커스텀 DML construct로 추가 | 중간 | ✅ 완료 |
 | 서브쿼리를 사용하는 `INSERT ... ON DUPLICATE KEY UPDATE` | ODKU 절에서 서브쿼리 값 지원 | 중간 | ✅ 완료 |
 | Lateral 조인 | CUBRID의 lateral 조인 지원을 조사하고, 가능하면 활성화 | 낮음 | ❌ 미지원 |
 | 재귀 CTE | CUBRID 11.x+에서 재귀 `WITH RECURSIVE` 지원 테스트 | 낮음 | ✅ 완료 |
-| 전문 검색 | CUBRID에는 전문 인덱스가 있음 — 가능하다면 커스텀 구성으로 노출 | 낮음 | ❌ 미지원 |
+| 전문 검색 | CUBRID에는 전문 인덱스가 있음 — 가능하다면 커스텀 construct로 노출 | 낮음 | ❌ 미지원 |
 | `EXPLAIN` 출력 | 쿼리 계획 검사를 위한 `EXPLAIN` 접두사 지원 추가 | 낮음 | ✅ 완료 (trace_query) |
 
 ### v0.6.0 — SQLAlchemy 2.1+ 및 비동기
@@ -391,7 +391,7 @@ not repo" --collect-only`를 실행하거나 `offline-tests` CI job 출력에서
 | 항목 | 설명 | 우선순위 | 상태 |
 |---|---|---|---|
 | SQLAlchemy 2.1 호환성 | SA 2.1의 호환성을 깨는 변경을 추적하고 그에 맞춰 방언을 갱신 | 높음 | ⏳ SA 2.1 미릴리스 |
-| SQLAlchemy 2.2+ 상위 호환 | 향후 SA 릴리스에 대해 테스트하고 조정 | 높음 | ⏳ 미릴리스 |
+| SQLAlchemy 2.2+ 향후 버전 호환 | 향후 SA 릴리스에 대해 테스트하고 조정 | 높음 | ⏳ 미릴리스 |
 | 비동기 DBAPI 지원 | CUBRID Python 드라이버가 비동기 지원을 추가하면 `create_async_engine` 호환성 구현 | 중간 | ✅ 완료 |
 | 타입 어노테이션 개선 | `insert()`, `merge()` 반환 타입에 대한 완전한 `overload` 시그니처 추가 | 중간 | ✅ 완료 |
 | `RETURNING` 에뮬레이션 | 단일 행 반환을 위한 TRIGGER 기반 또는 `LAST_INSERT_ID` 우회 방법 조사 | 낮음 | ⏳ 시작 전 |
@@ -453,8 +453,8 @@ SA 방언의 버그는 미묘합니다 — 잘못된 SQL 생성, 누락된 이�
 
 CUBRID는 `ALTER TABLE ... MODIFY`, `CHANGE`, `RENAME COLUMN`(MySQL 호환 구문)을
 네이티브로 지원하므로, 방언은 컬럼 타입 변경과 이름 변경에 대해 예외를 발생시키는 대신
-네이티브 DDL을 냅니다. 타입 변환은 `alter_table_change_type_strict` 시스템 파라미터의
-지배를 받습니다. 손실이 있거나 호환되지 않는 변환의 경우, 데이터 마이그레이션을
+네이티브 DDL을 냅니다. 타입 변환은 `alter_table_change_type_strict` 시스템 파라미터에
+따라 결정됩니다. 손실이 있거나 호환되지 않는 변환의 경우, 데이터 마이그레이션을
 완전히 제어해야 할 때 사용자는 여전히 Alembic의 `batch_alter_table`
 테이블 재생성 전략으로 폴백할 수 있습니다.
 

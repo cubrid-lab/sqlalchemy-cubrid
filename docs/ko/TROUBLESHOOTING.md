@@ -1,6 +1,6 @@
 # 문제 해결 가이드 (한국어)
 
-> 🌐 [TROUBLESHOOTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TROUBLESHOOTING.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [TROUBLESHOOTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TROUBLESHOOTING.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정, SQL 컴파일, 타입 매핑, 스키마 리플렉션, Alembic 마이그레이션, ORM 패턴, 성능 튜닝.
 

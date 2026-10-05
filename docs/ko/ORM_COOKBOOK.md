@@ -1,6 +1,6 @@
 # ORM 쿡북 (한국어)
 
-> 🌐 [ORM_COOKBOOK.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ORM_COOKBOOK.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [ORM_COOKBOOK.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ORM_COOKBOOK.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 CUBRID를 위한 실용적인 SQLAlchemy 2.0 ORM 패턴. 이 가이드는 현대적 `DeclarativeBase` / `mapped_column` API를 사용해 테이블 정의, 릴레이션십, CRUD 연산, CUBRID 전용 DML 확장을 다룹니다.
 

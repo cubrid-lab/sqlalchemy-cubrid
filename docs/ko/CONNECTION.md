@@ -1,6 +1,6 @@
 # 연결과 드라이버 설정 (한국어)
 
-> 🌐 [CONNECTION.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/CONNECTION.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [CONNECTION.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/CONNECTION.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 이 가이드는 CUBRID Python 드라이버 설치, SQLAlchemy 연결 문자열 구성, 연결 수명 주기의 이해를 다룹니다.
 

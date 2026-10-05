@@ -12,7 +12,7 @@
 - [Docker 통합 테스트](#docker-integration-testing)
 - [코드 스타일](#code-style)
 - [PR 지침](#pull-request-guidelines)
-- [이슈·PR·커밋 제목](#pull-request-and-commit-titles)
+- [PR·커밋 제목](#pull-request-and-commit-titles)
 - [릴리스](#releases)
 - [이슈 보고](#reporting-issues)
 
@@ -231,7 +231,7 @@ pre-commit run --all-files
 
 - PR을 한 가지 목적에 집중하세요 — PR 하나에 기능 또는 수정 하나.
 - _무엇을_ _왜_ 변경했는지 명확히 설명하고, PR 제목은
-  [이슈·PR·커밋 제목](#pull-request-and-commit-titles)에 설명한 대로 작성하세요.
+  [PR·커밋 제목](#pull-request-and-commit-titles)에 설명한 대로 작성하세요.
 - 관련 이슈는 제목이 아니라 PR 본문에서 참조하세요(예: `Fixes #42`).
 - 변경이 공개 API에 영향을 주면 문서를 갱신하세요.
 - 변경 요약을 `CHANGELOG.md`에 기록하세요.
@@ -243,7 +243,7 @@ pre-commit run --all-files
 - 명시적으로 승인받지 않는 한 하위 호환성을 유지하세요.
 
 기여자는 dev extra를 설치하고, 공유 검사를 실행하고, 관련 문서를 갱신한 뒤
-동기, 명령·결과와 실행하지 못한 검사의 이유를 담아 PR을 엽니다.
+동기, 명령·결과와 실행하지 않은 검사의 이유를 담아 PR을 엽니다.
 문서를 변경하면 `python scripts/generate_llms_full.py`를 실행하세요(이 명령은
 `docs/llms-full.txt`를 다시 생성하고 표준 `docs/llms.txt` 인덱스를 루트
 `llms.txt`에 복사합니다. `docs/llms.txt`만 편집하세요). 그리고
@@ -274,7 +274,7 @@ PR 본문에 빠진 언어와 사유를 적으세요. 이는 요청일 뿐 허�
 
 <a name="pull-request-and-commit-titles"></a>
 
-## 이슈·PR·커밋 제목
+## PR·커밋 제목
 
 모든 cubrid-lab 저장소의 이슈 제목, PR 제목과 커밋 첫 줄에 적용합니다.
 PR은 squash-merge하며 PR 제목이 `main`의 커밋 제목이 되므로, PR 제목을
@@ -357,11 +357,11 @@ refactor(compiler)!: drop legacy LIMIT rendering
 기존 이슈를 먼저 검색한 뒤 가장 가까운 이슈 양식을 사용하세요. 미리 채운 제목
 접두사(`fix:`, `feat:` 또는 `chore:`)를 유지합니다. 직접 만든 이슈는 PR 제목과
 같은 `type(scope): description` 형식을 사용하세요
-([이슈·PR·커밋 제목](#pull-request-and-commit-titles) 참고). 예:
+([PR·커밋 제목](#pull-request-and-commit-titles) 참고). 예:
 `fix(reflection): ...` 또는 `docs: ...`.
 
-제보자는 영향과 재현 방법을 설명하며, GitHub 라벨 권한이 없어도 보고할 수
-있습니다. 메인테이너가 유형 라벨과 `priority: <value>`, `size: <value>`를
+제보자는 영향과 재현 방법을 설명하며, GitHub 라벨을 붙일 권한은 필요하지
+**않습니다**. 메인테이너가 유형 라벨과 `priority: <value>`, `size: <value>`를
 각각 하나씩 지정하고 필요하면 `area:`도 붙입니다. `testing` 같은 주제 라벨도
 있을 수 있습니다. 사람이 CLI/API로 올린 이슈의 메타데이터가 불완전하면
 `status: needs triage`가 붙습니다. 메인테이너가 메타데이터를 바로잡고 그 라벨을
@@ -396,8 +396,8 @@ triager가 필수 표준 priority/size 라벨을 지정하므로 기여자에게
 현재 명세로 유지하고 날짜가 있는 진행 상황은 댓글에 적습니다. 메인테이너는
 관련 병합·인계 뒤에 닫힌 의존성과 완료된 체크리스트를 정리합니다. 원래 재현의
 revision과 한계를 보존하세요. 오래된 증거는 현재 동작을 입증하지 않습니다.
-우선순위·크기는 라벨에, 실행 순서는 backlog tracker에 둡니다. 연구는 문서화한
-결정으로 종료하며 제안한 모든 선택지를 구현하겠다는 약속이 아닙니다.
+우선순위·크기는 라벨에, 실행 순서는 backlog tracker에 둡니다. 조사(research) 이슈는 문서화한
+결정으로 종료하며, 제안한 모든 선택지를 구현하겠다는 암묵적 약속으로 종료하지 않습니다.
 
 작업 가능 여부를 확인하고 시작 전에 실제 구현자를 GitHub Assignees에 지정하세요.
 스스로 지정할 수 없으면 메인테이너에게 요청합니다. 기존 작업자·열린 PR과 조율하고
@@ -408,4 +408,4 @@ revision과 한계를 보존하세요. 오래된 증거는 현재 동작을 입�
 
 [CI 실행 정책](ko/CI_POLICY.md)을 따르세요. PR 스모크는 대표 검사이지 전체
 스위트·커버리지 증거가 아닙니다. 관련 회귀 테스트를 로컬에서 실행하고 명령·
-결과를 기록하며, 호환성상 필요하면 정확한 head의 전체 검증을 요청하세요.
+결과를 보고하며, 호환성상 필요하면 정확한 head의 전체 검증을 요청하세요.

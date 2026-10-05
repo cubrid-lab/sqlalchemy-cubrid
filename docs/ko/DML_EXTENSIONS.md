@@ -1,6 +1,6 @@
 # CUBRID 전용 DML 구성 (한국어)
 
-> 🌐 [DML_EXTENSIONS.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DML_EXTENSIONS.md)의 번역입니다. 영어 원문이 표준이며, 페이지 번역은 경고 수준의 동기화 규칙을 따릅니다.
+> 🌐 [DML_EXTENSIONS.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DML_EXTENSIONS.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
 이 방언은 표준 SQLAlchemy API를 넘어서는 CUBRID 전용 DML(Data Manipulation Language) 기능을 위한 커스텀 SQLAlchemy 구성을 제공합니다.
 
