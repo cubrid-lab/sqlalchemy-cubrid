@@ -55,6 +55,6 @@ with engine.connect() as conn:
 cubrid-lab Python 생태계의 일부입니다:
 
 - pycubrid — CUBRID용 순수 Python DB-API 2.0 드라이버 (동기 + 네이티브 asyncio)
-- **sqlalchemy-cubrid** — SQLAlchemy 2.0–2.2 방언 + Alembic
+- **sqlalchemy-cubrid** — SQLAlchemy 2.0–2.1 방언 + Alembic
 - cubrid-cookbook-python — 실행 가능한 예제 68개와 애플리케이션 템플릿
 - cubrid-mcp-server — MCP 서버 — LLM 클라이언트를 위한 자연어 접근
