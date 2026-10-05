@@ -59,6 +59,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_make_integration.py",
         "test_docs_reason.py",
         "test_release_detect.py",
+        "test_check_docs_translation.py",
     }
 )
 _missing_repo_modules = sorted(

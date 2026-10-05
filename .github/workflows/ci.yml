@@ -106,6 +106,8 @@ jobs:
         run: make lint
       - name: Lint CHANGELOG structure
         run: python scripts/lint_changelog.py
+      - name: Korean documents keep the structure of their English source
+        run: python scripts/check_docs_translation.py
       - name: llms-full.txt and root llms.txt are in sync with source docs
         run: |
           python scripts/generate_llms_full.py
