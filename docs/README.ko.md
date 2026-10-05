@@ -262,7 +262,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ## 기여하기
 
-가이드라인은 [CONTRIBUTING.md](../CONTRIBUTING.md), 개발 환경 설정은 [docs/DEVELOPMENT.md](DEVELOPMENT.md)를 참고하세요.
+가이드라인은 [한국어 기여 안내](CONTRIBUTING.ko.md)와 [영어 원문](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md), 개발 환경 설정은 [docs/DEVELOPMENT.md](DEVELOPMENT.md)를 참고하세요.
 
 ### 첫 기여
 

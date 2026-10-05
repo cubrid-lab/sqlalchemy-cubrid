@@ -82,6 +82,7 @@ nav:
       - 프로젝트:
           - 개발 가이드: ko/DEVELOPMENT.md
           - CI 실행 정책: ko/CI_POLICY.md
+          - 기여 가이드: CONTRIBUTING.ko.md
           - README: README.ko.md
 
 markdown_extensions:
