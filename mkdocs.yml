@@ -54,29 +54,35 @@ nav:
       - Development: DEVELOPMENT.md
       - CI Execution Policy: CI_POLICY.md
       - Translations:
-          - 한국어: README.ko.md
-          - 한국어 문서:
-              - 빠른 시작: ko/QUICKSTART.md
-              - 연결과 드라이버 설정: ko/CONNECTION.md
-              - 드라이버 호환성: ko/DRIVER_COMPAT.md
-              - 격리 수준: ko/ISOLATION_LEVELS.md
-              - 지원 매트릭스: ko/SUPPORT_MATRIX.md
-              - 성능 가이드: ko/PERFORMANCE.md
-              - 타입 매핑: ko/TYPES.md
-              - 아키텍처: ko/ARCHITECTURE.md
-              - ORM 쿡북: ko/ORM_COOKBOOK.md
-              - DML 확장: ko/DML_EXTENSIONS.md
-              - Alembic 마이그레이션: ko/ALEMBIC.md
-              - 기능 지원 비교: ko/FEATURE_SUPPORT.md
-              - 개발 가이드: ko/DEVELOPMENT.md
-              - CI 실행 정책: ko/CI_POLICY.md
-              - 문제 해결: ko/TROUBLESHOOTING.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
           - Русский: README.ru.md
           - 中文: README.zh.md
       - Changelog: https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md
       - Contributing: https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md
+  - 한국어:
+      - 홈: ko/index.md
+      - 시작하기:
+          - 빠른 시작: ko/QUICKSTART.md
+          - 연결과 드라이버 설정: ko/CONNECTION.md
+          - 드라이버 호환성: ko/DRIVER_COMPAT.md
+      - 사용:
+          - ORM 쿡북: ko/ORM_COOKBOOK.md
+          - DML 확장: ko/DML_EXTENSIONS.md
+          - 타입 매핑: ko/TYPES.md
+          - 격리 수준: ko/ISOLATION_LEVELS.md
+          - Alembic 마이그레이션: ko/ALEMBIC.md
+      - 참고:
+          - 기능 지원 비교: ko/FEATURE_SUPPORT.md
+          - 지원 매트릭스: ko/SUPPORT_MATRIX.md
+          - 아키텍처: ko/ARCHITECTURE.md
+      - 운영:
+          - 성능 가이드: ko/PERFORMANCE.md
+          - 문제 해결: ko/TROUBLESHOOTING.md
+      - 프로젝트:
+          - 개발 가이드: ko/DEVELOPMENT.md
+          - CI 실행 정책: ko/CI_POLICY.md
+          - README: README.ko.md
 
 markdown_extensions:
   - admonition

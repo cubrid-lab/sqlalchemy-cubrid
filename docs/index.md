@@ -2,6 +2,8 @@
 
 SQLAlchemy 2.0–2.1 dialect for CUBRID, built for production-ready Core and ORM workloads.
 
+> 한국어: [문서 홈](ko/index.md)
+
 ## Key features
 
 - Native SQLAlchemy 2.0–2.1 dialect support with statement caching
