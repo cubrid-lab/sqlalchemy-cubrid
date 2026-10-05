@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   integration tests on the minimum supported SQLAlchemy line. No dialect
   behavior changes on Python 3.11 or newer.
 
+### Documentation
+- **Korean support matrix, feature table and CI policy match the English documents (#706)** — `docs/ko/SUPPORT_MATRIX.md` shows the CI matrix as a table and loses a Korean-only closing section; `docs/ko/FEATURE_SUPPORT.md` drops a limitation row (`IS DISTINCT FROM`) that the English table does not list; `docs/ko/CI_POLICY.md` is a full translation instead of a summary. Both CI policy pages are in the site navigation. The English text is unchanged.
+
 ## [1.9.0] - 2026-10-04
 
 ### Release tooling

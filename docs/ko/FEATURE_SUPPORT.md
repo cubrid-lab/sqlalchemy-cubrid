@@ -477,7 +477,6 @@ stmt = (
 | JSON 타입 | ✅ | `JSON_EXTRACT`를 통한 경로 표현식을 갖춘 네이티브 JSON 지원 (CUBRID 10.2+) |
 | 임시 테이블 | ❌ | CUBRID는 `CREATE TEMPORARY TABLE` 미지원 |
 | 다중 스키마 | ❌ | CUBRID는 단일 스키마 모델로 동작 |
-| IS DISTINCT FROM | ✅ | NULL-안전 `<=>`로 에뮬레이트 (#344, #377) |
 | CHECK 제약 리플렉션 | ❌ | CUBRID는 CHECK 제약을 파싱하지만 무시 |
 | 시퀀스 | ❌ | CUBRID는 대신 `AUTO_INCREMENT` 사용 |
 | Lateral 조인 | ❌ | `LATERAL` 키워드가 CUBRID에서 구문 오류 발생 |

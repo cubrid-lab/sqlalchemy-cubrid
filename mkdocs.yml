@@ -52,6 +52,7 @@ nav:
       - Troubleshooting: TROUBLESHOOTING.md
   - Project:
       - Development: DEVELOPMENT.md
+      - CI Execution Policy: CI_POLICY.md
       - Translations:
           - 한국어: README.ko.md
           - 한국어 문서:
@@ -68,6 +69,7 @@ nav:
               - Alembic 마이그레이션: ko/ALEMBIC.md
               - 기능 지원 비교: ko/FEATURE_SUPPORT.md
               - 개발 가이드: ko/DEVELOPMENT.md
+              - CI 실행 정책: ko/CI_POLICY.md
               - 문제 해결: ko/TROUBLESHOOTING.md
           - Deutsch: README.de.md
           - हिन्दी: README.hi.md
