@@ -13,10 +13,10 @@
   - [삽입되는 값 참조](#삽입되는-값-참조)
   - [인자 형태](#인자-형태)
 - [REPLACE INTO](#replace-into)
-  - [기본 사용](#기본-사용-2)
+  - [기본 사용](#basic-usage-2)
   - [동작 참고](#동작-참고)
 - [MERGE 문](#merge-문)
-  - [기본 사용](#기본-사용-3)
+  - [기본 사용](#basic-usage-3)
   - [WHERE 절을 가진 MERGE](#where-절을-가진-merge)
   - [DELETE WHERE를 가진 MERGE](#delete-where를-가진-merge)
   - [빌더 메서드](#빌더-메서드)
@@ -126,6 +126,8 @@ ON DUPLICATE KEY UPDATE name = (SELECT max(users.name) FROM users)
 
 CUBRID는 INSERT 유사 구문을 사용하고 중복 키 충돌 시 기존 행을 교체하는 `REPLACE INTO`를 지원합니다.
 
+<a id="basic-usage-2"></a>
+
 ### 기본 사용
 
 ```python
@@ -153,6 +155,8 @@ VALUES (1, 'alice', 'alice@example.com')
 ## MERGE 문
 
 CUBRID는 단일 연산으로 조건부 INSERT/UPDATE를 수행하는 완전한 SQL `MERGE` 문을 지원합니다.
+
+<a id="basic-usage-3"></a>
 
 ### 기본 사용
 

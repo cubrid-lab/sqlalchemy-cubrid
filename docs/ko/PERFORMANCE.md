@@ -102,7 +102,7 @@ flowchart TD
 
 ---
 
-## 최점화 팁
+## 최적화 팁
 
 - 풀링을 명시적으로 구성하세요 (예: `pool_size`, `max_overflow`, `pool_pre_ping=True`).
 - 대용량 대량 쓰기와 큰 읽기 파이프라인에는 SQLAlchemy Core를 사용하세요.

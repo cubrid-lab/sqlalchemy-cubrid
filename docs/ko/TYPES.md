@@ -15,7 +15,7 @@
   - [비트 문자열 타입](#비트-문자열-타입)
   - [LOB 타입](#lob-타입)
   - [컬렉션 타입](#컬렉션-타입)
-- [타입 리플렉션 (ischema_names)](#타입-리플렉션-ischema_names)
+- [타입 리플렉션 (ischema_names)](#타입-리플렉션-ischema_names-전용)
 - [불리언 처리](#불리언-처리)
 - [Text와 STRING](#text와-string)
 - [사용 예제](#사용-예제)

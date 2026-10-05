@@ -124,6 +124,8 @@ ON DUPLICATE KEY UPDATE name = (SELECT max(users.name) FROM users)
 
 CUBRID supports `REPLACE INTO`, which uses INSERT-like syntax and replaces existing rows on duplicate-key conflicts.
 
+<a id="basic-usage-2"></a>
+
 ### Basic Usage
 
 ```python
@@ -151,6 +153,8 @@ VALUES (1, 'alice', 'alice@example.com')
 ## MERGE Statement
 
 CUBRID supports the full SQL `MERGE` statement for conditional INSERT/UPDATE in a single operation.
+
+<a id="basic-usage-3"></a>
 
 ### Basic Usage
 

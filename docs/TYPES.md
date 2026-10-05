@@ -13,7 +13,7 @@ This document covers the full type mapping between SQLAlchemy types, CUBRID SQL 
   - [Bit String Types](#bit-string-types)
   - [LOB Types](#lob-types)
   - [Collection Types](#collection-types)
-- [Type Reflection (ischema_names)](#type-reflection-ischema_names)
+- [Type Reflection (ischema_names)](#type-reflection-ischema_names-only)
 - [Boolean Handling](#boolean-handling)
 - [Text and STRING](#text-and-string)
 - [Usage Examples](#usage-examples)

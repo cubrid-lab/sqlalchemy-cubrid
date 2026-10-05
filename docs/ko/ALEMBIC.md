@@ -446,7 +446,7 @@ pip install "alembic>=1.7.2,<2.0"
 
 **원인**: `alter_table_change_type_strict` 시스템 파라미터가 `yes`일 때 손실 있거나 호환 불가한 타입 변환.
 
-**해결**: 진짜 손실/미지원 변환에는 `batch_alter_table` 사용 — [ALTER COLUMN TYPE (네이티브)](#️-alter-column-type-네이티브) 참고.
+**해결**: 진짜 손실/미지원 변환에는 `batch_alter_table` 사용 — [ALTER COLUMN TYPE (네이티브)](#-alter-column-type-네이티브) 참고.
 
 ### `alembic revision --autogenerate`가 리플렉션 오류로 실패함
 

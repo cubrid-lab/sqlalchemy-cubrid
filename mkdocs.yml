@@ -96,6 +96,11 @@ markdown_extensions:
   - toc:
       permalink: true
       toc_depth: 3
+      # Unicode-aware slugs, as GitHub renders them: the default slugifier drops
+      # non-ASCII characters, which left every Korean heading without a usable id.
+      slugify: !!python/object/apply:pymdownx.slugs.slugify
+        kwds:
+          case: lower
   - tables
   - attr_list
   - md_in_html
@@ -114,6 +119,7 @@ validation:
     omitted_files: ignore
   links:
     not_found: ignore
+    anchors: warn
 
 extra:
   social:
