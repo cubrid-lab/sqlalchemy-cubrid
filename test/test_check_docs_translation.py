@@ -75,6 +75,17 @@ def test_a_fence_closes_only_with_its_own_marker() -> None:
     assert MODULE.structure(text)["code blocks"] == 1
 
 
+def test_a_longer_fence_can_hold_a_shorter_one() -> None:
+    text = "````markdown\n```python\n## inside\n| not | a row |\n```\n````\n## outside\n"
+    assert MODULE.structure(text) == {
+        "h2": 1,
+        "h3": 0,
+        "h4": 0,
+        "code blocks": 1,
+        "table rows": 0,
+    }
+
+
 def test_matching_pair_passes(tmp_path: Path) -> None:
     assert MODULE.check(_tree(tmp_path), {}) == []
 
@@ -111,6 +122,12 @@ def test_a_stale_exception_is_reported(tmp_path: Path) -> None:
     ]
     assert MODULE.check(root, {"GONE.md": "English only"}) == [
         "GONE.md: listed as an exception but docs/GONE.md does not exist"
+    ]
+
+
+def test_an_exception_needs_a_reason(tmp_path: Path) -> None:
+    assert MODULE.check(_tree(tmp_path, korean=None), {"GUIDE.md": "  "}) == [
+        "GUIDE.md: listed as an exception without a reason"
     ]
 
 

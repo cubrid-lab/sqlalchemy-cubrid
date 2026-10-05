@@ -34,7 +34,7 @@ EXCEPTIONS: dict[str, str] = {}
 
 _HEADING = re.compile(r"(#{2,4}) ")
 _SEPARATOR = re.compile(r"\|[\s:|-]+\|?\s*$")
-_FENCE = re.compile(r"\s*(```|~~~)")
+_FENCE = re.compile(r"\s*(`{3,}|~{3,})")
 
 Structure = dict[str, int]
 
@@ -42,6 +42,8 @@ Structure = dict[str, int]
 def structure(text: str) -> Structure:
     """Count headings, fenced code blocks and table rows outside code blocks."""
     counts: Structure = {"h2": 0, "h3": 0, "h4": 0, "code blocks": 0, "table rows": 0}
+    # An open fence closes only with the same character, at least as long as
+    # the opener, so a longer fence can hold a shorter one as an example.
     fence: str | None = None
     for line in text.splitlines():
         match = _FENCE.match(line)
@@ -50,9 +52,10 @@ def structure(text: str) -> Structure:
             if fence is None:
                 fence = marker
                 counts["code blocks"] += 1
-            elif marker == fence:
+                continue
+            if marker[0] == fence[0] and len(marker) >= len(fence):
                 fence = None
-            continue
+                continue
         if fence is not None:
             continue
         heading = _HEADING.match(line)
@@ -79,6 +82,8 @@ def check(root: Path, exceptions: dict[str, str] | None = None) -> list[str]:
     problems: list[str] = []
     names = {path.name for path in sources(docs)}
     for name in sorted(allowed):
+        if not allowed[name].strip():
+            problems.append(f"{name}: listed as an exception without a reason")
         if name not in names:
             problems.append(f"{name}: listed as an exception but docs/{name} does not exist")
         elif (docs / "ko" / name).exists():
