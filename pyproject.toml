@@ -52,7 +52,7 @@ dev = [
     "pytest-asyncio",
     "hypothesis>=6.0",
     "mutmut>=3.8,<4",
-    "ruff==0.16.9",
+    "ruff==0.16.10",
     "mypy==2.4.0",
     "bandit[toml]==1.9.4",
     "pre-commit",
