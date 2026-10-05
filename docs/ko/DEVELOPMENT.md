@@ -801,6 +801,13 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 권한을 부여하지 않습니다. 유지보수자가 기존 `translations-deferred` 라벨을 명시적으로
 승인하고 후속 작업을 기록합니다. 한국어 필수·다른 언어 권고 검사는 유지합니다.
 
+`docs/` 아래 영어 문서가 기준이고, `docs/ko/` 아래 한국어는 완전하게 유지하는 유일한
+번역입니다. `python scripts/check_docs_translation.py`(린트 잡에서 실행)는 모든
+`docs/<name>.md`를 `docs/ko/<name>.md`와 비교해, 한국어 파일이 없거나 제목(2~4단계),
+펜스 코드 블록, 표 행의 개수가 다르면 실패합니다. 영어 섹션을 추가할 때는 같은
+PR에서 한국어 섹션도 추가하세요. 의도적으로 영어로만 두는 문서는 그 스크립트의
+`EXCEPTIONS`에 사유와 함께 넣습니다. 이 검사는 구조를 비교할 뿐 문구는 보지 않습니다.
+
 ### 릴리스 파이프라인
 
 릴리스는 유지보수자 전용이며 [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md)를 따릅니다:

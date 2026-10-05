@@ -7068,6 +7068,14 @@ Translation help requests do not authorize a bypass: maintainers explicitly
 approve the existing `translations-deferred` label and record follow-up. The
 Korean-required and other-language advisory translation checks are unchanged.
 
+English under `docs/` is the source of truth and Korean under `docs/ko/` is the one
+translation kept complete. `python scripts/check_docs_translation.py` (run by the
+lint job) compares every `docs/<name>.md` with `docs/ko/<name>.md` and fails on a
+missing Korean file or a different number of headings (levels 2-4), fenced code
+blocks or table rows. Add the Korean section in the same PR as the English one.
+A document that is deliberately English-only goes into `EXCEPTIONS` in that script
+with its reason. The check compares structure, not wording.
+
 ### Release Pipeline
 
 Releases are maintainer-only and follow [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md):
