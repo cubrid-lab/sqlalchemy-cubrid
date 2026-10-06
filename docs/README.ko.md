@@ -32,7 +32,7 @@ CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공�
 - **방대한 오프라인 테스트 스위트** — 데이터베이스 없이도 실행 가능; CI가 `offline-tests` 작업에서 최소 95% 라인 커버리지를 강제합니다 (`--cov-fail-under=95`)
 - **동시성 스트레스 테스트** — `QueuePool` 기반 동기 스레드 + `asyncio.gather` 워크로드를 실 CUBRID에서 검증
 - **SQLAlchemy 2.1 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.1 검증 전까지는 `<2.3`로 고정
-- **Python 3.10 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
+- **Python 3.11 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
 - CUBRID 전용 DML 구문: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic 마이그레이션 기본 지원
 - **세 가지 드라이버 옵션** — C 확장(`cubrid://`), 순수 Python(`cubrid+pycubrid://`), 비동기 순수 Python(`cubrid+aiopycubrid://`)
@@ -58,15 +58,14 @@ flowchart TD
 
 ## 요구 사항
 
-**Python 3.10 지원 종료 예고:** Python 3.10은 2026-10-01에 공식 지원이
+**Python 3.10 지원 종료:** Python 3.10은 2026-10-01에 공식 지원이
 종료됐습니다([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
-현재 1.8.x와 예고를 포함할 1.9.x 릴리스는 Python 3.10 지원을 유지합니다.
-1.9.0에 이 안내가 게시된 뒤, 그 다음 마이너 릴리스(예정: 1.10.0)부터
-Python 3.11 이상을 요구합니다. 해당 릴리스로 업그레이드하기 전에 Python을
-업그레이드하고 가상 환경을 새로 만든 뒤 애플리케이션을 검증하세요.
-이번 안내는 현재 설치 요구 사항을 바꾸거나 실행 시 경고를 추가하지 않습니다.
+1.8.x와 1.9.x는 Python 3.10을 지원하며, 1.9.0에 사전 안내가 포함됐습니다.
+1.10.0부터 패키지는 Python 3.11 이상을 요구하므로, Python 3.10의 `pip`은 계속
+1.9.x를 설치합니다. 업그레이드하기 전에 Python을 업그레이드하고 가상 환경을
+새로 만든 뒤 애플리케이션을 검증하세요.
 
-- Python 3.10+
+- Python 3.11 이상
 - SQLAlchemy 2.0 – 2.1
 - [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상에서 빌드한 레거시 CUBRIDdb C 확장
 
@@ -199,7 +198,7 @@ async with AsyncSession(engine) as session:
 
 | 구성 요소 | 지원 버전 |
 |---|---|
-| Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
+| Python | 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
@@ -227,7 +226,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### 어떤 Python 버전을 지원하나요?
 
-Python 3.10, 3.11, 3.12, 3.13, 3.14를 지원합니다.
+Python 3.11, 3.12, 3.13, 3.14를 지원합니다.
 
 ### CUBRID는 RETURNING 절을 지원하나요?
 

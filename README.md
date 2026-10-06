@@ -31,7 +31,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 - **Extensive offline test suite** — no database required to run it; CI enforces a minimum 95% line-coverage gate (`--cov-fail-under=95` in the `offline-tests` job, [CI badge above](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml))
 - **Concurrency stress tests** — `QueuePool` sync threaded + asyncio.gather workloads validated against live CUBRID
 - **SQLAlchemy 2.1-ready compat shim** — private API access wrapped in `_compat.py`; dependency pin now `>=2.0,<2.3` covering SA 2.0 and 2.1
-- Tested against **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) across **Python 3.10 -- 3.14**
+- Tested against **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) across **Python 3.11 -- 3.14**
 - CUBRID-specific DML constructs: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic migration support out of the box
 - **Three driver options** — pure Python (`cubrid+pycubrid://`, recommended), async pure Python (`cubrid+aiopycubrid://`), or the legacy C-extension (`cubrid://` / `cubrid+cubriddb://`)
@@ -39,7 +39,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 ## Support Status
 
 - **Status**: Production/Stable [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
-- Supported matrix: SQLAlchemy `>=2.0,<2.3`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.10`–`3.14`
+- Supported matrix: SQLAlchemy `>=2.0,<2.3`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.11`–`3.14`
 - Ordinary PRs run one Ubuntu/Python 3.12 offline smoke lane; high-risk changes add newest live integration. Main/changed-weekly runs use oldest/newest endpoints. The full supported integration matrix remains manual and release-gated. See [CI execution policy](docs/CI_POLICY.md).
 - SQLAlchemy 2.1 pre-releases are exercised by a non-gating `--pre` canary CI job
 - See [Known Limitations](#known-limitations) for behavior boundaries and unsupported features
@@ -67,14 +67,12 @@ flowchart TD
 
 **Python 3.10 support retirement:** Python 3.10 reached upstream end of life on
 2026-10-01 ([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
-The current 1.8.x line and the upcoming 1.9.x advance-notice release retain Python
-3.10 support. The following minor release (planned 1.10.0) will require Python
-3.11 or newer, after the 1.9.0 notice has shipped. Upgrade your interpreter,
-recreate your virtual environment and validate your application before upgrading
-to that release. This notice does not change the current installation requirement
-or add a runtime warning.
+The 1.8.x and 1.9.x lines support Python 3.10; 1.9.0 carried the advance notice.
+From 1.10.0 the package requires Python 3.11 or newer, so `pip` on Python 3.10
+keeps installing 1.9.x. Upgrade your interpreter, recreate your virtual
+environment and validate your application before upgrading.
 
-- Python 3.10+
+- Python 3.11 or later
 - SQLAlchemy 2.0 – 2.1
 - [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, recommended) **or** the legacy CUBRIDdb C extension built from [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later
 
@@ -243,7 +241,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 
 | Component | Supported versions |
 |---|---|
-| Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
+| Python | 3.11, 3.12, 3.13, 3.14 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
@@ -271,7 +269,7 @@ Yes. Install with `pip install "sqlalchemy-cubrid[alembic]"`. The CUBRID migrati
 
 ### What Python versions are supported?
 
-Python 3.10, 3.11, 3.12, 3.13, and 3.14.
+Python 3.11, 3.12, 3.13, and 3.14.
 
 ### Does CUBRID support RETURNING clauses?
 
