@@ -34,6 +34,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version. The rule selection is unchanged and no source needed a fix.
 
 ### Documentation
+- **The README and quickstart state Python 3.11 or later (#695)** — the
+  requirement lines, the tested and supported ranges (3.11–3.14) and the FAQ
+  answer in `README.md` and `docs/README.ko.md`, and the prerequisites in
+  `docs/QUICKSTART.md` and `docs/ko/QUICKSTART.md`. The Python 3.10 retirement
+  notice in both READMEs now describes the requirement as in effect from 1.10.0.
 - **In-page links work on the documentation site (#721)** — the site used the default heading slugifier, which drops non-ASCII characters, so Korean headings got ids such as `_2` and every Korean table of contents entry was dead; English links written for GitHub's slugs missed as well (208 broken anchors). `mkdocs.yml` now uses the Unicode-aware slugifier from `pymdown-extensions`, the eight anchors that were still wrong are fixed (among them a misspelled Korean heading and links to repeated "Basic Usage" headings), and `validation.links.anchors: warn` makes the strict build fail on a new broken anchor.
 - **Korean pages reviewed against the English wording (#719)** — the structure check cannot see a missing sentence. `docs/ko/DRIVER_COMPAT.md` gains the paragraph on how the `cursor.lastrowid` fallback opens and closes its cursor, `docs/ko/FEATURE_SUPPORT.md` says that the dialect handles `stmt.inserted` references, and the Native Enum row of `docs/ko/SUPPORT_MATRIX.md` matches English. The four translations added in this release (`PRD`, `SA_COMPAT`, `RELEASE_PLEASE_VALIDATION`, the contribution guide) were reviewed sentence by sentence: no content was missing, a few meanings were corrected (for example "checks not run", not "could not run") and unreadable literal renderings were rewritten. The banner on every Korean page now says the structure is checked by CI. English is unchanged.
 - **The documentation home page states one SQLAlchemy range (#716)** — its ecosystem list said "SQLAlchemy 2.0–2.2" while its first line, the README and the support matrix say 2.0–2.1. Both languages now say 2.0–2.1; the dependency pin (`>=2.0,<2.3`) is unchanged.

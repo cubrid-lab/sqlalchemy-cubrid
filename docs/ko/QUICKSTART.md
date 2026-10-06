@@ -11,7 +11,7 @@
 시작하기 전에 다음이 준비되어 있는지 확인하세요:
 
 - CUBRID 서버 (실행 중이고 도달 가능)
-- Python 3.10+
+- Python 3.11 이상
 - 권장 드라이버 구성:
   - pycubrid를 통한 `cubrid+pycubrid://`
   - pycubrid.aio를 통한 `cubrid+aiopycubrid://`

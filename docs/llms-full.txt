@@ -70,7 +70,7 @@ Get a working SQLAlchemy + CUBRID application running in minutes.
 Before you start, make sure the following are available:
 
 - CUBRID server (running and reachable)
-- Python 3.10+
+- Python 3.11 or later
 - Recommended driver configuration:
   - `cubrid+pycubrid://` via pycubrid
   - `cubrid+aiopycubrid://` via pycubrid.aio
