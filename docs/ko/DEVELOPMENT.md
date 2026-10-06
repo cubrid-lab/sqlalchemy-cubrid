@@ -475,7 +475,7 @@ CI와 같은 Makefile 타깃 및 SQLAlchemy/Python 조합을 쓰는 `typecheck-s
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
+envlist = lint, typecheck-sa20, typecheck-sa21, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
