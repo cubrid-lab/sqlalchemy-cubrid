@@ -100,7 +100,7 @@ version = {attr = "sqlalchemy_cubrid.__version__"}
 
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py311"
 include = ["*.py", "*.pyi"]
 
 [tool.ruff.lint]
@@ -115,7 +115,7 @@ select = ["E4", "E7", "E9", "F"]
 known-first-party = ["sqlalchemy_cubrid"]
 
 [tool.mypy]
-python_version = "3.10"
+python_version = "3.11"
 strict = true
 warn_return_any = true
 warn_unused_configs = true
