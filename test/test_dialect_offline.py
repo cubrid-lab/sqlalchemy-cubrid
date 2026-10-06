@@ -2422,22 +2422,13 @@ class TestIsDisconnect:
         exc.__cause__ = TimeoutError("timed out")
         assert dialect.is_disconnect(exc, None, None) is True
 
-    @pytest.mark.parametrize("legacy_class", [False, True])
-    def test_asyncio_timeout_cause_is_disconnect(self, pycubrid_dialect, monkeypatch, legacy_class):
-        """aiopycubrid's read timeout retires the session, so it disconnects (#624).
-
-        ``asyncio.TimeoutError`` is an ``OSError`` only from Python 3.11; on
-        3.10 it is a separate class, simulated here by ``legacy_class``.
-        """
-        import asyncio
-
-        if legacy_class:
-            monkeypatch.setattr(asyncio, "TimeoutError", type("TimeoutError", (Exception,), {}))
+    def test_asyncio_timeout_cause_is_disconnect(self, pycubrid_dialect):
+        """aiopycubrid's read timeout retires the session, so it disconnects (#624)."""
         dialect, dbapi = pycubrid_dialect
         exc = dbapi.OperationalError(
             "read timeout: no complete round trip within read_timeout=1.0s"
         )
-        exc.__cause__ = asyncio.TimeoutError()
+        exc.__cause__ = TimeoutError()
         assert dialect.is_disconnect(exc, None, None) is True
 
     @pytest.mark.parametrize(

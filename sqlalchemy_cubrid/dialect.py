@@ -20,7 +20,6 @@ Schema reflection uses SQLAlchemy's standard :func:`~sqlalchemy.inspect` API::
 
 from __future__ import annotations
 
-import asyncio
 from collections import Counter
 import importlib
 import importlib.metadata
@@ -1935,16 +1934,12 @@ class CubridDialect(default.DefaultDialect):
         ``OSError`` merely being handled when a DBAPI error is raised
         (or a context suppressed via ``raise ... from None``) must not
         trigger a false pool invalidation.
-
-        ``asyncio.TimeoutError`` counts as well: it is an ``OSError`` only
-        from Python 3.11, and aiopycubrid raises its read timeout from it
-        after retiring the session (#624).
         """
         seen: set[int] = set()
         current: Optional[BaseException] = exception.__cause__
         while current is not None and id(current) not in seen:
             seen.add(id(current))
-            if isinstance(current, (OSError, asyncio.TimeoutError)):
+            if isinstance(current, OSError):
                 return True
             current = current.__cause__
         return False
