@@ -6725,7 +6725,7 @@ tox integration does not run the formal suite. The offline threshold remains 95%
 
 ```ini
 [tox]
-envlist = lint, typecheck-sa20, typecheck-sa21, py310, py311, py312, py313, py314, repo
+envlist = lint, typecheck-sa20, typecheck-sa21, py311, py312, py313, py314, repo
 skip_missing_interpreters = true
 ```
 
