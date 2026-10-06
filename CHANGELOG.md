@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **tox no longer lists Python 3.10 (#687)** — `py310` is removed from
   `envlist`, and `typecheck-sa20` type-checks SQLAlchemy 2.0.53 on Python 3.11
   instead of 3.10. Local tooling only; CI and the dialect are unchanged.
+- **Ruff and mypy target Python 3.11 (#688)** — `target-version = "py311"` and
+  `python_version = "3.11"` in `pyproject.toml`, matching the minimum supported
+  version. The rule selection is unchanged and no source needed a fix.
 
 ### Documentation
 - **In-page links work on the documentation site (#721)** — the site used the default heading slugifier, which drops non-ASCII characters, so Korean headings got ids such as `_2` and every Korean table of contents entry was dead; English links written for GitHub's slugs missed as well (208 broken anchors). `mkdocs.yml` now uses the Unicode-aware slugifier from `pymdown-extensions`, the eight anchors that were still wrong are fixed (among them a misspelled Korean heading and links to repeated "Basic Usage" headings), and `validation.links.anchors: warn` makes the strict build fail on a new broken anchor.
