@@ -155,11 +155,13 @@ mypy 버전을 출력한 다음
 `python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`를 실행합니다.
 개발 의존성은 mypy `2.3.1`을 고정합니다.
 
-CI는 Python 3.11 / SQLAlchemy 2.0.53과 Python 3.13 / SQLAlchemy 2.1.1의 두 셀에서
-같은 Makefile 타깃을 실행합니다. 두 셀 모두 필수입니다. 타입 검사 잡이 실패하거나
-취소되거나 건너뛰어지면 필수 `matrix-result` 검사가 실패합니다. Ruff와 95% 최소
-커버리지의 기존 오프라인 테스트도 계속 필수입니다. 로컬 가상 환경 인터프리터를
-지정하려면 `make typecheck PYTHON=/path/to/venv/bin/python`을 사용하세요.
+CI는 Python 3.13 / SQLAlchemy 2.1.1의 한 셀에서 같은 Makefile 타깃을 실행합니다.
+이 셀은 필수입니다. 타입 검사 잡이 실패하거나 취소되거나 건너뛰어지면 필수
+`matrix-result` 검사가 실패합니다. CI의 단일 셀은 로컬 tox 환경과 같은 집합이
+아닙니다. `typecheck-sa21`이 이 셀과 일치하고, `typecheck-sa20`(Python 3.11 /
+SQLAlchemy 2.0.53)은 로컬 전용입니다. Ruff와 95% 최소 커버리지의 기존 오프라인
+테스트도 계속 필수입니다. 로컬 가상 환경 인터프리터를 지정하려면
+`make typecheck PYTHON=/path/to/venv/bin/python`을 사용하세요.
 
 ### 오프라인 테스트 (데이터베이스 불필요)
 
@@ -464,8 +466,10 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 ### tox 구성
 
 `tox.ini`는 Python 3.11–3.14의 로컬 오프라인 환경, 고정된 Ruff 린트 환경,
-CI와 같은 Makefile 타깃 및 SQLAlchemy/Python 조합을 쓰는 `typecheck-sa20` /
-`typecheck-sa21` 환경을 정의합니다. 기존 pycubrid/Alembic extra와 개발 테스트
+고정된 SQLAlchemy/Python 조합으로 같은 Makefile 타깃을 실행하는
+`typecheck-sa20` / `typecheck-sa21` 환경을 정의합니다. CI는 타입 검사를 한 셀에서만
+수행하므로 `typecheck-sa21`(Python 3.13 / SQLAlchemy 2.1.1)만 CI 셀에 대응하고,
+`typecheck-sa20`은 로컬 전용 조합입니다. 기존 pycubrid/Alembic extra와 개발 테스트
 의존성을 사용합니다. `py3xx` 환경의 오프라인 선택은 `-m "not integration and not repo"`이고,
 `repo` 환경은 저장소 도구 테스트를 `-m repo`로 실행합니다(#594). 통합 환경은
 `-m integration`과 `--ignore=test/test_suite.py`를 사용합니다. 공식 SQLAlchemy
@@ -591,9 +595,10 @@ Ruff나 Mypy를 올릴 때는 `pyproject.toml`의 dev 핀만 갱신하면 됩니
 `pip` 생태계가 정확히 이 작업을 수행합니다): pre-commit 훅과
 `tox -e lint`/`typecheck-sa20`/`typecheck-sa21` 환경 모두 프로젝트 자체의 `dev`
 extra를 설치하므로 그 핀이 가리키는 버전을 그대로 사용합니다.
-`tox -e typecheck-sa20`/`typecheck-sa21`은 CI의 타입 검사 매트릭스에 맞추기 위해
-Python 버전별 정확한 SQLAlchemy 릴리스(3.11엔 2.0.53, 3.13엔 2.1.1)를 추가로
-고정하며, 이 조합은 `scripts/check_tool_versions.py`가 CI에서 읽습니다. 갱신 후
+`tox -e typecheck-sa20`/`typecheck-sa21`은 Python 버전별 정확한 SQLAlchemy
+릴리스(3.11엔 2.0.53, 3.13엔 2.1.1)를 추가로 고정합니다. CI의 단일 타입 검사 셀에
+대응하는 것은 2.1.1 조합뿐이며, `scripts/check_tool_versions.py`는 CI의 각 셀에
+대응하는 `typecheck-sa<minor>` 환경을 요구하고 각 환경의 핀을 검증합니다. 갱신 후
 `make check-tool-versions`, `pre-commit run --all-files`,
 `tox -e lint,typecheck-sa20,typecheck-sa21`을 실행하세요. 일관성 검사는 CI 린트,
 tox 린트, 로컬 pre-commit 훅에서 실행되므로 의존성만 갱신한 변경이 오래된 핀을
@@ -709,6 +714,11 @@ python -m scripts.check_not_all_skipped integration.log --label "Run integration
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C 확장) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
 | `pycubrid@sa2.0` | `cubrid+pycubrid://` (권장) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.11 × CUBRID 10.2 |
 | `pycubrid@sa2.1` | `cubrid+pycubrid://` (권장) | pycubrid 1.8.0, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
+
+`고정 버전` 열은 각 레인의 자체 핀입니다. 가장 오래된 일반 통합 셀(Python 3.11 ×
+CUBRID 10.2)은 모든 단계에서 `sqlalchemy[asyncio]>=2.0,<2.1`을 설치하므로 그 셀이
+정확히 2.0.53으로 고정되는 것은 아니며, `pycubrid-compliance-sqlalchemy=2.0.53`
+행렬 값은 이 레인의 스위트 실행만 고정합니다.
 
 두 pycubrid 레인은 SQLAlchemy 2.0과 2.1을 두 PR 셀에 나누어 실행하므로 각 셀은
 pycubrid 스위트를 한 번만 실행합니다(SQLAlchemy 2.1은 Python 3.11 이상이 필요하므로
