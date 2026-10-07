@@ -313,6 +313,8 @@ implementation follows the agreed contract.
   Comments alone do not replace assignment. Preserve existing contributor
   claims and open PRs; agree a handoff before changing ownership. If assignment
   permission is missing, request maintainer assignment before starting.
+  Broad "review", "fix" or "release preparation" instructions do not override an
+  existing contributor assignment.
 - On handoff, update Assignees; unassign when returning unfinished work.
   Preserve a contributor's evidence and scope when editing their issue.
 - Before saving an issue edit, check for contradictory current statuses,
@@ -328,9 +330,11 @@ alongside a type label (`bug`/`enhancement`/`documentation`/`chore`/`ci`/…) an
 `area:` label when applicable. These must be GitHub labels, not just text in the
 issue title or body.
 
-Maintainers or triagers assign/create the canonical GitHub labels. Outside
-reporters can describe urgency and effort without label permissions; those
-descriptions help triage but do not themselves assign a label.
+Maintainers and triagers own label policy and apply or create the canonical GitHub
+labels. Authorized agents filing or triaging on their behalf apply the same
+canonical labels. Outside reporters do not need label-write permission: they can
+describe urgency and effort, but those descriptions help triage and do not
+themselves assign a label.
 
 Issue titles use the same `type(scope): description` format as pull request
 titles (see [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-and-commit-titles)).
@@ -365,7 +369,7 @@ helps contributors pick appropriately scoped work.
 Rules:
 
 1. **Size reflects effort, not importance** — a one-line fix for a critical bug is still `size: XS`.
-2. **Maintainers and agents assign both `priority:` and `size:` when filing.** If scope or impact
+2. **Maintainers, triagers and authorized agents filing for them assign both `priority:` and `size:` when filing.** If scope or impact
    is uncertain, use a provisional estimate, explain the uncertainty in the body,
    and add `status: needs triage`. External reports may start with that label;
    refine estimates during maintainer triage.
@@ -379,7 +383,12 @@ Rules:
 - A PR is opened for it: remove `good first issue`, add `status: in progress`.
 - PR merged: the issue closes.
 - PR closed without merging: first check that no other open PR still addresses the issue. Only if none remains, remove `status: in progress` and restore `good first issue`; otherwise keep it in progress.
-- Keep 3–5 genuinely unclaimed good first issues per repository; a good first issue should have a small blast radius and an existing pattern or reference PR to follow, not just a small diff.
+- Keep at least 3 genuinely unclaimed good first issues per repository; a good first issue should have a small blast radius and an existing pattern or reference PR to follow, not just a small diff.
+- Reserved for newcomers: a maintainer-run agent must not implement an issue labelled
+  `good first issue` unless a maintainer authorizes that **specific issue**. Broad
+  backlog, review, fix or release-preparation instructions are not authorization.
+  Before a release blocker is handed to an agent, a maintainer must check the issue's
+  Assignees, comments and open PRs and record the decision on the issue.
 
 ## Documentation definition of done
 
