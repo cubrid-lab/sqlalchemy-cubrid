@@ -1,6 +1,6 @@
 # sqlalchemy-cubrid
 
-> SQLAlchemy 2.0/2.1 dialect for the CUBRID database: SQL and DDL compilation, type mapping (including native JSON and collection types), schema reflection, CUBRID-specific DML constructs, Alembic migrations, and sync plus async driver support for Python 3.10+ (PEP 561 typed).
+> SQLAlchemy 2.0/2.1 dialect for the CUBRID database: SQL and DDL compilation, type mapping (including native JSON and collection types), schema reflection, CUBRID-specific DML constructs, Alembic migrations, and sync plus async driver support for Python 3.11+ (PEP 561 typed).
 
 sqlalchemy-cubrid lets Python applications use CUBRID with SQLAlchemy Core, the ORM, the asyncio extension, and Alembic. It registers three driver variants: the pure-Python `pycubrid` driver, its asyncio counterpart `pycubrid.aio`, and the legacy `CUBRIDdb` C extension.
 
