@@ -358,7 +358,8 @@ jobs:
           /tmp/test-sdist/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
 
   live-smoke:
-    needs: [detect-changes, lint, typecheck, offline-tests]
+    # Starts with lint/type/offline (#744); matrix-result still requires all of them.
+    needs: [detect-changes]
     if: needs.detect-changes.outputs.extended == 'true'
     name: Live CUBRID smoke
     uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
@@ -374,7 +375,8 @@ jobs:
         -v --tb=short
 
   make-integration:
-    needs: [detect-changes, lint, typecheck, offline-tests]
+    # Starts with lint/type/offline (#744); matrix-result still requires all of them.
+    needs: [detect-changes]
     if: needs.detect-changes.outputs.extended == 'true'
     # `make integration` exactly as a contributor runs it with the default,
     # recommended driver (#575): a run-owned Compose project, the readiness
@@ -412,7 +414,8 @@ jobs:
         run: python -m scripts.check_not_all_skipped make-integration.log --label "make integration (pycubrid)"
 
   integration-tests:
-    needs: [detect-changes, lint, typecheck, offline-tests]
+    # Starts with lint/type/offline (#744); matrix-result still requires all of them.
+    needs: [detect-changes]
     if: needs.detect-changes.outputs.live == 'true'
     # Explicit name: the pycubrid-compliance-sqlalchemy matrix value is only the
     # pycubrid compliance lane's pin, not the SQLAlchemy version of the job.
