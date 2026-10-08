@@ -15,8 +15,11 @@ an unrecognised license, is categorised ``Needs review`` and must be resolved in
 THIRD_PARTY_LICENSES.md from the package's own license files.
 
 ``--required-by`` adds a column naming the installed distributions whose
-unconditional or platform-conditional requirements pull each row in; edges
-gated on an ``extra`` are used only for a row that has no other parent.
+requirements pull each row in. Every environment marker is evaluated for the
+running interpreter, and extras are followed from the ones requested for the
+``--exclude``d project (``--extra``) to a fixed point, so a requirement counts
+only when it is active in this environment. It needs the ``packaging``
+distribution in the inventoried environment and fails rather than guessing.
 """
 
 from __future__ import annotations
@@ -38,8 +41,6 @@ PERMISSIVE_PART = re.compile(
 MPL_PART = re.compile(r"^(?:MPL|Mozilla Public License)", re.IGNORECASE)
 # No closing word boundary: "GPLv3", "LGPLv2+" must match too.
 GPL_FAMILY = re.compile(r"\b(?:A|L)?GPL|General Public License", re.IGNORECASE)
-REQUIREMENT_NAME = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
-EXTRA_MARKER = re.compile(r"\bextra\s*==")
 
 
 def field(dist: metadata.Distribution, key: str) -> str:
@@ -92,24 +93,38 @@ def url_of(dist: metadata.Distribution) -> str:
     return field(dist, "Home-page") or "-"
 
 
-def required_by() -> dict[str, list[str]]:
-    """Map each installed distribution to the installed ones that require it."""
-    installed = {canonical(field(d, "Name")) for d in metadata.distributions()}
-    plain: dict[str, set[str]] = {}
-    via_extra: dict[str, set[str]] = {}
-    for dist in metadata.distributions():
-        parent = field(dist, "Name")
-        for requirement in dist.requires or []:
-            spec, _, marker = requirement.partition(";")
-            match = REQUIREMENT_NAME.match(spec)
-            if not match or canonical(match.group(1)) not in installed:
-                continue
-            edges = via_extra if EXTRA_MARKER.search(marker) else plain
-            edges.setdefault(canonical(match.group(1)), set()).add(parent)
-    names = set(plain) | set(via_extra)
-    return {
-        name: sorted(plain.get(name) or via_extra.get(name, set()), key=str.lower) for name in names
-    }
+def required_by(root: set[str], root_extras: set[str]) -> dict[str, list[str]]:
+    """Map each installed distribution to the installed ones whose active requirements need it."""
+    try:
+        from packaging.requirements import Requirement
+    except ImportError as exc:  # pragma: no cover - environment dependent
+        raise SystemExit("--required-by needs 'packaging' installed in this environment") from exc
+    dists = {canonical(field(d, "Name")): d for d in metadata.distributions()}
+    requested: dict[str, set[str]] = {name: set() for name in dists}
+    for name in root:
+        requested.setdefault(name, set()).update(root_extras)
+    parents: dict[str, set[str]] = {}
+    changed = True
+    while changed:
+        changed = False
+        for name, dist in dists.items():
+            for raw in dist.requires or []:
+                req = Requirement(raw)
+                child = canonical(req.name)
+                if child not in dists:
+                    continue
+                contexts = [{"extra": extra} for extra in {"", *requested[name]}]
+                if req.marker is not None and not any(req.marker.evaluate(c) for c in contexts):
+                    continue
+                found = parents.setdefault(child, set())
+                parent = field(dist, "Name")
+                if parent not in found:
+                    found.add(parent)
+                    changed = True
+                if not set(req.extras) <= requested[child]:
+                    requested[child] |= set(req.extras)
+                    changed = True
+    return {child: sorted(names, key=str.lower) for child, names in parents.items()}
 
 
 def rows(exclude: set[str]) -> list[tuple[str, str, str, str, str]]:
@@ -130,9 +145,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--required-by", action="store_true", help="add a column naming each row's parents"
     )
+    parser.add_argument(
+        "--extra", action="append", default=[], help="extra requested for the excluded project"
+    )
     args = parser.parse_args(argv)
     exclude = {canonical(e) for e in args.exclude}
-    parents = required_by() if args.required_by else {}
+    parents = required_by(exclude, set(args.extra)) if args.required_by else {}
     extra_header = " Required by |" if args.required_by else ""
     print(f"| Name | Version | License | Category | URL |{extra_header}")
     print("|---|---|---|---|---|" + ("---|" if args.required_by else ""))
