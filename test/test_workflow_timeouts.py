@@ -17,7 +17,6 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github/workflows"
-pytestmark = pytest.mark.repo
 
 MAX_TIMEOUT_MINUTES = 180
 GATE_MAX_TIMEOUT_MINUTES = 10
