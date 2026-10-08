@@ -92,3 +92,30 @@ def test_live_readiness_still_connects_through_cubriddb(wf: str, name: str) -> N
     i_ready, ready = _step(steps, "Wait for CUBRID to be ready")
     assert i_install < i_ready
     assert "CUBRIDdb.connect(" in ready["run"]
+
+
+def test_all_jobs_share_one_key_and_one_build_recipe() -> None:
+    # The wheels are interchangeable across jobs (same key namespace), so a recipe
+    # edit in one copy without a matching key bump would silently reuse old wheels.
+    keys, recipes = set(), set()
+    for param in JOBS:
+        steps = param.values[2]
+        keys.add(_step(steps, "Restore the CUBRID Python driver wheel")[1]["with"]["key"])
+        recipe = _step(steps, "Build the CUBRID Python driver wheel")[1]["run"]
+        recipes.add("\n".join(line.strip() for line in recipe.splitlines() if line.strip()))
+    assert len(keys) == 1, keys
+    assert len(recipes) == 1, "the three build recipes diverged; keep them identical"
+
+
+def test_make_integration_guards_every_driver_step() -> None:
+    steps = yaml.safe_load((ROOT / ".github/workflows/integration-full.yml").read_text())["jobs"][
+        "make-integration"
+    ]["steps"]
+    for name in (
+        "Fetch CUBRID Python driver source",
+        "Restore the CUBRID Python driver wheel",
+        "Install system dependencies",
+        "Build the CUBRID Python driver wheel",
+        "Install the CUBRID Python driver",
+    ):
+        assert "matrix.driver == 'cubriddb'" in _step(steps, name)[1]["if"], name

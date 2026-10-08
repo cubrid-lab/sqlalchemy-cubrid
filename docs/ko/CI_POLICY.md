@@ -73,7 +73,10 @@ OS와 아키텍처, 러너 이미지(`ImageOS`), Python ABI(`SOABI`, 예: `cpyth
 그리고 태그가 아닌 해석된 소스 커밋입니다. CUBRID 서버 버전은 키에 포함되지 않으므로 같은
 Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴파일과
 `build-essential`/`cmake` 설치를 건너뛰고, 적중하지 않으면 `uv build`로 wheel을 빌드해
-저장합니다. 적중을 증거로 보지 않습니다. 매 실행이 wheel을 설치하고 `CUBRIDdb`를 import하며,
+잡이 성공하면 저장합니다. CPython은 마이너 버전 안에서 ABI를 안정적으로 유지하지만 러너
+이미지마다 패치 버전이 다르므로, 키에는 패치 버전 대신 ABI를 씁니다. 빌드 절차나 툴체인이
+바뀌면 `cubriddb-wheel-v` 접두사를 직접 올려야 하며, 세 곳의 빌드 절차는 동일하게
+유지해야 합니다. 적중을 증거로 보지 않습니다. 매 실행이 wheel을 설치하고 `CUBRIDdb`를 import하며,
 준비 확인 단계가 스위트 실행 전에 실제 서버에 연결합니다.
 `test/test_workflow_cubriddb_cache.py`가 키 구성 요소와 적중 시에만 빌드를 건너뛰는지를
 검증합니다.
