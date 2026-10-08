@@ -7163,6 +7163,14 @@ and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retai
 SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Live smoke, make integration
 and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validation.
 
+## Parallel live lanes
+
+`integration-tests`, `make-integration` and `live-smoke` depend only on
+`detect-changes` (#744), so they start alongside lint, type checking and offline
+tests instead of after them. `matrix-result` still needs every job, so a lint, type
+or offline failure keeps the required check red even when the live lanes pass. The
+trade-off is that a PR that fails lint can still spend live-lane runner time.
+
 ## Job timeouts
 
 Every executing job sets an integer `timeout-minutes` (GitHub's default is 360

@@ -204,3 +204,17 @@ def test_documentation_generator_includes_policy_and_preserves_index(tmp_path: P
     assert (
         b"[CI execution policy](https://cubrid-lab.github.io/sqlalchemy-cubrid/CI_POLICY/)" in index
     )
+
+
+LIVE_JOBS = ("live-smoke", "make-integration", "integration-tests")
+
+
+@pytest.mark.parametrize("name", LIVE_JOBS)
+def test_live_lanes_start_without_waiting_for_static_and_offline_jobs(name: str) -> None:
+    # #744: live lanes run in parallel with lint/typecheck/offline-tests.
+    assert workflow("ci.yml")["jobs"][name]["needs"] == ["detect-changes"], name
+
+
+def test_gate_still_requires_static_and_offline_jobs() -> None:
+    needs = set(gate()["needs"])
+    assert {"lint", "typecheck", "offline-tests", *LIVE_JOBS} <= needs

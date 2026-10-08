@@ -57,6 +57,14 @@ main/주간 실행에서 SQLAlchemy 2.0과 2.1 컴플라이언스 커버리지�
 스모크, make integration, 권고 수준의 SQLAlchemy 카나리는 PR에서 PR이 아닌 코드
 검증으로 미뤄집니다.
 
+## 병렬 라이브 레인
+
+`integration-tests`, `make-integration`, `live-smoke`는 `detect-changes`에만
+의존하므로(#744), lint, 타입 검사, 오프라인 테스트가 끝난 뒤가 아니라 함께
+시작합니다. `matrix-result`는 여전히 모든 잡을 요구하므로 라이브 레인이 통과해도
+lint, 타입, 오프라인 실패가 있으면 필수 검사는 실패합니다. 대신 lint에 실패한
+PR도 라이브 레인 러너 시간을 쓸 수 있습니다.
+
 ## 잡 타임아웃
 
 실행되는 모든 잡은 정수 `timeout-minutes`를 지정합니다(GitHub 기본값은 360분).
