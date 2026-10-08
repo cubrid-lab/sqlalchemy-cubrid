@@ -91,7 +91,9 @@ jobs:
       # which Python 3.10 selected by itself before it was retired.
       - name: Pin the minimum SQLAlchemy line in the oldest Python row
         if: matrix.python-version == '3.11'
-        run: uv pip install --system "sqlalchemy[asyncio]>=2.0,<2.1"
+        run: |
+          uv pip install --system "sqlalchemy[asyncio]>=2.0,<2.1"
+          uv pip freeze --system | grep -i '^sqlalchemy=='
 
       - name: Wait for CUBRID to be ready
         run: |

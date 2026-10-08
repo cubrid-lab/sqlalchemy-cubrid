@@ -101,7 +101,9 @@ def test_oldest_cells_use_python_311_and_keep_the_sqlalchemy_20_line() -> None:
         names = [s.get("name", "") for s in job["steps"]]
         pin = next(s for s in job["steps"] if s.get("name", "").startswith("Pin the minimum"))
         assert pin["if"] == condition, name
-        assert pin["run"] == 'uv pip install --system "sqlalchemy[asyncio]>=2.0,<2.1"', name
+        install, *log = pin["run"].strip().splitlines()
+        assert install == 'uv pip install --system "sqlalchemy[asyncio]>=2.0,<2.1"', name
+        assert log == ["uv pip freeze --system | grep -i '^sqlalchemy=='"], name
         assert names.index(pin["name"]) == names.index("Install project") + 1, name
 
 

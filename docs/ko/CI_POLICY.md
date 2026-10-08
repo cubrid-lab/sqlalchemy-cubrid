@@ -93,8 +93,8 @@ main/주간 실행에서 SQLAlchemy 2.0과 2.1 컴플라이언스 커버리지�
 막는 setup-uv의 보호를 유지합니다. 바뀌는 것은 설치 도구뿐입니다. 전환 전에 Python
 3.12에서 `.[dev]`, `.[dev,alembic]`, `.[dev,pycubrid]`를 pip와 uv로 해석한 결과는 같은
 패키지 집합이었습니다(PEP 503 이름 정규화 후 각각 73, 73, 74개). 고정된 SQLAlchemy와
-pycubrid 컴플라이언스 설치는 정확한 핀을 유지하고, SQLAlchemy 프리릴리스 카나리는 uv의
-`--prerelease=allow`를 사용합니다. 일반 `pip`는 그것이 목적인 곳에 남습니다. 패키징
+pycubrid 컴플라이언스 설치는 정확한 핀을 유지하고, SQLAlchemy 프리릴리스 카나리는
+`--upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit`를 사용해 pip의 업그레이드 범위(SQLAlchemy만, 의존성은 제외)를 유지하고 지정자가 요구하는 경우에만 프리릴리스를 허용합니다. 가장 오래된 셀의 SQLAlchemy 2.0 고정 단계는 고정된 버전을 기록합니다. 일반 `pip`는 그것이 목적인 곳에 남습니다. 패키징
 스모크 가상 환경은 빌드된 wheel과 sdist가 최종 사용자 도구로 설치되는지 증명하고, 외부
 `live-smoke` 재사용 워크플로는 자체 설치 명령을 받습니다. `test/test_workflow_installs.py`가
 이를 검증합니다.

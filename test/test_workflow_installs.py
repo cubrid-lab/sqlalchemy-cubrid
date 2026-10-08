@@ -61,6 +61,8 @@ def test_job_sets_up_pinned_uv_after_python(wf: str, name: str, steps: list) -> 
     assert uv[0]["with"]["cache-suffix"] == "${{ github.job }}"
     python = next(s for s in steps if "actions/setup-python@" in str(s.get("uses", "")))
     assert steps.index(python) < steps.index(uv[0]), f"{wf}:{name} set up Python first"
+    first_uv_use = next(i for i, s in enumerate(steps) if "uv pip" in s.get("run", ""))
+    assert steps.index(uv[0]) < first_uv_use, f"{wf}:{name} calls uv before setup-uv"
 
 
 @pytest.mark.parametrize(("wf", "name", "steps"), PYTHON_JOBS)
@@ -71,8 +73,13 @@ def test_job_installs_with_uv_and_logs_versions(wf: str, name: str, steps: list)
     for line in lines:
         if PIP_INSTALL.search(line) and not line.startswith("uv pip "):
             assert PIP_SMOKE_ALLOWED.match(line), f"{wf}:{name} still uses pip: {line}"
-    assert not any("--pre " in line for line in lines if line.startswith("uv pip ")), (
-        "uv spells pre-release opt-in as --prerelease=allow"
+    uv_lines = [line for line in lines if line.startswith("uv pip ")]
+    assert not any(re.search(r"--pre\b(?!release)", line) for line in uv_lines), (
+        "uv spells pre-release opt-in as --prerelease=..."
+    )
+    # pip's --upgrade touches only named packages; uv's upgrades their dependencies too.
+    assert not any(re.search(r"--upgrade\b(?!-package)", line) for line in uv_lines), (
+        "use --upgrade-package <name> to keep pip's upgrade scope"
     )
 
 
