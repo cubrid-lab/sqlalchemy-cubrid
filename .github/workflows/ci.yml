@@ -23,6 +23,7 @@ jobs:
   detect-changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code: ${{ steps.filter.outputs.code }}
       docs: ${{ steps.filter.outputs.docs }}
@@ -95,6 +96,7 @@ jobs:
   # ──────────────────────────────────────────
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -124,6 +126,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -147,6 +150,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.code == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -190,6 +194,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.tooling == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -215,6 +220,7 @@ jobs:
     if: needs.detect-changes.outputs.live == 'true'
     name: alembic-compat (${{ matrix.alembic }})
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -241,6 +247,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.extended == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     continue-on-error: true  # Canary: warn, don't gate. SA pre-releases may break.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -263,6 +270,7 @@ jobs:
     needs: detect-changes
     if: needs.detect-changes.outputs.live == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
@@ -332,6 +340,7 @@ jobs:
     # integration-full.yml.
     name: make integration (pycubrid, CUBRID 11.4)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -355,6 +364,7 @@ jobs:
     # pycubrid compliance lane's pin, not the SQLAlchemy version of the job.
     name: integration-tests (${{ matrix.python-version }}, ${{ matrix.cubrid-version }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(github.event_name == 'pull_request' && '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"}]}' || '{"include":[{"python-version":"3.14","cubrid-version":"11.4","pycubrid-compliance-sqlalchemy":"2.1.1"},{"python-version":"3.11","cubrid-version":"10.2","pycubrid-compliance-sqlalchemy":"2.0.53"}]}') }}
@@ -569,6 +579,7 @@ jobs:
   matrix-result:
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [detect-changes, lint, doc-lint, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, alembic-compat, live-smoke, make-integration]
     steps:
       - name: Check selected job results

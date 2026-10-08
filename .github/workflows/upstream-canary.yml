@@ -14,6 +14,7 @@ jobs:
   upstream-canary:
     name: Offline tests against pycubrid@main
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     continue-on-error: true
     outputs:
       status: ${{ steps.status.outputs.status }}
@@ -53,6 +54,7 @@ jobs:
   upstream-canary-integration:
     name: Integration tests against pycubrid@main
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     continue-on-error: true
     outputs:
       status: ${{ steps.status.outputs.status }}
@@ -167,6 +169,7 @@ jobs:
       && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
       && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     concurrency:
       group: upstream-canary-report
       cancel-in-progress: false
