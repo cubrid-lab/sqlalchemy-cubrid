@@ -89,8 +89,11 @@ main/주간 실행에서 SQLAlchemy 2.0과 2.1 컴플라이언스 커버리지�
 기록합니다. setup-uv가 setup-python 다음에 실행되므로 캐시 키에 잡의 인터프리터가
 반영됩니다. `pyproject.toml` 해시와 잡별 `cache-suffix`를 함께 써서 잡과 Python 버전마다
 별도 캐시를 유지합니다. 일상 CI와 카나리는 항상 캐시하고(`enable-cache: true`), 릴리스
-게이트인 `integration-full.yml`은 `auto`를 사용해 릴리스 계열 이벤트에서 캐시 복원을
-막는 setup-uv의 보호를 유지합니다. 바뀌는 것은 설치 도구뿐입니다. 전환 전에 Python
+게이트인 `integration-full.yml`은 `auto`를 사용하며, 이는 태그 푸시, `release`,
+`pull_request_target`, `workflow_run` 이벤트에서만 캐시를 끕니다. 따라서 릴리스 경로
+(`main` 푸시에서 실행되는 `publish-pypi.yml` 또는 복구용 수동 실행)는 여전히 캐시를
+복원합니다. uv 캐시에는 내려받거나 빌드한 wheel만 들어 있고 매 실행이 같은 제약에서
+다시 해석하므로, 캐시는 설치를 빠르게 할 뿐 해석된 버전을 바꿀 수 없어 안전합니다. 바뀌는 것은 설치 도구뿐입니다. 전환 전에 Python
 3.12에서 `.[dev]`, `.[dev,alembic]`, `.[dev,pycubrid]`를 pip와 uv로 해석한 결과는 같은
 패키지 집합이었습니다(PEP 503 이름 정규화 후 각각 73, 73, 74개). 고정된 SQLAlchemy와
 pycubrid 컴플라이언스 설치는 정확한 핀을 유지하고, SQLAlchemy 프리릴리스 카나리는

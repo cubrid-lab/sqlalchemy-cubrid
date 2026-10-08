@@ -30,9 +30,7 @@ jobs:
           enable-cache: true
           cache-dependency-glob: pyproject.toml
           cache-suffix: ${{ github.job }}
-      - run: |
-          uv pip install --system -e ".[dev]"
-          uv pip freeze --system
+      - run: uv pip install --system -e ".[dev]"
       - name: Resolve pycubrid@main commit
         id: pycubrid
         run: |
@@ -42,7 +40,9 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
       - env:
           PYCUBRID_SHA: ${{ steps.pycubrid.outputs.sha }}
-        run: uv pip install --system --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@${PYCUBRID_SHA}"
+        run: |
+          uv pip install --system --force-reinstall "git+https://github.com/cubrid-lab/pycubrid.git@${PYCUBRID_SHA}"
+          uv pip freeze --system
       # Offline half: without CUBRID_TEST_URL, integration-marked tests would only
       # skip, which conftest.py refuses under CI=true (#593); deselect them.
       - run: pytest test/ -m "not integration" -q
