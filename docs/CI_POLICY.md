@@ -22,8 +22,10 @@ their change locally and record commands/results in the PR.
 Change selection is in `ci.yml`'s `detect-changes` job. Non-documentation paths
 are code by default, so new source/configuration files do not silently become docs.
 Connection/protocol/cursor/async/compatibility or dialect/compiler/reflection,
-dependency, build, script and workflow changes select representative pre-merge
-integration. Repository tooling tests run in one Linux lane when tooling changes.
+dependency, build and script changes and `ci.yml` itself select representative
+pre-merge integration; other workflow changes select the tooling lane and the
+offline suite instead (see
+[Workflow change impact](#workflow-change-impact)). Repository tooling tests run in one Linux lane when tooling changes.
 The static lint job continues on all events, including generated documentation checks.
 
 The aggregate required-check name stays stable and includes change detection.
@@ -56,6 +58,28 @@ Routine type checking uses Python 3.13/SQLAlchemy 2.1.1; Alembic checks use late
 and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retain
 SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Live smoke, make integration
 and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validation.
+
+## Workflow change impact
+
+Changed-path selection follows a per-workflow impact table (#746). Only `ci.yml`
+selects the live PR lanes (`integration-tests`, `alembic-compat`, packaging) through
+`risk`, because it defines and runs them. Every other workflow under `.github/` is a
+non-documentation change, so it runs the full offline suite, and it selects the
+repository-tooling lane; together they cover every test that reads a workflow file.
+The live lanes of `ci.yml` do not execute another workflow's jobs, so running them
+adds no detection.
+
+| Changed workflow | PR validation |
+| --- | --- |
+| `ci.yml` | All lanes it defines, plus tooling and the offline suite |
+| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
+| `publish-pypi.yml`, `release-please.yml` | Tooling and offline suite (release workflow tests) |
+| Other workflows | Tooling and offline suite; `pr-title.yml`, `docs-sync.yml`, `codeql.yml` and `security.yml` also run themselves on the PR |
+
+`test/test_workflow_path_impact.py` evaluates the filters against every workflow
+file and representative paths, and fails if any test module that reads a workflow
+file (by literal path, split path or constant) contains an `integration` mark,
+which would leave that test unrun on such a PR.
 
 ## Parallel live lanes
 

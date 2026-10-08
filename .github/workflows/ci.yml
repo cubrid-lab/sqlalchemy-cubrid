@@ -61,7 +61,7 @@ jobs:
               - 'Makefile'
               - 'docker-compose.yml'
               - 'scripts/**'
-              - '.github/workflows/**'
+              - '.github/workflows/ci.yml'
               - 'sqlalchemy_cubrid/aio_pycubrid_dialect.py'
               - 'sqlalchemy_cubrid/pycubrid_dialect.py'
               - 'sqlalchemy_cubrid/_compat.py'
