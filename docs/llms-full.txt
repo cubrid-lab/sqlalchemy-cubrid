@@ -7187,6 +7187,30 @@ job lacks a bounded timeout, when a new external caller is not allowlisted, or
 when the release gate (`full-matrix-result`) stops failing on a non-success
 dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
 
+## Dependency installation
+
+`ci.yml`, `integration-full.yml` and `upstream-canary.yml` install dependencies with
+uv (#743): each job that installs packages runs `astral-sh/setup-uv` pinned to a
+commit SHA, with uv itself pinned (`version: "0.12.17"`), after `actions/setup-python`.
+It then installs with `uv pip install --system` into that interpreter and logs the
+result with `uv pip freeze --system`. Because setup-uv runs after setup-python, its
+cache key carries the job's interpreter; with the `pyproject.toml` hash and a per-job
+`cache-suffix`, each job and Python version keeps its own cache. Routine CI and the
+canary always cache (`enable-cache: true`); `integration-full.yml` uses `auto`, which
+disables caching only for tag pushes, `release`, `pull_request_target` and
+`workflow_run` events. The release path (`publish-pypi.yml` on a `main` push, or its
+recovery dispatch) therefore still restores caches. That is safe because a uv cache
+holds only downloaded and built wheels: every run re-resolves from the same
+constraints, so a cache can speed an install but cannot change the resolved versions.
+Only the installer changes: before the switch, `.[dev]`, `.[dev,alembic]` and
+`.[dev,pycubrid]` on Python 3.12 resolved to identical package sets with pip and uv
+(73, 73 and 74 packages after PEP 503 name normalization). The pinned SQLAlchemy
+and pycubrid compliance installs keep their exact pins, and the SQLAlchemy
+pre-release canary uses `--upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit`, which keeps pip's upgrade scope (only SQLAlchemy, not its dependencies) and admits a pre-release only where the specifier asks for one. The oldest cell's SQLAlchemy 2.0 pin step logs the pinned version. Plain `pip` stays where it is the
+point: the packaging smoke venvs prove the built wheel and sdist install with the
+end-user tool, and the external `live-smoke` reusable workflow receives its own
+install command. `test/test_workflow_installs.py` enforces this.
+
 ## Python 3.15 preview preparation
 
 `python-canary.yml` is manual-only: supply the full SHA and dispatch the branch

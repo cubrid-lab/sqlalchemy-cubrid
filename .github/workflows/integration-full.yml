@@ -51,6 +51,12 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
 
       - name: Install system dependencies
         run: |
@@ -73,18 +79,21 @@ jobs:
           echo 'exit 0' >> build_cci.sh
           chmod +x build_cci.sh
 
-          pip install .
+          uv pip install --system .
 
       - name: Install project
         run: |
-          pip install -e ".[dev]"
-          pip install pytest-cov
+          uv pip install --system -e ".[dev]"
+          uv pip install --system pytest-cov
+          uv pip freeze --system
 
       # The oldest Python row keeps the minimum supported SQLAlchemy line (2.0.x),
       # which Python 3.10 selected by itself before it was retired.
       - name: Pin the minimum SQLAlchemy line in the oldest Python row
         if: matrix.python-version == '3.11'
-        run: pip install "sqlalchemy[asyncio]>=2.0,<2.1"
+        run: |
+          uv pip install --system "sqlalchemy[asyncio]>=2.0,<2.1"
+          uv pip freeze --system | grep -i '^sqlalchemy=='
 
       - name: Wait for CUBRID to be ready
         run: |
@@ -126,7 +135,7 @@ jobs:
           # runs against a supported release (pytest-asyncio already comes from the [dev]
           # extra installed above). Testing against pycubrid@main (HEAD) is
           # handled separately by upstream-canary.yml.
-          pip install -e ".[pycubrid]"
+          uv pip install --system -e ".[pycubrid]"
           set -o pipefail
           python -m pytest test/test_aio_integration.py test/test_lob_value_contract.py test/test_scalar_execution_contract.py -v --tb=short | tee async-integration.log
           python -m scripts.check_not_all_skipped async-integration.log --label "Run async integration tests"
@@ -223,6 +232,12 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
 
       - name: Install system dependencies
         if: matrix.driver == 'cubriddb'
@@ -247,12 +262,14 @@ jobs:
           echo 'exit 0' >> build_cci.sh
           chmod +x build_cci.sh
 
-          pip install .
+          uv pip install --system .
 
       - name: Install project
         # pycubrid is installed in both cells: several integration files compare
         # or exercise both drivers whichever one CUBRID_TEST_URL selects.
-        run: pip install -e ".[dev,pycubrid]"
+        run: |
+          uv pip install --system -e ".[dev,pycubrid]"
+          uv pip freeze --system
 
       - name: Run make integration
         env:
@@ -359,8 +376,16 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
       - name: Install project
-        run: pip install -e ".[dev]"
+        run: |
+          uv pip install --system -e ".[dev]"
+          uv pip freeze --system
       - name: Run mutmut on compiler.py
         # Configuration lives in setup.cfg [mutmut] (mutmut 3). A crashed run,
         # a failing clean test run, or zero generated mutants fails this step;

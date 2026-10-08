@@ -130,7 +130,7 @@ def test_gated_server_lanes_and_pins_match_ci():
     assert expected == _GATED_SERVER_LANES
     for _, sa in cells:
         assert _PINNED_SQLALCHEMY[f"pycubrid@sa{'.'.join(sa.split('.')[:2])}"] == sa
-    assert 'pip install "sqlalchemy==2.0.53"' in ci
+    assert 'uv pip install --system "sqlalchemy==2.0.53"' in ci
     assert _PINNED_SQLALCHEMY["cubrid@sa2.0"] == "2.0.53"
 
 

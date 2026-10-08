@@ -80,6 +80,28 @@ main/주간 실행에서 SQLAlchemy 2.0과 2.1 컴플라이언스 커버리지�
 성공이 아닌 의존 결과에서 실패하지 않으면 실패합니다. `matrix-result`는
 `test/test_ci_policy.py`에서 검증합니다.
 
+## 의존성 설치
+
+`ci.yml`, `integration-full.yml`, `upstream-canary.yml`은 uv로 의존성을 설치합니다
+(#743). 패키지를 설치하는 각 잡은 `actions/setup-python` 다음에 커밋 SHA로 고정한
+`astral-sh/setup-uv`를 실행하고 uv 자체도 고정합니다(`version: "0.12.17"`). 그다음
+`uv pip install --system`으로 그 인터프리터에 설치하고, 결과를 `uv pip freeze --system`으로
+기록합니다. setup-uv가 setup-python 다음에 실행되므로 캐시 키에 잡의 인터프리터가
+반영됩니다. `pyproject.toml` 해시와 잡별 `cache-suffix`를 함께 써서 잡과 Python 버전마다
+별도 캐시를 유지합니다. 일상 CI와 카나리는 항상 캐시하고(`enable-cache: true`), 릴리스
+게이트인 `integration-full.yml`은 `auto`를 사용하며, 이는 태그 푸시, `release`,
+`pull_request_target`, `workflow_run` 이벤트에서만 캐시를 끕니다. 따라서 릴리스 경로
+(`main` 푸시에서 실행되는 `publish-pypi.yml` 또는 복구용 수동 실행)는 여전히 캐시를
+복원합니다. uv 캐시에는 내려받거나 빌드한 wheel만 들어 있고 매 실행이 같은 제약에서
+다시 해석하므로, 캐시는 설치를 빠르게 할 뿐 해석된 버전을 바꿀 수 없어 안전합니다. 바뀌는 것은 설치 도구뿐입니다. 전환 전에 Python
+3.12에서 `.[dev]`, `.[dev,alembic]`, `.[dev,pycubrid]`를 pip와 uv로 해석한 결과는 같은
+패키지 집합이었습니다(PEP 503 이름 정규화 후 각각 73, 73, 74개). 고정된 SQLAlchemy와
+pycubrid 컴플라이언스 설치는 정확한 핀을 유지하고, SQLAlchemy 프리릴리스 카나리는
+`--upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit`를 사용해 pip의 업그레이드 범위(SQLAlchemy만, 의존성은 제외)를 유지하고 지정자가 요구하는 경우에만 프리릴리스를 허용합니다. 가장 오래된 셀의 SQLAlchemy 2.0 고정 단계는 고정된 버전을 기록합니다. 일반 `pip`는 그것이 목적인 곳에 남습니다. 패키징
+스모크 가상 환경은 빌드된 wheel과 sdist가 최종 사용자 도구로 설치되는지 증명하고, 외부
+`live-smoke` 재사용 워크플로는 자체 설치 명령을 받습니다. `test/test_workflow_installs.py`가
+이를 검증합니다.
+
 ## Python 3.15 프리뷰 준비
 
 `python-canary.yml`은 수동 전용입니다. 전체 SHA를 전달하고 그 커밋의 브랜치에서
