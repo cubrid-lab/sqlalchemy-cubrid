@@ -7201,9 +7201,13 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
 uv (#743): each job that installs packages runs `astral-sh/setup-uv` pinned to a
 commit SHA, with uv itself pinned (`version: "0.12.17"`), after `actions/setup-python`.
 It then installs with `uv pip install --system` into that interpreter and logs the
-result with `uv pip freeze --system`. Because setup-uv runs after setup-python, its
-cache key carries the job's interpreter; with the `pyproject.toml` hash and a per-job
-`cache-suffix`, each job and Python version keeps its own cache. Routine CI and the
+result with `uv pip freeze --system`. setup-uv receives the same `python-version` spec
+as setup-python (for example `"3.12"` or the matrix value), so its cache key carries
+the job's Python minor version rather than the patch release `uv python find` would
+report, which differs between runner images and would make the key miss. With the
+`pyproject.toml` hash and a per-job `cache-suffix`, each job and Python version keeps
+its own cache. The same input exports `UV_PYTHON`, and `uv pip install --system`
+picks the first matching interpreter on `PATH`, which is setup-python's. Routine CI and the
 canary always cache (`enable-cache: true`); `integration-full.yml` uses `auto`, which
 disables caching only for tag pushes, `release`, `pull_request_target` and
 `workflow_run` events. The release path (`publish-pypi.yml` on a `main` push, or its
