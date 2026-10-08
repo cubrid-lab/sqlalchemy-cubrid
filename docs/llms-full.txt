@@ -7181,7 +7181,8 @@ own jobs. The externally owned callees are an explicit allowlist in
 by the fuzz bug hunt) and `codeql` workflows in `cubrid-lab/.github`, and the
 cookbook smoke test. That test parses every workflow and fails when an executing
 job lacks a bounded timeout, when a new external caller is not allowlisted, or
-when either gate stops failing on a non-success dependency.
+when the release gate (`full-matrix-result`) stops failing on a non-success
+dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
 
 ## Python 3.15 preview preparation
 

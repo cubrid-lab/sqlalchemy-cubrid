@@ -108,10 +108,8 @@ def test_aggregate_gates_have_short_timeouts(wf: str, name: str) -> None:
     assert str(job.get("if", "")).strip() in {"always()", "${{ always() }}"}
 
 
-@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped"])
-@pytest.mark.parametrize("failed", ["integration-full", "make-integration"])
-def test_release_gate_fails_on_any_non_success_dependency(failed: str, result: str) -> None:
-    # tests/test_ci_policy.py covers matrix-result; this covers the release gate.
+def run_release_gate(results: dict[str, str]) -> subprocess.CompletedProcess:
+    # test/test_ci_policy.py covers matrix-result; this covers the release gate.
     if shutil.which("bash") is None:
         pytest.skip("GitHub workflow shell requires bash")
     job = yaml.safe_load((WORKFLOWS / "integration-full.yml").read_text())["jobs"][
@@ -119,15 +117,26 @@ def test_release_gate_fails_on_any_non_success_dependency(failed: str, result: s
     ]
     script = "\n".join(step["run"] for step in job["steps"] if "run" in step)
     for need in job["needs"]:
-        value = result if need == failed else "success"
-        script = script.replace("${{ needs.%s.result }}" % need, value)
+        script = script.replace("${{ needs.%s.result }}" % need, results.get(need, "success"))
     assert "${{" not in script, "gate references an unexpected expression"
-    completed = subprocess.run(
+    return subprocess.run(
         ["bash", "-eo", "pipefail", "-c", script],
         text=True,
         capture_output=True,
         check=False,
         timeout=5,
     )
+
+
+def test_release_gate_passes_when_every_dependency_succeeds() -> None:
+    completed = run_release_gate({})
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "Full compatibility matrix passed." in completed.stdout
+
+
+@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped"])
+@pytest.mark.parametrize("failed", ["integration-full", "make-integration"])
+def test_release_gate_fails_on_any_non_success_dependency(failed: str, result: str) -> None:
+    completed = run_release_gate({failed: result})
     assert completed.returncode != 0
     assert result in completed.stdout
