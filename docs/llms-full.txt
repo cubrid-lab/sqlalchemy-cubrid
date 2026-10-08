@@ -7187,6 +7187,26 @@ job lacks a bounded timeout, when a new external caller is not allowlisted, or
 when the release gate (`full-matrix-result`) stops failing on a non-success
 dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
 
+## Dependency installation
+
+`ci.yml`, `integration-full.yml` and `upstream-canary.yml` install dependencies with
+uv (#743): each job that installs packages runs `astral-sh/setup-uv` pinned to a
+commit SHA, with uv itself pinned (`version: "0.12.17"`), after `actions/setup-python`.
+It then installs with `uv pip install --system` into that interpreter and logs the
+result with `uv pip freeze --system`. Because setup-uv runs after setup-python, its
+cache key carries the job's interpreter; with the `pyproject.toml` hash and a per-job
+`cache-suffix`, each job and Python version keeps its own cache. Routine CI and the
+canary always cache (`enable-cache: true`); the release-gate `integration-full.yml`
+uses `auto`, keeping setup-uv's guard against restoring caches on release-type events.
+Only the installer changes: before the switch, `.[dev]`, `.[dev,alembic]` and
+`.[dev,pycubrid]` on Python 3.12 resolved to identical package sets with pip and uv
+(73, 73 and 74 packages after PEP 503 name normalization). The pinned SQLAlchemy
+and pycubrid compliance installs keep their exact pins, and the SQLAlchemy
+pre-release canary uses uv's `--prerelease=allow`. Plain `pip` stays where it is the
+point: the packaging smoke venvs prove the built wheel and sdist install with the
+end-user tool, and the external `live-smoke` reusable workflow receives its own
+install command. `test/test_workflow_installs.py` enforces this.
+
 ## Python 3.15 preview preparation
 
 `python-canary.yml` is manual-only: supply the full SHA and dispatch the branch
