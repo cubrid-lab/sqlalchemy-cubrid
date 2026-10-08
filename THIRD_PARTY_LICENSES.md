@@ -35,8 +35,8 @@ way the license is the one listed in the `[pycubrid]` table.
 ## What sqlalchemy-cubrid distributes
 
 - **Wheel**: only the `sqlalchemy_cubrid` package, the `_sqlalchemy_cubrid_alembic`
-  plugin module and their metadata, plus `LICENSE`, `NOTICE` and `AUTHORS`. Every
-  source file carries this project's own copyright header. No third-party source
+  plugin module and their metadata, plus `LICENSE`, `NOTICE` and `AUTHORS`. No
+  source file carries a third-party copyright notice, and no third-party source
   code or asset is vendored.
 - **Source distribution**: the same files, project metadata (`README.md`,
   `pyproject.toml`, `setup.cfg`) and the `test/test_*.py` modules.
@@ -82,9 +82,13 @@ these inventories.
   part of the installed package. As installed, docutils is therefore public
   domain plus permissive BSD terms (BSD-2-Clause, BSD-3-Clause and 0BSD).
 - **CUBRID-Python** (`[cubrid]` / `[cubriddb]` only). Its installed metadata
-  declares `License: BSD`, with no license classifier and no license file, and
-  its `setup.py` makes the same declaration. The upstream `cubrid/cubrid-python`
-  repository ships no LICENSE file and no license headers. Whether this means
+  declares `License: BSD`, with no license classifier and no license file; in
+  the 9.3.0.1 sdist that value comes from `license = "BSD"` in `setup_2.py` and
+  `setup_3.py`. The upstream `CUBRID/cubrid-python` repository ships no LICENSE
+  file, and the wrapper's own files carry no license headers. The driver's
+  binary statically links the bundled CCI library, which is a separate
+  component with its own BSD-3-Clause notice (upstream `CUBRID/cubrid-cci`
+  LICENSE); that does not settle the wrapper's own terms. Whether this means
   BSD-2-Clause or BSD-3-Clause is **unresolved**: this document records it as
   "BSD, variant unspecified" and does not infer one. The generator's
   "Permissive" category for this row reflects only that every BSD variant is
@@ -119,8 +123,12 @@ is shared with pycubrid. It reads the PEP 639 `License-Expression` field, then
 `License ::` classifiers, then a short `License` field, and never guesses a
 license. `test/test_third_party_licenses.py` fails when a dependency declared
 in `pyproject.toml` is missing from its scope's table, when a recorded version
-falls outside its declared range, or when a row's category disagrees with what
-the generator would assign to its license.
+falls outside a declared version range, when a row's category disagrees with
+what the generator would assign to its license, or when a reviewed entry loses
+its row or its review. Exact `==` pins are checked for presence only: they are
+authoritative in `pyproject.toml`, so a routine pin bump does not require
+regenerating this snapshot. Transitive rows are kept accurate by regenerating
+the tables, not by the test.
 
 ## Default runtime (2 packages)
 

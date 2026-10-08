@@ -48,8 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   explicitly unresolved. The document separates dependency installation from
   what the wheel and sdist distribute. `test/test_third_party_licenses.py` fails
   when a declared dependency is missing from its scope, a recorded version falls
-  outside its declared range, a category disagrees with the generator, or the
-  CUBRID-Python entry stops saying the variant is unresolved; `ci.yml` now routes
+  outside a declared range, a category disagrees with the generator, a reviewed
+  row loses its review, or the CUBRID-Python entry stops saying the variant is
+  unresolved (exact `==` pins are checked for presence only, so Dependabot pin
+  bumps need no inventory refresh); `ci.yml` now routes
   `THIRD_PARTY_LICENSES.md` changes to the repository-tooling lane that runs it.
   No runtime change.
 - **The README and quickstart state Python 3.11 or later (#695)** — the

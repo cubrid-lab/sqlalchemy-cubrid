@@ -2,7 +2,8 @@
 
 The inventory is a generated snapshot; this check makes drift visible instead of
 silent: every dependency declared for each install scope must appear in that
-scope's table at a version its declared range allows, every row's category must
+scope's table (within its declared range, unless it is an exact ``==`` pin, which
+pyproject.toml already records), every row's category must
 be what the generator assigns to its license, every MPL or "Needs review" row
 must be explained in the prose, and the CUBRID-Python BSD variant stays
 explicitly unresolved.
@@ -75,6 +76,8 @@ def test_every_declared_dependency_is_inventoried_within_its_range(scope: str) -
     for req in requirements(scope):
         name = canonicalize_name(req.name)
         assert name in rows, f"{name} from {scope} is missing from THIRD_PARTY_LICENSES.md"
+        if any(spec.operator == "==" for spec in req.specifier):
+            continue  # Exact pins are authoritative in pyproject.toml; bumps need no regen.
         version = rows[name]["version"]
         assert req.specifier.contains(version, prereleases=True), (
             f"{name} {version} is outside {req.specifier} declared for {scope}"
@@ -98,6 +101,12 @@ def test_every_review_and_mpl_row_is_explained() -> None:
                 assert f"`{name}`" in categories, f"MPL package {name} not named in the prose"
             else:
                 assert row["category"] == "Permissive", (name, row)
+
+
+def test_reviewed_rows_keep_their_review() -> None:
+    # Transitive rows are not declared in pyproject.toml; pin the reviewed ones.
+    assert table("dev")["docutils"]["category"] == "Needs review"
+    assert "greenlet" in table("pycubrid")
 
 
 def test_cubrid_python_bsd_variant_stays_unresolved() -> None:
