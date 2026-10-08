@@ -13,6 +13,10 @@ from ``License ::`` classifiers, then from a short ``License`` field; anything
 else is reported as ``UNKNOWN`` rather than guessed. Any GPL-family mention, or
 an unrecognised license, is categorised ``Needs review`` and must be resolved in
 THIRD_PARTY_LICENSES.md from the package's own license files.
+
+``--required-by`` adds a column naming the installed distributions whose
+unconditional or platform-conditional requirements pull each row in; edges
+gated on an ``extra`` are used only for a row that has no other parent.
 """
 
 from __future__ import annotations
@@ -27,13 +31,15 @@ import sys
 PART_SPLIT = re.compile(r"\s+(?:AND|OR|WITH)\s+|\s*/\s*|[()]", re.IGNORECASE)
 PERMISSIVE_PART = re.compile(
     r"^(?:MIT(?:-0)?(?: License)?|BSD(?:-[23]-Clause)?(?: License)?|0BSD|"
-    r"Apache(?:-2\.0| Software License| License 2\.0)|ISC(?: License)?|PSF-2\.0|"
-    r"Python Software Foundation License|Unlicense|Public Domain)$",
+    r"Apache(?:-2\.0| Software License| License 2\.0)|ISC(?: License)?|ISCL|PSF-2\.0|"
+    r"Python Software Foundation License|(?:The )?Unlicense|Public Domain)$",
     re.IGNORECASE,
 )
 MPL_PART = re.compile(r"^(?:MPL|Mozilla Public License)", re.IGNORECASE)
 # No closing word boundary: "GPLv3", "LGPLv2+" must match too.
 GPL_FAMILY = re.compile(r"\b(?:A|L)?GPL|General Public License", re.IGNORECASE)
+REQUIREMENT_NAME = re.compile(r"\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+EXTRA_MARKER = re.compile(r"\bextra\s*==")
 
 
 def field(dist: metadata.Distribution, key: str) -> str:
@@ -86,6 +92,26 @@ def url_of(dist: metadata.Distribution) -> str:
     return field(dist, "Home-page") or "-"
 
 
+def required_by() -> dict[str, list[str]]:
+    """Map each installed distribution to the installed ones that require it."""
+    installed = {canonical(field(d, "Name")) for d in metadata.distributions()}
+    plain: dict[str, set[str]] = {}
+    via_extra: dict[str, set[str]] = {}
+    for dist in metadata.distributions():
+        parent = field(dist, "Name")
+        for requirement in dist.requires or []:
+            spec, _, marker = requirement.partition(";")
+            match = REQUIREMENT_NAME.match(spec)
+            if not match or canonical(match.group(1)) not in installed:
+                continue
+            edges = via_extra if EXTRA_MARKER.search(marker) else plain
+            edges.setdefault(canonical(match.group(1)), set()).add(parent)
+    names = set(plain) | set(via_extra)
+    return {
+        name: sorted(plain.get(name) or via_extra.get(name, set()), key=str.lower) for name in names
+    }
+
+
 def rows(exclude: set[str]) -> list[tuple[str, str, str, str, str]]:
     seen: dict[str, tuple[str, str, str, str, str]] = {}
     for dist in metadata.distributions():
@@ -101,12 +127,20 @@ def rows(exclude: set[str]) -> list[tuple[str, str, str, str, str]]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--exclude", action="append", default=[], help="distribution to skip")
+    parser.add_argument(
+        "--required-by", action="store_true", help="add a column naming each row's parents"
+    )
     args = parser.parse_args(argv)
     exclude = {canonical(e) for e in args.exclude}
-    print("| Name | Version | License | Category | URL |")
-    print("|---|---|---|---|---|")
+    parents = required_by() if args.required_by else {}
+    extra_header = " Required by |" if args.required_by else ""
+    print(f"| Name | Version | License | Category | URL |{extra_header}")
+    print("|---|---|---|---|---|" + ("---|" if args.required_by else ""))
     for name, version, lic, cat, url in rows(exclude):
-        print(f"| {name} | {version} | {lic} | {cat} | {url} |")
+        line = f"| {name} | {version} | {lic} | {cat} | {url} |"
+        if args.required_by:
+            line += f" {', '.join(parents.get(canonical(name), [])) or '-'} |"
+        print(line)
     return 0
 
 
