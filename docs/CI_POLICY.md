@@ -24,7 +24,8 @@ are code by default, so new source/configuration files do not silently become do
 Connection/protocol/cursor/async/compatibility or dialect/compiler/reflection,
 dependency, build and script changes and `ci.yml` itself select representative
 pre-merge integration; other workflow changes select the tooling lane and the
-offline suite instead (see [Workflow change impact](#workflow-change-impact)). Repository tooling tests run in one Linux lane when tooling changes.
+offline suite instead (see
+[Workflow change impact](#workflow-change-impact)). Repository tooling tests run in one Linux lane when tooling changes.
 The static lint job continues on all events, including generated documentation checks.
 
 The aggregate required-check name stays stable and includes change detection.
@@ -71,13 +72,14 @@ adds no detection.
 | Changed workflow | PR validation |
 | --- | --- |
 | `ci.yml` | All lanes it defines, plus tooling and the offline suite |
-| `integration-full.yml`, `upstream-canary.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
+| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
 | `publish-pypi.yml`, `release-please.yml` | Tooling and offline suite (release workflow tests) |
-| Other workflows | Tooling and offline suite; `pr-title.yml` and `docs-sync.yml` also run themselves on the PR |
+| Other workflows | Tooling and offline suite; `pr-title.yml`, `docs-sync.yml`, `codeql.yml` and `security.yml` also run themselves on the PR |
 
 `test/test_workflow_path_impact.py` evaluates the filters against every workflow
-file and representative paths, and fails if a workflow-reading test is marked
-`integration`, which would leave it unrun on such a PR.
+file and representative paths, and fails if any test module that reads a workflow
+file (by literal path, split path or constant) contains an `integration` mark,
+which would leave that test unrun on such a PR.
 
 ## Parallel live lanes
 

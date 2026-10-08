@@ -71,13 +71,13 @@ main/주간 실행에서 SQLAlchemy 2.0과 2.1 컴플라이언스 커버리지�
 | 변경된 워크플로 | PR 검증 |
 | --- | --- |
 | `ci.yml` | 정의한 모든 레인과 도구 레인, 오프라인 스위트 |
-| `integration-full.yml`, `upstream-canary.yml` | 도구 레인과 오프라인 스위트, 그리고 PR head에서 해당 워크플로를 수동 `workflow_dispatch`로 실행하고 PR에 링크 |
+| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml` | 도구 레인과 오프라인 스위트, 그리고 PR head에서 해당 워크플로를 수동 `workflow_dispatch`로 실행하고 PR에 링크 |
 | `publish-pypi.yml`, `release-please.yml` | 도구 레인과 오프라인 스위트(릴리스 워크플로 테스트) |
-| 그 밖의 워크플로 | 도구 레인과 오프라인 스위트. `pr-title.yml`과 `docs-sync.yml`은 PR에서 스스로도 실행됨 |
+| 그 밖의 워크플로 | 도구 레인과 오프라인 스위트. `pr-title.yml`, `docs-sync.yml`, `codeql.yml`, `security.yml`은 PR에서 스스로도 실행됨 |
 
 `test/test_workflow_path_impact.py`가 모든 워크플로 파일과 대표 경로에 대해 필터를
-평가하고, 워크플로를 읽는 테스트가 `integration`으로 표시되어 그런 PR에서 실행되지 않으면
-실패합니다.
+평가하고, 워크플로 파일을 (리터럴 경로, 분할 경로, 상수로) 읽는 테스트 모듈에
+`integration` 표시가 있어 그런 PR에서 실행되지 않으면 실패합니다.
 
 ## 병렬 라이브 레인
 

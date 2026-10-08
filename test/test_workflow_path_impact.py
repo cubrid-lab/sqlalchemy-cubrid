@@ -23,7 +23,8 @@ def _filters() -> dict[str, list[str]]:
     steps = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
         "detect-changes"
     ]["steps"]
-    return yaml.safe_load(steps[-1]["with"]["filters"])
+    step = next(s for s in steps if s.get("id") == "filter")
+    return yaml.safe_load(step["with"]["filters"])
 
 
 def _glob_re(pattern: str) -> re.Pattern[str]:
@@ -92,29 +93,35 @@ def test_representative_paths_select_the_expected_tiers(path: str, expected: set
     assert _selected(path) == expected, path
 
 
+WORKFLOW_REF = re.compile(r"\.github['\"]?\s*[/,]\s*['\"]?workflows")
+INTEGRATION_MARK = re.compile(r"\bmark\.integration\b")
+
+
+def _workflow_modules_with_integration_marks(test_dir: Path) -> list[str]:
+    # Module-level on purpose: workflow paths usually live in a module constant or
+    # helper (``ROOT / ".github" / "workflows"``), not in the test function body.
+    return sorted(
+        path.name
+        for path in test_dir.glob("test_*.py")
+        if WORKFLOW_REF.search(source := path.read_text()) and INTEGRATION_MARK.search(source)
+    )
+
+
 def test_tests_that_read_workflows_still_run_on_workflow_only_prs() -> None:
     # A workflow-only PR runs the full offline suite (not integration) and the
-    # tooling lane, so a workflow-reading test must not be integration-marked.
-    offenders = []
-    for path in sorted((ROOT / "test").glob("test_*.py")):
-        source = path.read_text()
-        if ".github/workflows" not in source:
-            continue
-        tree = ast.parse(source)
-        module_integration = any(
-            isinstance(node, ast.Assign)
-            and any(getattr(t, "id", "") == "pytestmark" for t in node.targets)
-            and re.search(r"\bmark\.integration\b", ast.unparse(node.value))
-            for node in tree.body
-        )
-        for node in tree.body:
-            if not isinstance(node, ast.FunctionDef) or not node.name.startswith("test_"):
-                continue
-            if ".github/workflows" not in (ast.get_source_segment(source, node) or ""):
-                continue
-            marked = any(
-                re.search(r"\bmark\.integration\b", ast.unparse(d)) for d in node.decorator_list
-            )
-            if module_integration or marked:
-                offenders.append(f"{path.name}:{node.name}")
-    assert not offenders, offenders
+    # tooling lane, so no module that reads a workflow may carry integration tests.
+    assert _workflow_modules_with_integration_marks(ROOT / "test") == []
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        'P = ROOT / ".github" / "workflows" / "ci.yml"\n\n@pytest.mark.integration\ndef test_x(): ...',
+        'W = ".github/workflows/ci.yml"\n\nclass TestX:\n    @pytest.mark.integration\n    def test_x(self): ...',
+        'W = ".github/workflows/x.yml"\npytestmark = [pytest.mark.integration]\n\nasync def test_x(): ...',
+    ],
+    ids=["split-path-constant", "class-method", "module-mark-async"],
+)
+def test_guard_catches_indirect_workflow_readers(tmp_path: Path, body: str) -> None:
+    (tmp_path / "test_probe.py").write_text("import pytest\n" + body + "\n")
+    assert _workflow_modules_with_integration_marks(tmp_path) == ["test_probe.py"]
