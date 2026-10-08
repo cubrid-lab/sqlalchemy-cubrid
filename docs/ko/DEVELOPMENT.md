@@ -390,7 +390,7 @@ make integration INTEGRATION_DRIVER=cubriddb
 세션에서 실행합니다. `INTEGRATION_DRIVER`는 `CUBRID_TEST_URL`의 드라이버를
 선택합니다. `pycubrid`(기본값, `cubrid+pycubrid://`) 또는 `cubriddb`(`cubrid://`,
 CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
-`.github/workflows/ci.yml`의 "Build and install CUBRID Python driver" 단계를
+`.github/workflows/ci.yml`의 "Build the CUBRID Python driver wheel" 단계를
 참고하세요)입니다. 다른 값을 주면 Docker 명령을 실행하기 전에 상태 2로
 종료합니다. 여러 테스트 파일이 URL이 선택한 드라이버와 관계없이 두 드라이버로
 연결하므로, 어느 드라이버를 쓰든 `.[dev,pycubrid]`를 설치하세요. PR CI는 기본

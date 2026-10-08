@@ -459,15 +459,38 @@ jobs:
           cache-dependency-glob: pyproject.toml
           cache-suffix: ${{ github.job }}
 
+      - name: Fetch CUBRID Python driver source
+        id: cubriddb-src
+        run: |
+          git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
+            https://github.com/CUBRID/cubrid-python.git /tmp/cubrid-python
+          {
+            echo "commit=$(git -C /tmp/cubrid-python rev-parse HEAD)"
+            echo "soabi=$(python -c 'import sysconfig; print(sysconfig.get_config_var("SOABI"))')"
+            echo "image=${ImageOS:-unknown}"
+          } >> "$GITHUB_OUTPUT"
+
+      # The driver wheel links CCI statically (libcascci.a) and needs only libc
+      # and libstdc++, so it depends on the Python ABI, the runner image and the
+      # driver source commit, not on the CUBRID server version: the server cells
+      # of one Python version share it (#745). A cache hit is not evidence of a
+      # working driver; the readiness step below imports CUBRIDdb and connects.
+      - name: Restore the CUBRID Python driver wheel
+        id: cubriddb-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/cubriddb-wheel
+          key: cubriddb-wheel-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
+
       - name: Install system dependencies
+        if: steps.cubriddb-cache.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake
 
-      - name: Build and install CUBRID Python driver
+      - name: Build the CUBRID Python driver wheel
+        if: steps.cubriddb-cache.outputs.cache-hit != 'true'
         run: |
-          git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
-            https://github.com/CUBRID/cubrid-python.git /tmp/cubrid-python
           cd /tmp/cubrid-python
 
           # Build CCI library
@@ -482,7 +505,13 @@ jobs:
           echo 'exit 0' >> build_cci.sh
           chmod +x build_cci.sh
 
-          uv pip install --system .
+          uv build --wheel --python "$(command -v python)" --out-dir /tmp/cubriddb-wheel .
+
+      - name: Install the CUBRID Python driver
+        run: |
+          ls -l /tmp/cubriddb-wheel
+          uv pip install --system /tmp/cubriddb-wheel/cubrid_python-*.whl
+          python -c "import CUBRIDdb, _cubrid; print('CUBRIDdb from', CUBRIDdb.__file__)"
 
       - name: Install project
         run: |
