@@ -86,6 +86,8 @@ def test_workflow_impact_table(name: str) -> None:
         ("test/test_compiler.py", {"code"}),
         ("docs/CI_POLICY.md", {"docs"}),
         ("README.md", {"docs"}),
+        ("THIRD_PARTY_LICENSES.md", {"docs", "tooling"}),
+        ("test/test_third_party_licenses.py", {"code", "tooling"}),
     ],
 )
 def test_representative_paths_select_the_expected_tiers(path: str, expected: set[str]) -> None:
