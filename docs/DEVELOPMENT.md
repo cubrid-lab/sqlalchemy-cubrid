@@ -399,7 +399,7 @@ make integration INTEGRATION_DRIVER=cubriddb
 `INTEGRATION_DRIVER` selects the driver of `CUBRID_TEST_URL`: `pycubrid` (the
 default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
 CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
-"Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
+"Build the CUBRID Python driver wheel" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
 command. Several test files open connections through both drivers whichever one
 the URL selects, so install `.[dev,pycubrid]` for either driver. Main/weekly code CI runs
 `make integration` with the default driver on CUBRID 11.4; the full dispatch and release-gate

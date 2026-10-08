@@ -65,6 +65,24 @@ tests instead of after them. `matrix-result` still needs every job, so a lint, t
 or offline failure keeps the required check red even when the live lanes pass. The
 trade-off is that a PR that fails lint can still spend live-lane runner time.
 
+## CUBRIDdb driver build cache
+
+The CUBRIDdb lanes build cubrid-python v11.3.0.51 into a wheel and cache it (#745).
+The wheel links CCI statically (`libcascci.a`) and needs only libc and libstdc++,
+so the cache key is the runner OS and architecture, the runner image (`ImageOS`),
+the Python ABI (`SOABI`, for example `cpython-314-x86_64-linux-gnu`) and the
+resolved source commit, never just the tag. The CUBRID server version is not part
+of the key, so the server cells of one Python version share a wheel. On a hit the
+CCI compile and the `build-essential`/`cmake` install are skipped; on a miss the
+wheel is built with `uv build` and saved when the job succeeds. The key uses the ABI
+rather than the patch release because CPython keeps the ABI stable within a minor
+version, while runner images ship different patch releases. A change to the build
+recipe or toolchain needs a manual bump of the `cubriddb-wheel-v` prefix, and the
+three copies of the recipe must stay identical. A hit is never treated as evidence: every
+run installs the wheel, imports `CUBRIDdb`, and the readiness step connects to the
+live server before any suite runs. `test/test_workflow_cubriddb_cache.py` enforces
+the key components and that the build is skipped only on a hit.
+
 ## Job timeouts
 
 Every executing job sets an integer `timeout-minutes` (GitHub's default is 360

@@ -62,6 +62,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_check_docs_translation.py",
         "test_workflow_timeouts.py",
         "test_workflow_installs.py",
+        "test_workflow_cubriddb_cache.py",
     }
 )
 _missing_repo_modules = sorted(

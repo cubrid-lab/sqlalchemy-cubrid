@@ -6632,7 +6632,7 @@ make integration INTEGRATION_DRIVER=cubriddb
 `INTEGRATION_DRIVER` selects the driver of `CUBRID_TEST_URL`: `pycubrid` (the
 default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
 CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
-"Build and install CUBRID Python driver" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
+"Build the CUBRID Python driver wheel" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
 command. Several test files open connections through both drivers whichever one
 the URL selects, so install `.[dev,pycubrid]` for either driver. Main/weekly code CI runs
 `make integration` with the default driver on CUBRID 11.4; the full dispatch and release-gate
@@ -7170,6 +7170,24 @@ and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validati
 tests instead of after them. `matrix-result` still needs every job, so a lint, type
 or offline failure keeps the required check red even when the live lanes pass. The
 trade-off is that a PR that fails lint can still spend live-lane runner time.
+
+## CUBRIDdb driver build cache
+
+The CUBRIDdb lanes build cubrid-python v11.3.0.51 into a wheel and cache it (#745).
+The wheel links CCI statically (`libcascci.a`) and needs only libc and libstdc++,
+so the cache key is the runner OS and architecture, the runner image (`ImageOS`),
+the Python ABI (`SOABI`, for example `cpython-314-x86_64-linux-gnu`) and the
+resolved source commit, never just the tag. The CUBRID server version is not part
+of the key, so the server cells of one Python version share a wheel. On a hit the
+CCI compile and the `build-essential`/`cmake` install are skipped; on a miss the
+wheel is built with `uv build` and saved when the job succeeds. The key uses the ABI
+rather than the patch release because CPython keeps the ABI stable within a minor
+version, while runner images ship different patch releases. A change to the build
+recipe or toolchain needs a manual bump of the `cubriddb-wheel-v` prefix, and the
+three copies of the recipe must stay identical. A hit is never treated as evidence: every
+run installs the wheel, imports `CUBRIDdb`, and the readiness step connects to the
+live server before any suite runs. `test/test_workflow_cubriddb_cache.py` enforces
+the key components and that the build is skipped only on a hit.
 
 ## Job timeouts
 
