@@ -255,7 +255,7 @@ The dialect translates automatically in `create_connect_args()`.
 
 | File | Trigger | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR, main, weekly, manual | Minimum PR smoke and representative integration; see docs/CI_POLICY.md |
+| `.github/workflows/ci.yml` | PR, main, weekly, manual | Full offline suite on PRs and representative integration; see docs/CI_POLICY.md |
 | `.github/workflows/integration-full.yml` | Manual dispatch, release workflow_call | Full supported compatibility matrix |
 | `.github/workflows/release-please.yml` | Push to main, manual dispatch | Prepare the release PR; compose generated and curated notes; never publish |
 | `.github/workflows/publish-pypi.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |

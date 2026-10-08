@@ -293,7 +293,7 @@ the current set.
 
 | Workflow | Python versions | CUBRID versions | Source |
 |---|---|---|---|
-| PR/push offline tests | 3.10, 3.11, 3.12, 3.13, 3.14 | N/A (offline) | `.github/workflows/ci.yml` |
+| PR/push offline tests | 3.12 (full suite, 95% coverage, PR and push) | N/A (offline) | `.github/workflows/ci.yml` |
 | PR/push integration tests | Reduced matrix: 3.14 (with 11.4), 3.10 (with 10.2) | 11.4, 10.2 — 2 combinations only, not a cross product | `.github/workflows/ci.yml` |
 | Nightly / release-gate / manual full integration matrix | 3.10, 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
 

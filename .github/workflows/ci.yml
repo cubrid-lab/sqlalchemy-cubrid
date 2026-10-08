@@ -165,11 +165,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install pytest-cov alembic tomli
-      - name: Run representative PR smoke tests
-        if: github.event_name == 'pull_request'
-        run: python -m pytest test/test_compiler.py test/test_types.py test/test_pycubrid_dialect.py -m "not integration and not repo" -q --tb=short
+      # Full offline suite on every event, PRs included (#742), so regressions
+      # in reflection, DML, async and Alembic modules fail before merge.
       - name: Run offline tests with coverage
-        if: github.event_name != 'pull_request'
         run: |
           python -m pytest \
             test/ \
@@ -179,11 +177,13 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=95
       - name: Upload coverage
-        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: coverage-report
           path: .coverage
+          # .coverage is a dotfile; upload-artifact skips hidden files by default.
+          include-hidden-files: true
+          if-no-files-found: error
 
   # Repository-tooling tests (#594): the Makefile `integration` recipe with its
   # sh/bash signal handling, and the repo scripts, all through subprocesses.
