@@ -85,10 +85,14 @@ these inventories.
   declares `License: BSD`, with no license classifier and no license file; in
   the 9.3.0.1 sdist that value comes from `license = "BSD"` in `setup_2.py` and
   `setup_3.py`. The upstream `CUBRID/cubrid-python` repository ships no LICENSE
-  file, and the wrapper's own files carry no license headers. The driver's
-  binary statically links the bundled CCI library, which is a separate
-  component with its own BSD-3-Clause notice (upstream `CUBRID/cubrid-cci`
-  LICENSE); that does not settle the wrapper's own terms. Whether this means
+  file, and the wrapper's own files carry no license headers. The sdist also
+  bundles the CCI client library (`cci-src/`), which the driver links into its
+  binary (statically on Linux and Windows). CCI's own `cci-src/COPYING`
+  (Copyright (C) 2008-2014 Search Solution Corporation) states "CUBRID APIs and
+  Connectors under BSD 3-Clause License". CUBRID-Python is such a connector from
+  the same copyright holder, so the evidence points to BSD-3-Clause, but that is
+  an inference: no notice in the wrapper's own files or metadata states the
+  variant. Whether this means
   BSD-2-Clause or BSD-3-Clause is **unresolved**: this document records it as
   "BSD, variant unspecified" and does not infer one. The generator's
   "Permissive" category for this row reflects only that every BSD variant is
