@@ -6751,8 +6751,8 @@ tox -e typecheck-sa20,typecheck-sa21
 ### CI Matrix
 
 Routine CI uses one Ubuntu/Python 3.12 offline lane and representative live
-combinations rather than the full matrix. PRs run smoke tests; main and changed
-weekly runs retain the full offline suite with 95% coverage. High-risk PRs select
+combinations rather than the full matrix. PRs, main and changed weekly runs all run
+the full offline suite with 95% coverage. High-risk PRs select
 newest integration, while main/weekly use oldest/newest endpoints. Repository
 tooling is path-selected on one Linux lane. Full integration is explicit/manual
 and release-only. See [CI execution policy](CI_POLICY.md) for exact selection and

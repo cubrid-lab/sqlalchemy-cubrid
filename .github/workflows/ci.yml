@@ -165,9 +165,8 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
           pip install pytest-cov alembic tomli
-      # Full offline suite on every event, PRs included (#742): it adds about
-      # 25 seconds over the former three-file PR smoke and catches regressions
-      # in reflection, DML, async and Alembic modules before merge.
+      # Full offline suite on every event, PRs included (#742), so regressions
+      # in reflection, DML, async and Alembic modules fail before merge.
       - name: Run offline tests with coverage
         run: |
           python -m pytest \
@@ -182,6 +181,9 @@ jobs:
         with:
           name: coverage-report
           path: .coverage
+          # .coverage is a dotfile; upload-artifact skips hidden files by default.
+          include-hidden-files: true
+          if-no-files-found: error
 
   # Repository-tooling tests (#594): the Makefile `integration` recipe with its
   # sh/bash signal handling, and the repo scripts, all through subprocesses.

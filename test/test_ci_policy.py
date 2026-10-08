@@ -114,6 +114,8 @@ def test_full_offline_suite_runs_on_every_event_in_one_linux_lane() -> None:
     steps = offline["steps"]
     names = [s.get("name") for s in steps]
     assert "Run representative PR smoke tests" not in names
+    # No step may run only on (or skip on) pull requests, whatever its name.
+    assert not [s.get("name") for s in steps if "pull_request" in str(s.get("if", ""))]
     coverage = next(s for s in steps if s.get("name") == "Run offline tests with coverage")
     upload = next(s for s in steps if s.get("name") == "Upload coverage")
     # PRs run the same full selection and coverage floor as pushes (#742).
@@ -121,6 +123,10 @@ def test_full_offline_suite_runs_on_every_event_in_one_linux_lane() -> None:
     assert "test/" in coverage["run"].split()
     assert '-m "not integration and not repo"' in coverage["run"]
     assert "--cov-fail-under=95" in coverage["run"]
+    # The dotfile must actually upload, and a missing file must fail the job.
+    assert upload["with"]["path"] == ".coverage"
+    assert upload["with"]["include-hidden-files"] is True
+    assert upload["with"]["if-no-files-found"] == "error"
     assert "outputs.live" in jobs["integration-tests"]["if"]
     assert "pull_request" in jobs["integration-tests"]["strategy"]["matrix"]
 
