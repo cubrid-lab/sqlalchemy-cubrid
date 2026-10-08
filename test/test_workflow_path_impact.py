@@ -9,7 +9,6 @@ validated by a manual dispatch on the PR head.
 
 from __future__ import annotations
 
-import ast
 import re
 from pathlib import Path
 
@@ -110,7 +109,9 @@ def _workflow_modules_with_integration_marks(test_dir: Path) -> list[str]:
 def test_tests_that_read_workflows_still_run_on_workflow_only_prs() -> None:
     # A workflow-only PR runs the full offline suite (not integration) and the
     # tooling lane, so no module that reads a workflow may carry integration tests.
-    assert _workflow_modules_with_integration_marks(ROOT / "test") == []
+    found = _workflow_modules_with_integration_marks(ROOT / "test")
+    # This module's own probe strings contain both patterns by design.
+    assert [name for name in found if name != Path(__file__).name] == []
 
 
 @pytest.mark.parametrize(
