@@ -34,6 +34,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   version. The rule selection is unchanged and no source needed a fix.
 
 ### Documentation
+- **Reproducible third-party license inventory by install scope (#727)** —
+  `THIRD_PARTY_LICENSES.md` is regenerated from one fresh environment per scope
+  (default runtime, `[pycubrid]`, `[alembic]`, `[cubrid]`/`[cubriddb]`, `[dev]`) at
+  a recorded commit, Python and OS by the standard-library
+  `scripts/generate_third_party_licenses.py` (shared with pycubrid). The old
+  document covered only the runtime tree and listed SQLAlchemy 2.0 with greenlet;
+  SQLAlchemy 2.1 installs no greenlet by default, which the scope notes now
+  explain. MPL-2.0 packages (`certifi`, `hypothesis`, `pathspec`, `[dev]` only)
+  are classified separately from permissive licenses instead of under a blanket
+  "no copyleft" statement, GPL-family metadata is flagged for review (docutils is
+  resolved from its own `COPYING`), and the CUBRID-Python BSD variant stays
+  explicitly unresolved. The document separates dependency installation from
+  what the wheel and sdist distribute. `test/test_third_party_licenses.py` fails
+  when a declared dependency is missing from its scope, a recorded version falls
+  outside its declared range, a category disagrees with the generator, or the
+  CUBRID-Python entry stops saying the variant is unresolved; `ci.yml` now routes
+  `THIRD_PARTY_LICENSES.md` changes to the repository-tooling lane that runs it.
+  No runtime change.
 - **The README and quickstart state Python 3.11 or later (#695)** — the
   requirement lines, the tested and supported ranges (3.11–3.14) and the FAQ
   answer in `README.md` and `docs/README.ko.md`, and the prerequisites in

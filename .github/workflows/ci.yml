@@ -81,6 +81,9 @@ jobs:
               - 'setup.cfg'
               - 'test/test_*workflow*.py'
               - 'test/test_ci_policy.py'
+              # The license inventory is checked against pyproject.toml (#727).
+              - 'THIRD_PARTY_LICENSES.md'
+              - 'test/test_third_party_licenses.py'
 
   doc-lint:
     needs: detect-changes
