@@ -94,9 +94,12 @@ PR도 라이브 레인 러너 시간을 쓸 수 있습니다.
 (#743). 패키지를 설치하는 각 잡은 `actions/setup-python` 다음에 커밋 SHA로 고정한
 `astral-sh/setup-uv`를 실행하고 uv 자체도 고정합니다(`version: "0.12.17"`). 그다음
 `uv pip install --system`으로 그 인터프리터에 설치하고, 결과를 `uv pip freeze --system`으로
-기록합니다. setup-uv가 setup-python 다음에 실행되므로 캐시 키에 잡의 인터프리터가
-반영됩니다. `pyproject.toml` 해시와 잡별 `cache-suffix`를 함께 써서 잡과 Python 버전마다
-별도 캐시를 유지합니다. 일상 CI와 카나리는 항상 캐시하고(`enable-cache: true`), 릴리스
+기록합니다. setup-uv에는 setup-python과 같은 `python-version` 지정(예: `"3.12"` 또는
+매트릭스 값)을 넘기므로, 캐시 키에는 러너 이미지마다 달라 키 불일치를 일으키는
+`uv python find`의 패치 버전 대신 잡의 Python 마이너 버전이 들어갑니다.
+`pyproject.toml` 해시와 잡별 `cache-suffix`를 함께 써서 잡과 Python 버전마다 별도
+캐시를 유지합니다. 같은 입력이 `UV_PYTHON`을 내보내며, `uv pip install --system`은
+`PATH`에서 처음 일치하는 인터프리터, 즉 setup-python의 인터프리터를 고릅니다. 일상 CI와 카나리는 항상 캐시하고(`enable-cache: true`), 릴리스
 게이트인 `integration-full.yml`은 `auto`를 사용하며, 이는 태그 푸시, `release`,
 `pull_request_target`, `workflow_run` 이벤트에서만 캐시를 끕니다. 따라서 릴리스 경로
 (`main` 푸시에서 실행되는 `publish-pypi.yml` 또는 복구용 수동 실행)는 여전히 캐시를
