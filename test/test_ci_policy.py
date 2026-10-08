@@ -105,19 +105,22 @@ def test_oldest_cells_use_python_311_and_keep_the_sqlalchemy_20_line() -> None:
         assert names.index(pin["name"]) == names.index("Install project") + 1, name
 
 
-def test_pr_smoke_is_separate_from_main_coverage_and_single_linux_lane() -> None:
+def test_full_offline_suite_runs_on_every_event_in_one_linux_lane() -> None:
     jobs = workflow("ci.yml")["jobs"]
     offline = jobs["offline-tests"]
     matrix = offline["strategy"]["matrix"]
     assert matrix["python-version"] == ["3.12"]
     assert matrix.get("os", [offline["runs-on"]]) == ["ubuntu-latest"]
     steps = offline["steps"]
-    smoke = next(s for s in steps if s.get("name") == "Run representative PR smoke tests")
+    names = [s.get("name") for s in steps]
+    assert "Run representative PR smoke tests" not in names
     coverage = next(s for s in steps if s.get("name") == "Run offline tests with coverage")
-    assert smoke["if"] == "github.event_name == 'pull_request'"
-    assert coverage["if"] == "github.event_name != 'pull_request'"
+    upload = next(s for s in steps if s.get("name") == "Upload coverage")
+    # PRs run the same full selection and coverage floor as pushes (#742).
+    assert "if" not in coverage and "if" not in upload
+    assert "test/" in coverage["run"].split()
+    assert '-m "not integration and not repo"' in coverage["run"]
     assert "--cov-fail-under=95" in coverage["run"]
-    assert "--cov" not in smoke["run"]
     assert "outputs.live" in jobs["integration-tests"]["if"]
     assert "pull_request" in jobs["integration-tests"]["strategy"]["matrix"]
 
@@ -146,16 +149,6 @@ def test_sensitive_execution_paths_select_live_validation() -> None:
     if REPO == "pycubrid":
         assert "tests/helpers/tls_*.py" in filters["tls"]
         assert "tests/fixtures/tls/**" in filters["tls"]
-
-
-def test_pr_smoke_paths_exist() -> None:
-    import shlex
-
-    steps = workflow("ci.yml")["jobs"]["offline-tests"]["steps"]
-    smoke = next(s for s in steps if s.get("name") == "Run representative PR smoke tests")
-    paths = [word for word in shlex.split(smoke["run"]) if word.endswith(".py")]
-    assert paths
-    assert all((ROOT / path).is_file() for path in paths)
 
 
 def test_ci_event_groups_do_not_cancel_each_other() -> None:

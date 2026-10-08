@@ -4338,7 +4338,7 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 
 | Validation | Routine execution | Full compatibility |
 | --- | --- | --- |
-| Offline | PR smoke on Ubuntu/Python 3.12; main/changed-weekly full suite, 95% coverage | Local full tests remain available |
+| Offline | Full suite with 95% coverage on Ubuntu/Python 3.12 for PRs, main and changed-weekly runs | Local full tests remain available |
 | Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
 See [CI execution policy](CI_POLICY.md). That policy selects what each run tests; it does
@@ -6897,10 +6897,10 @@ pre-commit run --all-files
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
-2. **Offline Tests** — one Ubuntu/Python 3.12 lane; PR smoke, main/weekly full offline coverage
+2. **Offline Tests** — one Ubuntu/Python 3.12 lane; the full offline suite on PRs, main and weekly runs
 3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
-5. **Coverage** — Enforces ≥ 95% on the full main/weekly offline lane; PR smoke makes no coverage claim
+5. **Coverage** — Enforces ≥ 95% on the full offline lane on every event, PRs included
 
 ### Driver-differential lane
 
@@ -7111,15 +7111,18 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | Trigger | Runtime validation |
 | --- | --- |
 | Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
-| Ordinary code PR | One Ubuntu/Python 3.12 offline smoke lane; no full coverage claim |
-| High-risk PR | Same offline smoke plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
+| Ordinary code PR | One Ubuntu/Python 3.12 full offline suite with the 95% coverage floor (#742) |
+| High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
 | Code push to main | One Ubuntu/Python 3.12 full offline suite with the existing 95% coverage floor; oldest/newest live endpoints |
 | Monday 03:00 UTC | Same representative policy, comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests |
 | Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes |
 
-The PR smoke suite is deliberately bounded. Contributors must run the regression
-checks relevant to their change locally and record commands/results in the PR.
-Passing smoke is not evidence that the whole offline suite or coverage floor ran.
+PRs run the same full offline selection (`-m "not integration and not repo"`) and
+95% coverage floor as pushes. The former three-file PR smoke ran in about 1 s
+locally against about 24 s for the full suite, too small a saving to justify
+letting offline regressions first fail on main (#742). Live integration on PRs
+stays representative: contributors must run the regression checks relevant to
+their change locally and record commands/results in the PR.
 `make test` and `make integration` remain available without changing their scope.
 
 Change selection is in `ci.yml`'s `detect-changes` job. Non-documentation paths

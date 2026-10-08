@@ -643,10 +643,10 @@ pre-commit run --all-files
 ### CI 파이프라인 단계
 
 1. **Lint** — Ruff check + 포맷 검증
-2. **오프라인 테스트** — Ubuntu/Python 3.12 단일 레인; PR 스모크, main/주간 전체 오프라인 커버리지
+2. **오프라인 테스트** — Ubuntu/Python 3.12 단일 레인; PR, main, 주간 실행 모두 전체 오프라인 스위트
 3. **통합 테스트** — 고위험 PR은 최신 조합; main/주간은 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
 4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 수동 전체 검증 및 릴리스 게이트에서 `integration-full.yml`로 실행)
-5. **커버리지** — main/주간 전체 오프라인 레인에서 ≥ 95% 임계값 강제; PR 스모크는 커버리지 검증을 주장하지 않음
+5. **커버리지** — PR을 포함한 모든 이벤트의 전체 오프라인 레인에서 ≥ 95% 임계값 강제
 
 ### 드라이버 차분 레인
 

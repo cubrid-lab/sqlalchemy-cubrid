@@ -5,15 +5,18 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | Trigger | Runtime validation |
 | --- | --- |
 | Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
-| Ordinary code PR | One Ubuntu/Python 3.12 offline smoke lane; no full coverage claim |
-| High-risk PR | Same offline smoke plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
+| Ordinary code PR | One Ubuntu/Python 3.12 full offline suite with the 95% coverage floor (#742) |
+| High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
 | Code push to main | One Ubuntu/Python 3.12 full offline suite with the existing 95% coverage floor; oldest/newest live endpoints |
 | Monday 03:00 UTC | Same representative policy, comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests |
 | Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes |
 
-The PR smoke suite is deliberately bounded. Contributors must run the regression
-checks relevant to their change locally and record commands/results in the PR.
-Passing smoke is not evidence that the whole offline suite or coverage floor ran.
+PRs run the same full offline selection (`-m "not integration and not repo"`) and
+95% coverage floor as pushes. The former three-file PR smoke ran in about 1 s
+locally against about 24 s for the full suite, too small a saving to justify
+letting offline regressions first fail on main (#742). Live integration on PRs
+stays representative: contributors must run the regression checks relevant to
+their change locally and record commands/results in the PR.
 `make test` and `make integration` remain available without changing their scope.
 
 Change selection is in `ci.yml`'s `detect-changes` job. Non-documentation paths

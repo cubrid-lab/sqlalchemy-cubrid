@@ -390,6 +390,7 @@ A reviewer does not need to be an issue assignee.
 
 ## Minimum PR validation
 
-Follow the [CI execution policy](docs/CI_POLICY.md). PR smoke is representative,
-not full-suite/coverage evidence. Run relevant regression tests locally and report
+Follow the [CI execution policy](docs/CI_POLICY.md). PRs run the full offline suite
+with the 95% coverage floor, but live integration on PRs is representative, not
+full-matrix evidence. Run relevant regression tests locally and report
 commands/results; request exact-head full validation where compatibility requires it.
