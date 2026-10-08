@@ -6258,7 +6258,7 @@ contribute to sqlalchemy-cubrid.
 
 | Requirement | Version |
 |---|---|
-| Python | 3.10+ |
+| Python | 3.11+ |
 | Git | any |
 | Docker | any (for integration tests) |
 | Docker Compose | v2+ |
@@ -6387,12 +6387,13 @@ SQLAlchemy, Alembic and mypy versions, then runs
 `python3 -m mypy sqlalchemy_cubrid/ --config-file=pyproject.toml`.
 The mypy version is pinned to `2.3.1` in the dev dependencies.
 
-CI runs the same Makefile target in two cells: Python 3.10 / SQLAlchemy 2.0.53
-and Python 3.13 / SQLAlchemy 2.1.1. Both cells are blocking: the required
-`matrix-result` check fails if the type-check job fails, is cancelled or is
-skipped. Ruff and the existing offline tests with 95% minimum coverage also
-remain required. To choose a virtualenv interpreter locally, use
-`make typecheck PYTHON=/path/to/venv/bin/python`.
+CI runs the same Makefile target in one cell, Python 3.13 / SQLAlchemy 2.1.1. It
+is blocking: the required `matrix-result` check fails if the type-check job fails,
+is cancelled or is skipped. CI's single cell is not the same set as the local tox
+environments: `typecheck-sa21` mirrors it, while `typecheck-sa20` (Python 3.11 /
+SQLAlchemy 2.0.53) is local-only. Ruff and the existing offline tests with 95%
+minimum coverage also remain required. To choose a virtualenv interpreter
+locally, use `make typecheck PYTHON=/path/to/venv/bin/python`.
 
 ### Offline Tests (No Database Required)
 
@@ -6711,9 +6712,11 @@ That target never starts or stops Docker and leaves the external server running.
 
 ### tox Configuration
 
-The `tox.ini` defines local offline environments for Python 3.10–3.14, a pinned
+The `tox.ini` defines local offline environments for Python 3.11–3.14, a pinned
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
-run the same Makefile target and pinned SQLAlchemy/Python pairs as CI. Tox uses
+run the same Makefile target against pinned SQLAlchemy/Python pairs. Only
+`typecheck-sa21` (Python 3.13 / SQLAlchemy 2.1.1) corresponds to a CI cell, since
+CI type-checks in one cell; `typecheck-sa20` is a local-only pair. Tox uses
 the existing pycubrid/Alembic extras and development test dependencies. Offline
 selection in the `py3xx` environments is `-m "not integration and not repo"`, and
 the `repo` environment runs the repository-tooling tests with `-m repo` (#594);
@@ -6804,7 +6807,7 @@ formatting.
 | Setting | Value |
 |---|---|
 | Line length | 100 characters |
-| Target Python | 3.10+ |
+| Target Python | 3.11+ |
 | Linter | `ruff check` |
 | Formatter | `ruff format` |
 
@@ -6846,9 +6849,10 @@ Only `pyproject.toml`'s dev pin needs updating when bumping Ruff or Mypy
 `tox -e lint`/`typecheck-sa20`/`typecheck-sa21` environments install the
 project's own `dev` extra, so they always run whatever that pin resolves to.
 `tox -e typecheck-sa20`/`typecheck-sa21` additionally pin an exact SQLAlchemy
-release per Python version (2.0.53 on 3.10, 2.1.1 on 3.13) to match CI's
-type-check matrix; those pairs are read from CI by
-`scripts/check_tool_versions.py`. Run `make check-tool-versions`,
+release per Python version (2.0.53 on 3.11, 2.1.1 on 3.13). Only the 2.1.1 pair
+corresponds to CI's single type-check cell; `scripts/check_tool_versions.py`
+requires a matching `typecheck-sa<minor>` environment for every CI cell and
+validates each environment's own pin. Run `make check-tool-versions`,
 `pre-commit run --all-files` and `tox -e lint,typecheck-sa20,typecheck-sa21`
 after a change. The consistency check runs through CI lint, tox lint and a
 local pre-commit hook, so a dependency-only update cannot silently leave old
@@ -6894,7 +6898,7 @@ pre-commit run --all-files
 
 1. **Lint** — Ruff check + format verification
 2. **Offline Tests** — one Ubuntu/Python 3.12 lane; PR smoke, main/weekly full offline coverage
-3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.10 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
 5. **Coverage** — Enforces ≥ 95% on the full main/weekly offline lane; PR smoke makes no coverage claim
 
@@ -6968,8 +6972,14 @@ therefore fail `matrix-result` when they fail:
 | Lane | URL | Pinned versions | CI cell |
 |---|---|---|---|
 | `cubrid@sa2.0` | `cubrid://` (CUBRIDdb C-extension) | cubrid-python v11.3.0.51, SQLAlchemy 2.0.53 | Python 3.14 × CUBRID 11.4 |
-| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.10 × CUBRID 10.2 |
+| `pycubrid@sa2.0` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.0.53 | Python 3.11 × CUBRID 10.2 |
 | `pycubrid@sa2.1` | `cubrid+pycubrid://` (recommended) | pycubrid 1.8.0, SQLAlchemy 2.1.1 | Python 3.14 × CUBRID 11.4 |
+
+The `Pinned versions` column is each lane's own pin. In the oldest regular
+integration cell (Python 3.11 × CUBRID 10.2) every step installs
+`sqlalchemy[asyncio]>=2.0,<2.1`, so that cell is not pinned to exactly 2.0.53:
+the `pycubrid-compliance-sqlalchemy=2.0.53` matrix value pins this lane's suite
+run only.
 
 The two pycubrid lanes split SQLAlchemy 2.0 and 2.1 across the two PR cells,
 so each cell runs the suite for pycubrid only once (SQLAlchemy 2.1 needs

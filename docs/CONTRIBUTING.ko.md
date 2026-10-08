@@ -24,7 +24,7 @@
 
 ### 사전 준비
 
-- Python 3.10 이상
+- Python 3.11 이상
 - Git
 - Docker (통합 테스트용)
 
@@ -167,7 +167,7 @@ docker compose down -v
 ### 규칙
 
 - **줄 길이**: 100자
-- **대상 Python**: 3.10+
+- **대상 Python**: 3.11+
 - **포매터**: `ruff format`
 - **린터**: `ruff check`
 

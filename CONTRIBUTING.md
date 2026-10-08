@@ -20,7 +20,7 @@ and instructions for contributing to the project.
 
 ### Prerequisites
 
-- Python 3.10 or later
+- Python 3.11 or later
 - Git
 - Docker (for integration tests)
 
@@ -155,7 +155,7 @@ This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formattin
 ### Rules
 
 - **Line length**: 100 characters
-- **Target Python**: 3.10+
+- **Target Python**: 3.11+
 - **Formatter**: `ruff format`
 - **Linter**: `ruff check`
 
