@@ -55,6 +55,29 @@ main/주간 실행에서 SQLAlchemy 2.0과 2.1 컴플라이언스 커버리지�
 스모크, make integration, 권고 수준의 SQLAlchemy 카나리는 PR에서 PR이 아닌 코드
 검증으로 미뤄집니다.
 
+## 잡 타임아웃
+
+실행되는 모든 잡은 정수 `timeout-minutes`를 지정합니다(GitHub 기본값은 360분).
+따라서 멈춘 컨테이너, 소켓, 드라이버 빌드, 설치가 러너를 6시간 동안 붙잡지 않고
+예산 안에서 실패합니다(#741). 예산은 Actions에서 관측된 최대 실행 시간의 약
+3–5배이며 하한을 둡니다. 게이트와 작은 잡은 5분, lint/type/오프라인/Alembic/카나리
+잡은 10–15분, `make integration`과 업스트림 카나리 통합 잡은 20분, 라이브 통합
+매트릭스는 30분(CUBRIDdb 소스 빌드와 컴플라이언스 스위트를 포함한 관측 최대 7.1분),
+뮤테이션 테스트는 60분(관측 최대 18.1분)입니다. 180분 상한을 넘는 예외가 필요한
+잡은 없습니다. 집계 게이트(`matrix-result`, `full-matrix-result`)는 `if: always()`와
+짧은 타임아웃으로 실행됩니다. 타임아웃된 의존 잡은 성공이 아닌 결과
+(`cancelled`/`failure`)로 보고되며 게이트는 이를 실패로 처리합니다.
+
+재사용 워크플로를 호출하는 잡에는 `timeout-minutes`를 지정할 수 없습니다. 저장소
+내부 피호출 워크플로(`publish-pypi.yml` → `integration-full.yml`)는 그 워크플로의
+잡에서 검증합니다. 외부 소유 피호출 워크플로는 `test/test_workflow_timeouts.py`의
+명시적 허용 목록입니다. `cubrid-lab/.github`의 공유 `doc-lint`, `live-smoke`(fuzz
+버그 탐색에서도 사용), `codeql` 워크플로와 cookbook 스모크 테스트가 여기에
+해당합니다. 이 테스트는 모든 워크플로를 파싱하여 실행 잡에 제한된 타임아웃이
+없거나, 새 외부 호출자가 허용 목록에 없거나, 릴리스 게이트(`full-matrix-result`)가
+성공이 아닌 의존 결과에서 실패하지 않으면 실패합니다. `matrix-result`는
+`test/test_ci_policy.py`에서 검증합니다.
+
 ## Python 3.15 프리뷰 준비
 
 `python-canary.yml`은 수동 전용입니다. 전체 SHA를 전달하고 그 커밋의 브랜치에서

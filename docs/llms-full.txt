@@ -7160,6 +7160,30 @@ and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retai
 SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Live smoke, make integration
 and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validation.
 
+## Job timeouts
+
+Every executing job sets an integer `timeout-minutes` (GitHub's default is 360
+minutes), so a hung container, socket, driver build or install fails within its
+budget instead of holding a runner for six hours (#741). Budgets are roughly 3–5×
+the observed maximum Actions duration with a floor: 5 minutes for gates and small
+jobs, 10–15 for lint/type/offline/Alembic/canary jobs, 20 for `make integration`
+and the upstream canary integration job, 30 for the live integration matrix
+(observed maximum 7.1, including the CUBRIDdb source build and compliance suites)
+and 60 for mutation testing (observed maximum 18.1). No job needs an exception
+above the 180-minute cap. Aggregate gates (`matrix-result`, `full-matrix-result`)
+run with `if: always()` and a short timeout; a timed-out dependency reports a
+non-success result (`cancelled`/`failure`), which the gate treats as a failure.
+
+Jobs that call a reusable workflow cannot set `timeout-minutes`. Repo-local
+callees (`publish-pypi.yml` → `integration-full.yml`) are covered through their
+own jobs. The externally owned callees are an explicit allowlist in
+`test/test_workflow_timeouts.py`: the shared `doc-lint`, `live-smoke` (also used
+by the fuzz bug hunt) and `codeql` workflows in `cubrid-lab/.github`, and the
+cookbook smoke test. That test parses every workflow and fails when an executing
+job lacks a bounded timeout, when a new external caller is not allowlisted, or
+when the release gate (`full-matrix-result`) stops failing on a non-success
+dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
+
 ## Python 3.15 preview preparation
 
 `python-canary.yml` is manual-only: supply the full SHA and dispatch the branch

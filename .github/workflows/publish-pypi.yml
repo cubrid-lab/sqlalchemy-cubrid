@@ -69,6 +69,7 @@ jobs:
   detect:
     name: Detect release
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
     outputs:
@@ -120,6 +121,7 @@ jobs:
     needs: [detect]
     if: needs.detect.outputs.build == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
@@ -155,6 +157,7 @@ jobs:
     needs: [detect, matrix]
     if: needs.detect.outputs.build == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     outputs:
@@ -269,6 +272,7 @@ jobs:
     needs: [detect, consistency, matrix, build]
     if: needs.detect.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: pypi
       url: https://pypi.org/project/${{ env.PACKAGE }}/${{ needs.detect.outputs.version }}/
@@ -406,6 +410,7 @@ jobs:
     needs: [detect, verify-cookbook]
     if: always() && needs.verify-cookbook.result != 'skipped'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions: {}
     steps:
       - name: Require status success and installed == requested
@@ -431,6 +436,7 @@ jobs:
     needs: [detect, consistency, matrix, build, publish, verify-cookbook, require-cookbook]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read # sparse checkout of the summary script
     steps:
