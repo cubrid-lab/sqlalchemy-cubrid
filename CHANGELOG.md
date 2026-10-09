@@ -65,6 +65,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/llms-full.txt` is regenerated. Docs only.
 
 ### CI
+- **"Prepare release" fails visibly when a merged release is blocked** —
+  `scripts/reconcile_release_labels.py` now classifies every merged
+  `autorelease: pending` release PR it cannot mark tagged by the `publish-pypi.yml`
+  runs at its merge SHA. Any queued or running publisher run at that SHA, or a merge
+  under 2 hours old with no run yet, emits a notice and stays green. A newest
+  completed run that concluded with anything but success, a successful run without
+  publication proof, or no run 2 hours after the merge emits an error with the PR,
+  merge SHA, run URL and conclusion (plus the rerun-failed-jobs command for failed,
+  cancelled or timed-out runs, and the manual-label path for recovery dispatched at
+  another SHA), writes it to the step summary and fails the run. Before, after the
+  1.10.0 cookbook failure (run 37871732934, PR #704), release-please only logged
+  "aborting" on every push and the run stayed green. The tagged transition and its
+  fail-closed proof are unchanged; nothing is relabelled, rerun or dispatched
+  automatically. See RELEASING.md, "When preparation is blocked". CI only; the
+  dialect is unchanged.
 - **Cookbook release verification pinned to the cookbook SHA with the PyPI wait** — the `verify-cookbook` call in `.github/workflows/publish-pypi.yml` is pinned to `32e80c6ea9ae78324f764d7b873ffb64b000ddcc` (cubrid-cookbook-python#274), the same commit in pycubrid, sqlalchemy-cubrid and cubrid-mcp-server. The cookbook now waits up to 10 minutes for PyPI to serve the exact requested version before installing, and reports what PyPI served if it times out; this fixes the 1.10.0 post-publish stale-CDN failure that blocked release-please. CI only; the dialect is unchanged.
 - **Shared fence-aware CHANGELOG lint and composer** — `scripts/lint_changelog.py` and
   `scripts/compose_release_changelog.py` adopt the canonical versions shared with
