@@ -102,12 +102,11 @@ graph TD
     pkg --> alembic["alembic_impl.py - Alembic migration support"]
     pkg --> typed["py.typed - PEP 561 marker"]
 
-    tests --> tcomp["test_compiler.py - SQL compilation tests"]
+    tests --> tcomp["test_compiler.py - SQL compilation and DML construct tests"]
     tests --> ttypes["test_types.py - Type system tests"]
     tests --> tdialect["test_dialect_offline.py - Dialect tests (no DB)"]
     tests --> tbase["test_base.py - Base module tests"]
     tests --> treq["test_requirements.py - SA requirement flag tests"]
-    tests --> tdml["test_dml.py - DML construct tests"]
     tests --> talembic["test_alembic.py - Alembic integration tests"]
     tests --> taio["test_aio_pycubrid_dialect.py - Async dialect tests"]
     tests --> taioint["test_aio_integration.py - Async integration tests"]
