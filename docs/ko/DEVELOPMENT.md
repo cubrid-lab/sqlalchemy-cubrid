@@ -108,7 +108,6 @@ graph TD
     tests --> tdialect["test_dialect_offline.py - Dialect tests (no DB)"]
     tests --> tbase["test_base.py - Base module tests"]
     tests --> treq["test_requirements.py - SA requirement flag tests"]
-    tests --> tdml["test_dml.py - DML construct tests"]
     tests --> talembic["test_alembic.py - Alembic integration tests"]
     tests --> taio["test_aio_pycubrid_dialect.py - Async dialect tests"]
     tests --> taioint["test_aio_integration.py - Async integration tests"]

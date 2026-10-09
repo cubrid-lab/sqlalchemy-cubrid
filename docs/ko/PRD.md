@@ -55,7 +55,7 @@ SQLAlchemy 2.0–2.1용 현대적 CUBRID 방언을 제공하는, 처음부터 �
 
 ```mermaid
 graph TD
-    root["sqlalchemy_cubrid/ (Python 모듈 12개 + py.typed 마커)"]
+    root["sqlalchemy_cubrid/ (Python 패키지 모듈 + py.typed 마커)"]
     init["__init__.py - 공개 API: 타입, insert(), merge(), replace(), trace_query(), __version__ 내보내기"]
     compat["_compat.py - SQLAlchemy 비공개 API 호환 헬퍼"]
     base["base.py - CubridExecutionContext, CubridIdentifierPreparer"]
@@ -66,7 +66,7 @@ graph TD
     dml["dml.py - ON DUPLICATE KEY UPDATE (Insert), MERGE 문"]
     trace["trace.py - 쿼리 추적 헬퍼"]
     types["types.py - CUBRID 타입 시스템: 숫자, 문자열, LOB, 컬렉션"]
-    req["requirements.py - SA 2.0 테스트 요구사항 플래그 (프로퍼티 40개 이상)"]
+    req["requirements.py - SA 2.0 테스트 요구사항 플래그 (`requirements.py` 참조)"]
     alembic["alembic_impl.py - Alembic 마이그레이션용 CubridImpl"]
     typed["py.typed - PEP 561 마커"]
 
@@ -273,7 +273,7 @@ stmt = (
 
 오프라인 스위트는 `test/test_compiler.py`, `test_types.py`,
 `test_requirements.py`, `test_dialect_offline.py`, `test_base.py`,
-`test_dml.py`, `test_alembic*.py`, `test_dialects.py`, `test_trace.py`와
+`test_alembic*.py`, `test_dialects.py`, `test_trace.py`와
 리플렉션, 컬렉션, Alembic 플러그인 등록, 드라이버 계약, 저장소 도구를 다루는
 그 밖의 많은 모듈에 걸쳐 있습니다. 파일별 및 전체 테스트 수는 거의 모든 PR마다
 바뀌므로, 여기에 고정된 스냅숏을 두는 대신 `pytest test/ -m "not integration and
@@ -441,13 +441,13 @@ Alembic 지원, 타입, DML 확장은 모두 `sqlalchemy_cubrid/` 안에 있습�
 
 CUBRID는 실행 중인 서버 인스턴스가 필요합니다. 대부분의 방언 로직(SQL 컴파일,
 타입 매핑, 리플렉션 파싱)은 결정적이며 데이터베이스 없이 테스트할 수 있습니다.
-테스트 중 314개가 오프라인으로 실행되어, 빠른 CI와 기여자 온보딩을 가능하게 합니다.
+오프라인 스위트(기본 `pytest test/ -m "not integration and not repo"` 선택)는 데이터베이스 없이 실행되어, 빠른 CI와 기여자 온보딩을 가능하게 합니다.
 
 ### 9.3 왜 95% 커버리지 임계값인가
 
 SA 방언의 버그는 미묘합니다 — 잘못된 SQL 생성, 누락된 이스케이프, 깨진 리플렉션.
-높은 커버리지는 회귀가 사용자에게 도달하기 전에 잡아냅니다. 커버되지 않은 3개 라인은
-도달 불가능함이 확인된 방어적 폴백이며, 테스트 스위트에 문서화되어 있습니다.
+높은 커버리지는 회귀가 사용자에게 도달하기 전에 잡아냅니다. 커버되지 않은 라인이 있다면
+도달 불가능한 방어적 폴백이어야 하며, 현재 수치는 커버리지 리포트에서 확인하세요.
 
 ### 9.4 Alembic의 네이티브 ALTER 컬럼 지원
 

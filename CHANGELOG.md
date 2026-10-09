@@ -26,6 +26,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   versions, default Docker version, test file list including the nonexistent
   `test_dml.py`) are removed or point to their
   canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only.
+- **Stale facts removed from PRD and DEVELOPMENT docs (#758)** — the nonexistent
+  `test_dml.py` is no longer listed in `docs/DEVELOPMENT.md` and `docs/PRD.md` (and
+  their Korean counterparts); DML tests live in `test/test_compiler.py`. The unguarded
+  "12 Python modules", "40+ properties", "314 offline tests" and "3 uncovered lines"
+  counts in `docs/PRD.md` are replaced with descriptions or pointers to the source.
+  `docs/llms-full.txt` is regenerated. Docs only.
 
 ## [1.10.0] - 2026-10-08
 

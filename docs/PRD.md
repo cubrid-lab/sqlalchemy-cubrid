@@ -53,7 +53,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 
 ```mermaid
 graph TD
-    root["sqlalchemy_cubrid/ (12 Python modules + py.typed marker)"]
+    root["sqlalchemy_cubrid/ (Python package modules + py.typed marker)"]
     init["__init__.py - Public API exports types, insert(), merge(), replace(), trace_query(), __version__"]
     compat["_compat.py - SQLAlchemy private API compatibility helpers"]
     base["base.py - CubridExecutionContext, CubridIdentifierPreparer"]
@@ -64,7 +64,7 @@ graph TD
     dml["dml.py - ON DUPLICATE KEY UPDATE (Insert), MERGE statement"]
     trace["trace.py - Query tracing helper"]
     types["types.py - CUBRID type system numeric, string, LOB, collection"]
-    req["requirements.py - SA 2.0 test requirement flags (40+ properties)"]
+    req["requirements.py - SA 2.0 test requirement flags (see requirements.py)"]
     alembic["alembic_impl.py - CubridImpl for Alembic migrations"]
     typed["py.typed - PEP 561 marker"]
 
@@ -271,7 +271,7 @@ stmt = (
 
 The offline suite spans `test/test_compiler.py`, `test_types.py`,
 `test_requirements.py`, `test_dialect_offline.py`, `test_base.py`,
-`test_dml.py`, `test_alembic*.py`, `test_dialects.py`, `test_trace.py`, and
+`test_alembic*.py`, `test_dialects.py`, `test_trace.py`, and
 many more modules covering reflection, collections, Alembic plugin
 registration, driver contracts and repository tooling. Per-file and total test
 counts shift with nearly every PR; run `pytest test/ -m "not integration and
@@ -440,13 +440,13 @@ Separate repos create versioning complexity with no benefit for a dialect this s
 
 CUBRID requires a running server instance. Most dialect logic (SQL compilation,
 type mapping, reflection parsing) is deterministic and testable without a database.
-314 of our tests run offline, enabling fast CI and contributor onboarding.
+The offline suite (the default `pytest test/ -m "not integration and not repo"` selection) runs without a database, enabling fast CI and contributor onboarding.
 
 ### 9.3 Why 95% Coverage Threshold
 
 SA dialect bugs are subtle — wrong SQL generation, missing escaping, broken reflection.
-High coverage catches regressions before they reach users. The 3 uncovered lines are
-verified unreachable defensive fallbacks, documented in test suite.
+High coverage catches regressions before they reach users. Any uncovered lines are
+expected to be unreachable defensive fallbacks; see the coverage report for current figures.
 
 ### 9.4 Native ALTER Column Support in Alembic
 
