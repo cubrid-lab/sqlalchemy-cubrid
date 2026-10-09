@@ -83,11 +83,16 @@ def test_cutoff_and_older_releases_keep_historical_sections(tmp_path: Path, rele
 
 
 @pytest.mark.parametrize("release", ["Unreleased", "1.10.1"])
-def test_duplicate_section_is_rejected_after_the_cutoff(tmp_path: Path, release: str) -> None:
+@pytest.mark.parametrize("heading", ["Fixed", "Documentation"])
+def test_duplicate_section_is_rejected_after_the_cutoff(
+    tmp_path: Path, release: str, heading: str
+) -> None:
     prefix = "## [Unreleased]\n" if release != "Unreleased" else ""
-    result = run_lint(tmp_path, prefix + f"## [{release}]\n### Fixed\n- A\n### Fixed\n- B\n")
+    result = run_lint(
+        tmp_path, prefix + f"## [{release}]\n### {heading}\n- First\n### {heading}\n- Second\n"
+    )
     assert result.returncode == 1
-    assert f"Duplicate subsection '### Fixed' in [{release}]" in result.stderr
+    assert f"Duplicate subsection '### {heading}' in [{release}]" in result.stderr
 
 
 def test_section_check_runs_without_released_versions(tmp_path: Path) -> None:
@@ -101,5 +106,15 @@ def test_section_check_runs_without_released_versions(tmp_path: Path) -> None:
 def test_repository_changelog_passes() -> None:
     result = subprocess.run(
         [sys.executable, str(ROOT / "scripts/lint_changelog.py")], capture_output=True, text=True
+    )
+    assert result.returncode == 0, result.stderr
+
+
+def test_same_subsection_across_releases_is_valid(tmp_path: Path) -> None:
+    # The order and duplicate checks restart for every release.
+    result = run_lint(
+        tmp_path,
+        "## [Unreleased]\n### Fixed\n- New\n## [1.10.2]\n### Fixed\n- Newer\n"
+        "## [1.10.1]\n### Fixed\n- New\n## [1.10.0]\n### Fixed\n- Old\n",
     )
     assert result.returncode == 0, result.stderr

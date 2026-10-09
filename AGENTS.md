@@ -517,7 +517,7 @@ These rules add to the release procedure above; the procedures and gates in
 - `CHANGELOG.md` is the single source of truth. The Release body is the extracted
   CHANGELOG section plus one `**Full Changelog**` compare link
   (`scripts/extract_release_notes.py`).
-- Allowed `###` sections, once each, in this order, only when they have content: Upgrade notes,
+- Allowed `###` sections, in this order, only when they have content: Upgrade notes,
   Added, Changed, Deprecated, Removed, Fixed, Security, Performance, Documentation, CI,
   Tests. `scripts/lint_changelog.py` enforces this for `[Unreleased]` and for releases
   after 1.10.0.
