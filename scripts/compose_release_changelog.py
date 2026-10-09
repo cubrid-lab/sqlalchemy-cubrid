@@ -24,6 +24,7 @@ GENERATED = re.compile(
     re.MULTILINE,
 )
 SUBSECTION = re.compile(r"^### (.+)$", re.MULTILINE)
+HEADING_1_2 = re.compile(r"^#{1,2} ", re.MULTILINE)
 # Standard ``###`` headings, in order (AGENTS.md "GitHub Release Policy"; kept in
 # sync with scripts/lint_changelog.py). release-please renders breaking changes
 # under its own heading; they are upgrade notes.
@@ -43,9 +44,32 @@ ALLOWED_SECTIONS = (
 GENERATED_ALIASES = {"⚠ BREAKING CHANGES": "Upgrade notes"}
 
 
+def _find(pattern: re.Pattern[str], text: str, origin: str) -> list[re.Match[str]]:
+    """Line-anchored matches outside fenced code blocks; an unclosed fence fails closed.
+
+    Lines inside a fenced code block are content, never headings (the same rule as
+    scripts/lint_changelog.py). Fence lines themselves stay part of the surrounding text.
+    A release header (``## [``) inside an open fence is an error, not content.
+    """
+    matches: list[re.Match[str]] = []
+    in_fence = False
+    pos = 0
+    for line in text.splitlines(keepends=True):
+        if in_fence and re.match(r"#{1,2} \[", line):
+            raise ValueError(f"release header inside an open code fence in {origin}")
+        if not in_fence and (match := pattern.match(text, pos)):
+            matches.append(match)
+        if line.startswith("```"):
+            in_fence = not in_fence
+        pos += len(line)
+    if in_fence:
+        raise ValueError(f"unclosed code fence in {origin}")
+    return matches
+
+
 def _split(text: str, origin: str, aliases: dict[str, str]) -> tuple[str, dict[str, list[str]]]:
     """Split notes into the text before the first ``###`` and per-heading bodies."""
-    heads = list(SUBSECTION.finditer(text))
+    heads = _find(SUBSECTION, text, origin)
     preamble = text[: heads[0].start() if heads else len(text)].strip("\n")
     bodies: dict[str, list[str]] = {}
     for i, head in enumerate(heads):
@@ -64,7 +88,7 @@ def compose(base: str, generated: str, version: str) -> str:
     """Pure, fail-closed and deterministic at a given generator base/input."""
     if not VERSION.fullmatch(version):
         raise ValueError("candidate version must be MAJOR.MINOR.PATCH")
-    sections = list(SECTION.finditer(base))
+    sections = _find(SECTION, base, "main CHANGELOG")
     if not sections or sections[0].group(1) != "Unreleased":
         raise ValueError("main CHANGELOG must start with [Unreleased]")
     if sum(s.group(1) == "Unreleased" for s in sections) != 1:
@@ -79,7 +103,7 @@ def compose(base: str, generated: str, version: str) -> str:
 
         if not VERSION.fullmatch(latest) or key(version) <= key(latest):
             raise ValueError("candidate must be newer than main's latest section")
-    headers = list(GENERATED.finditer(generated))
+    headers = _find(GENERATED, generated, "generated notes")
     if not headers or headers[0].group("version") != version:
         raise ValueError("generated top section must match the candidate")
     if sum(h.group("version") == version for h in headers) != 1:
@@ -88,7 +112,7 @@ def compose(base: str, generated: str, version: str) -> str:
     dt.date.fromisoformat(date)
     stop = headers[1].start() if len(headers) > 1 else len(generated)
     notes = generated[headers[0].end() : stop].strip()
-    if not notes or re.search(r"^#{1,2} ", notes, re.MULTILINE):
+    if not notes or _find(HEADING_1_2, notes, "generated notes"):
         raise ValueError("empty or unsupported generated section")
     generated_preamble, generated_bodies = _split(notes, "generated", GENERATED_ALIASES)
     if generated_preamble.strip() or not generated_bodies:

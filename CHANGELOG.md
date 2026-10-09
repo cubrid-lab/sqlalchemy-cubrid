@@ -65,6 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/llms-full.txt` is regenerated. Docs only.
 
 ### CI
+- **Shared fence-aware CHANGELOG lint and composer** — `scripts/lint_changelog.py` and
+  `scripts/compose_release_changelog.py` adopt the canonical versions shared with
+  pycubrid, cubrid-mcp-server and the cookbook. Lines inside a fenced code block are
+  entry content, never headings; a `## [` release header inside a fence and an unclosed
+  fence fail closed in both scripts. The lint gains the shared duplicate-`###` rule,
+  gated by `SECTION_POLICY_CUTOFF` like the section policy, so it applies to
+  `[Unreleased]` and releases after 1.10.0 while the historical duplicate headings in
+  1.9.0 and 1.7.1 stay byte-identical. `docs/DEVELOPMENT.md` (and Korean) document the
+  fence rules. CI only; the dialect is unchanged.
 - **GitHub Release naming and standard release-note sections** — `AGENTS.md` gains a
   "GitHub Release Policy" section: a Release title is exactly its tag `vX.Y.Z`, drafts
   included; tags are never moved or recreated to fix a title; stale drafts are
