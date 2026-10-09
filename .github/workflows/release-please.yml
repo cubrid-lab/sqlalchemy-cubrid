@@ -26,6 +26,11 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: '3.12'
+      - name: Reconcile completed external releases
+        run: python scripts/reconcile_release_labels.py
       - name: Freeze reviewed release PRs
         id: freeze
         run: |
@@ -41,12 +46,6 @@ jobs:
           else
             echo 'frozen=false' >> "$GITHUB_OUTPUT"
           fi
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
-        with:
-          python-version: '3.12'
-      - name: Reconcile completed external releases
-        if: steps.freeze.outputs.frozen == 'false'
-        run: python scripts/reconcile_release_labels.py
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
         id: release
         if: steps.freeze.outputs.frozen == 'false'

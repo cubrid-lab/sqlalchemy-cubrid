@@ -232,7 +232,7 @@ means: a release was merged, and its publication is not proven. To recover:
 
 1. Open the run URL from the message and find the failed job; fix the cause
    (for example a cookbook or PyPI CDN lag).
-2. For a failed or cancelled run, re-run its failed jobs with
+2. For a failed, cancelled or timed-out run, re-run its failed jobs with
    `gh api -X POST repos/cubrid-lab/sqlalchemy-cubrid/actions/runs/<id>/rerun-failed-jobs`
    (the same as `gh run rerun <id> --failed`), or follow the matching row in
    [Failure and recovery](#failure-and-recovery) (`verify-only` dispatch,
@@ -247,9 +247,7 @@ and what `detect` decided. If recovery ran as a dispatch at another SHA
 SHA stays failed and the PR stays blocked: after verifying the release summary,
 exact tag SHA, artifact hashes and cookbook success, label it manually (add
 `autorelease: tagged`, then remove `autorelease: pending`).
-While a release PR carries `autorelease: review`, preparation is frozen and the
-reconcile step is skipped, so no blocked signal is emitted until the label is
-removed. The script never relabels a blocked PR, reruns or dispatches anything;
+The script never relabels a blocked PR, reruns or dispatches anything;
 never clear `autorelease: pending` just to turn the run green. The 1.10.0
 release (PR #704) is the reference case: its publisher run
 [37871732934](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37871732934)
