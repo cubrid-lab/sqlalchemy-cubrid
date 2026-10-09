@@ -290,7 +290,7 @@ def test_documentation_generator_includes_policy_and_preserves_index(tmp_path: P
     )
 
 
-LIVE_JOBS = ("live-smoke", "make-integration", "integration-tests")
+LIVE_JOBS = ("make-integration", "integration-tests")
 
 
 @pytest.mark.parametrize("name", LIVE_JOBS)
@@ -302,3 +302,110 @@ def test_live_lanes_start_without_waiting_for_static_and_offline_jobs(name: str)
 def test_gate_still_requires_static_and_offline_jobs() -> None:
     needs = set(gate()["needs"])
     assert {"lint", "typecheck", "offline-tests", *LIVE_JOBS} <= needs
+
+
+# Jobs that report but never gate; everything else in ci.yml must feed the gate.
+CI_ADVISORY_JOBS = {"sqlalchemy-21-canary"}
+WEEKLY_OR_DISPATCH = "github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'"
+
+
+def gate_key(job: str) -> str:
+    return job.upper().replace("-", "_")
+
+
+def test_gate_needs_every_gating_job() -> None:
+    # A gating job missing from `needs` would never be checked (#737).
+    jobs = workflow("ci.yml")["jobs"]
+    assert set(gate()["needs"]) == set(jobs) - {"matrix-result"} - CI_ADVISORY_JOBS
+    advisory = {name for name, job in jobs.items() if job.get("continue-on-error")}
+    assert advisory == CI_ADVISORY_JOBS
+
+
+@pytest.mark.parametrize("job", gate()["needs"])
+def test_gate_checks_every_needed_job(job: str) -> None:
+    step = gate()["steps"][0]
+    key = gate_key(job)
+    assert step["env"][f"R_{key}"] == "${{ needs.%s.result }}" % job
+    assert f"E_{key}" in step["env"]
+    assert re.search(rf'^\s*check {re.escape(job)} "\$R_{key}" "\$E_{key}"$', step["run"], re.M)
+
+
+@pytest.mark.parametrize("job", gate()["needs"])
+def test_missing_result_of_a_selected_job_fails_the_gate(job: str) -> None:
+    # An empty result is what a job that never reported looks like.
+    completed = run_gate(set(gate()["needs"]), {job: ""})
+    assert completed.returncode != 0
+
+
+def test_live_smoke_is_folded_into_make_integration() -> None:
+    # #737: live-smoke ran test_integration.py and test_regression.py with
+    # Python 3.12, CUBRID 11.4 and cubrid+pycubrid://; make-integration runs every
+    # integration-marked test with the same interpreter, server and driver.
+    jobs = workflow("ci.yml")["jobs"]
+    assert "live-smoke" not in jobs
+    make = jobs["make-integration"]
+    assert make["if"] == "needs.detect-changes.outputs.extended == 'true'"
+    setups = [s for s in make["steps"] if "setup-python" in s.get("uses", "")]
+    assert [s["with"]["python-version"] for s in setups] == ["3.12"]
+    install = next(s for s in make["steps"] if s.get("name") == "Install project")
+    assert 'uv pip install --system -e ".[dev,pycubrid]"' in install["run"]
+    run = next(s for s in make["steps"] if s.get("name") == "Run make integration")
+    assert "make integration INTEGRATION_DRIVER=pycubrid " in run["run"]
+    assert run["env"]["CUBRID_VERSION"] == "11.4"
+    assert "run $(PYTEST) $(TESTS)/ -m integration -v" in (ROOT / "Makefile").read_text()
+    for name in ("test_integration.py", "test_regression.py"):
+        text = (ROOT / "test" / name).read_text()
+        assert re.search(r"^pytestmark = pytest\.mark\.integration$", text, re.M), name
+    # The former lane installed Alembic; the dev extra still does.
+    dev = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    assert any(d.startswith("alembic") for d in dev["optional-dependencies"]["dev"])
+
+
+def test_sqlalchemy_prerelease_canary_is_weekly_and_advisory() -> None:
+    job = workflow("ci.yml")["jobs"]["sqlalchemy-21-canary"]
+    # Upstream drift does not depend on this repository's diff (#737).
+    assert job["if"] == WEEKLY_OR_DISPATCH
+    assert "needs" not in job
+    assert job["continue-on-error"] is True
+    assert "sqlalchemy-21-canary" not in gate()["needs"]
+
+
+def test_oldest_cell_cubriddb_compliance_is_weekly_and_gating_lanes_are_not() -> None:
+    steps = {s.get("name"): s for s in workflow("ci.yml")["jobs"]["integration-tests"]["steps"]}
+    advisory = steps["Run SQLAlchemy dialect compliance suite (non-gating, other cells)"]
+    assert advisory["continue-on-error"] is True
+    assert f"&& ({WEEKLY_OR_DISPATCH})" in advisory["if"]
+    for name in (
+        "Run SQLAlchemy dialect compliance suite (gating, CUBRIDdb)",
+        "Run SQLAlchemy dialect compliance suite (gating, released pycubrid)",
+    ):
+        assert "event_name" not in str(steps[name].get("if", "")), name
+        assert "continue-on-error" not in steps[name], name
+
+
+def test_weekly_ci_and_upstream_canary_do_not_share_a_weekday() -> None:
+    def weekdays(name: str) -> set[str]:
+        doc = workflow(name)
+        return {entry["cron"].split()[4] for entry in doc.get("on", doc.get(True))["schedule"]}
+
+    assert weekdays("ci.yml") == {"1"}
+    assert weekdays("upstream-canary.yml") == {"4"}
+
+
+def test_release_runs_the_offline_endpoint_cells_itself() -> None:
+    # #737: the release does not rely on the main push run for the #734 cells.
+    full = workflow("integration-full.yml")["jobs"]
+    job = full["offline-endpoints"]
+    assert "if" not in job
+    assert job["strategy"]["fail-fast"] is False
+    assert job["strategy"]["matrix"] == {"python-version": offline_cells("push")}
+    ci_steps = workflow("ci.yml")["jobs"]["offline-tests"]["steps"]
+
+    def run_of(steps: list, name: str) -> str:
+        return next(s for s in steps if s.get("name") == name)["run"]
+
+    for name in ("Install dependencies", "Run offline tests with coverage"):
+        assert run_of(job["steps"], name) == run_of(ci_steps, name), name
+    release_gate = full["full-matrix-result"]
+    assert "offline-endpoints" in release_gate["needs"]
+    assert "needs.offline-endpoints.result" in release_gate["steps"][0]["run"]

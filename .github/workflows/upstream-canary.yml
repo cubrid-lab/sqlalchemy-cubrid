@@ -2,7 +2,7 @@ name: Upstream Canary
 
 on:
   schedule:
-    - cron: "0 6 * * 1"
+    - cron: "0 6 * * 4"
   workflow_dispatch:
 
 # Test jobs are read-only; only the report job below gets ``issues: write``.
