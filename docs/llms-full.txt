@@ -7099,6 +7099,14 @@ with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `publis
 runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
 automatically. Nobody pushes tags or publishes by hand.
 
+`python scripts/lint_changelog.py` requires, in `[Unreleased]` and in releases after
+1.10.0, the standard `###` sections, each once and with content, in this order: Upgrade
+notes, Added, Changed, Deprecated, Removed, Fixed, Security, Performance, Documentation,
+CI, Tests. Use `Documentation`, not `Docs`, and file release automation under `CI` or
+`Changed`. Releases up to 1.10.0 keep their historical headings. A GitHub Release is
+titled exactly `vX.Y.Z`, and its body is the CHANGELOG section plus one
+`**Full Changelog**` compare link; see the "GitHub Release Policy" in `AGENTS.md`.
+
 ---
 
 *See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
@@ -7555,20 +7563,27 @@ Its output candidate lives in `/tmp/sa-rp-candidate`, not in the repository.
 const fs=require('fs'),path=require('path');
 const upstream='/tmp/release-please-tools/node_modules/release-please/build/src';
 require(upstream+'/index.js'); const {Python}=require(upstream+'/strategies/python.js');
+const {Manifest}=require(upstream+'/manifest.js');
 const {parseConventionalCommits}=require(upstream+'/commit.js');
 const {TagName}=require(upstream+'/util/tag-name.js');
 const {Version}=require(upstream+'/version.js');
 const root=process.argv[2];
-const github={repository:{owner:'cubrid-lab',repo:'sqlalchemy-cubrid'},findFilesByFilenameAndRef:async()=>[],getFileContentsOnBranch:async p=>({parsedContent:fs.readFileSync(path.join(root,p),'utf8')})};
+const github={repository:{owner:'cubrid-lab',repo:'sqlalchemy-cubrid'},getFileJson:async p=>JSON.parse(fs.readFileSync(path.join(root,p),'utf8')),findFilesByFilenameAndRef:async()=>[],getFileContentsOnBranch:async p=>({parsedContent:fs.readFileSync(path.join(root,p),'utf8')})};
 (async()=>{
- const scenarios=[['fix: correct failure','1.8.1'],['feat: new optional API','1.9.0'],['feat!: remove old API\n\nBREAKING CHANGE: remove old API','2.0.0'],['docs: improve instructions','1.8.1'],['chore: housekeeping',null],['fix: explicit override\n\nRelease-As: 1.9.0','1.9.0']];
- for(const [message,expected] of scenarios){
- const strategy=new Python({github,targetBranch:'main',component:'sqlalchemy-cubrid',packageName:'sqlalchemy-cubrid',includeComponentInTag:false,changelogPath:'RELEASE_CHANGELOG.md'});
+ const manifest=await Manifest.fromManifest(github,'main');
+ const released=/^__version__ = "([^"]+)"$/m.exec(fs.readFileSync(path.join(root,'sqlalchemy_cubrid/__init__.py'),'utf8'))[1];
+ if(manifest.releasedVersions['.'].toString()!==released||manifest.repositoryConfig['.'].releaseType!=='python')throw new Error('Invalid manifest/config mapping');
+ const scenarios=[['fix: correct failure','1.8.1','Fixed'],['feat: new optional API','1.9.0','Added'],['feat!: remove old API\n\nBREAKING CHANGE: remove old API','2.0.0','Added'],['docs: improve instructions','1.8.1','Documentation'],['perf: faster compile','1.8.1','Performance'],['chore: housekeeping',null],['ci: pin action',null],['test: add case',null],['refactor: tidy',null],['fix: explicit override\n\nRelease-As: 1.9.0','1.9.0','Fixed']];
+ const allowed=new Set(['Upgrade notes','Added','Changed','Deprecated','Removed','Fixed','Security','Performance','Documentation','CI','Tests','⚠ BREAKING CHANGES']);
+ for(const [message,expected,heading] of scenarios){
+ const strategy=new Python({...manifest.repositoryConfig['.'],github,targetBranch:'main'});
  const commits=parseConventionalCommits([{sha:'a'.repeat(40),message,files:['sqlalchemy_cubrid/__init__.py']}]);
  const candidate=await strategy.buildReleasePullRequest(commits,{tag:new TagName(Version.parse('1.8.0')),sha:'78bcbc7dbd70d8f2c756b25d3c271977ace42aa5',notes:''});
  const actual=candidate?candidate.version.toString():null;
  if(actual!==expected)throw new Error(`${message}: expected ${expected} got ${actual}`);
- console.log(JSON.stringify({message,version:actual}));
+ const headings=candidate?[...candidate.body.toString().matchAll(/^### (.+)$/gm)].map(m=>m[1]):[];
+ if(candidate&&(!headings.includes(heading)||headings.some(h=>!allowed.has(h))))throw new Error(`${message}: expected ### ${heading}, got ${headings}`);
+ console.log(JSON.stringify({message,version:actual,headings}));
  if(candidate&&message.startsWith('feat:')){
  const out='/tmp/sa-rp-candidate';fs.mkdirSync(out,{recursive:true});
  for(const update of candidate.updates){
@@ -7581,6 +7596,16 @@ const github={repository:{owner:'cubrid-lab',repo:'sqlalchemy-cubrid'},findFiles
  }
 })().catch(err=>{console.error(err);process.exit(1)});
 ```
+
+The script reads `release-please-config.json` and `.release-please-manifest.json`
+through the upstream manifest loader, so the repository's `changelog-sections`
+apply. It fails unless the manifest version equals `__version__` in
+`sqlalchemy_cubrid/__init__.py`, and it checks the `###` heading each releasable
+commit type produces (AGENTS.md "GitHub Release Policy"): fix→Fixed, feat→Added,
+docs→Documentation, perf→Performance; chore, ci, test and refactor alone create
+no candidate. The feature candidate's `RELEASE_CHANGELOG.md`, generated from an
+empty file, is the `test/fixtures/release-please/17.6.0-feature.md` fixture
+(with the fixture's recorded date).
 
 ---
 

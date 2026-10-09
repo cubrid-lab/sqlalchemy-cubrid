@@ -294,7 +294,7 @@ def test_workflow_publishes_through_the_guard() -> None:
     }
     start = publish.index("uses: actions/checkout@")
     checkout = publish[start : publish.index("- name:", start)]
-    assert "sparse-checkout: scripts/pypi_duplicate_guard.py\n" in checkout
+    assert re.search(r"sparse-checkout: \|?\n?\s*scripts/pypi_duplicate_guard\.py\n", checkout)
     assert "persist-credentials: false" in checkout
     # The guard comes from the workflow's own commit (github.sha, the same on
     # `gh run rerun`), so a resumed older tag is covered by the current guard.

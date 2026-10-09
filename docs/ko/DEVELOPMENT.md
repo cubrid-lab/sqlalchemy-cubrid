@@ -826,6 +826,13 @@ PR에서 한국어 섹션도 추가하세요. 의도적으로 영어로만 두�
 엽니다. 검토 후 squash 병합하면 `publish-pypi.yml`이 전체 매트릭스, 한 번의 빌드, 태그, PyPI 게시, cookbook 검증을
 자동으로 수행합니다. 태그 푸시나 게시를 수동으로 하지 않습니다.
 
+`python scripts/lint_changelog.py`는 `[Unreleased]`와 1.10.0 이후 릴리스에서 내용이 있는 표준
+`###` 섹션을 한 번씩만, 다음 순서로 요구합니다: Upgrade notes, Added, Changed, Deprecated, Removed,
+Fixed, Security, Performance, Documentation, CI, Tests. `Docs`가 아니라 `Documentation`을 쓰고,
+릴리스 자동화 항목은 `CI` 또는 `Changed`에 둡니다. 1.10.0까지의 릴리스는 기존 제목을 유지합니다.
+GitHub Release 제목은 정확히 `vX.Y.Z`이고, 본문은 CHANGELOG 섹션에 `**Full Changelog**` 비교 링크
+하나를 붙인 것입니다. `AGENTS.md`의 "GitHub Release Policy"를 참고하세요.
+
 ---
 
 *참고: [기여 가이드](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) · [기능 지원](FEATURE_SUPPORT.md) · [연결 가이드](CONNECTION.md)*

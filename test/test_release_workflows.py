@@ -193,9 +193,9 @@ def test_release_content_comes_from_the_detected_sha() -> None:
         (checkout,) = checkouts(jobs[name])
         assert checkout["ref"] == DETECT_SHA, name
         assert checkout["persist-credentials"] is False
-    # Tooling-only jobs sparse-check out one script from the workflow commit.
+    # Tooling-only jobs sparse-check out their scripts from the workflow commit.
     for name, script in (
-        ("publish", "scripts/pypi_duplicate_guard.py"),
+        ("publish", "scripts/pypi_duplicate_guard.py\nscripts/check_release_title.py\n"),
         ("summary", "scripts/release_summary.py"),
     ):
         (checkout,) = checkouts(jobs[name])
@@ -229,6 +229,23 @@ def test_publish_order_tag_draft_pypi_undraft() -> None:
     )
     # An API error must fail the step, never read as "no Release yet".
     assert "2>/dev/null" not in body["Create the draft GitHub Release with the SBOM"]
+    # New Releases are titled exactly $TAG; a reused draft or published Release
+    # must already carry that title (fail closed, never renamed).
+    create = body["Create the draft GitHub Release with the SBOM"]
+    assert '--verify-tag --title "$TAG"' in create
+    lines = [line.strip() for line in create.splitlines()]
+    guard = 'if [ "$drafts" = true ] || [ "$drafts" = false ]; then'
+    title = "--jq '.[] | select(.tag_name == env.TAG) | .name // \"\"')"
+    check = 'python3 scripts/check_release_title.py --tag "$TAG" --title="$title" --draft "$drafts"'
+    # Exact lines: any existing Release (draft or published) is checked, a missing
+    # name reads as "" (never as the tag) and a failed check stops the step.
+    assert lines.index(guard) < lines.index(title) < lines.index(check)
+    assert lines[lines.index(check) + 1] == "fi"
+    assert lines.index(check) < lines.index('case "$drafts" in')
+    assert create.startswith("set -euo pipefail\n")
+    assert "set +e" not in create
+    assert "|| true" not in create and "|| :" not in create
+    assert "gh release edit" not in create
     assert body["Publish the GitHub Release"] == 'gh release edit "$TAG" --draft=false'
     text = (WORKFLOWS / "publish-pypi.yml").read_text()
     assert (

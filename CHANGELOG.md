@@ -64,6 +64,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counts in `docs/PRD.md` are replaced with descriptions or pointers to the source.
   `docs/llms-full.txt` is regenerated. Docs only.
 
+### CI
+- **GitHub Release naming and standard release-note sections** — `AGENTS.md` gains a
+  "GitHub Release Policy" section: a Release title is exactly its tag `vX.Y.Z`, drafts
+  included; tags are never moved or recreated to fix a title; stale drafts are
+  classified against the tag and PyPI history and changed only with maintainer
+  approval; release notes come from `CHANGELOG.md`. `publish-pypi.yml` keeps creating
+  Releases with `--title "$TAG"`, and on resume or recovery it now fails closed through
+  the new `scripts/check_release_title.py` when the existing Release has another
+  title, instead of reusing it; it never renames a Release.
+  `scripts/extract_release_notes.py` appends exactly one
+  `**Full Changelog**: …/compare/<previous>...<tag>` line after the unchanged CHANGELOG
+  section (none for the first release or when the section already has a compare
+  link). `scripts/lint_changelog.py` requires the standard `###` sections (Upgrade
+  notes, Added, Changed, Deprecated, Removed, Fixed, Security, Performance,
+  Documentation, CI, Tests), each once, with content and in that order, in
+  `[Unreleased]` and releases after 1.10.0; 1.10.0 and older keep their headings.
+  release-please `changelog-sections` map commit types to those headings with the same
+  hidden types as before, and `scripts/compose_release_changelog.py` merges generated
+  notes into the standard headings instead of a `### Conventional commits` block. The
+  release-please reproduction script in `docs/RELEASE_PLEASE_VALIDATION.md` now loads
+  the real manifest and config, checks the manifest against `__version__` and the
+  heading each commit type produces; the 17.6.0 fixture is regenerated with the new
+  mapping. CI and release tooling only; the dialect is unchanged.
+
 ## [1.10.0] - 2026-10-08
 
 ### Upgrade notes
