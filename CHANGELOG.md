@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Offline tests run on the oldest and newest supported Python outside PRs (#734)** —
+  in `ci.yml` the `offline-tests` matrix is chosen by event: pull requests keep the
+  single representative Python 3.12 cell, while main pushes, the weekly schedule and
+  manual dispatches run the full offline suite (`-m "not integration and not repo"`,
+  95% coverage floor) on Python 3.11 and 3.14. Each cell uploads its own
+  `coverage-report-py<version>` artifact, and `matrix-result` still fails when an
+  offline cell fails, is cancelled or is unexpectedly skipped. CI only; the dialect
+  is unchanged.
+
 ## [1.10.0] - 2026-10-08
 
 ### Upgrade notes

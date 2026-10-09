@@ -3,7 +3,9 @@
 Only ``ci.yml`` itself selects the live PR lanes: it defines and runs them. Every
 other workflow selects the tooling lane, and as a non-documentation change it also
 runs the full offline suite, which covers the workflow-contract tests outside the
-tooling lane. ``integration-full.yml`` and ``upstream-canary.yml`` changes are
+tooling lane. On a PR that suite is the representative Python 3.12 cell; the
+oldest/newest endpoint cells run on main pushes, the weekly schedule and manual
+dispatches (#734). ``integration-full.yml`` and ``upstream-canary.yml`` changes are
 validated by a manual dispatch on the PR head.
 """
 
@@ -88,6 +90,9 @@ def test_workflow_impact_table(name: str) -> None:
         ("README.md", {"docs"}),
         ("THIRD_PARTY_LICENSES.md", {"docs", "tooling"}),
         ("test/test_third_party_licenses.py", {"code", "tooling"}),
+        # The guards of the offline cell routing (#734) select the lanes that run them.
+        ("test/test_ci_policy.py", {"code", "tooling"}),
+        ("test/test_offline_lanes.py", {"code"}),
     ],
 )
 def test_representative_paths_select_the_expected_tiers(path: str, expected: set[str]) -> None:
