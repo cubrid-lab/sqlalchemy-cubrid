@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/llms-full.txt` is regenerated. Docs only.
 
 ### CI
+- **Cookbook release verification pinned to the cookbook SHA with the PyPI wait** — the `verify-cookbook` call in `.github/workflows/publish-pypi.yml` is pinned to `32e80c6ea9ae78324f764d7b873ffb64b000ddcc` (cubrid-cookbook-python#274), the same commit in pycubrid, sqlalchemy-cubrid and cubrid-mcp-server. The cookbook now waits up to 10 minutes for PyPI to serve the exact requested version before installing, and reports what PyPI served if it times out; this fixes the 1.10.0 post-publish stale-CDN failure that blocked release-please. CI only; the dialect is unchanged.
 - **Shared fence-aware CHANGELOG lint and composer** — `scripts/lint_changelog.py` and
   `scripts/compose_release_changelog.py` adopt the canonical versions shared with
   pycubrid, cubrid-mcp-server and the cookbook. Lines inside a fenced code block are

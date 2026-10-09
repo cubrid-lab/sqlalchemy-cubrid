@@ -152,6 +152,8 @@ outputs `status`, `requested_version`, `installed_version` and `artifact` are
 checked by `require-cookbook` and shown in the summary. A failed or cancelled
 called workflow is a failed verification.
 
+The verification now waits up to 10 minutes for PyPI to serve the exact version before installing, and reports what PyPI served if it times out.
+
 The release verification report needs all three cells (CUBRID 11.2 / Python 3.12,
 CUBRID 11.4 / Python 3.12 and CUBRID 11.4 / Python 3.11) to succeed; a missing or
 failed cell fails the report and therefore the verification.
