@@ -289,14 +289,16 @@ jobs:
       TAG: ${{ needs.detect.outputs.tag }}
       VERSION: ${{ needs.detect.outputs.version }}
     steps:
-      # Release tooling (guard and summary scripts) comes from the
+      # Release tooling (guard, Release title check and summary scripts) comes from the
       # workflow's own commit, so a resume or verify-only of an older tag uses
       # the current scripts; on a push it is the release SHA itself.
       - name: Check out the PyPI duplicate guard
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-          sparse-checkout: scripts/pypi_duplicate_guard.py
+          sparse-checkout: |
+            scripts/pypi_duplicate_guard.py
+            scripts/check_release_title.py
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
@@ -346,6 +348,13 @@ jobs:
           # fails the step instead of reading as "no Release yet".
           drafts=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
             --jq '.[] | select(.tag_name == env.TAG) | .draft')
+          # A Release reused on resume or recovery must already be titled exactly
+          # $TAG (AGENTS.md "GitHub Release Policy"); it is never renamed here.
+          if [ "$drafts" = true ] || [ "$drafts" = false ]; then
+            title=$(gh api --paginate "repos/$GH_REPO/releases?per_page=100" \
+              --jq '.[] | select(.tag_name == env.TAG) | .name // ""')
+            python3 scripts/check_release_title.py --tag "$TAG" --title="$title" --draft "$drafts"
+          fi
           case "$drafts" in
             "")
               gh release create "$TAG" --draft --verify-tag --title "$TAG" \

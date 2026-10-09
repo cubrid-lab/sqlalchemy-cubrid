@@ -3,7 +3,9 @@
 
 Read main's CHANGELOG at the generator base SHA, never a previously composed
 candidate. Generated headers belong in RELEASE_CHANGELOG.md; publication keeps
-its strict bracket/date contract. Call only after the freeze-label check.
+its strict bracket/date contract. Curated and generated entries are merged under
+the standard ``###`` headings in the standard order, so the candidate passes
+scripts/lint_changelog.py. Call only after the freeze-label check.
 """
 
 from __future__ import annotations
@@ -21,6 +23,41 @@ GENERATED = re.compile(
     r"(?:\([^\n]+\))? \((?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})\)$",
     re.MULTILINE,
 )
+SUBSECTION = re.compile(r"^### (.+)$", re.MULTILINE)
+# Standard ``###`` headings, in order (AGENTS.md "GitHub Release Policy"; kept in
+# sync with scripts/lint_changelog.py). release-please renders breaking changes
+# under its own heading; they are upgrade notes.
+ALLOWED_SECTIONS = (
+    "Upgrade notes",
+    "Added",
+    "Changed",
+    "Deprecated",
+    "Removed",
+    "Fixed",
+    "Security",
+    "Performance",
+    "Documentation",
+    "CI",
+    "Tests",
+)
+GENERATED_ALIASES = {"⚠ BREAKING CHANGES": "Upgrade notes"}
+
+
+def _split(text: str, origin: str, aliases: dict[str, str]) -> tuple[str, dict[str, list[str]]]:
+    """Split notes into the text before the first ``###`` and per-heading bodies."""
+    heads = list(SUBSECTION.finditer(text))
+    preamble = text[: heads[0].start() if heads else len(text)].strip("\n")
+    bodies: dict[str, list[str]] = {}
+    for i, head in enumerate(heads):
+        title = head.group(1).strip()
+        title = aliases.get(title, title)
+        if title not in ALLOWED_SECTIONS:
+            raise ValueError(f"unsupported {origin} section '### {head.group(1).strip()}'")
+        stop = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        body = text[head.end() : stop].strip("\n")
+        if body.strip():
+            bodies.setdefault(title, []).append(body)
+    return preamble, bodies
 
 
 def compose(base: str, generated: str, version: str) -> str:
@@ -53,14 +90,22 @@ def compose(base: str, generated: str, version: str) -> str:
     notes = generated[headers[0].end() : stop].strip()
     if not notes or re.search(r"^#{1,2} ", notes, re.MULTILINE):
         raise ValueError("empty or unsupported generated section")
-    # Keep generated headings below a single section, avoiding duplicate curated
-    # ### Fixed/Documentation/etc. headings (external changelog-validator work).
-    notes = re.sub(r"^(#{3,}) ", r"#\1 ", notes, flags=re.MULTILINE)
+    generated_preamble, generated_bodies = _split(notes, "generated", GENERATED_ALIASES)
+    if generated_preamble.strip() or not generated_bodies:
+        raise ValueError("generated notes must sit under ### headings")
     head = sections[0]
     history_start = sections[1].start() if len(sections) > 1 else len(base)
-    curated = base[head.end() : history_start].strip("\n")
-    body = curated + ("\n\n" if curated else "")
-    body += "### Conventional commits\n\n" + notes
+    curated_preamble, curated_bodies = _split(
+        base[head.end() : history_start], "curated [Unreleased]", {}
+    )
+    # Merge curated and generated entries under one standard heading each, in the
+    # standard order; curated text comes first and is copied unchanged.
+    blocks = [curated_preamble] if curated_preamble.strip() else []
+    for title in ALLOWED_SECTIONS:
+        parts = curated_bodies.get(title, []) + generated_bodies.get(title, [])
+        if parts:
+            blocks.append(f"### {title}\n\n" + "\n\n".join(p.strip("\n") for p in parts))
+    body = "\n\n".join(blocks)
     return (
         base[: head.end()]
         + f"\n\n## [{version}] - {date}\n\n"

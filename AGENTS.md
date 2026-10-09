@@ -482,6 +482,51 @@ tags or publish by hand; the only manual entry point is the narrow recovery
 dispatch of `publish-pypi.yml`. Procedure, failure matrix and recovery:
 [`RELEASING.md`](RELEASING.md).
 
+## GitHub Release Policy
+
+These rules add to the release procedure above; the procedures and gates in
+`RELEASING.md` stay authoritative.
+
+### Titles
+
+- A Release title equals its tag exactly. Stable tags and titles are `vMAJOR.MINOR.PATCH`.
+- No package name, feature, date or suffix in a title (not `sqlalchemy-cubrid 1.2.3`,
+  `v1.2.3 — Foo`, `v1.2.3 (corrected)` or `Release v1.2.3`). Drafts follow the same rule.
+- Never move, delete or recreate a tag to fix a title. Never delete and recreate a
+  published Release.
+- Metadata edits keep the notes, assets, published state and prerelease state. When
+  editing a draft through the API, always resend `tag_name`: a PATCH without it resets
+  the draft's tag to `untagged-…`. `gh release edit` resends `tag_name` automatically;
+  raw `gh api` PATCHes must include it.
+- Automation enforces these rules: `publish-pypi.yml` creates Releases with
+  `--title "$TAG"` and, on resume or recovery, fails closed through
+  `scripts/check_release_title.py` when an existing Release has another title. It never
+  renames one. Agents verify these rules whenever they touch release automation.
+
+### Stale drafts
+
+- Inspect drafts before preparing a release. Never assume a draft is pending.
+- Classify each draft against its tag and the PyPI history:
+  - Already shipped (tag and PyPI version both exist): publish it with
+    `make_latest=false`, or remove it, only after maintainer approval.
+  - Never shipped: never publish it. Delete it only after maintainer approval.
+- Never delete drafts automatically. Preserve their notes and assets.
+
+### Release notes
+
+- `CHANGELOG.md` is the single source of truth. The Release body is the extracted
+  CHANGELOG section plus one `**Full Changelog**` compare link
+  (`scripts/extract_release_notes.py`).
+- Allowed `###` sections, in this order, only when they have content: Upgrade notes,
+  Added, Changed, Deprecated, Removed, Fixed, Security, Performance, Documentation, CI,
+  Tests. `scripts/lint_changelog.py` enforces this for `[Unreleased]` and for releases
+  after 1.10.0.
+- Use `Documentation`, not `Docs`. Put release automation and tooling entries under
+  `CI` or `Changed`.
+- Never bulk-rewrite historical notes or regenerate them from current `main`. A
+  selective fix needs a dry-run diff and maintainer approval. Never invent PR or commit
+  references. Note formatting never changes tags, dates, artifacts or publish state.
+
 ## Performance Context
 
 sqlalchemy-cubrid provides ORM-level validation that pycubrid driver improvements reach

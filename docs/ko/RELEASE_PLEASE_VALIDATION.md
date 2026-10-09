@@ -64,20 +64,27 @@ npm install --prefix /tmp/release-please-tools --ignore-scripts release-please@1
 const fs=require('fs'),path=require('path');
 const upstream='/tmp/release-please-tools/node_modules/release-please/build/src';
 require(upstream+'/index.js'); const {Python}=require(upstream+'/strategies/python.js');
+const {Manifest}=require(upstream+'/manifest.js');
 const {parseConventionalCommits}=require(upstream+'/commit.js');
 const {TagName}=require(upstream+'/util/tag-name.js');
 const {Version}=require(upstream+'/version.js');
 const root=process.argv[2];
-const github={repository:{owner:'cubrid-lab',repo:'sqlalchemy-cubrid'},findFilesByFilenameAndRef:async()=>[],getFileContentsOnBranch:async p=>({parsedContent:fs.readFileSync(path.join(root,p),'utf8')})};
+const github={repository:{owner:'cubrid-lab',repo:'sqlalchemy-cubrid'},getFileJson:async p=>JSON.parse(fs.readFileSync(path.join(root,p),'utf8')),findFilesByFilenameAndRef:async()=>[],getFileContentsOnBranch:async p=>({parsedContent:fs.readFileSync(path.join(root,p),'utf8')})};
 (async()=>{
- const scenarios=[['fix: correct failure','1.8.1'],['feat: new optional API','1.9.0'],['feat!: remove old API\n\nBREAKING CHANGE: remove old API','2.0.0'],['docs: improve instructions','1.8.1'],['chore: housekeeping',null],['fix: explicit override\n\nRelease-As: 1.9.0','1.9.0']];
- for(const [message,expected] of scenarios){
- const strategy=new Python({github,targetBranch:'main',component:'sqlalchemy-cubrid',packageName:'sqlalchemy-cubrid',includeComponentInTag:false,changelogPath:'RELEASE_CHANGELOG.md'});
+ const manifest=await Manifest.fromManifest(github,'main');
+ const released=/^__version__ = "([^"]+)"$/m.exec(fs.readFileSync(path.join(root,'sqlalchemy_cubrid/__init__.py'),'utf8'))[1];
+ if(manifest.releasedVersions['.'].toString()!==released||manifest.repositoryConfig['.'].releaseType!=='python')throw new Error('Invalid manifest/config mapping');
+ const scenarios=[['fix: correct failure','1.8.1','Fixed'],['feat: new optional API','1.9.0','Added'],['feat!: remove old API\n\nBREAKING CHANGE: remove old API','2.0.0','Added'],['docs: improve instructions','1.8.1','Documentation'],['perf: faster compile','1.8.1','Performance'],['chore: housekeeping',null],['ci: pin action',null],['test: add case',null],['refactor: tidy',null],['fix: explicit override\n\nRelease-As: 1.9.0','1.9.0','Fixed']];
+ const allowed=new Set(['Upgrade notes','Added','Changed','Deprecated','Removed','Fixed','Security','Performance','Documentation','CI','Tests','⚠ BREAKING CHANGES']);
+ for(const [message,expected,heading] of scenarios){
+ const strategy=new Python({...manifest.repositoryConfig['.'],github,targetBranch:'main'});
  const commits=parseConventionalCommits([{sha:'a'.repeat(40),message,files:['sqlalchemy_cubrid/__init__.py']}]);
  const candidate=await strategy.buildReleasePullRequest(commits,{tag:new TagName(Version.parse('1.8.0')),sha:'78bcbc7dbd70d8f2c756b25d3c271977ace42aa5',notes:''});
  const actual=candidate?candidate.version.toString():null;
  if(actual!==expected)throw new Error(`${message}: expected ${expected} got ${actual}`);
- console.log(JSON.stringify({message,version:actual}));
+ const headings=candidate?[...candidate.body.toString().matchAll(/^### (.+)$/gm)].map(m=>m[1]):[];
+ if(candidate&&(!headings.includes(heading)||headings.some(h=>!allowed.has(h))))throw new Error(`${message}: expected ### ${heading}, got ${headings}`);
+ console.log(JSON.stringify({message,version:actual,headings}));
  if(candidate&&message.startsWith('feat:')){
  const out='/tmp/sa-rp-candidate';fs.mkdirSync(out,{recursive:true});
  for(const update of candidate.updates){
@@ -90,3 +97,12 @@ const github={repository:{owner:'cubrid-lab',repo:'sqlalchemy-cubrid'},findFiles
  }
 })().catch(err=>{console.error(err);process.exit(1)});
 ```
+
+이 스크립트는 업스트림 매니페스트 로더로 `release-please-config.json`과
+`.release-please-manifest.json`을 읽으므로 저장소의 `changelog-sections`가 적용됩니다.
+매니페스트 버전이 `sqlalchemy_cubrid/__init__.py`의 `__version__`과 같지 않으면 실패하며,
+릴리스 대상 커밋 유형마다 생성되는 `###` 제목을 확인합니다(AGENTS.md "GitHub Release Policy"):
+fix→Fixed, feat→Added, docs→Documentation, perf→Performance이고, chore, ci, test,
+refactor만으로는 후보가 생기지 않습니다. 빈 파일에서 생성한 기능 후보의
+`RELEASE_CHANGELOG.md`가 `test/fixtures/release-please/17.6.0-feature.md` 픽스처입니다
+(날짜는 픽스처에 기록된 값).

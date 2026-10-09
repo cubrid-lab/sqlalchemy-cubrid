@@ -866,6 +866,14 @@ with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `publis
 runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
 automatically. Nobody pushes tags or publishes by hand.
 
+`python scripts/lint_changelog.py` requires, in `[Unreleased]` and in releases after
+1.10.0, the standard `###` sections, each once and with content, in this order: Upgrade
+notes, Added, Changed, Deprecated, Removed, Fixed, Security, Performance, Documentation,
+CI, Tests. Use `Documentation`, not `Docs`, and file release automation under `CI` or
+`Changed`. Releases up to 1.10.0 keep their historical headings. A GitHub Release is
+titled exactly `vX.Y.Z`, and its body is the CHANGELOG section plus one
+`**Full Changelog**` compare link; see the "GitHub Release Policy" in `AGENTS.md`.
+
 ---
 
 *See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*

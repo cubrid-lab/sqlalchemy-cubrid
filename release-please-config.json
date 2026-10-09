@@ -8,7 +8,21 @@
       "include-component-in-tag": false,
       "include-v-in-tag": true,
       "skip-github-release": true,
-      "changelog-path": "RELEASE_CHANGELOG.md"
+      "changelog-path": "RELEASE_CHANGELOG.md",
+      "changelog-sections": [
+        { "type": "feat", "section": "Added" },
+        { "type": "fix", "section": "Fixed" },
+        { "type": "perf", "section": "Performance" },
+        { "type": "deps", "section": "Changed" },
+        { "type": "revert", "section": "Changed" },
+        { "type": "docs", "section": "Documentation" },
+        { "type": "ci", "section": "CI", "hidden": true },
+        { "type": "test", "section": "Tests", "hidden": true },
+        { "type": "refactor", "section": "Changed", "hidden": true },
+        { "type": "chore", "section": "Changed", "hidden": true },
+        { "type": "build", "section": "Changed", "hidden": true },
+        { "type": "style", "section": "Changed", "hidden": true }
+      ]
     }
   },
   "always-update": true

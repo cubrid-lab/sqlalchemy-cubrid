@@ -10,7 +10,10 @@ Usage:
     python scripts/extract_release_notes.py vX.Y.Z
 
 On success, writes the section body (without the header line) to
-RELEASE_NOTES.md in the current working directory.
+RELEASE_NOTES.md in the current working directory, followed by exactly one
+``**Full Changelog**: <REPO_URL>/compare/<PREV_TAG>...<TAG>`` line. PREV_TAG is
+the next older version section of the CHANGELOG; the link is omitted for the
+first release and when the section already contains a compare link.
 
 Exit codes:
     0 — section extracted and written to RELEASE_NOTES.md
@@ -23,6 +26,17 @@ from __future__ import annotations
 import pathlib
 import re
 import sys
+
+REPO_URL = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
+COMPARE_LINK = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/compare/")
+
+
+def full_changelog_link(tag: str, history: str) -> str | None:
+    """Compare link from the next older version section in ``history``, if any."""
+    previous = re.search(r"^## \[(\d+\.\d+\.\d+)\]", history, re.MULTILINE)
+    if previous is None:
+        return None
+    return f"**Full Changelog**: {REPO_URL}/compare/v{previous.group(1)}...{tag}"
 
 
 def main() -> int:
@@ -55,7 +69,11 @@ def main() -> int:
         print(f"ERROR: Empty CHANGELOG section for {version}", file=sys.stderr)
         return 1
 
-    pathlib.Path("RELEASE_NOTES.md").write_text(body + "\n", encoding="utf-8")
+    notes = body + "\n"
+    link = full_changelog_link(f"v{version}", text[end:])
+    if link and not COMPARE_LINK.search(body):
+        notes += "\n" + link + "\n"
+    pathlib.Path("RELEASE_NOTES.md").write_text(notes, encoding="utf-8")
     print(f"OK: wrote RELEASE_NOTES.md for {version} ({len(body)} chars)")
     return 0
 
