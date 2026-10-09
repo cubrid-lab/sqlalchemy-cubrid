@@ -23,7 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   replaced by a short performance-context statement pointing to
   `docs/PERFORMANCE.md`, cubrid-benchmark, `ROADMAP.md` and the org project board.
   Volatile counts and inventories (module count, requirement-flag count, tested CUBRID
-  versions, default Docker version, test file list) are removed or point to their
+  versions, default Docker version, test file list including the nonexistent
+  `test_dml.py`) are removed or point to their
   canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only.
 
 ## [1.10.0] - 2026-10-08

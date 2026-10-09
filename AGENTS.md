@@ -200,12 +200,11 @@ including repository-tooling, fuzz, differential and Alembic tests):
 ```
 test/
 ├── conftest.py              # Fixtures: mock dialect, engine, connection
-├── test_compiler.py         # SQL compilation (SELECT, JOIN, CAST, LIMIT, etc.)
+├── test_compiler.py         # SQL compilation (SELECT, JOIN, CAST, LIMIT, DML extensions)
 ├── test_types.py            # Type system (all type compilations, reflection)
 ├── test_dialect_offline.py  # Dialect (reflection stubs, connection, isolation)
 ├── test_base.py             # ExecutionContext, IdentifierPreparer
 ├── test_requirements.py     # SA requirement flags (parametrized)
-├── test_dml.py              # ON DUPLICATE KEY UPDATE, MERGE compilation
 ├── test_alembic.py          # Alembic CubridImpl import/registry
 ├── test_dialects.py         # Edge cases
 ├── test_pycubrid_dialect.py # PyCubridDialect (pure Python driver variant)
