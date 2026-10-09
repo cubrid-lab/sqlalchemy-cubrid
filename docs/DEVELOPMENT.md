@@ -883,7 +883,8 @@ rule in `scripts/lint_changelog.py` and `scripts/compose_release_changelog.py`: 
 (`scripts/extract_release_notes.py` is not fence-aware and would truncate the Release
 body); an unclosed fence is an error. Only fences that start at column 0 with three
 backticks are recognised, not tilde or indented/nested fences. Both scripts are shared
-with pycubrid, cubrid-mcp-server and the cookbook; only `SECTION_POLICY_CUTOFF` differs.
+with pycubrid, cubrid-mcp-server and the cookbook; once all four repositories adopt the
+rule-5 cutoff gating, only `SECTION_POLICY_CUTOFF` differs.
 
 ---
 

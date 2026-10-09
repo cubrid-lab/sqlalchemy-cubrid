@@ -840,8 +840,8 @@ lint는 한 릴리스 안에서 반복되는 `###` 제목도 거부하지만, �
 `###` 줄은 항목 내용이며 제목이 아닙니다. 펜스 안의 `## [` 릴리스 헤더는 오류입니다
 (`scripts/extract_release_notes.py`는 펜스를 인식하지 않아 Release 본문이 잘리기 때문입니다). 닫히지 않은
 펜스도 오류입니다. 0번 열에서 시작하는 백틱 세 개 펜스만 인식하며, 물결표(`~~~`) 펜스나 들여쓴/중첩
-펜스는 인식하지 않습니다. 두 스크립트는 pycubrid, cubrid-mcp-server, cookbook과 공유하며
-`SECTION_POLICY_CUTOFF`만 다릅니다.
+펜스는 인식하지 않습니다. 두 스크립트는 pycubrid, cubrid-mcp-server, cookbook과 공유하며,
+네 저장소 모두 규칙 5의 cutoff 적용을 도입한 뒤에는 `SECTION_POLICY_CUTOFF`만 다릅니다.
 
 ---
 

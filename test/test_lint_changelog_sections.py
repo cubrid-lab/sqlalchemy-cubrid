@@ -180,3 +180,10 @@ def test_unclosed_code_fence_is_rejected(tmp_path: Path) -> None:
     )
     assert result.returncode == 1
     assert "ERROR: Unclosed code fence in CHANGELOG.md" in result.stderr
+
+
+def test_duplicate_heading_before_the_first_release_is_rejected(tmp_path: Path) -> None:
+    # Only rule 5 sees ### lines before the first "## [" header (rule 6 starts at a release).
+    result = run_lint(tmp_path, "# C\n### Foo\n### Foo\n## [Unreleased]\n### Added\n- a\n")
+    assert result.returncode == 1
+    assert "Duplicate subsection heading '### Foo' in []" in result.stderr
