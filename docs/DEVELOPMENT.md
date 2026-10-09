@@ -874,6 +874,17 @@ CI, Tests. Use `Documentation`, not `Docs`, and file release automation under `C
 titled exactly `vX.Y.Z`, and its body is the CHANGELOG section plus one
 `**Full Changelog**` compare link; see the "GitHub Release Policy" in `AGENTS.md`.
 
+The lint also rejects a repeated `###` heading within one release, but, like the section
+policy, only in `[Unreleased]` and releases after 1.10.0: released history up to 1.10.0
+(for example the repeated `### Documentation` and `### Changed` in 1.9.0) is never
+rewritten. Different releases may reuse the same heading. Fenced code blocks follow one
+rule in `scripts/lint_changelog.py` and `scripts/compose_release_changelog.py`: a fenced
+`###` line is entry content, never a heading; a fenced `## [` release header is an error
+(`scripts/extract_release_notes.py` is not fence-aware and would truncate the Release
+body); an unclosed fence is an error. Only fences that start at column 0 with three
+backticks are recognised, not tilde or indented/nested fences. Both scripts are shared
+with pycubrid, cubrid-mcp-server and the cookbook; only `SECTION_POLICY_CUTOFF` differs.
+
 ---
 
 *See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*

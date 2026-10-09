@@ -833,6 +833,16 @@ Fixed, Security, Performance, Documentation, CI, Tests. `Docs`가 아니라 `Doc
 GitHub Release 제목은 정확히 `vX.Y.Z`이고, 본문은 CHANGELOG 섹션에 `**Full Changelog**` 비교 링크
 하나를 붙인 것입니다. `AGENTS.md`의 "GitHub Release Policy"를 참고하세요.
 
+lint는 한 릴리스 안에서 반복되는 `###` 제목도 거부하지만, 섹션 정책과 마찬가지로 `[Unreleased]`와
+1.10.0 이후 릴리스에만 적용합니다. 1.10.0까지의 릴리스 기록(예: 1.9.0의 반복된 `### Documentation`과
+`### Changed`)은 다시 쓰지 않습니다. 서로 다른 릴리스는 같은 제목을 쓸 수 있습니다. 펜스 코드 블록은
+`scripts/lint_changelog.py`와 `scripts/compose_release_changelog.py`에서 같은 규칙을 따릅니다. 펜스 안의
+`###` 줄은 항목 내용이며 제목이 아닙니다. 펜스 안의 `## [` 릴리스 헤더는 오류입니다
+(`scripts/extract_release_notes.py`는 펜스를 인식하지 않아 Release 본문이 잘리기 때문입니다). 닫히지 않은
+펜스도 오류입니다. 0번 열에서 시작하는 백틱 세 개 펜스만 인식하며, 물결표(`~~~`) 펜스나 들여쓴/중첩
+펜스는 인식하지 않습니다. 두 스크립트는 pycubrid, cubrid-mcp-server, cookbook과 공유하며
+`SECTION_POLICY_CUTOFF`만 다릅니다.
+
 ---
 
 *참고: [기여 가이드](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) · [기능 지원](FEATURE_SUPPORT.md) · [연결 가이드](CONNECTION.md)*
