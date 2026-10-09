@@ -266,11 +266,12 @@ Supported and tested CUBRID versions are maintained in
 
 ### CI Matrix
 
-- PR runtime smoke: Ubuntu/Python 3.12 only, selected for code changes.
-- High-risk PR integration: Python 3.14/CUBRID 11.4; targeted extra lanes.
-- main and changed-weekly: one full offline coverage lane, oldest/newest live endpoints.
-- Full integration: manual and every release; no automatic nightly full matrix.
-- Details, change classification and gate requirements: [CI policy](docs/CI_POLICY.md).
+Routine CI is tiered: pull requests run one representative cell, main and
+changed-weekly runs cover the oldest/newest supported Python and CUBRID endpoints,
+and the full integration matrix runs only on manual dispatch and every release
+(no automatic nightly full matrix). The exact cells, change classification and
+gate requirements live in [CI policy](docs/CI_POLICY.md); check it rather than
+copying versions here.
 
 ## Documentation Map
 
@@ -290,6 +291,10 @@ Supported and tested CUBRID versions are maintained in
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security vulnerability reporting |
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
+| `docs/SUPPORT_MATRIX.md` | Supported Python, SQLAlchemy, CUBRID and driver versions |
+| `docs/CI_POLICY.md` | CI tiers, selected cells and gate requirements |
+| `docs/PERFORMANCE.md` | Performance measurements and benchmark pointers |
+| `ROADMAP.md` | Current roadmap (public) |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 
 ## Issue specification and ownership
@@ -483,5 +488,6 @@ sqlalchemy-cubrid provides ORM-level validation that pycubrid driver improvement
 the application layer. Current benchmark results and methodology live in
 [docs/PERFORMANCE.md](docs/PERFORMANCE.md) and
 [cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark); current priorities live
-in [ROADMAP.md](ROADMAP.md) and the
-[CUBRID Ecosystem Roadmap](https://github.com/orgs/cubrid-lab/projects/2) board, not here.
+in [ROADMAP.md](ROADMAP.md) (public) and the
+[CUBRID Ecosystem Roadmap](https://github.com/orgs/cubrid-lab/projects/2) board (org
+members only), not here.
