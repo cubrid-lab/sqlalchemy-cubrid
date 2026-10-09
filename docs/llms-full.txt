@@ -7114,7 +7114,7 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | Ordinary code PR | One Ubuntu/Python 3.12 full offline suite with the 95% coverage floor (#742) |
 | High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
 | Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.14) (#734); oldest/newest live endpoints |
-| Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.14 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes (#737) |
+| Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.14 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes; the compliance step needs code changes in the previous seven days (#737) |
 | Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.14 offline cells (#737) |
 
 PRs run the same full offline selection (`-m "not integration and not repo"`) and
@@ -7169,8 +7169,7 @@ advisory SQLAlchemy canary runs on the weekly schedule and manual dispatches (#7
 ## Event tiers and cost evidence
 
 #737 gives each expensive workflow event one purpose: pull requests stay fast and
-representative, `main` pushes and the weekly schedule carry endpoint and canary
-evidence, and the release runs the full matrix and fails closed. Consolidation
+representative, `main` pushes carry endpoint evidence; the weekly schedule also carries the canaries, and the release runs the full matrix and fails closed. Consolidation
 removed only lanes whose assertions another lane on the same SHA already makes,
 or advisory lanes that gate nothing.
 
@@ -7197,11 +7196,13 @@ workflow shape changed often in early October, so windows are short.
 | Release (`publish-pypi.yml` with `integration-full.yml`) | 2026-10-04..09 (2) | 35 | 82.4 | 103.5 | 14.2 | 1 (cookbook verification) / 0 |
 | `integration-full.yml` dispatch | 2026-09-27..10-08 (8) | 24 | 73.4 | 85.5 | 8.0 | 0 / 0 |
 
-Over the 59 code pushes to `main` from 2026-10-01 to 2026-10-09, 9 runs failed
-and 12 were cancelled. Each failure (all on 2026-10-03) was `offline-tests`
+Over the 72 code pushes to `main` from 2026-10-01 to 2026-10-09 (a "code push" is
+a `main` push run where `offline-tests` or `typecheck` ran; 84 pushes in total),
+47 succeeded, 9 failed and 16 were cancelled. Each failure (all on 2026-10-03) was `offline-tests`
 together with `sqlalchemy-21-canary` on the same run; `live-smoke`, `make-integration` and `integration-tests` never failed on
-a push. All 11 failures of `sqlalchemy-21-canary` in the sample coincided with an
-`offline-tests` failure, so the canary added no independent signal on pushes.
+a push. All 9 failures of `sqlalchemy-21-canary` in every non-PR `ci.yml` run from
+2026-09-25 to 2026-10-09 (all attempts), all on 2026-10-03, coincided with an
+`offline-tests (3.12)` failure, so the canary added no independent signal on pushes.
 
 Median per-job runner minutes on code pushes: `integration-tests` 5.3 per cell,
 `make integration` 2.1, `repo-tests` 1.6, `live-smoke` 1.3, `offline-tests` 0.7–0.8
@@ -7221,7 +7222,7 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 | `make integration` | `ci.yml` `make-integration`; `integration-full.yml` `make-integration` (both drivers, CUBRID 10.2 and 11.4) | Non-PR code; dispatch and release |
 | CUBRID/Python endpoints | `ci.yml` `integration-tests` (3.14/11.4 on risk PRs, plus 3.11/10.2 on non-PR code); `integration-full.yml` `integration-full` (4 × 4) | Risk PR, non-PR code; dispatch and release |
 | SQLAlchemy dialect compliance (gating) | `ci.yml` `integration-tests`: CUBRIDdb lane on 3.14/11.4, released-pycubrid lane on both cells | Risk PR (3.14/11.4), non-PR code (both cells) |
-| SQLAlchemy compliance, CUBRIDdb on the oldest cell (advisory) | `ci.yml` `integration-tests` (3.11/10.2) | Weekly schedule and dispatch |
+| SQLAlchemy compliance, CUBRIDdb on the oldest cell (advisory) | `ci.yml` `integration-tests` (3.11/10.2) | Weekly runs with code changes in the previous 7 days, and code dispatches |
 | SQLAlchemy pre-release canary (advisory) | `ci.yml` `sqlalchemy-21-canary` | Weekly schedule and dispatch |
 | pycubrid upstream canary (advisory, reported) | `upstream-canary.yml` | Thursday 06:00 UTC and dispatch |
 | Driver differential | `ci.yml` `integration-tests`; `integration-full.yml` `integration-full` | Risk PR, non-PR code; dispatch and release |
@@ -7237,7 +7238,11 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
   on the same SHA runs every one of those tests with the same Python, server
   version and URL, in an environment that installs a superset of the packages
   (`.[dev,pycubrid]`, which includes Alembic) and with the stricter
-  `check_not_all_skipped` guard. No assertion is lost. `integration-tests` is
+  `check_not_all_skipped` guard. No assertion is lost. The removed job installed
+  only `.[pycubrid,alembic] pytest`, without the dev extras, while `make-integration`
+  uses `.[dev,pycubrid]`; `packaging-smoke-test` covers importing the package in a
+  minimal install but not running the smoke tests without dev-only packages. This
+  trade-off is accepted. `integration-tests` is
   kept: its CUBRIDdb lanes, compliance suites, driver differential,
   transactional DDL and server-restart steps are unique.
 - `sqlalchemy-21-canary` runs on the weekly schedule and manual dispatches only,
@@ -7246,7 +7251,9 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
   commits, and in the sample it never added a failure that `offline-tests` did
   not already report.
 - The advisory CUBRIDdb compliance step of the oldest `integration-tests` cell
-  (Python 3.11, CUBRID 10.2) runs on the weekly schedule and manual dispatches.
+  (Python 3.11, CUBRID 10.2) runs inside `integration-tests`, which requires code
+  changes, so only on weekly runs with code changes in the previous 7 days and on
+  code dispatches.
   It is `continue-on-error`, so it never gated a push; the gating
   released-pycubrid compliance lane of the same cell still runs on every code
   push.
@@ -7282,7 +7289,7 @@ fails unless they succeed. This repeats about 1.5 runner minutes per release.
 Requiring the push run instead would have needed a polling job (which holds a
 runner for at least as long), `actions: read` on the release workflow, which is
 kept identical across cubrid-lab repositories, and non-cancelling push runs,
-which would have finished the 12 superseded runs measured above.
+which would have finished the 16 cancelled runs measured above.
 
 The SQLAlchemy compliance lanes, type checking, `alembic-compat` and the
 pycubrid-extra and Alembic checks of `packaging-smoke-test` in `ci.yml` are still

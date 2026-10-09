@@ -10,7 +10,7 @@
 | 일반 코드 PR | 95% 커버리지 기준을 적용한 Ubuntu/Python 3.12 전체 오프라인 스위트 하나(#742) |
 | 고위험 PR | 같은 전체 오프라인 스위트와 Python 3.14/CUBRID 11.4. 필요하면 대상 레인 추가 |
 | main으로의 코드 푸시 | 기존 95% 커버리지 기준을 적용한 Ubuntu 전체 오프라인 스위트를 지원하는 가장 오래된·최신 Python(3.11, 3.14)에서 실행(#734). 최저·최신 라이브 엔드포인트 |
-| 월요일 03:00 UTC | main 푸시와 같은 정책(Python 3.11/3.14 오프라인 셀 포함)으로 최근 7일의 변경을 비교. 변경이 없거나 문서만 바뀐 이력은 런타임 테스트를 선택하지 않음. 권고용 SQLAlchemy 프리릴리스 카나리와 가장 오래된 셀의 권고용 CUBRIDdb 컴플라이언스는 푸시가 아니라 여기서 실행(#737) |
+| 월요일 03:00 UTC | main 푸시와 같은 정책(Python 3.11/3.14 오프라인 셀 포함)으로 최근 7일의 변경을 비교. 변경이 없거나 문서만 바뀐 이력은 런타임 테스트를 선택하지 않음. 권고용 SQLAlchemy 프리릴리스 카나리와 가장 오래된 셀의 권고용 CUBRIDdb 컴플라이언스는 푸시가 아니라 여기서 실행하며, 컴플라이언스 단계는 최근 7일에 코드 변경이 있어야 실행(#737) |
 | 명시적 전체 실행 또는 릴리스 | 기존 전체 Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 통합 워크플로와 필수 릴리스 레인, 그리고 Python 3.11/3.14 오프라인 셀(#737) |
 
 PR은 푸시와 같은 전체 오프라인 선택(`-m "not integration and not repo"`)과 95%
@@ -62,7 +62,7 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 ## 이벤트 계층과 비용 근거
 
 #737은 비용이 큰 워크플로 이벤트마다 목적을 하나씩 둡니다. PR은 빠르고 대표적인
-검사를 유지하고, `main` 푸시와 주간 일정은 엔드포인트와 카나리 증거를 담당하며,
+검사를 유지하고, `main` 푸시는 엔드포인트 증거를 담당하고 주간 일정은 카나리도 담당하며,
 릴리스는 전체 매트릭스를 실행하고 실패 시 닫힌 상태로 실패합니다(fail closed).
 통합 정리에서는 같은 SHA의 다른 레인이 이미 같은 단언을 하는 레인, 또는 아무것도
 차단하지 않는 권고 레인만 제거했습니다.
@@ -89,11 +89,12 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 | 릴리스(`publish-pypi.yml`과 `integration-full.yml`) | 2026-10-04..09 (2) | 35 | 82.4 | 103.5 | 14.2 | 1 (cookbook 검증) / 0 |
 | `integration-full.yml` 수동 실행 | 2026-09-27..10-08 (8) | 24 | 73.4 | 85.5 | 8.0 | 0 / 0 |
 
-2026-10-01부터 2026-10-09까지 `main`으로의 코드 푸시 59건 중 9건이 실패하고 12건이
-취소되었습니다. 실패(모두 2026-10-03)는 모두 같은 실행에서 `offline-tests`와
+2026-10-01부터 2026-10-09까지 `main`으로의 코드 푸시 72건("코드 푸시"는 `offline-tests` 또는
+`typecheck`가 실행된 `main` 푸시 실행이며, 전체 푸시는 84건) 중 47건이 성공하고 9건이
+실패하고 16건이 취소되었습니다. 실패(모두 2026-10-03)는 모두 같은 실행에서 `offline-tests`와
 `sqlalchemy-21-canary`가 함께 실패한 것이며, `live-smoke`, `make-integration`,
-`integration-tests`는 푸시에서 한 번도 실패하지 않았습니다. 표본에서
-`sqlalchemy-21-canary`의 실패 11건은 모두 `offline-tests` 실패와 겹쳤으므로, 이
+`integration-tests`는 푸시에서 한 번도 실패하지 않았습니다. 2026-09-25부터 2026-10-09까지 PR이 아닌 모든 `ci.yml` 실행(모든 시도)에서
+`sqlalchemy-21-canary`의 실패 9건(모두 2026-10-03)은 모두 `offline-tests (3.12)` 실패와 겹쳤으므로, 이
 카나리는 푸시에서 독립적인 신호를 더하지 않았습니다.
 
 코드 푸시에서의 잡별 러너 분 중앙값: `integration-tests` 셀당 5.3, `make integration`
@@ -114,7 +115,7 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 | `make integration` | `ci.yml` `make-integration`, `integration-full.yml` `make-integration`(두 드라이버, CUBRID 10.2와 11.4) | PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | CUBRID/Python 엔드포인트 | `ci.yml` `integration-tests`(고위험 PR은 3.14/11.4, PR이 아닌 코드 이벤트는 3.11/10.2 추가), `integration-full.yml` `integration-full`(4 × 4) | 고위험 PR, PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | SQLAlchemy 다이얼렉트 컴플라이언스(차단) | `ci.yml` `integration-tests`: 3.14/11.4의 CUBRIDdb 레인, 두 셀의 릴리스된 pycubrid 레인 | 고위험 PR(3.14/11.4), PR이 아닌 코드 이벤트(두 셀) |
-| 가장 오래된 셀의 CUBRIDdb SQLAlchemy 컴플라이언스(권고) | `ci.yml` `integration-tests`(3.11/10.2) | 주간 일정과 수동 실행 |
+| 가장 오래된 셀의 CUBRIDdb SQLAlchemy 컴플라이언스(권고) | `ci.yml` `integration-tests`(3.11/10.2) | 최근 7일에 코드 변경이 있는 주간 실행, 코드 수동 실행 |
 | SQLAlchemy 프리릴리스 카나리(권고) | `ci.yml` `sqlalchemy-21-canary` | 주간 일정과 수동 실행 |
 | pycubrid 업스트림 카나리(권고, 보고) | `upstream-canary.yml` | 목요일 06:00 UTC와 수동 실행 |
 | 드라이버 차등 비교 | `ci.yml` `integration-tests`, `integration-full.yml` `integration-full` | 고위험 PR, PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
@@ -129,7 +130,10 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
   실행했습니다. 두 파일 모두 `integration` 표시가 있으므로, 같은 SHA의
   `make-integration`이 같은 Python, 서버 버전, URL로 그 테스트를 모두 실행합니다. 그
   환경은 패키지의 상위 집합(Alembic을 포함하는 `.[dev,pycubrid]`)을 설치하고 더 엄격한
-  `check_not_all_skipped` 가드를 씁니다. 잃는 단언은 없습니다. `integration-tests`는
+  `check_not_all_skipped` 가드를 씁니다. 잃는 단언은 없습니다. 제거된 잡은 dev extra 없이 `.[pycubrid,alembic] pytest`만
+  설치했고 `make-integration`은 `.[dev,pycubrid]`를 쓰지만, `packaging-smoke-test`가
+  최소 설치에서 패키지 임포트를 확인할 뿐 dev 전용 패키지 없이 스모크 테스트를
+  실행하는 것은 검증하지 않습니다. 이 절충은 수용합니다. `integration-tests`는
   유지합니다. CUBRIDdb 레인, 컴플라이언스 스위트, 드라이버 차등 비교, 트랜잭션 DDL,
   서버 재시작 단계는 이 잡에만 있습니다.
 - `sqlalchemy-21-canary`는 변경 내용과 관계없이 주간 일정과 수동 실행에서만 실행되며
@@ -137,7 +141,7 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
   업스트림 SQLAlchemy 프리릴리스를 감시하며, 표본에서 `offline-tests`가 이미 보고하지
   않은 실패를 더한 적이 없습니다.
 - 가장 오래된 `integration-tests` 셀(Python 3.11, CUBRID 10.2)의 권고용 CUBRIDdb
-  컴플라이언스 단계는 주간 일정과 수동 실행에서 실행됩니다. `continue-on-error`이므로
+  컴플라이언스 단계는 코드 변경이 필요한 `integration-tests` 안에서 실행되므로, 최근 7일에 코드 변경이 있는 주간 실행과 코드 수동 실행에서만 실행됩니다. `continue-on-error`이므로
   푸시를 차단한 적이 없고, 같은 셀의 차단용 릴리스된 pycubrid 컴플라이언스 레인은
   여전히 모든 코드 푸시에서 실행됩니다.
 - `upstream-canary.yml`은 월요일 `ci.yml` 일정과 겹치지 않도록 월요일 06:00 UTC에서
@@ -171,7 +175,7 @@ Actions 데이터와 비교하세요.
 러너 분이 반복됩니다. 대신 푸시 실행을 요구하려면 (적어도 그만큼 러너를 붙잡는) 폴링
 잡, cubrid-lab 저장소 사이에서 동일하게 유지하는 릴리스 워크플로의 `actions: read`
 권한, 그리고 취소되지 않는 푸시 실행이 필요했고, 마지막 것은 위에서 측정한 대체된
-실행 12건을 끝까지 실행하게 했을 것입니다.
+취소된 실행 16건을 끝까지 실행하게 했을 것입니다.
 
 `ci.yml`의 SQLAlchemy 컴플라이언스 레인, 타입 검사, `alembic-compat`,
 `packaging-smoke-test`의 pycubrid extra 및 Alembic 검사는 여전히 릴리스가 반복하지

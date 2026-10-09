@@ -352,6 +352,12 @@ def test_live_smoke_is_folded_into_make_integration() -> None:
     run = next(s for s in make["steps"] if s.get("name") == "Run make integration")
     assert "make integration INTEGRATION_DRIVER=pycubrid " in run["run"]
     assert run["env"]["CUBRID_VERSION"] == "11.4"
+    guard = [
+        s
+        for s in make["steps"]
+        if "python -m scripts.check_not_all_skipped make-integration.log" in s.get("run", "")
+    ]
+    assert len(guard) == 1
     assert "run $(PYTEST) $(TESTS)/ -m integration -v" in (ROOT / "Makefile").read_text()
     for name in ("test_integration.py", "test_regression.py"):
         text = (ROOT / "test" / name).read_text()
