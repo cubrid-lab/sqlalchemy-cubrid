@@ -287,10 +287,11 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
   Dependabot `pip` 항목이 업데이트를 제안하므로, 업스트림 릴리스가 저장소 변경 없이
   엄격 빌드를 깨뜨릴 수 없습니다.
 - **스캔 동시성 (#762).** `codeql.yml`과 `security.yml`은 그룹
-  `${{ github.workflow }}-${{ github.ref }}`,
+  `${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}`,
   `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`로 `concurrency`를
-  설정합니다. 풀 리퀘스트에서는 새 푸시가 이전 스캔을 취소하지만, main 푸시와 주간
-  예약 실행은 취소되지 않습니다. 스캔 범위는 바뀌지 않습니다.
+  설정합니다. 풀 리퀘스트에서는 새 푸시가 이전 스캔을 취소하지만, 그 외 이벤트는 실행마다 고유한 그룹을 받습니다(같은 그룹에서는
+  `cancel-in-progress`가 없어도 대기 중인 실행이 대체됨). 따라서 main 푸시와 주간
+  예약 실행은 취소되거나 누락되지 않습니다. 스캔 범위는 바뀌지 않습니다.
 - **선언된 pycubrid 하한 (#764).** `pyproject.toml`은 `pycubrid>=1.8.0,<2.0`을 선언하고,
   `ci.yml`의 게이트 컴플라이언스 레인은 `pycubrid==1.8.0`을 설치합니다(통합 잡은 최신
   릴리스를 설치하므로 하한을 검증하는 유일한 레인). `test/test_workflow_hygiene.py`는 고정

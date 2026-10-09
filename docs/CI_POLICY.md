@@ -306,10 +306,12 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   `/.github/docs-requirements` proposes updates, so an upstream release cannot
   break the strict build without a repository change.
 - **Scan concurrency (#762).** `codeql.yml` and `security.yml` set
-  `concurrency` with group `${{ github.workflow }}-${{ github.ref }}` and
+  `concurrency` with group `${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}` and
   `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`: a new push
-  cancels the superseded scan on a pull request, while main pushes and the
-  weekly schedule are never cancelled. Scan coverage is unchanged.
+  cancels the superseded scan on a pull request, while every other event gets a
+  unique per-run group (GitHub replaces a pending run within one group even
+  without `cancel-in-progress`), so main pushes and the weekly schedule are
+  never cancelled or dropped. Scan coverage is unchanged.
 - **Declared pycubrid floor (#764).** `pyproject.toml` declares
   `pycubrid>=1.8.0,<2.0`; the gating compliance lane in `ci.yml` installs
   `pycubrid==1.8.0`, the only lane that exercises the floor (the integration

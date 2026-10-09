@@ -57,7 +57,9 @@ def test_dependabot_updates_the_docs_requirements() -> None:
 def test_scan_workflows_cancel_superseded_pull_requests_only() -> None:
     for name in ("codeql.yml", "security.yml"):
         concurrency = _workflow(name)["concurrency"]
-        assert concurrency["group"] == "${{ github.workflow }}-${{ github.ref }}", name
+        assert concurrency["group"] == (
+            "${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}"
+        ), name
         assert concurrency["cancel-in-progress"] == (
             "${{ github.event_name == 'pull_request' }}"
         ), f"{name} must never cancel main or scheduled runs"
