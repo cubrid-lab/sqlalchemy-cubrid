@@ -17,6 +17,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   offline cell fails, is cancelled or is unexpectedly skipped. CI only; the dialect
   is unchanged.
 
+### Documentation
+- **`AGENTS.md` no longer carries stale planning context (#736)** — the
+  "Performance Loop System" snapshot (R3 phases, issues #68/#70 as current work) is
+  replaced by a short performance-context statement pointing to
+  `docs/PERFORMANCE.md`, cubrid-benchmark, `ROADMAP.md` and the org project board.
+  Volatile counts and inventories (module count, requirement-flag count, tested CUBRID
+  versions, default Docker version, test file list) are removed or point to their
+  canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only.
+
 ## [1.10.0] - 2026-10-08
 
 ### Upgrade notes
