@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Documentation site build on pull requests (#786)** — `ci.yml` gains a `docs-build` job
+  that runs the `docs.yml` build (install `.github/docs-requirements/requirements.txt`,
+  `scripts/generate_llms_full.py`, `mkdocs build --strict`) when `docs/**`, `mkdocs.yml`,
+  `scripts/generate_llms_full.py`, `.github/docs-requirements/**`, `docs.yml` or `ci.yml`
+  change. The new `site` path filter selects it, `matrix-result` expects it exactly when
+  selected, and it never uploads or deploys anything. Previously a broken strict build or
+  docs-tool pin bump only failed on `main`. CI only; the dialect is unchanged.
 - **Docs tools pinned, scan concurrency, pycubrid floor test and stale "nightly" wording (#761, #762, #764, #747)** —
   `docs.yml` installs `mkdocs`, `mkdocs-material` and `pymdown-extensions` from the exact pins in
   `.github/docs-requirements/requirements.txt`, which Dependabot now updates. `codeql.yml` and

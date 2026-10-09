@@ -71,6 +71,8 @@ def test_workflow_impact_table(name: str) -> None:
     groups = _selected(f".github/workflows/{name}")
     # Every workflow is validated by the tooling lane and the full offline suite.
     assert {"code", "tooling"} <= groups, name
+    # #786: only the workflows that define or mirror the docs build select it.
+    assert ("site" in groups) == (name in {"ci.yml", "docs.yml"}), name
     if name == "ci.yml":
         assert "risk" in groups, "ci.yml defines and runs the live lanes"
     else:
@@ -86,7 +88,11 @@ def test_workflow_impact_table(name: str) -> None:
         ("scripts/check_not_all_skipped.py", {"code", "risk", "tooling"}),
         ("pyproject.toml", {"code", "risk", "tooling"}),
         ("test/test_compiler.py", {"code"}),
-        ("docs/CI_POLICY.md", {"docs"}),
+        ("docs/CI_POLICY.md", {"docs", "site"}),
+        (".github/docs-requirements/requirements.txt", {"code", "tooling", "site"}),
+        ("mkdocs.yml", {"code", "site"}),
+        ("scripts/generate_llms_full.py", {"code", "risk", "tooling", "site"}),
+        ("CHANGELOG.md", {"docs"}),
         ("README.md", {"docs"}),
         ("THIRD_PARTY_LICENSES.md", {"docs", "tooling"}),
         ("test/test_third_party_licenses.py", {"code", "tooling"}),

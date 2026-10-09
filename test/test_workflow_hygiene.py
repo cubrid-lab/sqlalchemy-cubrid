@@ -40,12 +40,23 @@ def test_docs_requirements_pin_every_docs_tool_exactly() -> None:
 
 
 def test_every_docs_build_installs_from_the_pinned_file() -> None:
-    builds = [p for p in WORKFLOWS.glob("*.yml") if "mkdocs build" in p.read_text()]
-    assert builds, "no workflow builds the docs site"
-    for path in builds:
-        runs = _runs(yaml.safe_load(path.read_text()))
-        installs = [r for r in runs if "pip install" in r]
-        assert installs == [f"pip install -r {DOCS_REQUIREMENTS}"], path.name
+    builds = [
+        (path.name, job)
+        for path in WORKFLOWS.glob("*.yml")
+        for job in yaml.safe_load(path.read_text())["jobs"].values()
+        if any("mkdocs build" in step.get("run", "") for step in job.get("steps", []))
+    ]
+    assert {name for name, _ in builds} == {"docs.yml", "ci.yml"}
+    for name, job in builds:
+        installs = [
+            line.strip()
+            for step in job["steps"]
+            for line in step.get("run", "").splitlines()
+            if "pip install" in line
+        ]
+        # ci.yml's PR build (#786) installs with uv like every other ci.yml job.
+        installer = "uv pip install --system" if name == "ci.yml" else "pip install"
+        assert installs == [f"{installer} -r {DOCS_REQUIREMENTS}"], name
 
 
 def test_dependabot_updates_the_docs_requirements() -> None:
