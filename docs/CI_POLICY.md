@@ -299,12 +299,27 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
 
 ## Docs tooling, scan concurrency and the pycubrid floor
 
-- **Pinned docs tools (#761).** `docs.yml`, the only workflow that runs
-  `mkdocs build --strict`, installs `mkdocs`, `mkdocs-material` and
+- **Pinned docs tools (#761).** `docs.yml` and the `docs-build` job of `ci.yml`
+  (see below) run `mkdocs build --strict`; `docs.yml` installs `mkdocs`, `mkdocs-material` and
   `pymdown-extensions` from `.github/docs-requirements/requirements.txt`, which
   pins exact versions. A dedicated Dependabot `pip` entry for
   `/.github/docs-requirements` proposes updates, so an upstream release cannot
   break the strict build without a repository change.
+- **Documentation site build on pull requests (#786).** `ci.yml` builds the site
+  before merge, so a docs edit or a docs-tool pin bump that breaks
+  `mkdocs build --strict` fails on the pull request instead of later on `main`. The
+  `docs-build` job is selected by the `site` path filter: `docs/**` (content,
+  translations and assets), `mkdocs.yml`, `scripts/generate_llms_full.py`,
+  `.github/docs-requirements/**`, `.github/workflows/docs.yml` and
+  `.github/workflows/ci.yml`. Root `*.md` files are not site inputs, so they do not
+  select it, and `workflow_dispatch` forces it like the other lanes. The job runs the
+  `docs.yml` build steps (install from `.github/docs-requirements/requirements.txt`
+  with the pinned uv, `scripts/generate_llms_full.py`, `mkdocs build --strict`) with
+  read-only permissions, pinned actions, a 10-minute timeout and
+  `persist-credentials: false`; it never uploads a Pages artifact or deploys. The
+  `matrix-result` gate expects `docs-build` to succeed exactly when `site` is selected
+  and accepts a skip otherwise. `test/test_ci_policy.py`,
+  `test/test_workflow_path_impact.py` and `test/test_workflow_hygiene.py` enforce this.
 - **Scan concurrency (#762).** `codeql.yml` and `security.yml` set
   `concurrency` with group `${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}` and
   `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`: a new push

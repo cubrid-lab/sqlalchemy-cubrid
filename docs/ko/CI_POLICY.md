@@ -281,11 +281,24 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
 
 ## 문서 도구, 스캔 동시성, pycubrid 하한
 
-- **문서 도구 고정 (#761).** `mkdocs build --strict`를 실행하는 유일한 워크플로인
-  `docs.yml`은 `mkdocs`, `mkdocs-material`, `pymdown-extensions`를 정확한 버전이 고정된
+- **문서 도구 고정 (#761).** `docs.yml`과 `ci.yml`의 `docs-build` 작업(아래 참고)이
+  `mkdocs build --strict`를 실행하며, `docs.yml`은 `mkdocs`, `mkdocs-material`, `pymdown-extensions`를 정확한 버전이 고정된
   `.github/docs-requirements/requirements.txt`에서 설치합니다. `/.github/docs-requirements`용
   Dependabot `pip` 항목이 업데이트를 제안하므로, 업스트림 릴리스가 저장소 변경 없이
   엄격 빌드를 깨뜨릴 수 없습니다.
+- **풀 리퀘스트의 문서 사이트 빌드 (#786).** `ci.yml`이 병합 전에 사이트를 빌드하므로,
+  `mkdocs build --strict`를 깨뜨리는 문서 수정이나 문서 도구 버전 갱신은 나중에 `main`이
+  아니라 풀 리퀘스트에서 실패합니다. `docs-build` 작업은 `site` 경로 필터로 선택됩니다:
+  `docs/**`(콘텐츠, 번역, 자산), `mkdocs.yml`, `scripts/generate_llms_full.py`,
+  `.github/docs-requirements/**`, `.github/workflows/docs.yml`,
+  `.github/workflows/ci.yml`. 루트 `*.md` 파일은 사이트 입력이 아니므로 이 작업을
+  선택하지 않으며, `workflow_dispatch`는 다른 레인처럼 이 작업을 강제로 선택합니다.
+  이 작업은 `docs.yml`의 빌드 단계(고정된 uv로 `.github/docs-requirements/requirements.txt`
+  설치, `scripts/generate_llms_full.py`, `mkdocs build --strict`)를 읽기 전용 권한, 고정된
+  액션, 10분 타임아웃, `persist-credentials: false`로 실행하며 Pages 아티팩트를 올리거나
+  배포하지 않습니다. `matrix-result` 게이트는 `site`가 선택된 경우에만 `docs-build`의
+  성공을 요구하고 그 외에는 건너뜀을 허용합니다. `test/test_ci_policy.py`,
+  `test/test_workflow_path_impact.py`, `test/test_workflow_hygiene.py`가 이를 검증합니다.
 - **스캔 동시성 (#762).** `codeql.yml`과 `security.yml`은 그룹
   `${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}`,
   `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`로 `concurrency`를

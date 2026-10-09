@@ -415,3 +415,73 @@ def test_release_runs_the_offline_endpoint_cells_itself() -> None:
     release_gate = full["full-matrix-result"]
     assert "offline-endpoints" in release_gate["needs"]
     assert "needs.offline-endpoints.result" in release_gate["steps"][0]["run"]
+
+
+# --- #786: documentation site build on pull requests ------------------------
+
+
+def detect() -> dict:
+    return workflow("ci.yml")["jobs"]["detect-changes"]
+
+
+def test_docs_build_job_mirrors_docs_workflow_and_stays_build_only() -> None:
+    job = workflow("ci.yml")["jobs"]["docs-build"]
+    assert job["needs"] == "detect-changes"
+    assert job["if"] == "needs.detect-changes.outputs.site == 'true'"
+    assert job["timeout-minutes"] == 10
+    assert "permissions" not in job, "inherits the read-only workflow permissions"
+    assert workflow("ci.yml")["permissions"] == {"contents": "read", "pull-requests": "read"}
+    assert "environment" not in job
+    steps = job["steps"]
+    checkout = next(s for s in steps if s["uses"].startswith("actions/checkout@"))
+    assert checkout["with"]["persist-credentials"] is False
+    for step in steps:
+        if "uses" in step:
+            assert len(step["uses"].split("@", 1)[1].split()[0]) == 40, step["uses"]
+            assert "pages" not in step["uses"], "PRs never upload or deploy a Pages artifact"
+    runs = [s["run"] for s in steps if "run" in s]
+    assert runs[0].splitlines()[0] == (
+        "uv pip install --system -r .github/docs-requirements/requirements.txt"
+    )
+    # Same build commands, in the same order, as docs.yml's build job.
+    docs_runs = [s["run"] for s in workflow("docs.yml")["jobs"]["build"]["steps"] if "run" in s]
+    assert (
+        runs[1:]
+        == docs_runs[1:]
+        == ["python scripts/generate_llms_full.py", "mkdocs build --strict"]
+    )
+    assert docs_runs[0] == "pip install -r .github/docs-requirements/requirements.txt"
+
+
+def test_docs_site_selection_covers_every_site_input() -> None:
+    step = next(s for s in detect()["steps"] if s.get("id") == "filter")
+    filters = yaml.safe_load(step["with"]["filters"])
+    assert set(filters["site"]) == {
+        "docs/**",  # content, nav assets and translations
+        "mkdocs.yml",
+        "scripts/generate_llms_full.py",
+        ".github/docs-requirements/**",
+        ".github/workflows/docs.yml",
+        ".github/workflows/ci.yml",
+    }
+
+
+def test_docs_site_output_is_forced_only_for_manual_dispatch() -> None:
+    out = detect()["outputs"]["site"]
+    assert "github.event_name == 'workflow_dispatch' ||" in out
+    assert "steps.filter.outputs.site == 'true'" in out
+
+
+def test_gate_expects_docs_build_exactly_when_the_site_is_selected() -> None:
+    step = gate()["steps"][0]
+    assert step["env"]["E_DOCS_BUILD"] == "${{ needs.detect-changes.outputs.site }}"
+    assert "docs-build" in gate()["needs"]
+    base = {"detect-changes", "lint", "doc-lint", "docs-build"}
+    assert run_gate(base, {}).returncode == 0
+    for result in ("failure", "cancelled", "skipped"):
+        completed = run_gate(base, {"docs-build": result})
+        assert completed.returncode != 0
+        assert f"docs-build expected success, got {result}" in completed.stdout
+    # Not selected: a skipped build passes, a failed one still blocks.
+    assert run_gate(base - {"docs-build"}, {}).returncode == 0
+    assert run_gate(base - {"docs-build"}, {"docs-build": "failure"}).returncode != 0
