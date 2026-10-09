@@ -69,7 +69,9 @@ instead of 3.12. The supported range between them is covered by those endpoints
 plus the 3.12 PR evidence; 3.13 has no routine offline cell. Both kinds of run use
 the same selection (`-m "not integration and not repo"`), the 95% coverage floor
 and the `detect-changes` `code` output: a docs-only push, or a week without code
-changes, selects no offline cell at all. Each cell uploads its own
+changes, selects no offline cell at all. A `workflow_dispatch` on `main` has no
+previous push to compare with, so `paths-filter` selects cells from its last commit
+only: dispatching right after a docs-only merge runs no offline cell. Each cell uploads its own
 `coverage-report-py<version>` artifact, so the cells do not collide on one name.
 
 | Event | `offline-tests` cells |
@@ -84,7 +86,9 @@ unexpected; each fails the required gate. Compared with the former single 3.12
 cell, a code push or weekly run adds one offline job of about the same length
 (the job budget is 15 minutes); pull requests are unchanged. `integration-full.yml`
 gains no offline cells: the release commit is a `main` commit whose push run
-already carries the endpoint evidence, which avoids repeating it (#737). The
+normally carries the endpoint evidence, which avoids repeating it. Nothing in
+the release path enforces that run's success yet, and a later merge can cancel it
+through the push concurrency group; #737 tracks closing that gap. The
 repository-tooling lane stays on the representative Python 3.12 cell.
 `test/test_ci_policy.py` renders the matrix for each event and runs the gate
 against failed, cancelled and skipped offline results.

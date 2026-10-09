@@ -184,7 +184,8 @@ def test_full_offline_suite_runs_on_every_event_in_linux_lanes() -> None:
     coverage = next(s for s in steps if s.get("name") == "Run offline tests with coverage")
     upload = next(s for s in steps if s.get("name") == "Upload coverage")
     # PRs run the same full selection and coverage floor as pushes (#742).
-    assert "if" not in coverage and "if" not in upload
+    # No event filter on either step; the upload may only widen to always().
+    assert "if" not in coverage and upload.get("if", "always()") == "always()"
     assert "test/" in coverage["run"].split()
     assert '-m "not integration and not repo"' in coverage["run"]
     assert "--cov-fail-under=95" in coverage["run"]
@@ -198,13 +199,11 @@ def test_full_offline_suite_runs_on_every_event_in_linux_lanes() -> None:
     assert "pull_request" in jobs["integration-tests"]["strategy"]["matrix"]
 
 
-@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
 @pytest.mark.parametrize("result", ["failure", "cancelled", "skipped"])
-def test_offline_endpoint_cell_outcome_fails_the_gate(event: str, result: str) -> None:
+def test_offline_endpoint_cell_outcome_fails_the_gate(result: str) -> None:
     # With fail-fast off, a failed or cancelled endpoint cell makes the
     # offline-tests job result non-success; a skip while code is selected is
-    # unexpected. Each must turn the required gate red on every non-PR event.
-    assert len(offline_cells(event)) == 2
+    # unexpected. Each must turn the required gate red.
     selected = {"detect-changes", "lint", "typecheck", "offline-tests"}
     completed = run_gate(selected, {"offline-tests": result})
     assert completed.returncode != 0

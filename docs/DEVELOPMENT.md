@@ -517,9 +517,10 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI Matrix
 
-Routine CI uses one Ubuntu/Python 3.12 offline lane and representative live
-combinations rather than the full matrix. PRs, main and changed weekly runs all run
-the full offline suite with 95% coverage. High-risk PRs select
+Routine CI uses representative offline and live combinations rather than the full
+matrix. Every run selected for code changes runs the full offline suite with 95%
+coverage: pull requests on Ubuntu/Python 3.12, and main pushes, changed weekly runs
+and manual dispatches on Python 3.11 and 3.14 (#734). High-risk PRs select
 newest integration, while main/weekly use oldest/newest endpoints. Repository
 tooling is path-selected on one Linux lane. Full integration is explicit/manual
 and release-only. See [CI execution policy](CI_POLICY.md) for exact selection and
@@ -664,7 +665,7 @@ pre-commit run --all-files
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
-2. **Offline Tests** — one Ubuntu/Python 3.12 lane; the full offline suite on PRs, main and weekly runs
+2. **Offline Tests** — the full offline suite on Ubuntu/Python 3.12 for PRs, and on Python 3.11 and 3.14 for main, weekly and dispatched runs
 3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
 5. **Coverage** — Enforces ≥ 95% on the full offline lane on every event, PRs included

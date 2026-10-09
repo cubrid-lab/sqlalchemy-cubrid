@@ -294,8 +294,8 @@ not repo" --collect-only`를 실행하거나 `offline-tests` CI job 출력에서
 
 | 워크플로 | Python 버전 | CUBRID 버전 | 소스 |
 |---|---|---|---|
-| PR/push 오프라인 테스트 | 3.12 (전체 스위트, 95% 커버리지, PR과 push) | 해당 없음 (오프라인) | `.github/workflows/ci.yml` |
-| PR/push 통합 테스트 | 축소 매트릭스: 3.14 (11.4와 함께), 3.10 (10.2와 함께) | 11.4, 10.2 — 2개 조합만, 교차 곱이 아님 | `.github/workflows/ci.yml` |
+| PR/push 오프라인 테스트 | PR: 3.12, push·주간·수동 실행: 3.11과 3.14 (전체 스위트, 95% 커버리지) | 해당 없음 (오프라인) | `.github/workflows/ci.yml` |
+| PR/push 통합 테스트 | 축소 매트릭스: 3.14 (11.4와 함께), 3.11 (10.2와 함께) | 11.4, 10.2 — 2개 조합만, 교차 곱이 아님 | `.github/workflows/ci.yml` |
 | 야간 / 릴리스 게이트 / 수동 전체 통합 매트릭스 | 3.10, 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
 
 ---

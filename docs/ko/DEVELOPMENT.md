@@ -501,9 +501,10 @@ tox -e typecheck-sa20,typecheck-sa21
 
 ### CI 매트릭스
 
-일상 CI는 Ubuntu/Python 3.12 오프라인 단일 레인과 대표 통합 조합을 사용합니다.
-PR, main, 최근 변경이 있는 주간 실행 모두 전체 오프라인 검사와 95% 커버리지를
-실행합니다. 고위험 PR은 최신 통합 조합을 선택하고,
+일상 CI는 전체 매트릭스 대신 대표 오프라인·통합 조합을 사용합니다. 코드 변경으로
+선택된 모든 실행은 전체 오프라인 검사와 95% 커버리지를 실행합니다. PR은
+Ubuntu/Python 3.12에서, main 푸시·최근 변경이 있는 주간 실행·수동 실행은 Python
+3.11과 3.14에서 실행합니다(#734). 고위험 PR은 최신 통합 조합을 선택하고,
 main/주간 실행은 최저·최신 조합을 사용합니다. 저장소 도구 검사는 관련 경로에
 따라 Linux 단일 레인에서 실행하며, 선택된 필수 잡은 성공해야 합니다.
 전체 통합 검사는 명시적 수동 실행과 릴리스에서 유지합니다.
@@ -643,7 +644,7 @@ pre-commit run --all-files
 ### CI 파이프라인 단계
 
 1. **Lint** — Ruff check + 포맷 검증
-2. **오프라인 테스트** — Ubuntu/Python 3.12 단일 레인; PR, main, 주간 실행 모두 전체 오프라인 스위트
+2. **오프라인 테스트** — PR은 Ubuntu/Python 3.12, main·주간·수동 실행은 Python 3.11과 3.14에서 전체 오프라인 스위트
 3. **통합 테스트** — 고위험 PR은 최신 조합; main/주간은 2개 조합(Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), 비동기 통합 커버리지와 CUBRIDdb 및 릴리스된 pycubrid의 차단형 [SQLAlchemy 컴플라이언스 레인](#sqlalchemy-컴플라이언스-레인) 포함
 4. **make integration** — 기본 드라이버 pycubrid로 CUBRID 11.4에서 `make integration` 실행: 로컬과 같이 `integration` 마커가 붙은 전체 스위트를 한 세션에서 실행 (두 드라이버 × CUBRID 10.2, 11.4는 수동 전체 검증 및 릴리스 게이트에서 `integration-full.yml`로 실행)
 5. **커버리지** — PR을 포함한 모든 이벤트의 전체 오프라인 레인에서 ≥ 95% 임계값 강제
