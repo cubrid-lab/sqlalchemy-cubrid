@@ -64,7 +64,7 @@ graph TD
     dml["dml.py - ON DUPLICATE KEY UPDATE (Insert), MERGE statement"]
     trace["trace.py - Query tracing helper"]
     types["types.py - CUBRID type system numeric, string, LOB, collection"]
-    req["requirements.py - SA 2.0 test requirement flags (see requirements.py)"]
+    req["requirements.py - SA 2.0 test requirement flags"]
     alembic["alembic_impl.py - CubridImpl for Alembic migrations"]
     typed["py.typed - PEP 561 marker"]
 

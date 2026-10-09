@@ -66,7 +66,7 @@ graph TD
     dml["dml.py - ON DUPLICATE KEY UPDATE (Insert), MERGE 문"]
     trace["trace.py - 쿼리 추적 헬퍼"]
     types["types.py - CUBRID 타입 시스템: 숫자, 문자열, LOB, 컬렉션"]
-    req["requirements.py - SA 2.0 테스트 요구사항 플래그 (`requirements.py` 참조)"]
+    req["requirements.py - SA 2.0 테스트 요구사항 플래그"]
     alembic["alembic_impl.py - Alembic 마이그레이션용 CubridImpl"]
     typed["py.typed - PEP 561 마커"]
 
