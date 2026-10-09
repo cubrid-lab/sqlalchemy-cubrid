@@ -129,7 +129,8 @@ with:
 ```
 
 The cookbook jobs (`Cookbook release verification / Smoke Tests (CUBRID 11.2)`,
-`… (CUBRID 11.4)` and `… / Release verification report`) run as jobs of the
+`… (CUBRID 11.4)`, `Cookbook release verification / Smoke Tests (CUBRID 11.4, Python 3.11)`
+and `… / Release verification report`) run as jobs of the
 release run with its own `GITHUB_TOKEN`: the calling job grants only
 `contents: read`, and **no token, secret or polling** is involved. They install
 exactly `sqlalchemy-cubrid==X.Y.Z` from PyPI (with a bounded retry for publication
@@ -138,6 +139,10 @@ delay, never a fallback to the latest release) and upload the report artifact
 outputs `status`, `requested_version`, `installed_version` and `artifact` are
 checked by `require-cookbook` and shown in the summary. A failed or cancelled
 called workflow is a failed verification.
+
+The release verification report needs all three cells (CUBRID 11.2 / Python 3.12,
+CUBRID 11.4 / Python 3.12 and CUBRID 11.4 / Python 3.11) to succeed; a missing or
+failed cell fails the report and therefore the verification.
 
 The pin is a full commit SHA of the cookbook's `main` branch. Dependabot
 (`github-actions` ecosystem) updates it: the cookbook's version tags do not
