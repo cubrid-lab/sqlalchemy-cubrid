@@ -347,11 +347,55 @@ jobs:
           python -m scripts.check_not_all_skipped make-integration.log \
             --label "make integration (${{ matrix.driver }}, CUBRID ${{ matrix.cubrid-version }})"
 
+  # Oldest/newest supported Python offline suite (#734) on the exact release
+  # SHA (#737). A main push of ci.yml runs the same cells, but nothing in the
+  # release path required that run to succeed, and a later merge can cancel it
+  # through the push concurrency group. The release therefore runs these two
+  # short cells itself and full-matrix-result requires them, instead of polling
+  # for another workflow's run. Keep the cells equal to the ci.yml push cells.
+  offline-endpoints:
+    name: offline-endpoints (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.14"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
+      - name: Install dependencies
+        run: |
+          uv pip install --system -e ".[dev]"
+          uv pip install --system pytest-cov alembic tomli
+          uv pip freeze --system
+      - name: Run offline tests with coverage
+        run: |
+          python -m pytest \
+            test/ \
+            -m "not integration and not repo" \
+            -v --tb=short \
+            --cov=sqlalchemy_cubrid \
+            --cov-report=term-missing \
+            --cov-fail-under=95
+
   full-matrix-result:
     name: Full compatibility matrix result
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [integration-full, make-integration]
+    needs: [integration-full, make-integration, offline-endpoints]
     if: always()
     steps:
       - name: Require all matrix cells to pass
@@ -362,6 +406,10 @@ jobs:
           fi
           if [ "${{ needs.make-integration.result }}" != "success" ]; then
             echo "::error::make integration matrix failed: ${{ needs.make-integration.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.offline-endpoints.result }}" != "success" ]; then
+            echo "::error::Offline Python endpoint cells failed: ${{ needs.offline-endpoints.result }}"
             exit 1
           fi
           echo "Full compatibility matrix passed."

@@ -291,9 +291,13 @@ jobs:
           python -m pytest test/test_alembic_plugin.py test/test_alembic_registration.py \
             test/test_alembic.py test/test_packaging.py -m "not integration" -v --tb=short -rs
 
+  # Advisory SQLAlchemy pre-release canary (#737): the weekly schedule and manual
+  # dispatches run it whatever changed, because it watches upstream drift rather
+  # than this repository's diff. Main pushes no longer repeat it: in the measured
+  # window every canary failure coincided with an offline-tests failure on the
+  # same run. It stays outside matrix-result and never gates.
   sqlalchemy-21-canary:
-    needs: detect-changes
-    if: needs.detect-changes.outputs.extended == 'true'
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     continue-on-error: true  # Canary: warn, don't gate. SA pre-releases may break.
@@ -373,23 +377,6 @@ jobs:
           cd /tmp
           /tmp/test-sdist/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
 
-  live-smoke:
-    # Starts with lint/type/offline (#744); matrix-result still requires all of them.
-    needs: [detect-changes]
-    if: needs.detect-changes.outputs.extended == 'true'
-    name: Live CUBRID smoke
-    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
-    with:
-      cubrid-version: "11.4"
-      python-version: "3.12"
-      cubrid-test-url: "cubrid+pycubrid://dba@localhost:33000/testdb"
-      setup-command: >-
-        python -m pip install --upgrade pip &&
-        pip install -e '.[pycubrid,alembic]' pytest
-      test-command: >-
-        python -m pytest test/test_integration.py test/test_regression.py
-        -v --tb=short
-
   make-integration:
     # Starts with lint/type/offline (#744); matrix-result still requires all of them.
     needs: [detect-changes]
@@ -400,8 +387,11 @@ jobs:
     # cubrid+pycubrid://. The steps of integration-tests run chosen files
     # separately and do not cover this session (capability probes, fuzz,
     # metamorphic, dogfood ORM, pool stress and UUID contract tests). The
-    # INTEGRATION_DRIVER=cubriddb variant runs nightly and as the release gate in
-    # integration-full.yml.
+    # INTEGRATION_DRIVER=cubriddb variant runs on full dispatch and as the
+    # release gate in integration-full.yml. This session also owns the former
+    # live-smoke lane (#737): that lane ran test_integration.py and
+    # test_regression.py, both `integration`-marked, with the same Python 3.12,
+    # CUBRID 11.4 and cubrid+pycubrid:// URL, so its assertions are a subset.
     name: make integration (pycubrid, CUBRID 11.4)
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -647,8 +637,13 @@ jobs:
             --dburi="$CUBRID_TEST_URL" \
             -v --tb=short
 
+      # Advisory CUBRIDdb compliance on the oldest cell (#737): it gates nothing,
+      # so it runs on the weekly schedule and manual dispatches instead of every
+      # main push. The gating pycubrid lane below still runs on every main push.
       - name: Run SQLAlchemy dialect compliance suite (non-gating, other cells)
-        if: matrix.python-version != '3.14' || matrix.cubrid-version != '11.4'
+        if: >-
+          (matrix.python-version != '3.14' || matrix.cubrid-version != '11.4')
+          && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
         continue-on-error: true
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
@@ -693,7 +688,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [detect-changes, lint, doc-lint, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, alembic-compat, live-smoke, make-integration]
+    needs: [detect-changes, lint, doc-lint, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, alembic-compat, make-integration]
     steps:
       - name: Check selected job results
         env:
@@ -715,8 +710,6 @@ jobs:
           E_REPO_TESTS: ${{ needs.detect-changes.outputs.tooling }}
           R_ALEMBIC_COMPAT: ${{ needs.alembic-compat.result }}
           E_ALEMBIC_COMPAT: ${{ needs.detect-changes.outputs.live }}
-          R_LIVE_SMOKE: ${{ needs.live-smoke.result }}
-          E_LIVE_SMOKE: ${{ needs.detect-changes.outputs.extended }}
           R_MAKE_INTEGRATION: ${{ needs.make-integration.result }}
           E_MAKE_INTEGRATION: ${{ needs.detect-changes.outputs.extended }}
         run: |
@@ -738,5 +731,4 @@ jobs:
           check integration-tests "$R_INTEGRATION_TESTS" "$E_INTEGRATION_TESTS"
           check repo-tests "$R_REPO_TESTS" "$E_REPO_TESTS"
           check alembic-compat "$R_ALEMBIC_COMPAT" "$E_ALEMBIC_COMPAT"
-          check live-smoke "$R_LIVE_SMOKE" "$E_LIVE_SMOKE"
           check make-integration "$R_MAKE_INTEGRATION" "$E_MAKE_INTEGRATION"

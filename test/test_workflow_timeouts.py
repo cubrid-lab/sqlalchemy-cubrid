@@ -28,7 +28,6 @@ JOB_MAX_OVERRIDES: dict[tuple[str, str], int] = {}
 # tracked) in the owning repository, not here. Keep entries exact.
 EXTERNAL_REUSABLE_CALLERS = {
     ("ci.yml", "doc-lint"): "cubrid-lab/.github/.github/workflows/doc-lint.yml",
-    ("ci.yml", "live-smoke"): "cubrid-lab/.github/.github/workflows/live-smoke.yml",
     ("codeql.yml", "analyze"): "cubrid-lab/.github/.github/workflows/codeql.yml",
     ("integration-full.yml", "fuzz-bug-hunt"): (
         "cubrid-lab/.github/.github/workflows/live-smoke.yml"
@@ -133,8 +132,18 @@ def test_release_gate_passes_when_every_dependency_succeeds() -> None:
     assert "Full compatibility matrix passed." in completed.stdout
 
 
-@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped"])
-@pytest.mark.parametrize("failed", ["integration-full", "make-integration"])
+RELEASE_GATE_NEEDS = yaml.safe_load((WORKFLOWS / "integration-full.yml").read_text())["jobs"][
+    "full-matrix-result"
+]["needs"]
+
+
+def test_release_gate_requires_the_offline_endpoint_cells() -> None:
+    # #737: the release runs the Python 3.11/3.14 offline cells itself.
+    assert set(RELEASE_GATE_NEEDS) == {"integration-full", "make-integration", "offline-endpoints"}
+
+
+@pytest.mark.parametrize("result", ["failure", "cancelled", "skipped", ""])
+@pytest.mark.parametrize("failed", RELEASE_GATE_NEEDS)
 def test_release_gate_fails_on_any_non_success_dependency(failed: str, result: str) -> None:
     completed = run_release_gate({failed: result})
     assert completed.returncode != 0

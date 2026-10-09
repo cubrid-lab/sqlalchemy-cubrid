@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `coverage-report-py<version>` artifact, and `matrix-result` still fails when an
   offline cell fails, is cancelled or is unexpectedly skipped. CI only; the dialect
   is unchanged.
+- **Extended main and compatibility validation consolidated (#737)** — `ci.yml` drops
+  the `live-smoke` lane, whose `test_integration.py`/`test_regression.py` run on
+  Python 3.12, CUBRID 11.4 and `cubrid+pycubrid://` is a subset of `make-integration`
+  on the same SHA. The advisory SQLAlchemy pre-release canary and the oldest cell's
+  advisory CUBRIDdb compliance step move from every main push to the weekly
+  schedule and manual dispatches, and `upstream-canary.yml` moves from Monday to
+  Thursday 06:00 UTC. The release now runs the Python 3.11/3.14 offline cells itself
+  (`integration-full.yml` `offline-endpoints`, required by `full-matrix-result`)
+  instead of relying on a main push run that nothing required and a later merge
+  could cancel. Pull requests are unchanged. `docs/CI_POLICY.md` records the
+  measured job counts, runner minutes and failure yield per event, the coverage
+  ownership table and the expected before/after runner minutes. CI only; the
+  dialect is unchanged.
 
 ### Documentation
 - **`AGENTS.md` no longer carries stale planning context (#736)** — the
