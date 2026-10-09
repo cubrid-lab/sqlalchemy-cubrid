@@ -793,7 +793,8 @@ CUBRID_STRICT_KNOWN_FAILURES=1 pytest test/test_suite.py --dburi="$CUBRID_TEST_U
 PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브랜치의 예약 실행이나 수동 실행에서 canary 작업이
 실패하면 워크플로가 "Upstream canary failing against pycubrid@main" 제목의 이슈(`ci` 레이블)를
 열거나, 이미 열려 있으면 댓글을 달아 실패한 작업, 실행 링크, 테스트한 pycubrid 커밋을 남기고,
-두 작업이 다시 통과하면 이슈를 닫습니다. 의존성 범위 `pycubrid>=1.8.0,<2.0`은 정확한 버전으로 설치한
+두 작업이 다시 통과하면 이슈를 닫습니다. 의존성 범위 `pycubrid>=1.8.0,<2.0`(컴플라이언스 레인이 같은 하한을 고정하며
+`test/test_workflow_hygiene.py`가 이를 검증)은 정확한 버전으로 설치한
 **특정** pycubrid 릴리스 후보(또는 새 메이저 릴리스)가 다운스트림 계약 스위트, 즉 일반·비동기
 통합 테스트, 위의 필수 드라이버 차분 레인, SQLAlchemy 호환성 스위트를 통과한 뒤에만
 넓힙니다. 채택 PR에는 `scripts/report_driver_versions.py`가 보고한 버전을 기록하고,

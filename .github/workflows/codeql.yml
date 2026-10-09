@@ -12,6 +12,13 @@ permissions:
   contents: read
   security-events: write
 
+concurrency:
+  # A newer push to a PR supersedes its older run. Every non-PR run gets a
+  # unique group, so main, release and scheduled runs are never cancelled and
+  # never replaced while queued behind another run of the same ref.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   analyze:
     name: Analyze

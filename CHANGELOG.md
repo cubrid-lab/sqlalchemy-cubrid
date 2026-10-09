@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Docs tools pinned, scan concurrency, pycubrid floor test and stale "nightly" wording (#761, #762, #764, #747)** —
+  `docs.yml` installs `mkdocs`, `mkdocs-material` and `pymdown-extensions` from the exact pins in
+  `.github/docs-requirements/requirements.txt`, which Dependabot now updates. `codeql.yml` and
+  `security.yml` cancel superseded pull-request runs only; every other event uses a unique
+  per-run group, since GitHub replaces a pending run within one group, so main and scheduled
+  runs are never cancelled or dropped. `test/test_workflow_hygiene.py` fails when the compliance lane's pinned pycubrid
+  differs from the `pycubrid>=` floor declared in `pyproject.toml`. The `integration-full.yml`
+  fuzz and mutation job names and a comment no longer say "nightly" although there is no
+  schedule; gating is unchanged (fuzz still gates the release). CI only; the dialect is unchanged.
 - **Offline tests run on the oldest and newest supported Python outside PRs (#734)** —
   in `ci.yml` the `offline-tests` matrix is chosen by event: pull requests keep the
   single representative Python 3.12 cell, while main pushes, the weekly schedule and

@@ -828,7 +828,8 @@ opens an issue titled "Upstream canary failing against pycubrid@main" (label
 `ci`), or comments on it if it is already open, with the failing jobs, the run
 link and the pycubrid commit tested, and closes it once both jobs pass again.
 The dependency bound
-`pycubrid>=1.8.0,<2.0` is widened only after a **specific** pycubrid release
+`pycubrid>=1.8.0,<2.0` (the compliance lane pins the same floor, enforced by
+`test/test_workflow_hygiene.py`) is widened only after a **specific** pycubrid release
 candidate (or new major release), installed by exact version, passes the
 downstream contract suite: the regular and async integration tests, the
 required driver-differential lane above, and the SQLAlchemy compliance suite.
