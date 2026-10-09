@@ -279,6 +279,28 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
 성공이 아닌 의존 결과에서 실패하지 않으면 실패합니다. `matrix-result`는
 `test/test_ci_policy.py`에서 검증합니다.
 
+## 문서 도구, 스캔 동시성, pycubrid 하한
+
+- **문서 도구 고정 (#761).** `mkdocs build --strict`를 실행하는 유일한 워크플로인
+  `docs.yml`은 `mkdocs`, `mkdocs-material`, `pymdown-extensions`를 정확한 버전이 고정된
+  `.github/docs-requirements/requirements.txt`에서 설치합니다. `/.github/docs-requirements`용
+  Dependabot `pip` 항목이 업데이트를 제안하므로, 업스트림 릴리스가 저장소 변경 없이
+  엄격 빌드를 깨뜨릴 수 없습니다.
+- **스캔 동시성 (#762).** `codeql.yml`과 `security.yml`은 그룹
+  `${{ github.workflow }}-${{ github.ref }}`,
+  `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`로 `concurrency`를
+  설정합니다. 풀 리퀘스트에서는 새 푸시가 이전 스캔을 취소하지만, main 푸시와 주간
+  예약 실행은 취소되지 않습니다. 스캔 범위는 바뀌지 않습니다.
+- **선언된 pycubrid 하한 (#764).** `pyproject.toml`은 `pycubrid>=1.8.0,<2.0`을 선언하고,
+  `ci.yml`의 게이트 컴플라이언스 레인은 `pycubrid==1.8.0`을 설치합니다(통합 잡은 최신
+  릴리스를 설치하므로 하한을 검증하는 유일한 레인). `test/test_workflow_hygiene.py`는 고정
+  버전과 선언된 하한이 다르면 실패하므로, 추가 CI 잡 없이 한쪽만 올리는 변경을 오프라인에서
+  잡아냅니다.
+- **표현 (#747).** `integration-full.yml`에는 일정이 없습니다. `fuzz-bug-hunt`와
+  `mutation-testing` 잡 이름에서 "nightly"를 뺐습니다(`nightly`는 Hypothesis 프로파일
+  이름으로 유지). 게이트 동작은 그대로입니다. 퍼즈는 릴리스를 게이트하고 뮤테이션
+  테스트는 비차단입니다. 필수 상태 검사는 이 잡 이름을 참조하지 않습니다.
+
 ## 의존성 설치
 
 `ci.yml`, `integration-full.yml`, `upstream-canary.yml`은 uv로 의존성을 설치합니다

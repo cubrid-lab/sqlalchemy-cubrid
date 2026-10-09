@@ -297,6 +297,31 @@ job lacks a bounded timeout, when a new external caller is not allowlisted, or
 when the release gate (`full-matrix-result`) stops failing on a non-success
 dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
 
+## Docs tooling, scan concurrency and the pycubrid floor
+
+- **Pinned docs tools (#761).** `docs.yml`, the only workflow that runs
+  `mkdocs build --strict`, installs `mkdocs`, `mkdocs-material` and
+  `pymdown-extensions` from `.github/docs-requirements/requirements.txt`, which
+  pins exact versions. A dedicated Dependabot `pip` entry for
+  `/.github/docs-requirements` proposes updates, so an upstream release cannot
+  break the strict build without a repository change.
+- **Scan concurrency (#762).** `codeql.yml` and `security.yml` set
+  `concurrency` with group `${{ github.workflow }}-${{ github.ref }}` and
+  `cancel-in-progress: ${{ github.event_name == 'pull_request' }}`: a new push
+  cancels the superseded scan on a pull request, while main pushes and the
+  weekly schedule are never cancelled. Scan coverage is unchanged.
+- **Declared pycubrid floor (#764).** `pyproject.toml` declares
+  `pycubrid>=1.8.0,<2.0`; the gating compliance lane in `ci.yml` installs
+  `pycubrid==1.8.0`, the only lane that exercises the floor (the integration
+  jobs install the latest release). `test/test_workflow_hygiene.py` fails when
+  the pinned version and the declared floor differ, so raising one without the
+  other is caught offline without an extra CI job.
+- **Wording (#747).** `integration-full.yml` has no schedule. The
+  `fuzz-bug-hunt` and `mutation-testing` job names no longer say "nightly"
+  (`nightly` remains the name of the Hypothesis profile). Gating is unchanged:
+  fuzz gates the release, mutation testing is non-gating. No required status
+  check refers to these job names.
+
 ## Dependency installation
 
 `ci.yml`, `integration-full.yml` and `upstream-canary.yml` install dependencies with
