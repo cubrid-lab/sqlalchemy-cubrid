@@ -17,7 +17,7 @@ Alembic migration support, and PEP 561 typing.
 
 ```mermaid
 graph TD
-    root["sqlalchemy_cubrid/ (Main package, 12 Python modules + py.typed)"]
+    root["sqlalchemy_cubrid/ (Main package + py.typed)"]
     init["__init__.py - Public API exports types, insert(), merge(), replace(), trace_query(), __version__"]
     compat["_compat.py - SQLAlchemy private API compatibility helpers"]
     base["base.py - CubridExecutionContext, CubridIdentifierPreparer"]
@@ -28,7 +28,7 @@ graph TD
     dml["dml.py - ON DUPLICATE KEY UPDATE (Insert), MERGE statement"]
     trace["trace.py - Query tracing helper"]
     types["types.py - CUBRID type system numeric, string, LOB, collection"]
-    req["requirements.py - SA 2.0 test requirement flags (40+ properties)"]
+    req["requirements.py - SA 2.0 test requirement flags"]
     alembic["alembic_impl.py - CubridImpl for Alembic migrations"]
     typed["py.typed - PEP 561 marker"]
 
@@ -114,7 +114,7 @@ pytest test/test_integration.py -v
 ### Docker
 
 ```bash
-docker compose up -d                          # Default CUBRID 11.2
+docker compose up -d                          # Default version from docker-compose.yml
 CUBRID_VERSION=11.4 docker compose up -d      # Specific version
 docker compose down -v                        # Cleanup
 ```
@@ -194,15 +194,17 @@ Use English for GitHub issues, pull requests and comments; localized documentati
 
 ## Test Structure
 
+Representative core test modules (not exhaustive; list `test/` for the current set,
+including repository-tooling, fuzz, differential and Alembic tests):
+
 ```
 test/
 ├── conftest.py              # Fixtures: mock dialect, engine, connection
-├── test_compiler.py         # SQL compilation (SELECT, JOIN, CAST, LIMIT, etc.)
+├── test_compiler.py         # SQL compilation (SELECT, JOIN, CAST, LIMIT, DML extensions)
 ├── test_types.py            # Type system (all type compilations, reflection)
 ├── test_dialect_offline.py  # Dialect (reflection stubs, connection, isolation)
 ├── test_base.py             # ExecutionContext, IdentifierPreparer
 ├── test_requirements.py     # SA requirement flags (parametrized)
-├── test_dml.py              # ON DUPLICATE KEY UPDATE, MERGE compilation
 ├── test_alembic.py          # Alembic CubridImpl import/registry
 ├── test_dialects.py         # Edge cases
 ├── test_pycubrid_dialect.py # PyCubridDialect (pure Python driver variant)
@@ -247,7 +249,9 @@ The dialect translates automatically in `create_connect_args()`.
 
 ### CUBRID Versions Tested
 
-10.2, 11.0, 11.2, 11.4 — via Docker images `cubrid/cubrid:{version}`.
+Supported and tested CUBRID versions are maintained in
+[docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md); CI lanes are defined in
+[docs/CI_POLICY.md](docs/CI_POLICY.md). Tests use Docker images `cubrid/cubrid:{version}`.
 
 ## CI/CD
 
@@ -262,11 +266,12 @@ The dialect translates automatically in `create_connect_args()`.
 
 ### CI Matrix
 
-- PR runtime smoke: Ubuntu/Python 3.12 only, selected for code changes.
-- High-risk PR integration: Python 3.14/CUBRID 11.4; targeted extra lanes.
-- main and changed-weekly: one full offline coverage lane, oldest/newest live endpoints.
-- Full integration: manual and every release; no automatic nightly full matrix.
-- Details, change classification and gate requirements: [CI policy](docs/CI_POLICY.md).
+Routine CI is tiered: pull requests run one representative cell, main and
+changed-weekly runs cover the oldest/newest supported Python and CUBRID endpoints,
+and the full integration matrix runs only on manual dispatch and every release
+(no automatic nightly full matrix). The exact cells, change classification and
+gate requirements live in [CI policy](docs/CI_POLICY.md); check it rather than
+copying versions here.
 
 ## Documentation Map
 
@@ -286,6 +291,10 @@ The dialect translates automatically in `create_connect_args()`.
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security vulnerability reporting |
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
+| `docs/SUPPORT_MATRIX.md` | Supported Python, SQLAlchemy, CUBRID and driver versions |
+| `docs/CI_POLICY.md` | CI tiers, selected cells and gate requirements |
+| `docs/PERFORMANCE.md` | Performance measurements and benchmark pointers |
+| `ROADMAP.md` | Current roadmap (public) |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 
 ## Issue specification and ownership
@@ -473,26 +482,12 @@ tags or publish by hand; the only manual entry point is the narrow recovery
 dispatch of `publish-pypi.yml`. Procedure, failure matrix and recovery:
 [`RELEASING.md`](RELEASING.md).
 
-## Project Context — Performance Loop System
+## Performance Context
 
-> This repo provides **ORM-level validation** of the Performance Loop.
-> Board: [CUBRID Ecosystem Roadmap](https://github.com/orgs/cubrid-lab/projects/2)
-
-### Role
-
-sqlalchemy-cubrid proves that pycubrid driver optimizations propagate to the **application layer**.
-Tier 2 ORM benchmarks (in cubrid-benchmark) measure this repo's overhead vs raw pycubrid.
-
-### Related Issues
-
-| Issue | Phase | Priority |
-|-------|-------|----------|
-| #70 Optimize query compilation and result mapping | R3 | Must-Have |
-| #68 Configure PyPI Trusted Publisher | R0 | Nice-to-Have |
-
-### Key Focus Areas
-
-- Query compile path optimization (compiler.py)
-- Result mapping improvement (dialect.py)
-- Bulk insert optimization (executemany/insertmanyvalues)
-- Quantify ORM overhead vs raw driver (% of total time)
+sqlalchemy-cubrid provides ORM-level validation that pycubrid driver improvements reach
+the application layer. Current benchmark results and methodology live in
+[docs/PERFORMANCE.md](docs/PERFORMANCE.md) and
+[cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark); current priorities live
+in [ROADMAP.md](ROADMAP.md) (public) and the
+[CUBRID Ecosystem Roadmap](https://github.com/orgs/cubrid-lab/projects/2) board (org
+members only), not here.
