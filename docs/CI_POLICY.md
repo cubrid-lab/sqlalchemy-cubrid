@@ -7,8 +7,8 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
 | Ordinary code PR | One Ubuntu/Python 3.12 full offline suite with the 95% coverage floor (#742) |
 | High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
-| Code push to main | One Ubuntu/Python 3.12 full offline suite with the existing 95% coverage floor; oldest/newest live endpoints |
-| Monday 03:00 UTC | Same representative policy, comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests |
+| Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.14) (#734); oldest/newest live endpoints |
+| Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.14 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests |
 | Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes |
 
 PRs run the same full offline selection (`-m "not integration and not repo"`) and
@@ -58,6 +58,40 @@ Routine type checking uses Python 3.13/SQLAlchemy 2.1.1; Alembic checks use late
 and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retain
 SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Live smoke, make integration
 and the advisory SQLAlchemy canary are deferred from PRs to non-PR code validation.
+
+## Offline Python endpoints
+
+The `offline-tests` matrix is chosen by `github.event_name` (#734). Pull requests,
+ordinary and high-risk alike, run one representative Python 3.12 cell. Every other
+`ci.yml` event (a push to `main`, the Monday schedule and a manual
+`workflow_dispatch`) runs the oldest and newest supported Python, 3.11 and 3.14,
+instead of 3.12. The supported range between them is covered by those endpoints
+plus the 3.12 PR evidence; 3.13 has no routine offline cell. Both kinds of run use
+the same selection (`-m "not integration and not repo"`), the 95% coverage floor
+and the `detect-changes` `code` output: a docs-only push, or a week without code
+changes, selects no offline cell at all. A `workflow_dispatch` on `main` has no
+previous push to compare with, so `paths-filter` selects cells from its last commit
+only: dispatching right after a docs-only merge runs no offline cell. Each cell uploads its own
+`coverage-report-py<version>` artifact, so the cells do not collide on one name.
+
+| Event | `offline-tests` cells |
+| --- | --- |
+| `pull_request` | Python 3.12 |
+| `push` to `main`, `schedule`, `workflow_dispatch` | Python 3.11 and 3.14 |
+
+The matrix uses `fail-fast: false`, so one failing interpreter does not cancel the
+other's evidence. `matrix-result` reads the job's aggregate result: any failed or
+cancelled cell makes it non-success, and a skip while `code` is selected is
+unexpected; each fails the required gate. Compared with the former single 3.12
+cell, a code push or weekly run adds one offline job of about the same length
+(the job budget is 15 minutes); pull requests are unchanged. `integration-full.yml`
+gains no offline cells: the release commit is a `main` commit whose push run
+normally carries the endpoint evidence, which avoids repeating it. Nothing in
+the release path enforces that run's success yet, and a later merge can cancel it
+through the push concurrency group; #737 tracks closing that gap. The
+repository-tooling lane stays on the representative Python 3.12 cell.
+`test/test_ci_policy.py` renders the matrix for each event and runs the gate
+against failed, cancelled and skipped offline results.
 
 ## Workflow change impact
 

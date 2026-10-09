@@ -74,9 +74,12 @@ def test_ci_repo_job_runs_repo_lane_when_tooling_changes():
     assert "python -m pytest test/ -m repo" in job
     conditions = re.findall(r"^\s+if: (.*)$", job.split("steps:", 1)[0], re.M)
     assert conditions == ["needs.detect-changes.outputs.tooling == 'true'"]
+    # Repo tests run on the representative PR Python of the offline lane (#734).
     offline = _ci_job("offline-tests")
-    versions = re.compile(r"python-version: (\[.*?\])")
-    assert versions.search(job).group(1) == versions.search(offline).group(1)
+    repo_versions = re.search(r"python-version: (\[.*?\])", job)
+    pr_versions = re.search(r"github\.event_name == 'pull_request' && '(\[.*?\])'", offline)
+    assert repo_versions and pr_versions
+    assert repo_versions.group(1) == pr_versions.group(1)
 
 
 def test_ci_repo_job_is_required_when_selected():

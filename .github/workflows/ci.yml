@@ -167,6 +167,10 @@ jobs:
   # ──────────────────────────────────────────
   # Job 2: Offline tests (no DB needed)
   # ──────────────────────────────────────────
+  # PRs keep one representative Python 3.12 cell; main pushes, the weekly
+  # schedule and manual dispatches run the oldest and newest supported Python
+  # (3.11, 3.14) instead (#734). Every selected cell must succeed: a failed or
+  # cancelled cell makes the job result non-success, which matrix-result rejects.
   offline-tests:
     needs: detect-changes
     if: needs.detect-changes.outputs.code == 'true'
@@ -175,7 +179,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.12"]
+        python-version: ${{ fromJSON(github.event_name == 'pull_request' && '["3.12"]' || '["3.11", "3.14"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
@@ -205,9 +209,11 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=95
       - name: Upload coverage
+        # Also on failure: a cell under the coverage floor keeps its evidence.
+        if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-report
+          name: coverage-report-py${{ matrix.python-version }}
           path: .coverage
           # .coverage is a dotfile; upload-artifact skips hidden files by default.
           include-hidden-files: true
