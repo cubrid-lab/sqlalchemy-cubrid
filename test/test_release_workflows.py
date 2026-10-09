@@ -347,3 +347,18 @@ def test_integration_full_is_callable_at_a_sha_and_keeps_its_triggers() -> None:
     for name, job in FULL["jobs"].items():
         for checkout in checkouts(job):
             assert checkout["ref"] == "${{ inputs.sha || github.sha }}", name
+
+
+def test_blocked_publication_fails_preparation_before_release_please() -> None:
+    # A blocked release must turn "Prepare release" red instead of hiding behind
+    # release-please's own "untagged, merged release PRs outstanding" abort.
+    prepare = steps(PREPARE["jobs"]["prepare"])
+    names = [s.get("name") or s.get("uses", "") for s in prepare]
+    reconcile = prepare[names.index("Reconcile completed external releases")]
+    assert reconcile["run"] == "python scripts/reconcile_release_labels.py"
+    assert "if" not in reconcile and "continue-on-error" not in reconcile
+    release = next(i for i, name in enumerate(names) if "release-please-action" in name)
+    assert names.index("Reconcile completed external releases") < release
+    assert names.index("Reconcile completed external releases") < names.index(
+        "Freeze reviewed release PRs"
+    )

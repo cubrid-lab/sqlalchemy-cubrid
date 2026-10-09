@@ -35,8 +35,9 @@ Before proposing another release, the preparer reconciles merged
 published non-draft GitHub Release and a successful `publish-pypi.yml` run at the
 merge SHA all agree. That run must include successful publication and cookbook
 verification jobs. It then transitions pending to `autorelease: tagged`.
-Partial publication remains pending and blocks the next release. Recovery runs
-at another head SHA require a maintainer to verify the same facts and perform
+Partial publication remains pending and blocks the next release, and turns
+**Prepare release** red; see [When preparation is blocked](#when-preparation-is-blocked).
+Recovery runs at another head SHA require a maintainer to verify the same facts and perform
 the label transition manually; no release is repeated to clear labels.
 
 The root manifest starts at `1.8.0`, bootstrapped from published `v1.8.0` commit
@@ -203,6 +204,55 @@ as a broken release, re-query `https://pypi.org/pypi/sqlalchemy-cubrid/X.Y.Z/jso
 compare the published SHA-256 with the run's `SHA256SUMS` (artifact
 `release-meta`): a match means the file is fine and `gh run rerun --failed`
 completes the release; a mismatch is a broken release.
+
+### When preparation is blocked
+
+While a merged release PR stays `autorelease: pending`, upstream release-please
+only logs "There are untagged, merged release PRs outstanding - aborting" and
+opens no new release PR. To keep that from passing silently,
+`reconcile_release_labels.py` (the **Reconcile completed external releases** step
+of **Prepare release**, which runs before release-please) classifies every
+pending PR it could not mark tagged, using the `publish-pypi.yml` runs at the
+merge SHA:
+
+| State | When | Prepare release run |
+| --- | --- | --- |
+| In progress | Any publisher run at that SHA is queued, waiting or in progress (including a re-run of an older run), or the merge is under 2 hours old (`PUBLISHER_START_GRACE`) and no run exists yet. | `::notice::`, stays green. Dispatch preparation again after the publisher succeeds. |
+| Blocked | All runs are completed and the newest concluded with anything other than `success`; it succeeded but the publication proof is missing; no run exists 2 hours or more after the merge; or the run state cannot be read. | `::error::` and a step-summary section with the PR number, merge SHA, run URL, conclusion and recovery; the run fails, so release-please is skipped (it would abort anyway). |
+
+The error includes the `rerun-failed-jobs` command only for `failure`,
+`cancelled` and `timed_out`; other conclusions (for example `action_required`)
+need a look at the run first. For "succeeded but not proven", the proof read
+itself may have failed transiently: if the run summary shows a complete
+publication, re-run Prepare release. Every error ends with "If recovery ran as
+a dispatch at another SHA, label the PR manually per RELEASING.md."
+
+A red Prepare release run with "Release preparation is blocked" therefore
+means: a release was merged, and its publication is not proven. To recover:
+
+1. Open the run URL from the message and find the failed job; fix the cause
+   (for example a cookbook or PyPI CDN lag).
+2. For a failed, cancelled or timed-out run, re-run its failed jobs with
+   `gh api -X POST repos/cubrid-lab/sqlalchemy-cubrid/actions/runs/<id>/rerun-failed-jobs`
+   (the same as `gh run rerun <id> --failed`), or follow the matching row in
+   [Failure and recovery](#failure-and-recovery) (`verify-only` dispatch,
+   `X.Y.(Z+1)` for a real defect).
+3. When the publisher run at the merge SHA is green, dispatch **Prepare
+   release** again. Reconciliation marks the PR tagged and release-please opens
+   the next candidate.
+
+If no publisher run exists, check whether the push started `publish-pypi.yml`
+and what `detect` decided. If recovery ran as a dispatch at another SHA
+(`resume` or `verify-only` from the current `main` head), the run at the merge
+SHA stays failed and the PR stays blocked: after verifying the release summary,
+exact tag SHA, artifact hashes and cookbook success, label it manually (add
+`autorelease: tagged`, then remove `autorelease: pending`).
+The script never relabels a blocked PR, reruns or dispatches anything;
+never clear `autorelease: pending` just to turn the run green. The 1.10.0
+release (PR #704) is the reference case: its publisher run
+[37871732934](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37871732934)
+failed in cookbook verification after PyPI publication on attempt 1, and
+preparation stayed silently green until its failed jobs were re-run.
 
 ### Recovery dispatch (the only manual entry point)
 
