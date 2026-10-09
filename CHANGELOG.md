@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **Cookbook release verification pinned to the shared cookbook SHA** — the `verify-cookbook` call to `cubrid-cookbook-python`'s `smoke-test.yml` in `.github/workflows/publish-pypi.yml` is pinned to `bd6749093813d3a447f993fec72ac733adbeae63`, the same commit as the other two package repositories (pycubrid, sqlalchemy-cubrid, cubrid-mcp-server). Since the previous pin the cookbook adds the Python 3.11 cell on release calls (`Smoke Tests (CUBRID 11.4, Python 3.11)`), so the release verification report now needs all three cells (11.2/3.12, 11.4/3.12, 11.4/3.11). `RELEASING.md` lists the third job. CI only; the dialect is unchanged.
 - **Documentation site build on pull requests (#786)** — `ci.yml` gains a `docs-build` job
   that runs the `docs.yml` build (install `.github/docs-requirements/requirements.txt`,
   `scripts/generate_llms_full.py`, `mkdocs build --strict`) when `docs/**`, `mkdocs.yml`,
