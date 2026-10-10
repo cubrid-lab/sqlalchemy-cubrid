@@ -18,8 +18,8 @@ appears through a relationship, an eager-load that emits SQL CUBRID rejects).
 This module models a small but realistic schema (users 1:N orders, orders N:M
 tags) and drives it the way an application would, asserting on the *data* that
 comes back rather than on generated SQL. Every test needs a live CUBRID and is
-`integration`-marked; the nightly `integration-full` job runs the whole corpus
-across all supported CUBRID versions.
+`integration`-marked; the `integration-full` workflow (manual dispatch and the
+release gate) runs it through `make integration` on CUBRID 10.2 and 11.4.
 """
 
 from __future__ import annotations
