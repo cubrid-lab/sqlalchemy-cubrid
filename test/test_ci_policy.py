@@ -417,6 +417,71 @@ def test_release_runs_the_offline_endpoint_cells_itself() -> None:
     assert "needs.offline-endpoints.result" in release_gate["steps"][0]["run"]
 
 
+def _without_checkout_and_uv_cache(steps: list) -> list:
+    """Steps with the per-workflow checkout and setup-uv cache mode normalised."""
+    normalised = []
+    for step in steps:
+        step = dict(step)
+        uses = str(step.get("uses", ""))
+        if uses.startswith("actions/checkout@"):
+            step.pop("with", None)
+        elif uses.startswith("astral-sh/setup-uv@"):
+            step["with"] = {k: v for k, v in step["with"].items() if k != "enable-cache"}
+        normalised.append(step)
+    return normalised
+
+
+# #737 option (b): release-run copies of ci.yml lanes, not gated on changed paths.
+RELEASE_COPIES = ("typecheck", "alembic-compat", "packaging-smoke-test")
+
+
+@pytest.mark.parametrize("name", RELEASE_COPIES)
+def test_release_runs_the_ci_lane_itself_with_the_same_steps(name: str) -> None:
+    full = workflow("integration-full.yml")["jobs"]
+    ci = workflow("ci.yml")["jobs"][name]
+    job = full[name]
+    assert "if" not in job and "needs" not in job and "continue-on-error" not in job
+    assert job["strategy"] == ci["strategy"]
+    assert job.get("name") == ci.get("name")
+    assert job["timeout-minutes"] == ci["timeout-minutes"]
+    assert _without_checkout_and_uv_cache(job["steps"]) == _without_checkout_and_uv_cache(
+        ci["steps"]
+    )
+    release_gate = full["full-matrix-result"]
+    assert name in release_gate["needs"]
+    assert f'"${{{{ needs.{name}.result }}}}" != "success"' in release_gate["steps"][0]["run"]
+
+
+def test_release_runs_the_gating_sqlalchemy_compliance_lanes_itself() -> None:
+    full = workflow("integration-full.yml")["jobs"]
+    job = full["sqlalchemy-compliance"]
+    assert "if" not in job and "needs" not in job and "continue-on-error" not in job
+    assert job["strategy"]["fail-fast"] is False
+    # The non-PR cells of ci.yml integration-tests, with the same lane pins.
+    ci = workflow("ci.yml")["jobs"]["integration-tests"]
+    match = re.fullmatch(
+        r"\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(?P<pr>.*?)'"
+        r" \|\| '(?P<other>.*?)'\) \}\}",
+        ci["strategy"]["matrix"],
+    )
+    assert match, ci["strategy"]["matrix"]
+    assert job["strategy"]["matrix"] == json.loads(match["other"])
+    assert job["services"] == ci["services"]
+    ci_steps = {s.get("name"): s for s in ci["steps"]}
+    steps = {s.get("name"): s for s in job["steps"]}
+    gating = (
+        "Run SQLAlchemy dialect compliance suite (gating, CUBRIDdb)",
+        "Run SQLAlchemy dialect compliance suite (gating, released pycubrid)",
+    )
+    for name in (*gating, "Wait for CUBRID to be ready"):
+        assert steps[name] == ci_steps[name], name
+    assert steps[gating[1]]["if"] == "${{ !cancelled() }}"
+    assert not any("continue-on-error" in s for s in job["steps"])
+    release_gate = full["full-matrix-result"]
+    assert "sqlalchemy-compliance" in release_gate["needs"]
+    assert "needs.sqlalchemy-compliance.result" in release_gate["steps"][0]["run"]
+
+
 # --- #786: documentation site build on pull requests ------------------------
 
 

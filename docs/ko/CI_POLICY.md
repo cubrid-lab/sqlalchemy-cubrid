@@ -11,7 +11,7 @@
 | 고위험 PR | 같은 전체 오프라인 스위트와 Python 3.14/CUBRID 11.4. 필요하면 대상 레인 추가 |
 | main으로의 코드 푸시 | 기존 95% 커버리지 기준을 적용한 Ubuntu 전체 오프라인 스위트를 지원하는 가장 오래된·최신 Python(3.11, 3.14)에서 실행(#734). 최저·최신 라이브 엔드포인트 |
 | 월요일 03:00 UTC | main 푸시와 같은 정책(Python 3.11/3.14 오프라인 셀 포함)으로 최근 7일의 변경을 비교. 변경이 없거나 문서만 바뀐 이력은 런타임 테스트를 선택하지 않음. 권고용 SQLAlchemy 프리릴리스 카나리와 가장 오래된 셀의 권고용 CUBRIDdb 컴플라이언스는 푸시가 아니라 여기서 실행하며, 컴플라이언스 단계는 최근 7일에 코드 변경이 있어야 실행(#737) |
-| 명시적 전체 실행 또는 릴리스 | 기존 전체 Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 통합 워크플로와 필수 릴리스 레인, 그리고 Python 3.11/3.14 오프라인 셀(#737) |
+| 명시적 전체 실행 또는 릴리스 | 기존 전체 Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 통합 워크플로와 필수 릴리스 레인, 그리고 Python 3.11/3.14 오프라인 셀, 타입 검사, `alembic-compat`, 패키징 스모크 테스트, 차단 SQLAlchemy 컴플라이언스 레인(#737) |
 
 PR은 푸시와 같은 전체 오프라인 선택(`-m "not integration and not repo"`)과 95%
 커버리지 기준을 실행합니다. 이전의 세 파일 PR 스모크는 로컬에서 약 1초, 전체
@@ -108,13 +108,13 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 | 커버리지 | 소유(워크플로 / 잡) | 이벤트 계층 |
 | --- | --- | --- |
 | 오프라인 스위트, 95% 기준 | `ci.yml` `offline-tests`, `integration-full.yml` `offline-endpoints` | PR: Python 3.12. main 푸시, 주간, 수동 실행: 3.11과 3.14. 릴리스: 3.11과 3.14 |
-| 타입 검사 | `ci.yml` `typecheck`(Python 3.13, SQLAlchemy 2.1.1) | 모든 코드 이벤트 |
-| Alembic 호환성 | `ci.yml` `alembic-compat`(최신 Alembic), `offline-tests`의 오프라인 Alembic 테스트, `integration-tests`·`make-integration`·`integration-full`의 라이브 Alembic 연산, `integration-tests`와 `integration-full`의 트랜잭션 DDL | 고위험 PR과 PR이 아닌 코드 이벤트, 릴리스는 `integration-full`로 |
-| 패키징 | `ci.yml` `packaging-smoke-test`, `publish-pypi.yml` `build` | 고위험 PR과 PR이 아닌 코드 이벤트, 릴리스 |
+| 타입 검사 | `ci.yml` `typecheck`(Python 3.13, SQLAlchemy 2.1.1), `integration-full.yml` `typecheck`(같은 셀) | 모든 코드 이벤트, 수동 실행과 릴리스 |
+| Alembic 호환성 | `ci.yml` `alembic-compat`(최신 Alembic), `integration-full.yml` `alembic-compat`(같은 셀), `offline-tests`의 오프라인 Alembic 테스트, `integration-tests`·`make-integration`·`integration-full`의 라이브 Alembic 연산, `integration-tests`와 `integration-full`의 트랜잭션 DDL | 고위험 PR과 PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
+| 패키징 | `ci.yml` `packaging-smoke-test`, `integration-full.yml` `packaging-smoke-test`(pycubrid extra와 Alembic 검사를 포함한 같은 단계), `publish-pypi.yml` `build` | 고위험 PR과 PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | 대표 라이브 스모크 | `live-smoke`를 흡수한 `ci.yml` `make-integration`(pycubrid, CUBRID 11.4, Python 3.12) | main 푸시, 주간, 수동 실행 |
 | `make integration` | `ci.yml` `make-integration`, `integration-full.yml` `make-integration`(두 드라이버, CUBRID 10.2와 11.4) | PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | CUBRID/Python 엔드포인트 | `ci.yml` `integration-tests`(고위험 PR은 3.14/11.4, PR이 아닌 코드 이벤트는 3.11/10.2 추가), `integration-full.yml` `integration-full`(4 × 4) | 고위험 PR, PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
-| SQLAlchemy 다이얼렉트 컴플라이언스(차단) | `ci.yml` `integration-tests`: 3.14/11.4의 CUBRIDdb 레인, 두 셀의 릴리스된 pycubrid 레인 | 고위험 PR(3.14/11.4), PR이 아닌 코드 이벤트(두 셀) |
+| SQLAlchemy 다이얼렉트 컴플라이언스(차단) | `ci.yml` `integration-tests`: 3.14/11.4의 CUBRIDdb 레인, 두 셀의 릴리스된 pycubrid 레인, `integration-full.yml` `sqlalchemy-compliance`(같은 두 셀의 같은 레인) | 고위험 PR(3.14/11.4), PR이 아닌 코드 이벤트(두 셀), 수동 실행과 릴리스(두 셀) |
 | 가장 오래된 셀의 CUBRIDdb SQLAlchemy 컴플라이언스(권고) | `ci.yml` `integration-tests`(3.11/10.2) | 최근 7일에 코드 변경이 있는 주간 실행, 코드 수동 실행 |
 | SQLAlchemy 프리릴리스 카나리(권고) | `ci.yml` `sqlalchemy-21-canary` | 주간 일정과 수동 실행 |
 | pycubrid 업스트림 카나리(권고, 보고) | `upstream-canary.yml` | 목요일 06:00 UTC와 수동 실행 |
@@ -177,11 +177,22 @@ Actions 데이터와 비교하세요.
 권한, 그리고 취소되지 않는 푸시 실행이 필요했고, 마지막 것은 위에서 측정한 대체된
 취소된 실행 16건을 끝까지 실행하게 했을 것입니다.
 
-`ci.yml`의 SQLAlchemy 컴플라이언스 레인, 타입 검사, `alembic-compat`,
-`packaging-smoke-test`의 pycubrid extra 및 Alembic 검사는 여전히 릴리스가 반복하지
-않으며, 릴리스 경로는 이를 위해 릴리스 PR과 `main` 푸시 실행에 의존합니다. 이 나머지를
-닫으려면 릴리스가 다른 워크플로의 증거를 어떻게 요구할지 결정해야 하며, #737에서
-추적합니다.
+같은 이유가 이제 나머지 `main` 푸시 증거에도 적용됩니다(#737, 옵션 b).
+`integration-full.yml`은 `ci.yml` `typecheck`, `alembic-compat`,
+`packaging-smoke-test`(pycubrid extra 및 Alembic 검사 포함)의 사본과
+`sqlalchemy-compliance` 잡도 실행합니다. 이 잡은 Python 3.14/CUBRID 11.4에서 차단
+CUBRIDdb 레인을, 3.14/11.4와 3.11/10.2 두 셀에서 차단 릴리스된 pycubrid 레인을
+실행하며, 각 레인은 `test/known_failures.txt` 기준선을 캡처한 SQLAlchemy 버전에
+고정됩니다. 이 잡들은 릴리스 SHA를 체크아웃하고, 변경 경로로 선택되지 않으며, 모든
+`integration-full.yml` 실행(수동 실행과 릴리스 호출)에서 실행됩니다.
+`full-matrix-result`는 이들을 `needs`에 두고 각각이 성공하지 않으면 실패하므로,
+실패·취소·건너뜀 레인은 호출된 워크플로를 필요로 하는 `publish-pypi.yml`의 `build`와
+`publish` 잡을 막습니다. 가장 오래된 셀의 권고용 CUBRIDdb 컴플라이언스 레인은 아무것도
+차단하지 않으므로 반복하지 않습니다. `publish-pypi.yml`은 바뀌지 않습니다. 이 워크플로는
+cubrid-lab 저장소 사이에서 동일하게 유지되며, 이 때문에 옵션 (a)(`actions: read`와
+필수 `ci.yml` 푸시 실행)를 채택하지 않았습니다. 사본은 릴리스마다 짧은 잡 세 개(위의
+중앙값으로 약 1.4 러너 분)와 라이브 컴플라이언스 셀 두 개를 추가하며,
+`test/test_ci_policy.py`가 그 단계를 `ci.yml` 원본과 같게 유지합니다.
 
 ## 오프라인 Python 엔드포인트
 

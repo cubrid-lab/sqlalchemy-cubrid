@@ -9,7 +9,7 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
 | Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.14) (#734); oldest/newest live endpoints |
 | Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.14 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes; the compliance step needs code changes in the previous seven days (#737) |
-| Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.14 offline cells (#737) |
+| Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.14 offline cells, type checking, `alembic-compat`, the packaging smoke test and the gating SQLAlchemy compliance lanes (#737) |
 
 PRs run the same full offline selection (`-m "not integration and not repo"`) and
 95% coverage floor as pushes. The former three-file PR smoke ran in about 1 s
@@ -109,13 +109,13 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 | Coverage | Owner (workflow / job) | Event tier |
 | --- | --- | --- |
 | Offline suite, 95% floor | `ci.yml` `offline-tests`; `integration-full.yml` `offline-endpoints` | PR: Python 3.12. Main push, weekly, dispatch: 3.11 and 3.14. Release: 3.11 and 3.14 |
-| Type checking | `ci.yml` `typecheck` (Python 3.13, SQLAlchemy 2.1.1) | Every code event |
-| Alembic compatibility | `ci.yml` `alembic-compat` (latest Alembic); offline Alembic tests in `offline-tests`; live Alembic operations in `integration-tests`, `make-integration` and `integration-full`; transactional DDL in `integration-tests` and `integration-full` | Risk PR and non-PR code; release through `integration-full` |
-| Packaging | `ci.yml` `packaging-smoke-test`; `publish-pypi.yml` `build` | Risk PR and non-PR code; release |
+| Type checking | `ci.yml` `typecheck` (Python 3.13, SQLAlchemy 2.1.1); `integration-full.yml` `typecheck` (same cell) | Every code event; dispatch and release |
+| Alembic compatibility | `ci.yml` `alembic-compat` (latest Alembic); `integration-full.yml` `alembic-compat` (same cell); offline Alembic tests in `offline-tests`; live Alembic operations in `integration-tests`, `make-integration` and `integration-full`; transactional DDL in `integration-tests` and `integration-full` | Risk PR and non-PR code; dispatch and release |
+| Packaging | `ci.yml` `packaging-smoke-test`; `integration-full.yml` `packaging-smoke-test` (same steps, including the pycubrid extra and Alembic checks); `publish-pypi.yml` `build` | Risk PR and non-PR code; dispatch and release |
 | Representative live smoke | `ci.yml` `make-integration` (pycubrid, CUBRID 11.4, Python 3.12), which absorbed `live-smoke` | Main push, weekly, dispatch |
 | `make integration` | `ci.yml` `make-integration`; `integration-full.yml` `make-integration` (both drivers, CUBRID 10.2 and 11.4) | Non-PR code; dispatch and release |
 | CUBRID/Python endpoints | `ci.yml` `integration-tests` (3.14/11.4 on risk PRs, plus 3.11/10.2 on non-PR code); `integration-full.yml` `integration-full` (4 × 4) | Risk PR, non-PR code; dispatch and release |
-| SQLAlchemy dialect compliance (gating) | `ci.yml` `integration-tests`: CUBRIDdb lane on 3.14/11.4, released-pycubrid lane on both cells | Risk PR (3.14/11.4), non-PR code (both cells) |
+| SQLAlchemy dialect compliance (gating) | `ci.yml` `integration-tests`: CUBRIDdb lane on 3.14/11.4, released-pycubrid lane on both cells; `integration-full.yml` `sqlalchemy-compliance` (the same lanes on the same two cells) | Risk PR (3.14/11.4), non-PR code (both cells); dispatch and release (both cells) |
 | SQLAlchemy compliance, CUBRIDdb on the oldest cell (advisory) | `ci.yml` `integration-tests` (3.11/10.2) | Weekly runs with code changes in the previous 7 days, and code dispatches |
 | SQLAlchemy pre-release canary (advisory) | `ci.yml` `sqlalchemy-21-canary` | Weekly schedule and dispatch |
 | pycubrid upstream canary (advisory, reported) | `upstream-canary.yml` | Thursday 06:00 UTC and dispatch |
@@ -185,12 +185,23 @@ runner for at least as long), `actions: read` on the release workflow, which is
 kept identical across cubrid-lab repositories, and non-cancelling push runs,
 which would have finished the 16 cancelled runs measured above.
 
-The SQLAlchemy compliance lanes, type checking, `alembic-compat` and the
-pycubrid-extra and Alembic checks of `packaging-smoke-test` in `ci.yml` are still
-not repeated by the release; the release path relies
-on the release PR and the `main` push run for them. Closing that remainder needs
-a decision on how the release requires another workflow's evidence and is
-tracked in #737.
+The same reasoning now covers the rest of the `main` push evidence (#737,
+option b). `integration-full.yml` also runs copies of `ci.yml` `typecheck`,
+`alembic-compat` and `packaging-smoke-test` (including its pycubrid-extra and
+Alembic checks), and an `sqlalchemy-compliance` job with the gating CUBRIDdb lane
+on Python 3.14/CUBRID 11.4 and the gating released-pycubrid lane on both
+3.14/11.4 and 3.11/10.2, each pinned to the SQLAlchemy version its
+`test/known_failures.txt` baseline was captured with. They check out the release
+SHA, are not selected by changed paths, and run on every `integration-full.yml`
+run (manual dispatch and the release call). `full-matrix-result` lists them in
+`needs` and fails unless each one succeeds, so a failed, cancelled or skipped
+lane blocks `publish-pypi.yml`, whose `build` and `publish` jobs need the called
+workflow. The advisory CUBRIDdb compliance lane of the oldest cell gates nothing
+and is not repeated. `publish-pypi.yml` is unchanged: it is kept identical across
+cubrid-lab repositories, which ruled out option (a) (`actions: read` and a
+required `ci.yml` push run). The copies add three short jobs (about 1.4 runner
+minutes from the medians above) and two live compliance cells per release;
+`test/test_ci_policy.py` keeps their steps equal to the `ci.yml` sources.
 
 ## Offline Python endpoints
 

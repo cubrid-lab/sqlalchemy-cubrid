@@ -26,6 +26,7 @@ EXPECTED = {
     ("ci.yml", "integration-tests"),
     ("integration-full.yml", "integration-full"),
     ("integration-full.yml", "make-integration"),
+    ("integration-full.yml", "sqlalchemy-compliance"),
 }
 MISS = "steps.cubriddb-cache.outputs.cache-hit != 'true'"
 
@@ -84,7 +85,12 @@ def test_only_the_build_is_skipped_on_a_hit(wf: str, name: str, steps: list) -> 
 
 
 @pytest.mark.parametrize(
-    ("wf", "name"), [("ci.yml", "integration-tests"), ("integration-full.yml", "integration-full")]
+    ("wf", "name"),
+    [
+        ("ci.yml", "integration-tests"),
+        ("integration-full.yml", "integration-full"),
+        ("integration-full.yml", "sqlalchemy-compliance"),
+    ],
 )
 def test_live_readiness_still_connects_through_cubriddb(wf: str, name: str) -> None:
     steps = yaml.safe_load((ROOT / ".github/workflows" / wf).read_text())["jobs"][name]["steps"]
@@ -104,7 +110,7 @@ def test_all_jobs_share_one_key_and_one_build_recipe() -> None:
         recipe = _step(steps, "Build the CUBRID Python driver wheel")[1]["run"]
         recipes.add("\n".join(line.strip() for line in recipe.splitlines() if line.strip()))
     assert len(keys) == 1, keys
-    assert len(recipes) == 1, "the three build recipes diverged; keep them identical"
+    assert len(recipes) == 1, "the build recipes diverged; keep them identical"
 
 
 def test_make_integration_guards_every_driver_step() -> None:
