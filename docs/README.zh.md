@@ -245,7 +245,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ## 安全
 
-请通过电子邮件报告漏洞 -- 详见 [SECURITY.md](../SECURITY.md)。请勿就安全问题创建公开 issue。
+请通过 GitHub 私密漏洞报告（private vulnerability reporting）报告漏洞（备用方式为电子邮件）-- 详见 [SECURITY.md](../SECURITY.md)。请勿就安全问题创建公开 issue。
 
 ## 许可证
 

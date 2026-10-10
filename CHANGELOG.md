@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialect is unchanged.
 
 ### Documentation
+- **Private vulnerability reporting is the preferred security channel (#738)** — GitHub
+  private vulnerability reporting is now enabled for the repository. `SECURITY.md` names it
+  as the preferred private route and keeps the maintainer email as the fallback; `README.md`
+  and the translated READMEs say the same. Docs only.
 - **No more "nightly" full integration (#747)** — the PRD CI matrix (+ ko) listed a
   "Nightly" full integration run with Python 3.10. `integration-full.yml` has no
   schedule: it runs on manual dispatch and as the release gate, on Python

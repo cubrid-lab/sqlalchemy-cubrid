@@ -15,9 +15,14 @@ strongly encouraged to always run the latest release.
 
 ## Reporting a Vulnerability
 
-We take security vulnerabilities seriously. If you discover a security issue in sqlalchemy-cubrid, please report it responsibly by emailing:
+We take security vulnerabilities seriously. If you discover a security issue in sqlalchemy-cubrid, please report it privately:
 
-**Email:** paikend@gmail.com
+1. **Preferred:** use GitHub's private vulnerability reporting. Open the
+   [Security tab](https://github.com/cubrid-lab/sqlalchemy-cubrid/security) and choose
+   **Report a vulnerability**, or go straight to
+   [the advisory form](https://github.com/cubrid-lab/sqlalchemy-cubrid/security/advisories/new).
+   Only the maintainers can see the report.
+2. **Fallback:** if you can't use GitHub, email **paikend@gmail.com**.
 
 **Do not** open a public GitHub issue for security vulnerabilities. Responsible disclosure allows us to address the issue before public disclosure.
 

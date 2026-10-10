@@ -247,7 +247,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ## Безопасность
 
-Сообщайте об уязвимостях по электронной почте -- см. [SECURITY.md](../SECURITY.md). Не создавайте публичные issues по вопросам безопасности.
+Сообщайте об уязвимостях конфиденциально через GitHub private vulnerability reporting (запасной вариант — электронная почта) -- см. [SECURITY.md](../SECURITY.md). Не создавайте публичные issues по вопросам безопасности.
 
 ## Лицензия
 

@@ -277,7 +277,7 @@ CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선�
 
 ## 보안
 
-취약점은 이메일로 제보해 주세요 -- 자세한 내용은 [SECURITY.md](../SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
+취약점은 GitHub의 비공개 취약점 제보(private vulnerability reporting)로 제보해 주세요(대체 수단은 이메일) -- 자세한 내용은 [SECURITY.md](../SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
 
 ## 라이선스
 

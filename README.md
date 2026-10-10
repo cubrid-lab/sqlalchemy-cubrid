@@ -322,7 +322,7 @@ Browse open [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid
 
 ## Security
 
-Report vulnerabilities via email -- see [SECURITY.md](SECURITY.md). Do not open public issues for security concerns.
+Report vulnerabilities privately through GitHub's private vulnerability reporting (email is the fallback) -- see [SECURITY.md](SECURITY.md). Do not open public issues for security concerns.
 
 ## Disclaimer
 
