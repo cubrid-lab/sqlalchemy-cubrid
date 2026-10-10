@@ -207,7 +207,7 @@ CREATE TABLE tagged_items (
 
 `SET`이나 `MULTISET` 컬럼의 값은 Python `list`, `tuple`, `set`, `frozenset`으로 바인딩합니다. `SEQUENCE`는 순서가 있으므로 `list`나 `tuple`로 바인딩하세요. pycubrid 드라이버에서 `SEQUENCE` 컬럼에 `set`이나 `frozenset`을 넘기면 pycubrid 버전과 관계없이 `TypeError`("SEQUENCE is ordered; pass a list or tuple", SQLAlchemy의 `StatementError`로 감싸짐)가 발생하며, 방언이 대신 정렬하지 않습니다. 그다음 동작은 드라이버에 따라 다릅니다.
 
-| | 타입 지정 컬렉션 파라미터가 있는 `cubrid+pycubrid://`, `cubrid+aiopycubrid://` (pycubrid main) | 릴리스된 pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
+| | pycubrid >= 1.9.0을 사용하는 `cubrid+pycubrid://`, `cubrid+aiopycubrid://` | pycubrid 1.8.x (지원 최저 버전) | `cubrid://` (CUBRIDdb) |
 |---|---|---|---|
 | `list`/`tuple` (`SET`/`MULTISET`은 `set`/`frozenset`도) 바인딩 | 컬럼 타입에 맞는 `pycubrid.types.Set`, `Multiset`, `Sequence`로 감싸 `SET{...}`, `MULTISET{...}`, `SEQUENCE{...}` 리터럴로 전송 | `ProgrammingError` (pycubrid가 컬렉션 파라미터를 거부) | CUBRIDdb가 직접, 항상 SET으로 바인딩: MULTISET은 중복을, SEQUENCE는 순서를 잃음 ([드라이버 호환성, 알려진 문제 11](DRIVER_COMPAT.md#11-컬렉션-파라미터-set-multiset-sequence)) |
 | `SET` 조회 | `?decode_collections=true`이면 `frozenset`, 없으면 원시 `bytes` | 같음 | `str`의 `set` |
@@ -235,7 +235,7 @@ with engine.begin() as conn:
 
 pycubrid에서는:
 
-- 타입 지정 파라미터(cubrid-lab/pycubrid#567)는 pycubrid main에 있으며 아직 pycubrid 릴리스에는 없습니다. 방언은 이를(`pycubrid.types.Set`, `Multiset`, `Sequence`) 감지하며, 이전 pycubrid에서는 값을 드라이버에 그대로 넘기므로 컬렉션 파라미터는 이전처럼 실패합니다.
+- 타입 지정 파라미터(`pycubrid.types.Set`, `Multiset`, `Sequence`)는 pycubrid 1.9.0에 출시되었습니다(cubrid-lab/pycubrid#567). 방언은 이를 감지합니다. 여전히 지원하는 pycubrid 1.8.x에서는 값을 드라이버에 그대로 넘기므로 컬렉션 파라미터는 이전처럼 실패합니다.
 - 각 원소는 pycubrid가 단독으로 바인딩할 수 있는 값이어야 합니다: `None`, `bool`, `int`, `float`, `Decimal`, `str`, `bytes`, `bytearray`, `date`, `time`, `datetime`. 중첩 컬렉션은 거부됩니다.
 - 이미 `pycubrid.types.Set`, `Multiset`, `Sequence`인 값, `None`, 그 밖의 값(예: `str`)은 드라이버에 그대로 전달됩니다.
 - 컬렉션 의미는 서버가 유지하며 방언은 바꾸지 않습니다. `SET`은 중복을 제거하고, `MULTISET`은 중복은 유지하지만 순서는 유지하지 않으며(`sorted(...)`로 비교하세요), `SEQUENCE`는 둘 다 유지합니다. 빈 컬렉션은 `frozenset()` 또는 `[]`로, `NULL` 컬럼은 `None`으로, `NULL` 원소는 컬렉션 안의 `None`으로 조회됩니다.
@@ -244,7 +244,7 @@ pycubrid에서는:
 - 컬렉션 값은 인라인으로 렌더링할 수 없습니다. `literal_binds`와 `literal_execute`는 `NULL`이 아닌 컬렉션 값에 `CompileError`를 발생시킵니다(`NULL`은 `NULL`로 렌더링). 컬렉션은 파라미터로 바인딩하세요.
 - ORM에서는 컬럼을 바꿀 때 새 컬렉션을 대입하세요(`obj.history = [*obj.history, 4]`). SQLAlchemy는 `list`나 `set` 속성의 제자리 변경을 추적하지 않습니다.
 
-이 왕복은 CUBRID 10.2와 11.4에서 pycubrid main으로 라이브 테스트됩니다(Core와 ORM, 동기와 비동기, `test/test_collection_roundtrip.py`).
+이 왕복은 1.9.0 출시 전 pycubrid main과 CUBRID 10.2, 11.4에서 라이브 테스트되었습니다(Core와 ORM, 동기와 비동기, `test/test_collection_roundtrip.py`).
 
 ### JSON 타입
 

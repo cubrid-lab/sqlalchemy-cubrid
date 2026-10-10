@@ -216,7 +216,7 @@ the pycubrid drivers a `set` or `frozenset` for a `SEQUENCE` column raises
 SQLAlchemy's `StatementError`) whatever the pycubrid version, and the dialect
 never sorts it for you. What happens next depends on the driver:
 
-| | `cubrid+pycubrid://`, `cubrid+aiopycubrid://` with typed collection parameters (pycubrid main) | Released pycubrid 1.8.0 | `cubrid://` (CUBRIDdb) |
+| | `cubrid+pycubrid://`, `cubrid+aiopycubrid://` with pycubrid >= 1.9.0 | pycubrid 1.8.x (supported floor) | `cubrid://` (CUBRIDdb) |
 |---|---|---|---|
 | Binding a `list`/`tuple` (and a `set`/`frozenset` for `SET`/`MULTISET`) | Wrapped in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type and sent as a `SET{...}`, `MULTISET{...}` or `SEQUENCE{...}` literal | `ProgrammingError` (pycubrid rejects collection parameters) | Bound by CUBRIDdb itself, always as a SET: a MULTISET loses duplicates and a SEQUENCE loses its order ([Driver Compatibility, Known Issue 11](DRIVER_COMPAT.md#11-collection-parameters-set-multiset-sequence)) |
 | Reading `SET` | `frozenset` with `?decode_collections=true`, raw `bytes` without it | Same | `set` of `str` |
@@ -244,11 +244,10 @@ with engine.begin() as conn:
 
 On pycubrid:
 
-- The typed parameters (cubrid-lab/pycubrid#567) are on pycubrid main and are
-  not in a pycubrid release yet. The dialect detects them
-  (`pycubrid.types.Set`, `Multiset` and `Sequence`); with an older pycubrid it
-  passes values to the driver unchanged, so a collection parameter fails as
-  before.
+- Typed parameters (`pycubrid.types.Set`, `Multiset` and `Sequence`) shipped in
+  pycubrid 1.9.0 (cubrid-lab/pycubrid#567). The dialect detects them; with the
+  still-supported pycubrid 1.8.x it passes values to the driver unchanged, so
+  a collection parameter fails as before.
 - Each element must be a value pycubrid can bind on its own: `None`, `bool`,
   `int`, `float`, `Decimal`, `str`, `bytes`, `bytearray`, `date`, `time` or
   `datetime`. Nested collections are rejected.
@@ -272,8 +271,9 @@ On pycubrid:
   (`obj.history = [*obj.history, 4]`). SQLAlchemy does not track in-place
   changes to a `list` or `set` attribute.
 
-The round trips are tested live on CUBRID 10.2 and 11.4 with pycubrid main
-(Core and ORM, sync and async; `test/test_collection_roundtrip.py`).
+The round trips were tested live on CUBRID 10.2 and 11.4 with pycubrid main
+before the 1.9.0 release (Core and ORM, sync and async;
+`test/test_collection_roundtrip.py`).
 
 ### JSON Type
 
