@@ -362,7 +362,7 @@ Only the installer changes: before the switch, `.[dev]`, `.[dev,alembic]` and
 `.[dev,pycubrid]` on Python 3.12 resolved to identical package sets with pip and uv
 (73, 73 and 74 packages after PEP 503 name normalization). The pinned SQLAlchemy
 and pycubrid compliance installs keep their exact pins, and the SQLAlchemy
-pre-release canary uses `--upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit`, which keeps pip's upgrade scope (only SQLAlchemy, not its dependencies) and admits a pre-release only where the specifier asks for one. The oldest cell's SQLAlchemy 2.0 pin step logs the pinned version. Plain `pip` stays where it is the
+pre-release canary uses `--upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit`, which requests an SQLAlchemy-only upgrade. This resolver flag does not guarantee that the newest available SQLAlchemy pre-release is selected: a compatible stable 2.1.x release may still win over a 2.2 beta. Issue #778 tracks verifying the resolved version against a real published 2.2 pre-release; the canary must not be cited as evidence of 2.2 coverage until that check succeeds. The oldest cell's SQLAlchemy 2.0 pin step logs the pinned version. Plain `pip` stays where it is the
 point: the packaging smoke venvs prove the built wheel and sdist install with the
 end-user tool, and the external `live-smoke` reusable workflow receives its own
 install command. `test/test_workflow_installs.py` enforces this.

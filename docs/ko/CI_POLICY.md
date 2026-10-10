@@ -335,7 +335,7 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
 3.12에서 `.[dev]`, `.[dev,alembic]`, `.[dev,pycubrid]`를 pip와 uv로 해석한 결과는 같은
 패키지 집합이었습니다(PEP 503 이름 정규화 후 각각 73, 73, 74개). 고정된 SQLAlchemy와
 pycubrid 컴플라이언스 설치는 정확한 핀을 유지하고, SQLAlchemy 프리릴리스 카나리는
-`--upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit`를 사용해 pip의 업그레이드 범위(SQLAlchemy만, 의존성은 제외)를 유지하고 지정자가 요구하는 경우에만 프리릴리스를 허용합니다. 가장 오래된 셀의 SQLAlchemy 2.0 고정 단계는 고정된 버전을 기록합니다. 일반 `pip`는 그것이 목적인 곳에 남습니다. 패키징
+`--upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit`로 SQLAlchemy만 업그레이드하도록 요청합니다. 이 옵션은 최신 SQLAlchemy 프리릴리스 설치를 보장하지 않으며, 안정 버전 2.1.x가 2.2 베타보다 우선 선택될 수 있습니다. #778에서 실제 공개된 2.2 프리릴리스를 대상으로 설치 버전을 검증할 예정이며, 검증 전까지 카나리 성공을 2.2 호환성 증거로 해석하지 않습니다. 가장 오래된 셀의 SQLAlchemy 2.0 고정 단계는 고정된 버전을 기록합니다. 일반 `pip`는 그것이 목적인 곳에 남습니다. 패키징
 스모크 가상 환경은 빌드된 wheel과 sdist가 최종 사용자 도구로 설치되는지 증명하고, 외부
 `live-smoke` 재사용 워크플로는 자체 설치 명령을 받습니다. `test/test_workflow_installs.py`가
 이를 검증합니다.
