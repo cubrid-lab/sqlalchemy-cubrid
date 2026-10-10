@@ -65,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialect is unchanged.
 
 ### Documentation
+- **No more "nightly" full integration (#747)** — the PRD CI matrix (+ ko) listed a
+  "Nightly" full integration run with Python 3.10. `integration-full.yml` has no
+  schedule: it runs on manual dispatch and as the release gate, on Python
+  3.11–3.14. The `test/test_dogfood_orm.py` docstring said the same. Both now
+  describe the current triggers; `nightly` remains only as the Hypothesis profile
+  name. Docs only.
 - **`AGENTS.md` no longer carries stale planning context (#736)** — the
   "Performance Loop System" snapshot (R3 phases, issues #68/#70 as current work) is
   replaced by a short performance-context statement pointing to
