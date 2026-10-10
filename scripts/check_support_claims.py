@@ -61,6 +61,12 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
             for variant in ("sync", "async"):
                 if f"| pycubrid ({variant}) | {py_bound} |" not in readme:
                     problems.append(f"README.md: pycubrid {variant} bound must match metadata")
+            for name, document in (("README.md", readme), ("docs/SUPPORT_MATRIX.md", matrix)):
+                stated = re.findall(
+                    r"pycubrid\s*>=\s*(\d+\.\d+\.\d+)\s*,\s*<\s*(\d+\.\d+)", document
+                )
+                if any(f">={floor},<{ceiling}" != py_bound for floor, ceiling in stated):
+                    problems.append(f"{name}: pycubrid package bounds differ from metadata")
     sqlalchemy_specs = {
         group: [str(item.specifier) for item in values if item.name.lower() == "sqlalchemy"]
         for group, values in requirements.items()

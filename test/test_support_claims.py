@@ -74,6 +74,27 @@ def test_pycubrid_driver_floor_must_match_readme() -> None:
     )
 
 
+def test_pycubrid_floor_change_needs_all_current_claims_updated() -> None:
+    metadata = METADATA.replace('"pycubrid>=1.8.0,<2.0"', '"pycubrid>=1.9.0,<2.0"')
+    readme = README.replace(
+        "| pycubrid (sync) | >=1.8.0,<2.0 |", "| pycubrid (sync) | >=1.9.0,<2.0 |"
+    )
+    readme = readme.replace(
+        "| pycubrid (async) | >=1.8.0,<2.0 |", "| pycubrid (async) | >=1.9.0,<2.0 |"
+    )
+    problems = check_claims(metadata, readme, MATRIX)
+    assert "README.md: pycubrid package bounds differ from metadata" in problems
+    assert "docs/SUPPORT_MATRIX.md: pycubrid package bounds differ from metadata" in problems
+
+
+def test_coordinated_pycubrid_floor_change_is_allowed() -> None:
+    metadata = METADATA.replace('"pycubrid>=1.8.0,<2.0"', '"pycubrid>=1.9.0,<2.0"')
+    readme = README.replace(">=1.8.0,<2.0", ">=1.9.0,<2.0")
+    readme = readme.replace(">= 1.8.0,<2.0", ">= 1.9.0,<2.0")
+    matrix = MATRIX.replace(">= 1.8.0,<2.0", ">= 1.9.0,<2.0")
+    assert check_claims(metadata, readme, matrix) == []
+
+
 def test_deprecated_extras_must_keep_pypi_driver_package() -> None:
     metadata = METADATA.replace('"CUBRID-Python"', '"pycubrid"')
     problems = check_claims(metadata, README, MATRIX)
