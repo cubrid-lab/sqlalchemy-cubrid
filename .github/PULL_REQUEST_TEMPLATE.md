@@ -42,6 +42,8 @@ See CONTRIBUTING.md#pull-request-and-commit-titles.
 
 <!-- Commands actually executed, results, and checks not run with reasons. -->
 
+Live CUBRID/Alembic evidence (dialect, SQL, reflection or migration changes; CUBRID version and command, or "not applicable"):
+
 <!-- Optional AI review: scope/tool/result. AI review is separate from executed checks. -->
 
 <!-- If documentation is not required, explain why or request the maintainer-managed `docs-not-needed` label.

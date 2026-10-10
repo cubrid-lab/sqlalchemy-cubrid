@@ -227,6 +227,9 @@ pre-commit run --all-files
 - All PRs require at least one review before merge.
 - CI must pass (lint, offline tests, integration tests).
 - Maintain backward compatibility unless explicitly approved.
+- `.github/CODEOWNERS` requests maintainer review automatically for release, CI,
+  security-policy, dialect, compiler, reflection and Alembic paths. It only routes
+  reviews: it is not a security boundary, and other changes do not wait on a code owner.
 
 Contributors install the dev extra, run the shared checks, update affected docs
 and open a PR with motivation, commands/results and reasons for checks not run.

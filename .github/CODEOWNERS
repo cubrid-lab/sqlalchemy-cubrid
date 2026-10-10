@@ -1,0 +1,37 @@
+# Review routing for high-blast-radius paths (#738).
+#
+# This file is intended only to route review requests; it is not a security
+# boundary. Whether code-owner approval is ever required on main is a separate
+# repository-settings decision (see #738). Paths not listed here have no
+# special owner: ordinary source, tests, docs and examples follow the normal
+# review flow without waiting on a code owner.
+
+# CI, release and supply-chain automation
+/.github/workflows/                     @yeongseon @paikend
+/.github/dependabot.yml                 @yeongseon @paikend
+/.github/CODEOWNERS                     @yeongseon @paikend
+/.github/labels.yml                     @yeongseon @paikend
+/release-please-config.json             @yeongseon @paikend
+/.release-please-manifest.json          @yeongseon @paikend
+/scripts/check_release_title.py         @yeongseon @paikend
+/scripts/compose_release_changelog.py   @yeongseon @paikend
+/scripts/extract_release_notes.py       @yeongseon @paikend
+/scripts/prepare_release.py             @yeongseon @paikend
+/scripts/pypi_duplicate_guard.py        @yeongseon @paikend
+/scripts/reconcile_release_labels.py    @yeongseon @paikend
+/scripts/release_detect.py              @yeongseon @paikend
+/scripts/release_summary.py             @yeongseon @paikend
+/pyproject.toml                         @yeongseon @paikend
+
+# Security and release policy
+/SECURITY.md                            @yeongseon @paikend
+/RELEASING.md                           @yeongseon @paikend
+
+# Dialect, SQL compilation, reflection and Alembic integration
+/sqlalchemy_cubrid/dialect.py           @yeongseon @paikend
+/sqlalchemy_cubrid/pycubrid_dialect.py  @yeongseon @paikend
+/sqlalchemy_cubrid/aio_pycubrid_dialect.py @yeongseon @paikend
+/sqlalchemy_cubrid/compiler.py          @yeongseon @paikend
+/sqlalchemy_cubrid/base.py              @yeongseon @paikend
+/sqlalchemy_cubrid/alembic_impl.py      @yeongseon @paikend
+/_sqlalchemy_cubrid_alembic.py          @yeongseon @paikend
