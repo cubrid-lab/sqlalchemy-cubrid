@@ -44,6 +44,6 @@ compiler internals in practice.
 ## Validation Plan
 
 - Keep running full offline tests on SQLAlchemy `2.0.x` and `2.1.x`.
-- Run an upstream SQLAlchemy pre-release canary with `--pre` for `SQLAlchemy>=2.1.0b1,<2.3`; keep it `continue-on-error` so upcoming pre-releases do not block regular CI. The canary installs SQLAlchemy in a separate step, but the current uv pre-release selection option does not guarantee a 2.2 beta will be installed: a stable 2.1.x may still be selected. Inspect the resolved version; do not treat this job as 2.2 compatibility evidence until #778 validates it against a published 2.2 beta.
+- Run an upstream SQLAlchemy pre-release canary with `--prerelease=if-necessary-or-explicit` for `SQLAlchemy>=2.1.0b1,<2.3`; keep it `continue-on-error` so upcoming pre-releases do not block regular CI. The canary installs SQLAlchemy in a separate step, but this uv option does not guarantee a 2.2 beta will be installed: a stable 2.1.x may still be selected. Inspect the resolved version; do not treat this job as 2.2 compatibility evidence until #778 validates it against a published 2.2 beta.
 - If canary fails, prioritize replacing direct internal usage where public
   alternatives exist, or align with upstream dialect patterns.
