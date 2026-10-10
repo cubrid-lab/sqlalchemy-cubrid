@@ -30,6 +30,7 @@
 | 소스 | [github.com/CUBRID/cubrid-python](https://github.com/CUBRID/cubrid-python) |
 
 이 드라이버는 CUBRID CCI(C Client Interface) 라이브러리를 감쌉니다. 순수 Python 드라이버가 **아니며** CCI 헤더에 대한 컴파일이 필요합니다.
+위의 소스 빌드 CUBRIDdb 드라이버는 이 방언에서 지원합니다. 폐기 예정인 `[cubrid]` / `[cubriddb]` 설치 extra가 테스트되지 않은 PyPI 패키지를 선택하는 것이며, 드라이버 인터페이스 자체가 폐기된 것은 아닙니다. 새 프로젝트에는 CUBRID 네이티브 라이브러리가 필요 없고 아래 CUBRIDdb 제약을 피할 수 있는 `pycubrid`를 권장합니다.
 
 ---
 
@@ -237,8 +238,8 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 
 | 드라이버 | `list` / `tuple` / `set` 바인딩 | 컬렉션 조회 |
 |---|---|---|
-| pycubrid main (타입 지정 컬렉션 파라미터, cubrid-lab/pycubrid#567) | 방언이 값을 컬럼 타입에 맞는 `pycubrid.types.Set`, `Multiset`, `Sequence`로 감쌉니다. `SET`, `MULTISET`, `SEQUENCE`의 의미가 유지됩니다. `SEQUENCE`는 `list`나 `tuple`만 받으며, `set`/`frozenset`은 `TypeError`("SEQUENCE is ordered; pass a list or tuple")를 발생시킵니다. | `?decode_collections=true`이면 `frozenset`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`), 없으면 원시 `bytes` |
-| pycubrid 1.8.0 (릴리스) | `ProgrammingError`: pycubrid가 컬렉션 파라미터를 거부합니다. `SEQUENCE`에 넘긴 `set`/`frozenset`은 방언이 위와 같은 `TypeError`를 발생시킵니다. | 위와 같음 |
+| pycubrid >= 1.9.0 (타입 지정 컬렉션 파라미터, cubrid-lab/pycubrid#567) | 방언이 값을 컬럼 타입에 맞는 `pycubrid.types.Set`, `Multiset`, `Sequence`로 감쌉니다. `SET`, `MULTISET`, `SEQUENCE`의 의미가 유지됩니다. `SEQUENCE`는 `list`나 `tuple`만 받으며, `set`/`frozenset`은 `TypeError`("SEQUENCE is ordered; pass a list or tuple")를 발생시킵니다. | `?decode_collections=true`이면 `frozenset`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`), 없으면 원시 `bytes` |
+| pycubrid 1.8.x (지원 최저 버전) | `ProgrammingError`: pycubrid가 컬렉션 파라미터를 거부합니다. `SEQUENCE`에 넘긴 `set`/`frozenset`은 방언이 위와 같은 `TypeError`를 발생시킵니다. | 위와 같음 |
 | CUBRIDdb 11.3.0.51 | CUBRIDdb가 값을 직접, 항상 SET 호스트 변수로 바인딩합니다. MULTISET은 중복을, SEQUENCE는 순서를 잃습니다(`[3, 1, 2, 1]`은 `{1, 2, 3}`으로 저장됨). `None` 원소는 지원되지 않습니다. `[None]`은 드라이버 안에서 `UnboundLocalError`로, `[1, None]`은 `-494 Cannot coerce host var to type sequence`로 실패합니다. | 원소 타입과 관계없이 `str` 원소로 된 `set`(`SET`) 또는 `list`(`MULTISET`, `SEQUENCE`) |
 
 방언은 CUBRIDdb의 동작을 바꾸지 않습니다. CUBRIDdb에서 중복이나 순서가 필요한 컬렉션은 바인드 파라미터로 보내지 말고 SQL에 컬렉션 리터럴을 쓰거나(`MULTISET{1, 1}`, `SEQUENCE{3, 1, 2}`) `cubrid+pycubrid://`를 사용하세요. [타입 매핑, 컬렉션 값](TYPES.md#컬렉션-값)을 참고하세요.

@@ -70,7 +70,7 @@ final release; free-threaded builds are outside this preparation.
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported (legacy C-extension, v11.3.0.51+ only) |
+| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported C-extension driver (v11.3.0.51+ only) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
 

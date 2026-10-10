@@ -34,7 +34,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 - Tested against **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) across **Python 3.11 -- 3.14**
 - CUBRID-specific DML constructs: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic migration support out of the box
-- **Three driver options** — pure Python (`cubrid+pycubrid://`, recommended), async pure Python (`cubrid+aiopycubrid://`), or the legacy C-extension (`cubrid://` / `cubrid+cubriddb://`)
+- **Three driver options** — pure Python (`cubrid+pycubrid://`, recommended), async pure Python (`cubrid+aiopycubrid://`), or the CUBRIDdb C-extension driver (`cubrid://` / `cubrid+cubriddb://`)
 
 ## Support Status
 
@@ -74,7 +74,7 @@ environment and validate your application before upgrading.
 
 - Python 3.11 or later
 - SQLAlchemy 2.0 – 2.1
-- [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, recommended) **or** the legacy CUBRIDdb C extension built from [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later
+- [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, recommended) **or** the official CUBRIDdb C extension built from [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later
 
 ## Installation
 
@@ -98,7 +98,7 @@ With Alembic support:
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-With the legacy CUBRIDdb C-extension driver (the bare `cubrid://` URL), build
+With the CUBRIDdb C-extension driver (the bare `cubrid://` URL), build
 CUBRIDdb from [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or
 later; see [Driver Compatibility](docs/DRIVER_COMPAT.md#building-cubriddb-from-source).
 
@@ -107,7 +107,7 @@ later; see [Driver Compatibility](docs/DRIVER_COMPAT.md#building-cubriddb-from-s
 > untested with this dialect: it returns `BIGINT` as `str` and fails parts of the
 > integration suite. The dialect warns (`SAWarning`) at the first connection when it
 > finds a CUBRIDdb older than 11.3. For new projects, use the recommended pure-Python
-> `[pycubrid]` driver (the `cubrid+pycubrid://` URL). To select the legacy C-extension
+> `[pycubrid]` driver (the `cubrid+pycubrid://` URL). To select the CUBRIDdb C-extension
 > driver explicitly, use the `cubrid+cubriddb://` URL.
 
 <img src="docs/demo.gif" alt="sqlalchemy-cubrid in action" width="100%"/>
@@ -257,7 +257,7 @@ from sqlalchemy import create_engine
 engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
-The recommended way is the pure-Python `pycubrid` driver: `create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")`. The driver requires no CUBRID native libraries. The `[pycubrid]` extra also installs `greenlet` for SQLAlchemy's async bridge; it may require build tools when no compatible wheel is available. The bare `cubrid://` URL uses the legacy CUBRIDdb C-extension driver, which must be built from cubrid-python v11.3.0.51 or later (the PyPI `CUBRID-Python` 9.3.x release that the deprecated `[cubriddb]` extra installs is untested); to select it explicitly and unambiguously use `cubrid+cubriddb://`.
+The recommended way is the pure-Python `pycubrid` driver: `create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")`. The driver requires no CUBRID native libraries. The `[pycubrid]` extra also installs `greenlet` for SQLAlchemy's async bridge; it may require build tools when no compatible wheel is available. The bare `cubrid://` URL uses the supported CUBRIDdb C-extension driver, which must be built from cubrid-python v11.3.0.51 or later (the PyPI `CUBRID-Python` 9.3.x release that the deprecated `[cubriddb]` extra installs is untested); to select it explicitly and unambiguously use `cubrid+cubriddb://`.
 
 ### Does sqlalchemy-cubrid support SQLAlchemy 2.0–2.1?
 
@@ -286,7 +286,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 `cubrid://` uses the C-extension driver (CUBRIDdb) which requires compilation. `cubrid+pycubrid://` uses the pure Python driver, which requires no CUBRID native libraries. The `[pycubrid]` extra includes `greenlet`, whose installation may require build tools when no compatible wheel is available. `cubrid+aiopycubrid://` uses the async variant of the pure Python driver for use with `create_async_engine` and `AsyncSession`.
 
-> **Recommendation:** for new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools. Use `cubrid+cubriddb://` with CUBRIDdb built from cubrid-python v11.3.0.51 or later when you specifically need the legacy C-extension driver.
+> **Recommendation:** for new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools. Use `cubrid+cubriddb://` with CUBRIDdb built from cubrid-python v11.3.0.51 or later when you specifically need the C-extension driver.
 
 ### Does sqlalchemy-cubrid support async?
 
