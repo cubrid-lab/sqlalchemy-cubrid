@@ -381,6 +381,12 @@ def test_release_please_only_touches_its_own_branch() -> None:
         "*) echo '::error::Unexpected release branch'; exit 1 ;; esac"
     )
     assert lines[guard - 1].startswith("branch=$(")
+    assert lines[guard + 1 : guard + 5] == [
+        "git fetch origin main",
+        STALE_MAIN,
+        "echo '::error::Main changed during generation; wait for the queued run'; exit 1",
+        "fi",
+    ]
     assert guard < lines.index('git checkout -B "$branch" FETCH_HEAD')
 
 
