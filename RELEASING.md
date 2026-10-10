@@ -240,7 +240,10 @@ means: a release was merged, and its publication is not proven. To recover:
    or abandoning `X.Y.Z` and preparing `X.Y.(Z+1)` for a real defect).
 3. When the publisher run at the merge SHA is green, dispatch **Prepare
    release** again. Reconciliation marks the PR tagged and release-please opens
-   the next candidate.
+   the next candidate. If you abandoned `X.Y.Z` instead, skip this step: there
+   is no green run to wait for and the PR must not be tagged; follow the
+   abandoned-release row (remove `autorelease: pending`, merge the fix, then
+   dispatch).
 
 If no publisher run exists, check whether the push started `publish-pypi.yml`
 and what `detect` decided. If recovery ran as a dispatch at another SHA
