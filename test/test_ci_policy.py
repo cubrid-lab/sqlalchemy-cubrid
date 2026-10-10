@@ -424,6 +424,21 @@ def detect() -> dict:
     return workflow("ci.yml")["jobs"]["detect-changes"]
 
 
+def test_support_claim_check_runs_for_docs_or_tooling_changes() -> None:
+    lint = workflow("ci.yml")["jobs"]["lint"]
+    assert lint["needs"] == "detect-changes"
+    steps = [
+        step
+        for step in lint["steps"]
+        if step.get("run") == "python scripts/check_support_claims.py"
+    ]
+    assert len(steps) == 1
+    assert steps[0]["if"] == (
+        "${{ needs.detect-changes.outputs.docs == 'true' || "
+        "needs.detect-changes.outputs.tooling == 'true' }}"
+    )
+
+
 def test_docs_build_job_mirrors_docs_workflow_and_stays_build_only() -> None:
     job = workflow("ci.yml")["jobs"]["docs-build"]
     assert job["needs"] == "detect-changes"

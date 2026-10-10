@@ -138,6 +138,7 @@ jobs:
   # Job 1: Lint (fast, no DB needed)
   # ──────────────────────────────────────────
   lint:
+    needs: detect-changes
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -162,6 +163,9 @@ jobs:
         run: python scripts/lint_changelog.py
       - name: Korean documents keep the structure of their English source
         run: python scripts/check_docs_translation.py
+      - name: Current support claims match package metadata and driver policy
+        if: ${{ needs.detect-changes.outputs.docs == 'true' || needs.detect-changes.outputs.tooling == 'true' }}
+        run: python scripts/check_support_claims.py
       - name: llms-full.txt and root llms.txt are in sync with source docs
         run: |
           python scripts/generate_llms_full.py
