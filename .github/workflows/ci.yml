@@ -361,6 +361,15 @@ jobs:
         run: |
           uv pip install --system -e ".[dev]"
           uv pip install --system --upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit "SQLAlchemy>=2.1.0b1,<2.3"
+          python - <<'PY'
+          from importlib.metadata import version
+          from packaging.version import Version
+
+          installed = Version(version("SQLAlchemy"))
+          print(f"SQLAlchemy canary resolved version: {installed}")
+          if installed.release[:2] == (2, 1):
+              print("Canary is testing SQLAlchemy 2.1; this does not prove 2.2 pre-release coverage.")
+          PY
           uv pip freeze --system
       - name: Run offline tests (canary)
         run: |
