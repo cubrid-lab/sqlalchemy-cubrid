@@ -34,7 +34,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | 3.12 | ✅ Supported |
 | 3.13 | ✅ Supported |
 | 3.14 | ✅ Supported |
-| 3.15 | 🧪 Preview preparation (not officially supported) |
+| 3.15 | 🧪 Validation pending (not officially supported) |
 | 3.10 | ❌ Not supported from 1.10.0 (last supported in 1.9.x) |
 | < 3.10 | ❌ Not supported |
 
@@ -47,13 +47,14 @@ release line receives fixes, so 1.9.x gets no further releases. Upgrade your
 interpreter, recreate your virtual environment and validate your application
 before upgrading.
 
-**Python 3.15 preparation:** As of 2026-10-03, Python 3.15 is a preview
-([3.15.0rc3](https://www.python.org/downloads/release/python-3150rc3/)); final
-is scheduled for 2026-10-09. A manual-only Ubuntu/standard-GIL preview workflow
-checks offline regressions and fresh wheel/sdist installs at an immutable commit.
-A configured lane is not a passing result. Python 3.15 is not yet officially
-supported. Promote it only after final-release dependency, packaging, offline
-and live CUBRID validation; free-threaded builds are outside this preparation.
+**Python 3.15 preparation:** Python
+[3.15.0 final](https://www.python.org/downloads/release/python-3150/) was released
+on 2026-10-09. The manual-only Ubuntu/standard-GIL workflow was configured as a
+preview check on 2026-10-03; it checks offline regressions and fresh wheel/sdist
+installs at an immutable commit. A configured lane is not a passing result.
+Python 3.15 is not yet officially supported by this dialect. Promote it only
+after dependency, packaging, offline and live CUBRID validation against the
+final release; free-threaded builds are outside this preparation.
 
 ### CUBRID Server
 
@@ -150,6 +151,11 @@ and live CUBRID validation; free-threaded builds are outside this preparation.
 Declared/compiled types and reflected types are not identical. `REAL`, `MONETARY`,
 and `OBJECT` compile correctly and can be declared in models, but they are not
 present in `dialect.ischema_names`, so reflection will not auto-map them back.
+The reflection column describes schema metadata mapping; the Python type column
+describes the intended value shape. Neither column promises that every driver
+binds and returns that value unchanged. See [Type Mapping](TYPES.md) and
+[Driver Compatibility](DRIVER_COMPAT.md) for BLOB/CLOB locators, empty BIT values,
+CUBRIDdb DECIMAL truncation and collection binding differences.
 
 | CUBRID Type | SQLAlchemy Type | Python Type | Reflection |
 |---|---|---|---|

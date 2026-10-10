@@ -67,6 +67,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_workflow_path_impact.py",
         "test_third_party_licenses.py",
         "test_sqlalchemy_range.py",
+        "test_support_claims.py",
     }
 )
 _missing_repo_modules = sorted(

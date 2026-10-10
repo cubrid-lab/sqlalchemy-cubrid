@@ -390,8 +390,8 @@ differently (#484; verified on CUBRID 10.2 and 11.4):
 
 | Driver | Binding a `list` / `tuple` / `set` | Reading a collection |
 |---|---|---|
-| pycubrid main (typed collection parameters, cubrid-lab/pycubrid#567) | The dialect wraps the value in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type. `SET`, `MULTISET` and `SEQUENCE` semantics are kept. A `SEQUENCE` takes only a `list` or `tuple`: a `set`/`frozenset` raises `TypeError` ("SEQUENCE is ordered; pass a list or tuple"). | `frozenset` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) with `?decode_collections=true`; raw `bytes` without it |
-| pycubrid 1.8.0 (released) | `ProgrammingError`: pycubrid rejects collection parameters. A `set`/`frozenset` for a `SEQUENCE` raises the same `TypeError` as above, from the dialect. | Same as above |
+| pycubrid >= 1.9.0 (typed collection parameters, cubrid-lab/pycubrid#567) | The dialect wraps the value in `pycubrid.types.Set`, `Multiset` or `Sequence` to match the column type. `SET`, `MULTISET` and `SEQUENCE` semantics are kept. A `SEQUENCE` takes only a `list` or `tuple`: a `set`/`frozenset` raises `TypeError` ("SEQUENCE is ordered; pass a list or tuple"). | `frozenset` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) with `?decode_collections=true`; raw `bytes` without it |
+| pycubrid 1.8.x (supported floor) | `ProgrammingError`: pycubrid rejects collection parameters. A `set`/`frozenset` for a `SEQUENCE` raises the same `TypeError` as above, from the dialect. | Same as above |
 | CUBRIDdb 11.3.0.51 | CUBRIDdb binds the value itself, always as a SET host variable. A MULTISET loses its duplicates and a SEQUENCE its order (`[3, 1, 2, 1]` is stored as `{1, 2, 3}`). `None` elements are not supported: `[None]` fails inside the driver with an `UnboundLocalError`, and `[1, None]` with `-494 Cannot coerce host var to type sequence`. | `set` (`SET`) or `list` (`MULTISET`, `SEQUENCE`) of `str` elements, whatever the element type |
 
 The dialect does not change what CUBRIDdb does. On CUBRIDdb, keep collections

@@ -22,6 +22,11 @@ def _section(document: str, heading: str) -> str:
     return match.group(1) if match else ""
 
 
+def _top_section(document: str, heading: str) -> str:
+    match = re.search(rf"(?ms)^## {re.escape(heading)}\n(.*?)(?=^## |\Z)", document)
+    return match.group(1) if match else ""
+
+
 def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
     """Return discrepancies in current English support declarations."""
     project = tomllib.loads(metadata)["project"]
@@ -61,11 +66,18 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
             for variant in ("sync", "async"):
                 if f"| pycubrid ({variant}) | {py_bound} |" not in readme:
                     problems.append(f"README.md: pycubrid {variant} bound must match metadata")
-            for name, document in (("README.md", readme), ("docs/SUPPORT_MATRIX.md", matrix)):
+            current_claims = (
+                ("README.md", _top_section(readme, "Known Limitations")),
+                ("README.md", _top_section(readme, "FAQ")),
+                ("docs/SUPPORT_MATRIX.md", _section(matrix, "Known Limitations")),
+            )
+            for name, section in current_claims:
                 stated = re.findall(
-                    r"pycubrid\s*>=\s*(\d+\.\d+\.\d+)\s*,\s*<\s*(\d+\.\d+)", document
+                    r"pycubrid\s*>=\s*(\d+\.\d+\.\d+)\s*,\s*<\s*(\d+\.\d+)", section
                 )
-                if any(f">={floor},<{ceiling}" != py_bound for floor, ceiling in stated):
+                if not stated or any(
+                    f">={floor},<{ceiling}" != py_bound for floor, ceiling in stated
+                ):
                     problems.append(f"{name}: pycubrid package bounds differ from metadata")
     sqlalchemy_specs = {
         group: [str(item.specifier) for item in values if item.name.lower() == "sqlalchemy"]

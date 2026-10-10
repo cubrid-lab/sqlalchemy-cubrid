@@ -2,6 +2,10 @@
 
 > 🌐 [PRD.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/PRD.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
+> 이 PRD에는 1.8.0 시기의 계획과 상태 기록이 포함돼 있습니다. Python 및 CI 매트릭스
+> 설명은 현재 지원 안내가 아닙니다. 현재 정책은 [지원 매트릭스](SUPPORT_MATRIX.md)를
+> 참고하세요. 해당 설명의 나머지 갱신은 [#697](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/697)에서 담당합니다.
+
 ## 1. 개요
 
 **프로젝트**: sqlalchemy-cubrid

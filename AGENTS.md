@@ -419,6 +419,19 @@ but describe the `[cubrid]` / `[cubriddb]` installation extras (which select an
 untested old PyPI package) as deprecated, not the supported driver itself.
 Keep valid historical uses of “legacy,” such as CAS error-code formats.
 
+For README, support/driver/connection guides, PRD, packaging and release-note
+changes, review these distinctions before publishing: official vs recommended vs
+deprecated; compiled vs reflected vs bound vs returned; implemented vs tested vs
+supported; current policy vs dated evidence; and per-driver/version results vs
+blanket claims. Check existing issues and PRs first. Package metadata owns current
+dependency bounds. CI configuration and recorded runs identify tested combinations.
+Tests and recorded runs provide evidence for observed behavior and feature limits. Reviewed
+support docs own driver recommendations and deprecation policy. Update the canonical
+English source, then any affected Korean counterpart and generated `llms*.txt` output.
+The maintainer changing a support policy updates its targeted consistency checks
+and regression cases in the same review; semantic support claims still
+need linked test/run evidence or an explicit untested qualifier in the PR body.
+
 ## Commit Convention
 
 Issue titles, pull request titles and commit subjects follow
