@@ -391,11 +391,307 @@ jobs:
             --cov-report=term-missing \
             --cov-fail-under=95
 
+  # The four ci.yml lanes below (#737, option b) run on the exact release SHA
+  # for the same reason as offline-endpoints: a main push run of ci.yml covers
+  # them, but nothing in the release path requires that run, and a later merge
+  # can cancel it. Each job copies its ci.yml source (same matrix values and
+  # commands); only the checkout ref and the setup-uv cache mode follow this
+  # workflow. test/test_ci_policy.py keeps the copies equal to ci.yml.
+
+  # Copy of ci.yml `typecheck`.
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.13"
+            sqlalchemy-version: "2.1.1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
+      - name: Install type-check dependencies
+        run: |
+          uv pip install --system -e ".[dev,alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
+          uv pip freeze --system
+      - name: Check strict typing and report dependency versions
+        run: make typecheck
+
+  # Copy of ci.yml `alembic-compat`.
+  alembic-compat:
+    name: alembic-compat (${{ matrix.alembic }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        alembic: ["latest"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.11"
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
+      - name: Install dependencies
+        env:
+          ALEMBIC: ${{ matrix.alembic }}
+        run: |
+          if [ "$ALEMBIC" = latest ]; then spec="alembic<2.0"; else spec="alembic==$ALEMBIC"; fi
+          uv pip install --system -e ".[dev,pycubrid]" tomli "$spec"
+          uv pip freeze --system
+          python -c "import alembic; print('alembic', alembic.__version__)"
+      - name: Run Alembic registration tests
+        run: |
+          python -m pytest test/test_alembic_plugin.py test/test_alembic_registration.py \
+            test/test_alembic.py test/test_packaging.py -m "not integration" -v --tb=short -rs
+
+  # Copy of ci.yml `packaging-smoke-test`. publish-pypi.yml's build job smoke-tests
+  # the release artifact itself, but not the [pycubrid] extra or the Alembic
+  # CubridImpl registration from the wheel; this job adds those on the release SHA.
+  packaging-smoke-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        sqlalchemy-version: ["2.1.1"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: "3.12"
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
+      - name: Install build tool
+        run: |
+          uv pip install --system build
+          uv pip freeze --system
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Smoke test wheel install
+        run: |
+          python -m venv /tmp/test-wheel
+          /tmp/test-wheel/bin/pip install dist/*.whl "SQLAlchemy==${{ matrix.sqlalchemy-version }}"
+          cd /tmp
+          /tmp/test-wheel/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
+          /tmp/test-wheel/bin/python -c "from sqlalchemy_cubrid import insert, merge, JSON, SET"
+          /tmp/test-wheel/bin/python -c "import importlib.metadata; eps = {ep.name: ep for ep in importlib.metadata.entry_points(group='sqlalchemy.dialects') if ep.name.startswith('cubrid')}; assert 'cubrid' in eps, f'Missing cubrid entry point, found: {list(eps.keys())}'; assert 'cubrid.cubrid' in eps; assert 'cubrid.pycubrid' in eps; assert 'cubrid.aiopycubrid' in eps; print(f'Found {len(eps)} dialect entry points'); [print(f'  {name} -> {ep.load().__module__}.{ep.load().__name__}') for name, ep in sorted(eps.items()) if name != 'cubrid.aiopycubrid']"
+          /tmp/test-wheel/bin/pip install alembic
+          /tmp/test-wheel/bin/python -c "from sqlalchemy.dialects import registry; from alembic.ddl.impl import _impls; names = [registry.load(n).name for n in ('cubrid', 'cubrid.pycubrid', 'cubrid.aiopycubrid')]; assert set(names) == {'cubrid'}, names; cls = _impls['cubrid']; print(f'alembic impl for cubrid -> {cls.__module__}.{cls.__name__}'); assert cls.__module__ == 'sqlalchemy_cubrid.alembic_impl'"
+          /tmp/test-wheel/bin/python -c "import pathlib, sqlalchemy_cubrid; pkg_dir = pathlib.Path(sqlalchemy_cubrid.__file__).parent; assert (pkg_dir / 'py.typed').exists(), 'py.typed marker missing'; print('py.typed marker: OK')"
+      - name: Smoke test pycubrid wheel extra without ambient packages
+        run: |
+          python -m venv /tmp/test-wheel-pycubrid
+          wheels=(dist/*.whl)
+          /tmp/test-wheel-pycubrid/bin/pip install "${wheels[0]}[pycubrid]" "SQLAlchemy==${{ matrix.sqlalchemy-version }}"
+          cd /tmp
+          /tmp/test-wheel-pycubrid/bin/python -c "import asyncio, greenlet; from sqlalchemy.ext.asyncio import create_async_engine; engine = create_async_engine('cubrid+aiopycubrid://dba@localhost:33000/testdb'); assert engine.dialect.is_async; asyncio.run(engine.dispose()); print('Async engine creation: OK')"
+      - name: Smoke test sdist install
+        run: |
+          python -m venv /tmp/test-sdist
+          /tmp/test-sdist/bin/pip install dist/*.tar.gz
+          cd /tmp
+          /tmp/test-sdist/bin/python -c "import sqlalchemy_cubrid; print(sqlalchemy_cubrid.__version__)"
+
+  # The gating SQLAlchemy dialect compliance lanes of ci.yml `integration-tests`
+  # on its non-PR cells: CUBRIDdb on 3.14/11.4, released pycubrid on both cells,
+  # each with the SQLAlchemy version its test/known_failures.txt lane was captured
+  # with. The advisory (continue-on-error) CUBRIDdb lane of the other cell gates
+  # nothing, so it is not repeated here.
+  sqlalchemy-compliance:
+    name: sqlalchemy-compliance (${{ matrix.python-version }}, ${{ matrix.cubrid-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - python-version: "3.14"
+            cubrid-version: "11.4"
+            pycubrid-compliance-sqlalchemy: "2.1.1"
+          - python-version: "3.11"
+            cubrid-version: "10.2"
+            pycubrid-compliance-sqlalchemy: "2.0.53"
+    services:
+      cubrid:
+        image: cubrid/cubrid:${{ matrix.cubrid-version }}
+        env:
+          CUBRID_DB: testdb
+        ports:
+          - 33000:33000
+        options: >-
+          --health-cmd "csql -u dba testdb -c 'SELECT 1'"
+          --health-interval 15s
+          --health-timeout 10s
+          --health-retries 10
+          --health-start-period 30s
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
+
+      - name: Fetch CUBRID Python driver source
+        id: cubriddb-src
+        run: |
+          git clone --branch v11.3.0.51 --depth 1 --recurse-submodules \
+            https://github.com/CUBRID/cubrid-python.git /tmp/cubrid-python
+          {
+            echo "commit=$(git -C /tmp/cubrid-python rev-parse HEAD)"
+            echo "soabi=$(python -c 'import sysconfig; print(sysconfig.get_config_var("SOABI"))')"
+            echo "image=${ImageOS:-unknown}"
+          } >> "$GITHUB_OUTPUT"
+
+      # Same wheel cache key and build recipe as the other CUBRIDdb jobs (#745).
+      - name: Restore the CUBRID Python driver wheel
+        id: cubriddb-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: /tmp/cubriddb-wheel
+          key: cubriddb-wheel-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
+
+      - name: Install system dependencies
+        if: steps.cubriddb-cache.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Build the CUBRID Python driver wheel
+        if: steps.cubriddb-cache.outputs.cache-hit != 'true'
+        run: |
+          cd /tmp/cubrid-python
+
+          # Build CCI library
+          mkdir -p cci-src/build_x86_64_release
+          cd cci-src/build_x86_64_release
+          cmake ../
+          make -j$(nproc)
+          cd /tmp/cubrid-python
+
+          # Patch build_cci.sh to skip rebuild
+          echo '#!/bin/bash' > build_cci.sh
+          echo 'exit 0' >> build_cci.sh
+          chmod +x build_cci.sh
+
+          uv build --wheel --python "$(command -v python)" --out-dir /tmp/cubriddb-wheel .
+
+      - name: Install the CUBRID Python driver
+        run: |
+          ls -l /tmp/cubriddb-wheel
+          uv pip install --system /tmp/cubriddb-wheel/cubrid_python-*.whl
+          python -c "import CUBRIDdb, _cubrid; print('CUBRIDdb from', CUBRIDdb.__file__)"
+
+      # ci.yml reaches the compliance steps with [dev] plus the [pycubrid] extra
+      # (installed by its async step); each lane then pins its own versions.
+      - name: Install project
+        run: |
+          uv pip install --system -e ".[dev,pycubrid]"
+          uv pip freeze --system
+
+      - name: Wait for CUBRID to be ready
+        run: |
+          for i in $(seq 1 30); do
+            if python -c "
+          import CUBRIDdb
+          try:
+              conn = CUBRIDdb.connect('CUBRID:localhost:33000:testdb:::', 'dba', '')
+              cur = conn.cursor()
+              cur.execute('SELECT 1')
+              cur.close()
+              conn.close()
+              print('CUBRID ready')
+              exit(0)
+          except Exception as e:
+              print(f'Attempt $i: {e}')
+              exit(1)
+          "; then
+              break
+            fi
+            echo "Waiting for CUBRID... (attempt $i/30)"
+            sleep 5
+          done
+
+      - name: Run SQLAlchemy dialect compliance suite (gating, CUBRIDdb)
+        if: matrix.python-version == '3.14' && matrix.cubrid-version == '11.4'
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+          CUBRID_STRICT_KNOWN_FAILURES: "1"
+        run: |
+          # Lane cubrid@sa2.0 in test/known_failures.txt. The baseline is a
+          # SQLAlchemy-version-specific snapshot (suite parametrization changes
+          # between releases). Pin the gating run to the captured version; a
+          # SQLAlchemy bump requires recapturing the baseline.
+          uv pip install --system "sqlalchemy==2.0.53"
+          python -m pytest test/test_suite.py \
+            --dburi="$CUBRID_TEST_URL" \
+            -v --tb=short
+
+      - name: Run SQLAlchemy dialect compliance suite (gating, released pycubrid)
+        # Run even when an earlier step (e.g. the CUBRIDdb lane) failed, so one
+        # lane's failure cannot hide the other's result; the job still fails.
+        if: ${{ !cancelled() }}
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+          CUBRID_STRICT_KNOWN_FAILURES: "1"
+          VERSION_REPORT_TITLE: "pycubrid compliance lane versions (Python ${{ matrix.python-version }}, CUBRID ${{ matrix.cubrid-version }})"
+        run: |
+          # Lane pycubrid@sa<major.minor> in test/known_failures.txt (#463):
+          # only entries tagged for this lane are strict-xfailed, so the
+          # CUBRIDdb baseline cannot hide a pycubrid regression or vice versa.
+          # Both the recommended released pycubrid and SQLAlchemy are pinned to
+          # the versions the lane baseline was captured with; bumping either
+          # requires recapturing that lane (see docs/DEVELOPMENT.md).
+          uv pip install --system "pycubrid==1.8.0" "sqlalchemy[asyncio]==${{ matrix.pycubrid-compliance-sqlalchemy }}"
+          python -m scripts.report_driver_versions
+          python -m pytest test/test_suite.py \
+            --dburi="$CUBRID_TEST_URL" \
+            -v --tb=short
+
   full-matrix-result:
     name: Full compatibility matrix result
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [integration-full, make-integration, offline-endpoints]
+    needs: [integration-full, make-integration, offline-endpoints, typecheck, alembic-compat, packaging-smoke-test, sqlalchemy-compliance]
     if: always()
     steps:
       - name: Require all matrix cells to pass
@@ -410,6 +706,22 @@ jobs:
           fi
           if [ "${{ needs.offline-endpoints.result }}" != "success" ]; then
             echo "::error::Offline Python endpoint cells failed: ${{ needs.offline-endpoints.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.typecheck.result }}" != "success" ]; then
+            echo "::error::Type check failed: ${{ needs.typecheck.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.alembic-compat.result }}" != "success" ]; then
+            echo "::error::Alembic compatibility failed: ${{ needs.alembic-compat.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.packaging-smoke-test.result }}" != "success" ]; then
+            echo "::error::Packaging smoke test failed: ${{ needs.packaging-smoke-test.result }}"
+            exit 1
+          fi
+          if [ "${{ needs.sqlalchemy-compliance.result }}" != "success" ]; then
+            echo "::error::SQLAlchemy compliance lanes failed: ${{ needs.sqlalchemy-compliance.result }}"
             exit 1
           fi
           echo "Full compatibility matrix passed."

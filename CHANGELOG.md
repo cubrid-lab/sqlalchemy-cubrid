@@ -94,6 +94,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/llms-full.txt` is regenerated. Docs only.
 
 ### CI
+- **The release runs the remaining `ci.yml` push lanes itself (#737)** — the release
+  path (`publish-pypi.yml` → `integration-full.yml`) used to rely on the release PR and
+  the `main` push run of `ci.yml` for SQLAlchemy compliance, type checking,
+  `alembic-compat` and the pycubrid-extra and Alembic parts of the packaging smoke test,
+  but nothing required that push run to succeed and a later merge could cancel it.
+  `integration-full.yml` now runs `typecheck`, `alembic-compat` and
+  `packaging-smoke-test` (copies of the `ci.yml` jobs: same matrix values and commands)
+  and `sqlalchemy-compliance`, the gating CUBRIDdb (3.14/11.4) and released-pycubrid
+  (3.14/11.4 and 3.11/10.2) compliance lanes, on the checked-out release SHA, on every
+  dispatch and release call. `full-matrix-result` needs all four and fails on any
+  non-success result, so a failed, cancelled or skipped lane blocks publication.
+  `publish-pypi.yml` is unchanged (option b; it stays identical across cubrid-lab
+  repositories). Workflow-structure tests pin the copies to their `ci.yml` sources and
+  the gate's `needs`; `docs/CI_POLICY.md` (and Korean) and `RELEASING.md` describe the
+  new release coverage. CI only; the dialect is unchanged.
 - **Dependabot groups minor and patch updates (#737)** — `.github/dependabot.yml`
   groups minor and patch version updates into one PR per ecosystem and directory
   (`dev-tools` for pip `/`, `docs-tools` for `/.github/docs-requirements`,
