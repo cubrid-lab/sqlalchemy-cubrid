@@ -25,7 +25,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (legacy) |
+| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (supported C extension) |
 
 ---
 
@@ -60,9 +60,9 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 > The `[pycubrid]` extra also installs `greenlet`, which may need build tools.
 > See [pycubrid on GitHub](https://github.com/cubrid-lab/pycubrid).
 
-### Legacy: C-extension Driver (CUBRIDdb)
+### CUBRIDdb C-extension Driver
 
-The legacy CUBRIDdb C-extension driver from
+The official CUBRIDdb C-extension driver from
 [cubrid-python](https://github.com/CUBRID/cubrid-python) is the driver bound to the bare
 `cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. The
 supported way to install it is to build cubrid-python v11.3.0.51 or later from source,
@@ -161,13 +161,13 @@ The dialect registers these SQLAlchemy entry points:
 
 | URL Scheme           | Driver      | Description                          |
 |----------------------|-------------|--------------------------------------|
-| `cubrid://`          | CUBRIDdb    | Default legacy C-extension driver    |
-| `cubrid+cubrid://`   | CUBRIDdb    | Explicit legacy C-extension driver   |
-| `cubrid+cubriddb://` | CUBRIDdb    | Explicit legacy C-extension driver   |
+| `cubrid://`          | CUBRIDdb    | Default CUBRIDdb C-extension driver  |
+| `cubrid+cubrid://`   | CUBRIDdb    | Explicit CUBRIDdb C-extension driver |
+| `cubrid+cubriddb://` | CUBRIDdb    | Explicit CUBRIDdb C-extension driver |
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the legacy CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
 ---
 
 ## Async Connection
@@ -487,7 +487,7 @@ The dialect implements `is_disconnect()` which detects connection failures using
 
 1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Codes are read only from these structured fields, never from message text: a message that starts with a number, such as a server error quoting application data (`-20004 rows rejected ...`), carries no code (#608). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
-3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the legacy CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", "reconnecting failed" when pycubrid cannot replace a lost CAS session, or "malformed response from broker" when it drops a connection whose reply it cannot parse) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671. The fallback is skipped for an error that carries a server error code (`args[0]` above -10000 on CUBRIDdb, `errno` on pycubrid outside -1000 .. -1200, where legacy CAS codes arrive), because server messages echo application data: `SELECT 1 FROM [connection refused]` fails with -493 and the phrase in its text. Only -190, -191 and -368, whose own text reports a failed connection to the database server, keep it (#624).
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", "reconnecting failed" when pycubrid cannot replace a lost CAS session, or "malformed response from broker" when it drops a connection whose reply it cannot parse) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671. The fallback is skipped for an error that carries a server error code (`args[0]` above -10000 on CUBRIDdb, `errno` on pycubrid outside -1000 .. -1200, where legacy CAS codes arrive), because server messages echo application data: `SELECT 1 FROM [connection refused]` fails with -493 and the phrase in its text. Only -190, -191 and -368, whose own text reports a failed connection to the database server, keep it (#624).
 
 Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 

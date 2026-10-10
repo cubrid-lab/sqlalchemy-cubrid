@@ -35,7 +35,7 @@ CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공�
 - **Python 3.11 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
 - CUBRID 전용 DML 구문: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic 마이그레이션 기본 지원
-- **세 가지 드라이버 옵션** — C 확장(`cubrid://`), 순수 Python(`cubrid+pycubrid://`), 비동기 순수 Python(`cubrid+aiopycubrid://`)
+- **세 가지 드라이버 옵션** — 권장 순수 Python(`cubrid+pycubrid://`), 비동기 순수 Python(`cubrid+aiopycubrid://`), CUBRIDdb C 확장(`cubrid://` / `cubrid+cubriddb://`)
 
 ## 아키텍처
 
@@ -67,7 +67,7 @@ flowchart TD
 
 - Python 3.11 이상
 - SQLAlchemy 2.0 – 2.1
-- [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상에서 빌드한 레거시 CUBRIDdb C 확장
+- [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상에서 빌드한 공식 CUBRIDdb C 확장
 
 ## 설치
 
@@ -91,14 +91,14 @@ Alembic 지원 포함:
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-레거시 CUBRIDdb C 확장 드라이버(`cubrid://` URL)를 쓰려면 [cubrid-python](https://github.com/CUBRID/cubrid-python)
+CUBRIDdb C 확장 드라이버(`cubrid://` URL)를 쓰려면 [cubrid-python](https://github.com/CUBRID/cubrid-python)
 v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko/DRIVER_COMPAT.md#소스에서-cubriddb-빌드)을 참고하세요.
 
 > **`[cubrid]`와 `[cubriddb]` extra는 폐기 예정(deprecated)입니다.** 이 extra는 PyPI의
 > `CUBRID-Python` 패키지를 설치하는데, 최신 릴리스가 9.3.x(2015년)입니다. 이 릴리스는 이 방언과
 > 함께 테스트되지 않았습니다. `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패합니다. 방언은
 > 첫 연결 시 11.3보다 오래된 CUBRIDdb를 발견하면 경고(`SAWarning`)를 냅니다. 새 프로젝트에는
-> 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요. 레거시 C 확장
+> 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요. CUBRIDdb C 확장
 > 드라이버를 명시적으로 선택하려면 `cubrid+cubriddb://` URL을 사용하세요.
 
 <img src="https://github.com/cubrid-lab/sqlalchemy-cubrid/raw/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>

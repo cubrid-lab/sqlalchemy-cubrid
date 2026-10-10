@@ -27,7 +27,7 @@
 | Python             | 3.10+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID 서버        | 10.2 – 11.4     |
-| CUBRID Python 드라이버 | pycubrid (권장) 또는 cubrid-python v11.3.0.51+에서 빌드한 CUBRIDdb (레거시) |
+| CUBRID Python 드라이버 | pycubrid (권장) 또는 cubrid-python v11.3.0.51+에서 빌드한 CUBRIDdb (지원되는 C 확장) |
 
 ---
 
@@ -59,9 +59,9 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 > **팁**: `pycubrid` 드라이버 자체는 순수 Python이며 네이티브 라이브러리가 필요 없습니다. `[pycubrid]` extra에 포함된 `greenlet`은 설치 시 빌드 도구가 필요할 수 있습니다. [GitHub의 pycubrid](https://github.com/cubrid-lab/pycubrid)를 참고하세요.
 
-### 레거시: C 확장 드라이버 (CUBRIDdb)
+### CUBRIDdb C 확장 드라이버
 
-[cubrid-python](https://github.com/CUBRID/cubrid-python)의 레거시 CUBRIDdb C 확장 드라이버는 `cubrid://` URL에 묶여 있으며, `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택할 수 있습니다. 지원되는 설치 방법은 cubrid-python v11.3.0.51 이상을 소스에서 빌드하는 것입니다. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고한 뒤 방언만 설치하세요:
+[cubrid-python](https://github.com/CUBRID/cubrid-python)의 공식 CUBRIDdb C 확장 드라이버는 `cubrid://` URL에 묶여 있으며, `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택할 수 있습니다. 지원되는 설치 방법은 cubrid-python v11.3.0.51 이상을 소스에서 빌드하는 것입니다. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고한 뒤 방언만 설치하세요:
 
 ```bash
 pip install sqlalchemy-cubrid
@@ -149,13 +149,13 @@ CUBRIDdb의 `connect(url, user, password)`는 키워드 옵션을 받지 않으�
 
 | URL 스킴             | 드라이버    | 설명                                  |
 |----------------------|-------------|----------------------------------------|
-| `cubrid://`          | CUBRIDdb    | 기본 레거시 C 확장 드라이버           |
-| `cubrid+cubrid://`   | CUBRIDdb    | 명시적 레거시 C 확장 드라이버         |
-| `cubrid+cubriddb://` | CUBRIDdb    | 명시적 레거시 C 확장 드라이버         |
+| `cubrid://`          | CUBRIDdb    | 기본 CUBRIDdb C 확장 드라이버        |
+| `cubrid+cubrid://`   | CUBRIDdb    | 명시적 CUBRIDdb C 확장 드라이버      |
+| `cubrid+cubriddb://` | CUBRIDdb    | 명시적 CUBRIDdb C 확장 드라이버      |
 | `cubrid+pycubrid://` | pycubrid    | 순수 Python 드라이버 (CUBRID 네이티브 라이브러리 불필요) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | 비동기 순수 Python 드라이버        |
 
-새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 cubrid-python v11.3.0.51 이상에서 빌드한 레거시 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `cubrid+cubriddb://`를 사용하세요.
+새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 cubrid-python v11.3.0.51 이상에서 빌드한 지원되는 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `cubrid+cubriddb://`를 사용하세요.
 
 ---
 
@@ -462,7 +462,7 @@ engine = create_engine(
 
 1. **숫자 오류 코드 매칭 (주)** — CUBRIDdb가 끊겼거나 쓸 수 없는 연결에 대해 내는 CCI·CAS 코드 `CCI_ER_COMMUNICATION`(-20004), `CAS_ER_COMMUNICATION`(-10003), `CCI_ER_CON_HANDLE`(-20002), `CCI_ER_CONNECT`(-20016), `CAS_ER_NO_MORE_MEMORY`(-10002; CAS가 이 코드를 보낸 뒤 연결을 닫음)와, CAS의 `cub_server` 세션이 사라져 CUBRID 브로커가 CAS를 리셋하는 서버 코드 `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`(-111), `ER_NET_SERVER_CRASHED`(-199), `ER_OBJ_NO_CONNECT`(-224), `ER_BO_CONNECT_FAILED`(-677)를 검사. CUBRIDdb는 코드를 `args[0]`에, pycubrid는 `errno`에 담으며, `errno`는 이 네 서버 코드에 더해 -1002(pycubrid가 실제로 받는 `CAS_ER_NO_MORE_MEMORY`의 레거시 번호. pycubrid처럼 갱신된 오류 코드 프로토콜을 이해한다고 알리지 않는 드라이버에게 CUBRID의 CAS는 CAS 코드에 9000을 더해 보냅니다)와도 비교합니다. 코드는 이 구조화된 필드에서만 읽고 메시지 텍스트에서는 읽지 않습니다. 애플리케이션 데이터를 인용하는 서버 오류(`-20004 rows rejected ...`)처럼 숫자로 시작하는 메시지에는 코드가 없습니다(#608). 다른 서버 코드는 연결 끊김이 아닙니다. -4는 `KILL QUERY`로 중단된 쿼리를 뜻하는 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. [문제 해결 — cub_server 재시작 또는 장애 후 오류](TROUBLESHOOTING.md#cub_server-재시작-또는-장애-후-오류) 참고.
 2. **명시적 `OSError` 원인 체인 (문구 무관)** — 예외의 명시적 `__cause__` 체인(`raise ... from`)에 `OSError`(예: 소켓 오류)이 있으면 메시지 문구와 무관하게 연결이 끊긴 것으로 간주. 무관한 진행 중 `OSError`가 살아있는 연결을 오탐 무효화하지 않도록 암시적 `__context__`는 의도적으로 무시.
-3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. 레거시 CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive", pycubrid가 잃어버린 CAS 세션을 교체하지 못했을 때의 "reconnecting failed", 해석할 수 없는 응답을 받은 연결을 끊을 때의 "malformed response from broker")를 커버. 패턴은 드라이버 자체 메시지(pycubrid의 `args[0]`)와 비교하며, -4(서버의 `ER_INTERRUPTED`)와 -671에 `Communication error` 같은 `errno` 설명을 덧붙이는 pycubrid의 `str()`과는 비교하지 않습니다. 서버 오류 코드(CUBRIDdb는 -10000보다 큰 `args[0]`, pycubrid는 레거시 CAS 코드가 오는 -1000 .. -1200 범위 밖의 `errno`)가 있는 오류에는 이 폴백을 적용하지 않습니다. 서버 메시지는 애플리케이션 데이터를 그대로 포함하기 때문입니다. 예를 들어 `SELECT 1 FROM [connection refused]`는 -493으로 실패하면서 메시지에 해당 문구가 들어갑니다. 메시지 자체가 데이터베이스 서버 연결 실패를 알리는 -190, -191, -368만 예외입니다 (#624).
+3. **메시지 매칭 (폴백)** — 알려진 연결 해제 패턴("connection is closed", "broker is not available", "connection reset" 등)을 오류 메시지에서 검사. CUBRIDdb 드라이버와 코드도 `OSError` 원인도 없는 pycubrid의 클라이언트 측 문자열 전용 오류(예: "connection lost during receive", pycubrid가 잃어버린 CAS 세션을 교체하지 못했을 때의 "reconnecting failed", 해석할 수 없는 응답을 받은 연결을 끊을 때의 "malformed response from broker")를 커버. 패턴은 드라이버 자체 메시지(pycubrid의 `args[0]`)와 비교하며, -4(서버의 `ER_INTERRUPTED`)와 -671에 `Communication error` 같은 `errno` 설명을 덧붙이는 pycubrid의 `str()`과는 비교하지 않습니다. 서버 오류 코드(CUBRIDdb는 -10000보다 큰 `args[0]`, pycubrid는 레거시 CAS 코드가 오는 -1000 .. -1200 범위 밖의 `errno`)가 있는 오류에는 이 폴백을 적용하지 않습니다. 서버 메시지는 애플리케이션 데이터를 그대로 포함하기 때문입니다. 예를 들어 `SELECT 1 FROM [connection refused]`는 -493으로 실패하면서 메시지에 해당 문구가 들어갑니다. 메시지 자체가 데이터베이스 서버 연결 실패를 알리는 -190, -191, -368만 예외입니다 (#624).
 
 감지는 의도적으로 보수적입니다: 해제 코드도, `OSError` 원인도, 해제 메시지도 아닌 데이터베이스 오류(예: 잘못된 격리 수준 오류, 닫힌 커서 오용)는 연결 해제로 취급하지 **않아** 오탐 풀 무효화를 피합니다.
 

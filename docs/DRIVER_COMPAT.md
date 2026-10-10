@@ -30,6 +30,10 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 The driver wraps the CUBRID CCI (C Client Interface) library. It is **not** a pure
 Python driver and requires compilation against the CCI headers.
+The source-built CUBRIDdb driver above is supported by this dialect; the deprecated
+`[cubrid]` / `[cubriddb]` installation extras select the untested PyPI package,
+not a deprecated driver interface. For new projects, `pycubrid` is recommended
+because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations below.
 
 ---
 

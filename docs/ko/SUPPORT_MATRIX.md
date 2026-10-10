@@ -69,7 +69,7 @@ Python을 업그레이드하고 가상 환경을 새로 만든 뒤 애플리케�
 
 | 드라이버 | 설치 | URL 스킴 | 상태 |
 |---|---|---|---|
-| CUBRIDdb (CCI) | cubrid-python v11.3.0.51+에서 빌드 ([방법](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)). `[cubrid]` / `[cubriddb]` extra는 폐기 예정이며 테스트되지 않은 PyPI 9.3.x를 설치 | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원 (레거시 C 확장, v11.3.0.51+만) |
+| CUBRIDdb (CCI) | cubrid-python v11.3.0.51+에서 빌드 ([방법](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)). `[cubrid]` / `[cubriddb]` extra는 폐기 예정이며 테스트되지 않은 PyPI 9.3.x를 설치 | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원되는 C 확장 드라이버 (v11.3.0.51+만) |
 | pycubrid (순수 Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ 지원 |
 | pycubrid 비동기 | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ 지원 |
 

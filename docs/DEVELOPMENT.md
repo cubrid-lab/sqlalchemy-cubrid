@@ -239,7 +239,7 @@ docker compose down -v
 ```
 
 The regular tox profile requires an explicit `cubrid+pycubrid` URL. It rejects
-missing URLs and legacy C-extension schemes, then probes both sync and derived
+missing URLs and CUBRIDdb C-extension schemes, then probes both sync and derived
 async connections with bounded `SELECT 1` requests before pytest. Async suites
 derive `cubrid+aiopycubrid` with SQLAlchemy's URL API, retaining credentials,
 ports and query options; `CUBRID_TEST_AURL` remains an explicit async override.
