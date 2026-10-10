@@ -87,3 +87,27 @@ def test_compliance_lane_pins_the_declared_pycubrid_floor() -> None:
         f"ci.yml pins pycubrid {pins} but pyproject declares floor {floors}; "
         "change both together (#764)"
     )
+
+
+def test_dependabot_groups_only_minor_and_patch_version_updates() -> None:
+    # #737: one grouped PR per ecosystem/directory; majors, security updates and the
+    # compatibility-sensitive SQLAlchemy/driver/Alembic packages keep their own PRs.
+    config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
+    groups = {(u["package-ecosystem"], u["directory"]): u.get("groups") for u in config["updates"]}
+    assert set(groups) == {
+        ("pip", "/"),
+        ("pip", "/.github/docs-requirements"),
+        ("github-actions", "/"),
+    }
+    for key, group in groups.items():
+        assert group is not None and len(group) == 1, key
+        (spec,) = group.values()
+        assert spec["applies-to"] == "version-updates", key
+        assert spec["patterns"] == ["*"], key
+        assert spec["update-types"] == ["minor", "patch"], key
+    assert groups[("pip", "/")]["dev-tools"]["exclude-patterns"] == [
+        "sqlalchemy",
+        "pycubrid",
+        "alembic",
+        "CUBRID-Python",
+    ]

@@ -82,6 +82,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/llms-full.txt` is regenerated. Docs only.
 
 ### CI
+- **Dependabot groups minor and patch updates (#737)** — `.github/dependabot.yml`
+  groups minor and patch version updates into one PR per ecosystem and directory
+  (`dev-tools` for pip `/`, `docs-tools` for `/.github/docs-requirements`,
+  `github-actions`), so a weekly batch runs CI once per group instead of once per
+  package. Major updates, security updates (`applies-to: version-updates`) and the
+  compatibility-sensitive SQLAlchemy, pycubrid, Alembic and CUBRID-Python stay in
+  their own PRs. Majors are still held from auto-merge, and a grouped PR still needs
+  the required checks. `docs/CI_POLICY.md` (+ ko) documents it, and
+  `test/test_workflow_hygiene.py` pins the settings. No runtime change.
 - **"Prepare release" fails visibly when a merged release is blocked** —
   `scripts/reconcile_release_labels.py` now classifies every merged
   `autorelease: pending` release PR it cannot mark tagged by the `publish-pypi.yml`
