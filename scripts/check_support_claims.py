@@ -41,11 +41,30 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
             "project": project["dependencies"],
             "dev": extras["dev"],
             "pycubrid": extras["pycubrid"],
+            "cubrid": extras["cubrid"],
+            "cubriddb": extras["cubriddb"],
         }.items()
     }
+    for group in ("cubrid", "cubriddb"):
+        if len(requirements[group]) != 1 or requirements[group][0].name.lower() != "cubrid-python":
+            problems.append(f"pyproject.toml: deprecated {group} extra must install CUBRID-Python")
+    pycubrid = [item for item in requirements["pycubrid"] if item.name.lower() == "pycubrid"]
+    if len(pycubrid) != 1:
+        problems.append("pyproject.toml: pycubrid extra needs one driver requirement")
+    else:
+        py_lower = [item.version for item in pycubrid[0].specifier if item.operator == ">="]
+        py_upper = [item.version for item in pycubrid[0].specifier if item.operator == "<"]
+        if len(py_lower) != 1 or len(py_upper) != 1:
+            problems.append("pyproject.toml: pycubrid needs reviewed lower and upper bounds")
+        else:
+            py_bound = f">={py_lower[0]},<{py_upper[0]}"
+            for variant in ("sync", "async"):
+                if f"| pycubrid ({variant}) | {py_bound} |" not in readme:
+                    problems.append(f"README.md: pycubrid {variant} bound must match metadata")
     sqlalchemy_specs = {
         group: [str(item.specifier) for item in values if item.name.lower() == "sqlalchemy"]
         for group, values in requirements.items()
+        if group in ("project", "dev", "pycubrid")
     }
     if (
         any(len(specs) != 1 for specs in sqlalchemy_specs.values())
@@ -80,8 +99,30 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
                     problems.append(
                         f"docs/SUPPORT_MATRIX.md: SQLAlchemy {version}+ must be excluded"
                     )
-            if f">={lower[0]},<{upper[0]}" not in readme:
-                problems.append("README.md: SQLAlchemy package bound is missing or differs")
+            bound = f">={lower[0]},<{upper[0]}"
+            support_status = re.search(r"(?ms)^## Support Status\n(.*?)(?=^## |\Z)", readme)
+            if support_status is None or not re.search(
+                rf"^- Supported matrix: SQLAlchemy `{re.escape(bound)}`[,]",
+                support_status.group(1),
+                re.M,
+            ):
+                problems.append("README.md: SQLAlchemy support matrix bound differs")
+            lower_parts = lower[0].split(".")
+            upper_parts = upper[0].split(".")
+            if (
+                len(lower_parts) != 2
+                or len(upper_parts) != 2
+                or lower_parts[0] != upper_parts[0]
+                or int(upper_parts[1]) <= int(lower_parts[1])
+            ):
+                problems.append("pyproject.toml: README SQLAlchemy range needs review")
+            else:
+                range_label = f"SQLAlchemy {lower[0]} – {upper_parts[0]}.{int(upper_parts[1]) - 1}"
+                requirements_text = re.search(r"(?ms)^## Requirements\n(.*?)(?=^## |\Z)", readme)
+                if requirements_text is None or not re.search(
+                    rf"^- {re.escape(range_label)}$", requirements_text.group(1), re.M
+                ):
+                    problems.append("README.md: SQLAlchemy Requirements range differs")
 
     python_rows = _section(matrix, "Python")
     if not re.search(rf"^\| {re.escape(minimum)} \| ✅ Supported \|", python_rows, re.M):

@@ -65,3 +65,30 @@ def test_current_sqlalchemy_support_disagreement_is_rejected() -> None:
     assert "docs/SUPPORT_MATRIX.md: SQLAlchemy 2.2+ must be excluded" in check_claims(
         METADATA, README, matrix
     )
+
+
+def test_pycubrid_driver_floor_must_match_readme() -> None:
+    metadata = METADATA.replace('"pycubrid>=1.8.0,<2.0"', '"pycubrid>=1.7.0,<2.0"')
+    assert "README.md: pycubrid sync bound must match metadata" in check_claims(
+        metadata, README, MATRIX
+    )
+
+
+def test_deprecated_extras_must_keep_pypi_driver_package() -> None:
+    metadata = METADATA.replace('"CUBRID-Python"', '"pycubrid"')
+    problems = check_claims(metadata, README, MATRIX)
+    assert "pyproject.toml: deprecated cubrid extra must install CUBRID-Python" in problems
+    assert "pyproject.toml: deprecated cubriddb extra must install CUBRID-Python" in problems
+
+
+def test_readme_requirements_sqlalchemy_range_must_match_metadata() -> None:
+    readme = README.replace("- SQLAlchemy 2.0 – 2.1", "- SQLAlchemy 2.0 – 2.2")
+    assert "README.md: SQLAlchemy Requirements range differs" in check_claims(
+        METADATA, readme, MATRIX
+    )
+    readme = README.replace(
+        "Supported matrix: SQLAlchemy `>=2.0,<2.2`", "Supported matrix: SQLAlchemy `>=2.0,<2.3`"
+    )
+    assert "README.md: SQLAlchemy support matrix bound differs" in check_claims(
+        METADATA, readme, MATRIX
+    )
