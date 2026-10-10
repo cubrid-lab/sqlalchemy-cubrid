@@ -30,6 +30,7 @@
 | 소스 | [github.com/CUBRID/cubrid-python](https://github.com/CUBRID/cubrid-python) |
 
 이 드라이버는 CUBRID CCI(C Client Interface) 라이브러리를 감쌉니다. 순수 Python 드라이버가 **아니며** CCI 헤더에 대한 컴파일이 필요합니다.
+위의 소스 빌드 CUBRIDdb 드라이버는 이 방언에서 지원합니다. 폐기 예정인 `[cubrid]` / `[cubriddb]` 설치 extra가 테스트되지 않은 PyPI 패키지를 선택하는 것이며, 드라이버 인터페이스 자체가 폐기된 것은 아닙니다. 새 프로젝트에는 CUBRID 네이티브 라이브러리가 필요 없고 아래 CUBRIDdb 제약을 피할 수 있는 `pycubrid`를 권장합니다.
 
 ---
 

@@ -15,7 +15,7 @@ sqlalchemy-cubrid는 SQLAlchemy와 CUBRID 데이터베이스 사이의 견고하
 
 ## Provenance (출처)
 
-sqlalchemy-cubrid는 SQLAlchemy 2.0을 위해 작성된 독립 구현입니다. 예전 `CUBRID-Python` 드라이버 배포판에 포함됐던 레거시 CUBRID SQLAlchemy 방언의 코드를 포함하지 않으며, 그 포트도 아닙니다. 선택적 `[cubrid]`/`[cubriddb]` extra는 이 방언이 그 레거시 드라이버 *위에서 실행되게* 할 뿐이며, 그 소스는 포함되거나 파생되지 않았습니다.
+sqlalchemy-cubrid는 SQLAlchemy 2.0을 위해 작성된 독립 구현입니다. 예전 `CUBRID-Python` 드라이버 배포판에 포함됐던 레거시 CUBRID SQLAlchemy 방언의 코드를 포함하지 않으며, 그 포트도 아닙니다. `[cubrid]`/`[cubriddb]` extra는 테스트되지 않은 이전 PyPI 드라이버 패키지를 설치합니다. 지원되는 CUBRIDdb C 확장은 cubrid-python v11.3.0.51 이상에서 빌드합니다. 이전 방언이나 드라이버의 소스를 포함하거나 파생하지 않았습니다.
 
 ## 전체 흐름
 
@@ -235,7 +235,7 @@ flowchart TD
 
 ## 드라이버 아키텍처
 
-방언은 계층적 클래스 구조를 통해 레거시 C 확장 드라이버, 현대적 순수 Python 드라이버, 비동기 pycubrid.aio 변형을 지원합니다.
+방언은 계층적 클래스 구조를 통해 CUBRIDdb C 확장 드라이버, 권장 순수 Python 드라이버, 비동기 pycubrid.aio 변형을 지원합니다.
 
 ```mermaid
 flowchart TD

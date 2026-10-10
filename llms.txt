@@ -2,13 +2,13 @@
 
 > SQLAlchemy 2.0/2.1 dialect for the CUBRID database: SQL and DDL compilation, type mapping (including native JSON and collection types), schema reflection, CUBRID-specific DML constructs, Alembic migrations, and sync plus async driver support for Python 3.11+ (PEP 561 typed).
 
-sqlalchemy-cubrid lets Python applications use CUBRID with SQLAlchemy Core, the ORM, the asyncio extension, and Alembic. It registers three driver variants: the pure-Python `pycubrid` driver, its asyncio counterpart `pycubrid.aio`, and the legacy `CUBRIDdb` C extension.
+sqlalchemy-cubrid lets Python applications use CUBRID with SQLAlchemy Core, the ORM, the asyncio extension, and Alembic. It registers three driver variants: the recommended pure-Python `pycubrid` driver, its asyncio counterpart `pycubrid.aio`, and the supported `CUBRIDdb` C extension.
 
 Key facts:
 - Driver variants (URL scheme, install extra):
   - `cubrid+pycubrid://user:password@host:33000/dbname` — pure-Python pycubrid, recommended for new projects; `pip install "sqlalchemy-cubrid[pycubrid]"` (pycubrid>=1.8.0,<2.0)
   - `cubrid+aiopycubrid://user:password@host:33000/dbname` — async pycubrid for `create_async_engine`; same `[pycubrid]` extra, which also pulls in `sqlalchemy[asyncio]`
-  - `cubrid://` (also `cubrid+cubrid://`, `cubrid+cubriddb://`) — legacy CUBRIDdb C extension; build it from cubrid-python v11.3.0.51 or later. The `[cubrid]`/`[cubriddb]` extras are deprecated: they install PyPI `CUBRID-Python` 9.3.x, which is untested, and the dialect emits a `SAWarning` at first connect for a CUBRIDdb older than 11.3
+  - `cubrid://` (also `cubrid+cubrid://`, `cubrid+cubriddb://`) — supported CUBRIDdb C extension; build it from cubrid-python v11.3.0.51 or later. The `[cubrid]`/`[cubriddb]` installation extras are deprecated: they install PyPI `CUBRID-Python` 9.3.x, which is untested, and the dialect emits a `SAWarning` at first connect for a CUBRIDdb older than 11.3
 - A bare `pip install sqlalchemy-cubrid` installs no DB-API driver; choose an extra above
 - Isolation levels: the three CUBRID MVCC levels `READ COMMITTED` (4, server default), `REPEATABLE READ` (5) and `SERIALIZABLE` (6), plus `AUTOCOMMIT` (driver autocommit). `CURSOR STABILITY` and the two long `... SCHEMA, ... INSTANCES` spellings are accepted only as aliases of levels 4 and 5; the pre-MVCC levels 1–3 are rejected
 - Native `JSON` type (CUBRID 10.2+) with `col["key"]` / path indexing compiled to `JSON_EXTRACT`

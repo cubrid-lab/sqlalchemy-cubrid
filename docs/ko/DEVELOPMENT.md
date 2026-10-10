@@ -232,7 +232,7 @@ docker compose down -v
 ```
 
 일반 tox 프로파일은 명시적인 `cubrid+pycubrid` URL을 요구합니다. URL 누락이나
-레거시 C 확장 스킴을 거부하고 pytest 전에 제한된 시간의 `SELECT 1`로 동기·파생
+CUBRIDdb C 확장 스킴을 거부하고 pytest 전에 제한된 시간의 `SELECT 1`로 동기·파생
 비동기 연결을 모두 확인합니다. 비동기 스위트는 SQLAlchemy URL API로 인증 정보,
 포트, 쿼리 옵션을 보존한 `cubrid+aiopycubrid` URL을 파생하며 `CUBRID_TEST_AURL`은
 명시적 비동기 재정의로 유지합니다. 실패 메시지는 URL 인증 정보를 출력하지 않습니다.

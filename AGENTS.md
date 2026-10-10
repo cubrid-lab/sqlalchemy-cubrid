@@ -413,6 +413,12 @@ follow-up. Korean-required checks and other-language advisory checks remain inta
 
 Do not mark work complete until code, tests, and documentation are consistent.
 
+Driver terminology: CUBRIDdb built from cubrid-python v11.3.0.51+ is the
+supported official C-extension driver. Recommend pycubrid for new projects,
+but describe the `[cubrid]` / `[cubriddb]` installation extras (which select an
+untested old PyPI package) as deprecated, not the supported driver itself.
+Keep valid historical uses of “legacy,” such as CAS error-code formats.
+
 ## Commit Convention
 
 Issue titles, pull request titles and commit subjects follow
