@@ -7,7 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+- **`sqlalchemy-cubrid` no longer installs with SQLAlchemy 2.2 or newer (#774).** The package
+  metadata now requires `sqlalchemy>=2.0,<2.2`, matching the supported range already
+  documented (2.0 and 2.1). SQLAlchemy 2.2 is not released yet (PyPI latest 2.1.4), so no
+  current install changes: 2.0.x and 2.1.x resolve exactly as before. Once 2.2 ships, `pip`
+  keeps resolving SQLAlchemy 2.1.x for this package. SQLAlchemy 2.2 was never verified
+  against the full compatibility matrix and is excluded until it ships and passes it; the
+  cap is then lifted in a later release.
+
 ### Changed
+- **SQLAlchemy is capped below 2.2 (#774)** — `sqlalchemy>=2.0,<2.3` became `>=2.0,<2.2` in
+  `dependencies` and in the `dev` and `pycubrid` extras, so package metadata matches
+  `docs/SUPPORT_MATRIX.md` (`≥ 2.2` unsupported). README, the translated READMEs,
+  `SUPPORT_MATRIX`, `SA_COMPAT`, `ARCHITECTURE`, `PRD` (English and Korean) and
+  `THIRD_PARTY_LICENSES.md` state the same range. The 2.2 forward-compat shims and the weekly
+  `--pre` canary stay: the canary installs SQLAlchemy in a separate explicit step
+  (`>=2.1.0b1,<2.3`), which is not bound by the package cap, so it still forward-tests 2.2
+  pre-releases. Packaging metadata only (release type: patch); no dialect code changes.
 - **Cookbook release verification pinned to the shared cookbook SHA** — the `verify-cookbook` call to `cubrid-cookbook-python`'s `smoke-test.yml` in `.github/workflows/publish-pypi.yml` is pinned to `bd6749093813d3a447f993fec72ac733adbeae63`, the same commit as the other two package repositories (pycubrid, sqlalchemy-cubrid, cubrid-mcp-server). Since the previous pin the cookbook adds the Python 3.11 cell on release calls (`Smoke Tests (CUBRID 11.4, Python 3.11)`), so the release verification report now needs all three cells (11.2/3.12, 11.4/3.12, 11.4/3.11). `RELEASING.md` lists the third job. CI only; the dialect is unchanged.
 - **Documentation site build on pull requests (#786)** — `ci.yml` gains a `docs-build` job
   that runs the `docs.yml` build (install `.github/docs-requirements/requirements.txt`,
@@ -112,6 +129,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the real manifest and config, checks the manifest against `__version__` and the
   heading each commit type produces; the 17.6.0 fixture is regenerated with the new
   mapping. CI and release tooling only; the dialect is unchanged.
+
+### Tests
+- **Guard for the SQLAlchemy range (#774)** — `test/test_sqlalchemy_range.py` (a `repo` test) fails when the `sqlalchemy` upper bound in `pyproject.toml` (all extras) differs from the pin stated in the README, translated READMEs and docs, or when `SUPPORT_MATRIX` (English and Korean) does not list every minor below the cap as supported and the cap minor as unsupported.
 
 ## [1.10.0] - 2026-10-08
 

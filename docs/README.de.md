@@ -32,7 +32,7 @@ unterstützt.
 - Vollständiger SQLAlchemy-2.0–2.1-Dialekt mit **Statement-Caching** und **PEP-561-Typisierung**
 - **Umfangreiche Offline-Testsuite** — zum Ausführen ist keine Datenbank erforderlich; CI erzwingt im `offline-tests`-Job eine Mindestabdeckung von 95 % (`--cov-fail-under=95`)
 - **Nebenläufigkeits-Stresstests** — `QueuePool`-basierte synchrone Threads + `asyncio.gather`-Workloads gegen echtes CUBRID validiert
-- **SQLAlchemy-2.1-fähiger Compat-Shim** — Zugriff auf private APIs in `_compat.py` gekapselt (bis zur vollständigen SA-2.1-Validierung weiterhin auf `<2.3` festgelegt)
+- **SQLAlchemy-2.1-fähiger Compat-Shim** — Zugriff auf private APIs in `_compat.py` gekapselt (bis zur vollständigen SA-2.1-Validierung weiterhin auf `<2.2` festgelegt)
 - Gegen **4 CUBRID-Versionen** (10.2, 11.0, 11.2, 11.4) auf **Python 3.10 -- 3.14** getestet
 - CUBRID-spezifische DML-Konstrukte: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic-Migrationsunterstützung sofort einsatzbereit
@@ -157,7 +157,7 @@ async with AsyncSession(engine) as session:
 - **Keine Sequenzen** — CUBRID verwendet ausschließlich `AUTO_INCREMENT`
 - **Kein Multi-Schema** — ein einzelnes Schema pro Datenbank
 - **Nicht committetes DDL hält Schemasperren** — DDL ist in CUBRID transaktional (`ROLLBACK` macht es rückgängig; vorzeitig committet es nur das Client-Autocommit, das der Dialekt abschaltet), daher ist ein Alembic-Upgrade standardmäßig eine einzige Transaktion (`transactional_ddl = True`) und hält die betroffenen Tabellen bis zum Commit gesperrt; für lange Migrationen oder große Tabellen `transaction_per_migration=True` verwenden
-- **Nur SQLAlchemy 2.0–2.1** — wegen interner API-Abhängigkeiten auf `<2.3` festgelegt ([Details](ARCHITECTURE.md))
+- **Nur SQLAlchemy 2.0–2.1** — wegen interner API-Abhängigkeiten auf `<2.2` festgelegt ([Details](ARCHITECTURE.md))
 - **Async erfordert pycubrid >= 1.8.0,<2.0** — der Treiber `cubrid+aiopycubrid://` benötigt die von diesem Projekt aktuell unterstützte async-fähige pycubrid-Paketlinie
 
 ## Dokumentation

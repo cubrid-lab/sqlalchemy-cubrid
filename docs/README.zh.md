@@ -30,7 +30,7 @@ CUBRID 是一款高性能开源关系型数据库，在韩国公共部门和企�
 - 完整的 SQLAlchemy 2.0–2.1 方言，支持**语句缓存**和 **PEP 561 类型标注**
 - **庞大的离线测试套件** —— 无需数据库即可运行；CI 在 `offline-tests` 任务中强制执行至少 95% 的行覆盖率（`--cov-fail-under=95`）
 - **并发压力测试** —— 已在真实 CUBRID 上验证 `QueuePool` 同步线程和 `asyncio.gather` 工作负载
-- **面向 SQLAlchemy 2.1 的兼容垫片** —— 私有 API 访问被封装在 `_compat.py` 中（在完成 SA 2.1 全面验证前仍固定为 `<2.3`）
+- **面向 SQLAlchemy 2.1 的兼容垫片** —— 私有 API 访问被封装在 `_compat.py` 中（在完成 SA 2.1 全面验证前仍固定为 `<2.2`）
 - 在 **Python 3.10 -- 3.14** 上测试 **4 个 CUBRID 版本**（10.2、11.0、11.2、11.4）
 - CUBRID 特有的 DML 构造：`ON DUPLICATE KEY UPDATE`、`MERGE`、`REPLACE INTO`
 - 开箱即用的 Alembic 迁移支持
@@ -155,7 +155,7 @@ async with AsyncSession(engine) as session:
 - **不支持序列** —— CUBRID 仅使用 `AUTO_INCREMENT`
 - **不支持多 schema** —— 每个数据库只有单一 schema
 - **未提交的 DDL 会持有模式锁** —— CUBRID 的 DDL 是事务性的（`ROLLBACK` 可撤销；只有方言已关闭的客户端自动提交才会提前提交它），因此默认情况下整个 Alembic 升级是一个事务（`transactional_ddl = True`），在提交前会一直锁住涉及的表；耗时较长或针对大表的迁移请使用 `transaction_per_migration=True`
-- **仅支持 SQLAlchemy 2.0–2.1** —— 由于内部 API 依赖，版本固定为 `<2.3`（[详情](ARCHITECTURE.md)）
+- **仅支持 SQLAlchemy 2.0–2.1** —— 由于内部 API 依赖，版本固定为 `<2.2`（[详情](ARCHITECTURE.md)）
 - **Async 需要 pycubrid >= 1.8.0,<2.0** —— `cubrid+aiopycubrid://` 驱动需要本项目当前支持的 async 能力 pycubrid 包线
 
 ## 文档

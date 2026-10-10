@@ -89,7 +89,7 @@ graph TD
 
 | 패키지 | 버전 | 용도 |
 |---|---|---|
-| SQLAlchemy | ≥ 2.0, < 2.3 | 핵심 ORM/엔진 프레임워크 |
+| SQLAlchemy | ≥ 2.0, < 2.2 | 핵심 ORM/엔진 프레임워크 |
 | Python | ≥ 3.10 | 런타임 |
 | CUBRID-Python | any | DBAPI 드라이버 (선택적 extra) |
 | Alembic | ≥ 1.7.2 | 마이그레이션 지원 (선택적 extra) |

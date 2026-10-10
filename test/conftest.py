@@ -66,6 +66,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_workflow_cubriddb_cache.py",
         "test_workflow_path_impact.py",
         "test_third_party_licenses.py",
+        "test_sqlalchemy_range.py",
     }
 )
 _missing_repo_modules = sorted(

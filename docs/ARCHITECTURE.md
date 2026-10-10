@@ -252,7 +252,7 @@ flowchart TD
 
 ## Key Design Decisions
 
-*   **SQLAlchemy `<2.3` pin**: Uses three remaining private SA attributes (`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`) via `_compat.py` helpers at compiler.py:93, 104-105 — requires version pinning until public alternatives exist.
+*   **SQLAlchemy `<2.2` pin**: Uses three remaining private SA attributes (`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`) via `_compat.py` helpers at compiler.py:93, 104-105 — requires version pinning until public alternatives exist.
 *   **BOOLEAN → SMALLINT mapping**: CUBRID has no native BOOLEAN — dialect maps to `SMALLINT` (0/1).
 *   **JSON type support (v1.2.0+)**: Full JSON type mapping including `JSON`, `JSONIndexType`, `JSONPathType`, with path access via `json_getattr` and `json_getitem_op`. Requires CUBRID ≥ 10.2.
 *   **`transactional_ddl = True`**: CUBRID DDL rolls back with the transaction (only client autocommit, which the dialect turns off, commits it early), so a failed Alembic upgrade is rolled back whole by default. `CubridImpl.emit_begin()` emits nothing because CUBRID has no `BEGIN` statement; offline scripts end each transaction with `COMMIT;`.

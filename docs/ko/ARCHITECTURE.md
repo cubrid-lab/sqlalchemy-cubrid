@@ -255,7 +255,7 @@ flowchart TD
 
 ## 핵심 설계 결정
 
-*   **SQLAlchemy `<2.3` 핀**: `_compat.py` 헬퍼를 통해 남은 세 개의 비공개 SA 속성(`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`)을 compiler.py:93, 104-105에서 사용 — 공개 대안이 나올 때까지 버전 고정 필요.
+*   **SQLAlchemy `<2.2` 핀**: `_compat.py` 헬퍼를 통해 남은 세 개의 비공개 SA 속성(`select._limit_clause`, `select._offset_clause`, `select._for_update_arg`)을 compiler.py:93, 104-105에서 사용 — 공개 대안이 나올 때까지 버전 고정 필요.
 *   **BOOLEAN → SMALLINT 매핑**: CUBRID에는 네이티브 BOOLEAN이 없음 — 방언이 `SMALLINT`(0/1)로 매핑.
 *   **JSON 타입 지원 (v1.2.0+)**: `JSON`, `JSONIndexType`, `JSONPathType`를 포함한 완전한 JSON 타입 매핑. `json_getattr`과 `json_getitem_op`를 통한 경로 접근. CUBRID ≥ 10.2 필요.
 *   **`transactional_ddl = True`**: CUBRID의 DDL은 트랜잭션과 함께 롤백됨(DDL을 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) — 실패한 Alembic 업그레이드는 기본적으로 통째로 롤백됨. CUBRID에는 `BEGIN` 문이 없으므로 `CubridImpl.emit_begin()`은 아무것도 내지 않으며, 오프라인 스크립트는 각 트랜잭션을 `COMMIT;`으로 끝냄.
