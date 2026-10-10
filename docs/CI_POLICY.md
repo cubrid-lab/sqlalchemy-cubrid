@@ -367,11 +367,11 @@ point: the packaging smoke venvs prove the built wheel and sdist install with th
 end-user tool, and the external `live-smoke` reusable workflow receives its own
 install command. `test/test_workflow_installs.py` enforces this.
 
-## Python 3.15 preview preparation
+## Python 3.15 validation preparation
 
 `python-canary.yml` is manual-only: supply the full SHA and dispatch the branch
-at that commit. One Ubuntu/standard-GIL lane selects Python 3.15 with prereleases
-allowed, prints the actual interpreter/dependency versions, runs full offline
+at that commit. One Ubuntu/standard-GIL lane selects Python 3.15 (prereleases
+are allowed by the selector), prints the actual interpreter/dependency versions, runs full offline
 regressions and validates fresh wheel/sdist installs. Failed setup/install/tests
 fail the run normally. It is separate from required PR checks and release gates;
 there is no new schedule, PR matrix cell or CUBRID provisioning. This lane alone
