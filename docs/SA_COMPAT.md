@@ -4,7 +4,7 @@ This document tracks every SQLAlchemy internal or semi-private API used by
 `sqlalchemy-cubrid`, why it is used, the SQLAlchemy version range verified by
 tests, and what would break if SQLAlchemy changes the API.
 
-Verified against: SQLAlchemy `2.0.x` and `2.1.x` (project pin: `>=2.0,<2.3`).
+Verified against: SQLAlchemy `2.0.x` and `2.1.x` (project pin: `>=2.0,<2.2`).
 
 ## Internal API Inventory
 
@@ -44,6 +44,6 @@ compiler internals in practice.
 ## Validation Plan
 
 - Keep running full offline tests on SQLAlchemy `2.0.x` and `2.1.x`.
-- Run an upstream SQLAlchemy pre-release canary with `--pre` for `SQLAlchemy>=2.1.0b1,<2.3`; keep it `continue-on-error` so upcoming pre-releases do not block regular CI.
+- Run an upstream SQLAlchemy pre-release canary with `--pre` for `SQLAlchemy>=2.1.0b1,<2.3`; keep it `continue-on-error` so upcoming pre-releases do not block regular CI. The canary installs SQLAlchemy in a second, explicit step, so it can resolve a 2.2 pre-release although the package metadata caps `sqlalchemy` at `<2.2`.
 - If canary fails, prioritize replacing direct internal usage where public
   alternatives exist, or align with upstream dialect patterns.

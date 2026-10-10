@@ -31,7 +31,7 @@ CUBRID एक उच्च-प्रदर्शन ओपन-सोर्स �
 - **statement caching** और **PEP 561 typing** के साथ पूर्ण SQLAlchemy 2.0–2.1 dialect
 - **विस्तृत ऑफ़लाइन टेस्ट सुइट** — इन्हें चलाने के लिए डेटाबेस की आवश्यकता नहीं; CI `offline-tests` जॉब में न्यूनतम 95% लाइन कवरेज सुनिश्चित करता है (`--cov-fail-under=95`)
 - **Concurrency stress tests** — `QueuePool` sync threaded + `asyncio.gather` workloads को live CUBRID पर validate किया गया है
-- **SQLAlchemy 2.1-ready compat shim** — private API access को `_compat.py` में wrap किया गया है (पूर्ण SA 2.1 validation तक अभी भी `<2.3` पर pinned)
+- **SQLAlchemy 2.1-ready compat shim** — private API access को `_compat.py` में wrap किया गया है (पूर्ण SA 2.1 validation तक अभी भी `<2.2` पर pinned)
 - **Python 3.10 -- 3.14** पर **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) के खिलाफ टेस्ट किया गया
 - CUBRID-विशिष्ट DML constructs: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic migration support box से बाहर उपलब्ध
@@ -156,7 +156,7 @@ async with AsyncSession(engine) as session:
 - **कोई sequences नहीं** — CUBRID केवल `AUTO_INCREMENT` का उपयोग करता है
 - **कोई multi-schema नहीं** — प्रति डेटाबेस एक single schema
 - **Uncommitted DDL schema locks रखता है** — CUBRID में DDL transactional है (`ROLLBACK` उसे undo करता है; उसे पहले commit सिर्फ client autocommit करता है, जिसे dialect बंद रखता है), इसलिए default रूप से पूरा Alembic upgrade एक transaction है (`transactional_ddl = True`) और commit होने तक छुई गई tables को lock रखता है; लंबे या बड़ी tables वाले migrations के लिए `transaction_per_migration=True` इस्तेमाल करें
-- **केवल SQLAlchemy 2.0–2.1** — internal API dependencies के कारण `<2.3` पर pinned ([details](ARCHITECTURE.md))
+- **केवल SQLAlchemy 2.0–2.1** — internal API dependencies के कारण `<2.2` पर pinned ([details](ARCHITECTURE.md))
 - **Async के लिए pycubrid >= 1.8.0,<2.0 आवश्यक है** — `cubrid+aiopycubrid://` driver को वही async-capable pycubrid package line चाहिए जिसे यह परियोजना वर्तमान में सपोर्ट करती है
 
 ## दस्तावेज़ीकरण

@@ -31,7 +31,7 @@ CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공�
 - **statement caching**과 **PEP 561 타입 지원**을 갖춘 완전한 SQLAlchemy 2.0–2.1 방언
 - **방대한 오프라인 테스트 스위트** — 데이터베이스 없이도 실행 가능; CI가 `offline-tests` 작업에서 최소 95% 라인 커버리지를 강제합니다 (`--cov-fail-under=95`)
 - **동시성 스트레스 테스트** — `QueuePool` 기반 동기 스레드 + `asyncio.gather` 워크로드를 실 CUBRID에서 검증
-- **SQLAlchemy 2.1 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.1 검증 전까지는 `<2.3`로 고정
+- **SQLAlchemy 2.1 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.1 검증 전까지는 `<2.2`로 고정
 - **Python 3.11 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
 - CUBRID 전용 DML 구문: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic 마이그레이션 기본 지원
@@ -175,7 +175,7 @@ async with AsyncSession(engine) as session:
 - **시퀀스 없음** — CUBRID는 `AUTO_INCREMENT`만 사용합니다
 - **멀티 스키마 미지원** — 데이터베이스당 단일 스키마 모델입니다
 - **커밋되지 않은 DDL은 스키마 잠금을 유지** — CUBRID의 DDL은 트랜잭션으로 처리되므로(`ROLLBACK`이 되돌리며, 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) 기본적으로 Alembic 업그레이드 전체가 하나의 트랜잭션(`transactional_ddl = True`)이고, 커밋할 때까지 건드린 테이블을 잠급니다. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True`를 사용하세요
-- **SQLAlchemy 2.0–2.1만 지원** — 내부 API 의존성 때문에 `<2.3`로 고정되어 있습니다([자세한 내용](ARCHITECTURE.md))
+- **SQLAlchemy 2.0–2.1만 지원** — 내부 API 의존성 때문에 `<2.2`로 고정되어 있습니다([자세한 내용](ARCHITECTURE.md))
 - **Async는 pycubrid >= 1.8.0,<2.0 필요** — `cubrid+aiopycubrid://` 드라이버는 현재 이 프로젝트가 지원하는 async 가능 pycubrid 패키지 라인이 필요합니다
 
 ## 문서

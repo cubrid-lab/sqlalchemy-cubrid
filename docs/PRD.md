@@ -87,7 +87,7 @@ graph TD
 
 | Package | Version | Purpose |
 |---|---|---|
-| SQLAlchemy | ≥ 2.0, < 2.3 | Core ORM/engine framework |
+| SQLAlchemy | ≥ 2.0, < 2.2 | Core ORM/engine framework |
 | Python | ≥ 3.10 | Runtime |
 | CUBRID-Python | any | DBAPI driver (optional extra) |
 | Alembic | ≥ 1.7.2 | Migration support (optional extra) |
