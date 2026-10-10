@@ -340,6 +340,66 @@ def test_prepare_release_composes_checked_notes_with_freeze() -> None:
     assert runs.count('git rev-parse FETCH_HEAD)" != "$GITHUB_SHA"') == 3
 
 
+# The freeze and compose/push steps of release-please.yml are shared verbatim by
+# pycubrid, sqlalchemy-cubrid and cubrid-mcp-server, and so are these tests (#801).
+REVIEW_COUNT = (
+    "count=$(gh pr list --state open --base main --limit 100"
+    " --label 'autorelease: review' --json number --jq 'length')"
+)
+STALE_MAIN = 'if [ "$(git rev-parse FETCH_HEAD)" != "$GITHUB_SHA" ]; then'
+PUSH = 'git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$branch"'  # noqa: E501
+
+
+def prepare_step(name: str) -> list[str]:
+    (step,) = [s for s in steps(PREPARE["jobs"]["prepare"]) if s.get("name") == name]
+    return [line.strip() for line in step["run"].splitlines()]
+
+
+def test_release_please_checkout_does_not_persist_credentials() -> None:
+    (checkout,) = checkouts(PREPARE["jobs"]["prepare"])
+    assert checkout == {"persist-credentials": False}
+
+
+def test_release_please_freeze_uses_the_review_label() -> None:
+    lines = prepare_step("Freeze reviewed release PRs")
+    assert lines[lines.index(STALE_MAIN) + 1] == (
+        "echo '::error::Stale generator run; wait for current main'; exit 1"
+    )
+    i = lines.index(REVIEW_COUNT)
+    assert lines[i + 1 : i + 4] == [
+        'if [ "$count" != 0 ]; then',
+        "echo 'frozen=true' >> \"$GITHUB_OUTPUT\"",
+        "echo 'Release preparation frozen: remove autorelease: review only when regeneration is safe.'",  # noqa: E501
+    ]
+
+
+def test_release_please_only_touches_its_own_branch() -> None:
+    lines = prepare_step("Compose and validate reviewed release notes")
+    assert lines[0] == "set -euo pipefail"
+    guard = lines.index(
+        'case "$branch" in release-please--branches--main*) ;; '
+        "*) echo '::error::Unexpected release branch'; exit 1 ;; esac"
+    )
+    assert lines[guard - 1].startswith("branch=$(")
+    assert guard < lines.index('git checkout -B "$branch" FETCH_HEAD')
+
+
+def test_release_please_push_is_guarded_by_stale_main_and_review_checks() -> None:
+    lines = prepare_step("Compose and validate reviewed release notes")
+    assert sum(" push " in line for line in lines) == 1
+    push = lines.index(PUSH)
+    assert lines[push - 8 : push] == [
+        'git commit -m "chore: curate release notes for v$version"',
+        "git fetch origin main",
+        STALE_MAIN,
+        "echo '::error::Main changed before push; refusing stale notes'; exit 1",
+        "fi",
+        REVIEW_COUNT,
+        "if [ \"$count\" != 0 ]; then echo '::error::Review freeze applied; refusing push'; exit 1; fi",  # noqa: E501
+        "auth=$(printf 'x-access-token:%s' \"$GH_TOKEN\" | base64 -w0)",
+    ]
+
+
 def test_integration_full_is_callable_at_a_sha_and_keeps_its_triggers() -> None:
     on = FULL["on"]
     assert set(on) == {"workflow_dispatch", "workflow_call"}
