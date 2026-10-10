@@ -1,5 +1,10 @@
 # PRD: sqlalchemy-cubrid — CUBRID Dialect for SQLAlchemy 2.0–2.1
 
+> This PRD contains planning and status snapshots from the 1.8.0 period. Its
+> Python and CI matrix statements are not current support guidance; see the
+> [Support Matrix](SUPPORT_MATRIX.md) for current policy. [#697](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/697)
+> owns the remaining updates to those statements.
+
 ## 1. Overview
 
 **Project**: sqlalchemy-cubrid

@@ -283,7 +283,7 @@ These types and capabilities are unique to the CUBRID dialect and have no direct
 
 | Feature | Description |
 |---------|-------------|
-| `MONETARY` type | Fixed-point currency type with locale-aware formatting |
+| `MONETARY` type | Currency-aware server type; declared/compiled but not auto-reflected |
 | `STRING` type | Alias for `VARCHAR(1,073,741,823)` — maximum-length variable string |
 | `OBJECT` type | OID reference type pointing to another row by object identifier |
 | `SET` collection | Unordered collection of unique elements |
