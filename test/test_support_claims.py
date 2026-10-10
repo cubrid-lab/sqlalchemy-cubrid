@@ -18,7 +18,8 @@ def test_current_support_contract() -> None:
 
 def test_historical_python_and_cas_terms_are_allowed() -> None:
     historical = (
-        "\n## Release history\nPython 3.10 was supported in 1.9.x. Legacy CAS error-code format.\n"
+        "\n## Release history\nPython 3.10 was supported in 1.9.x. Legacy CAS error-code format. "
+        "The old pycubrid>=1.7.0,<2.0 bound applied to that release.\n"
     )
     assert check_claims(METADATA, README + historical, MATRIX + historical) == []
 
@@ -85,6 +86,13 @@ def test_pycubrid_floor_change_needs_all_current_claims_updated() -> None:
     problems = check_claims(metadata, readme, MATRIX)
     assert "README.md: pycubrid package bounds differ from metadata" in problems
     assert "docs/SUPPORT_MATRIX.md: pycubrid package bounds differ from metadata" in problems
+
+
+def test_missing_current_pycubrid_claim_is_rejected() -> None:
+    matrix = MATRIX.replace("requires pycubrid >= 1.8.0,<2.0", "requires pycubrid")
+    assert "docs/SUPPORT_MATRIX.md: pycubrid package bounds differ from metadata" in check_claims(
+        METADATA, README, matrix
+    )
 
 
 def test_coordinated_pycubrid_floor_change_is_allowed() -> None:
