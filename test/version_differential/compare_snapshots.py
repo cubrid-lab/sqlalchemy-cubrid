@@ -19,7 +19,8 @@ behavior on all of them. An undeclared divergence is either
   correct on the version the maintainer happened to test), or
 * a genuine server behavior change that must be handled and then recorded here.
 
-Either way the nightly matrix should go red until a human decides which.
+Either way the full integration matrix (manual dispatch and the release gate) should
+go red until a human decides which.
 
 Exit code is non-zero when an undeclared difference is found, so this doubles as
 a CI gate.
