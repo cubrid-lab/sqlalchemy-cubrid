@@ -340,6 +340,27 @@ pycubrid 컴플라이언스 설치는 정확한 핀을 유지하고, SQLAlchemy 
 `live-smoke` 재사용 워크플로는 자체 설치 명령을 받습니다. `test/test_workflow_installs.py`가
 이를 검증합니다.
 
+## Dependabot 그룹
+
+이전에는 Dependabot이 pip(`/`), pip(`/.github/docs-requirements`), GitHub Actions의
+패키지마다 PR을 하나씩 열었고, PR마다 PR 계층 검사가 실행되었습니다. 이제
+`.github/dependabot.yml`은 minor와 patch 버전 업데이트를 생태계와 디렉터리별로 PR 하나에
+묶으므로(`dev-tools`, `docs-tools`, `github-actions`), 주간 업데이트 묶음은 그룹당 CI 실행
+한 번으로 끝납니다(#737). 다음은 여전히 별도 PR로 열립니다.
+
+- **Major 업데이트**는 모든 그룹에서 제외되며(`update-types`는 `minor`와 `patch`뿐),
+  `dependabot-auto-merge.yml`은 여전히 사람의 리뷰를 위해 보류합니다.
+- **보안 업데이트**는 그룹이 `applies-to: version-updates`로 설정되어 있어 분리됩니다.
+- **SQLAlchemy, pycubrid, Alembic, CUBRID-Python**은 `dev-tools`에서 제외됩니다. 이들은
+  도구 업데이트와 호환성 위험이 다르므로 업데이트마다 따로 리뷰할 수 있어야 합니다.
+
+그룹은 아무것도 우회하지 않습니다. 그룹 PR도 같은 필수 체크를 거치며, 체크가 통과해야
+자동 병합이 완료됩니다. `dependabot/fetch-metadata`는 그룹 PR의 `update-type`으로 가장
+높은 semver 변경을 보고하므로, 그룹이 major 업데이트를 자동 병합으로 가져갈 수 없습니다.
+패키지 하나가 실패하면 그룹 전체가 막힙니다. 그룹 PR에서 고치거나, 별도 작업이 필요하면
+리뷰된 PR로 해당 패키지를 그룹의 `exclude-patterns`에 추가해 Dependabot이 단독 PR로 열게
+하세요. `test/test_workflow_hygiene.py`가 그룹 설정을 검증합니다.
+
 ## Python 3.15 검증 준비
 
 `python-canary.yml`은 수동 전용입니다. 전체 SHA를 전달하고 그 커밋의 브랜치에서
