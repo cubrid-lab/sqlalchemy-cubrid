@@ -182,7 +182,8 @@ the `# main` comment.
 | Situation | What happened | What to do |
 | --- | --- | --- |
 | `detect` says "no release" on a release merge | Version unchanged, CHANGELOG section not dated, or the tag exists at another commit (see the warning). | `detect` only releases the commit that changes `__version__`, so a follow-up PR that only fixes the CHANGELOG cannot release `X.Y.Z`. Fix the cause through a normal PR, then prepare `X.Y.(Z+1)` and fold the `## [X.Y.Z]` entries into its section (if the tag is at another commit, that version is taken anyway). |
-| `consistency`, `matrix` or `build` failed | Nothing published; no tag, no Release. | Transient (flaky lane, runner error): `gh run rerun <run-id> --failed`. Real defect at that commit: `X.Y.Z` stays unpublished. Fix it in a normal PR (no version change, so no release), then prepare `X.Y.(Z+1)`; in that release PR fold the unpublished `## [X.Y.Z]` entries into the new section. A skipped version number on PyPI is harmless. |
+| `consistency`, `matrix` or `build` failed | Nothing published; no tag, no Release. | Transient (flaky lane, runner error): `gh run rerun <run-id> --failed`. Real defect at that commit: `X.Y.Z` stays unpublished. Fix it in a normal PR (no version change, so no release), unblock preparation (see "A merged `X.Y.Z` is abandoned" below), then prepare `X.Y.(Z+1)`; in that release PR fold the unpublished `## [X.Y.Z]` entries into the new section. A skipped version number on PyPI is harmless. |
+| A merged `X.Y.Z` is abandoned (it will not be published) | The merged release PR stays `autorelease: pending`, so reconciliation reports it as blocked (or release-please aborts while it is still in progress) and no newer candidate can be prepared. | Record on the release PR why `X.Y.Z` is abandoned, then remove `autorelease: pending` from it. Do **not** add `autorelease: tagged`: nothing was published. Merge the fix, then dispatch **Prepare release**. The next version is computed from the commits after the `X.Y.Z` merge (normally `X.Y.(Z+1)`; a `feat` gives `X.(Y+1).0`, and hidden types alone open no candidate). In that release PR fold the unpublished `## [X.Y.Z]` entries into the new section. |
 | `publish` failed (tag/Release/PyPI error, partial upload) | The tag and a draft Release may exist; PyPI may hold some files. | `gh run rerun <run-id> --failed` of the **same** run. It reuses the verified artifact, accepts the tag at the same SHA, reuses the draft Release, and the duplicate guard drops files PyPI already serves byte for byte. |
 | `publish` fails with `the title must be exactly 'vX.Y.Z'` | The existing Release for the tag (draft or published) has another title. | Fix only the title by hand, keeping notes, assets, published and prerelease state; for a draft, resend `tag_name` (`gh api -X PATCH repos/cubrid-lab/sqlalchemy-cubrid/releases/<id> -f name=vX.Y.Z -f tag_name=vX.Y.Z`). Then rerun. Never delete or recreate the Release or the tag. |
 | release-please preparation fails with `unsupported generated section` | The composer met a generated heading outside the standard list, for example from a breaking commit of a type that `changelog-sections` does not map (`foo!:`). | Add the commit type to `changelog-sections` in `release-please-config.json` with a standard section (hidden if it should not create a release by itself) through a reviewed PR, then regenerate. |
@@ -236,7 +237,7 @@ means: a release was merged, and its publication is not proven. To recover:
    `gh api -X POST repos/cubrid-lab/sqlalchemy-cubrid/actions/runs/<id>/rerun-failed-jobs`
    (the same as `gh run rerun <id> --failed`), or follow the matching row in
    [Failure and recovery](#failure-and-recovery) (`verify-only` dispatch,
-   `X.Y.(Z+1)` for a real defect).
+   or abandoning `X.Y.Z` and preparing `X.Y.(Z+1)` for a real defect).
 3. When the publisher run at the merge SHA is green, dispatch **Prepare
    release** again. Reconciliation marks the PR tagged and release-please opens
    the next candidate.
@@ -248,7 +249,8 @@ SHA stays failed and the PR stays blocked: after verifying the release summary,
 exact tag SHA, artifact hashes and cookbook success, label it manually (add
 `autorelease: tagged`, then remove `autorelease: pending`).
 The script never relabels a blocked PR, reruns or dispatches anything;
-never clear `autorelease: pending` just to turn the run green. The 1.10.0
+never clear `autorelease: pending` just to turn the run green; the only
+exception is a deliberately abandoned version (see the recovery table above). The 1.10.0
 release (PR #704) is the reference case: its publisher run
 [37871732934](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37871732934)
 failed in cookbook verification after PyPI publication on attempt 1, and

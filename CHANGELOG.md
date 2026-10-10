@@ -131,6 +131,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping. CI and release tooling only; the dialect is unchanged.
 
 ### Tests
+- **Release-please push guards are pinned (cubrid-lab/pycubrid#801)** —
+  `test/test_release_workflows.py` now asserts the exact, ordered guards of
+  `release-please.yml`: the push is directly preceded by the stale-main `exit`
+  and the `autorelease: review` re-check, the compose step starts with
+  `set -euo pipefail`, the branch `case` guard runs before checkout, the freeze
+  step counts the exact `autorelease: review` label, and the checkout keeps
+  `persist-credentials: false`. Removing or weakening any of them now fails a
+  test; before, these mutations passed. `RELEASING.md` gains the recovery row
+  for abandoning a merged release (remove `autorelease: pending`, never add
+  `autorelease: tagged`). Test and docs only; the dialect and workflows are
+  unchanged.
 - **Guard for the SQLAlchemy range (#774)** — `test/test_sqlalchemy_range.py` (a `repo` test) fails when the `sqlalchemy` upper bound in `pyproject.toml` (all extras) differs from the pin stated in the README, translated READMEs and docs, or when `SUPPORT_MATRIX` (English and Korean) does not list every minor below the cap as supported and the cap minor as unsupported.
 
 ## [1.10.0] - 2026-10-08
