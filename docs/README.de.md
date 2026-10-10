@@ -247,7 +247,7 @@ Siehe [CONTRIBUTING.md](../CONTRIBUTING.md) für Hinweise und [docs/DEVELOPMENT.
 
 ## Sicherheit
 
-Melden Sie Schwachstellen per E-Mail -- siehe [SECURITY.md](../SECURITY.md). Erstellen Sie keine öffentlichen Issues für Sicherheitsprobleme.
+Melden Sie Schwachstellen vertraulich über GitHubs Private Vulnerability Reporting (alternativ per E-Mail) -- siehe [SECURITY.md](../SECURITY.md). Erstellen Sie keine öffentlichen Issues für Sicherheitsprobleme.
 
 ## Lizenz
 

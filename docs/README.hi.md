@@ -246,7 +246,7 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ## सुरक्षा
 
-कमज़ोरियों की रिपोर्ट ईमेल के माध्यम से करें -- विवरण के लिए [SECURITY.md](../SECURITY.md) देखें। सुरक्षा चिंताओं के लिए सार्वजनिक issues न खोलें।
+कमज़ोरियों की रिपोर्ट GitHub की निजी vulnerability reporting के माध्यम से करें (वैकल्पिक रूप से ईमेल) -- विवरण के लिए [SECURITY.md](../SECURITY.md) देखें। सुरक्षा चिंताओं के लिए सार्वजनिक issues न खोलें।
 
 ## लाइसेंस
 
