@@ -424,11 +424,12 @@ changes, review these distinctions before publishing: official vs recommended vs
 deprecated; compiled vs reflected vs bound vs returned; implemented vs tested vs
 supported; current policy vs dated evidence; and per-driver/version results vs
 blanket claims. Check existing issues and PRs first. Package metadata owns current
-dependency bounds, CI plus recorded runs own tested combinations, and reviewed
-support docs plus tests own feature limits and driver recommendations. Update the
-canonical English source, Korean translation and generated `llms*.txt` in that
-order. The maintainer changing a support policy updates its targeted consistency
-checks and regression cases in the same review; semantic support claims still
+dependency bounds. CI configuration and recorded runs identify tested combinations.
+Tests and recorded runs provide evidence for observed behavior and feature limits. Reviewed
+support docs own driver recommendations and deprecation policy. Update the canonical
+English source, then any affected Korean counterpart and generated `llms*.txt` output.
+The maintainer changing a support policy updates its targeted consistency checks
+and regression cases in the same review; semantic support claims still
 need linked test/run evidence or an explicit untested qualifier in the PR body.
 
 ## Commit Convention
