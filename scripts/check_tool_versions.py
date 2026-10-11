@@ -67,6 +67,8 @@ def _requirement_name(requirement: str) -> str:
 
 def _exact_pin(requirement: str, tool: str) -> str | None:
     name, separator, version = requirement.partition("==")
+    name = name.strip()
+    version = version.strip()
     if (
         not separator
         or not version

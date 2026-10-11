@@ -195,11 +195,14 @@ def test_pins_are_read_from_their_dependency_groups() -> None:
     assert all(pins.values())
 
 
-def test_exact_tool_pin_with_extras_is_read_structurally(tooling_config: Path) -> None:
+@pytest.mark.parametrize("requirement", ["ruff[toml]=={pin}", "ruff[toml] == {pin} "])
+def test_exact_tool_pin_with_extras_is_read_structurally(
+    tooling_config: Path, requirement: str
+) -> None:
     config = tooling_config / "pyproject.toml"
     original = config.read_text()
     pin = declared_pins(tooling_config)["ruff"]
-    updated = original.replace(f'"ruff=={pin}"', f'"ruff[toml]=={pin}"')
+    updated = original.replace(f'"ruff=={pin}"', f'"{requirement.format(pin=pin)}"')
     assert updated != original
     config.write_text(updated)
     assert declared_pins(tooling_config)["ruff"] == pin
