@@ -161,8 +161,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rejects direct cross-repository auto-closing keywords, while local
   `Closes #N` and cross-repository `Refs owner/repo#N` remain valid. The
   PR body is inert environment data; no checkout or token permissions are
-  needed. Markdown fenced examples and comments are ignored, with regression
-  cases for longer, mixed and mismatched delimiters.
+  needed. Fenced, indented and inline code and HTML comments are ignored in
+  a single pass, so none of them can hide a later foreign closure; regression
+  cases cover longer, mixed and mismatched fence delimiters, tab indentation,
+  inline code and comment openers inside fences.
 - **The cookbook verifies the built wheel before it is published
   (cubrid-lab/cubrid-cookbook-python#240)** — `publish-pypi.yml` gains
   `verify-candidate`, which calls the cookbook smoke test in candidate mode on the

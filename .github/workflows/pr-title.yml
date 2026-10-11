@@ -99,33 +99,66 @@ jobs:
 
           # BEGIN cross-repo-closing-guard
           # No checkout or execution of untrusted PR-body text is needed.
-          def strip_fenced_examples(text: str) -> str:
+          def strip_inert_markdown(text: str) -> str:
+              # One pass, so fences, comments and code spans cannot hide each other.
               output = []
               fence_char = None
               fence_size = 0
-              for line in text.splitlines(keepends=True):
-                  stripped = line.lstrip(" ")
-                  indent = len(line) - len(stripped)
-                  if fence_char is None and indent >= 4:
-                      continue  # Indented Markdown code is inert.
-                  delimiter = re.match(r"(?:\x60{3,}|~{3,})", stripped) if indent <= 3 else None
-                  if fence_char is None:
+              in_comment = False
+              after_blank = True
+              token = re.compile(r"<!--|\x60+")
+              for line in text.splitlines():
+                  expanded = line.expandtabs(4)
+                  stripped = expanded.lstrip(" ")
+                  indent = len(expanded) - len(stripped)
+                  delimiter = re.match(r"\x60{3,}|~{3,}", stripped) if indent <= 3 else None
+                  if fence_char is not None:
+                      if (
+                          delimiter is not None
+                          and delimiter.group()[0] == fence_char
+                          and len(delimiter.group()) >= fence_size
+                          and not stripped[len(delimiter.group()):].strip()
+                      ):
+                          fence_char = None
+                          after_blank = True
+                      continue
+                  if not in_comment:
+                      if indent >= 4 and after_blank and stripped.strip():
+                          continue  # Indented Markdown code is inert.
                       if delimiter is not None:
                           fence_char, fence_size = delimiter.group()[0], len(delimiter.group())
                           continue
-                      output.append(line)
-                  elif (
-                      delimiter is not None
-                      and delimiter.group()[0] == fence_char
-                      and len(delimiter.group()) >= fence_size
-                      and not stripped[len(delimiter.group()):].strip()
-                  ):
-                      fence_char = None
+                  after_blank = not line.strip()
+                  pos = 0
+                  while pos < len(line):
+                      if in_comment:
+                          end = line.find("-->", pos)
+                          if end < 0:
+                              break
+                          in_comment = False
+                          pos = end + 3
+                          continue
+                      found = token.search(line, pos)
+                      if found is None:
+                          output.append(line[pos:])
+                          break
+                      output.append(line[pos:found.start()])
+                      if found.group() == "<!--":
+                          in_comment = True
+                          pos = found.end()
+                          continue
+                      run = re.escape(found.group())
+                      close = re.compile(rf"(?<!\x60){run}(?!\x60)").search(line, found.end())
+                      if close is None:
+                          output.append(found.group())
+                          pos = found.end()
+                      else:
+                          output.append(" ")  # Inline code is inert.
+                          pos = close.end()
+                  output.append("\n")
               return "".join(output)
 
-          body = os.environ.get("PR_BODY", "")
-          body = re.sub(r"(?s)<!--.*?-->", "", body)
-          body = strip_fenced_examples(body)
+          body = strip_inert_markdown(os.environ.get("PR_BODY", ""))
           close_ref = re.compile(
               r"(?i)\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+"
               r"(?:https://(?:www\.)?github\.com/)?"

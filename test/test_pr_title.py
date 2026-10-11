@@ -181,6 +181,11 @@ class PrTitleValidatorTest(unittest.TestCase):
             "~~~~yaml\nCloses another-org/another-repo#42\n~~~~~",
             f"{chr(96) * 4}md\nCloses another-org/another-repo#42\n~~~\nCloses another-org/another-repo#43\n{chr(96) * 4}",
             "    Closes another-org/another-repo#42",
+            "\tCloses another-org/another-repo#42",
+            "Example: `Closes another-org/another-repo#42`.",
+            f"Use {chr(96) * 2}Closes another-org/another-repo#42{chr(96) * 2} only there.",
+            "<!--\nCloses another-org/another-repo#42\n-->",
+            f"<!-- {chr(96) * 3} -->\nCloses #810",
         ):
             with self.subTest(body=body):
                 result = _run("docs: align issue ownership", body)
@@ -194,6 +199,20 @@ class PrTitleValidatorTest(unittest.TestCase):
         result = _run("docs: align issue ownership", body)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("Cross-repository issue closure", result.stdout)
+
+    def test_inert_markdown_cannot_hide_a_later_foreign_closure(self) -> None:
+        fence = chr(96) * 3
+        for body in (
+            f"{fence}html\n<!-- example\n{fence}\nCloses another-org/another-repo#43\n<!-- -->",
+            f"<!-- note -->\n{fence}\n<!--\n{fence}\nCloses another-org/another-repo#43",
+            f"<!-- {fence} -->\nCloses another-org/another-repo#43",
+            "Unclosed `code and Closes another-org/another-repo#43",
+            "Paragraph text\n    Closes another-org/another-repo#43",
+        ):
+            with self.subTest(body=body):
+                result = _run("docs: align issue ownership", body)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("another-org/another-repo#43", result.stdout)
 
 
 if __name__ == "__main__":
