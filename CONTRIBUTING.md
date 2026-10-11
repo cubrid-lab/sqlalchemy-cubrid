@@ -224,7 +224,13 @@ pre-commit run --all-files
 
 ### Review Process
 
-- All PRs require at least one review before merge.
+- All PRs require the applicable review route in
+  [AGENTS.md](AGENTS.md#development-workflow-cubrid-lab-org-standard) before merge.
+  OpenCode work uses recorded Oracle design/post reviews; standalone Claude Code
+  or Codex PRs wait for a substantive submitted GitHub Copilot review or another
+  person's review. A pending request, green CI or an AI "approval recommended"
+  summary does not count. Maintainers record final finding dispositions,
+  verified head and unresolved threads; outside contributors need no internal tools.
 - CI must pass (lint, offline tests, integration tests).
 - Maintain backward compatibility unless explicitly approved.
 - `.github/CODEOWNERS` requests maintainer review automatically for release, CI,
