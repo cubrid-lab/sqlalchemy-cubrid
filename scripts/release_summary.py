@@ -3,16 +3,24 @@
 
 The ``summary`` job always runs and passes ``toJSON(needs)`` in ``NEEDS``. This
 script renders one Markdown table (SHA, tag, version, artifact hashes, matrix
-result, PyPI URLs, cookbook verification and final state) to
-``$GITHUB_STEP_SUMMARY`` and stdout. The final state separates failures before
-publishing (nothing was tagged or uploaded) from "published; post-release
-verification failed". The cookbook verification is ``success`` only when the
-called smoke-test workflow (``verify-cookbook``) and ``require-cookbook``
-succeeded and its outputs report ``status == success`` with
-``installed_version == requested_version`` == the released version; a failed,
-cancelled or skipped call once verification was due (after a successful
-publish, a successful dry-run build, or for verify-only) is a failure, never a
-verified release.
+result, candidate verification, PyPI URLs, cookbook verification and final
+state) to ``$GITHUB_STEP_SUMMARY`` and stdout. The final state separates
+failures before publishing (nothing was tagged or uploaded) from "published;
+post-release verification failed".
+
+The candidate verification (``verify-candidate`` in cookbook candidate mode,
+enforced by ``require-candidate``) runs before ``publish``. It is ``success``
+only when both jobs succeeded and the outputs report ``status == success``,
+``evidence == candidate artifact``, ``installed_version == requested_version``
+== the release version and ``candidate_sha256`` == the wheel digest of the
+``build`` job; it is ``skipped`` only when completing a publish whose tag is
+already at the release commit. The cookbook verification is ``success`` only
+when the called smoke-test workflow (``verify-cookbook``) and
+``require-cookbook`` succeeded and its outputs report ``status == success``
+with ``installed_version == requested_version`` == the released version; a
+failed, cancelled or skipped call once verification was due (after a
+successful publish, or for verify-only) is a failure, never a verified
+release.
 
 Environment: ``NEEDS`` (required), ``PACKAGE``, ``GITHUB_REPOSITORY``,
 ``GITHUB_SERVER_URL``, ``GITHUB_RUN_ID``. Always exits 0 unless ``NEEDS`` is
@@ -27,7 +35,7 @@ import os
 import sys
 from typing import Any
 
-PRE_PUBLISH = ("consistency", "matrix", "build")
+PRE_PUBLISH = ("consistency", "matrix", "build", "require-candidate")
 
 
 def job(needs: dict[str, Any], name: str) -> tuple[str, dict[str, str]]:
@@ -36,17 +44,71 @@ def job(needs: dict[str, Any], name: str) -> tuple[str, dict[str, str]]:
 
 
 def verification_due(needs: dict[str, Any]) -> bool:
-    """Mirror the ``verify-cookbook`` condition: a published release, a successful
-    dry-run build, or verify-only. A call skipped or cancelled after that point is
-    a failed verification, not one that was never due."""
+    """Mirror the ``verify-cookbook`` condition: a published release or verify-only.
+    A call skipped or cancelled after that point is a failed verification, not one
+    that was never due."""
     _, detect = job(needs, "detect")
     if detect.get("verify") != "true":
         return False
-    if job(needs, "publish")[0] == "success":
-        return True
-    return detect.get("publish") != "true" and (
-        detect.get("mode") == "verify-only" or job(needs, "build")[0] == "success"
-    )
+    return job(needs, "publish")[0] == "success" or detect.get("mode") == "verify-only"
+
+
+def tagged_resume(needs: dict[str, Any]) -> bool:
+    """A publish completing at a tag already at the release commit skips the
+    candidate gate (mirrors the ``verify-candidate`` condition)."""
+    _, detect = job(needs, "detect")
+    return detect.get("publish") == "true" and detect.get("tag_state") == "same"
+
+
+def built_wheel_digest(needs: dict[str, Any]) -> str:
+    """The SHA-256 of the single wheel in the build job's map ("" if not exactly one)."""
+    _, build = job(needs, "build")
+    try:
+        hashes = json.loads(build.get("sha256", "") or "{}")
+    except ValueError:
+        return ""
+    if not isinstance(hashes, dict):
+        return ""
+    wheels = [name for name in hashes if str(name).endswith(".whl")]
+    if len(wheels) != 1:
+        return ""
+    return str(hashes[wheels[0]])
+
+
+def candidate(needs: dict[str, Any]) -> tuple[str, str]:
+    """Return (``success`` | ``failure`` | ``skipped`` | ``not run``, reason) for
+    the pre-publication candidate verification."""
+    result, outputs = job(needs, "verify-candidate")
+    require_result, _ = job(needs, "require-candidate")
+    if job(needs, "build")[0] != "success":
+        return "not run", ""
+    if tagged_resume(needs) and result == "skipped" and require_result == "success":
+        return "skipped", "tag already at the release commit"
+    version = job(needs, "detect")[1].get("version", "")
+    status = outputs.get("status", "")
+    evidence = outputs.get("evidence", "")
+    requested = outputs.get("requested_version", "")
+    installed = outputs.get("installed_version", "")
+    digest = outputs.get("candidate_sha256", "")
+    expected = built_wheel_digest(needs)
+    problems: list[str] = []
+    if result != "success":
+        problems.append(f"called workflow {result}")
+    if status != "success":
+        problems.append(f"status {status or 'missing'}")
+    if evidence != "candidate artifact":
+        problems.append(f"evidence {evidence or 'missing'}")
+    if not installed or installed != requested or requested != version:
+        problems.append(
+            f"requested {requested or '-'}, installed {installed or '-'}, release {version or '-'}"
+        )
+    if not expected or digest != expected:
+        problems.append(f"verified wheel {digest or '-'}, built wheel {expected or '-'}")
+    if require_result != "success":
+        problems.append(f"require-candidate {require_result}")
+    if problems:
+        return "failure", "; ".join(problems)
+    return "success", f"wheel sha256 {digest} == build"
 
 
 def verification(needs: dict[str, Any]) -> tuple[str, str]:
@@ -91,7 +153,7 @@ def final_state(needs: dict[str, Any]) -> str:
             prefix = "dry run failed" if mode == "dry-run" else "failed before publish"
             return f"{prefix} in {name} ({result}); nothing was tagged, released or uploaded"
     if mode == "dry-run":
-        return f"dry run passed; nothing published; cookbook verification {status}"
+        return f"dry run passed; nothing published; candidate verification {candidate(needs)[0]}"
     publish_result, _ = job(needs, "publish")
     if publish_result != "success":
         return (
@@ -124,7 +186,14 @@ def render(needs: dict[str, Any], env: dict[str, str]) -> str:
     matrix_result, _ = job(needs, "matrix")
     _, build = job(needs, "build")
     status, reason = verification(needs)
+    candidate_status, candidate_reason = candidate(needs)
     _, verify = job(needs, "verify-cookbook")
+    candidate_artifact = job(needs, "verify-candidate")[1].get("artifact", "")
+    candidate_cell = (
+        candidate_status
+        + (f": {candidate_reason}" if candidate_reason else "")
+        + (f" (report artifact `{candidate_artifact}`)" if candidate_artifact else "")
+    )
     artifact = verify.get("artifact", "")
     cookbook = (
         f"{status}"
@@ -141,6 +210,7 @@ def render(needs: dict[str, Any], env: dict[str, str]) -> str:
         ("Full matrix", matrix_result),
         ("Build", job(needs, "build")[0]),
         ("Artifact SHA-256", hashes_cell(build)),
+        ("Candidate verification", candidate_cell),
         ("Publish", job(needs, "publish")[0]),
         (
             "PyPI",

@@ -44,6 +44,18 @@ def needs(mode: str = "push", **results: Any) -> dict[str, Any]:
         "consistency": {"result": "success", "outputs": {}},
         "matrix": {"result": "success", "outputs": {}},
         "build": {"result": "success", "outputs": {"sha256": json.dumps(HASHES)}},
+        "verify-candidate": {
+            "result": "success",
+            "outputs": {
+                "status": "success",
+                "evidence": "candidate artifact",
+                "requested_version": "1.9.0",
+                "installed_version": "1.9.0",
+                "candidate_sha256": "1" * 64,
+                "artifact": "release-candidate-verification-pycubrid-rc-v1.9.0-1",
+            },
+        },
+        "require-candidate": {"result": "success", "outputs": {}},
         "publish": {
             "result": "success" if detect["publish"] == "true" else "skipped",
             "outputs": {},
@@ -95,6 +107,8 @@ def test_ordinary_merge_reports_no_release() -> None:
                 "consistency",
                 "matrix",
                 "build",
+                "verify-candidate",
+                "require-candidate",
                 "publish",
                 "verify-cookbook",
                 "require-cookbook",
@@ -161,14 +175,89 @@ def test_missing_call_after_publish_is_a_failed_verification(result: str) -> Non
     assert f"called workflow {result}" in reason
 
 
-def test_missing_call_in_dry_run_and_verify_only_is_a_failure() -> None:
+def test_missing_call_in_verify_only_is_a_failure() -> None:
     skipped = {"verify_cookbook": "skipped", "require_cookbook": "skipped"}
-    assert (
-        summary.final_state(needs("dry-run", **skipped))
-        == "dry run passed; nothing published; cookbook verification failure"
-    )
     data = needs("verify-only", consistency="skipped", matrix="skipped", build="skipped", **skipped)
     assert summary.final_state(data) == "verification only of v1.9.0: failure"
+
+
+def test_dry_run_is_verified_by_the_candidate_only() -> None:
+    # A dry run publishes nothing, so the post-publication call is not due.
+    skipped = {"verify_cookbook": "skipped", "require_cookbook": "skipped"}
+    data = needs("dry-run", **skipped)
+    assert summary.verification(data) == ("not run", "")
+    assert summary.final_state(data) == (
+        "dry run passed; nothing published; candidate verification success"
+    )
+    data = needs("dry-run", verify_candidate="skipped", require_candidate="failure", **skipped)
+    assert summary.final_state(data).startswith("dry run failed in require-candidate (failure)")
+
+
+def candidate_job(**outputs: str) -> dict[str, Any]:
+    base = needs()["verify-candidate"]
+    return {"result": outputs.pop("result", "success"), "outputs": {**base["outputs"], **outputs}}
+
+
+@pytest.mark.parametrize(
+    "verify_job",
+    [
+        pytest.param(candidate_job(result="failure"), id="call-failed"),
+        pytest.param(candidate_job(status="failure"), id="status-failure"),
+        pytest.param(candidate_job(evidence="published package"), id="published-evidence"),
+        pytest.param(candidate_job(installed_version="1.8.0"), id="installed-differs"),
+        pytest.param(candidate_job(installed_version=""), id="installed-empty"),
+        pytest.param(
+            candidate_job(requested_version="1.8.0", installed_version="1.8.0"),
+            id="requested-is-not-the-release",
+        ),
+        pytest.param(candidate_job(candidate_sha256="0" * 64), id="other-digest"),
+        pytest.param(candidate_job(candidate_sha256=""), id="no-digest"),
+        pytest.param({"result": "skipped", "outputs": {}}, id="skipped-without-tag"),
+        pytest.param({"result": "cancelled", "outputs": {}}, id="cancelled"),
+    ],
+)
+def test_candidate_verification_is_never_silently_green(verify_job: dict[str, Any]) -> None:
+    data = needs("dry-run", verify_candidate=verify_job)
+    status, reason = summary.candidate(data)
+    assert status == "failure"
+    assert reason
+
+
+def test_candidate_needs_exactly_one_built_wheel() -> None:
+    build = {
+        "result": "success",
+        "outputs": {"sha256": json.dumps({"pycubrid-1.9.0.tar.gz": "2" * 64})},
+    }
+    assert summary.candidate(needs("dry-run", build=build))[0] == "failure"
+    build = {"result": "success", "outputs": {"sha256": "not json"}}
+    assert summary.candidate(needs("dry-run", build=build))[0] == "failure"
+
+
+def test_failed_require_candidate_is_a_failed_candidate() -> None:
+    data = needs("dry-run", require_candidate="failure")
+    status, reason = summary.candidate(data)
+    assert status == "failure"
+    assert "require-candidate failure" in reason
+
+
+def test_tagged_resume_skips_the_candidate_gate_only_there() -> None:
+    data = needs("resume", verify_candidate={"result": "skipped", "outputs": {}})
+    data["detect"]["outputs"]["tag_state"] = "same"
+    assert summary.candidate(data) == ("skipped", "tag already at the release commit")
+    assert summary.final_state(data) == "published and verified"
+    data["detect"]["outputs"]["tag_state"] = "absent"
+    assert summary.candidate(data)[0] == "failure"
+
+
+def test_candidate_not_run_without_a_build() -> None:
+    data = needs(
+        build="failure",
+        verify_candidate="skipped",
+        require_candidate="skipped",
+        publish="skipped",
+    )
+    assert summary.candidate(data) == ("not run", "")
+    assert summary.final_state(data).startswith("failed before publish in build")
 
 
 def test_verification_not_due_is_not_run() -> None:
@@ -179,9 +268,10 @@ def test_verification_not_due_is_not_run() -> None:
     assert summary.verification(data) == ("not run", "")
     data = needs("dry-run", matrix="failure", build="skipped", **skipped)
     assert summary.verification(data) == ("not run", "")
+    assert summary.verification(needs("dry-run", **skipped)) == ("not run", "")
 
 
-@pytest.mark.parametrize("job", ["consistency", "matrix", "build"])
+@pytest.mark.parametrize("job", ["consistency", "matrix", "build", "require-candidate"])
 def test_failure_before_publish_says_nothing_was_published(job: str) -> None:
     data = needs(
         **{
@@ -208,14 +298,10 @@ def test_detect_failure() -> None:
 
 
 def test_dry_run_and_verify_only() -> None:
+    skipped = {"verify_cookbook": "skipped", "require_cookbook": "skipped"}
     assert (
-        summary.final_state(needs("dry-run"))
-        == "dry run passed; nothing published; cookbook verification success"
-    )
-    data = needs("dry-run", verify_cookbook=verify("failure"))
-    assert (
-        summary.final_state(data)
-        == "dry run passed; nothing published; cookbook verification failure"
+        summary.final_state(needs("dry-run", **skipped))
+        == "dry run passed; nothing published; candidate verification success"
     )
     assert summary.final_state(needs("dry-run", matrix="failure")).startswith(
         "dry run failed in matrix"
@@ -247,6 +333,8 @@ def test_table_lists_every_required_field() -> None:
         f"`pycubrid-1.9.0-py3-none-any.whl` `{'1' * 64}`",
         "| PyPI | https://pypi.org/project/pycubrid/1.9.0/ |",
         "| GitHub Release | https://github.com/cubrid-lab/pycubrid/releases/tag/v1.9.0 |",
+        f"| Candidate verification | success: wheel sha256 {'1' * 64} == build "
+        "(report artifact `release-candidate-verification-pycubrid-rc-v1.9.0-1`) |",
         "| Cookbook verification | success: installed 1.9.0 == requested 1.9.0 "
         "(report artifact `release-verification-pycubrid-v1.9.0-1-1`) |",
     ):

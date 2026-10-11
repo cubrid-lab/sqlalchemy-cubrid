@@ -157,6 +157,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **The cookbook verifies the built wheel before it is published
+  (cubrid-lab/cubrid-cookbook-python#240)** — `publish-pypi.yml` gains
+  `verify-candidate`, which calls the cookbook smoke test in candidate mode on the
+  `release-dist` wheel of the same run (exact file set and SHA-256 checked against
+  the `build` job's `sha256` output), and `require-candidate`, which requires
+  `status == success`, `evidence == candidate artifact`, installed == requested ==
+  the release version and the verified digest == the built wheel's digest.
+  `publish` needs `require-candidate` and now also checks `dist/` and
+  `release-meta/` against the `build` job outputs `sha256` and the new
+  `meta_sha256` (`scripts/verify_dist.py`) before tagging. The gate is skipped
+  only to complete a publish whose tag already points at the release commit. A
+  `dry-run` dispatch now verifies the freshly built wheel instead of the
+  already-published version; the post-publication `verify-cookbook` is
+  unchanged. Both cookbook calls use one pin, moved to `98866c2`. pycubrid gets
+  the same change. The candidate's pycubrid dependency still comes from PyPI, so
+  a release that needs an unpublished pycubrid must wait until that pycubrid
+  release is published. No runtime change.
 - **The PyPI duplicate guard uses `hashlib.file_digest()` (#730)** —
   `scripts/pypi_duplicate_guard.py` hashes `dist/` files with the Python 3.11 stdlib
   helper instead of a hand-written chunked read loop; the digests are the same. The
