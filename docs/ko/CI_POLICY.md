@@ -320,7 +320,9 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
   `ci.yml`의 게이트 컴플라이언스 레인은 `pycubrid==1.8.0`을 설치합니다(통합 잡은 최신
   릴리스를 설치하므로 하한을 검증하는 유일한 레인). `test/test_workflow_hygiene.py`는 고정
   버전과 선언된 하한이 다르면 실패하므로, 추가 CI 잡 없이 한쪽만 올리는 변경을 오프라인에서
-  잡아냅니다.
+  잡아냅니다. 그 뒤 잡의 마지막에 실행되는 cub_server 재시작 단계는 최신 릴리스로 다시
+  올리므로(`--upgrade-package pycubrid`, 일반 재설치는 1.8.0을 유지함) 다른 통합 단계와
+  같은 pycubrid를 테스트합니다. `test/test_ci_policy.py`가 이를 고정합니다(#479).
 - **표현 (#747).** `integration-full.yml`에는 일정이 없습니다. `fuzz-bug-hunt`와
   `mutation-testing` 잡 이름에서 "nightly"를 뺐습니다(`nightly`는 Hypothesis 프로파일
   이름으로 유지). 게이트 동작은 그대로입니다. 퍼즈는 릴리스를 게이트하고 뮤테이션

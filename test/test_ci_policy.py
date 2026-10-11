@@ -482,6 +482,43 @@ def test_release_runs_the_gating_sqlalchemy_compliance_lanes_itself() -> None:
     assert "needs.sqlalchemy-compliance.result" in release_gate["steps"][0]["run"]
 
 
+# --- #479 gap 7: the server-restart tests run on the latest pycubrid ----------
+
+RESTART_STEP = "Run cub_server stop/start pool recovery tests (#565)"
+RESTORE_LATEST_PYCUBRID = 'uv pip install --system --upgrade-package pycubrid -e ".[pycubrid]"'
+
+
+@pytest.mark.parametrize(
+    ("name", "job"), [("ci.yml", "integration-tests"), ("integration-full.yml", "integration-full")]
+)
+def test_server_restart_step_runs_last_on_the_latest_pycubrid(name: str, job: str) -> None:
+    steps = workflow(name)["jobs"][job]["steps"]
+    # Last step: it stops and restarts cub_server in the service container.
+    assert steps[-1]["name"] == RESTART_STEP
+    floor_pinned = False
+    for step in steps[:-1]:
+        run = str(step.get("run", ""))
+        if '"pycubrid==' in run:
+            floor_pinned = True
+        elif RESTORE_LATEST_PYCUBRID in run:
+            floor_pinned = False
+    restart = steps[-1]["run"]
+    if floor_pinned:
+        # The compliance step downgraded to the pycubrid floor, so the restart step
+        # must upgrade back to the latest release before its tests run. A plain
+        # ``.[pycubrid]`` reinstall keeps the floor, which satisfies the range.
+        assert restart.index(RESTORE_LATEST_PYCUBRID) < restart.index("test_server_restart.py")
+    assert '"pycubrid==' not in restart
+
+
+def test_ci_restart_step_follows_the_pycubrid_floor_compliance_step() -> None:
+    names = [s.get("name") for s in workflow("ci.yml")["jobs"]["integration-tests"]["steps"]]
+    compliance = "Run SQLAlchemy dialect compliance suite (gating, released pycubrid)"
+    assert names.index(compliance) < names.index(RESTART_STEP)
+    restart = workflow("ci.yml")["jobs"]["integration-tests"]["steps"][-1]["run"]
+    assert RESTORE_LATEST_PYCUBRID in restart
+
+
 # --- #786: documentation site build on pull requests ------------------------
 
 

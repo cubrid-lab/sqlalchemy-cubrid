@@ -7477,7 +7477,11 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   `pycubrid==1.8.0`, the only lane that exercises the floor (the integration
   jobs install the latest release). `test/test_workflow_hygiene.py` fails when
   the pinned version and the declared floor differ, so raising one without the
-  other is caught offline without an extra CI job.
+  other is caught offline without an extra CI job. The cub_server restart step
+  that runs after it, last in the job, upgrades back to the latest release
+  (`--upgrade-package pycubrid`; a plain reinstall keeps 1.8.0) so it tests the
+  same pycubrid as the other integration steps; `test/test_ci_policy.py` pins
+  this (#479).
 - **Wording (#747).** `integration-full.yml` has no schedule. The
   `fuzz-bug-hunt` and `mutation-testing` job names no longer say "nightly"
   (`nightly` remains the name of the Hypothesis profile). Gating is unchanged:

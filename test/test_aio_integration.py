@@ -960,3 +960,82 @@ class TestAsyncAutocommitIsolationLevel:
         async with make_engine().connect() as conn:
             with pytest.raises(sa.exc.ArgumentError, match="Invalid value 'BOGUS'"):
                 _ = await conn.execution_options(isolation_level="BOGUS")
+
+
+class TestAsyncCancellationAndDeadline:
+    """A cancelled or timed-out query retires the session; the pool recovers (#479 gap 4).
+
+    When the caller cancels an outstanding request, pycubrid retires the session
+    and raises ``asyncio.CancelledError`` (kept through pycubrid#554/pycubrid#556 in
+    1.9.0 and pycubrid#687/pycubrid#744 in 1.10.0), so ``asyncio.wait_for()`` surfaces the built-in
+    ``TimeoutError``. pycubrid's own ``read_timeout`` deadline raises
+    ``OperationalError``, which the dialect classifies as a disconnect (#624).
+    Either way SQLAlchemy must invalidate the connection instead of returning the
+    broken session to the pool, and the next checkout must get a working
+    connection without leaking a pool slot. Both tests pass on the 1.8.0 floor
+    as well, so they carry no version gate.
+    """
+
+    _SELECT_ONE = text("SELECT 1")
+    _SLOW_QUERY = text("SELECT SLEEP(5)")
+
+    @staticmethod
+    def _make_engine(**query: str) -> tuple[AsyncEngine, list[BaseException | None]]:
+        url = _async_url().update_query_dict(query) if query else _async_url()
+        # One slot and no overflow: a leaked or never-returned connection would
+        # make the next checkout wait for pool_timeout and fail.
+        eng = create_async_engine(url, pool_size=1, max_overflow=0, pool_timeout=5)
+        invalidated: list[BaseException | None] = []
+        sa.event.listen(
+            eng.sync_engine.pool,
+            "invalidate",
+            lambda _dbapi_conn, _record, exc: invalidated.append(exc),
+        )
+        return eng, invalidated
+
+    @classmethod
+    async def _assert_fresh_checkout(cls, eng: AsyncEngine, broken: object) -> None:
+        pool = eng.sync_engine.pool
+        assert pool.checkedout() == 0, pool.status()
+        async with eng.connect() as conn:
+            assert (await conn.execute(cls._SELECT_ONE)).scalar() == 1
+            assert (await conn.get_raw_connection()).driver_connection is not broken
+            assert pool.checkedout() == 1, pool.status()
+        assert pool.checkedout() == 0, pool.status()
+        assert pool.checkedin() == 1, pool.status()
+
+    async def test_wait_for_timeout_discards_the_connection(self):
+        eng, invalidated = self._make_engine()
+        try:
+            async with eng.connect() as conn:
+                assert (await conn.execute(self._SELECT_ONE)).scalar() == 1
+                broken = (await conn.get_raw_connection()).driver_connection
+                started = asyncio.get_running_loop().time()
+                with pytest.raises(TimeoutError):
+                    await asyncio.wait_for(conn.execute(self._SLOW_QUERY), timeout=0.2)
+                # The deadline fired; the query did not run to completion.
+                assert asyncio.get_running_loop().time() - started < 3
+                assert conn.invalidated is True
+            assert len(invalidated) == 1, invalidated
+            await self._assert_fresh_checkout(eng, broken)
+        finally:
+            await eng.dispose()
+
+    async def test_driver_read_timeout_is_a_disconnect(self):
+        pycubrid = pytest.importorskip("pycubrid")
+        eng, invalidated = self._make_engine(read_timeout="0.5")
+        try:
+            async with eng.connect() as conn:
+                assert (await conn.execute(self._SELECT_ONE)).scalar() == 1
+                broken = (await conn.get_raw_connection()).driver_connection
+                started = asyncio.get_running_loop().time()
+                with pytest.raises(sa.exc.OperationalError, match="read timeout") as excinfo:
+                    _ = await conn.execute(self._SLOW_QUERY)
+                assert asyncio.get_running_loop().time() - started < 3
+                assert excinfo.value.connection_invalidated is True
+                assert isinstance(excinfo.value.orig, pycubrid.OperationalError)
+                assert conn.invalidated is True
+            assert invalidated == [excinfo.value.orig]
+            await self._assert_fresh_checkout(eng, broken)
+        finally:
+            await eng.dispose()

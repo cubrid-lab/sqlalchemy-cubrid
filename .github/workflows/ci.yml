@@ -734,7 +734,13 @@ jobs:
           CUBRID_TEST_DOCKER_CONTAINER: ${{ job.services.cubrid.id }}
           # Fail instead of skip when a driver or the container is unavailable.
           CUBRID_REQUIRE_SERVER_RESTART: "1"
+          VERSION_REPORT_TITLE: "Server-restart versions (Python ${{ matrix.python-version }}, CUBRID ${{ matrix.cubrid-version }})"
         run: |
+          # The compliance step above downgrades to the pycubrid floor; restore the
+          # latest release the other integration steps test (#479). A plain
+          # reinstall keeps 1.8.0 because it satisfies the extra's range.
+          uv pip install --system --upgrade-package pycubrid -e ".[pycubrid]"
+          python -m scripts.report_driver_versions
           python -m pytest test/test_server_restart.py -v --tb=short -rs
 
   matrix-result:
