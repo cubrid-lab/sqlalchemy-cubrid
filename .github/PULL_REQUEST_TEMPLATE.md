@@ -38,6 +38,16 @@ See CONTRIBUTING.md#pull-request-and-commit-titles.
 - [ ] I have updated matching behavior/API/version/config documentation, or provided a populated standalone physical source line `Docs: not needed - <reason>` when none is required
 - [ ] I have recorded known warnings, limitations and follow-up work
 
+## Review Route and Final Disposition
+
+<!-- For maintainer/agent-authored PRs; no tool requirement for external contributors. -->
+- Development route: OpenCode + Oracle pre/post / standalone Claude Code / standalone Codex / human/other (select one).
+- Review evidence: reviewer or Oracle references, reviewed head SHA, or **pending**.
+- Finding dispositions: fixed commit + verification / rejected with reason / deferred issue.
+- Unresolved review threads and reason, or "none verified".
+- Maintainer merge decision: applicable review completed; final code and required CI checked.
+<!-- Requested reviews, green CI, and automated "approval recommended" text alone do not count. -->
+
 ## Validation
 
 <!-- Commands actually executed, results, and checks not run with reasons. -->
