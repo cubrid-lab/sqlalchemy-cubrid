@@ -121,7 +121,7 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 | 드라이버 차등 비교 | `ci.yml` `integration-tests`, `integration-full.yml` `integration-full` | 고위험 PR, PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | CUBRID 버전 차등 비교 | `integration-full.yml` `version-differential` | 수동 실행과 릴리스 |
 | 퍼즈와 메타모픽 | `make integration` 안의 `dev` 프로필, `integration-full.yml` `fuzz-bug-hunt`의 `nightly` 프로필 | PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
-| 뮤테이션 테스트(비차단) | `integration-full.yml` `mutation-testing` | 수동 실행과 릴리스(#747) |
+| 뮤테이션 테스트(비차단) | `integration-full.yml` `mutation-testing` | 수동 실행만, 릴리스 호출에서는 건너뜀(#747) |
 
 ### 통합 정리
 
@@ -327,6 +327,20 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
   `mutation-testing` 잡 이름에서 "nightly"를 뺐습니다(`nightly`는 Hypothesis 프로파일
   이름으로 유지). 게이트 동작은 그대로입니다. 퍼즈는 릴리스를 게이트하고 뮤테이션
   테스트는 비차단입니다. 필수 상태 검사는 이 잡 이름을 참조하지 않습니다.
+- **릴리스 경로에서 뮤테이션 테스트 제외 (#747).** `publish-pypi.yml`은
+  `integration-full.yml`을 호출하고 그 `build` 잡은 호출된 워크플로 전체를 기다리므로,
+  비차단 `mutation-testing` 잡은 릴리스를 막을 수 없으면서도 실행 시간만큼(과거 측정
+  중앙값 9.6분, 최대 18.1분) 모든 릴리스를 늦췄습니다. 이제 이 잡에는
+  `if: ${{ !inputs.sha }}`가 있습니다. 릴리스 호출은 필수 입력 `sha`를 항상 넘기므로 이
+  잡을 건너뛰고, `integration-full.yml`을 직접 수동 실행하면(입력 없음) 계속 실행되어
+  점수를 보고합니다. 경로는 이 명시적 입력으로 고르며 `github.event_name`으로 고르지
+  않습니다. 호출된 워크플로에서 이 값은 호출자의 이벤트(`push` 또는
+  `workflow_dispatch`)라서 릴리스 호출과 수동 실행을 구분하지 못합니다. Hypothesis 퍼즈
+  패스는 그대로 릴리스를 게이트합니다. `full-matrix-result`는 원래 뮤테이션 잡을 필요로
+  하지 않으므로, 건너뛴 실행은 게이트를 실패시키지도, 필수 잡의 통과로 간주되지도
+  않습니다. `publish-pypi.yml`은 바뀌지 않습니다(정본 사본과 동일하게 유지).
+  `test/test_ci_policy.py`가 이 조건, 어떤 잡도 뮤테이션 테스트를 기다리지 않는다는 점,
+  릴리스 호출에서도 퍼즈가 실행된다는 점을 고정합니다.
 
 ## 의존성 설치
 

@@ -482,6 +482,38 @@ def test_release_runs_the_gating_sqlalchemy_compliance_lanes_itself() -> None:
     assert "needs.sqlalchemy-compliance.result" in release_gate["steps"][0]["run"]
 
 
+# --- #747: deep tests on the release path -------------------------------------
+
+
+def test_mutation_testing_is_skipped_on_the_release_call_and_runs_on_dispatch() -> None:
+    full = workflow("integration-full.yml")
+    jobs = full["jobs"]
+    job = jobs["mutation-testing"]
+    # A release call always passes the required `sha` input; a direct dispatch
+    # has no inputs. github.event_name is the caller's event in a called
+    # workflow (push or workflow_dispatch), so it must not select the path.
+    assert full[True]["workflow_call"]["inputs"]["sha"]["required"] is True
+    assert "inputs" not in (full[True]["workflow_dispatch"] or {})
+    assert job["if"] == "${{ !inputs.sha }}"
+    assert job["continue-on-error"] is True
+    # Neither the release gate nor anything else waits on it, so a skipped run
+    # can neither fail the gate nor stand in for a required job.
+    release_gate = jobs["full-matrix-result"]
+    assert "mutation-testing" not in release_gate["needs"]
+    assert "mutation" not in release_gate["steps"][0]["run"]
+    assert not any("mutation-testing" in (other.get("needs") or []) for other in jobs.values())
+
+
+def test_fuzz_still_runs_and_gates_on_the_release_call() -> None:
+    job = workflow("integration-full.yml")["jobs"]["fuzz-bug-hunt"]
+    # Skipped only when a recovery run tests an older commit than github.sha.
+    assert job["if"] == "${{ !inputs.sha || inputs.sha == github.sha }}"
+    assert "continue-on-error" not in job
+    release = workflow("publish-pypi.yml")["jobs"]
+    assert release["matrix"]["uses"] == "./.github/workflows/integration-full.yml"
+    assert "matrix" in release["build"]["needs"]
+
+
 # --- #479 gap 7: the server-restart tests run on the latest pycubrid ----------
 
 RESTART_STEP = "Run cub_server stop/start pool recovery tests (#565)"

@@ -122,7 +122,7 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 | Driver differential | `ci.yml` `integration-tests`; `integration-full.yml` `integration-full` | Risk PR, non-PR code; dispatch and release |
 | CUBRID version differential | `integration-full.yml` `version-differential` | Dispatch and release |
 | Fuzz and metamorphic | `dev` profile inside `make integration`; `nightly` profile in `integration-full.yml` `fuzz-bug-hunt` | Non-PR code; dispatch and release |
-| Mutation testing (non-gating) | `integration-full.yml` `mutation-testing` | Dispatch and release (#747) |
+| Mutation testing (non-gating) | `integration-full.yml` `mutation-testing` | Dispatch only; skipped on the release call (#747) |
 
 ### Consolidation
 
@@ -353,6 +353,21 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   (`nightly` remains the name of the Hypothesis profile). Gating is unchanged:
   fuzz gates the release, mutation testing is non-gating. No required status
   check refers to these job names.
+- **Mutation testing off the release path (#747).** `publish-pypi.yml` calls
+  `integration-full.yml` and its `build` job waits for the whole called
+  workflow, so the non-gating `mutation-testing` job delayed every release by
+  its run time (historical median 9.6, maximum 18.1 minutes) without being able
+  to block it. The job now has `if: ${{ !inputs.sha }}`: a release call always
+  passes the required `sha` input and skips it, while a direct manual dispatch
+  of `integration-full.yml` (no inputs) still runs it and reports the score.
+  The path is chosen by that explicit input, not by `github.event_name`, which
+  in a called workflow is the caller's event (`push` or `workflow_dispatch`)
+  and so cannot tell a release call from a manual run. The Hypothesis fuzz
+  pass keeps gating the release unchanged. `full-matrix-result` never needed
+  the mutation job, so a skipped run can neither fail the gate nor count as a
+  pass of a required job. `publish-pypi.yml` is unchanged (it stays identical
+  to the canonical copy). `test/test_ci_policy.py` pins the condition, that no
+  job waits on mutation testing, and that fuzz still runs on the release call.
 
 ## Dependency installation
 

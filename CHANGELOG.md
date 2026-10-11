@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differs from the `pycubrid>=` floor declared in `pyproject.toml`. The `integration-full.yml`
   fuzz and mutation job names and a comment no longer say "nightly" although there is no
   schedule; gating is unchanged (fuzz still gates the release). CI only; the dialect is unchanged.
+- **Mutation testing no longer delays releases (#747)** — `publish-pypi.yml`'s `build`
+  waits for the whole called `integration-full.yml`, so the non-gating `mutation-testing`
+  job added its run time (historical median 9.6, maximum 18.1 minutes) to every release.
+  It now runs only when `integration-full.yml` is dispatched manually and is skipped on
+  the release call (`if: ${{ !inputs.sha }}`; the release call always passes `sha`).
+  The Hypothesis fuzz pass still gates the release, and `full-matrix-result` is
+  unchanged. `publish-pypi.yml` is unchanged. CI only; the dialect is unchanged.
 - **Offline tests run on the oldest and newest supported Python outside PRs (#734)** —
   in `ci.yml` the `offline-tests` matrix is chosen by event: pull requests keep the
   single representative Python 3.12 cell, while main pushes, the weekly schedule and
