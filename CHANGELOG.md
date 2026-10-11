@@ -94,6 +94,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `docs/llms-full.txt` is regenerated. Docs only.
 
 ### CI
+- **The cub_server restart tests run on the latest pycubrid again (#479)** — in
+  `ci.yml` `integration-tests`, the restart step ran after the gating compliance step
+  had downgraded the job to `pycubrid==1.8.0`, so it tested the floor instead of the
+  latest release the other integration steps use. The step now runs
+  `uv pip install --system --upgrade-package pycubrid -e ".[pycubrid]"` and reports
+  the driver versions before its tests (a plain `.[pycubrid]` reinstall would keep
+  1.8.0, which satisfies the range). It stays the last step, and the compliance steps
+  and their `integration-full.yml` `sqlalchemy-compliance` copies are unchanged.
+  `test/test_ci_policy.py` pins the order and the upgrade. `docs/CI_POLICY.md` (and
+  Korean) say so. CI only; the dialect is unchanged.
 - **The release runs the remaining `ci.yml` push lanes itself (#737)** — the release
   path (`publish-pypi.yml` → `integration-full.yml`) used to rely on the release PR and
   the `main` push run of `ci.yml` for SQLAlchemy compliance, type checking,
@@ -167,6 +177,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping. CI and release tooling only; the dialect is unchanged.
 
 ### Tests
+- **Async cancellation and driver deadlines discard the connection (#479)** —
+  `test/test_aio_integration.py::TestAsyncCancellationAndDeadline` runs `SELECT SLEEP(5)`
+  through `cubrid+aiopycubrid://` with a one-slot pool. Under
+  `asyncio.wait_for(..., timeout=0.2)` it raises the built-in `TimeoutError`; with the
+  `read_timeout=0.5` URL option it raises `sa.exc.OperationalError` with
+  `connection_invalidated=True`. In both cases SQLAlchemy invalidates the connection,
+  the next `engine.connect()` gets a different driver connection that answers
+  `SELECT 1`, and no pool slot leaks. Covers pycubrid's session retirement on
+  cancellation and deadline (cubrid-lab/pycubrid#554,
+  cubrid-lab/pycubrid#556, cubrid-lab/pycubrid#687, cubrid-lab/pycubrid#744); the tests pass
+  on the 1.8.0 floor as well, so they have no version gate. Tests only.
 - **Release-please push guards are pinned (cubrid-lab/pycubrid#801)** —
   `test/test_release_workflows.py` now asserts the exact, ordered guards of
   `release-please.yml`: the push is directly preceded by the stale-main `exit`
