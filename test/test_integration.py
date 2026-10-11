@@ -3178,8 +3178,10 @@ def _zone(key):
     """
     try:
         return ZoneInfo(key)
-    except ZoneInfoNotFoundError:
-        pytest.skip(f"no IANA time zone data for {key!r} on this system (install tzdata)")
+    except ZoneInfoNotFoundError as exc:
+        raise pytest.skip.Exception(
+            f"no IANA time zone data for {key!r} on this system (install tzdata)"
+        ) from exc
 
 
 def _pycubrid_binds_repeated_hour(value):
