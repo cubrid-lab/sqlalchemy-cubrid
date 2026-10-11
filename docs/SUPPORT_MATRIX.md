@@ -34,7 +34,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | 3.12 | ✅ Supported |
 | 3.13 | ✅ Supported |
 | 3.14 | ✅ Supported |
-| 3.15 | 🧪 Validation pending (not officially supported) |
+| 3.15 | ✅ Supported (standard GIL builds; see the notes below) |
 | 3.10 | ❌ Not supported from 1.10.0 (last supported in 1.9.x) |
 | < 3.10 | ❌ Not supported |
 
@@ -47,14 +47,37 @@ release line receives fixes, so 1.9.x gets no further releases. Upgrade your
 interpreter, recreate your virtual environment and validate your application
 before upgrading.
 
-**Python 3.15 preparation:** Python
-[3.15.0 final](https://www.python.org/downloads/release/python-3150/) was released
-on 2026-10-09. The manual-only Ubuntu/standard-GIL workflow was configured as a
-preview check on 2026-10-03; it checks offline regressions and fresh wheel/sdist
-installs at an immutable commit. A configured lane is not a passing result.
-Python 3.15 is not yet officially supported by this dialect. Promote it only
-after dependency, packaging, offline and live CUBRID validation against the
-final release; free-threaded builds are outside this preparation.
+**Python 3.15:** Supported on the final CPython
+[3.15.0](https://www.python.org/downloads/release/python-3150/) release with the
+standard GIL; free-threaded builds are not supported. The full compatibility
+matrix runs Python 3.15 against every supported CUBRID version on manual dispatch
+and every release, and 3.15 is the newest offline endpoint. The manual
+`python-canary.yml` lane still checks fresh wheel/sdist installs on 3.15. The
+scope of the claim:
+
+- **pycubrid (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`):** pycubrid declares
+  Python 3.15 from the release after 1.10.0
+  ([cubrid-lab/pycubrid#831](https://github.com/cubrid-lab/pycubrid/pull/831)).
+  The `[pycubrid]` floor stays `pycubrid>=1.8.0,<2.0`; pycubrid 1.10.0 passes the
+  sync and async integration suites on 3.15 but does not declare it. On 3.15,
+  pycubrid 1.10.0 and earlier reject `?charset=ksc5601`, because Python 3.15 maps
+  that codec alias to CP949; use `?charset=euckr`, or the pycubrid release that
+  declares 3.15, which maps `ksc5601` to EUC-KR itself.
+- **CUBRIDdb (`cubrid://`):** the official `cubrid-python` v11.3.0.51 source builds
+  for 3.15 with the CI recipe on `ubuntu-latest`, and the full matrix runs its
+  lanes on 3.15. With GCC 14 the stock build fails on every Python version,
+  3.14 included: GCC 14 makes `-Wincompatible-pointer-types` and
+  `-Wint-conversion` errors. This project does not add warning-downgrade flags to
+  CI; see [Driver Compatibility](DRIVER_COMPAT.md).
+- **Not run on 3.15:** the SQLAlchemy compliance lanes stay on Python 3.14/CUBRID
+  11.4 and Python 3.11/CUBRID 10.2.
+- **Environment:** Decimal-subclass parameters through pycubrid need the C
+  `_decimal` module, which a Python built without `libmpdec` lacks; pycubrid then
+  raises `ProgrammingError` for them, and plain `Decimal` values are unaffected.
+  The `actions/setup-python` 3.15.0 build that CI uses, the `python:3.15-rc`
+  Docker image and a source build without `libmpdec-dev` were observed without it,
+  so the Decimal-subclass round trip is skipped in CI's 3.15 cells. Docker Hub had no final `python:3.15` image when 3.15 was
+  promoted; CI uses `actions/setup-python`.
 
 ### CUBRID Server
 
@@ -199,8 +222,8 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 
 | Validation | Routine execution | Full compatibility |
 | --- | --- | --- |
-| Offline | Full suite with 95% coverage: Ubuntu/Python 3.12 for PRs; Python 3.11 and 3.14 for main, changed-weekly and dispatched runs | Local full tests remain available |
-| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
+| Offline | Full suite with 95% coverage: Ubuntu/Python 3.12 for PRs; Python 3.11 and 3.15 for main, changed-weekly and dispatched runs | Local full tests remain available |
+| Live integration | High-risk PR Python 3.14/CUBRID 11.4; main/changed-weekly also Python 3.11/CUBRID 10.2 | Python 3.11–3.15 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
 See [CI execution policy](CI_POLICY.md). That policy selects what each run tests; it does
 not define the supported versions listed above, and representative PR checks are not

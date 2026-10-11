@@ -92,7 +92,7 @@ make test-offline     # Every offline test (fast + repo) with coverage
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
 make integration      # Run-owned Docker project → integration tests → cleanup
-make test-all         # tox across Python 3.11–3.14
+make test-all         # tox across Python 3.11–3.15
 ```
 
 ### Test Commands (manual)

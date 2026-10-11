@@ -4179,7 +4179,7 @@ helpers, so the direct private API surface is down to these three attributes.
 | 3.12 | ✅ Supported |
 | 3.13 | ✅ Supported |
 | 3.14 | ✅ Supported |
-| 3.15 | 🧪 Validation pending (not officially supported) |
+| 3.15 | ✅ Supported (standard GIL builds; see the notes below) |
 | 3.10 | ❌ Not supported from 1.10.0 (last supported in 1.9.x) |
 | < 3.10 | ❌ Not supported |
 
@@ -4192,14 +4192,37 @@ release line receives fixes, so 1.9.x gets no further releases. Upgrade your
 interpreter, recreate your virtual environment and validate your application
 before upgrading.
 
-**Python 3.15 preparation:** Python
-[3.15.0 final](https://www.python.org/downloads/release/python-3150/) was released
-on 2026-10-09. The manual-only Ubuntu/standard-GIL workflow was configured as a
-preview check on 2026-10-03; it checks offline regressions and fresh wheel/sdist
-installs at an immutable commit. A configured lane is not a passing result.
-Python 3.15 is not yet officially supported by this dialect. Promote it only
-after dependency, packaging, offline and live CUBRID validation against the
-final release; free-threaded builds are outside this preparation.
+**Python 3.15:** Supported on the final CPython
+[3.15.0](https://www.python.org/downloads/release/python-3150/) release with the
+standard GIL; free-threaded builds are not supported. The full compatibility
+matrix runs Python 3.15 against every supported CUBRID version on manual dispatch
+and every release, and 3.15 is the newest offline endpoint. The manual
+`python-canary.yml` lane still checks fresh wheel/sdist installs on 3.15. The
+scope of the claim:
+
+- **pycubrid (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`):** pycubrid declares
+  Python 3.15 from the release after 1.10.0
+  ([cubrid-lab/pycubrid#831](https://github.com/cubrid-lab/pycubrid/pull/831)).
+  The `[pycubrid]` floor stays `pycubrid>=1.8.0,<2.0`; pycubrid 1.10.0 passes the
+  sync and async integration suites on 3.15 but does not declare it. On 3.15,
+  pycubrid 1.10.0 and earlier reject `?charset=ksc5601`, because Python 3.15 maps
+  that codec alias to CP949; use `?charset=euckr`, or the pycubrid release that
+  declares 3.15, which maps `ksc5601` to EUC-KR itself.
+- **CUBRIDdb (`cubrid://`):** the official `cubrid-python` v11.3.0.51 source builds
+  for 3.15 with the CI recipe on `ubuntu-latest`, and the full matrix runs its
+  lanes on 3.15. With GCC 14 the stock build fails on every Python version,
+  3.14 included: GCC 14 makes `-Wincompatible-pointer-types` and
+  `-Wint-conversion` errors. This project does not add warning-downgrade flags to
+  CI; see [Driver Compatibility](DRIVER_COMPAT.md).
+- **Not run on 3.15:** the SQLAlchemy compliance lanes stay on Python 3.14/CUBRID
+  11.4 and Python 3.11/CUBRID 10.2.
+- **Environment:** Decimal-subclass parameters through pycubrid need the C
+  `_decimal` module, which a Python built without `libmpdec` lacks; pycubrid then
+  raises `ProgrammingError` for them, and plain `Decimal` values are unaffected.
+  The `actions/setup-python` 3.15.0 build that CI uses, the `python:3.15-rc`
+  Docker image and a source build without `libmpdec-dev` were observed without it,
+  so the Decimal-subclass round trip is skipped in CI's 3.15 cells. Docker Hub had no final `python:3.15` image when 3.15 was
+  promoted; CI uses `actions/setup-python`.
 
 ### CUBRID Server
 
@@ -4344,8 +4367,8 @@ CUBRID has no `BINARY`, `VARBINARY` or `UUID` type. `sa.BINARY(n)` / `sa.VARBINA
 
 | Validation | Routine execution | Full compatibility |
 | --- | --- | --- |
-| Offline | Full suite with 95% coverage: Ubuntu/Python 3.12 for PRs; Python 3.11 and 3.14 for main, changed-weekly and dispatched runs | Local full tests remain available |
-| Live integration | High-risk PR newest endpoint; main/changed-weekly oldest/newest endpoints | Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
+| Offline | Full suite with 95% coverage: Ubuntu/Python 3.12 for PRs; Python 3.11 and 3.15 for main, changed-weekly and dispatched runs | Local full tests remain available |
+| Live integration | High-risk PR Python 3.14/CUBRID 11.4; main/changed-weekly also Python 3.11/CUBRID 10.2 | Python 3.11–3.15 × CUBRID 10.2/11.0/11.2/11.4 on manual dispatch and every release |
 
 See [CI execution policy](CI_POLICY.md). That policy selects what each run tests; it does
 not define the supported versions listed above, and representative PR checks are not
@@ -6737,7 +6760,7 @@ That target never starts or stops Docker and leaves the external server running.
 
 ### tox Configuration
 
-The `tox.ini` defines local offline environments for Python 3.11–3.14, a pinned
+The `tox.ini` defines local offline environments for Python 3.11–3.15, a pinned
 Ruff lint environment, and `typecheck-sa20` / `typecheck-sa21` environments that
 run the same Makefile target against pinned SQLAlchemy/Python pairs. Only
 `typecheck-sa21` (Python 3.13 / SQLAlchemy 2.1.1) corresponds to a CI cell, since
@@ -6778,8 +6801,8 @@ tox -e typecheck-sa20,typecheck-sa21
 Routine CI uses representative offline and live combinations rather than the full
 matrix. Every run selected for code changes runs the full offline suite with 95%
 coverage: pull requests on Ubuntu/Python 3.12, and main pushes, changed weekly runs
-and manual dispatches on Python 3.11 and 3.14 (#734). High-risk PRs select
-newest integration, while main/weekly use oldest/newest endpoints. Repository
+and manual dispatches on Python 3.11 and 3.15 (#734). High-risk PRs select
+Python 3.14/CUBRID 11.4 integration, while main/weekly add Python 3.11/CUBRID 10.2. Repository
 tooling is path-selected on one Linux lane. Full integration is explicit/manual
 and release-only. See [CI execution policy](CI_POLICY.md) for exact selection and
 validation requirements. Historical cost measurements below describe the earlier
@@ -6925,8 +6948,8 @@ pre-commit run --all-files
 ### CI Pipeline Steps
 
 1. **Lint** — Ruff check + format verification
-2. **Offline Tests** — the full offline suite on Ubuntu/Python 3.12 for PRs, and on Python 3.11 and 3.14 for main, weekly and dispatched runs
-3. **Integration Tests** — high-risk PR newest cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
+2. **Offline Tests** — the full offline suite on Ubuntu/Python 3.12 for PRs, and on Python 3.11 and 3.15 for main, weekly and dispatched runs
+3. **Integration Tests** — high-risk PR Python 3.14 × CUBRID 11.4 cell; main/weekly 2 combinations (Python 3.14 × CUBRID 11.4, Python 3.11 × CUBRID 10.2), plus async integration coverage and the blocking [SQLAlchemy compliance lanes](#sqlalchemy-compliance-lanes) for CUBRIDdb and released pycubrid
 4. **make integration** — `make integration` with the default pycubrid driver on CUBRID 11.4: the whole `integration`-marked suite in one session, as run locally (both drivers on CUBRID 10.2 and 11.4 on full dispatch and in the release gate in `integration-full.yml`)
 5. **Coverage** — Enforces ≥ 95% on the full offline lane on every event, PRs included
 
@@ -7162,9 +7185,9 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
 | Ordinary code PR | One Ubuntu/Python 3.12 full offline suite with the 95% coverage floor (#742) |
 | High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
-| Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.14) (#734); oldest/newest live endpoints |
-| Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.14 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes; the compliance step needs code changes in the previous seven days (#737) |
-| Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.14 offline cells, type checking, `alembic-compat`, the packaging smoke test and the gating SQLAlchemy compliance lanes (#737) |
+| Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.15) (#734); live endpoints Python 3.14/CUBRID 11.4 and Python 3.11/CUBRID 10.2 |
+| Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.15 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes; the compliance step needs code changes in the previous seven days (#737) |
+| Explicit full dispatch or release | Existing full Python 3.11–3.15 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.15 offline cells, type checking, `alembic-compat`, the packaging smoke test and the gating SQLAlchemy compliance lanes (#737) |
 
 PRs run the same full offline selection (`-m "not integration and not repo"`) and
 95% coverage floor as pushes. The former three-file PR smoke ran in about 1 s
@@ -7210,7 +7233,7 @@ Compare subsequent Actions jobs/runner minutes and the actual billing category
 before making a cost claim.
 
 Routine type checking uses Python 3.13/SQLAlchemy 2.1.1; Alembic checks use latest,
-and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retain
+and packaging uses SQLAlchemy 2.1.1. The live endpoint cells (Python 3.14/CUBRID 11.4 and Python 3.11/CUBRID 10.2) retain
 SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Make integration is deferred
 from PRs to non-PR code validation and also owns the former live-smoke assertions; the
 advisory SQLAlchemy canary runs on the weekly schedule and manual dispatches (#737).
@@ -7263,13 +7286,13 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 
 | Coverage | Owner (workflow / job) | Event tier |
 | --- | --- | --- |
-| Offline suite, 95% floor | `ci.yml` `offline-tests`; `integration-full.yml` `offline-endpoints` | PR: Python 3.12. Main push, weekly, dispatch: 3.11 and 3.14. Release: 3.11 and 3.14 |
+| Offline suite, 95% floor | `ci.yml` `offline-tests`; `integration-full.yml` `offline-endpoints` | PR: Python 3.12. Main push, weekly, dispatch: 3.11 and 3.15. Release: 3.11 and 3.15 |
 | Type checking | `ci.yml` `typecheck` (Python 3.13, SQLAlchemy 2.1.1); `integration-full.yml` `typecheck` (same cell) | Every code event; dispatch and release |
 | Alembic compatibility | `ci.yml` `alembic-compat` (latest Alembic); `integration-full.yml` `alembic-compat` (same cell); offline Alembic tests in `offline-tests`; live Alembic operations in `integration-tests`, `make-integration` and `integration-full`; transactional DDL in `integration-tests` and `integration-full` | Risk PR and non-PR code; dispatch and release |
 | Packaging | `ci.yml` `packaging-smoke-test`; `integration-full.yml` `packaging-smoke-test` (same steps, including the pycubrid extra and Alembic checks); `publish-pypi.yml` `build` | Risk PR and non-PR code; dispatch and release |
 | Representative live smoke | `ci.yml` `make-integration` (pycubrid, CUBRID 11.4, Python 3.12), which absorbed `live-smoke` | Main push, weekly, dispatch |
 | `make integration` | `ci.yml` `make-integration`; `integration-full.yml` `make-integration` (both drivers, CUBRID 10.2 and 11.4) | Non-PR code; dispatch and release |
-| CUBRID/Python endpoints | `ci.yml` `integration-tests` (3.14/11.4 on risk PRs, plus 3.11/10.2 on non-PR code); `integration-full.yml` `integration-full` (4 × 4) | Risk PR, non-PR code; dispatch and release |
+| CUBRID/Python endpoints | `ci.yml` `integration-tests` (3.14/11.4 on risk PRs, plus 3.11/10.2 on non-PR code); `integration-full.yml` `integration-full` (5 × 4) | Risk PR, non-PR code; dispatch and release |
 | SQLAlchemy dialect compliance (gating) | `ci.yml` `integration-tests`: CUBRIDdb lane on 3.14/11.4, released-pycubrid lane on both cells; `integration-full.yml` `sqlalchemy-compliance` (the same lanes on the same two cells) | Risk PR (3.14/11.4), non-PR code (both cells); dispatch and release (both cells) |
 | SQLAlchemy compliance, CUBRIDdb on the oldest cell (advisory) | `ci.yml` `integration-tests` (3.11/10.2) | Weekly runs with code changes in the previous 7 days, and code dispatches |
 | SQLAlchemy pre-release canary (advisory) | `ci.yml` `sqlalchemy-21-canary` | Weekly schedule and dispatch |
@@ -7310,7 +7333,7 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
   longer stacks on the Monday `ci.yml` schedule. Its jobs differ from the weekly
   `ci.yml` suites (they install `pycubrid@main`), so both stay.
 - Pull requests are unchanged: ordinary PRs still run one Python 3.12 offline
-  cell and no live lane, and #734's 3.11/3.14 cells stay off PRs.
+  cell and no live lane, and #734's 3.11/3.15 cells stay off PRs.
 
 Expected runner minutes, computed from the per-job medians above:
 
@@ -7363,9 +7386,10 @@ minutes from the medians above) and two live compliance cells per release;
 The `offline-tests` matrix is chosen by `github.event_name` (#734). Pull requests,
 ordinary and high-risk alike, run one representative Python 3.12 cell. Every other
 `ci.yml` event (a push to `main`, the Monday schedule and a manual
-`workflow_dispatch`) runs the oldest and newest supported Python, 3.11 and 3.14,
+`workflow_dispatch`) runs the oldest and newest supported Python, 3.11 and 3.15,
 instead of 3.12. The supported range between them is covered by those endpoints
-plus the 3.12 PR evidence; 3.13 has no routine offline cell. Both kinds of run use
+plus the 3.12 PR evidence; 3.13 and 3.14 have no routine offline cell (3.14 is
+still exercised live on every high-risk PR and in the full matrix). Both kinds of run use
 the same selection (`-m "not integration and not repo"`), the 95% coverage floor
 and the `detect-changes` `code` output: a docs-only push, or a week without code
 changes, selects no offline cell at all. A `workflow_dispatch` on `main` has no
@@ -7376,7 +7400,7 @@ only: dispatching right after a docs-only merge runs no offline cell. Each cell 
 | Event | `offline-tests` cells |
 | --- | --- |
 | `pull_request` | Python 3.12 |
-| `push` to `main`, `schedule`, `workflow_dispatch` | Python 3.11 and 3.14 |
+| `push` to `main`, `schedule`, `workflow_dispatch` | Python 3.11 and 3.15 |
 
 The matrix uses `fail-fast: false`, so one failing interpreter does not cancel the
 other's evidence. `matrix-result` reads the job's aggregate result: any failed or
@@ -7590,6 +7614,14 @@ branch, so the lane cannot run before it is merged. Its first run is made at
 the merged commit and recorded on the tracking issue; ordinary PR CI is not
 Python 3.15 evidence.
 
+Python 3.15 is now supported (#666; see the [support matrix](SUPPORT_MATRIX.md)).
+Its support evidence comes from the full compatibility matrix (Python 3.15 × four
+CUBRID versions, with the CUBRIDdb and pycubrid lanes), the 3.15 offline endpoint
+cells and this lane's fresh wheel/sdist installs; the lane is kept as a manual
+packaging check. The representative live cells stay on Python 3.14/CUBRID 11.4 and
+Python 3.11/CUBRID 10.2, and the SQLAlchemy compliance lanes stay on those two
+cells.
+
 ---
 
 # Release-please migration validation
@@ -7772,7 +7804,19 @@ because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations 
 | 3.12 | ✅ Fully supported | |
 | 3.13 | ✅ Fully supported | |
 | 3.14 | ✅ Fully supported | |
+| 3.15 | ✅ Fully supported | Standard GIL builds. The stock `cubrid-python` build fails with GCC 14 on every Python version (see below) |
 | 3.10 | ❌ Not supported from 1.10.0 | Last supported in 1.9.x |
+
+**GCC 14 and the official driver build:** `cubrid-python` v11.3.0.51 builds with
+the CI recipe on `ubuntu-latest`, where the compiler reports
+`-Wincompatible-pointer-types` and `-Wint-conversion` diagnostics in
+`python_cubrid.c` as warnings. GCC 14 makes them errors by default, so the same
+recipe fails to compile there on Python 3.14 and 3.15 alike; it is a toolchain
+change, not a Python 3.15 one. A contributor build with
+`CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion"` and no
+source change produced a working 3.15 wheel (recorded in #666). This project does
+not add those flags to CI; a runner image that moves to GCC 14 needs that decision
+first.
 
 ---
 

@@ -68,7 +68,19 @@ because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations 
 | 3.12 | ✅ Fully supported | |
 | 3.13 | ✅ Fully supported | |
 | 3.14 | ✅ Fully supported | |
+| 3.15 | ✅ Fully supported | Standard GIL builds. The stock `cubrid-python` build fails with GCC 14 on every Python version (see below) |
 | 3.10 | ❌ Not supported from 1.10.0 | Last supported in 1.9.x |
+
+**GCC 14 and the official driver build:** `cubrid-python` v11.3.0.51 builds with
+the CI recipe on `ubuntu-latest`, where the compiler reports
+`-Wincompatible-pointer-types` and `-Wint-conversion` diagnostics in
+`python_cubrid.c` as warnings. GCC 14 makes them errors by default, so the same
+recipe fails to compile there on Python 3.14 and 3.15 alike; it is a toolchain
+change, not a Python 3.15 one. A contributor build with
+`CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion"` and no
+source change produced a working 3.15 wheel (recorded in #666). This project does
+not add those flags to CI; a runner image that moves to GCC 14 needs that decision
+first.
 
 ---
 

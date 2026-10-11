@@ -65,7 +65,17 @@
 | 3.12 | ✅ 완전 지원 | |
 | 3.13 | ✅ 완전 지원 | |
 | 3.14 | ✅ 완전 지원 | |
+| 3.15 | ✅ 완전 지원 | 표준 GIL 빌드. GCC 14에서는 모든 Python 버전에서 기본 `cubrid-python` 빌드가 실패합니다(아래 참고) |
 | 3.10 | ❌ 1.10.0부터 미지원 | 1.9.x까지 지원 |
+
+**GCC 14와 공식 드라이버 빌드:** `cubrid-python` v11.3.0.51은 `ubuntu-latest`에서
+CI 빌드 절차로 빌드됩니다. 이 환경의 컴파일러는 `python_cubrid.c`의
+`-Wincompatible-pointer-types`와 `-Wint-conversion` 진단을 경고로 보고합니다. GCC 14는
+이를 기본적으로 오류로 만들기 때문에 같은 절차가 Python 3.14와 3.15 모두에서 컴파일에
+실패합니다. Python 3.15가 아니라 도구 체인의 변화입니다. 소스를 바꾸지 않고
+`CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion"`로 빌드한
+기여자 빌드는 동작하는 3.15 wheel을 만들었습니다(#666에 기록). 이 프로젝트는 CI에
+이 플래그를 추가하지 않습니다. 러너 이미지가 GCC 14로 바뀌면 먼저 이 결정이 필요합니다.
 
 ---
 

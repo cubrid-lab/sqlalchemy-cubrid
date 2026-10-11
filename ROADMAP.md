@@ -18,18 +18,22 @@
 - Users should migrate Python and recreate/test their virtual environment before
   upgrading to the removal release. No release date or publication is claimed.
 
-## Python 3.15 support preparation
+## Python 3.15 support
 
-- As of 2026-10-03, 3.15.0rc3 is a preview; final is scheduled for 2026-10-09
+- Supported from the next release (see the `[Unreleased]` CHANGELOG section,
+  #666): classifier, tox, full release matrix (Python 3.11–3.15 × CUBRID
+  10.2–11.4), 3.15 as the newest offline endpoint and English/Korean
+  supported-version docs. Standard GIL builds only; no free-threaded claim.
+  `requires-python` stays `>=3.11`.
+- The pycubrid routes depend on the pycubrid release that declares 3.15; the
+  `[pycubrid]` floor is unchanged. The official CUBRIDdb build is assessed
+  separately: it builds on `ubuntu-latest`, and GCC 14 breaks it on every Python
+  version (see `docs/DRIVER_COMPAT.md`).
+- Preparation history: on 2026-10-03, 3.15.0rc3 was a preview
   ([upstream release notes](https://www.python.org/downloads/release/python-3150rc3/)).
-- Add one manually dispatched Ubuntu/standard-GIL preview lane for full offline
-  regressions, distribution validation and fresh wheel/sdist installations.
-  Routine PRs do not gain a matrix cell or automatic preview run.
-- Before official support: record successful final-runtime/dependency, packaging,
-  offline and real CUBRID integration results at the candidate SHA, including sync/async pycubrid; assess native CUBRIDdb compatibility separately.
-- Then align the Python 3.15 classifier, full release matrix, local tooling where
-  present, release notes and English/Korean supported-version docs in a follow-up.
-  This preparation changes no official support declaration or Python minimum.
+  A manually dispatched Ubuntu/standard-GIL preview lane (`python-canary.yml`)
+  checked offline regressions and fresh wheel/sdist installations; it is kept as
+  a manual packaging check.
 
 ## Links
 

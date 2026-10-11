@@ -32,7 +32,7 @@ CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공�
 - **방대한 오프라인 테스트 스위트** — 데이터베이스 없이도 실행 가능; CI가 `offline-tests` 작업에서 최소 95% 라인 커버리지를 강제합니다 (`--cov-fail-under=95`)
 - **동시성 스트레스 테스트** — `QueuePool` 기반 동기 스레드 + `asyncio.gather` 워크로드를 실 CUBRID에서 검증
 - **SQLAlchemy 2.1 대응 compat shim** — private API 접근을 `_compat.py`로 감쌌지만, 완전한 2.1 검증 전까지는 `<2.2`로 고정
-- **Python 3.11 -- 3.14** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
+- **Python 3.11 -- 3.15** 전반에서 **4개 CUBRID 버전**(10.2, 11.0, 11.2, 11.4) 테스트 완료
 - CUBRID 전용 DML 구문: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic 마이그레이션 기본 지원
 - **세 가지 드라이버 옵션** — 권장 순수 Python(`cubrid+pycubrid://`), 비동기 순수 Python(`cubrid+aiopycubrid://`), CUBRIDdb C 확장(`cubrid://` / `cubrid+cubriddb://`)
@@ -198,7 +198,7 @@ async with AsyncSession(engine) as session:
 
 | 구성 요소 | 지원 버전 |
 |---|---|
-| Python | 3.11, 3.12, 3.13, 3.14 |
+| Python | 3.11, 3.12, 3.13, 3.14, 3.15 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
@@ -226,7 +226,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### 어떤 Python 버전을 지원하나요?
 
-Python 3.11, 3.12, 3.13, 3.14를 지원합니다.
+Python 3.11, 3.12, 3.13, 3.14, 3.15(표준 GIL 빌드)를 지원합니다.
 
 ### CUBRID는 RETURNING 절을 지원하나요?
 

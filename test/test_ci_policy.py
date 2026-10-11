@@ -74,7 +74,7 @@ def test_full_release_call_is_preserved_without_automatic_schedule() -> None:
     assert set(events) == {"workflow_dispatch", "workflow_call"}
     assert events["workflow_call"]["inputs"]["sha"]["required"] is True
     matrix = full["jobs"]["integration-full"]["strategy"]["matrix"]
-    assert matrix["python-version"] == ["3.11", "3.12", "3.13", "3.14"]
+    assert matrix["python-version"] == ["3.11", "3.12", "3.13", "3.14", "3.15"]
     assert len(matrix["cubrid-version"]) == 4
 
 
@@ -138,9 +138,9 @@ def test_ci_triggers_route_through_offline_cell_selection() -> None:
         ("pull_request", ["3.12"]),
         # Main pushes, the weekly schedule and manual dispatches run the oldest
         # and newest supported Python (#734).
-        ("push", ["3.11", "3.14"]),
-        ("schedule", ["3.11", "3.14"]),
-        ("workflow_dispatch", ["3.11", "3.14"]),
+        ("push", ["3.11", "3.15"]),
+        ("schedule", ["3.11", "3.15"]),
+        ("workflow_dispatch", ["3.11", "3.15"]),
     ],
 )
 def test_offline_cells_are_selected_by_event(event: str, cells: list[str]) -> None:
@@ -158,7 +158,7 @@ def test_offline_endpoints_match_the_supported_python_range() -> None:
         ),
         key=lambda v: tuple(map(int, v.split("."))),
     )
-    assert offline_cells("push") == [supported[0], supported[-1]] == ["3.11", "3.14"]
+    assert offline_cells("push") == [supported[0], supported[-1]] == ["3.11", "3.15"]
     full = workflow("integration-full.yml")["jobs"]["integration-full"]["strategy"]["matrix"]
     assert full["python-version"] == supported
 

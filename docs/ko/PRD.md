@@ -34,7 +34,7 @@ SQLAlchemy 2.0–2.1용 현대적 CUBRID 방언을 제공하는, 처음부터 �
 - **DDL 지원** — COMMENT, IF NOT EXISTS / IF EXISTS, AUTO_INCREMENT
 - `CubridImpl`을 통한 **Alembic 마이그레이션 지원**, 방언이 로드될 때 등록됨
 - **광범위한 오프라인 및 통합 테스트 스위트** — CI가 오프라인 스위트에 최소 95% 라인 커버리지 게이트를 강제합니다 (`--cov-fail-under=95`). 현재 테스트 수는 CI job 출력을 참고하세요
-- **CI/CD** — Python 3.11–3.14 × CUBRID 10.2–11.4 매트릭스
+- **CI/CD** — Python 3.11–3.15 × CUBRID 10.2–11.4 매트릭스
 - 방언을 다루는 `docs/`의 **영어 문서 파일 17개**
 
 ### 1.3 성공 기준 — 상태
@@ -45,7 +45,7 @@ SQLAlchemy 2.0–2.1용 현대적 CUBRID 방언을 제공하는, 처음부터 �
 | SQLAlchemy 2.0 – 2.1 호환 | ✅ | ✅ 완전한 API 준수 |
 | 오프라인 테스트 (라이브 DB 없음) | ✅ | ✅ 광범위한 스위트, 커버리지 ≥ 95% CI 강제 |
 | 모든 방언 메서드 구현 | ✅ | ✅ 리플렉션, 컴파일, 타입 |
-| 버전 매트릭스를 갖춘 CI/CD | ✅ | ✅ Py 3.11–3.14 × CUBRID 10.2–11.4 |
+| 버전 매트릭스를 갖춘 CI/CD | ✅ | ✅ Py 3.11–3.15 × CUBRID 10.2–11.4 |
 | PyPI에 게시 가능 | ✅ | ✅ 태그 시 릴리스 워크플로 |
 | Alembic 지원 | ✅ | ✅ CubridImpl 자동 등록 + autogenerate |
 | ≥ 95% 코드 커버리지 | ✅ | ✅ `--cov-fail-under=95`로 CI 강제 |
@@ -298,9 +298,9 @@ not repo" --collect-only`를 실행하거나 `offline-tests` CI job 출력에서
 
 | 워크플로 | Python 버전 | CUBRID 버전 | 소스 |
 |---|---|---|---|
-| PR/push 오프라인 테스트 | PR: 3.12, push·주간·수동 실행: 3.11과 3.14 (전체 스위트, 95% 커버리지) | 해당 없음 (오프라인) | `.github/workflows/ci.yml` |
+| PR/push 오프라인 테스트 | PR: 3.12, push·주간·수동 실행: 3.11과 3.15 (전체 스위트, 95% 커버리지) | 해당 없음 (오프라인) | `.github/workflows/ci.yml` |
 | PR/push 통합 테스트 | 축소 매트릭스: 3.14 (11.4와 함께), 3.11 (10.2와 함께) | 11.4, 10.2 — 2개 조합만, 교차 곱이 아님 | `.github/workflows/ci.yml` |
-| 릴리스 게이트 / 수동 전체 통합 매트릭스 | 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
+| 릴리스 게이트 / 수동 전체 통합 매트릭스 | 3.11, 3.12, 3.13, 3.14, 3.15 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
 
 ---
 
@@ -374,6 +374,7 @@ not repo" --collect-only`를 실행하거나 `offline-tests` CI job 출력에서
 | 오류 코드 매핑 | 올바른 예외 처리를 위해 CUBRID 오류 코드를 SA 예외(`IntegrityError`, `OperationalError` 등)로 매핑 | 중간 | ✅ 완료 |
 | CUBRID 12.x 지원 | CUBRID 12가 릴리스되면 테스트하고 CI 매트릭스에 추가 | 중간 | ⏳ 차단됨 (미릴리스) |
 | Python 3.14 지원 | 사용 가능해지면 Python 3.14를 CI 매트릭스에 추가 | 낮음 | ✅ 완료 |
+| Python 3.15 지원 | 정식 런타임 검증 후 분류자와 전체 매트릭스에 Python 3.15 추가 (#666) | 낮음 | ✅ 완료 |
 
 ### v0.5.0 — 쿼리 기능 확장
 

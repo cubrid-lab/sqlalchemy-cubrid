@@ -138,7 +138,7 @@ RELEASE_GATE_NEEDS = yaml.safe_load((WORKFLOWS / "integration-full.yml").read_te
 
 
 def test_release_gate_requires_the_release_run_ci_lanes() -> None:
-    # #737: the release runs the Python 3.11/3.14 offline cells, type checking,
+    # #737: the release runs the Python 3.11/3.15 offline cells, type checking,
     # Alembic compatibility, the packaging smoke test and the gating SQLAlchemy
     # compliance lanes itself instead of relying on the main push run of ci.yml.
     assert set(RELEASE_GATE_NEEDS) == {

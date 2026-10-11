@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Upgrade notes
+- **Python 3.15 is supported (#666).** Standard GIL builds only. The pycubrid routes
+  (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`) are covered with the pycubrid release
+  that declares Python 3.15 (cubrid-lab/pycubrid#831); the `[pycubrid]` floor stays
+  `pycubrid>=1.8.0,<2.0`. On 3.15, pycubrid 1.10.0 and earlier reject `?charset=ksc5601`
+  because Python 3.15 maps that codec alias to CP949; use `?charset=euckr` or the newer
+  pycubrid. Building the official CUBRIDdb driver with GCC 14 fails on every Python
+  version, 3.14 included; see `docs/DRIVER_COMPAT.md`.
 - **`sqlalchemy-cubrid` no longer installs with SQLAlchemy 2.2 or newer (#774).** The package
   metadata now requires `sqlalchemy>=2.0,<2.2`, matching the supported range already
   documented (2.0 and 2.1). SQLAlchemy 2.2 is not released yet (PyPI latest 2.1.4), so no
@@ -20,6 +27,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pip install -e ".[dev]"`, which now installs only the package and warns that the extra
   does not exist. End users are not affected: the runtime extras (`pycubrid`, `alembic`,
   `cubrid`, `cubriddb`) are unchanged.
+
+### Added
+- **Python 3.15 support (#666)** — the package declares the Python 3.15 classifier, tox
+  gains `py315`, and the full compatibility matrix runs Python 3.11–3.15 × CUBRID
+  10.2/11.0/11.2/11.4 (20 cells, with the CUBRIDdb, pycubrid sync/async, driver-differential,
+  transactional DDL and server-restart steps) on manual dispatch and every release.
+  `requires-python` stays `>=3.11`; no free-threaded claim. `docs/SUPPORT_MATRIX.md`
+  (+ ko) records the claim's scope: the pycubrid release it depends on, the CUBRIDdb GCC 14
+  build limitation, the SQLAlchemy compliance lanes that stay on 3.14/11.4 and 3.11/10.2,
+  and the C `_decimal` requirement for Decimal-subclass parameters. README (+ ko),
+  `DRIVER_COMPAT`, `CI_POLICY`, `DEVELOPMENT`, `PRD` (+ ko) and `ROADMAP` match. The
+  German, Hindi, Russian and Chinese READMEs are left to their open translation issues
+  (#698–#701).
 
 ### Changed
 - **Contributor tooling moved out of the published metadata (#765)** — the single `dev`
@@ -137,6 +157,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **Python 3.15 is the newest offline endpoint (#666)** — the `ci.yml` offline cells for
+  main pushes, the weekly schedule and manual dispatches, and the release
+  `offline-endpoints` cells, move from Python 3.11/3.14 to 3.11/3.15, as the existing
+  oldest/newest policy (#734) and its test require. Pull requests keep the Python 3.12
+  cell, and the representative live cells (3.14/11.4 and 3.11/10.2) and SQLAlchemy
+  compliance lanes are unchanged. The manual `python-canary.yml` lane is kept. The live
+  Decimal-subclass round trip in `test/test_integration.py` is skipped on a Python without
+  the C `_decimal` module (CI's 3.15.0), where pycubrid refuses Decimal subclasses by design.
 - **The cub_server restart tests run on the latest pycubrid again (#479)** — in
   `ci.yml` `integration-tests`, the restart step ran after the gating compliance step
   had downgraded the job to `pycubrid==1.8.0`, so it tested the floor instead of the

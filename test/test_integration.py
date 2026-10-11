@@ -45,6 +45,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import importlib.util
 from inspect import signature
 import os
 import select as io_select
@@ -3141,6 +3142,9 @@ class TestCursorDescriptionContract:
 # ---------------------------------------------------------------------------
 
 _PYCUBRID_1_9 = (1, 9, 0)
+# pycubrid refuses Decimal subclass parameters on a Python without the C decimal
+# module (such as the actions/setup-python 3.15.0 build); see SUPPORT_MATRIX.
+_C_DECIMAL = importlib.util.find_spec("_decimal") is not None
 
 
 class _HostileInt(int):
@@ -3247,7 +3251,13 @@ class TestPycubridValueRoundTrips:
             ),
             pytest.param(_HostileInt(42), Decimal(42), "pycubrid#518", id="int-subclass"),
             pytest.param(
-                _HostileDecimal("3.25"), Decimal("3.25"), "pycubrid#518", id="decimal-subclass"
+                _HostileDecimal("3.25"),
+                Decimal("3.25"),
+                "pycubrid#518",
+                id="decimal-subclass",
+                marks=pytest.mark.skipif(
+                    not _C_DECIMAL, reason="Decimal subclasses need the C decimal module"
+                ),
             ),
         ],
     )

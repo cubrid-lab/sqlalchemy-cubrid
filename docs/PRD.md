@@ -33,7 +33,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 - **DDL support** — COMMENT, IF NOT EXISTS / IF EXISTS, AUTO_INCREMENT
 - **Alembic migration support** via `CubridImpl`, registered when the dialect loads
 - **Extensive offline and integration test suites** — CI enforces a minimum 95% line-coverage gate on the offline suite (`--cov-fail-under=95`); see CI job output for current test counts
-- **CI/CD** — Python 3.11–3.14 × CUBRID 10.2–11.4 matrix
+- **CI/CD** — Python 3.11–3.15 × CUBRID 10.2–11.4 matrix
 - **17 English documentation files** in `docs/` covering the dialect
 
 ### 1.3 Success Criteria — Status
@@ -44,7 +44,7 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 | SQLAlchemy 2.0 – 2.1 compatible | ✅ | ✅ Full API compliance |
 | Offline tests (no live DB) | ✅ | ✅ Extensive suite, coverage ≥ 95% CI-enforced |
 | All dialect methods implemented | ✅ | ✅ Reflection, compilation, types |
-| CI/CD with version matrix | ✅ | ✅ Py 3.11–3.14 × CUBRID 10.2–11.4 |
+| CI/CD with version matrix | ✅ | ✅ Py 3.11–3.15 × CUBRID 10.2–11.4 |
 | Publishable to PyPI | ✅ | ✅ Release workflow on tag |
 | Alembic support | ✅ | ✅ CubridImpl auto-registered + autogenerate |
 | ≥ 95% code coverage | ✅ | ✅ CI-enforced via `--cov-fail-under=95` |
@@ -298,9 +298,9 @@ the current set.
 
 | Workflow | Python versions | CUBRID versions | Source |
 |---|---|---|---|
-| PR/push offline tests | PR: 3.12; push, weekly and dispatch: 3.11 and 3.14 (full suite, 95% coverage) | N/A (offline) | `.github/workflows/ci.yml` |
+| PR/push offline tests | PR: 3.12; push, weekly and dispatch: 3.11 and 3.15 (full suite, 95% coverage) | N/A (offline) | `.github/workflows/ci.yml` |
 | PR/push integration tests | Reduced matrix: 3.14 (with 11.4), 3.11 (with 10.2) | 11.4, 10.2 — 2 combinations only, not a cross product | `.github/workflows/ci.yml` |
-| Release-gate / manual full integration matrix | 3.11, 3.12, 3.13, 3.14 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
+| Release-gate / manual full integration matrix | 3.11, 3.12, 3.13, 3.14, 3.15 | 10.2, 11.0, 11.2, 11.4 | `.github/workflows/integration-full.yml` |
 
 ---
 
@@ -374,6 +374,7 @@ Limitations imposed by CUBRID itself (not the dialect):
 | Error code mapping | Map CUBRID error codes to SA exceptions (`IntegrityError`, `OperationalError`, etc.) for proper exception handling | Medium | ✅ Done |
 | CUBRID 12.x support | Test against CUBRID 12 when released, add to CI matrix | Medium | ⏳ Blocked (not released) |
 | Python 3.14 support | Add Python 3.14 to CI matrix when available | Low | ✅ Done |
+| Python 3.15 support | Add Python 3.15 to the classifiers and the full matrix after final-runtime validation (#666) | Low | ✅ Done |
 
 ### v0.5.0 — Query Feature Expansion
 

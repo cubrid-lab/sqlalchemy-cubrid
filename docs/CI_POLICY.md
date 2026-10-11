@@ -7,9 +7,9 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
 | Ordinary code PR | One Ubuntu/Python 3.12 full offline suite with the 95% coverage floor (#742) |
 | High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
-| Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.14) (#734); oldest/newest live endpoints |
-| Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.14 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes; the compliance step needs code changes in the previous seven days (#737) |
-| Explicit full dispatch or release | Existing full Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.14 offline cells, type checking, `alembic-compat`, the packaging smoke test and the gating SQLAlchemy compliance lanes (#737) |
+| Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.15) (#734); live endpoints Python 3.14/CUBRID 11.4 and Python 3.11/CUBRID 10.2 |
+| Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.15 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes; the compliance step needs code changes in the previous seven days (#737) |
+| Explicit full dispatch or release | Existing full Python 3.11–3.15 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.15 offline cells, type checking, `alembic-compat`, the packaging smoke test and the gating SQLAlchemy compliance lanes (#737) |
 
 PRs run the same full offline selection (`-m "not integration and not repo"`) and
 95% coverage floor as pushes. The former three-file PR smoke ran in about 1 s
@@ -55,7 +55,7 @@ Compare subsequent Actions jobs/runner minutes and the actual billing category
 before making a cost claim.
 
 Routine type checking uses Python 3.13/SQLAlchemy 2.1.1; Alembic checks use latest,
-and packaging uses SQLAlchemy 2.1.1. The oldest/newest live endpoint cells retain
+and packaging uses SQLAlchemy 2.1.1. The live endpoint cells (Python 3.14/CUBRID 11.4 and Python 3.11/CUBRID 10.2) retain
 SQLAlchemy 2.0 and 2.1 compliance coverage on main/weekly. Make integration is deferred
 from PRs to non-PR code validation and also owns the former live-smoke assertions; the
 advisory SQLAlchemy canary runs on the weekly schedule and manual dispatches (#737).
@@ -108,13 +108,13 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 
 | Coverage | Owner (workflow / job) | Event tier |
 | --- | --- | --- |
-| Offline suite, 95% floor | `ci.yml` `offline-tests`; `integration-full.yml` `offline-endpoints` | PR: Python 3.12. Main push, weekly, dispatch: 3.11 and 3.14. Release: 3.11 and 3.14 |
+| Offline suite, 95% floor | `ci.yml` `offline-tests`; `integration-full.yml` `offline-endpoints` | PR: Python 3.12. Main push, weekly, dispatch: 3.11 and 3.15. Release: 3.11 and 3.15 |
 | Type checking | `ci.yml` `typecheck` (Python 3.13, SQLAlchemy 2.1.1); `integration-full.yml` `typecheck` (same cell) | Every code event; dispatch and release |
 | Alembic compatibility | `ci.yml` `alembic-compat` (latest Alembic); `integration-full.yml` `alembic-compat` (same cell); offline Alembic tests in `offline-tests`; live Alembic operations in `integration-tests`, `make-integration` and `integration-full`; transactional DDL in `integration-tests` and `integration-full` | Risk PR and non-PR code; dispatch and release |
 | Packaging | `ci.yml` `packaging-smoke-test`; `integration-full.yml` `packaging-smoke-test` (same steps, including the pycubrid extra and Alembic checks); `publish-pypi.yml` `build` | Risk PR and non-PR code; dispatch and release |
 | Representative live smoke | `ci.yml` `make-integration` (pycubrid, CUBRID 11.4, Python 3.12), which absorbed `live-smoke` | Main push, weekly, dispatch |
 | `make integration` | `ci.yml` `make-integration`; `integration-full.yml` `make-integration` (both drivers, CUBRID 10.2 and 11.4) | Non-PR code; dispatch and release |
-| CUBRID/Python endpoints | `ci.yml` `integration-tests` (3.14/11.4 on risk PRs, plus 3.11/10.2 on non-PR code); `integration-full.yml` `integration-full` (4 × 4) | Risk PR, non-PR code; dispatch and release |
+| CUBRID/Python endpoints | `ci.yml` `integration-tests` (3.14/11.4 on risk PRs, plus 3.11/10.2 on non-PR code); `integration-full.yml` `integration-full` (5 × 4) | Risk PR, non-PR code; dispatch and release |
 | SQLAlchemy dialect compliance (gating) | `ci.yml` `integration-tests`: CUBRIDdb lane on 3.14/11.4, released-pycubrid lane on both cells; `integration-full.yml` `sqlalchemy-compliance` (the same lanes on the same two cells) | Risk PR (3.14/11.4), non-PR code (both cells); dispatch and release (both cells) |
 | SQLAlchemy compliance, CUBRIDdb on the oldest cell (advisory) | `ci.yml` `integration-tests` (3.11/10.2) | Weekly runs with code changes in the previous 7 days, and code dispatches |
 | SQLAlchemy pre-release canary (advisory) | `ci.yml` `sqlalchemy-21-canary` | Weekly schedule and dispatch |
@@ -155,7 +155,7 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
   longer stacks on the Monday `ci.yml` schedule. Its jobs differ from the weekly
   `ci.yml` suites (they install `pycubrid@main`), so both stay.
 - Pull requests are unchanged: ordinary PRs still run one Python 3.12 offline
-  cell and no live lane, and #734's 3.11/3.14 cells stay off PRs.
+  cell and no live lane, and #734's 3.11/3.15 cells stay off PRs.
 
 Expected runner minutes, computed from the per-job medians above:
 
@@ -208,9 +208,10 @@ minutes from the medians above) and two live compliance cells per release;
 The `offline-tests` matrix is chosen by `github.event_name` (#734). Pull requests,
 ordinary and high-risk alike, run one representative Python 3.12 cell. Every other
 `ci.yml` event (a push to `main`, the Monday schedule and a manual
-`workflow_dispatch`) runs the oldest and newest supported Python, 3.11 and 3.14,
+`workflow_dispatch`) runs the oldest and newest supported Python, 3.11 and 3.15,
 instead of 3.12. The supported range between them is covered by those endpoints
-plus the 3.12 PR evidence; 3.13 has no routine offline cell. Both kinds of run use
+plus the 3.12 PR evidence; 3.13 and 3.14 have no routine offline cell (3.14 is
+still exercised live on every high-risk PR and in the full matrix). Both kinds of run use
 the same selection (`-m "not integration and not repo"`), the 95% coverage floor
 and the `detect-changes` `code` output: a docs-only push, or a week without code
 changes, selects no offline cell at all. A `workflow_dispatch` on `main` has no
@@ -221,7 +222,7 @@ only: dispatching right after a docs-only merge runs no offline cell. Each cell 
 | Event | `offline-tests` cells |
 | --- | --- |
 | `pull_request` | Python 3.12 |
-| `push` to `main`, `schedule`, `workflow_dispatch` | Python 3.11 and 3.14 |
+| `push` to `main`, `schedule`, `workflow_dispatch` | Python 3.11 and 3.15 |
 
 The matrix uses `fail-fast: false`, so one failing interpreter does not cancel the
 other's evidence. `matrix-result` reads the job's aggregate result: any failed or
@@ -434,3 +435,11 @@ GitHub dispatches a manual workflow only after its file is on the default
 branch, so the lane cannot run before it is merged. Its first run is made at
 the merged commit and recorded on the tracking issue; ordinary PR CI is not
 Python 3.15 evidence.
+
+Python 3.15 is now supported (#666; see the [support matrix](SUPPORT_MATRIX.md)).
+Its support evidence comes from the full compatibility matrix (Python 3.15 × four
+CUBRID versions, with the CUBRIDdb and pycubrid lanes), the 3.15 offline endpoint
+cells and this lane's fresh wheel/sdist installs; the lane is kept as a manual
+packaging check. The representative live cells stay on Python 3.14/CUBRID 11.4 and
+Python 3.11/CUBRID 10.2, and the SQLAlchemy compliance lanes stay on those two
+cells.

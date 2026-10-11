@@ -35,7 +35,7 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 | 3.12 | ✅ 지원 |
 | 3.13 | ✅ 지원 |
 | 3.14 | ✅ 지원 |
-| 3.15 | 🧪 지원 준비 중 (공식 지원 아님) |
+| 3.15 | ✅ 지원 (표준 GIL 빌드, 아래 참고 사항 참고) |
 | 3.10 | ❌ 1.10.0부터 미지원 (1.9.x까지 지원) |
 | < 3.10 | ❌ 미지원 |
 
@@ -47,13 +47,37 @@ sqlalchemy-cubrid 릴리스의 호환성과 기능 지원.
 라인에만 제공되므로 1.9.x의 추가 릴리스는 없습니다. 업그레이드하기 전에
 Python을 업그레이드하고 가상 환경을 새로 만든 뒤 애플리케이션을 검증하세요.
 
-**Python 3.15 지원 준비:** [Python 3.15.0 정식 버전](https://www.python.org/downloads/release/python-3150/)은
-2026-10-09에 출시됐습니다. 수동 실행 전용 Ubuntu/표준 GIL 워크플로는 2026-10-03에
-미리 보기 검사로 설정됐으며, 고정 커밋의 오프라인 회귀 검사와 wheel/sdist의 새 환경
-설치를 검증합니다. 검사 설정이 있다는 사실은 통과 증거가 아닙니다. 이 방언은 아직
-Python 3.15의 공식 지원을 선언하지 않습니다. 정식 버전에서 의존성·패키징·오프라인·
-실 CUBRID 검증을 통과하면 지원 목록에 추가하며, free-threaded 빌드는 이번 준비
-범위에 포함하지 않습니다.
+**Python 3.15:** 표준 GIL을 쓰는 CPython
+[3.15.0](https://www.python.org/downloads/release/python-3150/) 정식 릴리스를
+지원합니다. free-threaded 빌드는 지원하지 않습니다. 전체 호환성 매트릭스는 수동
+실행과 모든 릴리스에서 Python 3.15를 지원되는 모든 CUBRID 버전과 함께 실행하며,
+3.15는 최신 오프라인 엔드포인트입니다. 수동 `python-canary.yml` 레인은 계속 3.15에서
+wheel/sdist의 새 환경 설치를 확인합니다. 지원 범위:
+
+- **pycubrid (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`):** pycubrid는 1.10.0
+  다음 릴리스부터 Python 3.15를 선언합니다
+  ([cubrid-lab/pycubrid#831](https://github.com/cubrid-lab/pycubrid/pull/831)).
+  `[pycubrid]` 하한은 `pycubrid>=1.8.0,<2.0` 그대로입니다. pycubrid 1.10.0은 3.15에서
+  동기·비동기 통합 스위트를 통과하지만 3.15를 선언하지 않습니다. Python 3.15는
+  `ksc5601` 코덱 별칭을 CP949로 매핑하므로, 3.15에서 pycubrid 1.10.0 이하는
+  `?charset=ksc5601`을 거부합니다. `?charset=euckr`을 쓰거나, `ksc5601`을 직접
+  EUC-KR로 매핑하는 3.15 선언 pycubrid 릴리스를 쓰세요.
+- **CUBRIDdb (`cubrid://`):** 공식 `cubrid-python` v11.3.0.51 소스는 `ubuntu-latest`의
+  CI 빌드 절차로 3.15용으로 빌드되며, 전체 매트릭스는 3.15에서 해당 레인을 실행합니다.
+  GCC 14에서는 3.14를 포함한 모든 Python 버전에서 기본 빌드가 실패합니다. GCC 14가
+  `-Wincompatible-pointer-types`와 `-Wint-conversion`을 오류로 만들기 때문입니다.
+  이 프로젝트는 CI에 경고 완화 플래그를 추가하지 않습니다. [드라이버 호환성](DRIVER_COMPAT.md)을
+  참고하세요.
+- **3.15에서 실행하지 않는 검사:** SQLAlchemy 컴플라이언스 레인은 Python 3.14/CUBRID
+  11.4와 Python 3.11/CUBRID 10.2에 그대로 둡니다.
+- **환경:** pycubrid를 통한 Decimal 하위 클래스 파라미터에는 C `_decimal` 모듈이
+  필요합니다. `libmpdec` 없이 빌드한 Python에는 이 모듈이 없으며, 이때 pycubrid는
+  이런 파라미터에 `ProgrammingError`를 발생시킵니다. 일반 `Decimal` 값은 영향이 없습니다.
+  CI가 쓰는 `actions/setup-python` 3.15.0 빌드, `python:3.15-rc` Docker 이미지,
+  `libmpdec-dev` 없는 소스 빌드에서 이 모듈이 없음을 확인했으므로, CI의 3.15 셀에서는
+  Decimal 하위 클래스 왕복 테스트를 건너뜁니다. 3.15를 지원 목록에
+  올린 시점에 Docker Hub에는 정식 `python:3.15` 이미지가 없었으며, CI는
+  `actions/setup-python`을 사용합니다.
 
 ### CUBRID 서버
 
@@ -192,8 +216,8 @@ CUBRID에는 `BINARY`, `VARBINARY`, `UUID` 타입이 없습니다. `sa.BINARY(n)
 
 | 검증 | 일상 실행 | 전체 호환성 |
 | --- | --- | --- |
-| 오프라인 | 95% 커버리지의 전체 스위트: PR은 Ubuntu/Python 3.12, main·변경이 있는 주간 실행·수동 실행은 Python 3.11과 3.14 | 로컬 전체 테스트는 그대로 사용 가능 |
-| 라이브 통합 | 고위험 PR은 최신 엔드포인트. main/변경이 있는 주간 실행은 최저·최신 엔드포인트 | 수동 실행과 모든 릴리스에서 Python 3.11–3.14 × CUBRID 10.2/11.0/11.2/11.4 |
+| 오프라인 | 95% 커버리지의 전체 스위트: PR은 Ubuntu/Python 3.12, main·변경이 있는 주간 실행·수동 실행은 Python 3.11과 3.15 | 로컬 전체 테스트는 그대로 사용 가능 |
+| 라이브 통합 | 고위험 PR은 Python 3.14/CUBRID 11.4. main/변경이 있는 주간 실행은 Python 3.11/CUBRID 10.2도 실행 | 수동 실행과 모든 릴리스에서 Python 3.11–3.15 × CUBRID 10.2/11.0/11.2/11.4 |
 
 [CI 실행 정책](CI_POLICY.md)을 참고하세요. 이 정책은 각 실행이 무엇을 테스트할지를
 고를 뿐, 위에 나열한 지원 버전을 정의하지 않습니다. 대표 PR 검사는 지원되는 모든
