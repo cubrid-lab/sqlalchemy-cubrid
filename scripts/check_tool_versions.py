@@ -67,7 +67,11 @@ def _requirement_name(requirement: str) -> str:
 
 def _exact_pin(requirement: str, tool: str) -> str | None:
     name, separator, version = requirement.partition("==")
-    if not separator or not version or any(char in version for char in " <>!=~;*\t"):
+    if (
+        not separator
+        or not version
+        or any(char.isspace() or char in "<>=~;*#@," for char in version)
+    ):
         return None
     if name != tool:
         prefix = f"{tool}["
@@ -139,9 +143,11 @@ def check(root: Path) -> list[str]:
     extras = _table(project_metadata, "optional-dependencies", "published extras")
     test_group = _group(project, "test")
     alembic = _one(
-        [requirement for requirement in test_group if requirement.startswith("alembic")],
+        [requirement for requirement in test_group if _requirement_name(requirement) == "alembic"],
         "Alembic requirement",
     )
+    if not any(char in alembic for char in "<>=!~"):
+        raise ValueError("Alembic requirement: expected one declaration, found 0")
     alembic_extra = _strings(extras, "alembic", "Alembic extra")
     hooks = (root / ".pre-commit-config.yaml").read_text()
     workflow = (root / ".github/workflows/ci.yml").read_text()
