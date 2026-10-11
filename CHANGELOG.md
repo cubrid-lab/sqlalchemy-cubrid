@@ -157,6 +157,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **The PyPI duplicate guard uses `hashlib.file_digest()` (#730)** —
+  `scripts/pypi_duplicate_guard.py` hashes `dist/` files with the Python 3.11 stdlib
+  helper instead of a hand-written chunked read loop; the digests are the same. The
+  pycubrid and cubrid-mcp-server copies get the same change, so the three stay
+  identical. No runtime change.
 - **Python 3.15 is the newest offline endpoint (#666)** — the `ci.yml` offline cells for
   main pushes, the weekly schedule and manual dispatches, and the release
   `offline-endpoints` cells, move from Python 3.11/3.14 to 3.11/3.15, as the existing

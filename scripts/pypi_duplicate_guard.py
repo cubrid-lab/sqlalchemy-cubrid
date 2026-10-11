@@ -61,11 +61,8 @@ def normalize(name: str) -> str:
 
 
 def sha256_of(path: Path) -> str:
-    digest = hashlib.sha256()
     with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+        return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
 def local_files(dist: Path, project: str, version: str) -> dict[str, str]:
