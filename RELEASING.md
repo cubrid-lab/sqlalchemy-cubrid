@@ -119,8 +119,8 @@ and chained with explicit `needs:` (tags and Releases created with
 | `consistency` | `make release-check VERSION=X.Y.Z` at the SHA: `__version__`, CHANGELOG lint and dated section, `build` + `twine check`. |
 | `matrix` | The full Python × CUBRID matrix, the `make integration` lanes for both drivers, the Python 3.11/3.15 offline cells, the release-run copies of the `ci.yml` type check, `alembic-compat`, packaging smoke test and gating SQLAlchemy compliance lanes (#737), the version-differential and the Hypothesis fuzz pass (mutation testing is non-gating and is skipped on this call, #747; it runs on a manual dispatch of `integration-full.yml`): `integration-full.yml` called through `workflow_call` at the SHA. Its `full-matrix-result` job fails unless every required lane succeeds. |
 | `build` | Builds the wheel and sdist **once**, `twine check`, wheel/sdist install smoke tests, extracts the release notes (the CHANGELOG section byte for byte plus one `**Full Changelog**` link to the previous CHANGELOG version; none for the first release or when the section already has a compare link), generates the SPDX SBOM and records SHA-256 hashes. Artifacts `release-dist` and `release-meta` are kept for 14 days. |
-| `verify-candidate` | Calls the same pinned cookbook smoke test in **candidate mode** before anything is published: `mode: candidate`, `candidate_artifact: release-dist`, `candidate_hashes` = the `build` job's `sha256` output, `candidate_source_sha` = the release SHA, and `request_id: sqlalchemy-cubrid-rc-vX.Y.Z-<run id>` (no run attempt, so `gh run rerun --failed` replaces only the failed cells). The cookbook checks the artifact's file set and every SHA-256, installs only that wheel and runs the release smoke on it. Skipped only to complete a publish whose tag already points at the release commit. |
-| `require-candidate` | Fails unless the call succeeded and its outputs report `status == success`, `evidence == candidate artifact`, `installed_version == requested_version == X.Y.Z` and `candidate_sha256` equal to the wheel's entry in the `build` job's `sha256` map. It also downloads the candidate report `release-candidate-verification-<request_id>` of this run and requires it to name this package, `request_id`, version and run, the artifact `release-dist`, the release commit as `source_sha`, exactly the `build` job's file map, and the same verified wheel and digest. Every value reaches the check through `env:` or the downloaded file, never through shell interpolation. It holds no permission. `publish` needs this job. |
+| `verify-candidate` | Calls the same pinned cookbook smoke test in **candidate mode** before anything is published: `mode: candidate`, `candidate_artifact: release-dist`, `candidate_hashes` = the `build` job's `sha256` output, `candidate_source_sha` = the release SHA, and `request_id: sqlalchemy-cubrid-rc-vX.Y.Z-<run id>` (no run attempt, so `gh run rerun --failed` replaces only the failed cells). The cookbook checks the artifact's file set and every SHA-256, installs only that wheel and runs the release smoke on it. It runs after every successful build, `resume` included; there is no skip. |
+| `require-candidate` | Fails unless the call succeeded and its outputs report `status == success`, `evidence == candidate artifact`, `installed_version == requested_version == X.Y.Z` and `candidate_sha256` equal to the wheel's entry in the `build` job's `sha256` map. It also downloads the candidate report `release-candidate-verification-<request_id>` of this run and requires it to name this package, `request_id`, version, run and calling repository, the artifact `release-dist`, the release commit as `source_sha`, exactly the `build` job's file map, and the same verified wheel and digest. Every value reaches the check through `env:` or the downloaded file, never through shell interpolation. It holds no permission. `publish` needs this job. |
 | `publish` | In the `pypi` environment: checks `dist/` and `release-meta/` against the `build` job outputs `sha256` and `meta_sha256` (`scripts/verify_dist.py`: exact file set, every digest) and re-checks `SHA256SUMS`, creates the annotated tag `vX.Y.Z` at the SHA (or accepts one already there), creates a **draft** GitHub Release titled exactly `vX.Y.Z` with the notes and `sbom.spdx.json` (an existing Release found on resume must already carry that title, or the job fails closed; it is never renamed), uploads the same artifact to PyPI through `scripts/pypi_duplicate_guard.py` and Trusted Publishing (OIDC), then publishes the Release. |
 | `verify-cookbook` | Calls the cookbook smoke test (`smoke-test.yml` of cubrid-cookbook-python) as a **reusable workflow** with `package=sqlalchemy-cubrid`, `version=X.Y.Z` and a `request_id`; its jobs run inside this release run. |
 | `require-cookbook` | Fails unless the called workflow succeeded and its outputs report `status == success` with `installed_version == requested_version == X.Y.Z`. |
@@ -130,10 +130,10 @@ Only `publish` has write access (`contents: write` for the tag and Release,
 `id-token: write` for PyPI); every other job reads (`require-candidate` and
 `require-cookbook` hold no permission at all). `publish` runs only when
 `consistency`, `matrix`, `build` and `require-candidate` all succeeded
-(`!cancelled()` plus each explicit result, so a skipped `verify-candidate` on a
-tagged resume does not skip `publish`). It uploads the same `release-dist`
-bytes the cookbook verified, never a rebuild: the trust anchor is the `build`
-job's outputs, which no later job of the run can change, not the artifacts.
+in this run (`!cancelled()` plus each explicit result). It uploads the same
+`release-dist` bytes this run's cookbook candidate call verified, never another
+build's: the trust anchor is the `build` job's outputs, which no later job of
+the run can change, not the artifacts.
 
 #### Candidate verification (before publish)
 
@@ -163,13 +163,15 @@ copy. The other drivers come from PyPI, so a candidate that needs an
 unpublished release of another cubrid-lab package fails here: release
 dependent packages one after the other.
 
-`verify-candidate` is skipped, and `require-candidate` passes with a notice,
-only when `detect` reports `publish == true` and `tag_state == same` (a
-`resume`, or a push whose tag already points at the release commit). The tag
-is created only after `require-candidate` passed, so the version already
-passed the gate (or predates it), and blocking the completion of a partly
-public release would protect nobody. A `verify-only` dispatch builds nothing,
-so it has no candidate.
+The candidate gate is never skipped once `build` succeeded, whatever the tag
+state. Builds are not reproducible (the same commit gives a wheel with another
+SHA-256), so a `resume` dispatch, which rebuilds, must verify its own bytes
+before it can upload them. To finish a partial publish with the bytes that
+were already verified, use `gh run rerun <run-id> --failed` of the **same**
+run within the 14-day artifact retention: it keeps the earlier `build`,
+`verify-candidate` and `require-candidate` results and the same `release-dist`
+artifact, and only re-runs what failed. A `verify-only` dispatch builds
+nothing and publishes nothing, so it has no candidate.
 
 #### Cookbook verification
 
@@ -313,7 +315,7 @@ creates a new version, never moves a tag and never deletes anything.
 
 | `action` | Allowed when | Runs |
 | --- | --- | --- |
-| `resume` | Dispatched from `main`; tag `vX.Y.Z` exists; its commit is on `main`; `__version__` and a dated CHANGELOG section at that commit equal `X.Y.Z`. | consistency → matrix → build → publish → verify at the tag commit (the tag exists, so the candidate gate is skipped; the Hypothesis fuzz pass runs only when the tag commit is `main`'s head, because its shared workflow checks out the dispatched commit). For an interrupted release whose run can no longer be rerun (for example the artifacts expired before anything reached PyPI). A rebuilt file that differs from one already on PyPI fails the guard. |
+| `resume` | Dispatched from `main`; tag `vX.Y.Z` exists; its commit is on `main`; `__version__` and a dated CHANGELOG section at that commit equal `X.Y.Z`. | consistency → matrix → build → publish → verify at the tag commit (the rebuilt wheel goes through the candidate gate like any other build; the Hypothesis fuzz pass runs only when the tag commit is `main`'s head, because its shared workflow checks out the dispatched commit). For an interrupted release whose run can no longer be rerun (for example the artifacts expired before anything reached PyPI). A rebuilt file that differs from one already on PyPI fails the guard. |
 | `verify-only` | Same conditions as `resume`. | Only `verify-cookbook`, `require-cookbook` and `summary` for the already-published version, through the same reusable cookbook workflow. |
 | `dry-run` | Any branch; `X.Y.Z` must equal `__version__` at the dispatched commit and have a dated CHANGELOG section. | consistency → matrix → build → verify-candidate → require-candidate, **no** tag, Release or upload (`publish` needs `detect`'s `publish == true`, which a dry run never sets, and the `pypi` environment allows only `main`). The cookbook verifies the wheel this run built; the post-publication `verify-cookbook` does not run. |
 

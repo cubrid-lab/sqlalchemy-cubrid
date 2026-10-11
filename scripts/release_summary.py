@@ -13,8 +13,8 @@ enforced by ``require-candidate``) runs before ``publish``. It is ``success``
 only when both jobs succeeded and the outputs report ``status == success``,
 ``evidence == candidate artifact``, ``installed_version == requested_version``
 == the release version and ``candidate_sha256`` == the wheel digest of the
-``build`` job; it is ``skipped`` only when completing a publish whose tag is
-already at the release commit. The cookbook verification is ``success`` only
+``build`` job; any other result after a successful build, ``resume``
+included, is a failure. The cookbook verification is ``success`` only
 when the called smoke-test workflow (``verify-cookbook``) and
 ``require-cookbook`` succeeded and its outputs report ``status == success``
 with ``installed_version == requested_version`` == the released version; a
@@ -53,13 +53,6 @@ def verification_due(needs: dict[str, Any]) -> bool:
     return job(needs, "publish")[0] == "success" or detect.get("mode") == "verify-only"
 
 
-def tagged_resume(needs: dict[str, Any]) -> bool:
-    """A publish completing at a tag already at the release commit skips the
-    candidate gate (mirrors the ``verify-candidate`` condition)."""
-    _, detect = job(needs, "detect")
-    return detect.get("publish") == "true" and detect.get("tag_state") == "same"
-
-
 def built_wheel_digest(needs: dict[str, Any]) -> str:
     """The SHA-256 of the single wheel in the build job's map ("" if not exactly one)."""
     _, build = job(needs, "build")
@@ -76,14 +69,12 @@ def built_wheel_digest(needs: dict[str, Any]) -> str:
 
 
 def candidate(needs: dict[str, Any]) -> tuple[str, str]:
-    """Return (``success`` | ``failure`` | ``skipped`` | ``not run``, reason) for
+    """Return (``success`` | ``failure`` | ``not run``, reason) for
     the pre-publication candidate verification."""
     result, outputs = job(needs, "verify-candidate")
     require_result, _ = job(needs, "require-candidate")
     if job(needs, "build")[0] != "success":
         return "not run", ""
-    if tagged_resume(needs) and result == "skipped" and require_result == "success":
-        return "skipped", "tag already at the release commit"
     version = job(needs, "detect")[1].get("version", "")
     status = outputs.get("status", "")
     evidence = outputs.get("evidence", "")

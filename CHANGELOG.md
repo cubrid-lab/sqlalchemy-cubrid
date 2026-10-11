@@ -164,12 +164,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `build` job's `sha256` output), and `require-candidate`, which requires
   `status == success`, `evidence == candidate artifact`, installed == requested ==
   the release version and the verified digest == the built wheel's digest, and
-  whose downloaded candidate report must name this package, request and run,
+  whose downloaded candidate report must name this package, request, run and
+  repository,
   `release-dist`, the release commit and the build's file map. `publish` needs
   `require-candidate` and now also checks `dist/` and
   `release-meta/` against the `build` job outputs `sha256` and the new
-  `meta_sha256` (`scripts/verify_dist.py`) before tagging. The gate is skipped
-  only to complete a publish whose tag already points at the release commit. A
+  `meta_sha256` (`scripts/verify_dist.py`) before tagging. The gate is never
+  skipped after a successful build, `resume` included: builds are not
+  reproducible, so every run that publishes verifies its own bytes (a
+  `gh run rerun --failed` of the same run keeps its earlier verification). A
   `dry-run` dispatch now verifies the freshly built wheel instead of the
   already-published version; the post-publication `verify-cookbook` is
   unchanged. Both cookbook calls use one pin, moved to `98866c2`. pycubrid gets

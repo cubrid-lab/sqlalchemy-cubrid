@@ -240,13 +240,22 @@ def test_failed_require_candidate_is_a_failed_candidate() -> None:
     assert "require-candidate failure" in reason
 
 
-def test_tagged_resume_skips_the_candidate_gate_only_there() -> None:
-    data = needs("resume", verify_candidate={"result": "skipped", "outputs": {}})
+def test_tagged_resume_never_skips_the_candidate_gate() -> None:
+    # A resume rebuilds, and builds are not reproducible: its bytes need their
+    # own candidate verification, whatever the tag state.
+    data = needs("resume")
     data["detect"]["outputs"]["tag_state"] = "same"
-    assert summary.candidate(data) == ("skipped", "tag already at the release commit")
+    assert summary.candidate(data)[0] == "success"
     assert summary.final_state(data) == "published and verified"
-    data["detect"]["outputs"]["tag_state"] = "absent"
+    data = needs(
+        "resume",
+        verify_candidate={"result": "skipped", "outputs": {}},
+        require_candidate="failure",
+        publish="skipped",
+    )
+    data["detect"]["outputs"]["tag_state"] = "same"
     assert summary.candidate(data)[0] == "failure"
+    assert summary.final_state(data).startswith("failed before publish in require-candidate")
 
 
 def test_candidate_not_run_without_a_build() -> None:

@@ -111,3 +111,14 @@ def test_bad_expected_map_fails(dist: Path, monkeypatch: pytest.MonkeyPatch, raw
 def test_unset_environment_variable_fails(dist: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("EXPECTED", raising=False)
     assert verify_dist.main(["--dir", str(dist), "--expected-env", "EXPECTED"]) == 1
+
+
+def test_os_error_fails_with_an_error_line(
+    dist: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def unreadable(self: Path) -> bytes:
+        raise PermissionError(13, "Permission denied", str(self))
+
+    monkeypatch.setattr(Path, "read_bytes", unreadable)
+    assert run(dist, digests(CONTENT), monkeypatch) == 1
+    assert "::error::" in capsys.readouterr().out

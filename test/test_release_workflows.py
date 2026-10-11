@@ -189,16 +189,16 @@ def test_job_graph() -> None:
     ]
     for name in ("consistency", "matrix", "build"):
         assert jobs[name]["if"] == "needs.detect.outputs.build == 'true'", name
-    # The candidate gate runs after every successful build (dry run included) and
-    # is skipped only to complete a publish whose tag is already at the commit.
-    assert " ".join(jobs["verify-candidate"]["if"].split()) == (
-        "needs.build.result == 'success' && "
-        "!(needs.detect.outputs.publish == 'true' && needs.detect.outputs.tag_state == 'same')"
-    )
-    # A status function, so a skipped verify-candidate does not skip the gate.
+    # The candidate gate runs after every successful build: dry run, push and
+    # resume alike. Builds are not reproducible, so a resume (which rebuilds)
+    # never inherits an earlier run's verification; there is no tag-state skip.
+    assert jobs["verify-candidate"]["if"] == "needs.build.result == 'success'"
+    for name in ("verify-candidate", "require-candidate", "publish"):
+        assert "tag_state" not in str(jobs[name].get("if", "")), name
+    # A status function, so a failed verify-candidate still reaches the gate,
+    # which lists every failed check.
     assert jobs["require-candidate"]["if"] == "!cancelled() && needs.build.result == 'success'"
-    # !cancelled() plus explicit results: a skipped verify-candidate (tagged
-    # resume) must not skip publish, and only these results gate it.
+    # !cancelled() plus explicit results: only these results gate publish.
     assert " ".join(jobs["publish"]["if"].split()) == (
         "!cancelled() && needs.detect.outputs.publish == 'true' && "
         "needs.consistency.result == 'success' && needs.matrix.result == 'success' && "
@@ -400,7 +400,10 @@ def test_require_candidate_reads_the_report_of_this_request() -> None:
     assert require["permissions"] == {}
     download, _ = require_steps()
     assert str(download["uses"]).startswith("actions/download-artifact@")
-    assert download["if"] == "needs.verify-candidate.result != 'skipped'"
+    # A missing report must not hide the diagnostics: the check step still runs
+    # and fails on it with every other failed check.
+    assert "if" not in download
+    assert download["continue-on-error"] is True
     # Named from this run's own request_id, never from a call output.
     request_id = RELEASE["jobs"]["verify-candidate"]["with"]["request_id"]
     assert download["with"] == {
@@ -426,18 +429,15 @@ def test_require_candidate_parses_the_outputs_through_env() -> None:
         "DIST_SHA256": "${{ needs.build.outputs.sha256 }}",
         "VERSION": "${{ needs.detect.outputs.version }}",
         "SHA": DETECT_SHA,
-        "PUBLISH": "${{ needs.detect.outputs.publish }}",
-        "TAG_STATE": "${{ needs.detect.outputs.tag_state }}",
     }
     run = step["run"]
     assert "${{" not in run
-    # The only pass without a verified candidate: completing a tagged publish.
-    lines = [line.strip() for line in run.splitlines()]
-    skip = 'if [ "$PUBLISH" = true ] && [ "$TAG_STATE" = same ] && [ "$RESULT" = skipped ]; then'
-    assert lines.index(skip) == 0
-    assert lines[2] == "exit 0" and lines[3] == "fi"
-    assert run.count("exit 0") == 1
+    # No pass without a verified candidate: no early exit, no skip branch.
+    assert run.startswith("python3 - <<'PY'\n")
+    assert "exit 0" not in run and "skipped" not in run
     for check in (
+        'run.get("caller_repository")',
+        'env["GITHUB_REPOSITORY"]',
         'hashes = json.loads(env["DIST_SHA256"])',
         'candidate.get("files") == hashes',
         'candidate.get("source_sha") == env["SHA"]',
@@ -623,9 +623,8 @@ GOOD_CANDIDATE = {
     "DIST_SHA256": json.dumps(DIST),
     "VERSION": "1.9.0",
     "SHA": SOURCE_SHA,
-    "PUBLISH": "true",
-    "TAG_STATE": "absent",
 }
+REPOSITORY = "cubrid-lab/example"
 
 
 def good_report() -> dict[str, Any]:
@@ -638,7 +637,7 @@ def good_report() -> dict[str, Any]:
         "status": "success",
         "reasons": [],
         "evidence": "candidate artifact",
-        "run": {"id": RUN_ID, "attempt": "1"},
+        "run": {"id": RUN_ID, "attempt": "1", "caller_repository": REPOSITORY},
         "candidate": {
             "artifact": "release-dist",
             "wheel": f"{PACKAGE_UNDERSCORE}-1.9.0-py3-none-any.whl",
@@ -662,6 +661,7 @@ def run_require_candidate(
         "PATH": os.environ["PATH"],
         "PACKAGE": RELEASE["env"]["PACKAGE"],
         "GITHUB_RUN_ID": RUN_ID,
+        "GITHUB_REPOSITORY": REPOSITORY,
         **GOOD_CANDIDATE,
         **overrides,
     }
@@ -687,8 +687,9 @@ def test_require_candidate_passes_the_built_wheel(tmp_path: Path) -> None:
         pytest.param({"CANDIDATE_SHA256": "0" * 64}, id="bad-digest"),
         pytest.param({"CANDIDATE_SHA256": ""}, id="no-digest"),
         pytest.param({"RESULT": "failure"}, id="call-failed"),
-        pytest.param({"RESULT": "skipped"}, id="skipped-without-tag"),
-        pytest.param({"RESULT": "skipped", "PUBLISH": "false", "TAG_STATE": "same"}, id="dry-run"),
+        pytest.param({"RESULT": "skipped"}, id="call-skipped"),
+        pytest.param({"RESULT": "cancelled"}, id="call-cancelled"),
+        pytest.param({"GITHUB_REPOSITORY": "someone/fork"}, id="other-repository"),
         pytest.param({"STATUS": "failure"}, id="status-failure"),
         pytest.param({"EVIDENCE": "published package"}, id="published-evidence"),
         pytest.param({"INSTALLED": "1.8.0"}, id="installed-differs"),
@@ -735,6 +736,8 @@ def _report(path: str, value: Any) -> dict[str, Any]:
         pytest.param(_report("status", "failure"), id="report-failure"),
         pytest.param(_report("evidence", "published package"), id="report-published"),
         pytest.param(_report("run.id", "1"), id="report-other-run"),
+        pytest.param(_report("run.caller_repository", "someone/fork"), id="report-other-repo"),
+        pytest.param(_report("run.caller_repository", None), id="report-no-repo"),
         pytest.param(_report("candidate", None), id="report-no-candidate"),
         pytest.param(_report("candidate.artifact", "other-dist"), id="report-other-artifact"),
         pytest.param(_report("candidate.source_sha", "d" * 40), id="report-other-source"),
@@ -751,9 +754,16 @@ def test_require_candidate_fails_closed_on_the_report(tmp_path: Path, report: An
     assert "::error::Candidate verification failed" in result.stdout, result.stderr
 
 
-def test_require_candidate_passes_a_tagged_resume_without_a_call(tmp_path: Path) -> None:
-    result = run_require_candidate(
-        tmp_path, None, RESULT="skipped", TAG_STATE="same", CANDIDATE_SHA256=""
-    )
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "without the candidate gate" in result.stdout
+def test_require_candidate_never_passes_without_a_call(tmp_path: Path) -> None:
+    # A skipped call (formerly the tagged-resume pass) fails like any other.
+    result = run_require_candidate(tmp_path, None, RESULT="skipped", CANDIDATE_SHA256="")
+    assert result.returncode != 0, result.stdout
+    assert "::error::Candidate verification failed" in result.stdout, result.stderr
+
+
+def test_missing_report_lists_every_failed_check(tmp_path: Path) -> None:
+    result = run_require_candidate(tmp_path, None)
+    assert result.returncode != 0
+    (error,) = [line for line in result.stdout.splitlines() if line.startswith("::error::")]
+    for check in ("report names this package", "report files == build job map"):
+        assert check in error, error

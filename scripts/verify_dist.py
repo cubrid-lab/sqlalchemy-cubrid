@@ -15,7 +15,8 @@ never passes through shell code) and must be a non-empty JSON object whose keys
 are plain file names and whose values are 64-character lowercase hex SHA-256
 digests. The directory must hold only regular files (no subdirectory, no
 symlink), its file names must equal the map keys exactly, and every file's
-SHA-256 must equal its entry. Any other case exits 1 with an ``::error::``.
+SHA-256 must equal its entry. Any other case, or an OS error while reading,
+exits 1 with an ``::error::``.
 
 Standard library only. Kept identical across pycubrid, sqlalchemy-cubrid and
 cubrid-mcp-server; see RELEASING.md.
@@ -86,7 +87,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         expected = parse_expected(os.environ.get(args.expected_env))
         verify(args.dir, expected)
-    except VerifyError as exc:
+    except (VerifyError, OSError) as exc:
         print(f"::error::{args.dir}: {exc}")
         return 1
     print(f"{args.dir}: {len(expected)} files match {args.expected_env}")
