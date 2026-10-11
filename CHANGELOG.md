@@ -233,7 +233,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   NULL-typed `CASE` returning `None` and `EVALUATE 42` returning `42` (pycubrid#542);
   `date(999, 1, 1)`, `date(99, 1, 2)` and `datetime` years 999 and 99 (pycubrid#519); a
   `?charset=utf8` URL round trip of Korean and emoji text (pycubrid#86). `test_collection_roundtrip.py`
-  adds an all-`None` `SEQUENCE` row (`[None, None]`, pycubrid#483). Each case that fails on
+  adds an all-`None` `SEQUENCE` row (`[None, None]`) for typed binding, and
+  `test_all_null_elements_are_decoded`, which seeds `SEQUENCE{NULL, NULL}`, `MULTISET{NULL}`
+  and `SET{NULL}` with SQL literals and so needs no typed binding: pycubrid 1.8.0 returned
+  those collections as raw bytes (pycubrid#483). The time zone cases resolve their
+  `ZoneInfo` inside the test and skip when the system has no IANA data for the zone, so
+  collecting `test_integration.py` no longer needs `tzdata`. Each case that fails on
   pycubrid 1.8.0, the `[pycubrid]` floor, is a strict xfail there through the new
   `test/_pycubrid_gate.py`. A ZoneInfo datetime in the repeated hour with `fold=1` is stored
   one hour off, because pycubrid binds `DATETIMETZ'... America/New_York'` without the fold or

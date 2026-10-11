@@ -3167,9 +3167,19 @@ class _HostileDecimal(Decimal):
         return "7"
 
 
-_NY = ZoneInfo("America/New_York")
-_SEOUL = ZoneInfo("Asia/Seoul")
 _EST = datetime.timezone(datetime.timedelta(hours=-5))
+
+
+def _zone(key):
+    """The IANA zone *key*, or skip when this system has no time zone data for it.
+
+    Resolved inside the test, not at import: the project does not depend on
+    ``tzdata``, so a missing zone must not break collection.
+    """
+    try:
+        return ZoneInfo(key)
+    except ZoneInfoNotFoundError:
+        pytest.skip(f"no IANA time zone data for {key!r} on this system (install tzdata)")
 
 
 def _pycubrid_binds_repeated_hour(value):
@@ -3258,29 +3268,40 @@ class TestPycubridValueRoundTrips:
 
     @pytest.mark.parametrize("column", ["dtz", "tstz"])
     @pytest.mark.parametrize(
-        "value",
+        "make_value",
         [
-            pytest.param(datetime.datetime(2026, 3, 8, 12, 0, tzinfo=datetime.UTC), id="utc"),
             pytest.param(
-                datetime.datetime(
+                lambda: datetime.datetime(2026, 3, 8, 12, 0, tzinfo=datetime.UTC), id="utc"
+            ),
+            pytest.param(
+                lambda: datetime.datetime(
                     2026, 3, 8, 2, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=9))
                 ),
                 id="+09:00",
             ),
-            pytest.param(datetime.datetime(2026, 7, 1, 9, 15, 30, tzinfo=_SEOUL), id="Asia/Seoul"),
+            pytest.param(
+                lambda: datetime.datetime(2026, 7, 1, 9, 15, 30, tzinfo=_zone("Asia/Seoul")),
+                id="Asia/Seoul",
+            ),
             # 01:30 occurs twice in New York on 2026-11-01; fold=0 is the EDT one.
-            pytest.param(datetime.datetime(2026, 11, 1, 1, 30, tzinfo=_NY), id="dst-end-edt"),
-            pytest.param(datetime.datetime(2026, 11, 1, 1, 30, tzinfo=_EST), id="dst-end-05:00"),
+            pytest.param(
+                lambda: datetime.datetime(2026, 11, 1, 1, 30, tzinfo=_zone("America/New_York")),
+                id="dst-end-edt",
+            ),
+            pytest.param(
+                lambda: datetime.datetime(2026, 11, 1, 1, 30, tzinfo=_EST), id="dst-end-05:00"
+            ),
         ],
     )
-    def test_aware_datetime_round_trip(self, engine, values, column, value):
+    def test_aware_datetime_round_trip(self, engine, values, column, make_value):
+        value = make_value()
         got = self._round_trip(engine, values, column, value)
         assert got == value
         assert got.utcoffset() == value.utcoffset()
 
     @pytest.mark.parametrize("column", ["dtz", "tstz"])
     def test_dst_end_second_occurrence_binds(self, request, engine, values, column):
-        value = datetime.datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=_NY)
+        value = datetime.datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=_zone("America/New_York"))
         if not _pycubrid_binds_repeated_hour(value):
             # A version check cannot tell the fix apart: pycubrid main keeps the
             # released version number until the next release.
@@ -3302,6 +3323,8 @@ class TestPycubridValueRoundTrips:
     @pytest.mark.parametrize(("column", "type_"), [("dtz", "DATETIMETZ"), ("tstz", "TIMESTAMPTZ")])
     def test_dst_end_abbreviation_is_decoded(self, request, engine, values, column, type_):
         # The server sends "America/New_York EST"; pycubrid >= 1.9.0 keeps fold=1.
+        # Decoding the zone needs the client's IANA data as well.
+        _zone("America/New_York")
         xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#413", raises=AssertionError)
         with engine.begin() as conn:
             conn.execute(
@@ -3328,6 +3351,7 @@ class TestPycubridValueRoundTrips:
         xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#413", raises=pytest.fail.Exception)
         import pycubrid.packet
 
+        seoul = _zone("Asia/Seoul")
         real = pycubrid.packet.ZoneInfo
 
         def without_seoul(key):
@@ -3339,7 +3363,7 @@ class TestPycubridValueRoundTrips:
         with engine.begin() as conn:
             conn.execute(
                 values.insert(),
-                {"id": 1, "dtz": datetime.datetime(2026, 1, 1, tzinfo=_SEOUL)},
+                {"id": 1, "dtz": datetime.datetime(2026, 1, 1, tzinfo=seoul)},
             )
         monkeypatch.setattr(pycubrid.packet, "ZoneInfo", without_seoul)
         with engine.connect() as conn:

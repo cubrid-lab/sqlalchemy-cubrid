@@ -36,6 +36,7 @@ from sqlalchemy import (
     bindparam,
     create_engine,
     select,
+    text,
 )
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -43,6 +44,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from scripts.integration_urls import async_url
 from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET
+from test._pycubrid_gate import xfail_before_pycubrid
 
 # The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
 # unset and errors them when its server is unreachable (#593).
@@ -153,7 +155,8 @@ _ROWS: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
         {"sq": [None, 2, None]},
         {"sq": [None, 2, None]},
     ),
-    # Every element NULL: pycubrid < 1.9.0 decoded this as raw bytes (pycubrid#483).
+    # Every element NULL, bound as a typed parameter. The decode regression of
+    # pycubrid#483 needs no typed binding: test_all_null_elements_are_decoded.
     "all-null-elements": (
         {"sq": [None, None]},
         {"sq": [None, None]},
@@ -266,6 +269,32 @@ class TestCoreRoundTrip:
         with engine.connect() as conn:
             row = conn.execute(select(core_table)).one()
         assert _normalized(row) == dict.fromkeys(_COLUMNS)
+
+    @pytest.mark.parametrize(
+        ("column", "literal", "expected"),
+        [
+            pytest.param("sq", "SEQUENCE{NULL, NULL}", [None, None], id="sequence"),
+            pytest.param("ms", "MULTISET{NULL}", [None], id="multiset"),
+            pytest.param("s", "SET{NULL}", frozenset({None}), id="set"),
+        ],
+    )
+    def test_all_null_elements_are_decoded(
+        self,
+        request: pytest.FixtureRequest,
+        engine: Engine,
+        core_table: Table,
+        column: str,
+        literal: str,
+        expected: Any,
+    ) -> None:
+        # Seeded with a SQL literal, so it binds no collection and runs on pycubrid
+        # 1.8.0 too, which returned the collection's raw bytes (pycubrid#483).
+        xfail_before_pycubrid(request, (1, 9, 0), "pycubrid#483", raises=AssertionError)
+        with engine.begin() as conn:
+            conn.execute(text(f"INSERT INTO coll_rt_core (id, {column}) VALUES (1, {literal})"))
+        with engine.connect() as conn:
+            got = conn.execute(select(core_table.c[column])).scalar_one()
+        assert got == expected
 
     @pytest.mark.parametrize("insertmanyvalues", _INSERT_PATHS)
     def test_insert_many(
