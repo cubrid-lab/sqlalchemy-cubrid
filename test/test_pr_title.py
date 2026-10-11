@@ -215,6 +215,8 @@ class PrTitleValidatorTest(unittest.TestCase):
             "- Summary\n\n    Closes another-org/another-repo#43",
             "1. Summary\n\n    Closes another-org/another-repo#43",
             "- a\n\n    - Closes another-org/another-repo#43",
+            "- Summary\nlazy continuation\n\n    Closes another-org/another-repo#43",
+            "Intro <!--> Closes another-org/another-repo#43 -->",
             "Use <!-- to start a comment.\n\nCloses another-org/another-repo#43",
             "<!-->\nCloses another-org/another-repo#43",
             f"{fence}a{chr(96)}b\nCloses another-org/another-repo#43",

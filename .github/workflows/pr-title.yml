@@ -126,7 +126,7 @@ jobs:
                   if not in_comment:
                       if re.match(r"(?:[-*+]|[0-9]{1,9}[.)])(?:\s|$)", stripped) and indent <= 3:
                           in_list = True
-                      elif stripped.strip() and indent == 0:
+                      elif stripped.strip() and indent == 0 and after_blank:  # Else lazy continuation.
                           in_list = False
                       if indent >= 4 and after_blank and not in_list and stripped.strip():
                           continue  # Indented Markdown code is inert.
@@ -157,7 +157,7 @@ jobs:
                               in_comment = True  # A line-start comment block ends at "-->".
                               pos = found.start() + 2
                               continue
-                          end = line.find("-->", found.end())
+                          end = line.find("-->", found.start() + 2)
                           if end < 0:
                               output.append(found.group())  # Unclosed inline "<!--" is text.
                               pos = found.end()
