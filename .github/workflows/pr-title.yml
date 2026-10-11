@@ -106,6 +106,7 @@ jobs:
               fence_size = 0
               in_comment = False
               after_blank = True
+              in_list = False  # Indented text in a list item is prose, not code.
               token = re.compile(r"<!--|(?<!\\)\x60+")
               for line in text.splitlines():
                   expanded = line.expandtabs(4)
@@ -123,7 +124,11 @@ jobs:
                           after_blank = True
                       continue
                   if not in_comment:
-                      if indent >= 4 and after_blank and stripped.strip():
+                      if re.match(r"(?:[-*+]|[0-9]{1,9}[.)])(?:\s|$)", stripped) and indent <= 3:
+                          in_list = True
+                      elif stripped.strip() and indent == 0:
+                          in_list = False
+                      if indent >= 4 and after_blank and not in_list and stripped.strip():
                           continue  # Indented Markdown code is inert.
                       if delimiter is not None and not (
                           stripped[0] == "\x60" and "\x60" in stripped[delimiter.end():]

@@ -157,6 +157,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **The PR-body closing guard checks list-continuation lines** — a line indented
+  by four spaces under a list item (`- item`, a blank line, then
+  `    Closes other/repo#N`) is ordinary paragraph text on GitHub, not an indented
+  code block, so the `PR title` check now scans it. Indented code outside a list
+  stays ignored. Regression cases cover bullet, numbered and nested list items.
 - **Repository-local issue closure in PRs** — the required `PR title` check
   rejects direct cross-repository auto-closing keywords, while local
   `Closes #N` and cross-repository `Refs owner/repo#N` remain valid. The
