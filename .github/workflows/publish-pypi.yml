@@ -318,9 +318,12 @@ jobs:
     steps:
       # The report names the package, source commit, artifact and files the
       # cookbook verified; the call outputs alone do not. It is an artifact of
-      # this run, so the download needs no token permission. A missing report
-      # does not stop here: the check below then lists every failed check.
+      # this run, so the download needs no token permission. A failed download
+      # does not stop here: the check below requires its outcome to be success
+      # (the action can extract files before it fails its digest check) and
+      # lists every other failed check too.
       - name: Download the candidate verification report
+        id: download
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -339,6 +342,7 @@ jobs:
           DIST_SHA256: ${{ needs.build.outputs.sha256 }}
           VERSION: ${{ needs.detect.outputs.version }}
           SHA: ${{ needs.detect.outputs.sha }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
         run: |
           python3 - <<'PY'
           import json, os, pathlib, sys
@@ -366,6 +370,7 @@ jobs:
               f" candidate_sha256={env['CANDIDATE_SHA256']} wheel={wheels} artifact={env['ARTIFACT']}"
           )
           checks = {
+              "report download succeeded": env["DOWNLOAD_OUTCOME"] == "success",
               "called workflow succeeded": env["RESULT"] == "success",
               "status is success": env["STATUS"] == "success",
               "evidence is the candidate artifact": env["EVIDENCE"] == "candidate artifact",

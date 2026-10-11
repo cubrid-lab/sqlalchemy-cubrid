@@ -404,6 +404,7 @@ def test_require_candidate_reads_the_report_of_this_request() -> None:
     # and fails on it with every other failed check.
     assert "if" not in download
     assert download["continue-on-error"] is True
+    assert download["id"] == "download"
     # Named from this run's own request_id, never from a call output.
     request_id = RELEASE["jobs"]["verify-candidate"]["with"]["request_id"]
     assert download["with"] == {
@@ -429,6 +430,7 @@ def test_require_candidate_parses_the_outputs_through_env() -> None:
         "DIST_SHA256": "${{ needs.build.outputs.sha256 }}",
         "VERSION": "${{ needs.detect.outputs.version }}",
         "SHA": DETECT_SHA,
+        "DOWNLOAD_OUTCOME": "${{ steps.download.outcome }}",
     }
     run = step["run"]
     assert "${{" not in run
@@ -623,6 +625,7 @@ GOOD_CANDIDATE = {
     "DIST_SHA256": json.dumps(DIST),
     "VERSION": "1.9.0",
     "SHA": SOURCE_SHA,
+    "DOWNLOAD_OUTCOME": "success",
 }
 REPOSITORY = "cubrid-lab/example"
 
@@ -690,6 +693,9 @@ def test_require_candidate_passes_the_built_wheel(tmp_path: Path) -> None:
         pytest.param({"RESULT": "skipped"}, id="call-skipped"),
         pytest.param({"RESULT": "cancelled"}, id="call-cancelled"),
         pytest.param({"GITHUB_REPOSITORY": "someone/fork"}, id="other-repository"),
+        # The action can extract the report before failing its digest check.
+        pytest.param({"DOWNLOAD_OUTCOME": "failure"}, id="download-failed-after-extract"),
+        pytest.param({"DOWNLOAD_OUTCOME": ""}, id="download-not-run"),
         pytest.param({"STATUS": "failure"}, id="status-failure"),
         pytest.param({"EVIDENCE": "published package"}, id="published-evidence"),
         pytest.param({"INSTALLED": "1.8.0"}, id="installed-differs"),
