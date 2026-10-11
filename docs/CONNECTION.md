@@ -22,7 +22,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 
 | Requirement        | Version         |
 |--------------------|-----------------|
-| Python             | 3.10+           |
+| Python             | 3.11+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
 | CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (supported C extension) |

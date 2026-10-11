@@ -34,18 +34,18 @@ SQLAlchemy 2.0–2.1용 현대적 CUBRID 방언을 제공하는, 처음부터 �
 - **DDL 지원** — COMMENT, IF NOT EXISTS / IF EXISTS, AUTO_INCREMENT
 - `CubridImpl`을 통한 **Alembic 마이그레이션 지원**, 방언이 로드될 때 등록됨
 - **광범위한 오프라인 및 통합 테스트 스위트** — CI가 오프라인 스위트에 최소 95% 라인 커버리지 게이트를 강제합니다 (`--cov-fail-under=95`). 현재 테스트 수는 CI job 출력을 참고하세요
-- **CI/CD** — Python 3.10–3.14 × CUBRID 10.2–11.4 매트릭스
+- **CI/CD** — Python 3.11–3.14 × CUBRID 10.2–11.4 매트릭스
 - 방언을 다루는 `docs/`의 **영어 문서 파일 17개**
 
 ### 1.3 성공 기준 — 상태
 
 | 기준 | 목표 | 달성 |
 |---|---|---|
-| Python 3.10+에 설치 가능 | ✅ | ✅ `pip install sqlalchemy-cubrid` |
+| Python 3.11+에 설치 가능 | ✅ | ✅ `pip install sqlalchemy-cubrid` |
 | SQLAlchemy 2.0 – 2.1 호환 | ✅ | ✅ 완전한 API 준수 |
 | 오프라인 테스트 (라이브 DB 없음) | ✅ | ✅ 광범위한 스위트, 커버리지 ≥ 95% CI 강제 |
 | 모든 방언 메서드 구현 | ✅ | ✅ 리플렉션, 컴파일, 타입 |
-| 버전 매트릭스를 갖춘 CI/CD | ✅ | ✅ Py 3.10–3.14 × CUBRID 10.2–11.4 |
+| 버전 매트릭스를 갖춘 CI/CD | ✅ | ✅ Py 3.11–3.14 × CUBRID 10.2–11.4 |
 | PyPI에 게시 가능 | ✅ | ✅ 태그 시 릴리스 워크플로 |
 | Alembic 지원 | ✅ | ✅ CubridImpl 자동 등록 + autogenerate |
 | ≥ 95% 코드 커버리지 | ✅ | ✅ `--cov-fail-under=95`로 CI 강제 |
@@ -94,7 +94,7 @@ graph TD
 | 패키지 | 버전 | 용도 |
 |---|---|---|
 | SQLAlchemy | ≥ 2.0, < 2.2 | 핵심 ORM/엔진 프레임워크 |
-| Python | ≥ 3.10 | 런타임 |
+| Python | ≥ 3.11 | 런타임 |
 | CUBRID-Python | any | DBAPI 드라이버 (선택적 extra) |
 | Alembic | ≥ 1.7.2 | 마이그레이션 지원 (선택적 extra) |
 | pytest | ≥ 7.0 | 테스트 (개발용) |

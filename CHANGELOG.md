@@ -65,6 +65,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialect is unchanged.
 
 ### Documentation
+- **Connection, driver-compatibility and PRD docs state the Python 3.11+ requirement
+  (#697)** — after 1.10.0 raised `requires-python` to `>=3.11`, the `docs/CONNECTION.md`
+  prerequisite row, the `docs/DRIVER_COMPAT.md` Python table (3.10 as the minimum, 3.14 as
+  pre-release) and the `docs/PRD.md` CI matrix, success criteria and dependency rows, with
+  their Korean copies, still described Python 3.10. They now give 3.11 as the minimum,
+  3.11–3.14 as the tested range, as the full compatibility matrix runs them, and mark 3.10
+  as not supported from 1.10.0. Historical rows and measurements are unchanged. Docs only.
 - **The compliance-lane pycubrid pin is labelled as the declared floor (#479)** —
   `docs/SUPPORT_MATRIX.md` (+ ko) listed the pycubrid compliance lanes as "pycubrid 1.8.0
   (recommended)", which read as a recommendation to install 1.8.0. The pin is the declared

@@ -33,18 +33,18 @@ A complete ground-up rewrite delivering a modern CUBRID dialect for SQLAlchemy 2
 - **DDL support** — COMMENT, IF NOT EXISTS / IF EXISTS, AUTO_INCREMENT
 - **Alembic migration support** via `CubridImpl`, registered when the dialect loads
 - **Extensive offline and integration test suites** — CI enforces a minimum 95% line-coverage gate on the offline suite (`--cov-fail-under=95`); see CI job output for current test counts
-- **CI/CD** — Python 3.10–3.14 × CUBRID 10.2–11.4 matrix
+- **CI/CD** — Python 3.11–3.14 × CUBRID 10.2–11.4 matrix
 - **17 English documentation files** in `docs/` covering the dialect
 
 ### 1.3 Success Criteria — Status
 
 | Criterion | Target | Achieved |
 |---|---|---|
-| Installable on Python 3.10+ | ✅ | ✅ `pip install sqlalchemy-cubrid` |
+| Installable on Python 3.11+ | ✅ | ✅ `pip install sqlalchemy-cubrid` |
 | SQLAlchemy 2.0 – 2.1 compatible | ✅ | ✅ Full API compliance |
 | Offline tests (no live DB) | ✅ | ✅ Extensive suite, coverage ≥ 95% CI-enforced |
 | All dialect methods implemented | ✅ | ✅ Reflection, compilation, types |
-| CI/CD with version matrix | ✅ | ✅ Py 3.10–3.14 × CUBRID 10.2–11.4 |
+| CI/CD with version matrix | ✅ | ✅ Py 3.11–3.14 × CUBRID 10.2–11.4 |
 | Publishable to PyPI | ✅ | ✅ Release workflow on tag |
 | Alembic support | ✅ | ✅ CubridImpl auto-registered + autogenerate |
 | ≥ 95% code coverage | ✅ | ✅ CI-enforced via `--cov-fail-under=95` |
@@ -93,7 +93,7 @@ graph TD
 | Package | Version | Purpose |
 |---|---|---|
 | SQLAlchemy | ≥ 2.0, < 2.2 | Core ORM/engine framework |
-| Python | ≥ 3.10 | Runtime |
+| Python | ≥ 3.11 | Runtime |
 | CUBRID-Python | any | DBAPI driver (optional extra) |
 | Alembic | ≥ 1.7.2 | Migration support (optional extra) |
 | pytest | ≥ 7.0 | Testing (dev) |

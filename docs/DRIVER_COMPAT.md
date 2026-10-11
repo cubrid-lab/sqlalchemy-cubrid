@@ -64,11 +64,11 @@ because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations 
 
 | Python | Status | Notes |
 |---|---|---|
-| 3.10 | ✅ Fully supported | Minimum version |
-| 3.11 | ✅ Fully supported | |
+| 3.11 | ✅ Fully supported | Minimum version |
 | 3.12 | ✅ Fully supported | |
 | 3.13 | ✅ Fully supported | |
-| 3.14 | 🔄 CI matrix added | Pre-release; depends on driver C extension compatibility |
+| 3.14 | ✅ Fully supported | |
+| 3.10 | ❌ Not supported from 1.10.0 | Last supported in 1.9.x |
 
 ---
 

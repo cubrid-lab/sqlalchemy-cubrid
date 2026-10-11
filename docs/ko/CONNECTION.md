@@ -24,7 +24,7 @@
 
 | 요구사항           | 버전            |
 |--------------------|-----------------|
-| Python             | 3.10+           |
+| Python             | 3.11+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID 서버        | 10.2 – 11.4     |
 | CUBRID Python 드라이버 | pycubrid (권장) 또는 cubrid-python v11.3.0.51+에서 빌드한 CUBRIDdb (지원되는 C 확장) |
