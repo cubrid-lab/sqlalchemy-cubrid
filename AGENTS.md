@@ -153,24 +153,42 @@ docker compose down -v                        # Cleanup
 
 ## Development Workflow (cubrid-lab org standard)
 
-Maintainers coordinate this 4-phase cycle for non-trivial project work:
+Choose the required review route based on the tool that **actually developed**
+the change and record it in the PR. A requested review, green CI, self-review,
+or an automated "approval recommended" summary is not a completed review.
 
-1. **Oracle Design Review** — Consult Oracle before implementation to validate architecture, API surface, and approach. Raise concerns early.
-2. **Implementation** — Build the feature/fix with tests. Follow existing codebase patterns.
-3. **Documentation Update** — Update ALL affected docs (README, CHANGELOG, ROADMAP, API docs, SUPPORT_MATRIX, PRD, etc.) in the same PR or as an immediate follow-up. Code without doc updates is incomplete.
-4. **Oracle Post-Implementation Review** — Consult Oracle to review the completed work for correctness, edge cases, and consistency before merging.
+**OpenCode with Oracle** — for non-trivial work:
+1. Obtain an Oracle **pre-implementation design review** before coding.
+2. Implement the agreed scope with tests.
+3. Update the affected behavior, support and release documentation.
+4. Obtain an Oracle **post-implementation code review** of the actual result,
+   address material findings, and record both review outcomes and validation.
 
-Skipping any phase requires explicit justification. Trivial changes (typos, single-line fixes) may skip phases 1 and 4.
+Trivial OpenCode edits may omit Oracle phases 1 and 4 only with a recorded reason.
+The two Oracle reviews satisfy this development route without an additional
+automatic requirement for GitHub Copilot. Repository/branch protection,
+maintainer approval, and required CI still apply.
 
-Outside contributors follow `CONTRIBUTING.md`: explain the change, implement tests
-and matching documentation, and open a PR with executed checks and gaps.
-Maintainers arrange project-specific Oracle/Codex reviews, integration and release
-classification. Contributors do not need a particular agent/tool installation,
-repository secrets, release access or label-write permissions. An AI review is
-review evidence; report commands actually executed separately.
+**Standalone agents (Claude Code, Codex, ChatGPT, or other agent tools)** —
+implement, test, document and open a PR; **wait for a substantive submitted
+GitHub Copilot review or a review by another person** before merge.
+A submitted COMMENTED review containing a real code assessment counts as review
+evidence, but not as formal GitHub APPROVED. Review requests, bot summaries
+without substantive assessment, self-review and green CI do not satisfy the
+review requirement. Check accepted fixes at the final relevant head; if no
+qualifying review arrives, leave the PR unmerged.
+
+**Human contributions** — follow the normal contributor/review process.
+This route is not a fallback for unnamed standalone agent tools, which use
+the route above. Maintainers coordinate internal tools, integration, evidence
+and release classification; no external contributor must install OpenCode,
+Oracle, Claude Code, Codex or Copilot. Preserve authorship and include tool
+attribution only when that tool actually produced the work.
+
 Use English for GitHub issues, pull requests and comments; localized documentation contributions remain welcome.
 
-5. **All changes to `main` MUST go through a Pull Request** with at least one review. No direct pushes.
+All changes to `main` must go through a reviewed PR; no direct pushes. Broad
+review/backlog requests do not authorize assigned or reserved good-first issues.
 
 ## Agent PR scope and review guardrails
 
@@ -191,6 +209,24 @@ Use English for GitHub issues, pull requests and comments; localized documentati
 - Maintain one editable, agent-owned English status comment. Avoid bot mentions in
   routine updates, per-finding progress replies and repeated review requests.
   Preserve contributor history; revisit external PRs only after an author-updated head SHA.
+
+## Review disposition and merge evidence
+
+- Record development route, reviewer or Oracle design/post review evidence,
+  reviewed head SHA and pending/complete status in the PR.
+- Classify actionable findings as fixed (commit plus focused test), rejected
+  (contract/reproduction reason), or deferred (linked issue and rationale).
+  A submitted COMMENTED review is not formal APPROVED status.
+- Post one **final** disposition reply in each relevant inline thread rather
+  than repeated progress messages. A maintainer or reviewer resolves only after
+  checking the updated code and evidence. Replies and outdated diffs do not
+  automatically resolve a thread; do not bulk-resolve old conversations.
+- Keep one editable, agent-owned English PR status comment with overall review
+  outcome, required CI, checks not run, and unresolved threads.
+- Before merge confirm the route and the final relevant code. Never merge with
+  required review still pending, failed required CI, or unresolved
+  critical/security findings. Give nonblocking open threads an explicit
+  maintainer disposition. Do not change branch protection or auto-merge here.
 
 ## Test Structure
 
