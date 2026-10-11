@@ -163,8 +163,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `release-dist` wheel of the same run (exact file set and SHA-256 checked against
   the `build` job's `sha256` output), and `require-candidate`, which requires
   `status == success`, `evidence == candidate artifact`, installed == requested ==
-  the release version and the verified digest == the built wheel's digest.
-  `publish` needs `require-candidate` and now also checks `dist/` and
+  the release version and the verified digest == the built wheel's digest, and
+  whose downloaded candidate report must name this package, request and run,
+  `release-dist`, the release commit and the build's file map. `publish` needs
+  `require-candidate` and now also checks `dist/` and
   `release-meta/` against the `build` job outputs `sha256` and the new
   `meta_sha256` (`scripts/verify_dist.py`) before tagging. The gate is skipped
   only to complete a publish whose tag already points at the release commit. A

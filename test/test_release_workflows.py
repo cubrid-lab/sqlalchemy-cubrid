@@ -390,10 +390,31 @@ def test_candidate_is_verified_before_publish_through_the_same_workflow() -> Non
     assert verify["with"]["candidate_artifact"] in downloads
 
 
-def test_require_candidate_parses_the_outputs_through_env() -> None:
+def require_steps() -> tuple[dict[str, Any], dict[str, Any]]:
+    download, check = steps(RELEASE["jobs"]["require-candidate"])
+    return download, check
+
+
+def test_require_candidate_reads_the_report_of_this_request() -> None:
     require = RELEASE["jobs"]["require-candidate"]
     assert require["permissions"] == {}
-    (step,) = steps(require)
+    download, _ = require_steps()
+    assert str(download["uses"]).startswith("actions/download-artifact@")
+    assert download["if"] == "needs.verify-candidate.result != 'skipped'"
+    # Named from this run's own request_id, never from a call output.
+    request_id = RELEASE["jobs"]["verify-candidate"]["with"]["request_id"]
+    assert download["with"] == {
+        "name": "release-candidate-verification-${{ env.PACKAGE }}-rc-v"
+        "${{ needs.detect.outputs.version }}-${{ github.run_id }}",
+        "path": "candidate-report/",
+    }
+    assert request_id.replace(RELEASE["env"]["PACKAGE"], "${{ env.PACKAGE }}", 1) == (
+        download["with"]["name"].removeprefix("release-candidate-verification-")
+    )
+
+
+def test_require_candidate_parses_the_outputs_through_env() -> None:
+    _, step = require_steps()
     assert step["env"] == {
         "RESULT": "${{ needs.verify-candidate.result }}",
         "STATUS": "${{ needs.verify-candidate.outputs.status }}",
@@ -404,6 +425,7 @@ def test_require_candidate_parses_the_outputs_through_env() -> None:
         "ARTIFACT": "${{ needs.verify-candidate.outputs.artifact }}",
         "DIST_SHA256": "${{ needs.build.outputs.sha256 }}",
         "VERSION": "${{ needs.detect.outputs.version }}",
+        "SHA": DETECT_SHA,
         "PUBLISH": "${{ needs.detect.outputs.publish }}",
         "TAG_STATE": "${{ needs.detect.outputs.tag_state }}",
     }
@@ -417,15 +439,14 @@ def test_require_candidate_parses_the_outputs_through_env() -> None:
     assert run.count("exit 0") == 1
     for check in (
         'hashes = json.loads(env["DIST_SHA256"])',
-        'env["RESULT"] == "success"',
-        'env["STATUS"] == "success"',
-        'env["EVIDENCE"] == "candidate artifact"',
-        'env["INSTALLED"] == env["REQUESTED"] == env["VERSION"]',
-        'env["CANDIDATE_SHA256"] == expected',
-        "len(wheels) == 1",
+        'candidate.get("files") == hashes',
+        'candidate.get("source_sha") == env["SHA"]',
         "sys.exit(1)",
     ):
         assert check in run, check
+    # The candidate artifact name the report must carry is the one passed in.
+    candidate_artifact = RELEASE["jobs"]["verify-candidate"]["with"]["candidate_artifact"]
+    assert f'== "{candidate_artifact}"' in run
 
 
 def test_cookbook_is_verified_through_the_pinned_reusable_workflow() -> None:
@@ -583,6 +604,14 @@ def test_blocked_publication_fails_preparation_before_release_please() -> None:
 
 
 WHEEL_SHA = "1" * 64
+RUN_ID = "4242"
+SOURCE_SHA = "c" * 40
+PACKAGE_UNDERSCORE = RELEASE["env"]["PACKAGE"].replace("-", "_")
+DIST = {
+    f"{PACKAGE_UNDERSCORE}-1.9.0-py3-none-any.whl": WHEEL_SHA,
+    f"{PACKAGE_UNDERSCORE}-1.9.0.tar.gz": "2" * 64,
+}
+REQUEST_ID = f"{RELEASE['env']['PACKAGE']}-rc-v1.9.0-{RUN_ID}"
 GOOD_CANDIDATE = {
     "RESULT": "success",
     "STATUS": "success",
@@ -590,36 +619,66 @@ GOOD_CANDIDATE = {
     "REQUESTED": "1.9.0",
     "INSTALLED": "1.9.0",
     "CANDIDATE_SHA256": WHEEL_SHA,
-    "ARTIFACT": "release-candidate-verification-x",
-    "DIST_SHA256": json.dumps(
-        {
-            f"{RELEASE['env']['PACKAGE'].replace('-', '_')}-1.9.0-py3-none-any.whl": WHEEL_SHA,
-            f"{RELEASE['env']['PACKAGE'].replace('-', '_')}-1.9.0.tar.gz": "2" * 64,
-        }
-    ),
+    "ARTIFACT": f"release-candidate-verification-{REQUEST_ID}",
+    "DIST_SHA256": json.dumps(DIST),
     "VERSION": "1.9.0",
+    "SHA": SOURCE_SHA,
     "PUBLISH": "true",
     "TAG_STATE": "absent",
 }
 
 
-def run_require_candidate(**overrides: str) -> subprocess.CompletedProcess[str]:
-    (step,) = steps(RELEASE["jobs"]["require-candidate"])
+def good_report() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "request_id": REQUEST_ID,
+        "package": RELEASE["env"]["PACKAGE"],
+        "requested_version": "1.9.0",
+        "installed_version": "1.9.0",
+        "status": "success",
+        "reasons": [],
+        "evidence": "candidate artifact",
+        "run": {"id": RUN_ID, "attempt": "1"},
+        "candidate": {
+            "artifact": "release-dist",
+            "wheel": f"{PACKAGE_UNDERSCORE}-1.9.0-py3-none-any.whl",
+            "source_sha": SOURCE_SHA,
+            "files": dict(DIST),
+            "expected_sha256": WHEEL_SHA,
+            "candidate_sha256": WHEEL_SHA,
+        },
+    }
+
+
+def run_require_candidate(
+    tmp_path: Path, report: Any = None, **overrides: str
+) -> subprocess.CompletedProcess[str]:
+    _, step = require_steps()
+    if report is not None:
+        (tmp_path / "candidate-report").mkdir()
+        text = report if isinstance(report, str) else json.dumps(report)
+        (tmp_path / "candidate-report" / "release-verification.json").write_text(text)
     env = {
         "PATH": os.environ["PATH"],
         "PACKAGE": RELEASE["env"]["PACKAGE"],
+        "GITHUB_RUN_ID": RUN_ID,
         **GOOD_CANDIDATE,
         **overrides,
     }
     return subprocess.run(
-        ["bash", "-e", "-c", step["run"]], env=env, capture_output=True, text=True, check=False
+        ["bash", "-e", "-c", step["run"]],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
-def test_require_candidate_passes_the_built_wheel() -> None:
-    result = run_require_candidate()
+def test_require_candidate_passes_the_built_wheel(tmp_path: Path) -> None:
+    result = run_require_candidate(tmp_path, good_report())
     assert result.returncode == 0, result.stdout + result.stderr
-    assert f"sha256 {WHEEL_SHA}" in result.stdout
+    assert f"sha256 {WHEEL_SHA} from {SOURCE_SHA}" in result.stdout
 
 
 @pytest.mark.parametrize(
@@ -635,6 +694,9 @@ def test_require_candidate_passes_the_built_wheel() -> None:
         pytest.param({"INSTALLED": "1.8.0"}, id="installed-differs"),
         pytest.param({"INSTALLED": ""}, id="installed-empty"),
         pytest.param({"REQUESTED": "1.8.0", "INSTALLED": "1.8.0"}, id="not-the-release"),
+        pytest.param({"ARTIFACT": "release-candidate-verification-other"}, id="other-report"),
+        pytest.param({"SHA": "d" * 40}, id="other-source-commit"),
+        pytest.param({"GITHUB_RUN_ID": "1"}, id="other-run"),
         pytest.param({"DIST_SHA256": "not json"}, id="map-not-json"),
         pytest.param({"DIST_SHA256": "[]"}, id="map-not-object"),
         pytest.param({"DIST_SHA256": json.dumps({"x.tar.gz": WHEEL_SHA})}, id="no-wheel"),
@@ -644,13 +706,54 @@ def test_require_candidate_passes_the_built_wheel() -> None:
         ),
     ],
 )
-def test_require_candidate_fails_closed(overrides: dict[str, str]) -> None:
-    result = run_require_candidate(**overrides)
+def test_require_candidate_fails_closed(tmp_path: Path, overrides: dict[str, str]) -> None:
+    result = run_require_candidate(tmp_path, good_report(), **overrides)
     assert result.returncode != 0, result.stdout
     assert "::error::Candidate verification failed" in result.stdout, result.stderr
 
 
-def test_require_candidate_passes_a_tagged_resume_without_a_call() -> None:
-    result = run_require_candidate(RESULT="skipped", TAG_STATE="same", CANDIDATE_SHA256="")
+def _report(path: str, value: Any) -> dict[str, Any]:
+    report = good_report()
+    target = report
+    *parents, key = path.split(".")
+    for parent in parents:
+        target = target[parent]
+    target[key] = value
+    return report
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        pytest.param(None, id="report-missing"),
+        pytest.param("not json", id="report-not-json"),
+        pytest.param([], id="report-not-object"),
+        pytest.param(_report("package", "sqlalchemy-cubrid-x"), id="report-other-package"),
+        pytest.param(_report("request_id", "x-rc-v1.9.0-4242"), id="report-other-request"),
+        pytest.param(_report("requested_version", "1.8.0"), id="report-other-version"),
+        pytest.param(_report("installed_version", None), id="report-not-installed"),
+        pytest.param(_report("status", "failure"), id="report-failure"),
+        pytest.param(_report("evidence", "published package"), id="report-published"),
+        pytest.param(_report("run.id", "1"), id="report-other-run"),
+        pytest.param(_report("candidate", None), id="report-no-candidate"),
+        pytest.param(_report("candidate.artifact", "other-dist"), id="report-other-artifact"),
+        pytest.param(_report("candidate.source_sha", "d" * 40), id="report-other-source"),
+        pytest.param(_report("candidate.files", {"x.whl": WHEEL_SHA}), id="report-other-files"),
+        pytest.param(
+            _report("candidate.wheel", "x-1.9.0-py3-none-any.whl"), id="report-other-wheel"
+        ),
+        pytest.param(_report("candidate.candidate_sha256", None), id="report-unverified"),
+    ],
+)
+def test_require_candidate_fails_closed_on_the_report(tmp_path: Path, report: Any) -> None:
+    result = run_require_candidate(tmp_path, report)
+    assert result.returncode != 0, result.stdout
+    assert "::error::Candidate verification failed" in result.stdout, result.stderr
+
+
+def test_require_candidate_passes_a_tagged_resume_without_a_call(tmp_path: Path) -> None:
+    result = run_require_candidate(
+        tmp_path, None, RESULT="skipped", TAG_STATE="same", CANDIDATE_SHA256=""
+    )
     assert result.returncode == 0, result.stdout + result.stderr
     assert "without the candidate gate" in result.stdout
