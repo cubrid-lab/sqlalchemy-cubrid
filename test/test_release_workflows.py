@@ -7,7 +7,10 @@ sqlalchemy-cubrid and cubrid-mcp-server; this repo retains its registered publis
 
 from __future__ import annotations
 
+import json
+import os
 import re
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +23,7 @@ PINNED = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 COOKBOOK_SMOKE = re.compile(
     r"^cubrid-lab/cubrid-cookbook-python/\.github/workflows/smoke-test\.yml@[0-9a-f]{40}$"
 )
+COOKBOOK_REF = re.compile(r"cubrid-cookbook-python/\.github/workflows/smoke-test\.yml@(\S*)")
 DETECT_SHA = "${{ needs.detect.outputs.sha }}"
 
 
@@ -118,6 +122,8 @@ EXPECTED_PERMISSIONS = {
     "consistency": {"contents": "read"},
     "matrix": {"contents": "read"},
     "build": {"contents": "read"},
+    "verify-candidate": {"contents": "read"},
+    "require-candidate": {},
     "publish": {"contents": "write", "id-token": "write"},
     "verify-cookbook": {"contents": "read"},
     "require-cookbook": {},
@@ -159,7 +165,15 @@ def test_job_graph() -> None:
     assert jobs["consistency"]["needs"] == ["detect"]
     assert jobs["matrix"]["needs"] == ["detect", "consistency"]
     assert jobs["build"]["needs"] == ["detect", "matrix"]
-    assert jobs["publish"]["needs"] == ["detect", "consistency", "matrix", "build"]
+    assert jobs["verify-candidate"]["needs"] == ["detect", "build"]
+    assert jobs["require-candidate"]["needs"] == ["detect", "build", "verify-candidate"]
+    assert jobs["publish"]["needs"] == [
+        "detect",
+        "consistency",
+        "matrix",
+        "build",
+        "require-candidate",
+    ]
     assert jobs["verify-cookbook"]["needs"] == ["detect", "build", "publish"]
     assert jobs["require-cookbook"]["needs"] == ["detect", "verify-cookbook"]
     assert jobs["summary"]["needs"] == [
@@ -167,19 +181,37 @@ def test_job_graph() -> None:
         "consistency",
         "matrix",
         "build",
+        "verify-candidate",
+        "require-candidate",
         "publish",
         "verify-cookbook",
         "require-cookbook",
     ]
     for name in ("consistency", "matrix", "build"):
         assert jobs[name]["if"] == "needs.detect.outputs.build == 'true'", name
-    # No status function: publish runs only when every earlier job succeeded.
-    assert jobs["publish"]["if"] == "needs.detect.outputs.publish == 'true'"
+    # The candidate gate runs after every successful build: dry run, push and
+    # resume alike. Builds are not reproducible, so a resume (which rebuilds)
+    # never inherits an earlier run's verification; there is no tag-state skip.
+    assert jobs["verify-candidate"]["if"] == "needs.build.result == 'success'"
+    for name in ("verify-candidate", "require-candidate", "publish"):
+        assert "tag_state" not in str(jobs[name].get("if", "")), name
+    # A status function, so a failed verify-candidate still reaches the gate,
+    # which lists every failed check.
+    assert jobs["require-candidate"]["if"] == "!cancelled() && needs.build.result == 'success'"
+    # !cancelled() plus explicit results: only these results gate publish.
+    assert " ".join(jobs["publish"]["if"].split()) == (
+        "!cancelled() && needs.detect.outputs.publish == 'true' && "
+        "needs.consistency.result == 'success' && needs.matrix.result == 'success' && "
+        "needs.build.result == 'success' && needs.require-candidate.result == 'success'"
+    )
     assert jobs["publish"]["environment"]["name"] == "pypi"
     verify_if = " ".join(jobs["verify-cookbook"]["if"].split())
-    # Not always(): cancelling a dry run must not start the cookbook smoke test.
-    assert verify_if.startswith("!cancelled() && needs.detect.outputs.verify == 'true' &&")
-    assert "needs.publish.result == 'success'" in verify_if
+    # Not always(): cancelling a run must not start the cookbook smoke test. A dry
+    # run publishes nothing, so only verify-candidate verifies it.
+    assert verify_if == (
+        "!cancelled() && needs.detect.outputs.verify == 'true' && "
+        "(needs.publish.result == 'success' || needs.detect.outputs.mode == 'verify-only')"
+    )
     assert jobs["require-cookbook"]["if"] == (
         "always() && needs.verify-cookbook.result != 'skipped'"
     )
@@ -195,7 +227,11 @@ def test_release_content_comes_from_the_detected_sha() -> None:
         assert checkout["persist-credentials"] is False
     # Tooling-only jobs sparse-check out their scripts from the workflow commit.
     for name, script in (
-        ("publish", "scripts/pypi_duplicate_guard.py\nscripts/check_release_title.py\n"),
+        (
+            "publish",
+            "scripts/pypi_duplicate_guard.py\nscripts/check_release_title.py\n"
+            "scripts/verify_dist.py\n",
+        ),
         ("summary", "scripts/release_summary.py"),
     ):
         (checkout,) = checkouts(jobs[name])
@@ -213,6 +249,7 @@ def test_release_content_comes_from_the_detected_sha() -> None:
 def test_publish_order_tag_draft_pypi_undraft() -> None:
     names = [s.get("name", s.get("uses", "")) for s in steps(RELEASE["jobs"]["publish"])]
     order = [
+        "Check dist/ and release-meta/ against the build job outputs",
         "Check the distribution against the recorded hashes",
         "Create the annotated tag",
         "Create the draft GitHub Release with the SBOM",
@@ -268,17 +305,155 @@ def test_build_once_with_hashes_and_recoverable_artifacts() -> None:
     assert all(u["retention-days"] == 14 for u in uploads)
     publish_runs = "\n".join(s.get("run", "") for s in steps(RELEASE["jobs"]["publish"]))
     assert "python -m build" not in publish_runs
+    assert RELEASE["jobs"]["build"]["outputs"] == {
+        "sha256": "${{ steps.hashes.outputs.sha256 }}",
+        "meta_sha256": "${{ steps.hashes.outputs.meta_sha256 }}",
+    }
+    (hashes,) = [s for s in build if s.get("id") == "hashes"]
+    assert '("meta_sha256", "release-meta")' in hashes["run"]
+    # Nothing writes to release-meta/ after its digests are recorded.
+    after = build[build.index(hashes) + 1 :]
+    assert all("release-meta" not in s.get("run", "") for s in after)
+
+
+def test_publish_checks_artifacts_against_the_build_job_outputs() -> None:
+    publish = steps(RELEASE["jobs"]["publish"])
+    (check,) = [
+        s
+        for s in publish
+        if s.get("name") == "Check dist/ and release-meta/ against the build job outputs"
+    ]
+    assert check["env"] == {
+        "DIST_SHA256": "${{ needs.build.outputs.sha256 }}",
+        "META_SHA256": "${{ needs.build.outputs.meta_sha256 }}",
+    }
+    assert check["run"].splitlines() == [
+        "python3 scripts/verify_dist.py --dir dist --expected-env DIST_SHA256",
+        "python3 scripts/verify_dist.py --dir release-meta --expected-env META_SHA256",
+    ]
+    names = [s.get("name", "") for s in publish]
+    assert names.index("Download the verified distribution") < names.index(check["name"])
+    assert names.index("Download release notes, SBOM and hashes") < names.index(check["name"])
+    # Before the tag and anything public; before the guard trims dist/.
+    assert names.index(check["name"]) < names.index("Create the annotated tag")
+    assert names.index(check["name"]) < names.index("Compare dist/ with files already on PyPI")
+
+
+def test_every_cookbook_reference_uses_one_pinned_main_commit() -> None:
+    lines = [
+        line
+        for line in (WORKFLOWS / "publish-pypi.yml").read_text().splitlines()
+        if "cubrid-cookbook-python/.github/workflows/smoke-test.yml@" in line
+    ]
+    assert len(lines) == 2, lines
+    for line in lines:
+        assert line.endswith(" # main"), line
+    refs = {match.group(1) for line in lines for match in COOKBOOK_REF.finditer(line)}
+    assert len(refs) == 1, refs
+    (ref,) = refs
+    assert re.fullmatch(r"[0-9a-f]{40}", ref), ref
+    for name in ("verify-candidate", "verify-cookbook"):
+        uses = RELEASE["jobs"][name]["uses"]
+        assert COOKBOOK_SMOKE.match(uses), (name, uses)
+        assert uses.endswith("@" + ref), (name, uses)
+
+
+def test_candidate_is_verified_before_publish_through_the_same_workflow() -> None:
+    verify = RELEASE["jobs"]["verify-candidate"]
+    assert verify["permissions"] == {"contents": "read"}
+    assert set(verify) == {"name", "needs", "if", "permissions", "uses", "with"}
+    assert verify["with"] == {
+        "package": "sqlalchemy-cubrid",
+        "version": "${{ needs.detect.outputs.version }}",
+        "request_id": "sqlalchemy-cubrid-rc-v${{ needs.detect.outputs.version }}-${{ github.run_id }}",
+        "mode": "candidate",
+        "candidate_artifact": "release-dist",
+        "candidate_hashes": "${{ needs.build.outputs.sha256 }}",
+        "candidate_source_sha": DETECT_SHA,
+    }
+    # Stable across attempts, so `gh run rerun --failed` replaces only the
+    # failed cells' parts; `--` is reserved by the cookbook part names.
+    assert "run_attempt" not in verify["with"]["request_id"]
+    assert "--" not in verify["with"]["request_id"]
+    uploads = [
+        s["with"]["name"]
+        for s in steps(RELEASE["jobs"]["build"])
+        if str(s.get("uses", "")).startswith("actions/upload-artifact@")
+    ]
+    assert verify["with"]["candidate_artifact"] in uploads
+    # publish uploads the same artifact the cookbook verified, never a rebuild.
+    downloads = [
+        s["with"]["name"]
+        for s in steps(RELEASE["jobs"]["publish"])
+        if str(s.get("uses", "")).startswith("actions/download-artifact@")
+    ]
+    assert verify["with"]["candidate_artifact"] in downloads
+
+
+def require_steps() -> tuple[dict[str, Any], dict[str, Any]]:
+    download, check = steps(RELEASE["jobs"]["require-candidate"])
+    return download, check
+
+
+def test_require_candidate_reads_the_report_of_this_request() -> None:
+    require = RELEASE["jobs"]["require-candidate"]
+    assert require["permissions"] == {}
+    download, _ = require_steps()
+    assert str(download["uses"]).startswith("actions/download-artifact@")
+    # A missing report must not hide the diagnostics: the check step still runs
+    # and fails on it with every other failed check.
+    assert "if" not in download
+    assert download["continue-on-error"] is True
+    assert download["id"] == "download"
+    # Named from this run's own request_id, never from a call output.
+    request_id = RELEASE["jobs"]["verify-candidate"]["with"]["request_id"]
+    assert download["with"] == {
+        "name": "release-candidate-verification-${{ env.PACKAGE }}-rc-v"
+        "${{ needs.detect.outputs.version }}-${{ github.run_id }}",
+        "path": "candidate-report/",
+    }
+    assert request_id.replace(RELEASE["env"]["PACKAGE"], "${{ env.PACKAGE }}", 1) == (
+        download["with"]["name"].removeprefix("release-candidate-verification-")
+    )
+
+
+def test_require_candidate_parses_the_outputs_through_env() -> None:
+    _, step = require_steps()
+    assert step["env"] == {
+        "RESULT": "${{ needs.verify-candidate.result }}",
+        "STATUS": "${{ needs.verify-candidate.outputs.status }}",
+        "EVIDENCE": "${{ needs.verify-candidate.outputs.evidence }}",
+        "REQUESTED": "${{ needs.verify-candidate.outputs.requested_version }}",
+        "INSTALLED": "${{ needs.verify-candidate.outputs.installed_version }}",
+        "CANDIDATE_SHA256": "${{ needs.verify-candidate.outputs.candidate_sha256 }}",
+        "ARTIFACT": "${{ needs.verify-candidate.outputs.artifact }}",
+        "DIST_SHA256": "${{ needs.build.outputs.sha256 }}",
+        "VERSION": "${{ needs.detect.outputs.version }}",
+        "SHA": DETECT_SHA,
+        "DOWNLOAD_OUTCOME": "${{ steps.download.outcome }}",
+    }
+    run = step["run"]
+    assert "${{" not in run
+    # No pass without a verified candidate: no early exit, no skip branch.
+    assert run.startswith("python3 - <<'PY'\n")
+    assert "exit 0" not in run and "skipped" not in run
+    for check in (
+        'run.get("caller_repository")',
+        'env["GITHUB_REPOSITORY"]',
+        'hashes = json.loads(env["DIST_SHA256"])',
+        'candidate.get("files") == hashes',
+        'candidate.get("source_sha") == env["SHA"]',
+        "sys.exit(1)",
+    ):
+        assert check in run, check
+    # The candidate artifact name the report must carry is the one passed in.
+    candidate_artifact = RELEASE["jobs"]["verify-candidate"]["with"]["candidate_artifact"]
+    assert f'== "{candidate_artifact}"' in run
 
 
 def test_cookbook_is_verified_through_the_pinned_reusable_workflow() -> None:
     verify = RELEASE["jobs"]["verify-cookbook"]
     assert COOKBOOK_SMOKE.match(verify["uses"]), verify["uses"]
-    line = next(
-        line
-        for line in (WORKFLOWS / "publish-pypi.yml").read_text().splitlines()
-        if "cubrid-cookbook-python/.github/workflows/smoke-test.yml@" in line
-    )
-    assert line.endswith(" # main"), line
     assert verify["permissions"] == {"contents": "read"}
     assert set(verify) == {"name", "needs", "if", "permissions", "uses", "with"}
     assert verify["with"] == {
@@ -428,3 +603,173 @@ def test_blocked_publication_fails_preparation_before_release_please() -> None:
     assert names.index("Reconcile completed external releases") < names.index(
         "Freeze reviewed release PRs"
     )
+
+
+WHEEL_SHA = "1" * 64
+RUN_ID = "4242"
+SOURCE_SHA = "c" * 40
+PACKAGE_UNDERSCORE = RELEASE["env"]["PACKAGE"].replace("-", "_")
+DIST = {
+    f"{PACKAGE_UNDERSCORE}-1.9.0-py3-none-any.whl": WHEEL_SHA,
+    f"{PACKAGE_UNDERSCORE}-1.9.0.tar.gz": "2" * 64,
+}
+REQUEST_ID = f"{RELEASE['env']['PACKAGE']}-rc-v1.9.0-{RUN_ID}"
+GOOD_CANDIDATE = {
+    "RESULT": "success",
+    "STATUS": "success",
+    "EVIDENCE": "candidate artifact",
+    "REQUESTED": "1.9.0",
+    "INSTALLED": "1.9.0",
+    "CANDIDATE_SHA256": WHEEL_SHA,
+    "ARTIFACT": f"release-candidate-verification-{REQUEST_ID}",
+    "DIST_SHA256": json.dumps(DIST),
+    "VERSION": "1.9.0",
+    "SHA": SOURCE_SHA,
+    "DOWNLOAD_OUTCOME": "success",
+}
+REPOSITORY = "cubrid-lab/example"
+
+
+def good_report() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "request_id": REQUEST_ID,
+        "package": RELEASE["env"]["PACKAGE"],
+        "requested_version": "1.9.0",
+        "installed_version": "1.9.0",
+        "status": "success",
+        "reasons": [],
+        "evidence": "candidate artifact",
+        "run": {"id": RUN_ID, "attempt": "1", "caller_repository": REPOSITORY},
+        "candidate": {
+            "artifact": "release-dist",
+            "wheel": f"{PACKAGE_UNDERSCORE}-1.9.0-py3-none-any.whl",
+            "source_sha": SOURCE_SHA,
+            "files": dict(DIST),
+            "expected_sha256": WHEEL_SHA,
+            "candidate_sha256": WHEEL_SHA,
+        },
+    }
+
+
+def run_require_candidate(
+    tmp_path: Path, report: Any = None, **overrides: str
+) -> subprocess.CompletedProcess[str]:
+    _, step = require_steps()
+    if report is not None:
+        (tmp_path / "candidate-report").mkdir()
+        text = report if isinstance(report, str) else json.dumps(report)
+        (tmp_path / "candidate-report" / "release-verification.json").write_text(text)
+    env = {
+        "PATH": os.environ["PATH"],
+        "PACKAGE": RELEASE["env"]["PACKAGE"],
+        "GITHUB_RUN_ID": RUN_ID,
+        "GITHUB_REPOSITORY": REPOSITORY,
+        **GOOD_CANDIDATE,
+        **overrides,
+    }
+    return subprocess.run(
+        ["bash", "-e", "-c", step["run"]],
+        env=env,
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_require_candidate_passes_the_built_wheel(tmp_path: Path) -> None:
+    result = run_require_candidate(tmp_path, good_report())
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert f"sha256 {WHEEL_SHA} from {SOURCE_SHA}" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        pytest.param({"CANDIDATE_SHA256": "0" * 64}, id="bad-digest"),
+        pytest.param({"CANDIDATE_SHA256": ""}, id="no-digest"),
+        pytest.param({"RESULT": "failure"}, id="call-failed"),
+        pytest.param({"RESULT": "skipped"}, id="call-skipped"),
+        pytest.param({"RESULT": "cancelled"}, id="call-cancelled"),
+        pytest.param({"GITHUB_REPOSITORY": "someone/fork"}, id="other-repository"),
+        # The action can extract the report before failing its digest check.
+        pytest.param({"DOWNLOAD_OUTCOME": "failure"}, id="download-failed-after-extract"),
+        pytest.param({"DOWNLOAD_OUTCOME": ""}, id="download-not-run"),
+        pytest.param({"STATUS": "failure"}, id="status-failure"),
+        pytest.param({"EVIDENCE": "published package"}, id="published-evidence"),
+        pytest.param({"INSTALLED": "1.8.0"}, id="installed-differs"),
+        pytest.param({"INSTALLED": ""}, id="installed-empty"),
+        pytest.param({"REQUESTED": "1.8.0", "INSTALLED": "1.8.0"}, id="not-the-release"),
+        pytest.param({"ARTIFACT": "release-candidate-verification-other"}, id="other-report"),
+        pytest.param({"SHA": "d" * 40}, id="other-source-commit"),
+        pytest.param({"GITHUB_RUN_ID": "1"}, id="other-run"),
+        pytest.param({"DIST_SHA256": "not json"}, id="map-not-json"),
+        pytest.param({"DIST_SHA256": "[]"}, id="map-not-object"),
+        pytest.param({"DIST_SHA256": json.dumps({"x.tar.gz": WHEEL_SHA})}, id="no-wheel"),
+        pytest.param(
+            {"DIST_SHA256": json.dumps({"a-1.9.0-py3-none-any.whl": WHEEL_SHA})},
+            id="wheel-of-another-package",
+        ),
+    ],
+)
+def test_require_candidate_fails_closed(tmp_path: Path, overrides: dict[str, str]) -> None:
+    result = run_require_candidate(tmp_path, good_report(), **overrides)
+    assert result.returncode != 0, result.stdout
+    assert "::error::Candidate verification failed" in result.stdout, result.stderr
+
+
+def _report(path: str, value: Any) -> dict[str, Any]:
+    report = good_report()
+    target = report
+    *parents, key = path.split(".")
+    for parent in parents:
+        target = target[parent]
+    target[key] = value
+    return report
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        pytest.param(None, id="report-missing"),
+        pytest.param("not json", id="report-not-json"),
+        pytest.param([], id="report-not-object"),
+        pytest.param(_report("package", "sqlalchemy-cubrid-x"), id="report-other-package"),
+        pytest.param(_report("request_id", "x-rc-v1.9.0-4242"), id="report-other-request"),
+        pytest.param(_report("requested_version", "1.8.0"), id="report-other-version"),
+        pytest.param(_report("installed_version", None), id="report-not-installed"),
+        pytest.param(_report("status", "failure"), id="report-failure"),
+        pytest.param(_report("evidence", "published package"), id="report-published"),
+        pytest.param(_report("run.id", "1"), id="report-other-run"),
+        pytest.param(_report("run.caller_repository", "someone/fork"), id="report-other-repo"),
+        pytest.param(_report("run.caller_repository", None), id="report-no-repo"),
+        pytest.param(_report("candidate", None), id="report-no-candidate"),
+        pytest.param(_report("candidate.artifact", "other-dist"), id="report-other-artifact"),
+        pytest.param(_report("candidate.source_sha", "d" * 40), id="report-other-source"),
+        pytest.param(_report("candidate.files", {"x.whl": WHEEL_SHA}), id="report-other-files"),
+        pytest.param(
+            _report("candidate.wheel", "x-1.9.0-py3-none-any.whl"), id="report-other-wheel"
+        ),
+        pytest.param(_report("candidate.candidate_sha256", None), id="report-unverified"),
+    ],
+)
+def test_require_candidate_fails_closed_on_the_report(tmp_path: Path, report: Any) -> None:
+    result = run_require_candidate(tmp_path, report)
+    assert result.returncode != 0, result.stdout
+    assert "::error::Candidate verification failed" in result.stdout, result.stderr
+
+
+def test_require_candidate_never_passes_without_a_call(tmp_path: Path) -> None:
+    # A skipped call (formerly the tagged-resume pass) fails like any other.
+    result = run_require_candidate(tmp_path, None, RESULT="skipped", CANDIDATE_SHA256="")
+    assert result.returncode != 0, result.stdout
+    assert "::error::Candidate verification failed" in result.stdout, result.stderr
+
+
+def test_missing_report_lists_every_failed_check(tmp_path: Path) -> None:
+    result = run_require_candidate(tmp_path, None)
+    assert result.returncode != 0
+    (error,) = [line for line in result.stdout.splitlines() if line.startswith("::error::")]
+    for check in ("report names this package", "report files == build job map"):
+        assert check in error, error

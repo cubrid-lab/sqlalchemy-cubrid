@@ -5,6 +5,8 @@ from __future__ import annotations
 import configparser
 import re
 import shlex
+import tomllib
+from collections.abc import Mapping
 from importlib import metadata
 from pathlib import Path
 from typing import Callable
@@ -22,17 +24,100 @@ def _unique(pattern: str, text: str, label: str) -> str:
 PIN_GROUPS = {"ruff": "lint", "mypy": "typecheck"}
 
 
-def _group(project: str, name: str) -> str:
-    groups = _unique(r"^\[dependency-groups\]\n(.*?)(?=^\[|\Z)", project, "dependency groups")
-    return _unique(rf"^{name}\s*=\s*\[\n(.*?)^\]", groups, f"{name} dependency group")
+def _project(root: Path) -> dict[str, object]:
+    with (root / "pyproject.toml").open("rb") as source:
+        return tomllib.load(source)
+
+
+def _table(source: Mapping[str, object], key: str, label: str) -> dict[str, object]:
+    value = source.get(key)
+    if value is None:
+        raise ValueError(f"{label}: expected one declaration, found 0")
+    if not isinstance(value, dict):
+        raise ValueError(f"{label}: expected a TOML table")
+    return value
+
+
+def _strings(source: Mapping[str, object], key: str, label: str) -> list[str]:
+    value = source.get(key)
+    if value is None:
+        raise ValueError(f"{label}: expected one declaration, found 0")
+    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
+        raise ValueError(f"{label}: expected a list of strings")
+    return value
+
+
+def _one(values: list[str], label: str) -> str:
+    if len(values) != 1:
+        raise ValueError(f"{label}: expected one declaration, found {len(values)}")
+    return values[0]
+
+
+def _group(project: Mapping[str, object], name: str) -> list[str]:
+    groups = _table(project, "dependency-groups", "dependency groups")
+    label = f"{name} dependency group"
+    values = groups.get(name)
+    if values is None:
+        raise ValueError(f"{label}: expected one declaration, found 0")
+    if not isinstance(values, list):
+        raise ValueError(f"{label}: expected a list of strings")
+    requirements = []
+    for value in values:
+        if isinstance(value, str):
+            requirements.append(value)
+        elif not (
+            isinstance(value, dict)
+            and set(value) == {"include-group"}
+            and isinstance(value["include-group"], str)
+        ):
+            raise ValueError(f"{label}: expected requirements or include-group entries")
+    return requirements
+
+
+def _requirement_name(requirement: str) -> str:
+    for index, char in enumerate(requirement):
+        if char in "[<>=!~; \t":
+            return requirement[:index]
+    return requirement
+
+
+def _exact_pin(requirement: str, tool: str) -> str | None:
+    name, separator, version = requirement.partition("==")
+    name = name.strip()
+    version = version.strip()
+    if (
+        not separator
+        or not version
+        or any(char.isspace() or char in "<>=~;*#@," for char in version)
+    ):
+        return None
+    if name != tool:
+        prefix = f"{tool}["
+        if not name.startswith(prefix) or not name.endswith("]"):
+            return None
+        extras = name[len(prefix) : -1]
+        if not extras or "[" in extras or "]" in extras:
+            return None
+    return version
+
+
+def _declared_pins(project: Mapping[str, object]) -> dict[str, str]:
+    pins = {}
+    for tool, group in PIN_GROUPS.items():
+        requirements = [
+            requirement
+            for requirement in _group(project, group)
+            if _requirement_name(requirement) == tool
+        ]
+        version = _exact_pin(_one(requirements, tool), tool)
+        if version is None:
+            raise ValueError(f"{tool}: expected one declaration, found 0")
+        pins[tool] = version
+    return pins
 
 
 def declared_pins(root: Path) -> dict[str, str]:
-    project = (root / "pyproject.toml").read_text()
-    return {
-        tool: _unique(rf'^\s*"{tool}==([^"\n]+)"\s*,?\s*$', _group(project, group), tool)
-        for tool, group in PIN_GROUPS.items()
-    }
+    return _declared_pins(_project(root))
 
 
 def check_environment(
@@ -66,18 +151,22 @@ def check_environment(
 
 
 def check(root: Path) -> list[str]:
-    project = (root / "pyproject.toml").read_text()
+    project = _project(root)
     # Each tool must still declare exactly one exact group pin (the single source
     # of truth); check_environment() verifies the active environment actually
     # matches it, since the local/system hooks and group-sourced tox envs always
     # run whatever is installed instead of a separately declared version.
-    declared_pins(root)
-    extras = _unique(
-        r"^\[project\.optional-dependencies\]\n(.*?)(?=^\[|\Z)", project, "published extras"
-    )
+    _declared_pins(project)
+    project_metadata = _table(project, "project", "project metadata")
+    extras = _table(project_metadata, "optional-dependencies", "published extras")
     test_group = _group(project, "test")
-    alembic = _unique(r'^\s*"(alembic[^"\n]+)"\s*,?\s*$', test_group, "Alembic requirement")
-    alembic_extra = _unique(r"^alembic\s*=\s*\[\n(.*?)^\]", project, "Alembic extra")
+    alembic = _one(
+        [requirement for requirement in test_group if _requirement_name(requirement) == "alembic"],
+        "Alembic requirement",
+    )
+    if not any(char in alembic for char in "<>=!~"):
+        raise ValueError("Alembic requirement: expected one declaration, found 0")
+    alembic_extra = _strings(extras, "alembic", "Alembic extra")
     hooks = (root / ".pre-commit-config.yaml").read_text()
     workflow = (root / ".github/workflows/ci.yml").read_text()
     typecheck = _unique(r"^  typecheck:\n(.*?)(?=^  [\w-]+:|\Z)", workflow, "CI typecheck job")
@@ -91,7 +180,7 @@ def check(root: Path) -> list[str]:
     tox.read(root / "tox.ini")
     makefile = (root / "Makefile").read_text()
     errors: list[str] = []
-    if re.search(r"^dev\s*=", extras, re.MULTILINE):
+    if "dev" in extras:
         errors.append(
             "pyproject.toml: the dev tooling belongs in [dependency-groups], not an extra"
         )
@@ -114,11 +203,11 @@ def check(root: Path) -> list[str]:
         "python -m scripts.check_integration_connection"
     ):
         errors.append("tox integration must run its pure-driver connection preflight first")
-    ruff = _unique(r"^\[tool.ruff\]\n(.*?)(?=^\[|\Z)", project, "Ruff configuration")
-    included = _unique(r"^include\s*=\s*\[([^\n]+)\]", ruff, "Ruff file scope")
-    if re.findall(r'"([^"\n]+)"', included) != ["*.py", "*.pyi"]:
+    ruff = _table(_table(project, "tool", "tool configuration"), "ruff", "Ruff configuration")
+    included = _strings(ruff, "include", "Ruff file scope")
+    if included != ["*.py", "*.pyi"]:
         errors.append("Ruff CLI file scope must be Python/pyi, matching the source hooks")
-    if _unique(r'^\s*"([^"\n]+)"\s*,?\s*$', alembic_extra, "Alembic extra requirement") != alembic:
+    if _one(alembic_extra, "Alembic extra requirement") != alembic:
         errors.append("Alembic test-group requirement and the alembic extra must agree")
 
     # Ruff and Mypy pre-commit hooks are `repo: local` / `language: system` hooks
@@ -216,7 +305,14 @@ def check(root: Path) -> list[str]:
             "tox testenv must install the test, lint and typecheck dependency groups "
             "instead of repeating their requirements in deps"
         )
-    declared = {"py" + v.replace(".", "") for v in re.findall(r"Python :: (3\.\d+)", project)}
+    python_classifier = "Programming Language :: Python :: "
+    declared = {
+        "py" + version.replace(".", "")
+        for classifier in _strings(project_metadata, "classifiers", "Python classifiers")
+        if classifier.startswith(python_classifier)
+        and (version := classifier.removeprefix(python_classifier)).startswith("3.")
+        and version[2:].isdigit()
+    }
     envs = {env.strip() for env in tox.get("tox", "envlist").replace("\n", "").split(",")}
     if not declared <= envs:
         errors.append("tox envlist: missing " + ", ".join(sorted(declared - envs)))

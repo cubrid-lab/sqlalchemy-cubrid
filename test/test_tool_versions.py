@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -127,17 +128,22 @@ def test_duplicate_local_hook_id_fails(tooling_config: Path) -> None:
 def test_dependabot_style_pin_bump_alone_does_not_require_hook_or_tox_edit(
     tooling_config: Path,
 ) -> None:
-    """The whole point of local/system pre-commit hooks and dev-extra-sourced
+    """The whole point of local/system pre-commit hooks and group-sourced
     tox envs: bumping only the pyproject.toml pin (what Dependabot's pip
     ecosystem does) must not require touching .pre-commit-config.yaml or
     tox.ini, since neither has a separate version to keep in sync."""
     config = tooling_config / "pyproject.toml"
     original = config.read_text()
-    config.write_text(
-        original.replace('"ruff==0.16.9"', '"ruff==99.0.0"').replace(
-            '"mypy==2.3.1"', '"mypy==99.0.0"'
-        )
-    )
+    pins = declared_pins(tooling_config)
+    bumped = {tool: f"{version}.999" for tool, version in pins.items()}
+    updated = original
+    for tool in pins:
+        current = f'"{tool}=={pins[tool]}"'
+        assert current in updated
+        updated = updated.replace(current, f'"{tool}=={bumped[tool]}"', 1)
+    assert updated != original
+    config.write_text(updated)
+    assert declared_pins(tooling_config) == bumped
     assert check(tooling_config) == []
 
 
@@ -187,6 +193,85 @@ def test_pins_are_read_from_their_dependency_groups() -> None:
     pins = declared_pins(ROOT)
     assert set(pins) == {"ruff", "mypy"}
     assert all(pins.values())
+
+
+@pytest.mark.parametrize("requirement", ["ruff[toml]=={pin}", "ruff[toml] == {pin} "])
+def test_exact_tool_pin_with_extras_is_read_structurally(
+    tooling_config: Path, requirement: str
+) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    pin = declared_pins(tooling_config)["ruff"]
+    updated = original.replace(f'"ruff=={pin}"', f'"{requirement.format(pin=pin)}"')
+    assert updated != original
+    config.write_text(updated)
+    assert declared_pins(tooling_config)["ruff"] == pin
+    assert check(tooling_config) == []
+
+
+def test_valid_toml_list_formatting_is_accepted(tooling_config: Path) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    pin = declared_pins(tooling_config)["ruff"]
+    updated = original.replace(
+        f'lint = [\n    "ruff=={pin}",\n]', f'lint = ["ruff=={pin}"]'
+    ).replace('include = ["*.py", "*.pyi"]', 'include = [\n    "*.py",\n    "*.pyi",\n]')
+    assert updated != original
+    config.write_text(updated)
+    assert check(tooling_config) == []
+
+
+def test_dependency_group_include_is_accepted(tooling_config: Path) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    pin = declared_pins(tooling_config)["ruff"]
+    updated = original.replace(
+        f'lint = [\n    "ruff=={pin}",',
+        f'lint = [\n    "ruff=={pin}",\n    {{include-group = "release"}},',
+    )
+    assert updated != original
+    config.write_text(updated)
+    assert check(tooling_config) == []
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        ("", "lint dependency group: expected one declaration, found 0"),
+        ('lint = ["ruff>={pin}"]', "ruff: expected one declaration, found 0"),
+        ('lint = ["""ruff=={pin}\ninvalid"""]', "ruff: expected one declaration, found 0"),
+        (
+            'lint = ["ruff=={pin}", "ruff[toml]=={pin}"]',
+            "ruff: expected one declaration, found 2",
+        ),
+        (
+            'lint = ["ruff=={pin}", "ruff>={pin}"]',
+            "ruff: expected one declaration, found 2",
+        ),
+        ('lint = "ruff=={pin}"', "lint dependency group: expected a list of strings"),
+    ],
+)
+def test_invalid_tool_pins_fail_clearly(
+    tooling_config: Path, replacement: str, message: str
+) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    pin = declared_pins(tooling_config)["ruff"]
+    updated = original.replace(f'lint = [\n    "ruff=={pin}",\n]', replacement.format(pin=pin))
+    assert updated != original
+    config.write_text(updated)
+    with pytest.raises(ValueError, match=message):
+        declared_pins(tooling_config)
+
+
+def test_unbounded_alembic_requirement_is_rejected(tooling_config: Path) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    requirement = tomllib.loads(original)["project"]["optional-dependencies"]["alembic"][0]
+    assert original.count(f'"{requirement}"') == 2
+    config.write_text(original.replace(f'"{requirement}"', '"alembic"'))
+    with pytest.raises(ValueError, match="Alembic requirement: expected one declaration, found 0"):
+        check(tooling_config)
 
 
 def test_published_dev_extra_is_detected(tooling_config: Path) -> None:

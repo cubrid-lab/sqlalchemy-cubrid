@@ -14,11 +14,19 @@
 #   matrix       integration-full.yml through workflow_call
 #   build        wheel + sdist once, twine check, smoke installs, SHA-256 list,
 #                release notes and SBOM; artifacts kept 14 days for recovery
-#   publish      annotated tag at the SHA, draft GitHub Release + SBOM, PyPI
-#                upload of that artifact through the duplicate guard (OIDC,
-#                `pypi` environment), then the Release is published
-#   verify-cookbook  cubrid-cookbook-python smoke-test.yml for that exact version,
-#                called as a reusable workflow (jobs of this run, no token)
+#   verify-candidate  cubrid-cookbook-python smoke-test.yml in candidate mode on
+#                the `release-dist` wheel of this run, before anything is
+#                published; every run that builds runs it (resume included)
+#   require-candidate status success, evidence `candidate artifact`, installed
+#                == requested == the version, the verified wheel digest == the
+#                build job's digest, and the report names this package, request,
+#                release-dist, release commit and the build's files
+#   publish      re-checks the artifacts against the build job outputs, annotated
+#                tag at the SHA, draft GitHub Release + SBOM, PyPI upload of
+#                that artifact through the duplicate guard (OIDC, `pypi`
+#                environment), then the Release is published
+#   verify-cookbook  cubrid-cookbook-python smoke-test.yml for that exact version
+#                from PyPI, called as a reusable workflow (jobs of this run, no token)
 #   require-cookbook status success and installed == requested
 #   summary      one table; always runs
 #
@@ -32,7 +40,7 @@
 # sqlalchemy-cubrid and cubrid-mcp-server except for the filename (this repo
 # keeps the registered PyPI publisher identity), the `env:` block below and
 # the smoke-test steps of the build job and the package name in the `with:`
-# inputs of verify-cookbook.
+# inputs of verify-candidate and verify-cookbook.
 name: Release
 
 on:
@@ -162,6 +170,7 @@ jobs:
       contents: read
     outputs:
       sha256: ${{ steps.hashes.outputs.sha256 }}
+      meta_sha256: ${{ steps.hashes.outputs.meta_sha256 }}
     env:
       VERSION: ${{ needs.detect.outputs.version }}
       TAG: ${{ needs.detect.outputs.tag }}
@@ -245,10 +254,14 @@ jobs:
         run: |
           set -euo pipefail
           (cd dist && sha256sum -- *) | tee release-meta/SHA256SUMS
+          # sha256 maps dist/ and meta_sha256 maps release-meta/ (written last:
+          # nothing changes release-meta/ after this step). Job outputs cannot
+          # be changed by a later job, unlike the artifacts.
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import hashlib, json, pathlib
-          hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(pathlib.Path("dist").iterdir())}
-          print("sha256=" + json.dumps(hashes, separators=(",", ":")))
+          for key, folder in (("sha256", "dist"), ("meta_sha256", "release-meta")):
+              hashes = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(pathlib.Path(folder).iterdir())}
+              print(key + "=" + json.dumps(hashes, separators=(",", ":")))
           PY
 
       - name: Upload the verified distribution
@@ -267,10 +280,139 @@ jobs:
           retention-days: 14
           if-no-files-found: error
 
+  # The cookbook smoke test in candidate mode, on the exact `release-dist` bytes
+  # this run built, before anything is tagged or uploaded (cubrid-cookbook-python
+  # docs/internal/rc-verification-design.md, section 13). Same pin as
+  # verify-cookbook. Never skipped after a successful build: builds are not
+  # reproducible, so a `resume` (which rebuilds) must verify its own bytes. A
+  # `gh run rerun --failed` of the same run keeps this job's earlier success,
+  # because it reuses the same build outputs and `release-dist` artifact.
+  verify-candidate:
+    name: Cookbook candidate verification
+    needs: [detect, build]
+    if: needs.build.result == 'success'
+    permissions:
+      contents: read # all the called workflow needs
+    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@98866c2fff9ed4745bd0f63aec7d619c1830895e # main
+    with:
+      package: sqlalchemy-cubrid
+      version: ${{ needs.detect.outputs.version }}
+      # Stable across run attempts (no run_attempt), so `gh run rerun --failed`
+      # replaces only the failed cells' parts.
+      request_id: sqlalchemy-cubrid-rc-v${{ needs.detect.outputs.version }}-${{ github.run_id }}
+      mode: candidate
+      candidate_artifact: release-dist
+      candidate_hashes: ${{ needs.build.outputs.sha256 }}
+      candidate_source_sha: ${{ needs.detect.outputs.sha }}
+
+  # Enforces the candidate outputs and report; publish needs this job. A status
+  # function keeps a failed verify-candidate from skipping it, so the failed
+  # checks are listed.
+  require-candidate:
+    name: Require a verified candidate
+    needs: [detect, build, verify-candidate]
+    if: "!cancelled() && needs.build.result == 'success'"
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      # The report names the package, source commit, artifact and files the
+      # cookbook verified; the call outputs alone do not. It is an artifact of
+      # this run, so the download needs no token permission. A failed download
+      # does not stop here: the check below requires its outcome to be success
+      # (the action can extract files before it fails its digest check) and
+      # lists every other failed check too.
+      - name: Download the candidate verification report
+        id: download
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: release-candidate-verification-${{ env.PACKAGE }}-rc-v${{ needs.detect.outputs.version }}-${{ github.run_id }}
+          path: candidate-report/
+
+      - name: Require the verified candidate to be the built wheel
+        env:
+          RESULT: ${{ needs.verify-candidate.result }}
+          STATUS: ${{ needs.verify-candidate.outputs.status }}
+          EVIDENCE: ${{ needs.verify-candidate.outputs.evidence }}
+          REQUESTED: ${{ needs.verify-candidate.outputs.requested_version }}
+          INSTALLED: ${{ needs.verify-candidate.outputs.installed_version }}
+          CANDIDATE_SHA256: ${{ needs.verify-candidate.outputs.candidate_sha256 }}
+          ARTIFACT: ${{ needs.verify-candidate.outputs.artifact }}
+          DIST_SHA256: ${{ needs.build.outputs.sha256 }}
+          VERSION: ${{ needs.detect.outputs.version }}
+          SHA: ${{ needs.detect.outputs.sha }}
+          DOWNLOAD_OUTCOME: ${{ steps.download.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib, sys
+          env = os.environ
+          package, version = env["PACKAGE"], env["VERSION"]
+          request_id = f"{package}-rc-v{version}-{env['GITHUB_RUN_ID']}"
+          report_name = "release-candidate-verification-" + request_id
+          wheel_prefix = package.replace("-", "_") + "-" + version + "-"
+          try:
+              hashes = json.loads(env["DIST_SHA256"])
+          except ValueError:
+              hashes = None
+          wheels = [name for name in hashes if name.endswith(".whl")] if isinstance(hashes, dict) else []
+          expected = hashes[wheels[0]] if len(wheels) == 1 and wheels[0].startswith(wheel_prefix) else ""
+          try:
+              report = json.loads(pathlib.Path("candidate-report/release-verification.json").read_text())
+          except (OSError, ValueError):
+              report = None
+          report = report if isinstance(report, dict) else {}
+          candidate = report.get("candidate") if isinstance(report.get("candidate"), dict) else {}
+          run = report.get("run") if isinstance(report.get("run"), dict) else {}
+          print(
+              f"result={env['RESULT']} status={env['STATUS']} evidence={env['EVIDENCE']}"
+              f" requested={env['REQUESTED']} installed={env['INSTALLED']}"
+              f" candidate_sha256={env['CANDIDATE_SHA256']} wheel={wheels} artifact={env['ARTIFACT']}"
+          )
+          checks = {
+              "report download succeeded": env["DOWNLOAD_OUTCOME"] == "success",
+              "called workflow succeeded": env["RESULT"] == "success",
+              "status is success": env["STATUS"] == "success",
+              "evidence is the candidate artifact": env["EVIDENCE"] == "candidate artifact",
+              "installed == requested == release version": bool(env["INSTALLED"])
+              and env["INSTALLED"] == env["REQUESTED"] == version,
+              "build job lists exactly one wheel of this version": bool(expected),
+              "verified digest == built wheel digest": bool(expected)
+              and env["CANDIDATE_SHA256"] == expected,
+              "report artifact is this request's": env["ARTIFACT"] == report_name,
+              "report names this package, request and version": report.get("package") == package
+              and report.get("request_id") == request_id
+              and report.get("requested_version") == version
+              and report.get("installed_version") == version,
+              "report status success, candidate evidence": report.get("status") == "success"
+              and report.get("evidence") == "candidate artifact",
+              "report candidate is release-dist built from the release commit": candidate.get("artifact")
+              == "release-dist"
+              and candidate.get("source_sha") == env["SHA"],
+              "report files == build job map": bool(hashes) and candidate.get("files") == hashes,
+              "report wheel and digest == built wheel": bool(expected)
+              and candidate.get("wheel") == wheels[0]
+              and candidate.get("candidate_sha256") == expected,
+              "report is from this run": str(run.get("id")) == env["GITHUB_RUN_ID"],
+              "report is from this repository": run.get("caller_repository")
+              == env["GITHUB_REPOSITORY"],
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          if failed:
+              print(f"::error::Candidate verification failed for {package} {version}: " + "; ".join(failed))
+              sys.exit(1)
+          print(f"Cookbook verified candidate {wheels[0]} sha256 {expected} from {env['SHA']} (report artifact {report_name})")
+          PY
+
   publish:
     name: Tag, GitHub Release and PyPI
-    needs: [detect, consistency, matrix, build]
-    if: needs.detect.outputs.publish == 'true'
+    needs: [detect, consistency, matrix, build, require-candidate]
+    # !cancelled() plus explicit results: only these jobs gate publish, and
+    # require-candidate must have succeeded in this run.
+    if: >-
+      !cancelled() && needs.detect.outputs.publish == 'true' &&
+      needs.consistency.result == 'success' && needs.matrix.result == 'success' &&
+      needs.build.result == 'success' && needs.require-candidate.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -299,6 +441,7 @@ jobs:
           sparse-checkout: |
             scripts/pypi_duplicate_guard.py
             scripts/check_release_title.py
+            scripts/verify_dist.py
           sparse-checkout-cone-mode: false
           persist-credentials: false
 
@@ -313,6 +456,17 @@ jobs:
         with:
           name: release-meta
           path: release-meta/
+
+      # The trust anchor is the build job's outputs, not an artifact: any job of
+      # this run (the cookbook calls included) could replace a same-named
+      # artifact, but not a finished job's outputs. Exact file set, every digest.
+      - name: Check dist/ and release-meta/ against the build job outputs
+        env:
+          DIST_SHA256: ${{ needs.build.outputs.sha256 }}
+          META_SHA256: ${{ needs.build.outputs.meta_sha256 }}
+        run: |
+          python3 scripts/verify_dist.py --dir dist --expected-env DIST_SHA256
+          python3 scripts/verify_dist.py --dir release-meta --expected-env META_SHA256
 
       - name: Check the distribution against the recorded hashes
         run: (cd dist && sha256sum --strict -c ../release-meta/SHA256SUMS)
@@ -396,16 +550,14 @@ jobs:
   verify-cookbook:
     name: Cookbook release verification
     needs: [detect, build, publish]
-    # After a successful publish; or, without publishing, after a successful
-    # dry-run build or for verify-only.
+    # After a successful publish, or for verify-only. A dry run publishes
+    # nothing, so it is verified by verify-candidate instead.
     if: >-
       !cancelled() && needs.detect.outputs.verify == 'true' &&
-      (needs.publish.result == 'success' ||
-      (needs.detect.outputs.publish != 'true' &&
-      (needs.detect.outputs.mode == 'verify-only' || needs.build.result == 'success')))
+      (needs.publish.result == 'success' || needs.detect.outputs.mode == 'verify-only')
     permissions:
       contents: read # all the called workflow needs
-    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@27f98d6f8ca8c87f5cb6ed25f623fa170fb9178f # main
+    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@98866c2fff9ed4745bd0f63aec7d619c1830895e # main
     with:
       package: sqlalchemy-cubrid
       version: ${{ needs.detect.outputs.version }}
@@ -442,7 +594,16 @@ jobs:
 
   summary:
     name: Release summary
-    needs: [detect, consistency, matrix, build, publish, verify-cookbook, require-cookbook]
+    needs:
+      - detect
+      - consistency
+      - matrix
+      - build
+      - verify-candidate
+      - require-candidate
+      - publish
+      - verify-cookbook
+      - require-cookbook
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
