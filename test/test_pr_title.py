@@ -163,6 +163,8 @@ class PrTitleValidatorTest(unittest.TestCase):
             "Closes cubrid-lab/pycubrid#833.",
             "Fixes https://github.com/cubrid-lab/cubrid-mcp-server/issues/271",
             "Resolves another-org/another-repo#42",
+            "Closes: another-org/another-repo#42",
+            "FIXES: another-org/another-repo#42",
         ):
             with self.subTest(body=body):
                 result = _run("docs: align issue ownership", body)
@@ -186,6 +188,8 @@ class PrTitleValidatorTest(unittest.TestCase):
             f"Use {chr(96) * 2}Closes another-org/another-repo#42{chr(96) * 2} only there.",
             "<!--\nCloses another-org/another-repo#42\n-->",
             f"<!-- {chr(96) * 3} -->\nCloses #810",
+            "# Example\n    Closes another-org/another-repo#42",
+            "Intro <!-- Closes another-org/another-repo#42 --> outro",
         ):
             with self.subTest(body=body):
                 result = _run("docs: align issue ownership", body)
@@ -208,6 +212,10 @@ class PrTitleValidatorTest(unittest.TestCase):
             f"<!-- {fence} -->\nCloses another-org/another-repo#43",
             "Unclosed `code and Closes another-org/another-repo#43",
             "Paragraph text\n    Closes another-org/another-repo#43",
+            "Use <!-- to start a comment.\n\nCloses another-org/another-repo#43",
+            "<!-->\nCloses another-org/another-repo#43",
+            f"{fence}a{chr(96)}b\nCloses another-org/another-repo#43",
+            f"\\{chr(96)}Closes another-org/another-repo#43\\{chr(96)}",
         ):
             with self.subTest(body=body):
                 result = _run("docs: align issue ownership", body)

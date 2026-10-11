@@ -106,7 +106,7 @@ jobs:
               fence_size = 0
               in_comment = False
               after_blank = True
-              token = re.compile(r"<!--|\x60+")
+              token = re.compile(r"<!--|(?<!\\)\x60+")
               for line in text.splitlines():
                   expanded = line.expandtabs(4)
                   stripped = expanded.lstrip(" ")
@@ -125,10 +125,14 @@ jobs:
                   if not in_comment:
                       if indent >= 4 and after_blank and stripped.strip():
                           continue  # Indented Markdown code is inert.
-                      if delimiter is not None:
+                      if delimiter is not None and not (
+                          stripped[0] == "\x60" and "\x60" in stripped[delimiter.end():]
+                      ):  # A backtick fence's info string cannot contain a backtick.
                           fence_char, fence_size = delimiter.group()[0], len(delimiter.group())
                           continue
-                  after_blank = not line.strip()
+                  # Indented code may also follow a blank line or an ATX heading.
+                  heading = re.match(r" {0,3}#{1,6}(?:\s|$)", expanded)
+                  after_blank = not line.strip() or heading is not None
                   pos = 0
                   while pos < len(line):
                       if in_comment:
@@ -144,8 +148,16 @@ jobs:
                           break
                       output.append(line[pos:found.start()])
                       if found.group() == "<!--":
-                          in_comment = True
-                          pos = found.end()
+                          if found.start() == len(line) - len(line.lstrip(" ")) <= 3:
+                              in_comment = True  # A line-start comment block ends at "-->".
+                              pos = found.start() + 2
+                              continue
+                          end = line.find("-->", found.end())
+                          if end < 0:
+                              output.append(found.group())  # Unclosed inline "<!--" is text.
+                              pos = found.end()
+                          else:
+                              pos = end + 3
                           continue
                       run = re.escape(found.group())
                       close = re.compile(rf"(?<!\x60){run}(?!\x60)").search(line, found.end())
@@ -160,7 +172,7 @@ jobs:
 
           body = strip_inert_markdown(os.environ.get("PR_BODY", ""))
           close_ref = re.compile(
-              r"(?i)\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+"
+              r"(?i)\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved):?\s+"
               r"(?:https://(?:www\.)?github\.com/)?"
               r"(?P<owner>[a-z0-9][a-z0-9-]*)/(?P<repo>[a-z0-9_.-]+)"
               r"(?:#|/issues/)(?P<number>[1-9][0-9]*)\b"
