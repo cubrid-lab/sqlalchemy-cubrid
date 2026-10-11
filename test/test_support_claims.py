@@ -45,8 +45,8 @@ def test_deprecated_extra_is_allowed_but_deprecated_driver_is_rejected() -> None
     )
 
 
-def test_dev_and_pycubrid_sqlalchemy_bounds_must_match_project() -> None:
-    for group in ("dev", "pycubrid"):
+def test_test_group_and_pycubrid_sqlalchemy_bounds_must_match_project() -> None:
+    for group in ("test", "pycubrid"):
         start = METADATA.index(f"{group} = [")
         end = METADATA.index("\n]", start)
         section = METADATA[start:end]
@@ -56,8 +56,9 @@ def test_dev_and_pycubrid_sqlalchemy_bounds_must_match_project() -> None:
             + section.replace("sqlalchemy[asyncio]>=2.0,<2.2", "sqlalchemy[asyncio]>=2.0,<2.3")
             + METADATA[end:]
         )
-        assert "pyproject.toml: project, dev and pycubrid SQLAlchemy bounds differ" in check_claims(
-            metadata, README, MATRIX
+        assert (
+            "pyproject.toml: project, test group and pycubrid SQLAlchemy bounds differ"
+            in check_claims(metadata, README, MATRIX)
         )
 
 

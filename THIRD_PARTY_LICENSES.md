@@ -15,12 +15,14 @@ own table below:
 | `[pycubrid]` | `pip install "sqlalchemy-cubrid[pycubrid]"` | Pure-Python driver (recommended) |
 | `[alembic]` | `pip install "sqlalchemy-cubrid[alembic]"` | Alembic migrations |
 | `[cubrid]` / `[cubriddb]` | `pip install "sqlalchemy-cubrid[cubrid]"` | Legacy C-extension driver CUBRID-Python |
-| `[dev]` | `pip install -e ".[dev]"` | Contributors' development and test toolchain |
+| `dev` dependency group | `pip install -e . --group dev` (pip >= 25.1) | Contributors' development and test toolchain |
 
-None of the extras is installed by default.
+None of the extras is installed by default. The `dev` dependency group (PEP 735)
+is not part of the published package metadata, so no `pip install
+sqlalchemy-cubrid` command can request it.
 
 **greenlet.** SQLAlchemy 2.1 no longer installs `greenlet` by default; it comes
-with `sqlalchemy[asyncio]`, which the `[pycubrid]` and `[dev]` extras request.
+with `sqlalchemy[asyncio]`, which the `[pycubrid]` extra and the `dev` dependency group request.
 The declared range `sqlalchemy>=2.0,<2.2` also admits SQLAlchemy 2.0.x, whose
 default install adds `greenlet` (MIT AND PSF-2.0) on common platforms. Either
 way the license is the one listed in the `[pycubrid]` table.
@@ -53,7 +55,7 @@ way the license is the one listed in the `[pycubrid]` table.
   also accepts ISC, 0BSD, Unlicense, Public Domain and a generic "BSD" or "BSD
   License" declaration as permissive. Most packages fall here.
 - **Weak (file-level) copyleft: MPL**: `certifi`, `hypothesis`, `pathspec`, all
-  MPL-2.0 and all in the `[dev]` scope only. MPL-2.0 is not a permissive
+  MPL-2.0 and all in the `dev` group scope only. MPL-2.0 is not a permissive
   license. Its obligations attach to the MPL-covered files themselves: anyone
   distributing those files, modified or not, must make their source available
   under MPL-2.0 and keep their notices. Because MPL-2.0 is file-level, it never
@@ -70,7 +72,7 @@ these inventories.
 
 ### Reviewed entries
 
-- **docutils** (0.23, `[dev]` only, pulled in by `twine` through
+- **docutils** (0.23, `dev` group only, pulled in by `twine` through
   `readme_renderer`). Its metadata carries Public Domain, BSD and GPL
   classifiers. Its `COPYING.rst` places most files in the public domain, with
   BSD-2-Clause exceptions including `docutils/utils/math/latex2mathml.py`,
@@ -116,9 +118,10 @@ uv pip install -p /tmp/tpl-runtime/bin/python .
 /tmp/tpl-runtime/bin/python scripts/generate_third_party_licenses.py --exclude sqlalchemy-cubrid
 
 # Repeat with a fresh environment for each extra:
-#   .[pycubrid]  .[alembic]  .[cubrid]  .[dev]
+#   .[pycubrid]  .[alembic]  .[cubrid]
+# and for the dev dependency group (#765):
 uv venv -p 3.12 /tmp/tpl-dev
-uv pip install -p /tmp/tpl-dev/bin/python ".[dev]"
+uv pip install -p /tmp/tpl-dev/bin/python . --group dev
 /tmp/tpl-dev/bin/python scripts/generate_third_party_licenses.py --exclude sqlalchemy-cubrid
 ```
 
@@ -168,7 +171,7 @@ the tables, not by the test.
 | SQLAlchemy | 2.1.4 | MIT | Permissive | https://www.sqlalchemy.org |
 | typing_extensions | 4.16.0 | PSF-2.0 | Permissive | https://github.com/python/typing_extensions |
 
-## Development / test dependencies: `[dev]` (73 packages, not distributed)
+## Development / test dependencies: `dev` dependency group (73 packages, not distributed)
 
 | Name | Version | License | Category | URL |
 |---|---|---|---|---|

@@ -180,3 +180,42 @@ def test_integration_preflight_cannot_be_omitted(tooling_config: Path) -> None:
         config.read_text().replace("python -m scripts.check_integration_connection", "")
     )
     assert any("preflight first" in error for error in check(tooling_config))
+
+
+def test_pins_are_read_from_their_dependency_groups() -> None:
+    # #765: Ruff and Mypy are pinned once, in the lint and typecheck groups.
+    pins = declared_pins(ROOT)
+    assert set(pins) == {"ruff", "mypy"}
+    assert all(pins.values())
+
+
+def test_published_dev_extra_is_detected(tooling_config: Path) -> None:
+    config = tooling_config / "pyproject.toml"
+    config.write_text(
+        config.read_text().replace(
+            "[project.optional-dependencies]\n",
+            '[project.optional-dependencies]\ndev = [\n    "pytest>=7.0",\n]\n',
+        )
+    )
+    assert any("[dependency-groups], not an extra" in error for error in check(tooling_config))
+
+
+def test_tox_test_requirements_repeated_in_deps_are_detected(tooling_config: Path) -> None:
+    config = tooling_config / "tox.ini"
+    config.write_text(
+        config.read_text().replace(
+            "    typecheck\ncommands =\n    pytest",
+            "    typecheck\ndeps =\n    pytest>=7.0\ncommands =\n    pytest",
+        )
+    )
+    assert any(
+        "tox testenv must install the test, lint and typecheck" in e for e in check(tooling_config)
+    )
+
+
+def test_ci_typecheck_without_the_typecheck_group_is_detected(tooling_config: Path) -> None:
+    config = tooling_config / ".github/workflows/ci.yml"
+    config.write_text(
+        config.read_text().replace('-e ".[alembic]" --group typecheck', '-e ".[alembic]"')
+    )
+    assert any("--group typecheck" in error for error in check(tooling_config))

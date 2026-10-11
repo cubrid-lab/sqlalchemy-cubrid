@@ -348,7 +348,7 @@ def test_live_smoke_is_folded_into_make_integration() -> None:
     setups = [s for s in make["steps"] if "setup-python" in s.get("uses", "")]
     assert [s["with"]["python-version"] for s in setups] == ["3.12"]
     install = next(s for s in make["steps"] if s.get("name") == "Install project")
-    assert 'uv pip install --system -e ".[dev,pycubrid]"' in install["run"]
+    assert 'uv pip install --system -e ".[pycubrid]" --group dev' in install["run"]
     run = next(s for s in make["steps"] if s.get("name") == "Run make integration")
     assert "make integration INTEGRATION_DRIVER=pycubrid " in run["run"]
     assert run["env"]["CUBRID_VERSION"] == "11.4"
@@ -362,9 +362,11 @@ def test_live_smoke_is_folded_into_make_integration() -> None:
     for name in ("test_integration.py", "test_regression.py"):
         text = (ROOT / "test" / name).read_text()
         assert re.search(r"^pytestmark = pytest\.mark\.integration$", text, re.M), name
-    # The former lane installed Alembic; the dev extra still does.
-    dev = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-    assert any(d.startswith("alembic") for d in dev["optional-dependencies"]["dev"])
+    # The former lane installed Alembic; the dev dependency group still does,
+    # through the test group it includes (#765).
+    groups = tomllib.loads((ROOT / "pyproject.toml").read_text())["dependency-groups"]
+    assert {"include-group": "test"} in groups["dev"]
+    assert any(d.startswith("alembic") for d in groups["test"])
 
 
 def test_sqlalchemy_prerelease_canary_is_weekly_and_advisory() -> None:

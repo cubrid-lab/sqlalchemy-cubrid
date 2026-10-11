@@ -29,8 +29,12 @@ def _top_section(document: str, heading: str) -> str:
 
 def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
     """Return discrepancies in current English support declarations."""
-    project = tomllib.loads(metadata)["project"]
+    document = tomllib.loads(metadata)
+    project = document["project"]
     extras = project["optional-dependencies"]
+    # Contributor tooling is a PEP 735 dependency group (#765); the test group
+    # carries the SQLAlchemy bound the offline suite installs.
+    test_group = [item for item in document["dependency-groups"]["test"] if isinstance(item, str)]
     problems: list[str] = []
 
     minimum_match = re.fullmatch(r">=(\d+)\.(\d+)", project["requires-python"])
@@ -44,7 +48,7 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
         group: [Requirement(item) for item in values]
         for group, values in {
             "project": project["dependencies"],
-            "dev": extras["dev"],
+            "test": test_group,
             "pycubrid": extras["pycubrid"],
             "cubrid": extras["cubrid"],
             "cubriddb": extras["cubriddb"],
@@ -82,13 +86,13 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
     sqlalchemy_specs = {
         group: [str(item.specifier) for item in values if item.name.lower() == "sqlalchemy"]
         for group, values in requirements.items()
-        if group in ("project", "dev", "pycubrid")
+        if group in ("project", "test", "pycubrid")
     }
     if (
         any(len(specs) != 1 for specs in sqlalchemy_specs.values())
         or len({spec for specs in sqlalchemy_specs.values() for spec in specs}) != 1
     ):
-        problems.append("pyproject.toml: project, dev and pycubrid SQLAlchemy bounds differ")
+        problems.append("pyproject.toml: project, test group and pycubrid SQLAlchemy bounds differ")
     else:
         sqlalchemy = next(
             item for item in requirements["project"] if item.name.lower() == "sqlalchemy"

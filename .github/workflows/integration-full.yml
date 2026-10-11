@@ -115,7 +115,7 @@ jobs:
 
       - name: Install project
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip install --system pytest-cov
           uv pip freeze --system
 
@@ -164,8 +164,8 @@ jobs:
         run: |
           # Release-verification: install the released pycubrid within the declared
           # support range ([pycubrid] extra = pycubrid>=1.8.0,<2.0) so async integration
-          # runs against a supported release (pytest-asyncio already comes from the [dev]
-          # extra installed above). Testing against pycubrid@main (HEAD) is
+          # runs against a supported release (pytest-asyncio already comes from the dev
+          # dependency group installed above). Testing against pycubrid@main (HEAD) is
           # handled separately by upstream-canary.yml.
           uv pip install --system -e ".[pycubrid]"
           set -o pipefail
@@ -333,7 +333,7 @@ jobs:
         # pycubrid is installed in both cells: several integration files compare
         # or exercise both drivers whichever one CUBRID_TEST_URL selects.
         run: |
-          uv pip install --system -e ".[dev,pycubrid]"
+          uv pip install --system -e ".[pycubrid]" --group dev
           uv pip freeze --system
 
       - name: Run make integration
@@ -378,7 +378,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip install --system pytest-cov alembic tomli
           uv pip freeze --system
       - name: Run offline tests with coverage
@@ -425,7 +425,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install type-check dependencies
         run: |
-          uv pip install --system -e ".[dev,alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
+          uv pip install --system -e ".[alembic]" --group typecheck "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
           uv pip freeze --system
       - name: Check strict typing and report dependency versions
         run: make typecheck
@@ -459,7 +459,7 @@ jobs:
           ALEMBIC: ${{ matrix.alembic }}
         run: |
           if [ "$ALEMBIC" = latest ]; then spec="alembic<2.0"; else spec="alembic==$ALEMBIC"; fi
-          uv pip install --system -e ".[dev,pycubrid]" tomli "$spec"
+          uv pip install --system -e ".[pycubrid]" --group dev tomli "$spec"
           uv pip freeze --system
           python -c "import alembic; print('alembic', alembic.__version__)"
       - name: Run Alembic registration tests
@@ -621,11 +621,11 @@ jobs:
           uv pip install --system /tmp/cubriddb-wheel/cubrid_python-*.whl
           python -c "import CUBRIDdb, _cubrid; print('CUBRIDdb from', CUBRIDdb.__file__)"
 
-      # ci.yml reaches the compliance steps with [dev] plus the [pycubrid] extra
+      # ci.yml reaches the compliance steps with the dev group plus the [pycubrid] extra
       # (installed by its async step); each lane then pins its own versions.
       - name: Install project
         run: |
-          uv pip install --system -e ".[dev,pycubrid]"
+          uv pip install --system -e ".[pycubrid]" --group dev
           uv pip freeze --system
 
       - name: Wait for CUBRID to be ready
@@ -776,7 +776,7 @@ jobs:
       cubrid-test-url: "cubrid+pycubrid://dba@localhost:33000/testdb"
       setup-command: >-
         python -m pip install --upgrade pip &&
-        pip install -e ".[dev,pycubrid]"
+        pip install -e ".[pycubrid]" --group dev
       test-command: >-
         HYPOTHESIS_PROFILE=nightly python -m pytest
         test/test_fuzz_select.py test/test_fuzz_insert.py
@@ -819,7 +819,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install project
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip freeze --system
       - name: Run mutmut on compiler.py
         # Configuration lives in setup.cfg [mutmut] (mutmut 3). A crashed run,

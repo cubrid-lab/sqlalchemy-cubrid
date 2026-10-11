@@ -155,7 +155,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install pinned ruff from pyproject.toml
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip freeze --system
       - name: Lint maintained Python sources
         run: make lint
@@ -203,7 +203,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install type-check dependencies
         run: |
-          uv pip install --system -e ".[dev,alembic]" "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
+          uv pip install --system -e ".[alembic]" --group typecheck "SQLAlchemy[asyncio]==${{ matrix.sqlalchemy-version }}"
           uv pip freeze --system
       - name: Check strict typing and report dependency versions
         run: make typecheck
@@ -238,7 +238,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip install --system pytest-cov alembic tomli
           uv pip freeze --system
       # Full offline suite on every event, PRs included (#742), so regressions
@@ -291,7 +291,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install dependencies
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip freeze --system
       - name: Run repository-tooling tests
         run: python -m pytest test/ -m repo -v --tb=short
@@ -327,7 +327,7 @@ jobs:
           ALEMBIC: ${{ matrix.alembic }}
         run: |
           if [ "$ALEMBIC" = latest ]; then spec="alembic<2.0"; else spec="alembic==$ALEMBIC"; fi
-          uv pip install --system -e ".[dev,pycubrid]" tomli "$spec"
+          uv pip install --system -e ".[pycubrid]" --group dev tomli "$spec"
           uv pip freeze --system
           python -c "import alembic; print('alembic', alembic.__version__)"
       - name: Run Alembic registration tests
@@ -359,7 +359,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install dependencies with SQLAlchemy pre-release
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip install --system --upgrade-package SQLAlchemy --prerelease=if-necessary-or-explicit "SQLAlchemy>=2.1.0b1,<2.3"
           python - <<'PY'
           from importlib.metadata import version
@@ -462,7 +462,7 @@ jobs:
           cache-suffix: ${{ github.job }}
       - name: Install project
         run: |
-          uv pip install --system -e ".[dev,pycubrid]"
+          uv pip install --system -e ".[pycubrid]" --group dev
           uv pip freeze --system
       - name: Run make integration
         env:
@@ -567,7 +567,7 @@ jobs:
 
       - name: Install project
         run: |
-          uv pip install --system -e ".[dev]"
+          uv pip install --system -e . --group dev
           uv pip install --system pytest-cov
           uv pip freeze --system
 
@@ -617,8 +617,8 @@ jobs:
         run: |
           # Release-verification: install the released pycubrid within the declared
           # support range ([pycubrid] extra = pycubrid>=1.8.0,<2.0) so async integration
-          # runs against a supported release (pytest-asyncio already comes from the [dev]
-          # extra installed above). Testing against pycubrid@main (HEAD) is
+          # runs against a supported release (pytest-asyncio already comes from the dev
+          # dependency group installed above). Testing against pycubrid@main (HEAD) is
           # handled separately by upstream-canary.yml.
           uv pip install --system -e ".[pycubrid]"
           set -o pipefail

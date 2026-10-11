@@ -30,9 +30,15 @@ PIN_PATTERN = re.compile(r">=\s?2\.0,\s?<\s?(\d+\.\d+)")
 
 
 def _sqlalchemy_requirements() -> list[Requirement]:
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-    lists = [project["dependencies"], *project["optional-dependencies"].values()]
-    reqs = [Requirement(r) for deps in lists for r in deps]
+    document = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    project = document["project"]
+    lists = [
+        project["dependencies"],
+        *project["optional-dependencies"].values(),
+        *document["dependency-groups"].values(),
+    ]
+    # Dependency groups (#765) may also hold {include-group = ...} tables.
+    reqs = [Requirement(r) for deps in lists for r in deps if isinstance(r, str)]
     return [r for r in reqs if r.name.lower() == "sqlalchemy"]
 
 
@@ -41,7 +47,9 @@ def _cap() -> tuple[int, int]:
     reqs = _sqlalchemy_requirements()
     assert reqs, "pyproject.toml declares no sqlalchemy requirement"
     specs = {str(r.specifier) for r in reqs}
-    assert len(specs) == 1, f"sqlalchemy specifiers differ across pyproject extras: {specs}"
+    assert len(specs) == 1, (
+        f"sqlalchemy specifiers differ across pyproject extras and groups: {specs}"
+    )
     uppers = [s.version for s in SpecifierSet(specs.pop()) if s.operator == "<"]
     assert len(uppers) == 1, "sqlalchemy needs exactly one '<' upper bound"
     major, minor, *rest = (int(p) for p in uppers[0].split("."))

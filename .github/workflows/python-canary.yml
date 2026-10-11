@@ -43,13 +43,13 @@ jobs:
       - name: Install test and packaging dependencies
         run: |
           python -m pip install --upgrade pip
-          # PyYAML: test_ci_policy.py and test_release_workflows.py import yaml
-          # at collection; the dev extra only brings it in through pre-commit.
-          python -m pip install -e ".[pycubrid,alembic]" pytest pytest-asyncio hypothesis PyYAML build twine
+          # The test and release dependency groups (#765; pip >= 25.1, which the
+          # upgrade above provides) hold the test runner, PyYAML and build/twine.
+          python -m pip install -e ".[pycubrid,alembic]" --group test --group release
           python -m pip freeze
       - name: Run offline regressions
-        # The deselected test checks that the pinned Ruff and Mypy of the dev
-        # extra are installed; this lane installs the runtime and test
+        # The deselected test checks that the pinned Ruff and Mypy of the lint
+        # and typecheck groups are installed; this lane installs the runtime and test
         # dependencies only, so that check does not apply here.
         run: |
           python -m pytest test/ -m "not integration and not repo" -q \

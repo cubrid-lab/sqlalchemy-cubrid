@@ -5,6 +5,8 @@
 # required checks before auto-merge completes.
 version: 2
 updates:
+  # Reads pyproject.toml: the runtime dependencies and extras, and the
+  # contributor tooling pins in [dependency-groups] (#765).
   - package-ecosystem: "pip"
     directory: "/"
     schedule:

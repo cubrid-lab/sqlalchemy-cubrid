@@ -39,8 +39,9 @@ cd sqlalchemy-cubrid
 python3 -m venv venv
 source venv/bin/activate
 
-# dev 의존성과 함께 개발 모드로 설치
-pip install -e ".[dev]"
+# dev 의존성 그룹과 함께 개발 모드로 설치 (pip >= 25.1)
+python -m pip install --upgrade "pip>=25.1"
+pip install -e . --group dev
 
 # pre-commit 훅 설치
 pre-commit install
@@ -245,7 +246,7 @@ pre-commit run --all-files
   경로의 변경에 메인테이너 리뷰를 자동으로 요청합니다. 리뷰 라우팅만 담당하며 보안 경계가
   아니고, 그 밖의 변경은 코드 오너를 기다리지 않습니다.
 
-기여자는 dev extra를 설치하고, 공유 검사를 실행하고, 관련 문서를 갱신한 뒤
+기여자는 `dev` 의존성 그룹을 설치하고, 공유 검사를 실행하고, 관련 문서를 갱신한 뒤
 동기, 명령·결과와 실행하지 않은 검사의 이유를 담아 PR을 엽니다.
 문서를 변경하면 `python scripts/generate_llms_full.py`를 실행하세요(이 명령은
 `docs/llms-full.txt`를 다시 생성하고 표준 `docs/llms.txt` 인덱스를 루트

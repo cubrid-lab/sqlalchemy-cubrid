@@ -22,7 +22,10 @@ from packaging.utils import canonicalize_name
 
 ROOT = Path(__file__).resolve().parents[1]
 DOC = (ROOT / "THIRD_PARTY_LICENSES.md").read_text(encoding="utf-8")
-PROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+PYPROJECT = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+PROJECT = PYPROJECT["project"]
+# Contributor tooling is the PEP 735 `dev` dependency group (#765), not an extra.
+GROUPS = PYPROJECT["dependency-groups"]
 
 _spec = importlib.util.spec_from_file_location(
     "generate_third_party_licenses", ROOT / "scripts" / "generate_third_party_licenses.py"
@@ -38,7 +41,7 @@ SECTIONS = {
     "alembic": "## `[alembic]` extra",
     "cubrid": "## `[cubrid]` / `[cubriddb]` extra",
     "cubriddb": "## `[cubrid]` / `[cubriddb]` extra",
-    "dev": "## Development / test dependencies: `[dev]`",
+    "dev": "## Development / test dependencies: `dev` dependency group",
 }
 
 
@@ -59,15 +62,25 @@ def table(scope: str) -> dict[str, dict[str, str]]:
     return rows
 
 
+def _group(name: str) -> list[str]:
+    declared: list[str] = []
+    for item in GROUPS[name]:
+        declared += _group(item["include-group"]) if isinstance(item, dict) else [item]
+    return declared
+
+
 def requirements(scope: str) -> list[Requirement]:
-    declared = (
-        PROJECT["dependencies"] if scope == "runtime" else PROJECT["optional-dependencies"][scope]
-    )
+    if scope == "runtime":
+        declared = PROJECT["dependencies"]
+    elif scope == "dev":
+        declared = _group("dev")
+    else:
+        declared = PROJECT["optional-dependencies"][scope]
     return [Requirement(req) for req in declared]
 
 
 def test_every_declared_scope_has_a_table() -> None:
-    assert set(PROJECT["optional-dependencies"]) | {"runtime"} == set(SECTIONS)
+    assert set(PROJECT["optional-dependencies"]) | {"runtime", "dev"} == set(SECTIONS)
 
 
 @pytest.mark.parametrize("scope", sorted(SECTIONS))
@@ -127,5 +140,6 @@ def test_generation_inputs_are_recorded() -> None:
     assert re.search(r"commit `[0-9a-f]{40}`", record)
     assert re.search(r"CPython 3\.\d+\.\d+ on Linux", record)
     assert "scripts/generate_third_party_licenses.py --exclude sqlalchemy-cubrid" in record
-    for scope in ("pycubrid", "alembic", "cubrid", "dev"):
+    for scope in ("pycubrid", "alembic", "cubrid"):
         assert f".[{scope}]" in record
+    assert "--group dev" in record

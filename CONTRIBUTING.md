@@ -35,8 +35,9 @@ cd sqlalchemy-cubrid
 python3 -m venv venv
 source venv/bin/activate
 
-# Install in development mode with dev dependencies
-pip install -e ".[dev]"
+# Install in development mode with the dev dependency group (pip >= 25.1)
+python -m pip install --upgrade "pip>=25.1"
+pip install -e . --group dev
 
 # Install pre-commit hooks
 pre-commit install
@@ -240,7 +241,7 @@ pre-commit run --all-files
   security-policy, dialect, compiler, reflection and Alembic paths. It only routes
   reviews: it is not a security boundary, and other changes do not wait on a code owner.
 
-Contributors install the dev extra, run the shared checks, update affected docs
+Contributors install the `dev` dependency group, run the shared checks, update affected docs
 and open a PR with motivation, commands/results and reasons for checks not run.
 For documentation changes, run `python scripts/generate_llms_full.py` (it regenerates
 `docs/llms-full.txt` and copies the canonical `docs/llms.txt` index to the root

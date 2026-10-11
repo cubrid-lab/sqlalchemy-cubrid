@@ -131,10 +131,10 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
   `cubrid+pycubrid://`. Both files are `integration`-marked, so `make-integration`
   on the same SHA runs every one of those tests with the same Python, server
   version and URL, in an environment that installs a superset of the packages
-  (`.[dev,pycubrid]`, which includes Alembic) and with the stricter
+  (`.[pycubrid]` plus the `dev` dependency group, which includes Alembic) and with the stricter
   `check_not_all_skipped` guard. No assertion is lost. The removed job installed
-  only `.[pycubrid,alembic] pytest`, without the dev extras, while `make-integration`
-  uses `.[dev,pycubrid]`; `packaging-smoke-test` covers importing the package in a
+  only `.[pycubrid,alembic] pytest`, without the dev tooling, while `make-integration`
+  uses `.[pycubrid]` plus the `dev` group; `packaging-smoke-test` covers importing the package in a
   minimal install but not running the smoke tests without dev-only packages. This
   trade-off is accepted. `integration-tests` is
   kept: its CUBRIDdb lanes, compliance suites, driver differential,

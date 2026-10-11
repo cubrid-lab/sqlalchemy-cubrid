@@ -267,8 +267,8 @@ pycubrid 1.8.0(지원 최저 버전)은 `pycubrid.compat.native` 아래에 추�
 순수 Python pycubrid 방언 변형은 `pycubrid>=1.8.0,<2.0`과 함께 `sqlalchemy-cubrid[pycubrid]`를 설치하세요. pycubrid 1.8.0이 최소 버전인 이유는 `commit()` / `rollback()` 이후에도 CAS 세션을 유지하고, 계약 테스트가 요구하는 수정을 포함하기 때문입니다([알려진 문제 8~10](#8-commit--rollback-이후-다-읽지-않은-결과)). `pool_pre_ping`이 사용하는 네이티브 동기·비동기 `ping(False)`도 제공합니다.
 
 `[pycubrid]` extra는 동기·비동기 연결을 모두 지원하며, SQLAlchemy 2.0과 2.1에서
-`greenlet`을 제공하는 `SQLAlchemy[asyncio]`를 포함합니다. `[dev]` extra도 비동기
-테스트 import를 위해 이 브리지를 포함합니다. 기본 설치의 SQLAlchemy 의존성은
+`greenlet`을 제공하는 `SQLAlchemy[asyncio]`를 포함합니다. 기여자용 `test` 의존성 그룹(`dev`에 포함)도
+비동기 테스트 import를 위해 이 브리지를 포함합니다. 기본 설치의 SQLAlchemy 의존성은
 유지됩니다. pycubrid 드라이버 자체는 순수 Python이지만, 호환 wheel이 없으면
 `greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 

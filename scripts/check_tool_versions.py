@@ -17,11 +17,21 @@ def _unique(pattern: str, text: str, label: str) -> str:
     return matches[0]
 
 
+# Contributor tooling lives in PEP 735 dependency groups (#765), not in a
+# published extra. Each pinned tool belongs to exactly one purpose group.
+PIN_GROUPS = {"ruff": "lint", "mypy": "typecheck"}
+
+
+def _group(project: str, name: str) -> str:
+    groups = _unique(r"^\[dependency-groups\]\n(.*?)(?=^\[|\Z)", project, "dependency groups")
+    return _unique(rf"^{name}\s*=\s*\[\n(.*?)^\]", groups, f"{name} dependency group")
+
+
 def declared_pins(root: Path) -> dict[str, str]:
     project = (root / "pyproject.toml").read_text()
-    dev = _unique(r"^dev\s*=\s*\[\n(.*?)^\]", project, "dev dependencies")
     return {
-        tool: _unique(rf'^\s*"{tool}==([^"\n]+)"\s*,?\s*$', dev, tool) for tool in ("ruff", "mypy")
+        tool: _unique(rf'^\s*"{tool}==([^"\n]+)"\s*,?\s*$', _group(project, group), tool)
+        for tool, group in PIN_GROUPS.items()
     }
 
 
@@ -34,32 +44,39 @@ def check_environment(
     resolves to in the environment that invoked Git/pre-commit; unlike the
     former pinned mirror repos, nothing installs or refreshes the tool for
     you, so a checkout where `pyproject.toml` was bumped without reinstalling
-    `.[dev]` would otherwise silently run a stale or missing tool version."""
+    the dev dependency group would otherwise silently run a stale or missing
+    tool version."""
     version = installed or metadata.version
     errors = []
     for tool, expected in pins.items():
         try:
             actual = version(tool)
         except metadata.PackageNotFoundError:
-            errors.append(f"{tool}: not installed in the active environment; install .[dev]")
+            errors.append(
+                f"{tool}: not installed in the active environment; install the dev "
+                "dependency group (make install)"
+            )
             continue
         if actual != expected:
             errors.append(
-                f"{tool}: installed {actual}, expected {expected}; install .[dev] in the "
-                "active environment"
+                f"{tool}: installed {actual}, expected {expected}; install the dev "
+                "dependency group (make install) in the active environment"
             )
     return errors
 
 
 def check(root: Path) -> list[str]:
     project = (root / "pyproject.toml").read_text()
-    dev = _unique(r"^dev\s*=\s*\[\n(.*?)^\]", project, "dev dependencies")
-    # Each tool must still declare exactly one exact dev pin (the single source
+    # Each tool must still declare exactly one exact group pin (the single source
     # of truth); check_environment() verifies the active environment actually
-    # matches it, since the local/system hooks and dev-extra-sourced tox envs
-    # always run whatever is installed instead of a separately declared version.
+    # matches it, since the local/system hooks and group-sourced tox envs always
+    # run whatever is installed instead of a separately declared version.
     declared_pins(root)
-    alembic = _unique(r'^\s*"(alembic[^"\n]+)"\s*,?\s*$', dev, "Alembic requirement")
+    extras = _unique(
+        r"^\[project\.optional-dependencies\]\n(.*?)(?=^\[|\Z)", project, "published extras"
+    )
+    test_group = _group(project, "test")
+    alembic = _unique(r'^\s*"(alembic[^"\n]+)"\s*,?\s*$', test_group, "Alembic requirement")
     alembic_extra = _unique(r"^alembic\s*=\s*\[\n(.*?)^\]", project, "Alembic extra")
     hooks = (root / ".pre-commit-config.yaml").read_text()
     workflow = (root / ".github/workflows/ci.yml").read_text()
@@ -74,6 +91,10 @@ def check(root: Path) -> list[str]:
     tox.read(root / "tox.ini")
     makefile = (root / "Makefile").read_text()
     errors: list[str] = []
+    if re.search(r"^dev\s*=", extras, re.MULTILINE):
+        errors.append(
+            "pyproject.toml: the dev tooling belongs in [dependency-groups], not an extra"
+        )
     source = _unique(r"^SRC\s*=\s*([^\n]+)", makefile, "Makefile source directory")
     tests = _unique(r"^TESTS\s*=\s*([^\n]+)", makefile, "Makefile test directory")
     lint_paths = _unique(r"^LINT_PATHS\s*=\s*([^\n]+)", makefile, "Makefile Ruff scope")
@@ -98,10 +119,10 @@ def check(root: Path) -> list[str]:
     if re.findall(r'"([^"\n]+)"', included) != ["*.py", "*.pyi"]:
         errors.append("Ruff CLI file scope must be Python/pyi, matching the source hooks")
     if _unique(r'^\s*"([^"\n]+)"\s*,?\s*$', alembic_extra, "Alembic extra requirement") != alembic:
-        errors.append("Alembic dev requirement and existing install extra must agree")
+        errors.append("Alembic test-group requirement and the alembic extra must agree")
 
     # Ruff and Mypy pre-commit hooks are `repo: local` / `language: system` hooks
-    # that invoke `python3 -m <tool>` against the active `.[dev]` environment, so
+    # that invoke `python3 -m <tool>` against the active dev-group environment, so
     # there is no separate hook revision to keep in sync with the pyproject pin
     # (that's what previously broke Dependabot's routine pip-ecosystem bumps).
     local_block = _unique(
@@ -133,7 +154,7 @@ def check(root: Path) -> list[str]:
             if not re.search(r"^        language: system\s*$", body, re.MULTILINE):
                 errors.append(
                     f"{hook_id}: hook must run via language: system against the active "
-                    f".[dev] environment, matching the pyproject {tool} pin"
+                    f"dev-group environment, matching the pyproject {tool} pin"
                 )
             entry = expected_entry[hook_id]
             if not re.search(rf"^        entry: {re.escape(entry)}\s*$", body, re.MULTILINE):
@@ -173,15 +194,28 @@ def check(root: Path) -> list[str]:
             return set()
         return {line.strip() for line in tox.get(section, "extras").splitlines() if line.strip()}
 
-    if "dev" not in _extras("testenv:lint"):
+    def _groups(section: str) -> set[str]:
+        if not tox.has_option(section, "dependency_groups"):
+            return set()
+        return set(tox.get(section, "dependency_groups").split())
+
+    if not {"lint", "typecheck"} <= _groups("testenv:lint"):
         errors.append(
-            "tox lint must install the project's dev extra (extras = dev) so Ruff tracks "
-            "the pyproject pin instead of a hardcoded tox version"
+            "tox lint must install the lint and typecheck dependency groups "
+            "(dependency_groups = lint typecheck) so Ruff and Mypy track the pyproject pins "
+            "instead of a hardcoded tox version"
         )
     if tox.has_option("testenv:lint", "deps") and re.search(
         r"^\s*ruff==", tox.get("testenv:lint", "deps"), re.MULTILINE
     ):
-        errors.append("tox lint must not hardcode a ruff version; the dev extra already pins it")
+        errors.append("tox lint must not hardcode a ruff version; the lint group already pins it")
+    if _groups("testenv") != {"test", "lint", "typecheck"} or (
+        tox.has_option("testenv", "deps") and tox.get("testenv", "deps").strip()
+    ):
+        errors.append(
+            "tox testenv must install the test, lint and typecheck dependency groups "
+            "instead of repeating their requirements in deps"
+        )
     declared = {"py" + v.replace(".", "") for v in re.findall(r"Python :: (3\.\d+)", project)}
     envs = {env.strip() for env in tox.get("tox", "envlist").replace("\n", "").split(",")}
     if not declared <= envs:
@@ -201,20 +235,21 @@ def check(root: Path) -> list[str]:
             errors.append(f"{name} dependencies: expected " + ", ".join(sorted(expected)))
         if tox.get(section, "basepython") != f"python{python_version}":
             errors.append(f"{name}: expected Python {python_version}")
-        if _extras(section) != {"alembic", "dev"}:
+        if _extras(section) != {"alembic"} or _groups(section) != {"typecheck"}:
             errors.append(
-                f"{name}: extras must be exactly alembic and dev (dev supplies the pinned Mypy)"
+                f"{name}: install exactly the alembic extra and the typecheck dependency "
+                "group (the group supplies the pinned Mypy)"
             )
         if tox.get(section, "commands").strip() != "make typecheck PYTHON={envpython}":
             errors.append(f"{name}: use the Makefile typecheck target")
     if re.search(r'"mypy==', typecheck):
         errors.append(
-            "CI typecheck: must not hardcode a mypy version; install the dev extra instead"
+            "CI typecheck: must not hardcode a mypy version; install the typecheck group instead"
         )
-    if not re.search(r'"\.\[[^\]"]*\bdev\b[^\]"]*\]"', typecheck):
+    if not re.search(r"--group typecheck\b", typecheck):
         errors.append(
-            "CI typecheck: must install the project's dev extra (e.g. .[dev,alembic]) so "
-            "mypy tracks the pyproject pin"
+            "CI typecheck: must install the project's typecheck dependency group "
+            "(--group typecheck) so mypy tracks the pyproject pin"
         )
     return errors
 

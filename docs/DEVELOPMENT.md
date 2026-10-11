@@ -43,8 +43,24 @@ make install
 ```
 
 `make install` performs:
-1. `pip install -e ".[dev]"` — editable install with dev dependencies
-2. `pre-commit install` — git hook setup
+1. `pip install --upgrade "pip>=25.1"` — dependency groups need pip 25.1 or later
+2. `pip install -e . --group dev` — editable install with the `dev` dependency group
+3. `pre-commit install` — git hook setup
+
+Contributor tooling is declared in `[dependency-groups]` in `pyproject.toml`
+(PEP 735, #765), not in a published extra, so `pip install sqlalchemy-cubrid`
+never offers it. Each group has one purpose: `test` (pytest, coverage,
+Hypothesis, PyYAML, Alembic and `sqlalchemy[asyncio]`), `lint` (Ruff), `typecheck`
+(Mypy), `security` (Bandit), `mutation` (mutmut) and `release` (build, twine).
+`dev` includes all of them plus pre-commit and tox. Install one group with
+`pip install --group <name>` or `uv pip install --group <name>`; for example
+`uv pip install -e ".[alembic]" --group typecheck` is what the CI type check
+installs. The offline suite also checks that the pinned Ruff and Mypy are
+installed (`test/test_tool_versions.py`), so a test-only environment needs
+`--group test --group lint --group typecheck`, which is what the tox test
+environments install. The former `pip install -e ".[dev]"` no longer installs any tooling:
+use `pip install -e . --group dev` instead. Documentation tools stay pinned in
+`.github/docs-requirements/requirements.txt` (#761).
 
 ### Manual Setup
 
@@ -54,8 +70,9 @@ python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 
-# Install in editable mode with dev dependencies
-pip install -e ".[dev]"
+# Install in editable mode with the dev dependency group (pip >= 25.1)
+python -m pip install --upgrade "pip>=25.1"
+pip install -e . --group dev
 
 # Install pre-commit hooks
 pre-commit install
@@ -400,7 +417,7 @@ default, `cubrid+pycubrid://`) or `cubriddb` (`cubrid://`, which needs the
 CUBRIDdb C extension; CI builds it from cubrid-python v11.3.0.51, see the
 "Build the CUBRID Python driver wheel" step in `.github/workflows/ci.yml`). Any other value exits with status 2 before any Docker
 command. Several test files open connections through both drivers whichever one
-the URL selects, so install `.[dev,pycubrid]` for either driver. Main/weekly code CI runs
+the URL selects, so install `-e ".[pycubrid]" --group dev` for either driver. Main/weekly code CI runs
 `make integration` with the default driver on CUBRID 11.4; the full dispatch and release-gate
 `integration-full.yml` workflow runs it with both drivers on CUBRID 10.2 and
 11.4.
@@ -594,13 +611,14 @@ make format
 
 Pre-commit hooks run lint and format checks automatically on `git commit`.
 
-Ruff and Mypy versions are single-sourced from the dev pins in `pyproject.toml`.
+Ruff and Mypy versions are single-sourced from the `lint` and `typecheck`
+dependency-group pins in `pyproject.toml`.
 The Ruff and Mypy pre-commit hooks are `repo: local` / `language: system` hooks
-that invoke `python3 -m ruff`/`python3 -m mypy` against the active `.[dev]`
+that invoke `python3 -m ruff`/`python3 -m mypy` against the active `dev` group
 environment, so there is no separate hook revision to keep in sync: the pin in
 `pyproject.toml` is authoritative everywhere. The mypy hook checks
 `sqlalchemy_cubrid/` with the project's strict configuration using whatever
-SQLAlchemy/Alembic the active `.[dev,alembic]` environment already provides. It
+SQLAlchemy/Alembic the active `dev` group environment already provides. It
 does not install stubs automatically or suppress missing imports. Ruff's
 explicit `include = ["*.py", "*.pyi"]` and the matching hook types keep CLI, CI
 and hooks on Python sources rather than rewriting documentation snippets.
@@ -611,10 +629,11 @@ demos, samples and `docs/source` Python configuration. CI and tox invoke
 checker rejects omitted maintained directories or a runner that bypasses this
 shared target.
 
-Only `pyproject.toml`'s dev pin needs updating when bumping Ruff or Mypy
+Only the group pin in `pyproject.toml` needs updating when bumping Ruff or Mypy
 (Dependabot's `pip` ecosystem does exactly this): the pre-commit hooks and the
 `tox -e lint`/`typecheck-sa20`/`typecheck-sa21` environments install the
-project's own `dev` extra, so they always run whatever that pin resolves to.
+project's own `lint`/`typecheck` dependency groups (tox 4.22+ `dependency_groups`),
+so they always run whatever that pin resolves to.
 `tox -e typecheck-sa20`/`typecheck-sa21` additionally pin an exact SQLAlchemy
 release per Python version (2.0.53 on 3.11, 2.1.1 on 3.13). Only the 2.1.1 pair
 corresponds to CI's single type-check cell; `scripts/check_tool_versions.py`
@@ -629,11 +648,11 @@ pins.
 
 The Ruff and Mypy hooks run via `language: system`, invoking `python3 -m
 ruff`/`python3 -m mypy` from whatever environment is active when Git runs the
-hook. Install the project's `dev` extra (which pins Ruff and Mypy) into that
-same environment first, then install the hooks:
+hook. Install the project's `dev` dependency group (which pins Ruff and Mypy)
+into that same environment first, then install the hooks:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e . --group dev
 pre-commit install
 ```
 

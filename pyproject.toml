@@ -45,28 +45,56 @@ cubrid = [
 cubriddb = [
     "CUBRID-Python",
 ]
-dev = [
-    "sqlalchemy[asyncio]>=2.0,<2.2",
-    "pytest>=7.0",
-    "pytest-cov",
-    "pytest-asyncio",
-    "hypothesis>=6.0",
-    "mutmut>=3.8,<4",
-    "ruff==0.16.10",
-    "mypy==2.4.0",
-    "bandit[toml]==1.9.4",
-    "pre-commit",
-    "tox",
-    "build",
-    "twine",
-    "alembic>=1.7.2,<2.0",
-]
 alembic = [
     "alembic>=1.7.2,<2.0",
 ]
 pycubrid = [
     "pycubrid>=1.8.0,<2.0",
     "sqlalchemy[asyncio]>=2.0,<2.2",
+]
+
+# Contributor tooling (PEP 735, #765). Dependency groups are not part of the
+# published package metadata, so `pip install sqlalchemy-cubrid` users never see
+# them. Each pin is declared once here; scripts/check_tool_versions.py reads the
+# Ruff and Mypy pins from the lint and typecheck groups. Install one group with
+# `pip install --group <name>` (pip >= 25.1) or `uv pip install --group <name>`;
+# `make install` installs the editable package plus the `dev` group.
+# Documentation tools stay in .github/docs-requirements/requirements.txt (#761).
+[dependency-groups]
+test = [
+    "sqlalchemy[asyncio]>=2.0,<2.2",
+    "pytest>=7.0",
+    "pytest-cov",
+    "pytest-asyncio",
+    "hypothesis>=6.0",
+    "PyYAML",
+    "alembic>=1.7.2,<2.0",
+]
+lint = [
+    "ruff==0.16.10",
+]
+typecheck = [
+    "mypy==2.4.0",
+]
+security = [
+    "bandit[toml]==1.9.4",
+]
+mutation = [
+    "mutmut>=3.8,<4",
+]
+release = [
+    "build",
+    "twine",
+]
+dev = [
+    {include-group = "test"},
+    {include-group = "lint"},
+    {include-group = "typecheck"},
+    {include-group = "security"},
+    {include-group = "mutation"},
+    {include-group = "release"},
+    "pre-commit",
+    "tox>=4.22",
 ]
 
 [project.urls]

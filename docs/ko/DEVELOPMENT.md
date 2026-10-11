@@ -44,8 +44,24 @@ make install
 ```
 
 `make install`이 수행하는 것:
-1. `pip install -e ".[dev]"` — dev 의존성과 함께 편집 가능 설치
-2. `pre-commit install` — git 훅 설정
+1. `pip install --upgrade "pip>=25.1"` — 의존성 그룹에는 pip 25.1 이상이 필요합니다
+2. `pip install -e . --group dev` — `dev` 의존성 그룹과 함께 편집 가능 설치
+3. `pre-commit install` — git 훅 설정
+
+기여자 도구는 게시되는 extra가 아니라 `pyproject.toml`의 `[dependency-groups]`
+(PEP 735, #765)에 선언되므로 `pip install sqlalchemy-cubrid`에는 나타나지 않습니다.
+그룹마다 용도가 하나입니다. `test`(pytest, 커버리지, Hypothesis, PyYAML, Alembic,
+`sqlalchemy[asyncio]`), `lint`(Ruff), `typecheck`(Mypy), `security`(Bandit),
+`mutation`(mutmut), `release`(build, twine)이며, `dev`는 이 모두와 pre-commit, tox를
+포함합니다. 그룹 하나만 설치하려면 `pip install --group <이름>` 또는
+`uv pip install --group <이름>`을 쓰세요. 예를 들어 CI 타입 검사는
+`uv pip install -e ".[alembic]" --group typecheck`를 설치합니다. 오프라인 테스트는
+고정된 Ruff와 Mypy가 설치되어 있는지도 확인하므로(`test/test_tool_versions.py`),
+테스트 전용 환경에는 tox 테스트 환경과 같이
+`--group test --group lint --group typecheck`가 필요합니다. 예전의
+`pip install -e ".[dev]"`는 이제 도구를 설치하지 않으므로 대신
+`pip install -e . --group dev`를 쓰세요. 문서 도구는 계속
+`.github/docs-requirements/requirements.txt`(#761)에 고정됩니다.
 
 ### 수동 설정
 
@@ -55,8 +71,9 @@ python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 
-# dev 의존성과 함께 편집 가능 모드로 설치
-pip install -e ".[dev]"
+# dev 의존성 그룹과 함께 편집 가능 모드로 설치 (pip >= 25.1)
+python -m pip install --upgrade "pip>=25.1"
+pip install -e . --group dev
 
 # pre-commit 훅 설치
 pre-commit install
@@ -392,7 +409,7 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 `.github/workflows/ci.yml`의 "Build the CUBRID Python driver wheel" 단계를
 참고하세요)입니다. 다른 값을 주면 Docker 명령을 실행하기 전에 상태 2로
 종료합니다. 여러 테스트 파일이 URL이 선택한 드라이버와 관계없이 두 드라이버로
-연결하므로, 어느 드라이버를 쓰든 `.[dev,pycubrid]`를 설치하세요. PR CI는 기본
+연결하므로, 어느 드라이버를 쓰든 `-e ".[pycubrid]" --group dev`를 설치하세요. PR CI는 기본
 드라이버로 CUBRID 11.4에서 `make integration`을 실행하는 레인은 PR 이후 코드 검증에 유지합니다. 수동 전체 검증 및 릴리스 게이트
 `integration-full.yml` 워크플로는 두 드라이버로 CUBRID 10.2와 11.4에서 실행합니다.
 
@@ -577,10 +594,10 @@ make format
 
 Pre-commit 훅은 `git commit` 시 린트와 포맷 검사를 자동 실행합니다.
 
-Ruff와 Mypy 버전의 기준은 `pyproject.toml`의 개발 의존성 핀입니다. Ruff와 Mypy
-pre-commit 훅은 `repo: local` / `language: system` 훅으로, 같은 활성 `.[dev]`
-환경에서 `python3 -m ruff`/`python3 -m mypy`를 직접 호출합니다. 따라서 맞춰야 할
-별도의 훅 버전이 없습니다. mypy 훅은 활성 `.[dev,alembic]` 환경이 이미 제공하는
+Ruff와 Mypy 버전의 기준은 `pyproject.toml`의 `lint`·`typecheck` 의존성 그룹
+핀입니다. Ruff와 Mypy pre-commit 훅은 `repo: local` / `language: system` 훅으로,
+같은 활성 `dev` 그룹 환경에서 `python3 -m ruff`/`python3 -m mypy`를 직접 호출합니다. 따라서 맞춰야 할
+별도의 훅 버전이 없습니다. mypy 훅은 활성 `dev` 그룹 환경이 이미 제공하는
 SQLAlchemy/Alembic으로 프로젝트의 엄격한 설정에 따라 `sqlalchemy_cubrid/`를
 검사합니다. 스텁을 자동 설치하거나 누락된 임포트를 무시하지 않습니다. Ruff의 명시적
 `include = ["*.py", "*.pyi"]`와 동일한 훅 타입 설정으로 CLI, CI, 훅 모두 Python
@@ -591,10 +608,11 @@ Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모, �
 훅은 계속 모든 추적된 Python/pyi 파일을 검사합니다. 일관성 검사는 유지보수 대상
 디렉터리 누락이나 공통 타깃을 우회하는 실행 설정을 거부합니다.
 
-Ruff나 Mypy를 올릴 때는 `pyproject.toml`의 dev 핀만 갱신하면 됩니다(Dependabot의
+Ruff나 Mypy를 올릴 때는 `pyproject.toml`의 그룹 핀만 갱신하면 됩니다(Dependabot의
 `pip` 생태계가 정확히 이 작업을 수행합니다): pre-commit 훅과
-`tox -e lint`/`typecheck-sa20`/`typecheck-sa21` 환경 모두 프로젝트 자체의 `dev`
-extra를 설치하므로 그 핀이 가리키는 버전을 그대로 사용합니다.
+`tox -e lint`/`typecheck-sa20`/`typecheck-sa21` 환경 모두 프로젝트 자체의
+`lint`/`typecheck` 의존성 그룹(tox 4.22+ `dependency_groups`)을 설치하므로 그 핀이
+가리키는 버전을 그대로 사용합니다.
 `tox -e typecheck-sa20`/`typecheck-sa21`은 Python 버전별 정확한 SQLAlchemy
 릴리스(3.11엔 2.0.53, 3.13엔 2.1.1)를 추가로 고정합니다. CI의 단일 타입 검사 셀에
 대응하는 것은 2.1.1 조합뿐이며, `scripts/check_tool_versions.py`는 CI의 각 셀에
@@ -608,11 +626,11 @@ tox 린트, 로컬 pre-commit 훅에서 실행되므로 의존성만 갱신한 �
 
 Ruff와 Mypy 훅은 `language: system`으로 실행되어, Git이 훅을 실행할 때 활성화된
 환경에서 `python3 -m ruff`/`python3 -m mypy`를 직접 호출합니다. 먼저 그 같은
-환경에 Ruff와 Mypy를 고정하는 프로젝트의 `dev` extra를 설치한 뒤 훅을
+환경에 Ruff와 Mypy를 고정하는 프로젝트의 `dev` 의존성 그룹을 설치한 뒤 훅을
 설치하세요:
 
 ```bash
-pip install -e ".[dev]"
+pip install -e . --group dev
 pre-commit install
 ```
 

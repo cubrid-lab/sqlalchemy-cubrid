@@ -44,8 +44,9 @@ help: ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-install: ## Install in development mode with all dependencies
-	pip install -e ".[dev]"
+install: ## Install in development mode with the dev dependency group (pip >= 25.1)
+	pip install --upgrade "pip>=25.1"
+	pip install -e . --group dev
 	pre-commit install
 
 check-tool-versions: ## Detect local and CI tool-version drift

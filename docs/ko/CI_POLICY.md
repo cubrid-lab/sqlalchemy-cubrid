@@ -129,9 +129,9 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
   `cubrid+pycubrid://`로 `test/test_integration.py`와 `test/test_regression.py`를
   실행했습니다. 두 파일 모두 `integration` 표시가 있으므로, 같은 SHA의
   `make-integration`이 같은 Python, 서버 버전, URL로 그 테스트를 모두 실행합니다. 그
-  환경은 패키지의 상위 집합(Alembic을 포함하는 `.[dev,pycubrid]`)을 설치하고 더 엄격한
-  `check_not_all_skipped` 가드를 씁니다. 잃는 단언은 없습니다. 제거된 잡은 dev extra 없이 `.[pycubrid,alembic] pytest`만
-  설치했고 `make-integration`은 `.[dev,pycubrid]`를 쓰지만, `packaging-smoke-test`가
+  환경은 패키지의 상위 집합(`.[pycubrid]`와 Alembic을 포함하는 `dev` 의존성 그룹)을 설치하고 더 엄격한
+  `check_not_all_skipped` 가드를 씁니다. 잃는 단언은 없습니다. 제거된 잡은 개발 도구 없이 `.[pycubrid,alembic] pytest`만
+  설치했고 `make-integration`은 `.[pycubrid]`와 `dev` 그룹을 쓰지만, `packaging-smoke-test`가
   최소 설치에서 패키지 임포트를 확인할 뿐 dev 전용 패키지 없이 스모크 테스트를
   실행하는 것은 검증하지 않습니다. 이 절충은 수용합니다. `integration-tests`는
   유지합니다. CUBRIDdb 레인, 컴플라이언스 스위트, 드라이버 차등 비교, 트랜잭션 DDL,

@@ -4,7 +4,7 @@ Run it with the interpreter of an isolated environment that has exactly the
 dependency set to inventory installed (#735)::
 
     uv venv -p 3.12 /tmp/tpl-dev
-    uv pip install -p /tmp/tpl-dev/bin/python -e ".[dev]"
+    uv pip install -p /tmp/tpl-dev/bin/python -e . --group dev
     /tmp/tpl-dev/bin/python scripts/generate_third_party_licenses.py --exclude pycubrid
 
 The default output uses only the standard library, so the generator itself

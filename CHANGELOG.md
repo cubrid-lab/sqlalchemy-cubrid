@@ -15,8 +15,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeps resolving SQLAlchemy 2.1.x for this package. SQLAlchemy 2.2 was never verified
   against the full compatibility matrix and is excluded until it ships and passes it; the
   cap is then lifted in a later release.
+- **The `dev` extra is gone; contributors install the `dev` dependency group (#765).** Use
+  `pip install -e . --group dev` (pip 25.1 or later) or `make install` instead of
+  `pip install -e ".[dev]"`, which now installs only the package and warns that the extra
+  does not exist. End users are not affected: the runtime extras (`pycubrid`, `alembic`,
+  `cubrid`, `cubriddb`) are unchanged.
 
 ### Changed
+- **Contributor tooling moved out of the published metadata (#765)** — the single `dev`
+  extra, which shipped test, lint, type-check, security, mutation and release tools in the
+  package metadata, is replaced by PEP 735 `[dependency-groups]` in `pyproject.toml`:
+  `test`, `lint` (Ruff), `typecheck` (Mypy), `security` (Bandit), `mutation` (mutmut),
+  `release` (build, twine) and `dev`, which includes them all plus pre-commit and tox.
+  Each pin is declared once. `tox.ini` installs the groups through `dependency_groups`
+  (tox 4.22+) instead of repeating the test requirements in `deps` (the test environments
+  add `lint` and `typecheck`, because the suite checks the pinned Ruff and Mypy are installed); the CI type check
+  installs `.[alembic]` with the `typecheck` group; the other CI, canary and maintenance
+  installs use the `dev` group, and Bandit in `security.yml` and `maintenance.yml` now
+  comes from the pinned `security` group. `scripts/check_tool_versions.py` reads the Ruff
+  and Mypy pins from their groups and rejects a published `dev` extra, a tox test
+  environment that repeats the test requirements, and a CI type check without the
+  `typecheck` group. Docs tools stay in `.github/docs-requirements/requirements.txt`
+  (#761). The `dev` group resolves to the same 73 packages as the former extra. Packaging
+  metadata and contributor tooling only (release type: patch); no dialect code changes.
 - **SQLAlchemy is capped below 2.2 (#774)** — `sqlalchemy>=2.0,<2.3` became `>=2.0,<2.2` in
   `dependencies` and in the `dev` and `pycubrid` extras, so package metadata matches
   `docs/SUPPORT_MATRIX.md` (`≥ 2.2` unsupported). README, the translated READMEs,
