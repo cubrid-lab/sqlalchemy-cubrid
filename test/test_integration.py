@@ -3172,6 +3172,15 @@ _SEOUL = ZoneInfo("Asia/Seoul")
 _EST = datetime.timezone(datetime.timedelta(hours=-5))
 
 
+def _pycubrid_binds_repeated_hour(value):
+    """Whether the installed pycubrid names the occurrence of a repeated hour (pycubrid#819)."""
+    try:
+        from pycubrid._cursor_common import format_parameter
+    except ImportError:
+        return False
+    return value.tzname() in format_parameter(value)
+
+
 class TestPycubridValueRoundTrips:
     """#479 gaps 3, 5, 6, 8 and 9: values whose round trip pycubrid 1.9.0 fixed.
 
@@ -3269,18 +3278,24 @@ class TestPycubridValueRoundTrips:
         assert got == value
         assert got.utcoffset() == value.utcoffset()
 
-    @pytest.mark.xfail(
-        strict=True,
-        raises=AssertionError,
-        reason=(
-            "pycubrid binds a ZoneInfo datetime as DATETIMETZ'... America/New_York' "
-            "without the fold or the abbreviation, so CUBRID stores the EDT instant "
-            "of a repeated hour, one hour off (#479)"
-        ),
-    )
     @pytest.mark.parametrize("column", ["dtz", "tstz"])
-    def test_dst_end_second_occurrence_binds(self, engine, values, column):
+    def test_dst_end_second_occurrence_binds(self, request, engine, values, column):
         value = datetime.datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=_NY)
+        if not _pycubrid_binds_repeated_hour(value):
+            # A version check cannot tell the fix apart: pycubrid main keeps the
+            # released version number until the next release.
+            request.applymarker(
+                pytest.mark.xfail(
+                    strict=True,
+                    raises=AssertionError,
+                    reason=(
+                        "this pycubrid binds a ZoneInfo datetime as DATETIMETZ'... "
+                        "America/New_York' without the fold or the abbreviation, so CUBRID "
+                        "stores the EDT instant of a repeated hour, one hour off "
+                        "(cubrid-lab/pycubrid#819)"
+                    ),
+                )
+            )
         got = self._round_trip(engine, values, column, value)
         assert got.utcoffset() == datetime.timedelta(hours=-5)
 
@@ -3308,7 +3323,9 @@ class TestPycubridValueRoundTrips:
     def test_unresolvable_zone_is_data_error_and_keeps_session(
         self, request, engine, values, monkeypatch
     ):
-        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#413")
+        # pycubrid 1.8.0 decodes the row without error, so only pytest.raises'
+        # "DID NOT RAISE" failure is the expected one.
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#413", raises=pytest.fail.Exception)
         import pycubrid.packet
 
         real = pycubrid.packet.ZoneInfo

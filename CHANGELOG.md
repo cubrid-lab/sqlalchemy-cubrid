@@ -237,8 +237,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   pycubrid 1.8.0, the `[pycubrid]` floor, is a strict xfail there through the new
   `test/_pycubrid_gate.py`. A ZoneInfo datetime in the repeated hour with `fold=1` is stored
   one hour off, because pycubrid binds `DATETIMETZ'... America/New_York'` without the fold or
-  the abbreviation; `test_dst_end_second_occurrence_binds` records this as a strict xfail on
-  every pycubrid release. The `_NO_TYPED_COLLECTIONS_REASON` text and the module docstring
+  the abbreviation (cubrid-lab/pycubrid#819). `test_dst_end_second_occurrence_binds` is a
+  strict xfail while the installed pycubrid still renders that literal, and passes once it
+  names the occurrence. A version check cannot tell the fix apart, because pycubrid `main`
+  keeps the released version number until the next release. The `_NO_TYPED_COLLECTIONS_REASON` text and the module docstring
   of `test_collection_roundtrip.py` now say typed collections shipped in pycubrid 1.9.0.
   Tests only; the dialect is unchanged.
 
