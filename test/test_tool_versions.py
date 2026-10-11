@@ -221,6 +221,19 @@ def test_valid_toml_list_formatting_is_accepted(tooling_config: Path) -> None:
     assert check(tooling_config) == []
 
 
+def test_dependency_group_include_is_accepted(tooling_config: Path) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    pin = declared_pins(tooling_config)["ruff"]
+    updated = original.replace(
+        f'lint = [\n    "ruff=={pin}",',
+        f'lint = [\n    "ruff=={pin}",\n    {{include-group = "release"}},',
+    )
+    assert updated != original
+    config.write_text(updated)
+    assert check(tooling_config) == []
+
+
 @pytest.mark.parametrize(
     ("replacement", "message"),
     [

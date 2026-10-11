@@ -55,7 +55,23 @@ def _one(values: list[str], label: str) -> str:
 
 def _group(project: Mapping[str, object], name: str) -> list[str]:
     groups = _table(project, "dependency-groups", "dependency groups")
-    return _strings(groups, name, f"{name} dependency group")
+    label = f"{name} dependency group"
+    values = groups.get(name)
+    if values is None:
+        raise ValueError(f"{label}: expected one declaration, found 0")
+    if not isinstance(values, list):
+        raise ValueError(f"{label}: expected a list of strings")
+    requirements = []
+    for value in values:
+        if isinstance(value, str):
+            requirements.append(value)
+        elif not (
+            isinstance(value, dict)
+            and set(value) == {"include-group"}
+            and isinstance(value["include-group"], str)
+        ):
+            raise ValueError(f"{label}: expected requirements or include-group entries")
+    return requirements
 
 
 def _requirement_name(requirement: str) -> str:
