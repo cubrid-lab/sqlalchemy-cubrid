@@ -226,11 +226,14 @@ pre-commit run --all-files
 
 - All PRs require the applicable review route in
   [AGENTS.md](AGENTS.md#development-workflow-cubrid-lab-org-standard) before merge.
-  OpenCode work uses recorded Oracle design/post reviews; standalone Claude Code
-  or Codex PRs wait for a substantive submitted GitHub Copilot review or another
-  person's review. A pending request, green CI or an AI "approval recommended"
-  summary does not count. Maintainers record final finding dispositions,
-  verified head and unresolved threads; outside contributors need no internal tools.
+  Non-trivial OpenCode work uses recorded Oracle design/post reviews; trivial
+  OpenCode edits may skip those reviews with a recorded reason. Standalone
+  Claude Code, Codex, ChatGPT or other agent tools wait for a substantive submitted
+  GitHub Copilot review or another person's review. A pending request, green CI
+  or an AI "approval recommended" summary alone does not complete that route.
+  Maintainers record final finding dispositions, verified head and unresolved
+  threads. Human contributions follow ordinary contributor review; no
+  contributor must install internal tools.
 - CI must pass (lint, offline tests, integration tests).
 - Maintain backward compatibility unless explicitly approved.
 - `.github/CODEOWNERS` requests maintainer review automatically for release, CI,
