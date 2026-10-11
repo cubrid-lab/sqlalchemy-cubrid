@@ -395,21 +395,62 @@ def test_result_after_rollback_is_never_partial(both_engines: Any) -> None:
 # #480: constraint violations surface as sqlalchemy.exc.IntegrityError
 # ---------------------------------------------------------------------------
 
+# Row 1 of drvdiff_ie exists and is referenced by row 1 of drvdiff_iec, so
+# changing or truncating it violates the foreign key (#479,
+# cubrid-lab/pycubrid#493). The TRUNCATE code depends on the server: CUBRID
+# 11.2+ reports ER_TRUNCATE_PK_REFERRED (-1284), 10.2 and 11.0 report -924.
 _CONSTRAINT_VIOLATIONS = {
     "not_null": ("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, NULL, NULL)", -631),
     "foreign_key": ("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (2, 999, 1)", -922),
     "unique_pk": ("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)", -670),
+    "restrict_delete": ("DELETE FROM drvdiff_ie WHERE id = 1", -924),
+    "restrict_update": ("UPDATE drvdiff_ie SET id = 5 WHERE id = 1", -924),
+    "restrict_truncate": ("TRUNCATE TABLE drvdiff_ie", -1284),
 }
+_PARENT_CHANGE_KINDS = {"restrict_delete", "restrict_update", "restrict_truncate"}
+
+
+def _pycubrid_older_than(version: tuple[int, ...]) -> bool:
+    import pycubrid
+
+    installed = tuple(int(part) for part in pycubrid.__version__.split(".")[: len(version)])
+    return installed < version
+
+
+class _OldPycubridParentChangeClass(Exception):
+    """Raised only for the known pycubrid < 1.9.0 class of a parent-change violation.
+
+    pycubrid 1.8.x raises the base DatabaseError for -924/-1284
+    (cubrid-lab/pycubrid#493). The xfail marker expects this exception alone, so
+    any other failed assertion in the test still fails it.
+    """
 
 
 @pytest.mark.parametrize("kind", list(_CONSTRAINT_VIOLATIONS))
-def test_constraint_violation_class_agrees(both_engines: Any, kind: str) -> None:
-    """NOT NULL, FK and unique/PK violations raise IntegrityError on both drivers."""
+def test_constraint_violation_class_agrees(
+    request: pytest.FixtureRequest, both_engines: Any, kind: str
+) -> None:
+    """Constraint violations raise IntegrityError on both drivers.
+
+    The exception is CUBRIDdb on a -1284 TRUNCATE (CUBRID 11.2+): its error map
+    predates that code, so it raises the base DatabaseError. Recorded here, not
+    normalized by the dialect.
+    """
     pyc, cext = both_engines
     sql, code = _CONSTRAINT_VIOLATIONS[kind]
+    if kind in _PARENT_CHANGE_KINDS and _pycubrid_older_than((1, 9)):
+        request.applymarker(
+            pytest.mark.xfail(
+                strict=True,
+                raises=_OldPycubridParentChangeClass,
+                reason="pycubrid < 1.9.0 raises DatabaseError for a referenced parent "
+                "change (-924/-1284); IntegrityError since cubrid-lab/pycubrid#493",
+            )
+        )
 
     def run(engine: Any) -> tuple[str, Any]:
         with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS drvdiff_iec"))
             conn.execute(text("DROP TABLE IF EXISTS drvdiff_ie"))
             conn.execute(
                 text(
@@ -417,7 +458,14 @@ def test_constraint_violation_class_agrees(both_engines: Any, kind: str) -> None
                     "n INTEGER NOT NULL, FOREIGN KEY (parent_id) REFERENCES drvdiff_ie(id))"
                 )
             )
+            conn.execute(
+                text(
+                    "CREATE TABLE drvdiff_iec (id INTEGER PRIMARY KEY, parent_id INTEGER, "
+                    "FOREIGN KEY (parent_id) REFERENCES drvdiff_ie(id))"
+                )
+            )
             conn.execute(text("INSERT INTO drvdiff_ie (id, parent_id, n) VALUES (1, NULL, 1)"))
+            conn.execute(text("INSERT INTO drvdiff_iec (id, parent_id) VALUES (1, 1)"))
         try:
             with engine.connect() as conn:
                 raw = conn.connection.dbapi_connection
@@ -428,17 +476,32 @@ def test_constraint_violation_class_agrees(both_engines: Any, kind: str) -> None
                 assert not conn.invalidated
                 assert conn.connection.dbapi_connection is raw
                 assert conn.execute(text("SELECT COUNT(*) FROM drvdiff_ie")).scalar() == 1
+                assert conn.execute(text("SELECT COUNT(*) FROM drvdiff_iec")).scalar() == 1
         finally:
             with engine.begin() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS drvdiff_iec"))
                 conn.execute(text("DROP TABLE IF EXISTS drvdiff_ie"))
         return type(excinfo.value).__name__, excinfo.value.orig
 
     c_class, c_orig = run(cext)
+    if code == -1284 and cext.dialect.server_version_info[:2] < (11, 2):
+        code = -924
     assert CubridDialect._extract_error_code(c_orig) == code
-    assert c_class == "IntegrityError"
-    assert isinstance(c_orig, cext.dialect.loaded_dbapi.IntegrityError)
+    if code == -1284:
+        assert c_class == "DatabaseError"
+        assert type(c_orig) is cext.dialect.loaded_dbapi.DatabaseError
+    else:
+        assert c_class == "IntegrityError"
+        assert isinstance(c_orig, cext.dialect.loaded_dbapi.IntegrityError)
     py_class, py_orig = run(pyc)
     assert py_orig.code == code
+    if (
+        kind in _PARENT_CHANGE_KINDS
+        and _pycubrid_older_than((1, 9))
+        and py_class == "DatabaseError"
+        and type(py_orig) is pyc.dialect.loaded_dbapi.DatabaseError
+    ):
+        raise _OldPycubridParentChangeClass(type(py_orig).__name__)
     assert py_class == "IntegrityError"
     assert isinstance(py_orig, pyc.dialect.loaded_dbapi.IntegrityError)
 
