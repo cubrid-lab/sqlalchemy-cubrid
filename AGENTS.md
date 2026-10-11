@@ -169,19 +169,23 @@ The two Oracle reviews satisfy this development route without an additional
 automatic requirement for GitHub Copilot. Repository/branch protection,
 maintainer approval, and required CI still apply.
 
-**Standalone Claude Code or Codex** — implement, test, document and open a PR;
-**wait for a substantive submitted GitHub Copilot review or a review by another
-person** before merge. A submitted COMMENTED review containing a real code
-assessment counts as review evidence, but not as formal GitHub APPROVED.
-Review requests, bot summaries without substantive findings, self-review and
-green CI do not satisfy the review requirement. Check accepted fixes at the
-final relevant head; if no qualifying review arrives, leave the PR unmerged.
+**Standalone agents (Claude Code, Codex, ChatGPT, or other agent tools)** —
+implement, test, document and open a PR; **wait for a substantive submitted
+GitHub Copilot review or a review by another person** before merge.
+A submitted COMMENTED review containing a real code assessment counts as review
+evidence, but not as formal GitHub APPROVED. Review requests, bot summaries
+without substantive assessment, self-review and green CI do not satisfy the
+review requirement. Check accepted fixes at the final relevant head; if no
+qualifying review arrives, leave the PR unmerged.
 
-**Human/other contributors** — follow the normal contributor/review process.
-Maintainers coordinate internal tools, integration, evidence and release
-classification; no external contributor must install OpenCode, Oracle, Claude
-Code, Codex or Copilot. Preserve authorship and include tool attribution only
-when that tool actually produced the work.
+**Human contributions** — follow the normal contributor/review process.
+This route is not a fallback for unnamed standalone agent tools, which use
+the route above. Maintainers coordinate internal tools, integration, evidence
+and release classification; no external contributor must install OpenCode,
+Oracle, Claude Code, Codex or Copilot. Preserve authorship and include tool
+attribution only when that tool actually produced the work.
+
+Use English for GitHub issues, pull requests and comments; localized documentation contributions remain welcome.
 
 All changes to `main` must go through a reviewed PR; no direct pushes. Broad
 review/backlog requests do not authorize assigned or reserved good-first issues.
