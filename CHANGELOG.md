@@ -65,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialect is unchanged.
 
 ### Documentation
+- **The compliance-lane pycubrid pin is labelled as the declared floor (#479)** —
+  `docs/SUPPORT_MATRIX.md` (+ ko) listed the pycubrid compliance lanes as "pycubrid 1.8.0
+  (recommended)", which read as a recommendation to install 1.8.0. The pin is the declared
+  floor of `pycubrid>=1.8.0,<2.0`, kept on purpose; pycubrid is the recommended driver, and
+  the integration lanes test the latest release. Docs only.
 - **Private vulnerability reporting is the preferred security channel (#738)** — GitHub
   private vulnerability reporting is now enabled for the repository. `SECURITY.md` names it
   as the preferred private route and keeps the maintainer email as the fallback; `README.md`
