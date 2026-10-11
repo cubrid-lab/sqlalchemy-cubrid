@@ -157,6 +157,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **Repository-local issue closure in PRs** — the required `PR title` check
+  rejects direct cross-repository auto-closing keywords, while local
+  `Closes #N` and cross-repository `Refs owner/repo#N` remain valid. The
+  PR body is inert environment data; no checkout or token permissions are
+  needed. Markdown fenced examples and comments are ignored, with regression
+  cases for longer, mixed and mismatched delimiters.
 - **The PyPI duplicate guard uses `hashlib.file_digest()` (#730)** —
   `scripts/pypi_duplicate_guard.py` hashes `dist/` files with the Python 3.11 stdlib
   helper instead of a hand-written chunked read loop; the digests are the same. The
