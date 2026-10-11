@@ -2804,13 +2804,22 @@ def _pycubrid_older_than(version):
 _PYCUBRID_BEFORE_1_9 = _pycubrid_older_than((1, 9))
 
 
+class _OldPycubridParentChangeClass(Exception):
+    """Raised only for the known pycubrid < 1.9.0 class of a parent-change violation.
+
+    pycubrid 1.8.x raises the base DatabaseError for -924/-1284
+    (cubrid-lab/pycubrid#493). The xfail marker expects this exception alone, so
+    any other failed assertion in the test still fails it.
+    """
+
+
 def _xfail_parent_change_on_old_pycubrid(request, engine, operation):
     """pycubrid 1.8.x raises DatabaseError for -924/-1284 (cubrid-lab/pycubrid#493)."""
     if operation != "insert" and engine.dialect.driver == "pycubrid" and _PYCUBRID_BEFORE_1_9:
         request.applymarker(
             pytest.mark.xfail(
                 strict=True,
-                raises=AssertionError,
+                raises=_OldPycubridParentChangeClass,
                 reason="pycubrid < 1.9.0 raises DatabaseError for a referenced parent "
                 "change (-924/-1284); IntegrityError since cubrid-lab/pycubrid#493",
             )
@@ -2842,6 +2851,13 @@ def _native_error_code(engine, orig):
 
 
 def _assert_integrity_error(engine, exc):
+    if (
+        engine.dialect.driver == "pycubrid"
+        and _PYCUBRID_BEFORE_1_9
+        and type(exc) is sa.exc.DatabaseError
+        and type(exc.orig) is engine.dialect.loaded_dbapi.DatabaseError
+    ):
+        raise _OldPycubridParentChangeClass(type(exc.orig).__name__)
     if engine.dialect.driver == "cubrid" and _native_error_code(engine, exc.orig) == -1284:
         # Recorded CUBRIDdb 11.3 behavior (CUBRID 11.4): its error map predates
         # -1284, so a TRUNCATE of a referenced table is the base DatabaseError.

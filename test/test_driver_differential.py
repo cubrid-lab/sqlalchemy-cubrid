@@ -417,6 +417,15 @@ def _pycubrid_older_than(version: tuple[int, ...]) -> bool:
     return installed < version
 
 
+class _OldPycubridParentChangeClass(Exception):
+    """Raised only for the known pycubrid < 1.9.0 class of a parent-change violation.
+
+    pycubrid 1.8.x raises the base DatabaseError for -924/-1284
+    (cubrid-lab/pycubrid#493). The xfail marker expects this exception alone, so
+    any other failed assertion in the test still fails it.
+    """
+
+
 @pytest.mark.parametrize("kind", list(_CONSTRAINT_VIOLATIONS))
 def test_constraint_violation_class_agrees(
     request: pytest.FixtureRequest, both_engines: Any, kind: str
@@ -433,7 +442,7 @@ def test_constraint_violation_class_agrees(
         request.applymarker(
             pytest.mark.xfail(
                 strict=True,
-                raises=AssertionError,
+                raises=_OldPycubridParentChangeClass,
                 reason="pycubrid < 1.9.0 raises DatabaseError for a referenced parent "
                 "change (-924/-1284); IntegrityError since cubrid-lab/pycubrid#493",
             )
@@ -486,6 +495,13 @@ def test_constraint_violation_class_agrees(
         assert isinstance(c_orig, cext.dialect.loaded_dbapi.IntegrityError)
     py_class, py_orig = run(pyc)
     assert py_orig.code == code
+    if (
+        kind in _PARENT_CHANGE_KINDS
+        and _pycubrid_older_than((1, 9))
+        and py_class == "DatabaseError"
+        and type(py_orig) is pyc.dialect.loaded_dbapi.DatabaseError
+    ):
+        raise _OldPycubridParentChangeClass(type(py_orig).__name__)
     assert py_class == "IntegrityError"
     assert isinstance(py_orig, pyc.dialect.loaded_dbapi.IntegrityError)
 

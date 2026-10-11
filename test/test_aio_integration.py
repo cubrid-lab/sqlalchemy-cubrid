@@ -597,6 +597,15 @@ def _xfail_on_pycubrid_before_1_9(
         request.applymarker(pytest.mark.xfail(strict=True, raises=raises, reason=reason))
 
 
+class _OldPycubridParentChangeClass(Exception):
+    """Raised only for the known pycubrid < 1.9.0 class of a parent-change violation.
+
+    pycubrid 1.8.x raises the base DatabaseError for -924/-1284
+    (cubrid-lab/pycubrid#493). The xfail marker expects this exception alone, so
+    any other failed assertion in the test still fails it.
+    """
+
+
 _OLD_PARENT_CHANGE_REASON = (
     "pycubrid < 1.9.0 raises DatabaseError for a referenced parent change "
     "(-924/-1284); IntegrityError since cubrid-lab/pycubrid#493"
@@ -624,6 +633,12 @@ def _core_violation(
 
 
 def _assert_integrity_error(engine: AsyncEngine, exc: sa.exc.DBAPIError) -> None:
+    if (
+        _pycubrid_older_than((1, 9))
+        and type(exc) is sa.exc.DatabaseError
+        and type(exc.orig) is engine.dialect.loaded_dbapi.DatabaseError
+    ):
+        raise _OldPycubridParentChangeClass(type(exc.orig).__name__)
     assert isinstance(exc, sa.exc.IntegrityError), (
         f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
         f"wrapping {type(exc.orig).__module__}.{type(exc.orig).__name__}"
@@ -660,7 +675,9 @@ class TestAsyncIntegrityErrorContract:
     ):
         operation, model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
         if operation != "insert":
-            _xfail_on_pycubrid_before_1_9(request, AssertionError, _OLD_PARENT_CHANGE_REASON)
+            _xfail_on_pycubrid_before_1_9(
+                request, _OldPycubridParentChangeClass, _OLD_PARENT_CHANGE_REASON
+            )
         statement, params = _core_violation(operation, model, values)
         async with engine.connect() as conn:
             raw = await _dbapi_connection(conn)
@@ -688,7 +705,9 @@ class TestAsyncIntegrityErrorContract:
     ):
         operation, model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
         if operation != "insert":
-            _xfail_on_pycubrid_before_1_9(request, AssertionError, _OLD_PARENT_CHANGE_REASON)
+            _xfail_on_pycubrid_before_1_9(
+                request, _OldPycubridParentChangeClass, _OLD_PARENT_CHANGE_REASON
+            )
         # The AsyncSession is bound to one AsyncConnection, so after its rollback
         # it keeps using that connection and its DBAPI connection.
         async with engine.connect() as conn, AsyncSession(bind=conn) as session:
