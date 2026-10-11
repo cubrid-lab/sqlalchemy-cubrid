@@ -171,7 +171,7 @@ class PrTitleValidatorTest(unittest.TestCase):
             "Closes https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/810",
             "Refs #810 and cubrid-lab/cubrid-cookbook-python#240.",
             "<!-- Closes another-org/another-repo#42 -->",
-            f"{chr(96)*3}markdown\nCloses another-org/another-repo#42\n{chr(96)*3}",
+            f"{chr(96) * 3}markdown\nCloses another-org/another-repo#42\n{chr(96) * 3}",
         ):
             with self.subTest(body=body):
                 result = _run("docs: align issue ownership", body)
