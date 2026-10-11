@@ -6,11 +6,10 @@ collection parameter (cubrid-lab/pycubrid#567), and read collections back with
 ``decode_collections=true`` as ``frozenset`` (``SET``) or ``list``
 (``MULTISET``/``SEQUENCE``).
 
-The typed parameters are on pycubrid main but not in a release yet: the released
-pycubrid (1.8.0, the ``[pycubrid]`` floor) rejects collection parameters, so
-every case that binds a collection is a strict xfail there and the upstream
-canary (pycubrid@main, ``CUBRID_REQUIRE_TYPED_COLLECTIONS=1``) runs them for
-real. A ``NULL`` collection binds on every pycubrid release and is never
+The typed parameters shipped in pycubrid 1.9.0. pycubrid 1.8.0, the
+``[pycubrid]`` floor, rejects collection parameters, so every case that binds a
+collection is a strict xfail there; the upstream canary (pycubrid@main,
+``CUBRID_REQUIRE_TYPED_COLLECTIONS=1``) fails instead of xfailing. A ``NULL`` collection binds on every pycubrid release and is never
 xfailed, and neither is a ``set``/``frozenset`` bound to a ``SEQUENCE``, which
 the dialect rejects with ``TypeError`` before the driver sees it.
 
@@ -62,9 +61,9 @@ def _typed_collections_available() -> bool:
 
 _TYPED_COLLECTIONS = _typed_collections_available()
 _NO_TYPED_COLLECTIONS_REASON = (
-    "the installed pycubrid has no pycubrid.types.Set/Multiset/Sequence (released "
-    "pycubrid 1.8.0 rejects collection parameters); typed collection parameters "
-    "are on pycubrid main, cubrid-lab/pycubrid#567"
+    "the installed pycubrid has no pycubrid.types.Set/Multiset/Sequence (pycubrid "
+    "1.8.0 rejects collection parameters); typed collection parameters shipped in "
+    "pycubrid 1.9.0, cubrid-lab/pycubrid#567"
 )
 
 
@@ -153,6 +152,11 @@ _ROWS: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "null-elements": (
         {"sq": [None, 2, None]},
         {"sq": [None, 2, None]},
+    ),
+    # Every element NULL: pycubrid < 1.9.0 decoded this as raw bytes (pycubrid#483).
+    "all-null-elements": (
+        {"sq": [None, None]},
+        {"sq": [None, None]},
     ),
 }
 _COLUMNS = ("s", "ms", "sq", "txt")

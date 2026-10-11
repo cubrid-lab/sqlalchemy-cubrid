@@ -134,7 +134,7 @@ engine = create_engine(
 | `connect_timeout` | positive number of seconds | Timeout for opening the broker connection |
 | `read_timeout` | positive number of seconds | Socket read timeout after connecting |
 | `fetch_size` | integer >= 1 | Server-side fetch batch size (pycubrid default `100`) |
-| `charset` | codec name | Python codec, or CUBRID `utf8` / `euckr` / `iso88591`; set it to the database charset. Requires a pycubrid release newer than 1.8.0 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)); with pycubrid 1.8.0, `create_engine()` raises `ArgumentError` naming the installed version |
+| `charset` | codec name | Python codec, or CUBRID `utf8` / `euckr` / `iso88591`; set it to the database charset. Requires pycubrid 1.9.0 or newer ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)); with pycubrid 1.8.0, `create_engine()` raises `ArgumentError` naming the installed version |
 | `ssl` | boolean | `true` enables TLS with pycubrid's default context (TLS 1.2+); pass an `ssl.SSLContext` through `connect_args` for anything else |
 | `decode_collections` | boolean | Decode `SET` / `MULTISET` / `SEQUENCE` values into Python collections |
 | `no_backslash_escapes` | boolean | pycubrid's own string-escape mode (auto-detected when omitted). This is not the `create_engine(no_backslash_escapes=...)` dialect option described [below](#backslash-escaping-no_backslash_escapes), which controls `literal_binds` rendering |

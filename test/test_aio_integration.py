@@ -20,6 +20,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy_cubrid import DOUBLE, MULTISET, SEQUENCE, SET
 
 from scripts.integration_urls import async_url
+from test._pycubrid_gate import xfail_before_pycubrid
 
 _DEFAULT_SYNC_URL = "cubrid://dba@localhost:33000/testdb"
 
@@ -1168,3 +1169,93 @@ class TestAsyncCancellationAndDeadline:
             await self._assert_fresh_checkout(eng, broken)
         finally:
             await eng.dispose()
+
+
+# ---------------------------------------------------------------------------
+# #479: value round trips that depend on pycubrid fixes released after 1.8.0
+# (the sync cases are in test_integration.py::TestPycubridValueRoundTrips)
+# ---------------------------------------------------------------------------
+
+_PYCUBRID_1_9 = (1, 9, 0)
+
+
+class TestAsyncPycubridValueRoundTrips:
+    @pytest_asyncio.fixture
+    async def values(self, engine: AsyncEngine) -> AsyncIterator[Table]:
+        meta = MetaData()
+        table = Table(
+            "aio_value_rt_479",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("num", sa.Numeric(38, 10)),
+            Column("txt", String(100)),
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(meta.drop_all)
+            await conn.run_sync(meta.create_all)
+        yield table
+        async with engine.begin() as conn:
+            await conn.run_sync(meta.drop_all)
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            pytest.param(
+                Decimal("1.2345678901234567891E+20"),
+                Decimal("123456789012345678910"),
+                id="1.2345678901234567891E+20",
+            ),
+            pytest.param(Decimal("1E-7"), Decimal("0.0000001"), id="1E-7"),
+        ],
+    )
+    async def test_decimal_binds_in_plain_notation(
+        self,
+        request: pytest.FixtureRequest,
+        engine: AsyncEngine,
+        values: Table,
+        value: Decimal,
+        expected: Decimal,
+    ):
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#517", raises=AssertionError)
+        async with engine.begin() as conn:
+            _ = await conn.execute(values.insert(), {"id": 1, "num": value})
+        async with engine.connect() as conn:
+            stored = (await conn.execute(select(values.c.num))).scalar_one()
+            # CUBRID reads an E-notation literal (pycubrid 1.8.0) as DOUBLE.
+            literal = (await conn.execute(text("SELECT :v").bindparams(v=value))).scalar_one()
+        assert type(stored) is Decimal and stored == expected
+        assert type(literal) is Decimal and literal == expected
+
+    async def test_null_typed_column_is_none(self, engine: AsyncEngine):
+        async with engine.connect() as conn:
+            assert (await conn.execute(text("SELECT NULL"))).one() == (None,)
+            case = select(sa.case((sa.literal_column("1") == 1, sa.null())))
+            assert (await conn.execute(case)).one() == (None,)
+
+    async def test_null_typed_column_with_a_value_is_decoded(
+        self, request: pytest.FixtureRequest, engine: AsyncEngine
+    ):
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#542", raises=AssertionError)
+        async with engine.connect() as conn:
+            assert (await conn.execute(text("EVALUATE 42"))).one() == (42,)
+
+    async def test_charset_utf8_url_round_trips_non_ascii(
+        self, request: pytest.FixtureRequest, values: Table
+    ):
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#86", raises=sa.exc.ArgumentError)
+        eng = create_async_engine(_async_url().update_query_dict({"charset": "utf8"}))
+        value = "한국어 😀 é"
+        try:
+            async with eng.begin() as conn:
+                _ = await conn.execute(values.insert(), {"id": 1, "txt": value})
+            async with eng.connect() as conn:
+                row = (
+                    await conn.execute(
+                        select(values.c.txt, sa.func.octet_length(values.c.txt)).where(
+                            values.c.txt == value
+                        )
+                    )
+                ).one()
+        finally:
+            await eng.dispose()
+        assert tuple(row) == (value, len(value.encode("utf-8")))
