@@ -92,6 +92,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "12 Python modules", "40+ properties", "314 offline tests" and "3 uncovered lines"
   counts in `docs/PRD.md` are replaced with descriptions or pointers to the source.
   `docs/llms-full.txt` is regenerated. Docs only.
+- **`charset` names pycubrid 1.9.0 (#479)** — `docs/CONNECTION.md` (+ ko) said the `charset`
+  URL option needs a pycubrid release "newer than 1.8.0"; it now names 1.9.0, the release
+  that added it. Docs only.
 
 ### CI
 - **The cub_server restart tests run on the latest pycubrid again (#479)** — in
@@ -217,6 +220,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for a green publisher run in that case. Test and docs only; the dialect and
   workflows are unchanged.
 - **Guard for the SQLAlchemy range (#774)** — `test/test_sqlalchemy_range.py` (a `repo` test) fails when the `sqlalchemy` upper bound in `pyproject.toml` (all extras) differs from the pin stated in the README, translated READMEs and docs, or when `SUPPORT_MATRIX` (English and Korean) does not list every minor below the cap as supported and the cap minor as unsupported.
+- **Live value round trips for pycubrid 1.9.0 fixes (#479)** — gaps 3, 5, 6, 8 and 9 of
+  the #479 inventory, through `cubrid+pycubrid://` in
+  `test/test_integration.py::TestPycubridValueRoundTrips` and through
+  `cubrid+aiopycubrid://` in `test/test_aio_integration.py::TestAsyncPycubridValueRoundTrips`:
+  `Decimal` values bound in plain notation (`1E-7`, `1.2345678901234567891E+20`) and `int` /
+  `Decimal` subclasses bound by value, all read back from `Numeric(38,10)` as `Decimal`
+  (cubrid-lab/pycubrid#517, #518); aware datetimes in `DateTime(timezone=True)` (`DATETIMETZ`)
+  and `TIMESTAMPTZ` columns, including the repeated hour at the end of US daylight saving
+  time, the `EST` abbreviation decoded with `fold=1`, and an unresolvable zone raising
+  `DataError` without invalidating the connection (pycubrid#413); `SELECT NULL` and a
+  NULL-typed `CASE` returning `None` and `EVALUATE 42` returning `42` (pycubrid#542);
+  `date(999, 1, 1)`, `date(99, 1, 2)` and `datetime` years 999 and 99 (pycubrid#519); a
+  `?charset=utf8` URL round trip of Korean and emoji text (pycubrid#86). `test_collection_roundtrip.py`
+  adds an all-`None` `SEQUENCE` row (`[None, None]`) for typed binding, and
+  `test_all_null_elements_are_decoded`, which seeds `SEQUENCE{NULL, NULL}`, `MULTISET{NULL}`
+  and `SET{NULL}` with SQL literals and so needs no typed binding: pycubrid 1.8.0 returned
+  those collections as raw bytes (pycubrid#483). The time zone cases resolve their
+  `ZoneInfo` inside the test and skip when the system has no IANA data for the zone, so
+  collecting `test_integration.py` no longer needs `tzdata`. Each case that fails on
+  pycubrid 1.8.0, the `[pycubrid]` floor, is a strict xfail there through the new
+  `test/_pycubrid_gate.py`. A ZoneInfo datetime in the repeated hour with `fold=1` is stored
+  one hour off, because pycubrid binds `DATETIMETZ'... America/New_York'` without the fold or
+  the abbreviation (cubrid-lab/pycubrid#819). `test_dst_end_second_occurrence_binds` is a
+  strict xfail while the installed pycubrid still renders that literal, and passes once it
+  names the occurrence. A version check cannot tell the fix apart, because pycubrid `main`
+  keeps the released version number until the next release. The `_NO_TYPED_COLLECTIONS_REASON` text and the module docstring
+  of `test_collection_roundtrip.py` now say typed collections shipped in pycubrid 1.9.0.
+  Tests only; the dialect is unchanged.
 
 ## [1.10.0] - 2026-10-08
 

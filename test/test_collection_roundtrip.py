@@ -6,11 +6,10 @@ collection parameter (cubrid-lab/pycubrid#567), and read collections back with
 ``decode_collections=true`` as ``frozenset`` (``SET``) or ``list``
 (``MULTISET``/``SEQUENCE``).
 
-The typed parameters are on pycubrid main but not in a release yet: the released
-pycubrid (1.8.0, the ``[pycubrid]`` floor) rejects collection parameters, so
-every case that binds a collection is a strict xfail there and the upstream
-canary (pycubrid@main, ``CUBRID_REQUIRE_TYPED_COLLECTIONS=1``) runs them for
-real. A ``NULL`` collection binds on every pycubrid release and is never
+The typed parameters shipped in pycubrid 1.9.0. pycubrid 1.8.0, the
+``[pycubrid]`` floor, rejects collection parameters, so every case that binds a
+collection is a strict xfail there; the upstream canary (pycubrid@main,
+``CUBRID_REQUIRE_TYPED_COLLECTIONS=1``) fails instead of xfailing. A ``NULL`` collection binds on every pycubrid release and is never
 xfailed, and neither is a ``set``/``frozenset`` bound to a ``SEQUENCE``, which
 the dialect rejects with ``TypeError`` before the driver sees it.
 
@@ -37,6 +36,7 @@ from sqlalchemy import (
     bindparam,
     create_engine,
     select,
+    text,
 )
 from sqlalchemy.engine import URL, Engine, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
@@ -44,6 +44,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from scripts.integration_urls import async_url
 from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET
+from test._pycubrid_gate import xfail_before_pycubrid
 
 # The shared gate in test/conftest.py skips these tests when CUBRID_TEST_URL is
 # unset and errors them when its server is unreachable (#593).
@@ -62,9 +63,9 @@ def _typed_collections_available() -> bool:
 
 _TYPED_COLLECTIONS = _typed_collections_available()
 _NO_TYPED_COLLECTIONS_REASON = (
-    "the installed pycubrid has no pycubrid.types.Set/Multiset/Sequence (released "
-    "pycubrid 1.8.0 rejects collection parameters); typed collection parameters "
-    "are on pycubrid main, cubrid-lab/pycubrid#567"
+    "the installed pycubrid has no pycubrid.types.Set/Multiset/Sequence (pycubrid "
+    "1.8.0 rejects collection parameters); typed collection parameters shipped in "
+    "pycubrid 1.9.0, cubrid-lab/pycubrid#567"
 )
 
 
@@ -153,6 +154,12 @@ _ROWS: dict[str, tuple[dict[str, Any], dict[str, Any]]] = {
     "null-elements": (
         {"sq": [None, 2, None]},
         {"sq": [None, 2, None]},
+    ),
+    # Every element NULL, bound as a typed parameter. The decode regression of
+    # pycubrid#483 needs no typed binding: test_all_null_elements_are_decoded.
+    "all-null-elements": (
+        {"sq": [None, None]},
+        {"sq": [None, None]},
     ),
 }
 _COLUMNS = ("s", "ms", "sq", "txt")
@@ -262,6 +269,32 @@ class TestCoreRoundTrip:
         with engine.connect() as conn:
             row = conn.execute(select(core_table)).one()
         assert _normalized(row) == dict.fromkeys(_COLUMNS)
+
+    @pytest.mark.parametrize(
+        ("column", "literal", "expected"),
+        [
+            pytest.param("sq", "SEQUENCE{NULL, NULL}", [None, None], id="sequence"),
+            pytest.param("ms", "MULTISET{NULL}", [None], id="multiset"),
+            pytest.param("s", "SET{NULL}", frozenset({None}), id="set"),
+        ],
+    )
+    def test_all_null_elements_are_decoded(
+        self,
+        request: pytest.FixtureRequest,
+        engine: Engine,
+        core_table: Table,
+        column: str,
+        literal: str,
+        expected: Any,
+    ) -> None:
+        # Seeded with a SQL literal, so it binds no collection and runs on pycubrid
+        # 1.8.0 too, which returned the collection's raw bytes (pycubrid#483).
+        xfail_before_pycubrid(request, (1, 9, 0), "pycubrid#483", raises=AssertionError)
+        with engine.begin() as conn:
+            conn.execute(text(f"INSERT INTO coll_rt_core (id, {column}) VALUES (1, {literal})"))
+        with engine.connect() as conn:
+            got = conn.execute(select(core_table.c[column])).scalar_one()
+        assert got == expected
 
     @pytest.mark.parametrize("insertmanyvalues", _INSERT_PATHS)
     def test_insert_many(

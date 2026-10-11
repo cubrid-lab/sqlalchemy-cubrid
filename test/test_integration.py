@@ -53,6 +53,7 @@ import sys
 import time
 import uuid
 from decimal import Decimal
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import pytest
 import sqlalchemy as sa
@@ -72,6 +73,8 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from sqlalchemy_cubrid import DOUBLE, MULTISET, SEQUENCE, SET, STRING
 from sqlalchemy_cubrid.dialect import CubridDialect
+from sqlalchemy_cubrid.types import TIMESTAMPTZ
+from test._pycubrid_gate import xfail_before_pycubrid
 
 
 # ---------------------------------------------------------------------------
@@ -3131,3 +3134,311 @@ class TestCursorDescriptionContract:
             assert codes == expected
         finally:
             engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# #479: value round trips that depend on pycubrid fixes released after 1.8.0
+# ---------------------------------------------------------------------------
+
+_PYCUBRID_1_9 = (1, 9, 0)
+
+
+class _HostileInt(int):
+    """An ``int`` subclass whose text forms all lie (pycubrid#518)."""
+
+    def __str__(self) -> str:
+        return "7"
+
+    __repr__ = __str__
+
+    def __format__(self, spec: str) -> str:
+        return "7"
+
+
+class _HostileDecimal(Decimal):
+    """A ``Decimal`` subclass whose text forms all lie (pycubrid#518)."""
+
+    def __str__(self) -> str:
+        return "7"
+
+    __repr__ = __str__
+
+    def __format__(self, spec: str, context=None) -> str:
+        return "7"
+
+
+_EST = datetime.timezone(datetime.timedelta(hours=-5))
+
+
+def _zone(key):
+    """The IANA zone *key*, or skip when this system has no time zone data for it.
+
+    Resolved inside the test, not at import: the project does not depend on
+    ``tzdata``, so a missing zone must not break collection.
+    """
+    try:
+        return ZoneInfo(key)
+    except ZoneInfoNotFoundError as exc:
+        raise pytest.skip.Exception(
+            f"no IANA time zone data for {key!r} on this system (install tzdata)"
+        ) from exc
+
+
+def _pycubrid_binds_repeated_hour(value):
+    """Whether the installed pycubrid names the occurrence of a repeated hour (pycubrid#819)."""
+    try:
+        from pycubrid._cursor_common import format_parameter
+    except ImportError:
+        return False
+    return value.tzname() in format_parameter(value)
+
+
+class TestPycubridValueRoundTrips:
+    """#479 gaps 3, 5, 6, 8 and 9: values whose round trip pycubrid 1.9.0 fixed.
+
+    Every gated case is a strict xfail on pycubrid 1.8.0, the ``[pycubrid]``
+    floor (``test/_pycubrid_gate.py``); the others pass on every release.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _pycubrid_only(self, engine):
+        if engine.dialect.driver != "pycubrid":
+            pytest.skip("pycubrid value contract (cubrid-lab/sqlalchemy-cubrid#479)")
+
+    @pytest.fixture
+    def values(self, engine):
+        meta = MetaData()
+        table = Table(
+            "value_rt_479",
+            meta,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("num", sa.Numeric(38, 10)),
+            Column("d", sa.Date),
+            Column("dt", sa.DateTime),
+            Column("dtz", sa.DateTime(timezone=True)),
+            Column("tstz", TIMESTAMPTZ),
+            Column("txt", String(100)),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        yield table
+        meta.drop_all(engine)
+
+    @staticmethod
+    def _round_trip(engine, table, column, value):
+        with engine.begin() as conn:
+            conn.execute(table.insert(), {"id": 1, column: value})
+        with engine.connect() as conn:
+            return conn.execute(select(table.c[column])).scalar_one()
+
+    # Gap 3: pycubrid#517 (plain-notation Decimal), pycubrid#518 (subclasses).
+
+    @pytest.mark.parametrize(
+        ("value", "expected", "issue"),
+        [
+            # A DOUBLE 1e-07 converts to NUMERIC(38,10) exactly, so this case
+            # passes on 1.8.0 too; test_decimal_literal_stays_numeric covers it.
+            pytest.param(Decimal("1E-7"), Decimal("0.0000001"), None, id="1E-7"),
+            pytest.param(
+                Decimal("1.2345678901234567891E+20"),
+                Decimal("123456789012345678910"),
+                "pycubrid#517",
+                id="1.2345678901234567891E+20",
+            ),
+            pytest.param(_HostileInt(42), Decimal(42), "pycubrid#518", id="int-subclass"),
+            pytest.param(
+                _HostileDecimal("3.25"), Decimal("3.25"), "pycubrid#518", id="decimal-subclass"
+            ),
+        ],
+    )
+    def test_numeric_round_trip(self, request, engine, values, value, expected, issue):
+        if issue is not None:
+            xfail_before_pycubrid(request, _PYCUBRID_1_9, issue, raises=AssertionError)
+        got = self._round_trip(engine, values, "num", value)
+        assert type(got) is Decimal
+        assert got == expected
+
+    def test_decimal_literal_stays_numeric(self, request, engine):
+        # pycubrid 1.8.0 sent Decimal("1E-7") as 1E-7, which CUBRID reads as DOUBLE.
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#517", raises=AssertionError)
+        with engine.connect() as conn:
+            got = conn.execute(text("SELECT :v").bindparams(v=Decimal("1E-7"))).scalar_one()
+        assert type(got) is Decimal
+        assert got == Decimal("0.0000001")
+
+    # Gap 5: pycubrid#413 (zone errors, DST abbreviation), pycubrid#530.
+
+    @pytest.mark.parametrize("column", ["dtz", "tstz"])
+    @pytest.mark.parametrize(
+        "make_value",
+        [
+            pytest.param(
+                lambda: datetime.datetime(2026, 3, 8, 12, 0, tzinfo=datetime.UTC), id="utc"
+            ),
+            pytest.param(
+                lambda: datetime.datetime(
+                    2026, 3, 8, 2, 30, tzinfo=datetime.timezone(datetime.timedelta(hours=9))
+                ),
+                id="+09:00",
+            ),
+            pytest.param(
+                lambda: datetime.datetime(2026, 7, 1, 9, 15, 30, tzinfo=_zone("Asia/Seoul")),
+                id="Asia/Seoul",
+            ),
+            # 01:30 occurs twice in New York on 2026-11-01; fold=0 is the EDT one.
+            pytest.param(
+                lambda: datetime.datetime(2026, 11, 1, 1, 30, tzinfo=_zone("America/New_York")),
+                id="dst-end-edt",
+            ),
+            pytest.param(
+                lambda: datetime.datetime(2026, 11, 1, 1, 30, tzinfo=_EST), id="dst-end-05:00"
+            ),
+        ],
+    )
+    def test_aware_datetime_round_trip(self, engine, values, column, make_value):
+        value = make_value()
+        got = self._round_trip(engine, values, column, value)
+        assert got == value
+        assert got.utcoffset() == value.utcoffset()
+
+    @pytest.mark.parametrize("column", ["dtz", "tstz"])
+    def test_dst_end_second_occurrence_binds(self, request, engine, values, column):
+        value = datetime.datetime(2026, 11, 1, 1, 30, fold=1, tzinfo=_zone("America/New_York"))
+        if not _pycubrid_binds_repeated_hour(value):
+            # A version check cannot tell the fix apart: pycubrid main keeps the
+            # released version number until the next release.
+            request.applymarker(
+                pytest.mark.xfail(
+                    strict=True,
+                    raises=AssertionError,
+                    reason=(
+                        "this pycubrid binds a ZoneInfo datetime as DATETIMETZ'... "
+                        "America/New_York' without the fold or the abbreviation, so CUBRID "
+                        "stores the EDT instant of a repeated hour, one hour off "
+                        "(cubrid-lab/pycubrid#819)"
+                    ),
+                )
+            )
+        got = self._round_trip(engine, values, column, value)
+        assert got.utcoffset() == datetime.timedelta(hours=-5)
+
+    @pytest.mark.parametrize(("column", "type_"), [("dtz", "DATETIMETZ"), ("tstz", "TIMESTAMPTZ")])
+    def test_dst_end_abbreviation_is_decoded(self, request, engine, values, column, type_):
+        # The server sends "America/New_York EST"; pycubrid >= 1.9.0 keeps fold=1.
+        # Decoding the zone needs the client's IANA data as well.
+        _zone("America/New_York")
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#413", raises=AssertionError)
+        with engine.begin() as conn:
+            conn.execute(
+                text(
+                    f"INSERT INTO value_rt_479 (id, {column}) "
+                    f"VALUES (1, {type_}'2026-11-01 01:30:00 America/New_York EST')"
+                )
+            )
+        with engine.connect() as conn:
+            got = conn.execute(select(values.c[column])).scalar_one()
+        assert got.fold == 1
+        assert got.utcoffset() == datetime.timedelta(hours=-5)
+        # An aware datetime in a repeated hour never equals one of another zone
+        # (PEP 495), so compare the instant.
+        assert got.astimezone(datetime.UTC) == datetime.datetime(
+            2026, 11, 1, 6, 30, tzinfo=datetime.UTC
+        )
+
+    def test_unresolvable_zone_is_data_error_and_keeps_session(
+        self, request, engine, values, monkeypatch
+    ):
+        # pycubrid 1.8.0 decodes the row without error, so only pytest.raises'
+        # "DID NOT RAISE" failure is the expected one.
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#413", raises=pytest.fail.Exception)
+        import pycubrid.packet
+
+        seoul = _zone("Asia/Seoul")
+        real = pycubrid.packet.ZoneInfo
+
+        def without_seoul(key):
+            # A client whose time zone database lacks Asia/Seoul.
+            if key == "Asia/Seoul":
+                raise ZoneInfoNotFoundError(key)
+            return real(key)
+
+        with engine.begin() as conn:
+            conn.execute(
+                values.insert(),
+                {"id": 1, "dtz": datetime.datetime(2026, 1, 1, tzinfo=seoul)},
+            )
+        monkeypatch.setattr(pycubrid.packet, "ZoneInfo", without_seoul)
+        with engine.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            with pytest.raises(sa.exc.DataError, match="Asia/Seoul"):
+                conn.execute(select(values.c.dtz))
+            assert not conn.invalidated
+            conn.rollback()
+            assert conn.connection.dbapi_connection is dbapi_conn
+            assert conn.execute(select(values.c.id)).scalar_one() == 1
+
+    # Gap 6: pycubrid#542 (NULL-typed columns).
+
+    @pytest.mark.parametrize(
+        "statement",
+        [
+            pytest.param(text("SELECT NULL"), id="select-null"),
+            pytest.param(text("SELECT CASE WHEN 1 = 1 THEN NULL END"), id="text-case"),
+            pytest.param(select(sa.case((sa.literal_column("1") == 1, sa.null()))), id="core-case"),
+        ],
+    )
+    def test_null_typed_column_is_none(self, engine, statement):
+        with engine.connect() as conn:
+            assert conn.execute(statement).one() == (None,)
+
+    def test_null_typed_columns_beside_typed_columns(self, engine):
+        with engine.connect() as conn:
+            row = conn.execute(text("SELECT NULL, 1, NULL, 'x'")).one()
+        assert tuple(row) == (None, 1, None, "x")
+
+    def test_null_typed_column_with_a_value_is_decoded(self, request, engine):
+        # EVALUATE's result column is NULL-typed; pycubrid 1.8.0 returned the cell's bytes.
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#542", raises=AssertionError)
+        with engine.connect() as conn:
+            assert conn.execute(text("EVALUATE 42")).one() == (42,)
+
+    # Gap 8: pycubrid#519 (years below 1000).
+
+    @pytest.mark.parametrize(
+        ("column", "value", "issue"),
+        [
+            # 1.8.0 sent DATE'999-01-01', which CUBRID reads correctly.
+            pytest.param("d", datetime.date(999, 1, 1), None, id="date-999"),
+            pytest.param("d", datetime.date(99, 1, 2), "pycubrid#519", id="date-99"),
+            pytest.param(
+                "dt", datetime.datetime(999, 1, 2, 3, 4, 5, 6000), None, id="datetime-999"
+            ),
+            pytest.param(
+                "dt", datetime.datetime(99, 1, 2, 3, 4, 5), "pycubrid#519", id="datetime-99"
+            ),
+        ],
+    )
+    def test_year_below_1000_round_trip(self, request, engine, values, column, value, issue):
+        if issue is not None:
+            xfail_before_pycubrid(request, _PYCUBRID_1_9, issue, raises=AssertionError)
+        assert self._round_trip(engine, values, column, value) == value
+
+    # Gap 9: pycubrid#86 (charset connection option).
+
+    def test_charset_utf8_url_round_trips_non_ascii(self, request, values):
+        xfail_before_pycubrid(request, _PYCUBRID_1_9, "pycubrid#86", raises=sa.exc.ArgumentError)
+        engine = create_engine(sa.make_url(_cubrid_url()).update_query_dict({"charset": "utf8"}))
+        value = "한국어 😀 é"
+        try:
+            with engine.begin() as conn:
+                conn.execute(values.insert(), {"id": 1, "txt": value})
+            with engine.connect() as conn:
+                row = conn.execute(
+                    select(values.c.txt, sa.func.octet_length(values.c.txt)).where(
+                        values.c.txt == value
+                    )
+                ).one()
+        finally:
+            engine.dispose()
+        # The column is in the database charset; the bytes stored are UTF-8.
+        assert tuple(row) == (value, len(value.encode("utf-8")))
