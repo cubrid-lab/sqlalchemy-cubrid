@@ -188,6 +188,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cancellation and deadline (cubrid-lab/pycubrid#554,
   cubrid-lab/pycubrid#556, cubrid-lab/pycubrid#687, cubrid-lab/pycubrid#744); the tests pass
   on the 1.8.0 floor as well, so they have no version gate. Tests only.
+- **pycubrid 1.9.0 error classification through SQLAlchemy (#479)** — live tests for two
+  driver changes the dialect relies on, sync (`cubrid+pycubrid://`) and async
+  (`cubrid+aiopycubrid://`), on CUBRID 10.2 and 11.4. A zero `DATE`/`DATETIME`
+  (`'0000-00-00'`) raises `sqlalchemy.exc.DataError`, the connection is not invalidated,
+  and the same DB-API connection runs the next query (cubrid-lab/pycubrid#492/#512/#543;
+  `TestCompleteReplyValueError` in `test/test_integration.py`,
+  `test_zero_date_is_data_error_and_keeps_connection` in `test/test_aio_integration.py`).
+  The integrity tables (`_INTEGRITY_VIOLATIONS`, `_ASYNC_INTEGRITY_VIOLATIONS`,
+  `_CONSTRAINT_VIOLATIONS`) gain a parent `DELETE`/`UPDATE` restricted by a foreign key
+  (-924) and a `TRUNCATE` of a referenced table (-1284 on CUBRID 11.2+, -924 on 10.2/11.0),
+  which raise `IntegrityError` (cubrid-lab/pycubrid#493). On pycubrid 1.8.x, the supported
+  floor, these cases are strict expected failures. The tests record two `CUBRIDdb`
+  differences, documented in `docs/DRIVER_COMPAT.md`: a zero date escapes as a bare
+  `SystemError`, and a -1284 `TRUNCATE` is `DatabaseError`. Tests and docs only; the
+  dialect is unchanged.
 - **Release-please push guards are pinned (cubrid-lab/pycubrid#801)** —
   `test/test_release_workflows.py` now asserts the exact, ordered guards of
   `release-please.yml`: the push is directly preceded by the stale-main `exit`

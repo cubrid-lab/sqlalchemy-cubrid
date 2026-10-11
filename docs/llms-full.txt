@@ -7767,7 +7767,10 @@ Observed on CUBRID 11.4:
 | Syntax error or unknown table (-493) | `ProgrammingError` |
 | NOT NULL (-631), foreign key (-922), unique (-670) | `IntegrityError` |
 | Division by zero (-494) | `IntegrityError` |
+| Parent `DELETE`/`UPDATE` restricted by a foreign key (-924) | `IntegrityError` |
+| `TRUNCATE` of a referenced table (-1284; CUBRID 10.2 and 11.0 report -924, `IntegrityError`) | `DatabaseError` |
 | Failed `CAST` (-181) | `DatabaseError` |
+| A zero `DATE`/`DATETIME` (`'0000-00-00'`) in a result | `SystemError`, not a DB-API error: SQLAlchemy does not wrap it, and the connection stays usable |
 | Reading a result after `rollback()` (CCI -20040) | `InterfaceError` |
 
 SQLAlchemy wraps the class it receives, so `cubrid://` raises
@@ -7996,6 +7999,17 @@ tests require that behavior. With pycubrid 1.7.1 or earlier, catch
 foreign-key failures through pycubrid. The dialect deliberately does not
 reclassify exceptions by message. On every driver the connection or `Session`
 remains usable after `rollback()`.
+
+**pycubrid 1.8.x (supported floor), fixed in pycubrid 1.9.0** (verified on CUBRID
+10.2 and 11.4, #479):
+
+| Case | pycubrid 1.8.x | pycubrid >= 1.9.0 |
+|---|---|---|
+| Parent `DELETE`/`UPDATE` restricted by a foreign key (-924), `TRUNCATE` of a referenced table (-1284) | `DatabaseError` | `IntegrityError` (cubrid-lab/pycubrid#493) |
+| A value pycubrid cannot represent in a complete reply, such as a zero `DATE`/`DATETIME` (`'0000-00-00'`) | `OperationalError` ("malformed response from broker"), reported as a disconnect: the connection is invalidated | `DataError` (cubrid-lab/pycubrid#492, #512, #543): the same connection runs the next statement |
+
+The contract tests require the 1.9.0 behavior and are strict expected failures
+on pycubrid 1.8.x.
 
 ### 10. pycubrid replaces the session after a CAS restart (dialect re-applies the isolation level)
 

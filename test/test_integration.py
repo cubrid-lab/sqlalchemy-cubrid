@@ -2773,13 +2773,65 @@ class _IntegrityChild(_IntegrityBase):
     parent_id: Mapped[int] = mapped_column(ForeignKey("integration_ie480_parent.id"))
 
 
-# kind -> (mapped class, values violating the constraint, native CUBRID error
-# code); parent 1 always exists.
+# kind -> (operation, mapped class, values, native CUBRID error code); parent 1
+# always exists. "insert" adds a row built from the values. The parent-change
+# operations (#479, cubrid-lab/pycubrid#493) first add child 20 referencing
+# parent 1 in the same transaction, which the rollback removes again: "delete"
+# deletes parent values["id"], "update" changes its key to values["new_id"] and
+# "truncate" truncates the parent table (Core only; the ORM has no TRUNCATE).
 _INTEGRITY_VIOLATIONS = {
-    "not_null": (_IntegrityParent, {"id": 2, "name": None}, -631),
-    "foreign_key": (_IntegrityChild, {"id": 1, "parent_id": 999}, -922),
-    "unique_pk": (_IntegrityParent, {"id": 1, "name": "duplicate"}, -670),  # control
+    "not_null": ("insert", _IntegrityParent, {"id": 2, "name": None}, -631),
+    "foreign_key": ("insert", _IntegrityChild, {"id": 1, "parent_id": 999}, -922),
+    "unique_pk": ("insert", _IntegrityParent, {"id": 1, "name": "duplicate"}, -670),  # control
+    "restrict_delete": ("delete", _IntegrityParent, {"id": 1}, -924),
+    "restrict_update": ("update", _IntegrityParent, {"id": 1, "new_id": 5}, -924),
+    # CUBRID 11.2+ reports ER_TRUNCATE_PK_REFERRED (-1284); 10.2 and 11.0 report
+    # -924. _expected_integrity_code() picks the code for the server.
+    "restrict_truncate": ("truncate", _IntegrityParent, {}, -1284),
 }
+_ORM_INTEGRITY_KINDS = [k for k, case in _INTEGRITY_VIOLATIONS.items() if case[0] != "truncate"]
+
+
+def _pycubrid_older_than(version):
+    try:
+        import pycubrid
+    except ImportError:
+        return False
+    installed = tuple(int(part) for part in pycubrid.__version__.split(".")[: len(version)])
+    return installed < version
+
+
+_PYCUBRID_BEFORE_1_9 = _pycubrid_older_than((1, 9))
+
+
+def _xfail_parent_change_on_old_pycubrid(request, engine, operation):
+    """pycubrid 1.8.x raises DatabaseError for -924/-1284 (cubrid-lab/pycubrid#493)."""
+    if operation != "insert" and engine.dialect.driver == "pycubrid" and _PYCUBRID_BEFORE_1_9:
+        request.applymarker(
+            pytest.mark.xfail(
+                strict=True,
+                raises=AssertionError,
+                reason="pycubrid < 1.9.0 raises DatabaseError for a referenced parent "
+                "change (-924/-1284); IntegrityError since cubrid-lab/pycubrid#493",
+            )
+        )
+
+
+def _expected_integrity_code(engine, code):
+    if code == -1284 and not _server_at_least(engine, (11, 2)):
+        return -924
+    return code
+
+
+def _core_violation(operation, model, values):
+    """The Core statement and parameters for one ``_INTEGRITY_VIOLATIONS`` case."""
+    if operation == "insert":
+        return sa.insert(model), values
+    if operation == "delete":
+        return sa.delete(model).where(model.id == values["id"]), {}
+    if operation == "update":
+        return sa.update(model).where(model.id == values["id"]).values(id=values["new_id"]), {}
+    return text("TRUNCATE TABLE integration_ie480_parent"), {}
 
 
 def _native_error_code(engine, orig):
@@ -2790,6 +2842,14 @@ def _native_error_code(engine, orig):
 
 
 def _assert_integrity_error(engine, exc):
+    if engine.dialect.driver == "cubrid" and _native_error_code(engine, exc.orig) == -1284:
+        # Recorded CUBRIDdb 11.3 behavior (CUBRID 11.4): its error map predates
+        # -1284, so a TRUNCATE of a referenced table is the base DatabaseError.
+        # On CUBRID 10.2 the server reports -924, which CUBRIDdb maps to
+        # IntegrityError.
+        assert type(exc) is sa.exc.DatabaseError
+        assert type(exc.orig) is engine.dialect.loaded_dbapi.DatabaseError
+        return
     assert isinstance(exc, sa.exc.IntegrityError), (
         f"expected sqlalchemy.exc.IntegrityError, got {type(exc).__name__} "
         f"wrapping {type(exc.orig).__module__}.{type(exc.orig).__name__}"
@@ -2815,12 +2875,16 @@ class TestIntegrityErrorContract:
         _IntegrityBase.metadata.drop_all(engine)
 
     @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
-    def test_core_violation_raises_integrity_error(self, engine, kind):
-        model, values, code = _INTEGRITY_VIOLATIONS[kind]
+    def test_core_violation_raises_integrity_error(self, request, engine, kind):
+        operation, model, values, code = _INTEGRITY_VIOLATIONS[kind]
+        _xfail_parent_change_on_old_pycubrid(request, engine, operation)
+        statement, params = _core_violation(operation, model, values)
         with engine.connect() as conn:
             raw = conn.connection.dbapi_connection
+            if operation != "insert":
+                conn.execute(sa.insert(_IntegrityChild), {"id": 20, "parent_id": 1})
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
-                conn.execute(sa.insert(model), values)
+                conn.execute(statement, params)
             assert not excinfo.value.connection_invalidated
             conn.rollback()
             # The same Connection, on the same DBAPI connection, runs new
@@ -2831,17 +2895,29 @@ class TestIntegrityErrorContract:
             conn.execute(sa.insert(_IntegrityChild), {"id": 10, "parent_id": 1})
             assert _integrity_counts(conn) == (1, 1)
             conn.rollback()
-        assert _native_error_code(engine, excinfo.value.orig) == code
+        assert _native_error_code(engine, excinfo.value.orig) == _expected_integrity_code(
+            engine, code
+        )
         _assert_integrity_error(engine, excinfo.value)
 
-    @pytest.mark.parametrize("kind", list(_INTEGRITY_VIOLATIONS))
-    def test_orm_flush_violation_raises_integrity_error(self, engine, kind):
-        model, values, code = _INTEGRITY_VIOLATIONS[kind]
+    @pytest.mark.parametrize("kind", _ORM_INTEGRITY_KINDS)
+    def test_orm_flush_violation_raises_integrity_error(self, request, engine, kind):
+        operation, model, values, code = _INTEGRITY_VIOLATIONS[kind]
+        _xfail_parent_change_on_old_pycubrid(request, engine, operation)
         # The Session is bound to one Connection, so after its rollback it keeps
         # using that Connection and its DBAPI connection.
         with engine.connect() as conn, Session(bind=conn) as session:
             raw = conn.connection.dbapi_connection
-            session.add(model(**values))
+            if operation == "insert":
+                session.add(model(**values))
+            else:
+                session.add(_IntegrityChild(id=20, parent_id=1))
+                session.flush()
+                parent = session.get(model, values["id"])
+                if operation == "delete":
+                    session.delete(parent)
+                else:
+                    parent.id = values["new_id"]
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
                 session.flush()
             assert not excinfo.value.connection_invalidated
@@ -2853,8 +2929,58 @@ class TestIntegrityErrorContract:
             session.flush()
             assert _integrity_counts(session.connection()) == (1, 1)
             session.rollback()
-        assert _native_error_code(engine, excinfo.value.orig) == code
+        assert _native_error_code(engine, excinfo.value.orig) == _expected_integrity_code(
+            engine, code
+        )
         _assert_integrity_error(engine, excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# #479: a value error in a complete reply is DataError and keeps the session
+# ---------------------------------------------------------------------------
+
+# CUBRID stores zero dates, but Python's datetime has no year 0.
+_ZERO_DATE_QUERIES = {
+    "date": "SELECT DATE'0000-00-00'",
+    "datetime": "SELECT DATETIME'0000-00-00 00:00:00'",
+}
+
+
+class TestCompleteReplyValueError:
+    """pycubrid 1.9.0+ raises DataError for a value it cannot represent and keeps
+    the session (cubrid-lab/pycubrid#492/#512/#543); 1.8.x raised a disconnect
+    OperationalError ("malformed response from broker") and closed it.
+    """
+
+    @pytest.mark.parametrize("kind", list(_ZERO_DATE_QUERIES))
+    def test_zero_date_is_data_error_and_keeps_connection(self, request, engine, kind):
+        if engine.dialect.driver == "pycubrid" and _PYCUBRID_BEFORE_1_9:
+            request.applymarker(
+                pytest.mark.xfail(
+                    strict=True,
+                    raises=sa.exc.OperationalError,
+                    reason="pycubrid < 1.9.0 raises a disconnect OperationalError for a "
+                    "zero date; DataError since cubrid-lab/pycubrid#512",
+                )
+            )
+        with engine.connect() as conn:
+            raw = conn.connection.dbapi_connection
+            if engine.dialect.driver == "cubrid":
+                # Recorded CUBRIDdb 11.3 behavior: the C extension's ValueError
+                # escapes as SystemError, which is no DB-API error, so
+                # SQLAlchemy neither wraps it nor invalidates the connection.
+                with pytest.raises(SystemError) as raised:
+                    conn.execute(text(_ZERO_DATE_QUERIES[kind])).all()
+                assert isinstance(raised.value.__cause__, ValueError)
+            else:
+                with pytest.raises(sa.exc.DataError) as excinfo:
+                    conn.execute(text(_ZERO_DATE_QUERIES[kind])).all()
+                assert isinstance(excinfo.value.orig, engine.dialect.loaded_dbapi.DataError)
+                assert not excinfo.value.connection_invalidated
+            assert not conn.invalidated
+            assert conn.connection.dbapi_connection is raw
+            assert conn.execute(text("SELECT 1")).scalar_one() == 1
+            assert conn.connection.dbapi_connection is raw
 
 
 # ---------------------------------------------------------------------------

@@ -563,13 +563,64 @@ class _AsyncIntegrityChild(_AsyncIntegrityBase):
     parent_id: Mapped[int] = mapped_column(sa.ForeignKey("aio_test_ie480_parent.id"))
 
 
-# kind -> (mapped class, values violating the constraint, native CUBRID error
-# code); parent 1 always exists.
-_ASYNC_INTEGRITY_VIOLATIONS: dict[str, tuple[type[_AsyncIntegrityBase], dict[str, object], int]] = {
-    "not_null": (_AsyncIntegrityParent, {"id": 2, "name": None}, -631),
-    "foreign_key": (_AsyncIntegrityChild, {"id": 1, "parent_id": 999}, -922),
-    "unique_pk": (_AsyncIntegrityParent, {"id": 1, "name": "duplicate"}, -670),  # control
+# kind -> (operation, mapped class, values, native CUBRID error code); parent 1
+# always exists. Same cases as _INTEGRITY_VIOLATIONS in test_integration.py:
+# the parent-change operations (#479, cubrid-lab/pycubrid#493) first add child
+# 20 referencing parent 1 in the same transaction, and "truncate" is Core only.
+_ASYNC_INTEGRITY_VIOLATIONS: dict[
+    str, tuple[str, type[_AsyncIntegrityBase], dict[str, object], int]
+] = {
+    "not_null": ("insert", _AsyncIntegrityParent, {"id": 2, "name": None}, -631),
+    "foreign_key": ("insert", _AsyncIntegrityChild, {"id": 1, "parent_id": 999}, -922),
+    "unique_pk": ("insert", _AsyncIntegrityParent, {"id": 1, "name": "duplicate"}, -670),
+    "restrict_delete": ("delete", _AsyncIntegrityParent, {"id": 1}, -924),
+    "restrict_update": ("update", _AsyncIntegrityParent, {"id": 1, "new_id": 5}, -924),
+    # CUBRID 11.2+ reports ER_TRUNCATE_PK_REFERRED (-1284); 10.2 and 11.0 report -924.
+    "restrict_truncate": ("truncate", _AsyncIntegrityParent, {}, -1284),
 }
+_ASYNC_ORM_INTEGRITY_KINDS = [
+    kind for kind, case in _ASYNC_INTEGRITY_VIOLATIONS.items() if case[0] != "truncate"
+]
+
+
+def _pycubrid_older_than(version: tuple[int, ...]) -> bool:
+    import pycubrid
+
+    installed = tuple(int(part) for part in pycubrid.__version__.split(".")[: len(version)])
+    return installed < version
+
+
+def _xfail_on_pycubrid_before_1_9(
+    request: pytest.FixtureRequest, raises: type[BaseException], reason: str
+) -> None:
+    if _pycubrid_older_than((1, 9)):
+        request.applymarker(pytest.mark.xfail(strict=True, raises=raises, reason=reason))
+
+
+_OLD_PARENT_CHANGE_REASON = (
+    "pycubrid < 1.9.0 raises DatabaseError for a referenced parent change "
+    "(-924/-1284); IntegrityError since cubrid-lab/pycubrid#493"
+)
+
+
+def _expected_integrity_code(engine: AsyncEngine, code: int) -> int:
+    version = engine.dialect.server_version_info
+    assert version is not None  # set by the engine's first connection
+    if code == -1284 and tuple(version[:2]) < (11, 2):
+        return -924
+    return code
+
+
+def _core_violation(
+    operation: str, model: Any, values: dict[str, object]
+) -> tuple[Any, dict[str, object]]:
+    if operation == "insert":
+        return sa.insert(model), values
+    if operation == "delete":
+        return sa.delete(model).where(model.id == values["id"]), {}
+    if operation == "update":
+        return sa.update(model).where(model.id == values["id"]).values(id=values["new_id"]), {}
+    return text("TRUNCATE TABLE aio_test_ie480_parent"), {}
 
 
 def _assert_integrity_error(engine: AsyncEngine, exc: sa.exc.DBAPIError) -> None:
@@ -604,12 +655,19 @@ class TestAsyncIntegrityErrorContract:
             await conn.run_sync(_AsyncIntegrityBase.metadata.drop_all)
 
     @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
-    async def test_core_violation_raises_integrity_error(self, engine: AsyncEngine, kind: str):
-        model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+    async def test_core_violation_raises_integrity_error(
+        self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
+    ):
+        operation, model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        if operation != "insert":
+            _xfail_on_pycubrid_before_1_9(request, AssertionError, _OLD_PARENT_CHANGE_REASON)
+        statement, params = _core_violation(operation, model, values)
         async with engine.connect() as conn:
             raw = await _dbapi_connection(conn)
+            if operation != "insert":
+                _ = await conn.execute(sa.insert(_AsyncIntegrityChild), {"id": 20, "parent_id": 1})
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
-                _ = await conn.execute(sa.insert(model), values)
+                _ = await conn.execute(statement, params)
             assert not excinfo.value.connection_invalidated
             await conn.rollback()
             # The same AsyncConnection, on the same DBAPI connection, runs new
@@ -620,17 +678,31 @@ class TestAsyncIntegrityErrorContract:
             _ = await conn.execute(sa.insert(_AsyncIntegrityChild), {"id": 10, "parent_id": 1})
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await conn.rollback()
-        assert excinfo.value.orig.code == code  # pycubrid Error.code
+        # pycubrid Error.code
+        assert excinfo.value.orig.code == _expected_integrity_code(engine, code)
         _assert_integrity_error(engine, excinfo.value)
 
-    @pytest.mark.parametrize("kind", list(_ASYNC_INTEGRITY_VIOLATIONS))
-    async def test_orm_flush_violation_raises_integrity_error(self, engine: AsyncEngine, kind: str):
-        model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+    @pytest.mark.parametrize("kind", _ASYNC_ORM_INTEGRITY_KINDS)
+    async def test_orm_flush_violation_raises_integrity_error(
+        self, request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
+    ):
+        operation, model, values, code = _ASYNC_INTEGRITY_VIOLATIONS[kind]
+        if operation != "insert":
+            _xfail_on_pycubrid_before_1_9(request, AssertionError, _OLD_PARENT_CHANGE_REASON)
         # The AsyncSession is bound to one AsyncConnection, so after its rollback
         # it keeps using that connection and its DBAPI connection.
         async with engine.connect() as conn, AsyncSession(bind=conn) as session:
             raw = await _dbapi_connection(conn)
-            session.add(model(**values))
+            if operation == "insert":
+                session.add(model(**values))
+            else:
+                session.add(_AsyncIntegrityChild(id=20, parent_id=1))
+                await session.flush()
+                parent = await session.get(model, values["id"])
+                if operation == "delete":
+                    await session.delete(parent)
+                else:
+                    cast(Any, parent).id = values["new_id"]
             with pytest.raises(sa.exc.DBAPIError) as excinfo:
                 await session.flush()
             assert not excinfo.value.connection_invalidated
@@ -642,8 +714,46 @@ class TestAsyncIntegrityErrorContract:
             await session.flush()
             assert await conn.run_sync(_integrity_counts) == (1, 1)
             await session.rollback()
-        assert excinfo.value.orig.code == code  # pycubrid Error.code
+        # pycubrid Error.code
+        assert excinfo.value.orig.code == _expected_integrity_code(engine, code)
         _assert_integrity_error(engine, excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# #479: a value error in a complete reply is DataError and keeps the session
+# ---------------------------------------------------------------------------
+
+# CUBRID stores zero dates, but Python's datetime has no year 0.
+_ZERO_DATE_QUERIES = {
+    "date": "SELECT DATE'0000-00-00'",
+    "datetime": "SELECT DATETIME'0000-00-00 00:00:00'",
+}
+
+
+@pytest.mark.parametrize("kind", list(_ZERO_DATE_QUERIES))
+async def test_zero_date_is_data_error_and_keeps_connection(
+    request: pytest.FixtureRequest, engine: AsyncEngine, kind: str
+):
+    """pycubrid 1.9.0+ raises DataError and keeps the session
+    (cubrid-lab/pycubrid#492/#512/#543); 1.8.x raised a disconnect
+    OperationalError ("malformed response from broker") and closed it.
+    """
+    _xfail_on_pycubrid_before_1_9(
+        request,
+        sa.exc.OperationalError,
+        "pycubrid < 1.9.0 raises a disconnect OperationalError for a zero date; "
+        "DataError since cubrid-lab/pycubrid#512",
+    )
+    async with engine.connect() as conn:
+        raw = await _dbapi_connection(conn)
+        with pytest.raises(sa.exc.DataError) as excinfo:
+            _ = (await conn.execute(text(_ZERO_DATE_QUERIES[kind]))).all()
+        assert isinstance(excinfo.value.orig, engine.dialect.loaded_dbapi.DataError)
+        assert not excinfo.value.connection_invalidated
+        assert not conn.invalidated
+        assert await _dbapi_connection(conn) is raw
+        assert (await conn.execute(text("SELECT 1"))).scalar_one() == 1
+        assert await _dbapi_connection(conn) is raw
 
 
 # ---------------------------------------------------------------------------

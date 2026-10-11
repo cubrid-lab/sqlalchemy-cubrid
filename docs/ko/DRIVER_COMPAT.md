@@ -94,7 +94,10 @@ graph TD
 | 구문 오류 또는 알 수 없는 테이블 (-493) | `ProgrammingError` |
 | NOT NULL (-631), 외래 키 (-922), 고유 (-670) | `IntegrityError` |
 | 0으로 나누기 (-494) | `IntegrityError` |
+| 외래 키로 제한된 부모 `DELETE`/`UPDATE` (-924) | `IntegrityError` |
+| 참조되는 테이블의 `TRUNCATE` (-1284, CUBRID 10.2 및 11.0은 -924 `IntegrityError`를 보고) | `DatabaseError` |
 | 실패한 `CAST` (-181) | `DatabaseError` |
+| 결과의 0 `DATE`/`DATETIME` (`'0000-00-00'`) | DB-API 오류가 아닌 `SystemError`: SQLAlchemy가 감싸지 않으며 연결은 계속 사용할 수 있음 |
 | `rollback()` 이후 결과 읽기 (CCI -20040) | `InterfaceError` |
 
 SQLAlchemy는 전달받은 클래스를 감싸므로 `cubrid://`는 제약 위반에 `sqlalchemy.exc.IntegrityError`를 발생시킵니다. pycubrid는 [알려진 문제 9](#9-pycubrid-171-이하의-not-null--외래-키-위반)를 참고하세요. `sqlalchemy-cubrid` 방언은 연결 해제 오류를 다른 실패와 구별하기 위해 **문자열 기반 메시지 매칭**을 사용합니다.
@@ -219,6 +222,15 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 | 고유 / 기본 키 (-670) | `IntegrityError` | `IntegrityError` |
 
 **pycubrid 1.8.0에서 수정됨:** cubrid-lab/pycubrid#390으로 NOT NULL 및 외래 키 위반이 `CUBRIDdb`와 같이 `IntegrityError`로 발생하며, 계약 테스트는 이 동작을 요구합니다. pycubrid 1.7.1 이하에서는 pycubrid를 통한 NOT NULL 및 외래 키 실패를 `sqlalchemy.exc.DatabaseError`(`IntegrityError`의 기반 클래스)로 잡으세요. 방언은 의도적으로 메시지 기반으로 예외를 재분류하지 않습니다. 모든 드라이버에서 `rollback()` 후 연결이나 `Session`을 계속 사용할 수 있습니다.
+
+**pycubrid 1.8.x(지원 하한), pycubrid 1.9.0에서 수정됨** (CUBRID 10.2 및 11.4에서 검증, #479):
+
+| 경우 | pycubrid 1.8.x | pycubrid >= 1.9.0 |
+|---|---|---|
+| 외래 키로 제한된 부모 `DELETE`/`UPDATE` (-924), 참조되는 테이블의 `TRUNCATE` (-1284) | `DatabaseError` | `IntegrityError` (cubrid-lab/pycubrid#493) |
+| 완전한 응답 안에 pycubrid가 표현할 수 없는 값, 예를 들어 0 `DATE`/`DATETIME` (`'0000-00-00'`) | 연결 해제로 보고되는 `OperationalError`("malformed response from broker"): 연결이 무효화됨 | `DataError` (cubrid-lab/pycubrid#492, #512, #543): 같은 연결이 다음 문장을 실행함 |
+
+계약 테스트는 1.9.0 동작을 요구하며, pycubrid 1.8.x에서는 엄격한 예상 실패(strict xfail)입니다.
 
 ### 10. pycubrid는 CAS 재시작 후 세션을 교체 (방언이 격리 수준을 다시 적용)
 
