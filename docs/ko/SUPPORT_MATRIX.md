@@ -64,7 +64,7 @@ wheel/sdist의 새 환경 설치를 확인합니다. 지원 범위:
   EUC-KR로 매핑하는 3.15 선언 pycubrid 릴리스를 쓰세요.
 - **CUBRIDdb (`cubrid://`):** 공식 `cubrid-python` v11.3.0.51 소스는 `ubuntu-latest`의
   CI 빌드 절차로 3.15용으로 빌드되며, 전체 매트릭스는 3.15에서 해당 레인을 실행합니다.
-  GCC 14에서는 3.14를 포함한 모든 Python 버전에서 기본 빌드가 실패합니다. GCC 14가
+  GCC 14에서는 Python 3.14와 3.15 모두에서 기본 빌드가 실패합니다(비교한 두 버전이며 3.11–3.13은 시험하지 않음). GCC 14가
   `-Wincompatible-pointer-types`와 `-Wint-conversion`을 오류로 만들기 때문입니다.
   이 프로젝트는 CI에 경고 완화 플래그를 추가하지 않습니다. [드라이버 호환성](DRIVER_COMPAT.md)을
   참고하세요.

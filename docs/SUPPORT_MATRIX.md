@@ -65,8 +65,8 @@ scope of the claim:
   declares 3.15, which maps `ksc5601` to EUC-KR itself.
 - **CUBRIDdb (`cubrid://`):** the official `cubrid-python` v11.3.0.51 source builds
   for 3.15 with the CI recipe on `ubuntu-latest`, and the full matrix runs its
-  lanes on 3.15. With GCC 14 the stock build fails on every Python version,
-  3.14 included: GCC 14 makes `-Wincompatible-pointer-types` and
+  lanes on 3.15. With GCC 14 the stock build fails on Python 3.14 and 3.15
+  alike (the two versions compared; 3.11–3.13 were not tried): GCC 14 makes `-Wincompatible-pointer-types` and
   `-Wint-conversion` errors. This project does not add warning-downgrade flags to
   CI; see [Driver Compatibility](DRIVER_COMPAT.md).
 - **Not run on 3.15:** the SQLAlchemy compliance lanes stay on Python 3.14/CUBRID

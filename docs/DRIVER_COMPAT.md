@@ -68,7 +68,7 @@ because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations 
 | 3.12 | ✅ Fully supported | |
 | 3.13 | ✅ Fully supported | |
 | 3.14 | ✅ Fully supported | |
-| 3.15 | ✅ Fully supported | Standard GIL builds. The stock `cubrid-python` build fails with GCC 14 on every Python version (see below) |
+| 3.15 | ✅ Fully supported | Standard GIL builds. The stock `cubrid-python` build fails with GCC 14 on Python 3.14 and 3.15 alike (see below) |
 | 3.10 | ❌ Not supported from 1.10.0 | Last supported in 1.9.x |
 
 **GCC 14 and the official driver build:** `cubrid-python` v11.3.0.51 builds with

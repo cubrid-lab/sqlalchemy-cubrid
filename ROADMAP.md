@@ -27,8 +27,8 @@
   `requires-python` stays `>=3.11`.
 - The pycubrid routes depend on the pycubrid release that declares 3.15; the
   `[pycubrid]` floor is unchanged. The official CUBRIDdb build is assessed
-  separately: it builds on `ubuntu-latest`, and GCC 14 breaks it on every Python
-  version (see `docs/DRIVER_COMPAT.md`).
+  separately: it builds on `ubuntu-latest`, and GCC 14 breaks it on Python 3.14 and
+  3.15 alike, the two versions compared (see `docs/DRIVER_COMPAT.md`).
 - Preparation history: on 2026-10-03, 3.15.0rc3 was a preview
   ([upstream release notes](https://www.python.org/downloads/release/python-3150rc3/)).
   A manually dispatched Ubuntu/standard-GIL preview lane (`python-canary.yml`)

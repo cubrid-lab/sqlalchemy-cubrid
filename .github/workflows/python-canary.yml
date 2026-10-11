@@ -1,6 +1,8 @@
-name: Python 3.15 Preview
+name: Python 3.15 Packaging Check
 
-# One manually requested compatibility lane; not a supported-version declaration.
+# One manually requested lane: offline regressions and fresh wheel/sdist installs
+# on Python 3.15. Supported versions are declared in pyproject.toml and tested by
+# the full compatibility matrix (integration-full.yml), not by this lane.
 on:
   workflow_dispatch:
     inputs:
@@ -76,8 +78,8 @@ jobs:
           PREVIEW_STATUS: ${{ job.status }}
         run: |
           {
-            printf '## Python 3.15 preview\n\n'
+            printf '## Python 3.15 packaging check\n\n'
             printf 'Commit: %s\n\n' "$REQUESTED_SHA"
             printf 'Result: %s\n\n' "$PREVIEW_STATUS"
-            printf 'Manual Ubuntu/standard-GIL offline and packaging preview only. No live DB or official 3.15 support claim.\n'
+            printf 'Manual Ubuntu/standard-GIL offline and packaging check. Live CUBRID coverage for 3.15 is in integration-full.yml.\n'
           } >> "$GITHUB_STEP_SUMMARY"

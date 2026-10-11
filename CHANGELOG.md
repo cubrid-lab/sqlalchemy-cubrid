@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that declares Python 3.15 (cubrid-lab/pycubrid#831); the `[pycubrid]` floor stays
   `pycubrid>=1.8.0,<2.0`. On 3.15, pycubrid 1.10.0 and earlier reject `?charset=ksc5601`
   because Python 3.15 maps that codec alias to CP949; use `?charset=euckr` or the newer
-  pycubrid. Building the official CUBRIDdb driver with GCC 14 fails on every Python
-  version, 3.14 included; see `docs/DRIVER_COMPAT.md`.
+  pycubrid. Building the official CUBRIDdb driver with GCC 14 fails on Python 3.14 and
+  3.15 alike (the two versions compared); see `docs/DRIVER_COMPAT.md`.
 - **`sqlalchemy-cubrid` no longer installs with SQLAlchemy 2.2 or newer (#774).** The package
   metadata now requires `sqlalchemy>=2.0,<2.2`, matching the supported range already
   documented (2.0 and 2.1). SQLAlchemy 2.2 is not released yet (PyPI latest 2.1.4), so no
@@ -162,7 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `offline-endpoints` cells, move from Python 3.11/3.14 to 3.11/3.15, as the existing
   oldest/newest policy (#734) and its test require. Pull requests keep the Python 3.12
   cell, and the representative live cells (3.14/11.4 and 3.11/10.2) and SQLAlchemy
-  compliance lanes are unchanged. The manual `python-canary.yml` lane is kept. The live
+  compliance lanes are unchanged. The manual `python-canary.yml` lane is kept and renamed
+  "Python 3.15 Packaging Check", so it no longer says 3.15 is unsupported. The live
   Decimal-subclass round trip in `test/test_integration.py` is skipped on a Python without
   the C `_decimal` module (CI's 3.15.0), where pycubrid refuses Decimal subclasses by design.
 - **The cub_server restart tests run on the latest pycubrid again (#479)** — in
