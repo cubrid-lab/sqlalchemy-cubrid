@@ -133,11 +133,12 @@ def test_dependabot_style_pin_bump_alone_does_not_require_hook_or_tox_edit(
     tox.ini, since neither has a separate version to keep in sync."""
     config = tooling_config / "pyproject.toml"
     original = config.read_text()
-    config.write_text(
-        original.replace('"ruff==0.16.9"', '"ruff==99.0.0"').replace(
-            '"mypy==2.3.1"', '"mypy==99.0.0"'
-        )
+    updated = original.replace('"ruff==0.16.10"', '"ruff==99.0.0"').replace(
+        '"mypy==2.4.0"', '"mypy==99.0.0"'
     )
+    assert updated != original
+    config.write_text(updated)
+    assert declared_pins(tooling_config) == {"ruff": "99.0.0", "mypy": "99.0.0"}
     assert check(tooling_config) == []
 
 
@@ -187,6 +188,55 @@ def test_pins_are_read_from_their_dependency_groups() -> None:
     pins = declared_pins(ROOT)
     assert set(pins) == {"ruff", "mypy"}
     assert all(pins.values())
+
+
+def test_exact_tool_pin_with_extras_is_read_structurally(tooling_config: Path) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    updated = original.replace('"ruff==0.16.10"', '"ruff[toml]==0.16.10"')
+    assert updated != original
+    config.write_text(updated)
+    assert declared_pins(tooling_config)["ruff"] == "0.16.10"
+    assert check(tooling_config) == []
+
+
+def test_valid_toml_list_formatting_is_accepted(tooling_config: Path) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    updated = original.replace(
+        'lint = [\n    "ruff==0.16.10",\n]', 'lint = ["ruff==0.16.10"]'
+    ).replace('include = ["*.py", "*.pyi"]', 'include = [\n    "*.py",\n    "*.pyi",\n]')
+    assert updated != original
+    config.write_text(updated)
+    assert check(tooling_config) == []
+
+
+@pytest.mark.parametrize(
+    ("replacement", "message"),
+    [
+        ("", "lint dependency group: expected one declaration, found 0"),
+        ('lint = ["ruff>=0.16.10"]', "ruff: expected one declaration, found 0"),
+        (
+            'lint = ["ruff==0.16.10", "ruff[toml]==0.16.10"]',
+            "ruff: expected one declaration, found 2",
+        ),
+        (
+            'lint = ["ruff==0.16.10", "ruff>=0.16.10"]',
+            "ruff: expected one declaration, found 2",
+        ),
+        ('lint = "ruff==0.16.10"', "lint dependency group: expected a list of strings"),
+    ],
+)
+def test_invalid_tool_pins_fail_clearly(
+    tooling_config: Path, replacement: str, message: str
+) -> None:
+    config = tooling_config / "pyproject.toml"
+    original = config.read_text()
+    updated = original.replace('lint = [\n    "ruff==0.16.10",\n]', replacement)
+    assert updated != original
+    config.write_text(updated)
+    with pytest.raises(ValueError, match=message):
+        declared_pins(tooling_config)
 
 
 def test_published_dev_extra_is_detected(tooling_config: Path) -> None:
