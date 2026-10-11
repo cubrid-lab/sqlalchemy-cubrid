@@ -7,7 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.10.1] - 2026-10-11
+
 ### Upgrade notes
+
 - **`sqlalchemy-cubrid` no longer installs with SQLAlchemy 2.2 or newer (#774).** The package
   metadata now requires `sqlalchemy>=2.0,<2.2`, matching the supported range already
   documented (2.0 and 2.1). SQLAlchemy 2.2 is not released yet (PyPI latest 2.1.4), so no
@@ -17,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cap is then lifted in a later release.
 
 ### Changed
+
 - **SQLAlchemy is capped below 2.2 (#774)** — `sqlalchemy>=2.0,<2.3` became `>=2.0,<2.2` in
   `dependencies` and in the `dev` and `pycubrid` extras, so package metadata matches
   `docs/SUPPORT_MATRIX.md` (`≥ 2.2` unsupported). README, the translated READMEs,
@@ -64,7 +68,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ownership table and the expected before/after runner minutes. CI only; the
   dialect is unchanged.
 
+### Fixed
+
+* **packaging:** cap SQLAlchemy below 2.2 to match the documented support matrix ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/777)) ([715349a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715349a58f207facfdc43520ead2456f72eddbe4)), closes [#774](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/774)
+
 ### Documentation
+
 - **The compliance-lane pycubrid pin is labelled as the declared floor (#479)** —
   `docs/SUPPORT_MATRIX.md` (+ ko) listed the pycubrid compliance lanes as "pycubrid 1.8.0
   (recommended)", which read as a recommendation to install 1.8.0. The pin is the declared
@@ -101,7 +110,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   URL option needs a pycubrid release "newer than 1.8.0"; it now names 1.9.0, the release
   that added it. Docs only.
 
+* **agents:** add support-claim review checklist ([#784](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/784)) ([a8ffc4b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a8ffc4bbd2ae41279f86ca125dfaba242ff2909e))
+* **agents:** replace stale performance planning snapshot with pointers ([#757](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/757)) ([f2b838a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f2b838a4e7fc418c63c0343c572bde1c2daf9c54))
+* **ci:** clarify SQLAlchemy pre-release canary coverage ([#788](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/788)) ([85817ca](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85817ca476e05604ba1347d6b99ff525da706489))
+* **driver:** clarify CUBRIDdb support and deprecated extras ([#781](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/781)) ([d20a6b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d20a6b25cba37cc9d9a55aef330600242cd038e6))
+* drop the stale nightly full-integration wording ([#792](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/792)) ([b0e95b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b0e95b27bb46ac90d505897e280f6037d41ea670))
+* label the compliance-lane pycubrid pin as the declared floor ([#801](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/801)) ([ea9392e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ea9392e8e5efea626a3777db3fb923ca7200b6ad)), closes [#479](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/479)
+* name private vulnerability reporting as the preferred security channel ([#796](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/796)) ([98b746f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/98b746f00fa66268f3334088bca705f3fe786713))
+* remove stale test_dml.py and unguarded counts from PRD/DEVELOPMENT ([#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/759)) ([c59c7db](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c59c7db92fc49769abeb832f1dce47fe48ca78f7))
+* **review:** distinguish agent review routes and dispositions ([#802](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/802)) ([24743d6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24743d604461fc681b84ecfadc0e4ec46b2c2668))
+* **support:** distinguish current guarantees from historical evidence ([#783](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/783)) ([92307cf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/92307cfcb856103827a488d5f4bf8895c02c192d))
+* **types:** identify pycubrid 1.9.0 collection binding ([#782](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/782)) ([81fc4ff](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/81fc4ff7744d5a200c2077183c601125e21f09f0))
+
 ### CI
+
 - **The cub_server restart tests run on the latest pycubrid again (#479)** — in
   `ci.yml` `integration-tests`, the restart step ran after the gating compliance step
   had downgraded the job to `pycubrid==1.8.0`, so it tested the floor instead of the
@@ -185,6 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mapping. CI and release tooling only; the dialect is unchanged.
 
 ### Tests
+
 - **Async cancellation and driver deadlines discard the connection (#479)** —
   `test/test_aio_integration.py::TestAsyncCancellationAndDeadline` runs `SELECT SLEEP(5)`
   through `cubrid+aiopycubrid://` with a one-slot pool. Under
