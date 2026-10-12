@@ -79,18 +79,33 @@ def _find(pattern: re.Pattern[str], text: str, origin: str) -> list[re.Match[str
     return matches
 
 
+# A GitHub Markdown code fence: three or more backticks or tildes, indented by at
+# most three spaces. It closes with the same character, at least as long, alone.
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+
+
 def _rewrite_references(notes: str) -> str:
     """Rewrite release-please's reference suffix on generated ``* `` entry lines only.
 
-    Lines inside fenced code blocks are content and stay unchanged.
+    Lines inside fenced code blocks (backtick or tilde fences) are content and stay
+    unchanged.
     """
     lines = []
-    in_fence = False
+    fence: str | None = None
     for line in notes.splitlines(keepends=True):
-        if not in_fence and line.startswith("* "):
+        if fence is None and line.startswith("* "):
             line = GENERATED_REFERENCES.sub(r"\1, refs ", line, count=1)
-        if line.startswith("```"):
-            in_fence = not in_fence
+        match = FENCE.match(line)
+        if match:
+            marker = match.group(1)
+            if fence is None:
+                fence = marker
+            elif (
+                marker[0] == fence[0]
+                and len(marker) >= len(fence)
+                and not line[match.end() :].strip()
+            ):
+                fence = None
         lines.append(line)
     return "".join(lines)
 
@@ -184,7 +199,7 @@ def rewrite_pr_body(pull_request: dict[str, object]) -> str | None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--base-changelog")
-    parser.add_argument("--generated-changelog", default="RELEASE_CHANGELOG.md")
+    parser.add_argument("--generated-changelog")
     parser.add_argument("--version")
     parser.add_argument("--output")
     parser.add_argument(
@@ -193,9 +208,10 @@ def main(argv: list[str] | None = None) -> int:
         "only when the body changes",
     )
     args = parser.parse_args(argv)
-    if args.pr_body:
-        if args.base_changelog or args.version or not args.output:
-            parser.error("--pr-body takes only --output")
+    if args.pr_body is not None:
+        others = (args.base_changelog, args.generated_changelog, args.version)
+        if not args.pr_body or any(o is not None for o in others) or not args.output:
+            parser.error("--pr-body takes a pull request JSON path and only --output")
         try:
             pull_request = json.loads(Path(args.pr_body).read_text(encoding="utf-8"))
             if not isinstance(pull_request, dict):
@@ -217,7 +233,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = compose(
             Path(args.base_changelog).read_text(encoding="utf-8"),
-            Path(args.generated_changelog).read_text(encoding="utf-8"),
+            Path(args.generated_changelog or "RELEASE_CHANGELOG.md").read_text(encoding="utf-8"),
             args.version,
         )
     except (ValueError, OSError) as exc:

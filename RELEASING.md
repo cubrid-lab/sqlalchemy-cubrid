@@ -128,13 +128,19 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
   the close/reopen above.
 - The release PR body is release-please's raw notes. GitHub reads a
   `, closes [#N](…)` there as a closing keyword and would close issue N on
-  merge, even when the commit only said `Refs #N`. After composition, the
-  **Rewrite generated references in the release PR body** step therefore runs
-  the same composer with `--pr-body` and rewrites those references to
-  `, refs [#N](…)` (only on generated `* ` entry lines, only right after the
-  commit link, never inside code blocks), using the job's existing
-  `pull-requests: write` token. A body that is already rewritten is left alone.
-  The PR's Development sidebar shows any closing issue that remains.
+  merge, even when the commit only said `Refs #N`. Right after release-please
+  updates the PR, the **Rewrite generated references in the release PR body**
+  step runs the composer from `main` with `--pr-body` and rewrites those
+  references to `, refs [#N](…)` (only on generated `* ` entry lines, only
+  right after the commit link, never inside code blocks), with the job's
+  existing `pull-requests: write` token. It runs before composition, so a
+  failed composition does not leave the body unrewritten; an edit someone makes
+  to the body while that step runs can be overwritten. Before merging, confirm
+  that GitHub lists no closing issue the release must not close; normally the
+  list is empty:
+  `gh api graphql -f query='{repository(owner:"cubrid-lab",name:"sqlalchemy-cubrid"){pullRequest(number:<N>){closingIssuesReferences(first:50){nodes{number state}}}}}'`.
+  Anything listed (for example a link added by hand in the Development
+  sidebar) has to be handled before the merge.
 - Run `make release-check VERSION=X.Y.Z` again after manual edits. Require
   all normal PR checks before squash-merging; the merged version change
   starts the existing guarded publisher, regardless of PR title.
