@@ -32,7 +32,7 @@ CUBRID एक उच्च-प्रदर्शन ओपन-सोर्स �
 - **विस्तृत ऑफ़लाइन टेस्ट सुइट** — इन्हें चलाने के लिए डेटाबेस की आवश्यकता नहीं; CI `offline-tests` जॉब में न्यूनतम 95% लाइन कवरेज सुनिश्चित करता है (`--cov-fail-under=95`)
 - **Concurrency stress tests** — `QueuePool` sync threaded + `asyncio.gather` workloads को live CUBRID पर validate किया गया है
 - **SQLAlchemy 2.1-ready compat shim** — private API access को `_compat.py` में wrap किया गया है (पूर्ण SA 2.1 validation तक अभी भी `<2.2` पर pinned)
-- **Python 3.10 -- 3.14** पर **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) के खिलाफ टेस्ट किया गया
+- **Python 3.11 -- 3.15** पर **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) के खिलाफ टेस्ट किया गया
 - CUBRID-विशिष्ट DML constructs: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic migration support box से बाहर उपलब्ध
 - **तीन driver options** — C-extension (`cubrid://`), pure Python (`cubrid+pycubrid://`), या async pure Python (`cubrid+aiopycubrid://`)
@@ -58,7 +58,7 @@ flowchart TD
 
 ## आवश्यकताएँ
 
-- Python 3.10+
+- Python 3.11 या उससे नया संस्करण
 - SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-extension) **या** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python)
 
@@ -179,7 +179,7 @@ async with AsyncSession(engine) as session:
 
 | घटक | समर्थित versions |
 |---|---|
-| Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
+| Python | 3.11, 3.12, 3.13, 3.14, 3.15 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
@@ -207,7 +207,7 @@ Pure Python driver के लिए (CUBRID native libraries की आवश्
 
 ### कौन-से Python versions समर्थित हैं?
 
-Python 3.10, 3.11, 3.12, 3.13, और 3.14।
+Python 3.11, 3.12, 3.13, 3.14, और 3.15 (मानक GIL बिल्ड)।
 
 ### क्या CUBRID RETURNING clauses को सपोर्ट करता है?
 
