@@ -166,10 +166,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty), and fails when a PR has 250 or more commits, because GitHub lists only
   250. A test pins that step. Owners with an underscore, as Enterprise Managed Users
   have (`alice_acme/repo#N`), are now matched in references and links. The job setup
-  and these checks come from pycubrid's guard (cubrid-lab/pycubrid#845); the PR-body
-  handling is unchanged. cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#276) and
-  cubrid-cookbook-python (cubrid-lab/cubrid-cookbook-python#294) have the same
-  change.
+  and these checks come from pycubrid's guard (cubrid-lab/pycubrid#845); Markdown
+  handling of the PR body is unchanged, and underscore owners are matched there too.
+  cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#276) and cubrid-cookbook-python
+  (cubrid-lab/cubrid-cookbook-python#294) have the same change.
 - **The PR-body closing guard catches emphasized, linked, escaped and split
   closures, and fails closed where Markdown structure is uncertain** — the
   `PR title` check now rejects:
@@ -189,7 +189,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code and inline comments are scanned, because hiding them needs inline parsing
   that link destinations, HTML attributes and autolinks can defeat. Once a fence
   appears where its extent is unknown (in a list item, a block quote, after a list
-  marker, inside raw HTML, on an indented line, or a line that only looks like a
+  marker, inside raw HTML, on an indented line, or as a line that only looks like a
   fence), no later fence or comment is hidden, so a closing fence can never be
   misread as an opener. Raw HTML blocks end where CommonMark ends them, and any
   other line starting with a tag is treated as raw HTML until a blank line. Comments
