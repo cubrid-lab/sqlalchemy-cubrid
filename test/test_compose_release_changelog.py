@@ -234,15 +234,26 @@ def test_generated_issue_references_render_as_refs_not_closes() -> None:
     # release-please renders a "Refs #479" footer as ", closes [#479](...)" (#770).
     entry = (
         "* pin note ([#801](https://example/issues/801)) ([ea9392e](https://example/commit/e))"
-        ", closes [#479](https://example/issues/479) [#480](https://example/issues/480)"
+        ", closes [cubrid-lab/pycubrid#801](https://example/pycubrid/issues/801)"
+        " [#479](https://example/issues/479)"
     )
-    base = BASE.replace(
-        "Keep this **exactly**.", "Curated, closes [#9](https://example/issues/9) stays."
+    curated = (
+        "- Curated ([abc1234](https://example/commit/c)), closes [#9](https://example/issues/9)"
     )
-    actual = compose(base, NOTES.replace("* new API", entry), "1.9.0")
+    history = "* old ([def5678](https://example/commit/d)), closes [#7](https://example/issues/7)"
+    subject = "* note (x), closes [y] stays"
+    base = BASE.replace("Keep this **exactly**.", curated).replace("Old history.", history)
+    generated = NOTES.replace("* new API", f"{entry}\n{subject}") + (
+        "\n## [1.8.0](https://example/compare) (2026-09-01)\n\n### Fixed\n\n" + history + "\n"
+    )
+    actual = compose(base, generated, "1.9.0")
     assert (
-        "([ea9392e](https://example/commit/e)), refs [#479](https://example/issues/479)"
-        " [#480](https://example/issues/480)" in actual
+        "([ea9392e](https://example/commit/e)), refs "
+        "[cubrid-lab/pycubrid#801](https://example/pycubrid/issues/801)"
+        " [#479](https://example/issues/479)" in actual
     )
-    assert "), closes [#479]" not in actual
-    assert "Curated, closes [#9](https://example/issues/9) stays." in actual
+    candidate = actual[actual.index("## [1.9.0]") : actual.index("## [1.8.0]")]
+    assert curated in candidate and subject in candidate
+    assert candidate.count(", closes [") == 2  # the curated line and the subject
+    assert actual[actual.index("## [1.8.0]") :] == base[base.index("## [1.8.0]") :]
+    assert compose(base, generated, "1.9.0") == actual

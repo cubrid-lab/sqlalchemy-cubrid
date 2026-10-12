@@ -47,7 +47,8 @@ GENERATED_ALIASES = {"⚠ BREAKING CHANGES": "Upgrade notes"}
 # block ("Refs #1" as well as "Closes #1") into a reference, and its
 # changelog template renders all references as ", closes [#1](...)". The
 # keyword is lost, so "closes" can be false; "refs" is true for every trailer.
-GENERATED_REFERENCES = re.compile(r"\), closes (?=\[)")
+# The match is tied to the commit-hash link that precedes the reference list.
+GENERATED_REFERENCES = re.compile(r"(\(\[[0-9a-f]{7,40}\]\([^)\s]+\)\)), closes (?=\[)")
 
 
 def _find(pattern: re.Pattern[str], text: str, origin: str) -> list[re.Match[str]]:
@@ -120,7 +121,7 @@ def compose(base: str, generated: str, version: str) -> str:
     notes = generated[headers[0].end() : stop].strip()
     if not notes or _find(HEADING_1_2, notes, "generated notes"):
         raise ValueError("empty or unsupported generated section")
-    notes = GENERATED_REFERENCES.sub("), refs ", notes)
+    notes = GENERATED_REFERENCES.sub(r"\1, refs ", notes)
     generated_preamble, generated_bodies = _split(notes, "generated", GENERATED_ALIASES)
     if generated_preamble.strip() or not generated_bodies:
         raise ValueError("generated notes must sit under ### headings")
