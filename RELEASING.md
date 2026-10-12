@@ -68,7 +68,12 @@ create no candidate on their own and appear only with a breaking change.
 standard `###` headings in the standard order (curated entries first,
 release-please's `⚠ BREAKING CHANGES` under Upgrade notes), and creates the
 canonical dated header required by the existing publisher, so the candidate
-passes `scripts/lint_changelog.py`. It preserves released history and one empty
+passes `scripts/lint_changelog.py`. Generated issue references are written as
+`, refs [#N](…)`: release-please 17.6.0 turns any `Refs #N` or `Closes #N`
+trailer in a commit's final footer block into a reference and renders every
+reference as `, closes [#N](…)`, which is false for `Refs`. `RELEASE_CHANGELOG.md`
+keeps the raw generator output; `CHANGELOG.md`, the publication source, has the
+rewritten form. It preserves released history and one empty
 Unreleased section. An unknown generated or curated heading fails closed.
 Stale main runs fail before generation and before pushing composed notes. The
 candidate must pass `make release-check VERSION=X.Y.Z`.
@@ -117,7 +122,8 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
   Then confirm
   `gh api repos/cubrid-lab/sqlalchemy-cubrid/compare/main...release-please--branches--main--components--sqlalchemy-cubrid --jq .behind_by`
   prints `0`, re-apply the freeze label
-  (`gh api -X POST repos/cubrid-lab/sqlalchemy-cubrid/issues/<N>/labels -f 'labels[]=autorelease: review'`)
+  (`echo '{"labels":["autorelease: review"]}' | gh api -X POST repos/cubrid-lab/sqlalchemy-cubrid/issues/<N>/labels --input -`;
+  the JSON body also works with old `gh` releases that do not support `-f 'labels[]=…'`)
   and keep it through merge, re-apply any recorded correction, and start CI with
   the close/reopen above.
 - Run `make release-check VERSION=X.Y.Z` again after manual edits. Require

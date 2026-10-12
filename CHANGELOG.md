@@ -157,6 +157,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **Generated release notes write issue references as "refs", not "closes"** — release-please
+  17.6.0 renders every issue trailer in a commit's final footer block as `, closes [#N](…)`,
+  so a commit that only said `Refs #479` was listed as closing that issue (#770).
+  `scripts/compose_release_changelog.py` now rewrites generated references to
+  `, refs [#N](…)` in `CHANGELOG.md`; curated entries and released history are unchanged.
+  `RELEASING.md` gives the freeze-label command as a JSON body, which also works with old
+  `gh` releases.
 - **The closing guard also checks the PR title and commit messages, and owners with
   an underscore** — the PR title and the PR's commit messages make up the squash
   commit, so the `PR title` check now reads them too, as plain text: Markdown code

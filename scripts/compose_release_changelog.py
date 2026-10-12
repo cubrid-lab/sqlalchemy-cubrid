@@ -5,7 +5,8 @@ Read main's CHANGELOG at the generator base SHA, never a previously composed
 candidate. Generated headers belong in RELEASE_CHANGELOG.md; publication keeps
 its strict bracket/date contract. Curated and generated entries are merged under
 the standard ``###`` headings in the standard order, so the candidate passes
-scripts/lint_changelog.py. Call only after the freeze-label check.
+scripts/lint_changelog.py. Generated issue references are rendered as "refs",
+not "closes" (see GENERATED_REFERENCES). Call only after the freeze-label check.
 """
 
 from __future__ import annotations
@@ -42,6 +43,11 @@ ALLOWED_SECTIONS = (
     "Tests",
 )
 GENERATED_ALIASES = {"⚠ BREAKING CHANGES": "Upgrade notes"}
+# release-please 17.6.0 turns an issue trailer in a commit's final footer
+# block ("Refs #1" as well as "Closes #1") into a reference, and its
+# changelog template renders all references as ", closes [#1](...)". The
+# keyword is lost, so "closes" can be false; "refs" is true for every trailer.
+GENERATED_REFERENCES = re.compile(r"\), closes (?=\[)")
 
 
 def _find(pattern: re.Pattern[str], text: str, origin: str) -> list[re.Match[str]]:
@@ -114,6 +120,7 @@ def compose(base: str, generated: str, version: str) -> str:
     notes = generated[headers[0].end() : stop].strip()
     if not notes or _find(HEADING_1_2, notes, "generated notes"):
         raise ValueError("empty or unsupported generated section")
+    notes = GENERATED_REFERENCES.sub("), refs ", notes)
     generated_preamble, generated_bodies = _split(notes, "generated", GENERATED_ALIASES)
     if generated_preamble.strip() or not generated_bodies:
         raise ValueError("generated notes must sit under ### headings")

@@ -228,3 +228,21 @@ def test_unclosed_code_fence_fails_closed(base: str, generated: str, message: st
 def test_fenced_release_header_fails_closed(base: str, generated: str) -> None:
     with pytest.raises(ValueError, match="release header inside an open code fence"):
         compose(base, generated, "1.9.0")
+
+
+def test_generated_issue_references_render_as_refs_not_closes() -> None:
+    # release-please renders a "Refs #479" footer as ", closes [#479](...)" (#770).
+    entry = (
+        "* pin note ([#801](https://example/issues/801)) ([ea9392e](https://example/commit/e))"
+        ", closes [#479](https://example/issues/479) [#480](https://example/issues/480)"
+    )
+    base = BASE.replace(
+        "Keep this **exactly**.", "Curated, closes [#9](https://example/issues/9) stays."
+    )
+    actual = compose(base, NOTES.replace("* new API", entry), "1.9.0")
+    assert (
+        "([ea9392e](https://example/commit/e)), refs [#479](https://example/issues/479)"
+        " [#480](https://example/issues/480)" in actual
+    )
+    assert "), closes [#479]" not in actual
+    assert "Curated, closes [#9](https://example/issues/9) stays." in actual
