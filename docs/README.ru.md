@@ -33,7 +33,7 @@ CUBRID — это высокопроизводительная реляцион�
 - **Обширный набор офлайн-тестов** — для запуска не требуется база данных; CI обеспечивает минимум 95 % покрытия строк в задаче `offline-tests` (`--cov-fail-under=95`)
 - **Стресс-тесты конкурентности** — синхронные threaded-нагрузки `QueuePool` и `asyncio.gather` валидированы на реальном CUBRID
 - **Compat shim, готовый к SQLAlchemy 2.1** — доступ к приватным API обёрнут в `_compat.py` (пока остаётся ограничение `<2.2` до полной валидации SA 2.1)
-- Протестирован на **4 версиях CUBRID** (10.2, 11.0, 11.2, 11.4) и **Python 3.10 -- 3.14**
+- Протестирован на **4 версиях CUBRID** (10.2, 11.0, 11.2, 11.4) и **Python 3.11 -- 3.15**
 - CUBRID-специфичные DML-конструкции: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Поддержка миграций Alembic из коробки
 - **Три варианта драйвера** — C-расширение (`cubrid://`), чистый Python (`cubrid+pycubrid://`) или асинхронный чистый Python (`cubrid+aiopycubrid://`)
@@ -59,7 +59,7 @@ flowchart TD
 
 ## Требования
 
-- Python 3.10+
+- Python 3.11 или новее
 - SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-расширение) **или** [pycubrid](https://github.com/cubrid-lab/pycubrid) (чистый Python)
 
@@ -180,7 +180,7 @@ async with AsyncSession(engine) as session:
 
 | Компонент | Поддерживаемые версии |
 |---|---|
-| Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
+| Python | 3.11, 3.12, 3.13, 3.14, 3.15 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
@@ -208,7 +208,7 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
 ### Какие версии Python поддерживаются?
 
-Python 3.10, 3.11, 3.12, 3.13 и 3.14.
+Python 3.11, 3.12, 3.13, 3.14 и 3.15 (стандартные сборки с GIL).
 
 ### Поддерживает ли CUBRID предложения RETURNING?
 
