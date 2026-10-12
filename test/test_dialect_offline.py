@@ -858,6 +858,77 @@ class TestReflectionMethods:
         assert members[1].__class__.__name__ == "VARCHAR"
         assert members[1].length == 50
 
+    @pytest.mark.parametrize(
+        ("type_text", "ddl"),
+        [
+            ("CHAR(3)", "CHAR(3)"),
+            ("VARCHAR", "VARCHAR(4096)"),
+            ("CHAR VARYING(50)", "VARCHAR(50)"),
+            ("NCHAR VARYING(20)", "NCHAR VARYING(20)"),
+            ("NUMERIC(10, 2)", "NUMERIC(10, 2)"),
+            ("NUMERIC(38)", "NUMERIC(38)"),
+            ("DECIMAL", "DECIMAL"),
+            ("BIT", "BIT(1)"),
+            ("BIT VARYING(128)", "BIT VARYING(128)"),
+            ("SHORT", "SMALLINT"),
+            ("INTEGER(11)", "INTEGER"),
+            ("DATETIMETZ", "DATETIMETZ"),
+            ("JSON", "JSON"),
+        ],
+    )
+    def test_decode_show_columns_type_matches_get_columns(self, type_text, ddl):
+        """#831: the shared decoder builds what get_columns reflects for a column
+        and for a parenthesised collection member, without any query."""
+        dialect = CubridDialect()
+        decoded = dialect._decode_show_columns_type(type_text)
+        assert dialect.type_compiler_instance.process(decoded) == ddl
+
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = [
+            [
+                ("col", type_text, "YES", "", None, ""),
+                ("coll", f"SET({type_text})", "YES", "", None, ""),
+            ],
+            [],
+        ]
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            columns = _invoke_reflection(dialect, "get_columns", connection, "t")
+        compile_type = dialect.type_compiler_instance.process
+        assert repr(columns[0]["type"]) == repr(decoded)
+        assert compile_type(columns[0]["type"]) == ddl
+        assert compile_type(columns[1]["type"]) == f"SET({ddl})"
+        assert connection.execute.call_count == 2
+
+    @pytest.mark.parametrize("type_text", ["MYSTERY", "MYSTERY(3)", "datetime", "", "SET(INTEGER)"])
+    def test_decode_show_columns_type_unknown_returns_none(self, type_text):
+        """#831: an unrecognized text returns None; get_columns keeps deciding
+        (warn + NullType for a column, the raw text for a collection member)."""
+        dialect = CubridDialect()
+        assert dialect._decode_show_columns_type(type_text) is None
+
+    def test_get_columns_unknown_column_and_member_handling_unchanged(self):
+        """#831: the column path warns and uses NullType; a collection member
+        keeps its text, with no warning."""
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.info_cache = {}
+        connection.dialect_options = {}
+        connection.execute.side_effect = [
+            [
+                ("col", "MYSTERY(3)", "YES", "", None, ""),
+                ("coll", "SET(MYSTERY, INTEGER)", "YES", "", None, ""),
+            ],
+            [],
+        ]
+        with patch("sqlalchemy.util.warn") as warn:
+            columns = _invoke_reflection(dialect, "get_columns", connection, "t")
+        warn.assert_called_once_with("Did not recognize type 'MYSTERY(3)' of column 'col'")
+        assert columns[0]["type"] is sqltypes.NULLTYPE
+        assert dialect.type_compiler_instance.process(columns[1]["type"]) == "SET(MYSTERY,INTEGER)"
+
     def test_get_pk_constraint_with_primary_key_and_constraint_name(self):
         dialect = CubridDialect()
         connection = MagicMock()

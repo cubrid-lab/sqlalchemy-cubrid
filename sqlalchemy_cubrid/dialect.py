@@ -620,61 +620,12 @@ class CubridDialect(default.DefaultDialect):
                 members: list[Any] = []
                 for member_str in _split_collection_members(inner_raw):
                     member_str = member_str.strip()
-                    member_key = _RE_TYPE_PARAMS.sub("", member_str).strip()
-                    if member_key in ("CHAR", "VARCHAR", "NCHAR", "CHAR VARYING", "NCHAR VARYING"):
-                        length_match = _RE_LENGTH.search(member_str)
-                        length = int(length_match.group(1)) if length_match else None
-                        members.append(self.ischema_names[member_key](length))  # pyright: ignore[reportCallIssue, reportArgumentType]
-                    elif member_key in ("NUMERIC", "DECIMAL"):
-                        params_match = _RE_PRECISION_SCALE.search(member_str)
-                        if params_match:
-                            precision = int(params_match.group(1))
-                            scale = int(params_match.group(2)) if params_match.group(2) else None
-                            members.append(
-                                self.ischema_names[member_key](precision=precision, scale=scale)
-                            )  # pyright: ignore[reportCallIssue]
-                        else:
-                            members.append(self.ischema_names[member_key]())
-                    elif member_key in ("BIT", "BIT VARYING"):
-                        length_match = _RE_LENGTH.search(member_str)
-                        members.append(
-                            BIT(
-                                length=int(length_match.group(1)) if length_match else None,
-                                varying=member_key == "BIT VARYING",
-                            )
-                        )
-                    elif member_key in self.ischema_names:
-                        cls = self.ischema_names[member_key]
-                        members.append(cls() if callable(cls) else cls)
-                    else:
-                        members.append(member_str)
+                    member = self._decode_show_columns_type(member_str)
+                    members.append(member_str if member is None else member)
                 coltype = coll_cls(*members)
-            elif coltype_key in ("CHAR", "VARCHAR", "NCHAR", "CHAR VARYING", "NCHAR VARYING"):
-                length_match = _RE_LENGTH.search(coltype_raw)
-                length = int(length_match.group(1)) if length_match else None
-                coltype = self.ischema_names[coltype_key](length)  # pyright: ignore[reportCallIssue, reportArgumentType]
-            elif coltype_key in ("NUMERIC", "DECIMAL"):
-                params_match = _RE_PRECISION_SCALE.search(coltype_raw)
-                if params_match:
-                    precision = int(params_match.group(1))
-                    scale = int(params_match.group(2)) if params_match.group(2) else None
-                    coltype = self.ischema_names[coltype_key](precision=precision, scale=scale)  # pyright: ignore[reportCallIssue]
-                else:
-                    coltype = self.ischema_names[coltype_key]()
-            elif coltype_key in ("BIT", "BIT VARYING"):
-                # Keep the bit length and VARYING so a reflected BIT(32) /
-                # BIT VARYING(64) compiles back to the same DDL (#545).
-                length_match = _RE_LENGTH.search(coltype_raw)
-                coltype = BIT(
-                    length=int(length_match.group(1)) if length_match else None,
-                    varying=coltype_key == "BIT VARYING",
-                )
             else:
-                try:
-                    coltype_cls = self.ischema_names[coltype_key]
-                    # Some ischema entries are classes, some are instances
-                    coltype = coltype_cls() if callable(coltype_cls) else coltype_cls
-                except KeyError:
+                coltype = self._decode_show_columns_type(coltype_raw or "")
+                if coltype is None:
                     util.warn("Did not recognize type '%s' of column '%s'" % (coltype_raw, colname))
                     coltype = sqltypes.NULLTYPE
 
@@ -709,6 +660,45 @@ class CubridDialect(default.DefaultDialect):
             column["comment"] = comment_map.get(column["name"])
 
         return columns
+
+    def _decode_show_columns_type(self, type_text: str) -> Any | None:
+        """Return the SQLAlchemy type for a ``SHOW COLUMNS`` type text, or ``None``.
+
+        Decodes a scalar type such as ``VARCHAR(100)``, ``NUMERIC(10,2)`` or
+        ``BIT VARYING(64)``, used for a column and for each member of a
+        parenthesised collection (``SET(NUMERIC(10,2),VARCHAR(50))``). Keeps the
+        CHAR/VARCHAR/NCHAR (and VARYING) length, the NUMERIC/DECIMAL precision and
+        scale, and the BIT length and VARYING (#545); any other ``ischema_names``
+        entry is built without arguments. An unrecognized type returns ``None`` and
+        the caller decides: :meth:`get_columns` warns and uses ``NullType`` for a
+        column and keeps the text for a collection member (#831). No query, no
+        warning, no server-version branch.
+        """
+        type_key = _RE_TYPE_PARAMS.sub("", type_text).strip()
+        if type_key in ("CHAR", "VARCHAR", "NCHAR", "CHAR VARYING", "NCHAR VARYING"):
+            length_match = _RE_LENGTH.search(type_text)
+            length = int(length_match.group(1)) if length_match else None
+            return self.ischema_names[type_key](length)  # pyright: ignore[reportCallIssue, reportArgumentType]
+        if type_key in ("NUMERIC", "DECIMAL"):
+            params_match = _RE_PRECISION_SCALE.search(type_text)
+            if params_match:
+                precision = int(params_match.group(1))
+                scale = int(params_match.group(2)) if params_match.group(2) else None
+                return self.ischema_names[type_key](precision=precision, scale=scale)  # pyright: ignore[reportCallIssue]
+            return self.ischema_names[type_key]()
+        if type_key in ("BIT", "BIT VARYING"):
+            # Keep the bit length and VARYING so a reflected BIT(32) /
+            # BIT VARYING(64) compiles back to the same DDL (#545).
+            length_match = _RE_LENGTH.search(type_text)
+            return BIT(
+                length=int(length_match.group(1)) if length_match else None,
+                varying=type_key == "BIT VARYING",
+            )
+        type_cls = self.ischema_names.get(type_key)
+        if type_cls is None:
+            return None
+        # Some ischema entries are classes, some are instances
+        return type_cls() if callable(type_cls) else type_cls
 
     @reflection.cache
     def get_pk_constraint(
