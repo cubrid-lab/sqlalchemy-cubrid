@@ -344,7 +344,10 @@ but do not transfer work or require another repository to close its issue.
 For changes to several repositories, create independent local issues and PRs.
 Never use issue auto-closing keywords with another repository's issue; its
 maintainer controls closure. The existing required PR title check rejects
-direct foreign-repository closing references while allowing Refs links.
+direct foreign-repository closing references in the PR body, the PR title and
+commit messages while allowing Refs links. `main` is squash-merged with the PR
+title and the commit messages; an edit to the squash message at merge time is
+not checked, so do not add foreign closing keywords there.
 
 An issue body is the current work specification, not a session transcript.
 Before implementation, maintainers/agents must ensure it states the problem

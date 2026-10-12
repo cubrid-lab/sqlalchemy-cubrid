@@ -157,6 +157,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **The closing guard also checks the PR title and commit messages, and owners with
+  an underscore** — the PR title and the PR's commit messages make up the squash
+  commit, so the `PR title` check now reads them too, as plain text: Markdown code
+  does not hide a keyword there, and each commit message is checked on its own. The
+  job lists the commits with `gh api`, using a token that can only read pull
+  requests (the job has `pull-requests: read`; the workflow-level permissions stay
+  empty), and fails when a PR has 250 or more commits, because GitHub lists only
+  250. A test pins that step. Owners with an underscore, as Enterprise Managed Users
+  have (`alice_acme/repo#N`), are now matched in references and links. The job setup
+  and these checks come from pycubrid's guard (cubrid-lab/pycubrid#845); the PR-body
+  handling is unchanged. cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#276) and
+  cubrid-cookbook-python (cubrid-lab/cubrid-cookbook-python#294) have the same
+  change.
 - **The PR-body closing guard catches emphasized, linked, escaped and split
   closures, and fails closed where Markdown structure is uncertain** — the
   `PR title` check now rejects:
@@ -176,21 +189,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   code and inline comments are scanned, because hiding them needs inline parsing
   that link destinations, HTML attributes and autolinks can defeat. Once a fence
   appears where its extent is unknown (in a list item, a block quote, after a list
-  marker or inside raw HTML), no later fence or comment is hidden, so a closing
-  fence can never be misread as an opener. Raw HTML blocks end where CommonMark
-  ends them, and any other line starting with a tag is treated as raw HTML until
-  a blank line. Comments after raw HTML are scanned, a comment also ends at `--!>`,
-  and after a raw-text element such as `<textarea>` or `<select>` the rest of the
-  body is scanned. Lines split only at CR and LF, a leading byte order mark is
-  dropped, and only spaces and tabs count as blank or indentation. A heading, block
-  quote, fence, thematic break or comment block directly under a list item now ends
-  the list, so indented code after it is ignored instead of blocking the PR.
+  marker, inside raw HTML, on an indented line, or a line that only looks like a
+  fence), no later fence or comment is hidden, so a closing fence can never be
+  misread as an opener. Raw HTML blocks end where CommonMark ends them, and any
+  other line starting with a tag is treated as raw HTML until a blank line. Comments
+  after anything that may start an HTML tag are scanned, a comment also ends at
+  `--!>`, and after a raw-text element such as `<textarea>` or `<select>` the rest
+  of the body is scanned. Lines split only at CR and LF, a leading byte order mark
+  is dropped, and only spaces and tabs count as blank or indentation. A heading,
+  block quote, fence, thematic break or comment block directly under a list item now
+  ends the list, so indented code after it is ignored instead of blocking the PR.
   Footnote text is treated like list text. A very long issue number is reported
   instead of crashing the check, and long adversarial bodies stay fast at GitHub's
-  65,536-character limit.
-  The same guard and regression cases are applied to cubrid-mcp-server and
-  cubrid-cookbook-python in their own pull requests; a test pins the block's SHA-256
-  so every copy changes together.
+  65,536-character limit. The same guard and regression cases are in
+  cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#275) and cubrid-cookbook-python
+  (cubrid-lab/cubrid-cookbook-python#293); a test pins the block's SHA-256 so every
+  copy changes together.
 - **The PR-body closing guard checks list-continuation lines** — a line indented
   by four spaces under a list item (`- item`, a blank line, then
   `    Closes other/repo#N`) is ordinary paragraph text on GitHub, not an indented
@@ -203,8 +217,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `Closes #N` and cross-repository `Refs owner/repo#N` remain valid. The
   PR body is inert environment data; no checkout or token permissions are
   needed. The guard is a best-effort line scanner, not a full Markdown parser:
-  fenced, indented and inline code and HTML comments are ignored in one pass,
-  so a comment opener inside a fence cannot hide a later closure, and
+  fenced and indented code and HTML comments are ignored in one pass (inline
+  code and inline comments are now scanned; see the guard entry above), so a
+  comment opener inside a fence cannot hide a later closure, and
   `Closes: owner/repo#N` is caught too. Fences inside block quotes or list items
   are not recognized. Regression cases cover longer, mixed and mismatched
   fences, tab indentation, inline code and unterminated comment openers.
