@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+import tomllib
 from typing import Any
 from unittest import mock
 
@@ -40,11 +41,6 @@ try:
 except ImportError:
     _COMPARE_INSPECT_TARGET = "alembic.autogenerate.compare.inspect"
 
-if sys.version_info >= (3, 11):
-    import tomllib as toml_mod
-else:
-    import tomli as toml_mod
-
 
 def _load_pyproject():
     """Load pyproject.toml."""
@@ -52,7 +48,7 @@ def _load_pyproject():
 
     pyproject = pathlib.Path(__file__).resolve().parent.parent / "pyproject.toml"
     with open(pyproject, "rb") as f:
-        return toml_mod.load(f)
+        return tomllib.load(f)
 
 
 class _AutogenContext:

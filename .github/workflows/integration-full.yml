@@ -379,7 +379,7 @@ jobs:
       - name: Install dependencies
         run: |
           uv pip install --system -e . --group dev
-          uv pip install --system pytest-cov alembic tomli
+          uv pip install --system pytest-cov alembic
           uv pip freeze --system
       - name: Run offline tests with coverage
         run: |
@@ -459,7 +459,7 @@ jobs:
           ALEMBIC: ${{ matrix.alembic }}
         run: |
           if [ "$ALEMBIC" = latest ]; then spec="alembic<2.0"; else spec="alembic==$ALEMBIC"; fi
-          uv pip install --system -e ".[pycubrid]" --group dev tomli "$spec"
+          uv pip install --system -e ".[pycubrid]" --group dev "$spec"
           uv pip freeze --system
           python -c "import alembic; print('alembic', alembic.__version__)"
       - name: Run Alembic registration tests
