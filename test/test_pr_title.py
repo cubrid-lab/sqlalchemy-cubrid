@@ -13,7 +13,6 @@ import re
 import subprocess
 import sys
 import textwrap
-import time
 import unittest
 from pathlib import Path
 
@@ -96,7 +95,9 @@ def _validator() -> str:
     return textwrap.dedent(text[line_start:stop])
 
 
-def _run(title: str, body: str = "") -> subprocess.CompletedProcess[str]:
+def _run(
+    title: str, body: str = "", timeout: float | None = None
+) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "PR_TITLE": title,
@@ -109,6 +110,7 @@ def _run(title: str, body: str = "") -> subprocess.CompletedProcess[str]:
         text=True,
         env=env,
         check=False,
+        timeout=timeout,
     )
 
 
@@ -509,9 +511,8 @@ class PrTitleValidatorTest(unittest.TestCase):
             f"- a\n  {FENCE}\n" * 6000,
         ):
             with self.subTest(body=body[:20]):
-                start = time.monotonic()
-                result = _run("docs: align issue ownership", body)
-                self.assertLess(time.monotonic() - start, 5)
+                # A regex blow-up raises subprocess.TimeoutExpired instead of hanging.
+                result = _run("docs: align issue ownership", body, timeout=5)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
