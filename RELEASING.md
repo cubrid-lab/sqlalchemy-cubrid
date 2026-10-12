@@ -33,7 +33,7 @@ Python release PR:
 gh workflow run release-please.yml -R cubrid-lab/sqlalchemy-cubrid --ref main
 ```
 
-The workflow's run name is **Prepare release**. It never creates
+The workflow is named **Prepare release**. It never creates
 tags or GitHub Releases (`skip-github-release: true`). The offline migration
 validation and the live evidence since the cutover are recorded in
 [`docs/RELEASE_PLEASE_VALIDATION.md`](docs/RELEASE_PLEASE_VALIDATION.md). The former
@@ -104,12 +104,22 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
 
 - A candidate that is behind `main` or shows merge conflicts is stale, not
   broken: regenerate it instead of editing or rebasing the release branch.
-  If it carries `autorelease: review`, first move any branch-only edits to
-  main's Unreleased section through a normal PR, then remove the label
+  If it carries `autorelease: review`, first move any branch-only curated
+  edits to main's Unreleased section through a normal PR, then remove the label
   (`gh api -X DELETE repos/cubrid-lab/sqlalchemy-cubrid/issues/<N>/labels/autorelease:%20review`).
-  Dispatch `release-please.yml` from `main`, wait for the run to finish, and
-  confirm `gh api repos/cubrid-lab/sqlalchemy-cubrid/compare/main...release-please--branches--main--components--sqlalchemy-cubrid --jq .behind_by`
-  prints `0` before starting CI with the close/reopen above.
+  A correction to a generated entry (one derived from a commit message) cannot
+  move to main: record it, and re-apply it on the branch after regeneration.
+  Dispatch `release-please.yml` from `main` and wait until that **Prepare
+  release** run has finished **successfully**: the upstream action force-pushes
+  the rebuilt branch before notes are composed and checked, so a failed run can
+  leave a branch that is current but uncomposed
+  (`gh api 'repos/cubrid-lab/sqlalchemy-cubrid/actions/workflows/release-please.yml/runs?branch=main&per_page=1' --jq '.workflow_runs[0].conclusion'`).
+  Then confirm
+  `gh api repos/cubrid-lab/sqlalchemy-cubrid/compare/main...release-please--branches--main--components--sqlalchemy-cubrid --jq .behind_by`
+  prints `0`, re-apply the freeze label
+  (`gh api -X POST repos/cubrid-lab/sqlalchemy-cubrid/issues/<N>/labels -f 'labels[]=autorelease: review'`)
+  and keep it through merge, re-apply any recorded correction, and start CI with
+  the close/reopen above.
 - Run `make release-check VERSION=X.Y.Z` again after manual edits. Require
   all normal PR checks before squash-merging; the merged version change
   starts the existing guarded publisher, regardless of PR title.
@@ -345,9 +355,9 @@ creates a new version, never moves a tag and never deletes anything.
 | `dry-run` | Any branch; `X.Y.Z` must equal `__version__` at the dispatched commit and have a dated CHANGELOG section. | consistency → matrix → build → verify-candidate → require-candidate, **no** tag, Release or upload (`publish` needs `detect`'s `publish == true`, which a dry run never sets, and the `pypi` environment allows only `main`). The cookbook verifies the wheel this run built; the post-publication `verify-cookbook` does not run. |
 
 ```bash
-gh workflow run publish-pypi.yml -f action=resume -f version=X.Y.Z
-gh workflow run publish-pypi.yml -f action=verify-only -f version=X.Y.Z
-gh workflow run publish-pypi.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
+gh workflow run publish-pypi.yml -R cubrid-lab/sqlalchemy-cubrid -f action=resume -f version=X.Y.Z
+gh workflow run publish-pypi.yml -R cubrid-lab/sqlalchemy-cubrid -f action=verify-only -f version=X.Y.Z
+gh workflow run publish-pypi.yml -R cubrid-lab/sqlalchemy-cubrid --ref <branch> -f action=dry-run -f version=X.Y.Z
 ```
 
 ### Dry-run evidence

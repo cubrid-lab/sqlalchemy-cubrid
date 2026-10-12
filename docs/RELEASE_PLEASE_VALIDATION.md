@@ -44,16 +44,18 @@ main merge, tag, GitHub Release, PyPI upload or credential creation occurred.
 No live database compatibility matrix or candidate cookbook run was executed.
 Existing publisher dry-run evidence in RELEASING.md covers unchanged publisher
 code; it installs a published package and does not prove the fresh candidate
-artifact's database/cookbook behavior. Required CI must pass at the final heads.
+artifact's database/cookbook behavior (superseded by the candidate-gate dry run
+below). Required CI must pass at the final heads.
 
 ## Live evidence since the migration
 
 The checks above are the 2026-10-03 offline record and stay unchanged. Live
-runs since then, recorded on #651 and #654:
+publication and dry-run evidence since then (the history of each release pull
+request, including the open candidate, is on #651 and #654):
 
 | Evidence | Revision | Result |
 | --- | --- | --- |
-| First live release PR #661 (1.9.0) | final head `d221ccf`; merge `4d41a22` | One release PR from manifest 1.8.0; the diff touched only the manifest, `CHANGELOG.md`, `RELEASE_CHANGELOG.md` and `__version__`. Bot updates left the PR checks waiting until a maintainer closed and reopened it; the checks then passed at the final head. |
+| First live release PR #661 (1.9.0) | final head `d221ccf`; merge `4d41a22` | One release PR from manifest 1.8.0; the diff touched only the manifest, `CHANGELOG.md`, `RELEASE_CHANGELOG.md` and `__version__`. The pull request runs created by bot updates started no jobs (they were later recorded as failed) until a maintainer closed and reopened the PR; the checks then passed at the final head. |
 | Publication of 1.9.0, [run 37209737260](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37209737260) | `4d41a22` | Every job passed, including the live PyPI Trusted Publishing exchange and cookbook verification; reconciliation moved #661 to `autorelease: tagged`. |
 | Publication of 1.10.0, [run 37871732934](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37871732934) | `57850be` | Attempt 1 failed only in post-publication cookbook verification (PyPI served stale metadata for a short time); re-running the failed jobs passed without publishing again. Reconciliation then moved #704 to `autorelease: tagged`. |
 | No-publication dry run with the candidate gate, [run 38156819662](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/38156819662) | `2f1083d` (#814) | The cookbook verified the freshly built 1.10.0 wheel before `publish`; `publish` was skipped and nothing was published. See RELEASING.md "Dry-run evidence". |
