@@ -70,7 +70,7 @@ def test_missing_or_invalid_release_facts_remain_pending():
 
 
 # Blocked-preparation signal: classify pending PRs ready() could not prove.
-NOW = MODULE.datetime(2026, 10, 9, 12, 0, tzinfo=MODULE.timezone.utc)
+NOW = MODULE.datetime(2026, 10, 9, 12, 0, tzinfo=MODULE.UTC)
 SHA = "d383be79e55a5f164b2569a0edb44eace9bb7e50"
 RUN_URL = "https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37871732934"
 

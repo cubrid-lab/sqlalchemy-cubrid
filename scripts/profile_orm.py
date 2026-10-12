@@ -7,7 +7,7 @@ import pstats
 import sys
 from collections import defaultdict
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
 from typing import Any, cast
@@ -94,7 +94,7 @@ def _build_user(index: int, prefix: str) -> BenchUser:
         name=f"{prefix}_{index:05d}",
         email=f"{prefix}_{index:05d}@example.com",
         age=20 + (index % 50),
-        created_at=datetime.now(timezone.utc).replace(tzinfo=None),
+        created_at=datetime.now(UTC).replace(tzinfo=None),
     )
 
 

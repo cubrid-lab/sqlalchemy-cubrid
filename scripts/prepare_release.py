@@ -76,7 +76,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--version-file", action="append", required=True)
     parser.add_argument("--changelog", default="CHANGELOG.md")
-    parser.add_argument("--date", default=dt.datetime.now(dt.timezone.utc).strftime("%Y-%m-%d"))
+    parser.add_argument("--date", default=dt.datetime.now(dt.UTC).strftime("%Y-%m-%d"))
     try:
         args = parser.parse_args(argv)
     except SystemExit as exc:

@@ -19,7 +19,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 # A merge with no publish-pypi.yml run yet is normal right after the merge (the
 # push event may not have created the run). The publisher is created within
@@ -146,7 +146,7 @@ def report(blocked: list[str], env=os.environ) -> int:
 
 
 def main(api=gh, now: datetime | None = None, env=os.environ) -> int:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     repository = env["GITHUB_REPOSITORY"]
     pulls = api(
         "pr",
