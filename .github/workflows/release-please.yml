@@ -57,6 +57,20 @@ jobs:
         if: steps.release.outputs.pr != ''
         with:
           python-version: '3.12'
+      - name: Rewrite generated references in the release PR body
+        if: steps.release.outputs.pr != ''
+        env:
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          number=$(python -c 'import json,os; print(int(json.loads(os.environ["RELEASE_PR"])["number"]))')
+          if [ "$number" -le 0 ]; then echo 'No release PR number; nothing to rewrite'; exit 0; fi
+          cp scripts/compose_release_changelog.py /tmp/compose-release-body.py
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" > /tmp/release-pr.json
+          python /tmp/compose-release-body.py --pr-body /tmp/release-pr.json --output /tmp/release-pr-body.json
+          if [ -s /tmp/release-pr-body.json ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" --input /tmp/release-pr-body.json --jq .number
+          fi
       - name: Compose and validate reviewed release notes
         if: steps.release.outputs.pr != ''
         env:

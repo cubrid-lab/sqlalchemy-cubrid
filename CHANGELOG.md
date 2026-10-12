@@ -167,6 +167,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tests' 5-second timeout. The fix came from Copilot's review of
   cubrid-lab/pycubrid#849, and `pr-title.yml` is again byte-identical across
   pycubrid, sqlalchemy-cubrid, cubrid-mcp-server and cubrid-cookbook-python.
+- **The release PR body also writes generated issue references as "refs"** — GitHub reads
+  release-please's `, closes [#N](…)` in the release PR body as a closing keyword, so merging
+  a release PR could close an issue that a commit only referenced. The **Prepare release**
+  workflow now rewrites those references in the PR body right after release-please updates
+  it, using the same rule as for `CHANGELOG.md`; no permission changes (#821).
 - **Generated release notes write issue references as "refs", not "closes"** — release-please
   17.6.0 renders every issue trailer in a commit's final footer block as `, closes [#N](…)`,
   so a commit that only said `Refs #479` was listed as closing that issue (#770).

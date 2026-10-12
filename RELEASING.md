@@ -126,14 +126,21 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
   the JSON body also works with old `gh` releases that do not support `-f 'labels[]=…'`)
   and keep it through merge, re-apply any recorded correction, and start CI with
   the close/reopen above.
-- Before merging, check which issues GitHub will close. The release PR body
-  is release-please's raw notes, which still say `, closes [#N](…)` for every
-  generated reference, and GitHub links those issues to the PR as closing
-  references:
+- The release PR body is release-please's raw notes. GitHub reads a
+  `, closes [#N](…)` there as a closing keyword and would close issue N on
+  merge, even when the commit only said `Refs #N`. Right after release-please
+  updates the PR, the **Rewrite generated references in the release PR body**
+  step runs the composer from `main` with `--pr-body` and rewrites those
+  references to `, refs [#N](…)` (only on generated `* ` entry lines, only
+  right after the commit link, never inside code blocks), with the job's
+  existing `pull-requests: write` token. It runs before composition, so a
+  failed composition does not leave the body unrewritten; an edit someone makes
+  to the body while that step runs can be overwritten. Before merging, confirm
+  that GitHub lists no closing issue the release must not close; normally the
+  list is empty:
   `gh api graphql -f query='{repository(owner:"cubrid-lab",name:"sqlalchemy-cubrid"){pullRequest(number:<N>){closingIssuesReferences(first:50){nodes{number state}}}}}'`.
-  An issue that is still open and that the release must not close has to be
-  handled before the merge, for example by removing the PR's link to it in the
-  pull request's Development sidebar.
+  Anything listed (for example a link added by hand in the Development
+  sidebar) has to be handled before the merge.
 - Run `make release-check VERSION=X.Y.Z` again after manual edits. Require
   all normal PR checks before squash-merging; the merged version change
   starts the existing guarded publisher, regardless of PR title.

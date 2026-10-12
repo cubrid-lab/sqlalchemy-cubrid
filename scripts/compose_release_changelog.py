@@ -7,12 +7,17 @@ its strict bracket/date contract. Curated and generated entries are merged under
 the standard ``###`` headings in the standard order, so the candidate passes
 scripts/lint_changelog.py. Generated issue references are rendered as "refs",
 not "closes" (see GENERATED_REFERENCES). Call only after the freeze-label check.
+
+With ``--pr-body``, read a GitHub pull request JSON instead and apply the same
+reference rewrite to the release PR body, so GitHub does not treat the
+generated references as closing keywords.
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import re
 import sys
 from pathlib import Path
@@ -74,18 +79,33 @@ def _find(pattern: re.Pattern[str], text: str, origin: str) -> list[re.Match[str
     return matches
 
 
+# A GitHub Markdown code fence: three or more backticks or tildes, indented by at
+# most three spaces. It closes with the same character, at least as long, alone.
+FENCE = re.compile(r" {0,3}(`{3,}|~{3,})")
+
+
 def _rewrite_references(notes: str) -> str:
     """Rewrite release-please's reference suffix on generated ``* `` entry lines only.
 
-    Lines inside fenced code blocks are content and stay unchanged.
+    Lines inside fenced code blocks (backtick or tilde fences) are content and stay
+    unchanged.
     """
     lines = []
-    in_fence = False
+    fence: str | None = None
     for line in notes.splitlines(keepends=True):
-        if not in_fence and line.startswith("* "):
+        if fence is None and line.startswith("* "):
             line = GENERATED_REFERENCES.sub(r"\1, refs ", line, count=1)
-        if line.startswith("```"):
-            in_fence = not in_fence
+        match = FENCE.match(line)
+        if match:
+            marker = match.group(1)
+            if fence is None:
+                fence = marker
+            elif (
+                marker[0] == fence[0]
+                and len(marker) >= len(fence)
+                and not line[match.end() :].strip()
+            ):
+                fence = None
         lines.append(line)
     return "".join(lines)
 
@@ -163,23 +183,63 @@ def compose(base: str, generated: str, version: str) -> str:
     )
 
 
+def rewrite_pr_body(pull_request: dict[str, object]) -> str | None:
+    """Return the release PR body with rewritten references, or None if unchanged."""
+    head = pull_request.get("head")
+    ref = head.get("ref") if isinstance(head, dict) else None
+    if not isinstance(ref, str) or not ref.startswith("release-please--branches--main"):
+        raise ValueError("pull request is not a release-please release PR")
+    body = pull_request.get("body") or ""
+    if not isinstance(body, str):
+        raise ValueError("pull request body must be text")
+    rewritten = _rewrite_references(body)
+    return None if rewritten == body else rewritten
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--base-changelog", required=True)
-    parser.add_argument("--generated-changelog", default="RELEASE_CHANGELOG.md")
-    parser.add_argument("--version", required=True)
-    parser.add_argument("--output", default="CHANGELOG.md")
+    parser.add_argument("--base-changelog")
+    parser.add_argument("--generated-changelog")
+    parser.add_argument("--version")
+    parser.add_argument("--output")
+    parser.add_argument(
+        "--pr-body",
+        help="GitHub pull request JSON; write a {'body': ...} PATCH payload to --output "
+        "only when the body changes",
+    )
     args = parser.parse_args(argv)
+    if args.pr_body is not None:
+        others = (args.base_changelog, args.generated_changelog, args.version)
+        if not args.pr_body or any(o is not None for o in others) or not args.output:
+            parser.error("--pr-body takes a pull request JSON path and only --output")
+        try:
+            pull_request = json.loads(Path(args.pr_body).read_text(encoding="utf-8"))
+            if not isinstance(pull_request, dict):
+                raise ValueError("pull request JSON must be an object")
+            body = rewrite_pr_body(pull_request)
+        except (ValueError, OSError) as exc:
+            print(f"::error::{exc}", file=sys.stderr)
+            return 1
+        output = Path(args.output)
+        if body is None:
+            output.unlink(missing_ok=True)
+            print("release PR body unchanged")
+        else:
+            output.write_text(json.dumps({"body": body}), encoding="utf-8")
+            print("release PR body references rewritten")
+        return 0
+    if not args.base_changelog or not args.version:
+        parser.error("--base-changelog and --version are required")
     try:
         result = compose(
             Path(args.base_changelog).read_text(encoding="utf-8"),
-            Path(args.generated_changelog).read_text(encoding="utf-8"),
+            Path(args.generated_changelog or "RELEASE_CHANGELOG.md").read_text(encoding="utf-8"),
             args.version,
         )
     except (ValueError, OSError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
-    Path(args.output).write_text(result, encoding="utf-8")
+    Path(args.output or "CHANGELOG.md").write_text(result, encoding="utf-8")
     return 0
 
 

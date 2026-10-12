@@ -581,6 +581,38 @@ def test_release_please_push_is_guarded_by_stale_main_and_review_checks() -> Non
     ]
 
 
+def test_release_please_rewrites_generated_references_in_the_pr_body() -> None:
+    # The bot-written PR body keeps release-please's ", closes [#N]" wording, which
+    # GitHub treats as closing keywords; the composer rewrites it after composition.
+    prepare = steps(PREPARE["jobs"]["prepare"])
+    names = [s.get("name") for s in prepare]
+    body = prepare[names.index("Rewrite generated references in the release PR body")]
+    # Directly after release-please, so a failed composition cannot leave the body.
+    release = next(i for i, s in enumerate(prepare) if "release-please-action" in s.get("uses", ""))
+    rewrite = names.index("Rewrite generated references in the release PR body")
+    assert release < rewrite < names.index("Compose and validate reviewed release notes")
+    assert body["if"] == "steps.release.outputs.pr != ''"
+    lines = prepare_step("Rewrite generated references in the release PR body")
+    assert lines[0] == "set -euo pipefail"
+    assert lines[2] == (
+        "if [ \"$number\" -le 0 ]; then echo 'No release PR number; nothing to rewrite'; exit 0; fi"
+    )
+    # The composer comes from main's checkout, never from the release branch.
+    assert lines[3] == "cp scripts/compose_release_changelog.py /tmp/compose-release-body.py"
+    assert (
+        "python /tmp/compose-release-body.py --pr-body /tmp/release-pr.json"
+        " --output /tmp/release-pr-body.json"
+    ) in lines
+    patch = next(i for i, line in enumerate(lines) if "gh api -X PATCH" in line)
+    assert lines[patch - 1] == "if [ -s /tmp/release-pr-body.json ]; then"
+    assert "--input /tmp/release-pr-body.json" in lines[patch]
+    assert PREPARE["jobs"]["prepare"]["permissions"] == {
+        "contents": "write",
+        "pull-requests": "write",
+        "actions": "read",
+    }
+
+
 def test_integration_full_is_callable_at_a_sha_and_keeps_its_triggers() -> None:
     on = FULL["on"]
     assert set(on) == {"workflow_dispatch", "workflow_call"}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -258,3 +259,78 @@ def test_generated_issue_references_render_as_refs_not_closes() -> None:
     assert candidate.count(", closes [") == 3  # curated line, subject and fenced example
     assert actual[actual.index("## [1.8.0]") :] == base[base.index("## [1.8.0]") :]
     assert compose(base, generated, "1.9.0") == actual
+
+
+RELEASE_PR_BODY = (
+    ":robot: I have created a release *beep* *boop*\n---\n\n\n"
+    "## [1.9.0](https://example/compare/v1.8.0...v1.9.0) (2026-10-03)\n\n\n### Documentation\n\n"
+    "* pin note ([#801](https://example/issues/801)) ([ea9392e](https://example/commit/e))"
+    ", closes [#479](https://example/issues/479)\n"
+    "* plain note ([#802](https://example/issues/802)) ([fb12345](https://example/commit/f))\n"
+    "\n```\n* call ([abc1234](https://example/commit/a)), closes [literal]\n```\n\n---\n"
+    "This PR was generated with [Release Please](https://github.com/googleapis/release-please).\n"
+)
+
+
+def release_pr(body: str | None, ref: str = "release-please--branches--main--components--x"):
+    return {"number": 7, "head": {"ref": ref}, "body": body}
+
+
+def test_release_pr_body_references_render_as_refs() -> None:
+    rewritten = MODULE.rewrite_pr_body(release_pr(RELEASE_PR_BODY))
+    assert rewritten == RELEASE_PR_BODY.replace(
+        "([ea9392e](https://example/commit/e)), closes [#479]",
+        "([ea9392e](https://example/commit/e)), refs [#479]",
+    )
+    assert "), closes [literal]" in rewritten  # fenced content stays
+    crlf = RELEASE_PR_BODY.replace("\n", "\r\n")
+    assert MODULE.rewrite_pr_body(release_pr(crlf)) == rewritten.replace("\n", "\r\n")
+    assert MODULE.rewrite_pr_body(release_pr(rewritten)) is None
+    assert MODULE.rewrite_pr_body(release_pr(None)) is None
+
+
+def test_release_pr_body_rewrite_refuses_other_pull_requests() -> None:
+    with pytest.raises(ValueError, match="not a release-please release PR"):
+        MODULE.rewrite_pr_body(release_pr(RELEASE_PR_BODY, ref="feature/x"))
+    with pytest.raises(ValueError, match="not a release-please release PR"):
+        MODULE.rewrite_pr_body({"body": RELEASE_PR_BODY})
+    with pytest.raises(ValueError, match="not a release-please release PR"):
+        MODULE.rewrite_pr_body({"head": "release-please--branches--main", "body": ""})
+
+
+@pytest.mark.parametrize(
+    "fence",
+    [("```", "```"), ("~~~", "~~~"), ("   ```", "```"), ("````", "````"), ("```", "~~~\n```")],
+)
+def test_reference_rewrite_skips_every_github_fence_form(fence: tuple[str, str]) -> None:
+    opening, closing = fence
+    example = "* call ([abc1234](https://example/commit/a)), closes [literal]"
+    entry = "* entry ([fb12345](https://example/commit/f)), closes [#1](https://example/issues/1)"
+    body = f"{opening}\n{example}\n{closing}\n{entry}\n"
+    rewritten = MODULE.rewrite_pr_body(release_pr(body))
+    assert rewritten == body.replace("/f)), closes [#1]", "/f)), refs [#1]")
+
+
+def test_release_pr_body_cli_writes_a_patch_payload_only_on_change(tmp_path: Path) -> None:
+    pr_json = tmp_path / "pr.json"
+    out = tmp_path / "body.json"
+    pr_json.write_text(json.dumps(release_pr(RELEASE_PR_BODY)), encoding="utf-8")
+    assert MODULE.main(["--pr-body", str(pr_json), "--output", str(out)]) == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert list(payload) == ["body"] and "), refs [#479]" in payload["body"]
+    pr_json.write_text(json.dumps(release_pr(payload["body"])), encoding="utf-8")
+    assert MODULE.main(["--pr-body", str(pr_json), "--output", str(out)]) == 0
+    assert not out.exists()
+    pr_json.write_text(json.dumps(release_pr(RELEASE_PR_BODY, ref="main")), encoding="utf-8")
+    assert MODULE.main(["--pr-body", str(pr_json), "--output", str(out)]) == 1
+    for broken in ("not json", "[1]"):
+        pr_json.write_text(broken, encoding="utf-8")
+        assert MODULE.main(["--pr-body", str(pr_json), "--output", str(out)]) == 1
+    with pytest.raises(SystemExit):
+        MODULE.main(["--pr-body", "", "--output", str(out)])
+    with pytest.raises(SystemExit):
+        MODULE.main(["--pr-body", str(pr_json), "--output", str(out), "--generated-changelog", "x"])
+    with pytest.raises(SystemExit):
+        MODULE.main(["--pr-body", str(pr_json)])
+    with pytest.raises(SystemExit):
+        MODULE.main(["--pr-body", str(pr_json), "--output", str(out), "--version", "1.9.0"])
