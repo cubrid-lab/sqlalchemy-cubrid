@@ -50,7 +50,8 @@ not compare CUBRID with another database.
 source equals v1.11.0 apart from one `typing` import in `dml.py`, #827; v1.10.0
 and v1.11.0 have identical dialect source), pycubrid 1.12.0 through
 `cubrid+pycubrid://`, SQLAlchemy 2.1.4 and 2.0.54, CPython 3.12.13, CUBRID
-11.4.6.1963 (`cubrid/cubrid:11.4` in Docker, port bound to 127.0.0.1), Intel
+11.4.6.1963 (`cubrid/cubrid:11.4` image `sha256:1248b77ad398` in Docker, port bound
+to 127.0.0.1), Intel
 Core i5-9400F (6 cores), Linux 5.15. The host was shared with other CUBRID
 containers. Autocommit off, default `QueuePool`, one connection per variant,
 no `pool_pre_ping`. Each figure is the median of 5 trials, with the
@@ -126,20 +127,25 @@ checked afterwards (row count and sum), in ms:
   which calls `cursor.executemany()` unchanged, so they cost the same as the raw
   literal batch (the 2.0.54 medians, 974 and 948 ms, had an IQR of 421–1190 and
   484–1065 ms on the shared host).
+- The experimental `prepared=True` override affects only `do_executemany()`, so
+  it changes the Core UPDATE and DELETE columns; its INSERT still goes through
+  insertmanyvalues (`do_execute()`), and the 116 versus 99 ms INSERT difference
+  is run-to-run variation, not an effect of the prepared path.
 - Reflecting the table (columns, primary key, foreign keys, indexes and unique
   constraints with a fresh `Inspector`) takes 16.5 ms and 8 SQL statements;
   `MetaData.reflect()` of the table 20.9 ms and 10 statements.
 
 ### Where the time goes
 
-`scripts/profile_orm.py` (default workload) attributes 0.003% of the profiled
+`scripts/profile_orm.py` (default workload: 20 single-row ORM CRUD loops and
+3 bulk inserts of 300 rows under cProfile) attributes 0.003% of the profiled
 request time to the dialect's own modules, 5.9% (2.0.54: 6.7%) to SQLAlchemy
-self time and 5.9% to pycubrid self time; the remaining self time is outside
+self time (Core and ORM together) and 5.9% to pycubrid self time; the remaining self time is outside
 those packages (standard library, socket and builtin calls, which include the
 wait for the server's replies).
-The top dialect functions by cumulative time are `visit_insert`,
-`visit_update`, `visit_delete`, `visit_on_duplicate_key_update` and
-`limit_clause`. No dialect-specific hotspot or regression was found, so no
+The script's separate compile-only pass (250 loops of five statements) ranks
+the dialect functions by cumulative time as `visit_insert`, `visit_update`,
+`visit_delete`, `visit_on_duplicate_key_update` and `limit_clause`. No dialect-specific hotspot or regression was found, so no
 dialect change is proposed from this baseline.
 
 ### Prepared batch feasibility

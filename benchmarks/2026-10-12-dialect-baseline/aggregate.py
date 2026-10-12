@@ -35,16 +35,25 @@ def stats(values: list[float]) -> dict[str, object]:
     }
 
 
+def check(cond: bool, msg: str) -> None:
+    if not cond:
+        raise SystemExit(f"aggregate.py: {msg}")
+
+
 def workers() -> dict[str, dict[str, object]]:
     out: dict[str, dict[str, object]] = {}
     for label, pattern in WORKERS.items():
         runs = [json.loads((RAW / pattern.format(t=t)).read_text()) for t in TRIALS]
-        assert all(r["status"] == "ok" for r in runs), label
+        check(all(r["status"] == "ok" for r in runs), f"{label}: a worker run failed")
         ops: dict[str, object] = {}
         for i, step in enumerate(runs[0]["steps"]):
             name = step["name"]
             steps = [r["steps"][i] for r in runs]
-            assert all(s["name"] == name for s in steps)
+            check(all(s["name"] == name for s in steps), f"{label}: step order differs")
+            check(
+                all(s["errors"] == 0 and s["ops"] > 0 for s in steps),
+                f"{label} {name}: failed or missing operations",
+            )
             ops[name] = {
                 "p50_ms": stats([s["latency_summary"]["p50_ns"] / 1e6 for s in steps]),
                 "p95_ms": stats([s["latency_summary"]["p95_ns"] / 1e6 for s in steps]),

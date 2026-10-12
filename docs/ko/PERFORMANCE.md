@@ -52,7 +52,8 @@ SQLAlchemy Core, ORM이 하나의 CUBRID 서버에 같은 워크로드를 실행
 `dml.py`의 `typing` import 하나(#827)를 빼면 v1.11.0과 같으며, v1.10.0과
 v1.11.0의 방언 소스는 동일), `cubrid+pycubrid://`를 통한 pycubrid 1.12.0,
 SQLAlchemy 2.1.4와 2.0.54, CPython 3.12.13, CUBRID 11.4.6.1963(Docker의
-`cubrid/cubrid:11.4`, 포트는 127.0.0.1에 바인딩), Intel Core i5-9400F(6코어),
+`cubrid/cubrid:11.4` 이미지 `sha256:1248b77ad398`, 포트는 127.0.0.1에
+바인딩), Intel Core i5-9400F(6코어),
 Linux 5.15. 호스트는 다른 CUBRID 컨테이너와 공유되었습니다. 오토커밋 꺼짐,
 기본 `QueuePool`, 변형마다 연결 하나, `pool_pre_ping` 없음. 각 수치는 5회
 시행의 중앙값이며 시행 값의 사분위 범위(IQR)를 함께 적었습니다. 모든 시행은
@@ -125,18 +126,24 @@ INSERT … ON DUPLICATE KEY UPDATE를 124.5 µs(117.7), SELECT … FOR UPDATE를
   `PyCubridDialect.do_executemany()`를 거치므로 raw 리터럴 배치와 비용이 같습니다
   (2.0.54 중앙값 974 ms와 948 ms는 공유 호스트에서 IQR이 421–1190 ms와
   484–1065 ms였습니다).
+- 실험적 `prepared=True` 재정의는 `do_executemany()`에만 영향을 주므로 Core
+  UPDATE와 DELETE 열을 바꿉니다. INSERT는 여전히 insertmanyvalues
+  (`do_execute()`)를 거치며, INSERT의 116 ms 대 99 ms 차이는 prepared 경로의
+  효과가 아니라 실행 간 변동입니다.
 - 테이블 리플렉션(새 `Inspector`로 컬럼, 기본 키, 외래 키, 인덱스, 유니크 제약)은
   16.5 ms와 SQL 문 8개, 테이블의 `MetaData.reflect()`는 20.9 ms와 문 10개가
   걸립니다.
 
 ### 시간이 쓰이는 곳
 
-`scripts/profile_orm.py`(기본 워크로드)는 프로파일된 요청 시간의 0.003%를 방언
-자체 모듈에, 5.9%(2.0.54: 6.7%)를 SQLAlchemy 자기 시간에, 5.9%를 pycubrid 자기
-시간에 귀속합니다. 나머지 자기 시간은 이 패키지들 밖(표준 라이브러리, 소켓,
-내장 함수 호출이며 서버 응답 대기를 포함)에 있습니다. 누적 시간 기준 상위 방언
-함수는 `visit_insert`, `visit_update`, `visit_delete`,
-`visit_on_duplicate_key_update`, `limit_clause`입니다. 방언 고유의 핫스팟이나
+`scripts/profile_orm.py`(기본 워크로드: cProfile 아래 단일 행 ORM CRUD 20회와
+300행 대량 삽입 3회)는 프로파일된 요청 시간의 0.003%를 방언 자체 모듈에,
+5.9%(2.0.54: 6.7%)를 SQLAlchemy 자기 시간(Core와 ORM 합계)에, 5.9%를 pycubrid
+자기 시간에 귀속합니다. 나머지 자기 시간은 이 패키지들 밖(표준 라이브러리, 소켓,
+내장 함수 호출이며 서버 응답 대기를 포함)에 있습니다. 스크립트의 별도 컴파일 전용 패스(문
+다섯 개를 250회 반복)는 누적 시간 기준 방언 함수를 `visit_insert`,
+`visit_update`, `visit_delete`, `visit_on_duplicate_key_update`, `limit_clause`
+순으로 꼽습니다. 방언 고유의 핫스팟이나
 회귀는 발견되지 않았으므로 이 기준선에서 방언 변경을 제안하지 않습니다.
 
 ### Prepared 배치 타당성

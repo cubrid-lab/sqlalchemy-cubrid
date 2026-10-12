@@ -3,6 +3,10 @@
 # Set the five variables, then run from this directory. Results land in raw/;
 # `python aggregate.py` then writes summary.json.
 #
+# Measured with REPO checked out at a570ea4d3aa7f222553a925677e0b324b8b39cde and the
+# cubrid/cubrid:11.4 image sha256:1248b77ad39888df9e064655937188ab99fe056ed7e35b57d06155a015dc1791
+# (CUBRID 11.4.6.1963).
+#
 #   docker run -d --name clsa-830-db114 -e CUBRID_DB=testdb \
 #       -p 127.0.0.1:33830:33000 cubrid/cubrid:11.4
 #   git clone https://github.com/cubrid-lab/cubrid-benchmark && git -C cubrid-benchmark checkout f5510d0
