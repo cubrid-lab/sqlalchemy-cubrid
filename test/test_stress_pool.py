@@ -216,7 +216,9 @@ class TestAsyncPoolConcurrency:
                     )
                     return result.scalar_one()
 
-            results = await asyncio.gather(*(worker(i) for i in range(n)))
+            async with asyncio.TaskGroup() as tg:
+                tasks = [tg.create_task(worker(i)) for i in range(n)]
+            results = [task.result() for task in tasks]
             assert all(r == per_task for r in results), results
         finally:
             await engine.dispose()
@@ -240,7 +242,9 @@ class TestAsyncPoolConcurrency:
                     )
                 return 1
 
-            results = await asyncio.gather(*(worker(i) for i in range(n)))
+            async with asyncio.TaskGroup() as tg:
+                tasks = [tg.create_task(worker(i)) for i in range(n)]
+            results = [task.result() for task in tasks]
             assert sum(results) == n
 
             async with engine.connect() as conn:

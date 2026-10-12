@@ -175,7 +175,9 @@ class TestAsyncCRUD:
                 assert isinstance(value, int)
                 return value
 
-        results = await asyncio.gather(*(worker(i) for i in range(5)))
+        async with asyncio.TaskGroup() as tg:
+            tasks = [tg.create_task(worker(i)) for i in range(5)]
+        results = [task.result() for task in tasks]
         assert sorted(results) == [0, 1, 2, 3, 4]
 
     async def test_bad_sql_raises(self, engine: AsyncEngine):
