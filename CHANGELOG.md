@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **The feature support table no longer marks CUBRID `BLOB` / `CLOB` as fully supported
+  (#829)** — `docs/FEATURE_SUPPORT.md` (and its Korean page) shows ⚠️ in the CUBRID
+  `BLOB` and `CLOB` cells, with a note that separates the supported parts (DDL and type
+  mapping, reflection, binding `bytes` / `str`, `NULL` round trips) from the ordinary
+  Core/ORM read of a non-NULL value, which returns the driver's LOB locator on
+  `cubrid://`, `cubrid+pycubrid://` and `cubrid+aiopycubrid://`. The note links Known
+  Issue 6 in `docs/DRIVER_COMPAT.md`. Documentation only; runtime behavior is unchanged.
+
 ### CI
 
 - **A release commit's `main` push no longer repeats the release's runtime lanes
