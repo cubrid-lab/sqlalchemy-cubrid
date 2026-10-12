@@ -1,0 +1,11 @@
+{
+  "dsn": "cubrid+pycubrid://dba@localhost:33830/testdb",
+  "steps": [],
+  "concurrency": 1,
+  "duration_s": 10,
+  "warmup_s": 2,
+  "seed": 42,
+  "setup_queries": [],
+  "teardown_queries": [],
+  "worker_config": {"seed_rows": 1000, "batch_size": 100, "sample_limit": 100}
+}

@@ -1,0 +1,11 @@
+Benchmarking CUBRID dialect compilation (10000 iterations each)
+
+Benchmark                             Total (ms)  Per-op (µs)
+--------------------------------------------------------------
+SELECT + LIMIT/OFFSET                    847.0ms       84.7µs
+INSERT (simple)                          608.6ms       60.9µs
+INSERT ON DUPLICATE KEY UPDATE          1226.4ms      122.6µs
+SELECT FOR UPDATE                        663.6ms       66.4µs
+
+==============================================================
+Done. Compare results before/after optimization attempts.

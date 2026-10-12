@@ -1,0 +1,26 @@
+== ORM profile summary ==
+Total request time: 5.775083s
+Dialect self time: 0.000192s
+Dialect overhead: 0.0033% of total request time
+SQLAlchemy core self time: 0.387343s (6.7071% of total)
+pycubrid self time: 0.342976s (5.9389% of total)
+
+Dialect module breakdown:
+- compiler.py: 0.000192s (0.0033% of total request time)
+- dialect.py: 0.000000s (0.0000% of total request time)
+- types.py: 0.000000s (0.0000% of total request time)
+- base.py: 0.000000s (0.0000% of total request time)
+
+ORM select overhead:
+- raw SQL select: 0.039209s
+- ORM select: 0.105288s
+- overhead: 0.066079s (62.76% of ORM select, 1.14% of total request time)
+
+Top dialect hotspots:
+- compiler.py:230:visit_insert | calls=500/500 | self=0.001778s | cumulative=0.115027s
+- compiler.py:261:visit_update | calls=250/250 | self=0.000672s | cumulative=0.043965s
+- compiler.py:267:visit_delete | calls=250/250 | self=0.000577s | cumulative=0.023442s
+- compiler.py:368:visit_on_duplicate_key_update | calls=250/250 | self=0.006788s | cumulative=0.020530s
+- compiler.py:299:limit_clause | calls=250/250 | self=0.000653s | cumulative=0.007747s
+
+Wrote JSON report to raw/profile_orm_sa20.json

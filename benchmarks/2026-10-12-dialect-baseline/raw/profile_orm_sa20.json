@@ -1,0 +1,82 @@
+{
+  "total_request_time_s": 5.7750831979792565,
+  "profiled_self_time_s": 5.772401975000001,
+  "sqlalchemy_core": {
+    "self_time_s": 0.3873434340000005,
+    "pct_of_total_request_time": 6.707148983334729
+  },
+  "pycubrid": {
+    "self_time_s": 0.34297613600000015,
+    "pct_of_total_request_time": 5.938895150809429
+  },
+  "dialect_modules": {
+    "compiler.py": {
+      "self_time_s": 0.00019157600000000002,
+      "pct_of_total_request_time": 0.0033172855426054095,
+      "pct_of_profiled_self_time": 0.003318826388558984
+    },
+    "dialect.py": {
+      "self_time_s": 0.0,
+      "pct_of_total_request_time": 0.0,
+      "pct_of_profiled_self_time": 0.0
+    },
+    "types.py": {
+      "self_time_s": 0.0,
+      "pct_of_total_request_time": 0.0,
+      "pct_of_profiled_self_time": 0.0
+    },
+    "base.py": {
+      "self_time_s": 0.0,
+      "pct_of_total_request_time": 0.0,
+      "pct_of_profiled_self_time": 0.0
+    }
+  },
+  "dialect_total": {
+    "self_time_s": 0.00019157600000000002,
+    "pct_of_total_request_time": 0.0033172855426054095
+  },
+  "orm_overhead": {
+    "select_overhead_s": 0.06607933202758431,
+    "select_overhead_pct_of_orm_select": 62.76053126622868,
+    "select_overhead_pct_of_total_request_time": 1.1442143734086108,
+    "orm_select_time_s": 0.10528803803026676,
+    "raw_select_time_s": 0.03920870600268245
+  },
+  "top_dialect_hotspots": [
+    {
+      "function": "compiler.py:230:visit_insert",
+      "calls": 500,
+      "primitive_calls": 500,
+      "self_time_s": 0.0017780760000000002,
+      "cumulative_time_s": 0.115027429
+    },
+    {
+      "function": "compiler.py:261:visit_update",
+      "calls": 250,
+      "primitive_calls": 250,
+      "self_time_s": 0.0006719320000000001,
+      "cumulative_time_s": 0.043965023000000006
+    },
+    {
+      "function": "compiler.py:267:visit_delete",
+      "calls": 250,
+      "primitive_calls": 250,
+      "self_time_s": 0.0005770570000000001,
+      "cumulative_time_s": 0.023441944000000003
+    },
+    {
+      "function": "compiler.py:368:visit_on_duplicate_key_update",
+      "calls": 250,
+      "primitive_calls": 250,
+      "self_time_s": 0.006788285000000001,
+      "cumulative_time_s": 0.020530246000000002
+    },
+    {
+      "function": "compiler.py:299:limit_clause",
+      "calls": 250,
+      "primitive_calls": 250,
+      "self_time_s": 0.000653253,
+      "cumulative_time_s": 0.007746848000000001
+    }
+  ]
+}

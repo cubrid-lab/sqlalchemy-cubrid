@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **`docs/PERFORMANCE.md` has a current same-CUBRID baseline (#830)** — raw
+  pycubrid, SQLAlchemy Core and ORM measured on one CUBRID 11.4 server at `main`
+  `a570ea4` (dialect source as in v1.11.0) with pycubrid 1.12.0, SQLAlchemy 2.1.4
+  and 2.0.54 and Python 3.12: single-row CRUD, fetch, the statement cache on and
+  off, 1,000-row `executemany` and bulk INSERT/UPDATE/DELETE, reflection and
+  offline compilation, 5 trials each with medians and interquartile ranges. The
+  new `scripts/bench_dialect_baseline.py` covers what the existing tools did not
+  (cache, batch DML, reflection, checked results); the raw files, the exact
+  commands and `summary.json` are in `benchmarks/2026-10-12-dialect-baseline/`.
+  The section also records the feasibility of pycubrid's opt-in
+  `executemany(prepared=True)`, which the dialect does not use. Historical
+  figures are now dated. No dialect hotspot or regression was found; runtime
+  behavior is unchanged.
+
 - **The feature support table no longer marks CUBRID `BLOB` / `CLOB` as fully supported
   (#829)** — `docs/FEATURE_SUPPORT.md` (and its Korean page) shows ⚠️ in the CUBRID
   `BLOB` and `CLOB` cells, with a note that separates the supported parts (DDL and type

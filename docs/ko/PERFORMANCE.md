@@ -9,6 +9,7 @@
 ## 목차
 
 - [개요](#개요)
+- [현재 기준선 (2026-10-12)](#현재-기준선-2026-10-12)
 - [벤치마크 결과](#벤치마크-결과)
 - [성능 특성](#성능-특성)
 - [최적화 팁](#최적화-팁)
@@ -40,13 +41,141 @@ flowchart TD
 
 ---
 
+## 현재 기준선 (2026-10-12)
+
+현재 방언의 같은 호스트, 같은 CUBRID 기준선입니다(#830). raw pycubrid,
+SQLAlchemy Core, ORM이 하나의 CUBRID 서버에 같은 워크로드를 실행합니다.
+이후 비교를 위한 기준이며 성능 목표가 아니고, CUBRID를 다른 데이터베이스와
+비교하지 않습니다.
+
+**조건.** sqlalchemy-cubrid `main` `a570ea4`(`sqlalchemy_cubrid/` 소스는
+`dml.py`의 `typing` import 하나(#827)를 빼면 v1.11.0과 같으며, v1.10.0과
+v1.11.0의 방언 소스는 동일), `cubrid+pycubrid://`를 통한 pycubrid 1.12.0,
+SQLAlchemy 2.1.4와 2.0.54, CPython 3.12.13, CUBRID 11.4.6.1963(Docker의
+`cubrid/cubrid:11.4`, 포트는 127.0.0.1에 바인딩), Intel Core i5-9400F(6코어),
+Linux 5.15. 호스트는 다른 CUBRID 컨테이너와 공유되었습니다. 오토커밋 꺼짐,
+기본 `QueuePool`, 변형마다 연결 하나, `pool_pre_ping` 없음. 각 수치는 5회
+시행의 중앙값이며 시행 값의 사분위 범위(IQR)를 함께 적었습니다. 모든 시행은
+기록하지 않는 워밍업을 먼저 한 번 실행합니다.
+
+**원시 산출물과 명령**:
+[`benchmarks/2026-10-12-dialect-baseline/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-12-dialect-baseline)
+(`run.sh`, 워커 `input.json`, `raw/`, `summary.json`, `aggregate.py`).
+도구는 `scripts/bench_dialect_baseline.py`(문 캐시, 조회, 배치 DML, 리플렉션.
+모든 결과를 검증), `scripts/bench_compile.py`, `scripts/profile_orm.py`,
+cubrid-benchmark `f5510d0`의 `orm-overhead` 워커(단일 행 CRUD, 2초 워밍업 후
+연산마다 10초, 시드 1,000행, 배치 100행, 모든 시행에서 오류 0)입니다.
+
+### 단일 행 연산과 조회
+
+연산당 지연 시간(ms, 시행 p50 값의 중앙값, 괄호 안은 IQR), SQLAlchemy 2.1.4.
+SQLAlchemy 2.0.54는 마지막 두 열입니다.
+
+| 연산 (orm-overhead 워커) | raw pycubrid | Core | ORM | Core 2.0 | ORM 2.0 |
+|---|---:|---:|---:|---:|---:|
+| select_by_pk | 0.62 [0.61–0.63] | 0.75 [0.73–0.77] | 1.05 [1.01–1.09] | 0.78 | 1.11 |
+| select_full_scan (1,000행) | 3.86 [3.82–3.93] | 4.22 [4.20–4.27] | 7.61 [7.59–7.69] | 4.26 | 8.02 |
+| insert_single (커밋 포함) | 59.2 [58.5–84.0] | 58.7 [58.5–61.8] | 73.5 [66.9–74.9] | 58.5 | 75.0 |
+| update_by_pk (커밋 포함) | 50.5 [50.1–58.4] | 58.0 [58.0–58.0] | 66.6 [66.5–66.7] | 58.3 | 66.6 |
+| delete_by_pk (커밋 포함) | 66.7 [50.2–67.4] | 58.5 [58.4–58.6] | 74.9 [67.2–75.0] | 58.5 | 74.8 |
+
+- 읽기는 클라이언트 계층을 분리해 보여 줍니다. Core는 기본 키 SELECT에 약
+  0.13 ms(21%), 1,000행 조회에 9%를 더하고, ORM은 조회 시간을 약 두 배로
+  늘립니다(객체 구체화).
+- 커밋하는 쓰기는 계층과 무관하게 약 8.3 ms 단위로 50–75 ms가 걸리므로 서버
+  커밋이 지배적이고, Core는 그 단위 안에서 raw pycubrid와 같습니다. 쓰기는
+  시행당 수백 회에 불과해 중앙값이 시행 사이에 한 단위씩 움직입니다.
+- 워커의 `insert_batch` 단계는 같은 작업이 아니므로(raw는 `executemany()`,
+  Core는 insertmanyvalues INSERT 하나, ORM은 객체별 삭제까지 하는 unit-of-work
+  flush) 원시 파일에만 있습니다.
+
+### 문 캐시, 조회, 배치 DML
+
+`scripts/bench_dialect_baseline.py`, SQLAlchemy 2.1.4(마지막 열은 2.0.54).
+기본 키로 한 행을 SELECT, 변형마다 1,000회 호출, 단위 µs:
+
+| 변형 | 2.1.4 중앙값 [IQR] | 2.0.54 중앙값 |
+|---|---:|---:|
+| raw pycubrid | 661 [646–664] | 637 |
+| Core, 문 캐시 사용(기본) | 775 [748–847] | 838 |
+| Core, `compiled_cache=None` | 996 [984–1012] | 1035 |
+| ORM `select(Item)` | 999 [938–1098] | 951 |
+
+문 캐시를 끄면 여기서 실행마다 약 220 µs(컴파일과 결과 메타데이터 준비)가
+더 듭니다. 오프라인에서 `scripts/bench_compile.py`(컴파일 10,000회, 5회 시행)는
+LIMIT/OFFSET이 있는 SELECT를 91.2 µs(2.0.54: 84.7), 단순 INSERT를 65.4 µs(60.7),
+INSERT … ON DUPLICATE KEY UPDATE를 124.5 µs(117.7), SELECT … FOR UPDATE를
+70.8 µs(67.0)에 컴파일합니다.
+
+1,000행 배치, 각 문은 커밋까지 시간을 재고 이후 테이블(행 수와 합계)을 검증,
+단위 ms:
+
+| 변형 | INSERT | UPDATE | DELETE |
+|---|---:|---:|---:|
+| raw `executemany()` | 480 [459–666] | 471 [441–497] | 619 [446–653] |
+| raw `executemany(prepared=True)` | 180 [174–195] | 221 [209–247] | 244 [238–288] |
+| Core (`insert()` 목록: insertmanyvalues, `update()`/`delete()` 목록: `executemany()`) | 99 [95–121] | 577 [421–590] | 567 [456–615] |
+| Core, `do_executemany`의 실험적 `prepared=True` | 116 [112–117] | 239 [223–245] | 280 [216–289] |
+| ORM (대량 INSERT, 기본 키 기준 대량 UPDATE, unit-of-work DELETE) | 108 [105–129] | 466 [447–701] | 498 [440–533] |
+
+- Core나 ORM 대량 INSERT는 드라이버 자체 `executemany()`보다 4.4–4.8배
+  빠릅니다. insertmanyvalues는 1,000개의 단일 행 문을 한 리터럴 배치로 보내는
+  대신 여러 행 INSERT 문 몇 개를 보냅니다.
+- Core UPDATE/DELETE 배치는 `cursor.executemany()`를 그대로 호출하는
+  `PyCubridDialect.do_executemany()`를 거치므로 raw 리터럴 배치와 비용이 같습니다
+  (2.0.54 중앙값 974 ms와 948 ms는 공유 호스트에서 IQR이 421–1190 ms와
+  484–1065 ms였습니다).
+- 테이블 리플렉션(새 `Inspector`로 컬럼, 기본 키, 외래 키, 인덱스, 유니크 제약)은
+  16.5 ms와 SQL 문 8개, 테이블의 `MetaData.reflect()`는 20.9 ms와 문 10개가
+  걸립니다.
+
+### 시간이 쓰이는 곳
+
+`scripts/profile_orm.py`(기본 워크로드)는 프로파일된 요청 시간의 0.003%를 방언
+자체 모듈에, 5.9%(2.0.54: 6.7%)를 SQLAlchemy 자기 시간에, 5.9%를 pycubrid 자기
+시간에 귀속합니다. 나머지 자기 시간은 이 패키지들 밖(표준 라이브러리, 소켓,
+내장 함수 호출이며 서버 응답 대기를 포함)에 있습니다. 누적 시간 기준 상위 방언
+함수는 `visit_insert`, `visit_update`, `visit_delete`,
+`visit_on_duplicate_key_update`, `limit_clause`입니다. 방언 고유의 핫스팟이나
+회귀는 발견되지 않았으므로 이 기준선에서 방언 변경을 제안하지 않습니다.
+
+### Prepared 배치 타당성
+
+pycubrid 1.12.0의 옵트인 `executemany(..., prepared=True)`(대량 배치 안전성
+작업 cubrid-lab/pycubrid#854 완료)는 위에서 리터럴 배치 시간의 0.37–0.47배,
+벤치마크 전용 `do_executemany` 재정의를 거친 Core UPDATE/DELETE에서는 약
+0.4–0.5배가 걸렸습니다. 방언은 기본 경로를 유지합니다. 계약상 옵트인은
+가능하지만 조용한 기본값 변경은 안 됩니다.
+
+- SQLAlchemy는 UPDATE와 DELETE 파라미터 목록, 그리고 #421의 INSERT 대체 경로에
+  `executemany()`를 보냅니다. 이 문들은 prepared 경로가 받아들이는 `UPDATE`,
+  `DELETE`, `INSERT`로 시작합니다. `WITH`로 시작하는 문은 `NotSupportedError`로
+  거부되며 대체 경로가 없습니다.
+- 성공 시 `rowcount`는 행별 개수의 합으로, 방언의
+  `supports_sane_multi_rowcount`에 필요한 값입니다. 부분 실패, 커밋과 롤백 동작,
+  예외 매핑은 리터럴 배치와 같습니다.
+- 허용 값이 더 좁습니다. 빈 `bytes`, NaN/무한대, `str`/`int`/`None` 이외의
+  컬렉션 요소, (오토커밋 켜짐에서) `Lob` 값은 전송 전에 거부되고, 변환 오류
+  문구는 리터럴 문구 대신 "Cannot coerce host var"입니다. 모든 플레이스홀더는
+  서버가 타입을 정할 수 있어야 합니다.
+
+측정하지 않음: CUBRID 10.2, 11.0, 11.2, `cubrid://`(CUBRIDdb)와
+`cubrid+aiopycubrid://` 경로, 연결 하나를 넘는 동시성, `pool_pre_ping`,
+Python 3.12 이외 버전, 원격 네트워크, 서버 측 자원 사용량.
+
+---
+
 ## 벤치마크 결과
+
+이 절의 결과는 과거 기록입니다. 이전 릴리스와 다른 호스트에서 측정되었으며
+v1.11.0을 설명하지 않습니다. 현재 수치는
+[현재 기준선 (2026-10-12)](#현재-기준선-2026-10-12)을 참고하세요.
 
 출처: [cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark)
 
 환경: Intel Core i5-9400F @ 2.90GHz, 6코어, Linux x86_64, Docker 컨테이너.
 
-기준 드라이버 워크로드: Python `pycubrid` vs `PyMySQL`, 10000행 × 5라운드.
+기준 드라이버 워크로드(2026-03-16, cubrid-benchmark `baseline-multilang`): Python `pycubrid` vs `PyMySQL`, 10000행 × 5라운드.
 
 | 시나리오 | CUBRID (pycubrid 기준) | MySQL (PyMySQL) | 비율 (CUBRID/MySQL) |
 |---|---:|---:|---:|
@@ -60,7 +189,7 @@ flowchart TD
 
 ### 이슈 #104 — ORM 방언 프로파일과 최적화
 
-이슈 #104에 사용된 로컬 벤치마크 환경에서 측정:
+2026년 4월, 이슈 #104에 사용된 로컬 벤치마크 환경에서 측정:
 
 | 시나리오 | 이전 | 이후 | 변화 |
 |---|---:|---:|---:|
@@ -132,3 +261,9 @@ flowchart TD
 5. 프레임워크 오버헤드를 분리하려면 드라이버 기준과 ORM/Core 실행을 비교하세요.
 
 정확한 명령 집합과 러너 스크립트는 벤치마크 저장소 문서를 사용하세요.
+
+현재 기준선은 `benchmarks/2026-10-12-dialect-baseline/run.sh`로 재현합니다. 이
+스크립트는 하나의 CUBRID 컨테이너에 대해 `scripts/bench_dialect_baseline.py`,
+`scripts/bench_compile.py`, `scripts/profile_orm.py`, cubrid-benchmark
+`orm-overhead` 워커를 실행하며, 그 디렉터리에서 `python aggregate.py`를 실행하면
+`raw/`로부터 `summary.json`을 다시 만듭니다.

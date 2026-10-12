@@ -1,0 +1,32 @@
+== select_pk_us
+  raw                        median 660.587  [629.414..829.319]
+  core_cached                median 774.833  [740.715..1434.070]
+  core_uncached              median 996.442  [964.306..1352.553]
+  orm                        median 999.350  [897.871..1321.637]
+== fetch_all_us
+  raw                        median 3862.854  [3449.759..4767.261]
+  core                       median 4342.935  [4228.573..4429.881]
+  orm                        median 7695.674  [7333.187..7776.172]
+== batch_ms
+  raw insert                         median 480.027  [444.514..732.002]
+  raw update                         median 471.234  [424.921..593.871]
+  raw delete                         median 619.482  [445.451..681.188]
+  raw_prepared insert                median 179.790  [165.103..198.551]
+  raw_prepared update                median 220.851  [171.255..336.346]
+  raw_prepared delete                median 243.973  [193.000..328.758]
+  core insert                        median 98.834  [94.850..141.014]
+  core update                        median 576.562  [372.962..1281.751]
+  core delete                        median 567.045  [424.562..648.137]
+  core_prepared_experiment insert    median 116.164  [98.940..132.926]
+  core_prepared_experiment update    median 239.470  [165.234..279.973]
+  core_prepared_experiment delete    median 279.810  [206.656..306.951]
+  orm insert                         median 108.185  [104.649..142.576]
+  orm update                         median 465.762  [445.700..752.503]
+  orm delete                         median 497.803  [413.081..671.152]
+== reflect_ms
+  inspector_table            median 16.463  [15.241..16.537]
+  metadata_reflect           median 20.901  [18.986..25.723]
+== reflect_sql_statements
+  inspector_table            8
+  metadata_reflect           10
+wrote raw/bench_dialect_baseline_sa21.json
