@@ -25,12 +25,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      # A release commit's runtime lanes run in the release workflow instead (#737).
+      release: ${{ steps.release.outputs.build == 'true' }}
+      code: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' }}
       docs: ${{ steps.filter.outputs.docs }}
       site: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.site == 'true' }}
       tooling: ${{ steps.filter.outputs.tooling }}
-      live: ${{ steps.filter.outputs.code == 'true' && (github.event_name != 'pull_request' || steps.filter.outputs.risk == 'true') }}
-      extended: ${{ steps.filter.outputs.code == 'true' && github.event_name != 'pull_request' }}
+      live: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' && (github.event_name != 'pull_request' || steps.filter.outputs.risk == 'true') }}
+      extended: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' && github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -41,6 +43,19 @@ jobs:
         run: |
           base=$(git rev-list -1 --before="7 days ago" HEAD)
           echo "base=${base:-$(git rev-list --max-parents=0 HEAD)}" >> "$GITHUB_OUTPUT"
+      # #737: on the push of a release commit, publish-pypi.yml calls
+      # integration-full.yml at the same SHA, which runs every runtime lane of a
+      # main push (offline endpoints, type checking, alembic-compat, packaging,
+      # make integration, both endpoint cells and the gating compliance lanes)
+      # and fails closed before anything is published. The same decision script
+      # on the same SHA selects the release, so this run keeps only the static,
+      # documentation and tooling checks instead of repeating that work.
+      - name: Detect a release commit
+        id: release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          python3 scripts/release_detect.py --mode push --sha "$GITHUB_SHA" \
+            --version-file sqlalchemy_cubrid/__init__.py
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d
         id: filter
         with:

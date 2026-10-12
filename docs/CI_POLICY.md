@@ -7,7 +7,7 @@ Routine CI uses representative combinations instead of a Cartesian version/OS ma
 | Documentation-only PR | Documentation and policy checks; no runtime suite or CUBRID provisioning |
 | Ordinary code PR | One Ubuntu/Python 3.12 full offline suite with the 95% coverage floor (#742) |
 | High-risk PR | Same full offline suite plus Python 3.14/CUBRID 11.4; targeted additional lanes where relevant |
-| Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.15) (#734); live endpoints Python 3.14/CUBRID 11.4 and Python 3.11/CUBRID 10.2 |
+| Code push to main | Ubuntu full offline suite with the existing 95% coverage floor on the oldest and newest supported Python (3.11, 3.15) (#734); live endpoints Python 3.14/CUBRID 11.4 and Python 3.11/CUBRID 10.2. The push of a release commit runs only the static, documentation and tooling checks; its runtime lanes run in the release at the same SHA (#737) |
 | Monday 03:00 UTC | Same policy as a main push (including the Python 3.11/3.15 offline cells), comparing changes in the previous seven days; unchanged/docs-only history does not select runtime tests. The advisory SQLAlchemy pre-release canary and the oldest cell's advisory CUBRIDdb compliance run here, not on pushes; the compliance step needs code changes in the previous seven days (#737) |
 | Explicit full dispatch or release | Existing full Python 3.11–3.15 × CUBRID 10.2/11.0/11.2/11.4 integration workflow and mandatory release lanes, plus the Python 3.11/3.15 offline cells, type checking, `alembic-compat`, the packaging smoke test and the gating SQLAlchemy compliance lanes (#737) |
 
@@ -202,6 +202,80 @@ cubrid-lab repositories, which ruled out option (a) (`actions: read` and a
 required `ci.yml` push run). The copies add three short jobs (about 1.4 runner
 minutes from the medians above) and two live compliance cells per release;
 `test/test_ci_policy.py` keeps their steps equal to the `ci.yml` sources.
+
+### Release commit push
+
+A release commit is pushed to `main` once, and two workflows start on that SHA:
+`ci.yml`'s push run and `publish-pypi.yml`, whose `matrix` job calls
+`integration-full.yml`. The release call already runs every runtime lane of a
+`main` push: the Python 3.11/3.15 offline cells, type checking, `alembic-compat`,
+the packaging smoke test, `make integration` (both drivers, CUBRID 10.2 and 11.4),
+the gating compliance lanes and all 20 Python × CUBRID cells, behind the
+fail-closed `full-matrix-result`. Measured on the three release commits in the
+sample (1.9.0, 1.10.0, 1.11.0), the push run spent 15.0 to 19.5 runner minutes
+repeating that work (14.1 runner minutes and 18 rounded minutes in 8 jobs on
+1.11.0, the first release after the consolidation).
+
+`ci.yml`'s `detect-changes` therefore runs `scripts/release_detect.py --mode push`
+on push events to `main`, the same script, mode and SHA that `publish-pypi.yml`'s
+`detect` job uses. When it selects a release (`build=true`), the `code`, `live` and
+`extended` outputs are false, so `typecheck`, `offline-tests`, `alembic-compat`,
+`packaging-smoke-test`, `integration-tests` and `make-integration` are
+intentionally unselected and `matrix-result` accepts their skips. Lint,
+documentation lint, the site build and repository-tooling tests still follow
+their own selection. A failed detection fails `detect-changes` and with it the
+required gate, so a release push is never reported green by accident.
+
+The two `integration-tests` steps that `integration-full.yml` did not run, "Run
+pycubrid sync integration tests" and "Run regression tests", now also run in its
+Python 3.11/CUBRID 10.2 and Python 3.14/CUBRID 11.4 cells, with the same commands
+and URLs (the 3.11 row already pins SQLAlchemy 2.0, as the oldest `ci.yml` cell
+does). They took a median 42 seconds and 1 second per cell on `main` pushes, so
+the release gains about 1.4 runner minutes while each release commit's push run
+drops about 14 runner minutes. `test/test_ci_policy.py` keeps the copied steps
+equal to the `ci.yml` source and their cells equal to its push matrix.
+
+Release verification stays fail-closed and complete: nothing is published unless
+`full-matrix-result` succeeds, and a release that fails or is never published
+leaves the version unreleased. The release commit only changes the version,
+`CHANGELOG.md` and release metadata, and the release PR ran the PR tier before
+the merge. Ordinary pushes, the weekly schedule and manual dispatches are
+unchanged.
+
+### Measured after the consolidation
+
+Measured with the same method on 2026-10-12 (`actions/runs` and `runs/{id}/jobs`,
+all attempts, skipped jobs excluded). "Before" is 2026-10-03 to the merge of #760
+(2026-10-09 03:19 UTC); for the release rows it is everything before #797
+(2026-10-10 23:56 UTC). "After" runs until 2026-10-12. Samples are short, and
+several other CI changes merged in the same days, noted below the table.
+
+| Category | Before: window (runs) | Before: median runner / rounded min | After: window (runs) | After: median runner / rounded min | After: failed / cancelled |
+| --- | --- | --- | --- | --- | --- |
+| Docs-only PR | 2026-10-03..09 (15) | 1.0 / 7 | 2026-10-10..12 (29) | 1.0 / 8 | 1 / 2 |
+| Ordinary code PR | 2026-10-03..06 (17) | 2.0 / 9 | 2026-10-09..12 (39) | 3.8 / 11 | 2 / 2 |
+| Risk PR | 2026-10-03..09 (66) | 10.4 / 19 | 2026-10-09..12 (65) | 9.4 / 18 | 0 / 15 |
+| Main push, code | 2026-10-03..09 (48) | 18.9 / 28.5 | 2026-10-09..12 (47) | 17.0 / 27 | 0 / 4 |
+| Weekly `ci.yml` schedule | 2026-10-05 (1) | 21.2 / 32 | 2026-10-12 (1) | 18.8 / 29 | 0 / 0 |
+| Upstream pycubrid canary | 2026-09-21..10-08 (13) | 2.0 / 4 | none yet (first Thursday run 2026-10-15) | not measured | not measured |
+| Release (`publish-pypi.yml` push) | 2026-10-04, 10-09 (2) | 93.8 and 143.9 / 118 and 185 | 2026-10-12 (1) | 103.8 / 133 | 0 / 0 |
+| Release rehearsal (`publish-pypi.yml` dry-run dispatch) | none | not measured | 2026-10-11 (5) | 92.8 / 118 | 0 / 0 |
+| `integration-full.yml` dispatch | 2026-10-04..09 (8) | 73.4 / 85.5 | 2026-10-10..12 (11) | 82.1 / 102 | 0 / 1 |
+
+- Main pushes dropped about 1.9 runner minutes at the median: `live-smoke` and the
+  push-time SQLAlchemy canary are gone, and #734's second offline cell took back
+  part of that. The weekly run dropped 2.4 runner minutes. Main-push failures fell
+  from 9 to 0; cancelled runs are still superseded runs, as before.
+- Ordinary code PRs rose because #742 (2026-10-08) runs the full offline suite on
+  every PR and #786 builds the documentation site on PRs that touch it. Neither is
+  part of this consolidation; both move failures from `main` to the PR.
+- `integration-full.yml` rose from 24 to 35 jobs: #797 added the five release
+  copies (about 5.2 runner minutes) and #807 (2026-10-11) added the Python 3.15
+  row (four cells). The 10-09 release before includes re-run attempts.
+- These are runner minutes on GitHub-hosted runners of a public repository, not
+  billed charges. With this change, each future release commit also saves the
+  push run's runtime lanes measured above (about 14 runner minutes), less about
+  1.4 runner minutes added to the release.
 
 ## Offline Python endpoints
 
@@ -420,6 +494,14 @@ a major update into auto-merge. One failing package blocks the whole group: fix 
 the group PR, or, if it needs separate work, add it to the group's `exclude-patterns`
 through a reviewed PR so Dependabot opens it on its own.
 `test/test_workflow_hygiene.py` enforces the group settings.
+
+The first grouped weekly run on 2026-10-10 opened one PR, #793 ("bump the
+github-actions group with 2 updates"), for `actions/upload-artifact` and
+`actions/download-artifact` across four workflows; on 2026-09-21 the same two actions had needed two PRs
+(#451, #452). It passed the required checks before it merged. The SHA bumps of the
+pinned cookbook smoke-test workflow (#794, #809) are commit updates, not minor or
+patch version updates, so the group does not match them and they still open their
+own PRs.
 
 ## Python 3.15 validation preparation
 

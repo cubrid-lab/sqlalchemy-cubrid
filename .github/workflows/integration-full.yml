@@ -172,6 +172,30 @@ jobs:
           python -m pytest test/test_aio_integration.py test/test_lob_value_contract.py test/test_scalar_execution_contract.py -v --tb=short | tee async-integration.log
           python -m scripts.check_not_all_skipped async-integration.log --label "Run async integration tests"
 
+      # #737: the two ci.yml endpoint cells also run these two steps. A release
+      # commit's main push run skips its runtime lanes, so the release repeats
+      # them on the same cells (the 3.11 row already pins SQLAlchemy 2.0).
+      - name: Run pycubrid sync integration tests
+        if: (matrix.python-version == '3.11' && matrix.cubrid-version == '10.2') || (matrix.python-version == '3.14' && matrix.cubrid-version == '11.4')
+        env:
+          CUBRID_TEST_URL: "cubrid+pycubrid://dba@localhost:33000/testdb"
+        run: |
+          # Preflight: verify pycubrid sync connectivity.
+          python -c "
+          from sqlalchemy import create_engine, text
+          e = create_engine('cubrid+pycubrid://dba@localhost:33000/testdb')
+          with e.connect() as c:
+              c.execute(text('SELECT 1'))
+          e.dispose()
+          print('pycubrid sync: connected')
+          "
+          set -o pipefail
+          python -m pytest test/test_integration.py test/test_alembic_registration.py \
+            test/test_show_create_table_server_output.py \
+            test/test_unique_constraint_fallback.py test/test_lob_value_contract.py \
+            test/test_scalar_execution_contract.py -v --tb=short | tee pycubrid-sync-integration.log
+          python -m scripts.check_not_all_skipped pycubrid-sync-integration.log --label "Run pycubrid sync integration tests"
+
       - name: Run driver-differential comparison (required)
         env:
           CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
@@ -193,6 +217,15 @@ jobs:
           CUBRID_REQUIRE_TRANSACTIONAL_DDL: "1"
         run: |
           python -m pytest test/test_transactional_ddl.py -v --tb=short -rs
+
+      - name: Run regression tests
+        if: (matrix.python-version == '3.11' && matrix.cubrid-version == '10.2') || (matrix.python-version == '3.14' && matrix.cubrid-version == '11.4')
+        env:
+          CUBRID_TEST_URL: "cubrid://dba@localhost:33000/testdb"
+        run: |
+          set -o pipefail
+          python -m pytest test/test_regression.py -v --tb=short | tee regression.log
+          python -m scripts.check_not_all_skipped regression.log --label "Run regression tests"
 
       # Recorded SHOW CREATE TABLE output per supported CUBRID version (#611),
       # ENUM / collection column reflection from it (#631) and the

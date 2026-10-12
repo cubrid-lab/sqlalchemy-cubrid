@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- **A release commit's `main` push no longer repeats the release's runtime lanes
+  (#737)** — `ci.yml` runs `scripts/release_detect.py --mode push`, the decision
+  `publish-pypi.yml` makes on the same SHA, and on a release commit skips
+  `typecheck`, `offline-tests`, `alembic-compat`, `packaging-smoke-test`,
+  `integration-tests` and `make-integration`, which `integration-full.yml` already
+  runs there behind the fail-closed `full-matrix-result`. Lint, documentation and
+  tooling checks still run. `integration-full.yml` gains the two endpoint-cell steps
+  it lacked (pycubrid sync integration and regression tests) on Python 3.11/CUBRID
+  10.2 and 3.14/11.4. On the 1.11.0 release commit this would have saved 14.1
+  runner minutes for about 1.4 added to the release. `docs/CI_POLICY.md` records
+  measured runner minutes after the #760 and #797 consolidation and the first
+  grouped Dependabot run.
+
 ## [1.11.0] - 2026-10-12
 
 ### Upgrade notes

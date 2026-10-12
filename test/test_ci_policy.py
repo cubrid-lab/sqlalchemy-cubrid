@@ -636,3 +636,80 @@ def test_gate_expects_docs_build_exactly_when_the_site_is_selected() -> None:
     # Not selected: a skipped build passes, a failed one still blocks.
     assert run_gate(base - {"docs-build"}, {}).returncode == 0
     assert run_gate(base - {"docs-build"}, {"docs-build": "failure"}).returncode != 0
+
+
+# --- #737: release commits run their runtime lanes in the release workflow ---
+
+RELEASE_GUARD = "steps.release.outputs.build != 'true'"
+ENDPOINT_MATRIX = re.compile(
+    r"^\$\{\{ fromJSON\(github\.event_name == 'pull_request' && '(?P<pr>\{.*?\})'"
+    r" \|\| '(?P<other>\{.*?\})'\) \}\}$"
+)
+
+
+def test_release_commit_is_detected_with_the_release_workflow_decision() -> None:
+    steps = detect()["steps"]
+    step = next(s for s in steps if s.get("id") == "release")
+    assert step["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
+    # Same script, mode and SHA as publish-pypi.yml's detect job.
+    publish = workflow("publish-pypi.yml")
+    decide = next(s for s in publish["jobs"]["detect"]["steps"] if s.get("id") == "detect")
+    assert "scripts/release_detect.py --mode" in decide["run"]
+    assert '--sha "$GITHUB_SHA"' in decide["run"]
+    run = " ".join(step["run"].replace("\\\n", " ").split())
+    assert run == (
+        'python3 scripts/release_detect.py --mode push --sha "$GITHUB_SHA" '
+        f"--version-file {publish['env']['VERSION_FILE']}"
+    )
+    # It runs before paths-filter, which stays the last step.
+    assert steps.index(step) < len(steps) - 1
+    assert steps[-1]["uses"].startswith("dorny/paths-filter@")
+
+
+def test_release_commit_deselects_only_the_runtime_lanes() -> None:
+    outputs = detect()["outputs"]
+    assert outputs["release"] == "${{ steps.release.outputs.build == 'true' }}"
+    for name in ("code", "live", "extended"):
+        assert RELEASE_GUARD in outputs[name], name
+    for name in ("docs", "site", "tooling"):
+        assert "steps.release" not in outputs[name], name
+    jobs = workflow("ci.yml")["jobs"]
+    assert "if" not in jobs["lint"]
+    for job, output in (
+        ("typecheck", "code"),
+        ("offline-tests", "code"),
+        ("alembic-compat", "live"),
+        ("packaging-smoke-test", "live"),
+        ("integration-tests", "live"),
+        ("make-integration", "extended"),
+    ):
+        assert jobs[job]["if"] == f"needs.detect-changes.outputs.{output} == 'true'", job
+
+
+def test_release_commit_push_gate_passes_with_static_checks_and_rejects_failures() -> None:
+    selected = {"detect-changes", "lint", "doc-lint"}
+    assert run_gate(selected, {}).returncode == 0
+    assert run_gate(selected, {"lint": "failure"}).returncode != 0
+    assert run_gate(selected, {"detect-changes": "failure"}).returncode != 0
+
+
+@pytest.mark.parametrize("name", ["Run pycubrid sync integration tests", "Run regression tests"])
+def test_release_repeats_the_ci_endpoint_cell_steps(name: str) -> None:
+    ci_job = workflow("ci.yml")["jobs"]["integration-tests"]
+    ci_step = next(s for s in ci_job["steps"] if s.get("name") == name)
+    full_step = next(
+        s
+        for s in workflow("integration-full.yml")["jobs"]["integration-full"]["steps"]
+        if s.get("name") == name
+    )
+    assert "if" not in ci_step
+    assert full_step["run"] == ci_step["run"]
+    assert full_step["env"] == ci_step["env"]
+    match = ENDPOINT_MATRIX.fullmatch(ci_job["strategy"]["matrix"])
+    assert match, ci_job["strategy"]["matrix"]
+    cells = [
+        f"(matrix.python-version == '{c['python-version']}' && "
+        f"matrix.cubrid-version == '{c['cubrid-version']}')"
+        for c in json.loads(match["other"])["include"]
+    ]
+    assert sorted(full_step["if"].split(" || ")) == sorted(cells)
