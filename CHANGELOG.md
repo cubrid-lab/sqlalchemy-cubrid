@@ -166,8 +166,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty), and fails when a PR has 250 or more commits, because GitHub lists only
   250. A test pins that step. Owners with an underscore, as Enterprise Managed Users
   have (`alice_acme/repo#N`), are now matched in references and links. The job setup
-  and these checks come from pycubrid's guard (cubrid-lab/pycubrid#845); Markdown
-  handling of the PR body is unchanged, and underscore owners are matched there too.
+  and these checks come from pycubrid's guard (cubrid-lab/pycubrid#845); code-block
+  and comment handling of the PR body is unchanged; an underscore inside a word is
+  no longer read as emphasis, so underscore owners are matched there too.
   cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#276) and cubrid-cookbook-python
   (cubrid-lab/cubrid-cookbook-python#294) have the same change.
 - **The PR-body closing guard catches emphasized, linked, escaped and split
@@ -213,16 +214,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   may block a PR but never lets a closure through. Regression cases cover bullet,
   numbered, nested and lazy-continuation list items.
 - **Repository-local issue closure in PRs** — the required `PR title` check
-  rejects direct cross-repository auto-closing keywords, while local
-  `Closes #N` and cross-repository `Refs owner/repo#N` remain valid. The
-  PR body is inert environment data; no checkout or token permissions are
-  needed. The guard is a best-effort line scanner, not a full Markdown parser:
-  fenced and indented code and HTML comments are ignored in one pass (inline
-  code and inline comments are now scanned; see the guard entry above), so a
-  comment opener inside a fence cannot hide a later closure, and
-  `Closes: owner/repo#N` is caught too. Fences inside block quotes or list items
-  are not recognized. Regression cases cover longer, mixed and mismatched
-  fences, tab indentation, inline code and unterminated comment openers.
+  rejects direct cross-repository auto-closing keywords, while local `Closes #N` and
+  cross-repository `Refs owner/repo#N` remain valid. The PR body is inert
+  environment data; no checkout or token permissions are needed. (Superseded in part
+  by the entries above: the job now has a `pull-requests: read` token to list the
+  commit messages, and the PR title and commit messages are checked too.) The guard
+  is a best-effort line scanner, not a full Markdown parser: fenced and indented
+  code and HTML comments are ignored in one pass, so a comment opener inside a fence
+  cannot hide a later closure, and `Closes: owner/repo#N` is caught too. (Superseded
+  in part by the guard entry above: inline code and inline comments are now
+  scanned.) Fences inside block quotes or list items are not recognized. Regression
+  cases cover longer, mixed and mismatched fences, tab indentation, inline code and
+  unterminated comment openers.
 - **The cookbook verifies the built wheel before it is published
   (cubrid-lab/cubrid-cookbook-python#240)** — `publish-pypi.yml` gains
   `verify-candidate`, which calls the cookbook smoke test in candidate mode on the
