@@ -7,12 +7,17 @@ its strict bracket/date contract. Curated and generated entries are merged under
 the standard ``###`` headings in the standard order, so the candidate passes
 scripts/lint_changelog.py. Generated issue references are rendered as "refs",
 not "closes" (see GENERATED_REFERENCES). Call only after the freeze-label check.
+
+With ``--pr-body``, read a GitHub pull request JSON instead and apply the same
+reference rewrite to the release PR body, so GitHub does not treat the
+generated references as closing keywords.
 """
 
 from __future__ import annotations
 
 import argparse
 import datetime as dt
+import json
 import re
 import sys
 from pathlib import Path
@@ -163,13 +168,52 @@ def compose(base: str, generated: str, version: str) -> str:
     )
 
 
+def rewrite_pr_body(pull_request: dict[str, object]) -> str | None:
+    """Return the release PR body with rewritten references, or None if unchanged."""
+    head = pull_request.get("head")
+    ref = head.get("ref") if isinstance(head, dict) else None
+    if not isinstance(ref, str) or not ref.startswith("release-please--branches--main"):
+        raise ValueError("pull request is not a release-please release PR")
+    body = pull_request.get("body") or ""
+    if not isinstance(body, str):
+        raise ValueError("pull request body must be text")
+    rewritten = _rewrite_references(body)
+    return None if rewritten == body else rewritten
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--base-changelog", required=True)
+    parser.add_argument("--base-changelog")
     parser.add_argument("--generated-changelog", default="RELEASE_CHANGELOG.md")
-    parser.add_argument("--version", required=True)
-    parser.add_argument("--output", default="CHANGELOG.md")
+    parser.add_argument("--version")
+    parser.add_argument("--output")
+    parser.add_argument(
+        "--pr-body",
+        help="GitHub pull request JSON; write a {'body': ...} PATCH payload to --output "
+        "only when the body changes",
+    )
     args = parser.parse_args(argv)
+    if args.pr_body:
+        if args.base_changelog or args.version or not args.output:
+            parser.error("--pr-body takes only --output")
+        try:
+            pull_request = json.loads(Path(args.pr_body).read_text(encoding="utf-8"))
+            if not isinstance(pull_request, dict):
+                raise ValueError("pull request JSON must be an object")
+            body = rewrite_pr_body(pull_request)
+        except (ValueError, OSError) as exc:
+            print(f"::error::{exc}", file=sys.stderr)
+            return 1
+        output = Path(args.output)
+        if body is None:
+            output.unlink(missing_ok=True)
+            print("release PR body unchanged")
+        else:
+            output.write_text(json.dumps({"body": body}), encoding="utf-8")
+            print("release PR body references rewritten")
+        return 0
+    if not args.base_changelog or not args.version:
+        parser.error("--base-changelog and --version are required")
     try:
         result = compose(
             Path(args.base_changelog).read_text(encoding="utf-8"),
@@ -179,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
     except (ValueError, OSError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1
-    Path(args.output).write_text(result, encoding="utf-8")
+    Path(args.output or "CHANGELOG.md").write_text(result, encoding="utf-8")
     return 0
 
 

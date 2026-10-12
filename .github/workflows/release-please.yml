@@ -92,3 +92,15 @@ jobs:
             auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
             git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" push origin "HEAD:refs/heads/$branch"
           fi
+      - name: Rewrite generated references in the release PR body
+        if: steps.release.outputs.pr != ''
+        env:
+          RELEASE_PR: ${{ steps.release.outputs.pr }}
+        run: |
+          set -euo pipefail
+          number=$(python -c 'import json,os; print(int(json.loads(os.environ["RELEASE_PR"])["number"]))')
+          gh api "repos/$GITHUB_REPOSITORY/pulls/$number" > /tmp/release-pr.json
+          python /tmp/compose-release.py --pr-body /tmp/release-pr.json --output /tmp/release-pr-body.json
+          if [ -s /tmp/release-pr-body.json ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$number" --input /tmp/release-pr-body.json --jq .number
+          fi
