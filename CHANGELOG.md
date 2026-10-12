@@ -157,6 +157,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that added it. Docs only.
 
 ### CI
+- **The closing guard catches a closing keyword used as link text** —
+  `[Closes](url) owner/repo#N` renders as "Closes owner/repo#N", but the gap after
+  the keyword stopped at `]`. The `PR title` check now crosses a link's `]`,
+  `](destination)` or `][label]`, and also a quoted continuation line, an image's
+  alt text and a link reference definition line, each of which renders nothing
+  between the keyword and the reference. Each `)` or `]` is scanned once per check,
+  so adversarial link syntax stays under a second at GitHub's 65,536-character
+  limit. The fix came from Copilot's review of cubrid-lab/pycubrid#849, and
+  `pr-title.yml` is again byte-identical across pycubrid, sqlalchemy-cubrid,
+  cubrid-mcp-server and cubrid-cookbook-python.
 - **Generated release notes write issue references as "refs", not "closes"** — release-please
   17.6.0 renders every issue trailer in a commit's final footer block as `, closes [#N](…)`,
   so a commit that only said `Refs #479` was listed as closing that issue (#770).
