@@ -24,6 +24,22 @@ Workloads (per trial; the variant order rotates from trial to trial):
 * ``reflect``     a fresh ``Inspector``'s column/PK/FK/index/unique-constraint
                   calls and ``MetaData.reflect()`` for the table, with the number
                   of SQL statements each sends.
+* ``concurrency`` (with ``--concurrency``, #830 follow-up) N workers, each on its
+                  own connection, start together: ``--concurrent-ops`` one-row
+                  SELECTs by primary key per worker (raw, Core, ORM), then
+                  ``--concurrent-writes`` single-row Core UPDATEs, each committed,
+                  on the worker's own rows. Reports throughput and the p50 latency.
+
+Drivers: ``cubrid+pycubrid://`` runs everything; ``cubrid://`` (CUBRIDdb) runs
+the same workloads with a raw CUBRIDdb connection and without the two
+``prepared=True`` variants, which only pycubrid has (the raw CUBRIDdb
+``rowcount`` after ``executemany()`` is the last row's, so only the table
+check applies to it);
+``cubrid+aiopycubrid://`` runs the async counterparts (``pycubrid.aio`` raw,
+``AsyncConnection`` Core, ``AsyncSession`` ORM, ``asyncio`` tasks for
+concurrency) of ``select_pk``, ``fetch_all``, ``batch`` (no prepared variants)
+and ``concurrency``; reflection is skipped there (it runs the same synchronous
+dialect code through ``run_sync``).
 
 Usage:
     python scripts/bench_dialect_baseline.py \\
@@ -34,10 +50,12 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import platform
 import statistics
 import sys
+import threading
 import time
 from collections.abc import Callable
 from importlib.metadata import version
@@ -45,6 +63,7 @@ from pathlib import Path
 from typing import Any
 
 import pycubrid
+import pycubrid.aio
 from sqlalchemy import (
     Integer,
     MetaData,
@@ -62,6 +81,7 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 TABLE = "bench_dialect_baseline"
@@ -233,7 +253,7 @@ def verify_batch(conn: Connection, stage: str, n: int) -> None:
 
 
 def bench_batch(
-    engine: Engine, prepared_engine: Engine, raw: Any, n: int, rounds: int, trial: int
+    engine: Engine, prepared_engine: Engine | None, raw: Any, n: int, rounds: int, trial: int
 ) -> dict:
     tuples_ins = [(i, f"n{i}", i) for i in range(n)]
     tuples_upd = [(i + 1, i) for i in range(n)]
@@ -261,7 +281,8 @@ def bench_batch(
             cur.executemany(sql, params, **kw)
             raw.commit()
             res[stage] = pc() - t0
-            check(cur.rowcount == n, f"raw {stage} rowcount {cur.rowcount}")
+            if prepared_engine is not None:  # pycubrid; CUBRIDdb reports the last row's count
+                check(cur.rowcount == n, f"raw {stage} rowcount {cur.rowcount}")
             with engine.connect() as conn:
                 verify_batch(conn, stage, n)
         cur.close()
@@ -313,9 +334,11 @@ def bench_batch(
         ("raw", lambda: raw_round(False)),
         ("raw_prepared", lambda: raw_round(True)),
         ("core", lambda: core_round(engine)),
-        ("core_prepared_experiment", lambda: core_round(prepared_engine)),
+        ("core_prepared_experiment", lambda: core_round(prepared_engine or engine)),
         ("orm", orm_round),
     ]
+    if prepared_engine is None:
+        variants = [v for v in variants if "prepared" not in v[0]]
     out: dict[str, dict[str, float]] = {}
     for name, fn in rotate(variants, trial):
         with engine.connect() as conn:
@@ -369,6 +392,441 @@ def bench_reflect(engine: Engine, rounds: int) -> dict:
     return out
 
 
+# ----- concurrency -----------------------------------------------------------------------
+
+
+def concurrency_result(times: list[list[int]], wall_ns: int) -> dict[str, float]:
+    flat = [t for worker in times for t in worker]
+    return {"ops_per_s": len(flat) / (wall_ns / 1e9), "p50_us": us(flat)}
+
+
+def run_threads(n: int, work: Callable[[int, threading.Barrier], list[int]]) -> dict:
+    """Run ``work(i, barrier)`` in ``n`` threads; each opens its connection, then waits."""
+    barrier = threading.Barrier(n + 1)
+    times: list[list[int]] = [[] for _ in range(n)]
+    errors: list[BaseException] = []
+
+    def target(i: int) -> None:
+        try:
+            times[i] = work(i, barrier)
+        except BaseException as exc:  # reported after join
+            errors.append(exc)
+            barrier.abort()
+
+    threads = [threading.Thread(target=target, args=(i,)) for i in range(n)]
+    for t in threads:
+        t.start()
+    try:
+        barrier.wait()
+    except threading.BrokenBarrierError:
+        pass  # a worker failed before the start; its error is raised below
+    t0 = pc()
+    for t in threads:
+        t.join()
+    wall = pc() - t0
+    if errors:
+        raise errors[0]
+    return concurrency_result(times, wall)
+
+
+def bench_concurrency(
+    engine: Engine, raw_connect: Callable[[], Any], args: argparse.Namespace, n: int, trial: int
+) -> dict:
+    rows, ops = args.rows, args.concurrent_ops
+    stmt = select(ITEMS.c.id, ITEMS.c.name, ITEMS.c.amount).where(ITEMS.c.id == bindparam("k"))
+    orm_stmt = select(Item).where(Item.id == bindparam("k"))
+    upd = update(ITEMS).where(ITEMS.c.id == bindparam("k")).values(amount=bindparam("a"))
+
+    def keys(i: int) -> list[int]:
+        return [((i * ops + j) * 7919) % rows for j in range(ops)]
+
+    def raw_select(i: int, barrier: threading.Barrier) -> list[int]:
+        raw = raw_connect()
+        try:
+            cur = raw.cursor()
+            barrier.wait()
+            times = []
+            for k in keys(i):
+                t0 = pc()
+                cur.execute(
+                    "SELECT id, name, amount FROM bench_dialect_baseline WHERE id = ?", (k,)
+                )
+                row = cur.fetchone()
+                times.append(pc() - t0)
+                check(row[0] == k, "raw concurrent select returned the wrong row")
+            cur.close()
+            raw.commit()
+            return times
+        finally:
+            raw.close()
+
+    def core_select(i: int, barrier: threading.Barrier) -> list[int]:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1 FROM db_root")).all()  # check out before the start
+            barrier.wait()
+            times = []
+            for k in keys(i):
+                t0 = pc()
+                row = conn.execute(stmt, {"k": k}).first()
+                times.append(pc() - t0)
+                check(row is not None and row.id == k, "Core concurrent select wrong row")
+            return times
+
+    def orm_select(i: int, barrier: threading.Barrier) -> list[int]:
+        with Session(engine) as session:
+            session.execute(text("SELECT 1 FROM db_root")).all()
+            barrier.wait()
+            times = []
+            for k in keys(i):
+                t0 = pc()
+                obj = session.execute(orm_stmt, {"k": k}).scalar_one()
+                times.append(pc() - t0)
+                check(obj.id == k, "ORM concurrent select returned the wrong row")
+                session.expunge_all()
+            return times
+
+    def core_update_commit(i: int, barrier: threading.Barrier) -> list[int]:
+        own = list(range(i, rows, n))  # rows no other worker touches
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1 FROM db_root")).all()
+            conn.commit()
+            barrier.wait()
+            times = []
+            for j in range(args.concurrent_writes):
+                k = own[j % len(own)]
+                t0 = pc()
+                result = conn.execute(upd, {"k": k, "a": j})
+                conn.commit()
+                times.append(pc() - t0)
+                check(result.rowcount == 1, f"concurrent UPDATE rowcount {result.rowcount}")
+            return times
+
+    variants: list[tuple[str, Callable[[int, threading.Barrier], list[int]]]] = [
+        ("raw_select_pk", raw_select),
+        ("core_select_pk", core_select),
+        ("orm_select_pk", orm_select),
+        ("core_update_commit", core_update_commit),
+    ]
+    out: dict[str, dict[str, float]] = {}
+    for name, fn in rotate(variants, trial):
+        run_threads(n, fn)  # warm-up pass, not recorded
+        out[name] = run_threads(n, fn)
+    return out
+
+
+# ----- async (cubrid+aiopycubrid://) -----------------------------------------------------
+
+
+async def async_reset(engine: AsyncEngine, rows: int) -> None:
+    async with engine.connect() as conn:
+        await conn.execute(delete(ITEMS))
+        if rows:
+            await conn.execute(
+                insert(ITEMS), [{"id": i, "name": f"n{i}", "amount": i} for i in range(rows)]
+            )
+        await conn.commit()
+
+
+async def async_verify_batch(engine: AsyncEngine, stage: str, n: int) -> None:
+    async with engine.connect() as conn:
+        await conn.run_sync(verify_batch, stage, n)
+
+
+async def async_select_pk(
+    engine: AsyncEngine, raw: Any, rows: int, iterations: int, trial: int
+) -> dict:
+    keys = [(i * 7919) % rows for i in range(iterations)]
+    stmt = select(ITEMS.c.id, ITEMS.c.name, ITEMS.c.amount).where(ITEMS.c.id == bindparam("k"))
+    orm_stmt = select(Item).where(Item.id == bindparam("k"))
+
+    async def run_raw() -> list[int]:
+        cur = raw.cursor()
+        times = []
+        for k in keys:
+            t0 = pc()
+            await cur.execute(
+                "SELECT id, name, amount FROM bench_dialect_baseline WHERE id = ?", (k,)
+            )
+            row = await cur.fetchone()
+            times.append(pc() - t0)
+            check(row[0] == k, "async raw select_pk returned the wrong row")
+        await cur.close()
+        return times
+
+    async def run_core(cache: bool) -> list[int]:
+        async with engine.connect() as conn:
+            if not cache:
+                conn = await conn.execution_options(compiled_cache=None)
+            times = []
+            for k in keys:
+                t0 = pc()
+                row = (await conn.execute(stmt, {"k": k})).first()
+                times.append(pc() - t0)
+                check(row is not None and row.id == k, "async Core select_pk wrong row")
+            return times
+
+    async def run_orm() -> list[int]:
+        async with AsyncSession(engine) as session:
+            times = []
+            for k in keys:
+                t0 = pc()
+                obj = (await session.execute(orm_stmt, {"k": k})).scalar_one()
+                times.append(pc() - t0)
+                check(obj.id == k, "async ORM select_pk returned the wrong row")
+                session.expunge_all()
+            return times
+
+    variants: list[tuple[str, Callable[[], Any]]] = [
+        ("raw", run_raw),
+        ("core_cached", lambda: run_core(True)),
+        ("core_uncached", lambda: run_core(False)),
+        ("orm", run_orm),
+    ]
+    out: dict[str, float] = {}
+    for name, fn in rotate(variants, trial):
+        await fn()
+        out[name] = us(await fn())
+    return out
+
+
+async def async_fetch_all(
+    engine: AsyncEngine, raw: Any, rows: int, rounds: int, trial: int
+) -> dict:
+    core_stmt = select(ITEMS.c.id, ITEMS.c.name, ITEMS.c.amount)
+    orm_stmt = select(Item)
+
+    async def run_raw() -> list[int]:
+        cur = raw.cursor()
+        times = []
+        for _ in range(rounds):
+            t0 = pc()
+            await cur.execute("SELECT id, name, amount FROM bench_dialect_baseline")
+            got = await cur.fetchall()
+            times.append(pc() - t0)
+            check(len(got) == rows, "async raw fetch_all row count")
+        await cur.close()
+        return times
+
+    async def run_core() -> list[int]:
+        async with engine.connect() as conn:
+            times = []
+            for _ in range(rounds):
+                t0 = pc()
+                got = (await conn.execute(core_stmt)).all()
+                times.append(pc() - t0)
+                check(len(got) == rows, "async Core fetch_all row count")
+            return times
+
+    async def run_orm() -> list[int]:
+        times = []
+        for _ in range(rounds):
+            async with AsyncSession(engine) as session:
+                t0 = pc()
+                got = (await session.scalars(orm_stmt)).all()
+                times.append(pc() - t0)
+                check(len(got) == rows, "async ORM fetch_all row count")
+        return times
+
+    variants: list[tuple[str, Callable[[], Any]]] = [
+        ("raw", run_raw),
+        ("core", run_core),
+        ("orm", run_orm),
+    ]
+    out: dict[str, float] = {}
+    for name, fn in rotate(variants, trial):
+        await fn()
+        out[name] = us(await fn())
+    return out
+
+
+async def async_batch(engine: AsyncEngine, raw: Any, n: int, rounds: int, trial: int) -> dict:
+    tuples_ins = [(i, f"n{i}", i) for i in range(n)]
+    tuples_upd = [(i + 1, i) for i in range(n)]
+    tuples_del = [(i,) for i in range(n)]
+    dicts_ins = [{"id": i, "name": f"n{i}", "amount": i} for i in range(n)]
+    dicts_upd = [{"b_id": i, "b_amount": i + 1} for i in range(n)]
+    dicts_del = [{"b_id": i} for i in range(n)]
+    upd = update(ITEMS).where(ITEMS.c.id == bindparam("b_id")).values(amount=bindparam("b_amount"))
+    dele = delete(ITEMS).where(ITEMS.c.id == bindparam("b_id"))
+
+    async def raw_round() -> dict[str, int]:
+        cur = raw.cursor()
+        res = {}
+        for stage, sql, params in (
+            (
+                "insert",
+                "INSERT INTO bench_dialect_baseline (id, name, amount) VALUES (?, ?, ?)",
+                tuples_ins,
+            ),
+            ("update", "UPDATE bench_dialect_baseline SET amount = ? WHERE id = ?", tuples_upd),
+            ("delete", "DELETE FROM bench_dialect_baseline WHERE id = ?", tuples_del),
+        ):
+            t0 = pc()
+            await cur.executemany(sql, params)
+            await raw.commit()
+            res[stage] = pc() - t0
+            check(cur.rowcount == n, f"async raw {stage} rowcount {cur.rowcount}")
+            await async_verify_batch(engine, stage, n)
+        await cur.close()
+        return res
+
+    async def core_round() -> dict[str, int]:
+        res = {}
+        async with engine.connect() as conn:
+            for stage, stmt, params in (
+                ("insert", insert(ITEMS), dicts_ins),
+                ("update", upd, dicts_upd),
+                ("delete", dele, dicts_del),
+            ):
+                t0 = pc()
+                result = await conn.execute(stmt, params)
+                await conn.commit()
+                res[stage] = pc() - t0
+                if stage != "insert":
+                    check(result.rowcount == n, f"async Core {stage} rowcount {result.rowcount}")
+                await conn.run_sync(verify_batch, stage, n)
+        return res
+
+    async def orm_round() -> dict[str, int]:
+        res = {}
+        async with AsyncSession(engine) as session:
+            t0 = pc()
+            await session.execute(insert(Item), dicts_ins)
+            await session.commit()
+            res["insert"] = pc() - t0
+            await async_verify_batch(engine, "insert", n)
+            t0 = pc()
+            await session.execute(update(Item), [{"id": i, "amount": i + 1} for i in range(n)])
+            await session.commit()
+            res["update"] = pc() - t0
+            await async_verify_batch(engine, "update", n)
+            objs = (await session.scalars(select(Item))).all()
+            check(len(objs) == n, "async ORM load before DELETE")
+            t0 = pc()
+            for obj in objs:
+                await session.delete(obj)
+            await session.commit()
+            res["delete"] = pc() - t0
+            await async_verify_batch(engine, "delete", n)
+        return res
+
+    variants: list[tuple[str, Callable[[], Any]]] = [
+        ("raw", raw_round),
+        ("core", core_round),
+        ("orm", orm_round),
+    ]
+    out: dict[str, dict[str, float]] = {}
+    for name, fn in rotate(variants, trial):
+        await async_reset(engine, 0)
+        await fn()  # warm-up round
+        samples: dict[str, list[int]] = {"insert": [], "update": [], "delete": []}
+        for _ in range(rounds):
+            for stage, ns in (await fn()).items():
+                samples[stage].append(ns)
+        out[name] = {stage: statistics.median(v) / 1e6 for stage, v in samples.items()}
+    return out
+
+
+async def run_tasks(n: int, work: Callable[[int, asyncio.Barrier], Any]) -> dict:
+    """Run ``work(i, barrier)`` as ``n`` tasks; each opens its connection, then waits."""
+    barrier = asyncio.Barrier(n + 1)
+    tasks = [asyncio.create_task(work(i, barrier)) for i in range(n)]
+    waiter = asyncio.create_task(barrier.wait())
+    done, _ = await asyncio.wait([waiter, *tasks], return_when=asyncio.FIRST_COMPLETED)
+    if waiter not in done:  # a task failed before the start
+        await barrier.abort()
+        await asyncio.gather(*tasks)
+    t0 = pc()
+    times = await asyncio.gather(*tasks)
+    wall = pc() - t0
+    return concurrency_result(list(times), wall)
+
+
+async def async_concurrency(
+    engine: AsyncEngine, raw_kw: dict[str, Any], args: argparse.Namespace, n: int, trial: int
+) -> dict:
+    rows, ops = args.rows, args.concurrent_ops
+    stmt = select(ITEMS.c.id, ITEMS.c.name, ITEMS.c.amount).where(ITEMS.c.id == bindparam("k"))
+    orm_stmt = select(Item).where(Item.id == bindparam("k"))
+    upd = update(ITEMS).where(ITEMS.c.id == bindparam("k")).values(amount=bindparam("a"))
+
+    def keys(i: int) -> list[int]:
+        return [((i * ops + j) * 7919) % rows for j in range(ops)]
+
+    async def raw_select(i: int, barrier: asyncio.Barrier) -> list[int]:
+        raw = await pycubrid.aio.connect(**raw_kw, autocommit=False)
+        try:
+            cur = raw.cursor()
+            await barrier.wait()
+            times = []
+            for k in keys(i):
+                t0 = pc()
+                await cur.execute(
+                    "SELECT id, name, amount FROM bench_dialect_baseline WHERE id = ?", (k,)
+                )
+                row = await cur.fetchone()
+                times.append(pc() - t0)
+                check(row[0] == k, "async raw concurrent select returned the wrong row")
+            await cur.close()
+            await raw.commit()
+            return times
+        finally:
+            await raw.close()
+
+    async def core_select(i: int, barrier: asyncio.Barrier) -> list[int]:
+        async with engine.connect() as conn:
+            (await conn.execute(text("SELECT 1 FROM db_root"))).all()
+            await barrier.wait()
+            times = []
+            for k in keys(i):
+                t0 = pc()
+                row = (await conn.execute(stmt, {"k": k})).first()
+                times.append(pc() - t0)
+                check(row is not None and row.id == k, "async Core concurrent select wrong row")
+            return times
+
+    async def orm_select(i: int, barrier: asyncio.Barrier) -> list[int]:
+        async with AsyncSession(engine) as session:
+            (await session.execute(text("SELECT 1 FROM db_root"))).all()
+            await barrier.wait()
+            times = []
+            for k in keys(i):
+                t0 = pc()
+                obj = (await session.execute(orm_stmt, {"k": k})).scalar_one()
+                times.append(pc() - t0)
+                check(obj.id == k, "async ORM concurrent select returned the wrong row")
+                session.expunge_all()
+            return times
+
+    async def core_update_commit(i: int, barrier: asyncio.Barrier) -> list[int]:
+        own = list(range(i, rows, n))
+        async with engine.connect() as conn:
+            (await conn.execute(text("SELECT 1 FROM db_root"))).all()
+            await conn.commit()
+            await barrier.wait()
+            times = []
+            for j in range(args.concurrent_writes):
+                k = own[j % len(own)]
+                t0 = pc()
+                result = await conn.execute(upd, {"k": k, "a": j})
+                await conn.commit()
+                times.append(pc() - t0)
+                check(result.rowcount == 1, f"async concurrent UPDATE rowcount {result.rowcount}")
+            return times
+
+    variants: list[tuple[str, Callable[[int, asyncio.Barrier], Any]]] = [
+        ("raw_select_pk", raw_select),
+        ("core_select_pk", core_select),
+        ("orm_select_pk", orm_select),
+        ("core_update_commit", core_update_commit),
+    ]
+    out: dict[str, dict[str, float]] = {}
+    for name, fn in rotate(variants, trial):
+        await run_tasks(n, fn)
+        out[name] = await run_tasks(n, fn)
+    return out
+
+
 # ----- driver ----------------------------------------------------------------------------
 
 
@@ -383,7 +841,40 @@ def prepared_executemany_engine(dsn: str) -> Engine:
     return engine
 
 
-def environment(engine: Engine, args: argparse.Namespace) -> dict[str, Any]:
+def raw_kwargs(engine: Engine | AsyncEngine) -> dict[str, Any]:
+    url = engine.url
+    return {
+        "host": url.host,
+        "port": url.port,
+        "database": url.database,
+        "user": url.username or "dba",
+        "password": url.password or "",
+    }
+
+
+def raw_connector(engine: Engine) -> Callable[[], Any]:
+    """A raw DB-API connection factory for the engine's driver, autocommit off."""
+    kw = raw_kwargs(engine)
+    if engine.dialect.driver == "pycubrid":
+
+        def connect_pycubrid() -> Any:
+            raw = pycubrid.connect(**kw)
+            raw.autocommit = False
+            return raw
+
+        return connect_pycubrid
+    import CUBRIDdb
+
+    def connect_cubriddb() -> Any:
+        dsn = f"CUBRID:{kw['host'] or 'localhost'}:{kw['port'] or 33000}:{kw['database']}:::"
+        raw = CUBRIDdb.connect(dsn, kw["user"], kw["password"])
+        raw.set_autocommit(False)
+        return raw
+
+    return connect_cubriddb
+
+
+def environment(server: str, driver: str, pool: str, args: argparse.Namespace) -> dict[str, Any]:
     cpu = ""
     try:
         for line in Path("/proc/cpuinfo").read_text().splitlines():
@@ -392,9 +883,7 @@ def environment(engine: Engine, args: argparse.Namespace) -> dict[str, Any]:
                 break
     except OSError:
         pass
-    with engine.connect() as conn:
-        server = conn.execute(text("SELECT version()")).scalar()
-    return {
+    env = {
         "python": platform.python_version(),
         "implementation": platform.python_implementation(),
         "platform": platform.platform(),
@@ -404,10 +893,136 @@ def environment(engine: Engine, args: argparse.Namespace) -> dict[str, Any]:
         "sqlalchemy_cubrid": version("sqlalchemy-cubrid"),
         "source_sha": args.source_sha,
         "cubrid_server": server,
-        "driver": engine.dialect.driver,
-        "pool": type(engine.pool).__name__,
+        "driver": driver,
+        "pool": pool,
         "args": {k: v for k, v in vars(args).items() if k not in ("dsn", "output")},
     }
+    if driver == "cubrid":
+        env["cubrid_python"] = version("cubrid_python")
+    return env
+
+
+def run_sync(args: argparse.Namespace) -> dict[str, Any]:
+    pool_size = max([5, *args.concurrency])
+    engine = create_engine(args.dsn, pool_size=pool_size)
+    check(
+        engine.dialect.driver in ("pycubrid", "cubrid"),
+        "this baseline needs cubrid+pycubrid://, cubrid:// or cubrid+aiopycubrid://",
+    )
+    prepared_engine = None
+    if engine.dialect.driver == "pycubrid":
+        prepared_engine = prepared_executemany_engine(args.dsn)
+    with engine.begin() as conn:
+        conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
+    Base.metadata.create_all(engine)
+    raw_connect = raw_connector(engine)
+    raw = raw_connect()
+    with engine.connect() as conn:
+        server = conn.execute(text("SELECT version()")).scalar()
+    env = environment(str(server), engine.dialect.driver, type(engine.pool).__name__, args)
+    report: dict[str, Any] = {"environment": env, "trials": []}
+    try:
+        for trial in range(args.trials):
+            print(f"trial {trial + 1}/{args.trials}", file=sys.stderr, flush=True)
+            with engine.connect() as conn:
+                reset(conn, args.rows)
+            result = {
+                "select_pk_us": bench_select_pk(engine, raw, args.rows, args.iterations, trial),
+                "fetch_all_us": bench_fetch_all(engine, raw, args.rows, args.fetch_rounds, trial),
+                "reflect": bench_reflect(engine, args.reflect_rounds),
+            }
+            raw.commit()
+            if args.concurrency:
+                result["concurrency"] = {
+                    str(n): bench_concurrency(engine, raw_connect, args, n, trial)
+                    for n in args.concurrency
+                }
+            result["batch_ms"] = bench_batch(
+                engine, prepared_engine, raw, args.batch, args.batch_rounds, trial
+            )
+            report["trials"].append(result)
+    finally:
+        raw.close()
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
+        engine.dispose()
+        if prepared_engine is not None:
+            prepared_engine.dispose()
+    return report
+
+
+async def run_async(args: argparse.Namespace) -> dict[str, Any]:
+    pool_size = max([5, *args.concurrency])
+    engine = create_async_engine(args.dsn, pool_size=pool_size)
+    async with engine.begin() as conn:
+        await conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
+        await conn.run_sync(Base.metadata.create_all)
+    raw_kw = raw_kwargs(engine)
+    raw = await pycubrid.aio.connect(**raw_kw, autocommit=False)
+    async with engine.connect() as conn:
+        server = (await conn.execute(text("SELECT version()"))).scalar()
+    env = environment(str(server), engine.dialect.driver, type(engine.pool).__name__, args)
+    report: dict[str, Any] = {"environment": env, "trials": []}
+    try:
+        for trial in range(args.trials):
+            print(f"trial {trial + 1}/{args.trials}", file=sys.stderr, flush=True)
+            await async_reset(engine, args.rows)
+            result = {
+                "select_pk_us": await async_select_pk(
+                    engine, raw, args.rows, args.iterations, trial
+                ),
+                "fetch_all_us": await async_fetch_all(
+                    engine, raw, args.rows, args.fetch_rounds, trial
+                ),
+            }
+            await raw.commit()
+            if args.concurrency:
+                result["concurrency"] = {
+                    str(n): await async_concurrency(engine, raw_kw, args, n, trial)
+                    for n in args.concurrency
+                }
+            result["batch_ms"] = await async_batch(
+                engine, raw, args.batch, args.batch_rounds, trial
+            )
+            report["trials"].append(result)
+    finally:
+        await raw.close()
+        async with engine.begin() as conn:
+            await conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
+        await engine.dispose()
+    return report
+
+
+def aggregate(trials: list[dict[str, Any]]) -> dict[str, Any]:
+    def walk(values: list[Any]) -> Any:
+        if isinstance(values[0], dict):
+            return {k: walk([v[k] for v in values]) for k in values[0]}
+        return summary(values)
+
+    first = trials[0]
+    agg: dict[str, Any] = {}
+    for section in ("select_pk_us", "fetch_all_us", "batch_ms", "concurrency"):
+        if section in first:
+            agg[section] = walk([t[section] for t in trials])
+    if "reflect" in first:
+        agg["reflect_ms"] = {
+            k: summary([t["reflect"][k]["ms"] for t in trials]) for k in first["reflect"]
+        }
+        agg["reflect_sql_statements"] = {
+            k: first["reflect"][k]["sql_statements"] for k in first["reflect"]
+        }
+    return agg
+
+
+def show(data: dict[str, Any], prefix: str = "") -> None:
+    for k, v in data.items():
+        name = f"{prefix} {k}".strip()
+        if isinstance(v, dict) and "median" in v:
+            print(f"  {name:<40} median {v['median']:.3f}  [{v['min']:.3f}..{v['max']:.3f}]")
+        elif isinstance(v, dict):
+            show(v, name)
+        else:
+            print(f"  {name:<40} {v}")
 
 
 def main() -> None:
@@ -420,82 +1035,27 @@ def main() -> None:
     ap.add_argument("--batch", type=int, default=1000, help="rows per batch statement")
     ap.add_argument("--batch-rounds", type=int, default=5)
     ap.add_argument("--reflect-rounds", type=int, default=20)
+    ap.add_argument(
+        "--concurrency",
+        type=lambda s: [int(x) for x in s.split(",") if x],
+        default=[],
+        help="comma-separated worker counts for the concurrency workload (default: skip it)",
+    )
+    ap.add_argument("--concurrent-ops", type=int, default=500, help="SELECTs per worker")
+    ap.add_argument("--concurrent-writes", type=int, default=50, help="UPDATEs per worker")
     ap.add_argument("--source-sha", default="unknown", help="sqlalchemy-cubrid commit measured")
     ap.add_argument("--output", type=Path, default=Path("bench_dialect_baseline.json"))
     args = ap.parse_args()
 
-    engine = create_engine(args.dsn)
-    check(engine.dialect.driver == "pycubrid", "this baseline needs cubrid+pycubrid://")
-    prepared_engine = prepared_executemany_engine(args.dsn)
-    with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
-    Base.metadata.create_all(engine)
-    url = engine.url
-    raw = pycubrid.connect(
-        host=url.host,
-        port=url.port,
-        database=url.database,
-        user=url.username or "dba",
-        password=url.password or "",
-    )
-    raw.autocommit = False
-    report: dict[str, Any] = {"environment": environment(engine, args), "trials": []}
-    try:
-        for trial in range(args.trials):
-            print(f"trial {trial + 1}/{args.trials}", file=sys.stderr, flush=True)
-            with engine.connect() as conn:
-                reset(conn, args.rows)
-            result = {
-                "select_pk_us": bench_select_pk(engine, raw, args.rows, args.iterations, trial),
-                "fetch_all_us": bench_fetch_all(engine, raw, args.rows, args.fetch_rounds, trial),
-                "reflect": bench_reflect(engine, args.reflect_rounds),
-            }
-            raw.commit()
-            result["batch_ms"] = bench_batch(
-                engine, prepared_engine, raw, args.batch, args.batch_rounds, trial
-            )
-            report["trials"].append(result)
-    finally:
-        raw.close()
-        with engine.begin() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
-        engine.dispose()
-        prepared_engine.dispose()
-
-    agg: dict[str, Any] = {}
-    first = report["trials"][0]
-    for section in ("select_pk_us", "fetch_all_us"):
-        agg[section] = {
-            v: summary([t[section][v] for t in report["trials"]]) for v in first[section]
-        }
-    agg["batch_ms"] = {
-        v: {
-            s: summary([t["batch_ms"][v][s] for t in report["trials"]])
-            for s in first["batch_ms"][v]
-        }
-        for v in first["batch_ms"]
-    }
-    agg["reflect_ms"] = {
-        k: summary([t["reflect"][k]["ms"] for t in report["trials"]]) for k in first["reflect"]
-    }
-    agg["reflect_sql_statements"] = {
-        k: first["reflect"][k]["sql_statements"] for k in first["reflect"]
-    }
-    report["summary"] = agg
+    if args.dsn.startswith("cubrid+aiopycubrid://"):
+        report = asyncio.run(run_async(args))
+    else:
+        report = run_sync(args)
+    report["summary"] = aggregate(report["trials"])
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    for section, data in agg.items():
+    for section, data in report["summary"].items():
         print(f"== {section}")
-        for k, v in data.items():
-            if isinstance(v, dict) and "median" in v:
-                print(f"  {k:<26} median {v['median']:.3f}  [{v['min']:.3f}..{v['max']:.3f}]")
-            elif isinstance(v, dict):
-                for s, sv in v.items():
-                    print(
-                        f"  {k + ' ' + s:<34} median {sv['median']:.3f}  "
-                        f"[{sv['min']:.3f}..{sv['max']:.3f}]"
-                    )
-            else:
-                print(f"  {k:<26} {v}")
+        show(data)
     print(f"wrote {args.output}")
 
 
