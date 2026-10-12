@@ -74,6 +74,22 @@ def _find(pattern: re.Pattern[str], text: str, origin: str) -> list[re.Match[str
     return matches
 
 
+def _rewrite_references(notes: str) -> str:
+    """Rewrite release-please's reference suffix on generated ``* `` entry lines only.
+
+    Lines inside fenced code blocks are content and stay unchanged.
+    """
+    lines = []
+    in_fence = False
+    for line in notes.splitlines(keepends=True):
+        if not in_fence and line.startswith("* "):
+            line = GENERATED_REFERENCES.sub(r"\1, refs ", line, count=1)
+        if line.startswith("```"):
+            in_fence = not in_fence
+        lines.append(line)
+    return "".join(lines)
+
+
 def _split(text: str, origin: str, aliases: dict[str, str]) -> tuple[str, dict[str, list[str]]]:
     """Split notes into the text before the first ``###`` and per-heading bodies."""
     heads = _find(SUBSECTION, text, origin)
@@ -121,7 +137,7 @@ def compose(base: str, generated: str, version: str) -> str:
     notes = generated[headers[0].end() : stop].strip()
     if not notes or _find(HEADING_1_2, notes, "generated notes"):
         raise ValueError("empty or unsupported generated section")
-    notes = GENERATED_REFERENCES.sub(r"\1, refs ", notes)
+    notes = _rewrite_references(notes)
     generated_preamble, generated_bodies = _split(notes, "generated", GENERATED_ALIASES)
     if generated_preamble.strip() or not generated_bodies:
         raise ValueError("generated notes must sit under ### headings")
