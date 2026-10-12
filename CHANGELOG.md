@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **`ROADMAP.md` no longer presents shipped releases as plans (#833)** — the stale
+  "Current Release Line — v1.8.x" heading is now "Current Focus", the Python 3.10
+  retirement (shipped in 1.10.0) and Python 3.15 support (shipped in 1.11.0) moved
+  to Completed with their release dates, and the Compatibility section and the
+  header link to `CHANGELOG.md`, PyPI and `docs/SUPPORT_MATRIX.md` instead of
+  repeating version numbers. The 2026-10-02 decisions are kept as dated history.
+
 - **`docs/PERFORMANCE.md` has a current same-CUBRID baseline (#830)** — raw
   pycubrid, SQLAlchemy Core and ORM measured on one CUBRID 11.4 server at `main`
   `a570ea4` (dialect source as in v1.11.0) with pycubrid 1.12.0, SQLAlchemy 2.1.4
