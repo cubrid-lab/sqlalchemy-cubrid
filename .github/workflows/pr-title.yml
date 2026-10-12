@@ -4,8 +4,8 @@ name: PR title
 # commit titles"). The PR title becomes the squash commit title on main.
 #
 # Security: runs on `pull_request` (never `pull_request_target`), requests no
-# token permissions, checks out nothing and receives the title only through an
-# environment variable, so no PR-controlled code or string is executed.
+# token permissions, checks out nothing and receives the title and body only
+# through environment variables, so no PR-controlled code or string is executed.
 # Also rejects accidental foreign-issue closing keywords in inert PR body data.
 # The job name "PR title" is the required-status-check context; keep it stable.
 
@@ -32,6 +32,7 @@ jobs:
         run: |
           python3 - <<'PY'
           # BEGIN pr-title-validator
+          import html
           import os
           import re
           import sys
@@ -100,96 +101,224 @@ jobs:
           # BEGIN cross-repo-closing-guard
           # No checkout or execution of untrusted PR-body text is needed.
           def strip_inert_markdown(text: str) -> str:
-              # One pass, so fences, comments and code spans cannot hide each other.
+              # Hide only what GitHub never renders as text: fenced and indented
+              # code blocks and HTML comment blocks. Anything that needs inline
+              # parsing (code spans, inline comments) stays live, and once a fence
+              # appears where its extent is unknown (a list item, a quote, raw HTML)
+              # no later fence or comment is hidden: a false positive only asks for
+              # a body edit, a false negative closes a foreign issue.
               output = []
-              fence_char = None
-              fence_size = 0
+              fence = None  # Character and length of the open fenced code block.
+              fences_inert = True  # False once a fence was seen that is not tracked.
+              raw_end = None  # End rule of the raw HTML block: a regex or "blank".
               in_comment = False
-              after_blank = True
-              in_list = False  # Indented text in a list item is prose, not code.
-              token = re.compile(r"<!--|(?<!\\)\x60+")
-              for line in text.splitlines():
+              comments_inert = True  # Earlier raw HTML (an open attribute) can show one.
+              after_blank = True  # No open paragraph: indented code may start.
+              in_list = False  # Indented text in a list item or footnote is prose.
+              list_floor = 0  # Lowest possible content column of the open items.
+              # GitHub splits lines only at CR and LF; str.splitlines() splits at more.
+              lines = re.split(r"\r\n|\r|\n", text.removeprefix("\ufeff"))
+              for number, line in enumerate(lines):
                   expanded = line.expandtabs(4)
                   stripped = expanded.lstrip(" ")
                   indent = len(expanded) - len(stripped)
-                  delimiter = re.match(r"\x60{3,}|~{3,}", stripped) if indent <= 3 else None
-                  if fence_char is not None:
+                  blank = not stripped.strip(" \t")
+                  delimiter = re.match(r"\x60{3,}(?!.*\x60)|~{3,}", stripped) if indent <= 3 else None
+                  if fence is not None:
                       if (
                           delimiter is not None
-                          and delimiter.group()[0] == fence_char
-                          and len(delimiter.group()) >= fence_size
-                          and not stripped[len(delimiter.group()):].strip()
+                          and delimiter.group()[0] == fence[0]
+                          and len(delimiter.group()) >= fence[1]
+                          and not stripped[delimiter.end():].strip(" \t")
                       ):
-                          fence_char = None
+                          fence = None
                           after_blank = True
                       continue
-                  if not in_comment:
-                      if re.match(r"(?:[-*+]|[0-9]{1,9}[.)])(?:\s|$)", stripped) and indent <= 3:
-                          in_list = True
-                      elif stripped.strip() and indent == 0 and after_blank:  # Else lazy continuation.
-                          in_list = False
-                      if indent >= 4 and after_blank and not in_list and stripped.strip():
-                          continue  # Indented Markdown code is inert.
-                      if delimiter is not None and not (
-                          stripped[0] == "\x60" and "\x60" in stripped[delimiter.end():]
-                      ):  # A backtick fence's info string cannot contain a backtick.
-                          fence_char, fence_size = delimiter.group()[0], len(delimiter.group())
-                          continue
-                  # Indented code may also follow a blank line or an ATX heading.
-                  heading = re.match(r" {0,3}#{1,6}(?:\s|$)", expanded)
-                  after_blank = not line.strip() or heading is not None
-                  pos = 0
-                  while pos < len(line):
+                  live = line
+                  fence_like = re.match(
+                      r"[ >]*(?:(?:[-*+]|[0-9]{1,9}[.)])[ >]+)*(?:\x60{3,}|~{3,})", expanded
+                  )
+                  if raw_end is not None:  # Raw HTML: no Markdown until the block ends.
                       if in_comment:
-                          end = line.find("-->", pos)
-                          if end < 0:
-                              break
-                          in_comment = False
-                          pos = end + 3
+                          close = re.search(r"--!?>", line)
+                          in_comment = close is None
+                          live = "" if close is None else line[close.end():]
+                      if raw_end == "blank" and blank:
+                          raw_end, after_blank = None, True
+                      elif raw_end != "blank" and raw_end.search(line):
+                          raw_end, after_blank = None, False
+                  else:
+                      thematic_break = re.match(
+                          r" {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$", expanded
+                      )
+                      marker = None
+                      if indent <= 3 and thematic_break is None:
+                          marker = re.match(r"(?:[-*+]|[0-9]{1,9}[.)])(?=[ \t]|$)|\[\^[^\]]+\]:", stripped)
+                      if marker is not None:
+                          column = indent + (1 if marker.group()[0] == "[" else len(marker.group()) + 1)
+                          list_floor = min(list_floor, column) if in_list else column
+                          in_list = True
+                      elif in_list and not blank and indent < list_floor and (
+                          after_blank
+                          or delimiter is not None
+                          or thematic_break is not None
+                          or re.match(r" {0,3}(?:#{1,6}(?:[ \t]|$)|>|<!--)", expanded)
+                      ):
+                          in_list = False  # Outside every item and not a lazy continuation.
+                      if indent >= 4 and after_blank and not in_list and not blank:
+                          continue  # Indented code is inert.
+                      if delimiter is not None and fences_inert and not in_list:
+                          fence = (delimiter.group()[0], len(delimiter.group()))
                           continue
-                      found = token.search(line, pos)
-                      if found is None:
-                          output.append(line[pos:])
-                          break
-                      output.append(line[pos:found.start()])
-                      if found.group() == "<!--":
-                          if found.start() == len(line) - len(line.lstrip(" ")) <= 3:
-                              in_comment = True  # A line-start comment block ends at "-->".
-                              pos = found.start() + 2
-                              continue
-                          end = line.find("-->", found.start() + 2)
-                          if end < 0:
-                              output.append(found.group())  # Unclosed inline "<!--" is text.
-                              pos = found.end()
-                          else:
-                              pos = end + 3
-                          continue
-                      run = re.escape(found.group())
-                      close = re.compile(rf"(?<!\x60){run}(?!\x60)").search(line, found.end())
-                      if close is None:
-                          output.append(found.group())
-                          pos = found.end()
+                      if indent <= 3 and stripped.startswith("<!--"):
+                          raw_end = None if "-->" in line else re.compile("-->")
+                          if comments_inert and not in_list:
+                              start = line.index("<!--")
+                              close = re.compile(r"--!?>").search(line, start + 2)
+                              in_comment = close is None
+                              live = "" if close is None else line[close.end():]
+                          after_blank = False
+                      elif indent <= 3 and re.match(r"(?i:<(?:[a-z/?]|![a-z\[]))", stripped):
+                          raw_end = "blank"  # Any other tag line: raw until a blank line.
+                          for opener, closer in (
+                              (
+                                  r"(?i:<(?:script|pre|style|textarea))(?:[ \t\x0b\x0c>]|$)",
+                                  r"(?i:</(?:script|pre|style|textarea)>)",
+                              ),
+                              (r"<\?", r"\?>"),
+                              (r"<![A-Z]", r">"),
+                              (r"<!\[CDATA\[", r"\]\]>"),
+                          ):
+                              if re.match(opener, stripped):
+                                  raw_end = re.compile(closer)
+                          if raw_end != "blank" and raw_end.search(line):
+                              raw_end = None
+                          after_blank = False
                       else:
-                          output.append(" ")  # Inline code is inert.
-                          pos = close.end()
-                  output.append("\n")
+                          after_blank = blank or re.match(r" {0,3}#{1,6}(?:[ \t]|$)", expanded) is not None
+                  if fence_like is not None:
+                      fences_inert = comments_inert = False  # Its extent is unknown here.
+                  output.append(live + "\n")
+                  if re.search(r"<(?:[a-z/?]|!(?!--))", live, re.I):
+                      comments_inert = False
+                  if re.search(
+                      r"<(?:script|style|textarea|title|xmp|iframe|noembed|noframes|noscript"
+                      r"|plaintext|select)(?![a-z0-9-])",
+                      live,
+                      re.I,
+                  ):
+                      # A raw text element shows the code and comments after it as text.
+                      return "".join(output) + "\n".join(lines[number + 1:])
               return "".join(output)
 
           body = strip_inert_markdown(os.environ.get("PR_BODY", ""))
-          close_ref = re.compile(
-              r"(?i)\b(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved):?\s+"
-              r"(?:https://(?:www\.)?github\.com/)?"
-              r"(?P<owner>[a-z0-9][a-z0-9-]*)/(?P<repo>[a-z0-9_.-]+)"
-              r"(?:#|/issues/)(?P<number>[1-9][0-9]*)\b"
+          # Escapes and entities render as the plain characters they stand for.
+          body = html.unescape(re.sub(r"\\([!-/:-@\[-\x60{-~])", r"\1", body))
+          tag = re.compile(r"</?[a-z][a-z0-9-]*(?:\s(?:[^<>\"']|\"[^\"]*\"|'[^']*')*)?/?>", re.I)
+          inline_hidden = re.compile(r"<!--|<\?|<!\[CDATA\[|<![a-z]", re.I)
+          # cmark ends these at the closer, a browser ends "<?" and "<![CDATA["
+          # at the first ">": both ends are tried.
+          closers = {"<!--": ("-->", "--!>"), "<?": ("?>", ">"), "<![CDATA[": ("]]>", ">")}
+          separator = re.compile(r"[\s:*_~\[(<\\]")
+          keyword = re.compile(
+              r"(?<![a-z0-9])(?:closes|closed|close|fixes|fixed|fix|resolves|resolved|resolve)(?![a-z0-9])",
+              re.I,
           )
+          reference = re.compile(
+              r"(?:(?:https?://)?(?:www\.)?github\.com/)?"
+              r"(?:(?P<owner>[a-z0-9][a-z0-9-]*)/(?P<repo>[a-z0-9_.-]+)(?:#|/issues/)|#|gh-)"
+              r"(?P<number>[0-9]+)(?![0-9])",
+              re.I,
+          )
+          next_ref = re.compile(r"[\s*_~)\]>]*(?:,|&|\band\b)[\s*_~\[(<\\]*", re.I)
+          # Absolute or relative ("/o/r/issues/N", "../../r/issues/N") issue links.
+          issue_url = re.compile(r"(?P<owner>[a-z0-9_.-]+)/(?P<repo>[a-z0-9_.-]+)/issues/(?P<number>[0-9]+)", re.I)
           local_repo = os.environ.get("GITHUB_REPOSITORY", "").lower()
-          for match in close_ref.finditer(body):
-              target = f"{match['owner']}/{match['repo']}".lower()
-              if target != local_repo:
-                  errors.append(
-                      f"Cross-repository issue closure {match.group()!r} is forbidden; "
-                      f"use 'Refs {target}#{match['number']}' and let its own repo close it."
+          found = {}
+
+          def gap_ends(text: str, start: int, seen: set) -> tuple[list, bool]:
+              # New positions reachable from start over spaces, a colon, emphasis,
+              # a hard break, tags and inline comments, instructions or CDATA,
+              # which GitHub shows as a gap; and whether a link starts on the way.
+              # "seen" is shared by every keyword, so each position is walked once.
+              is_link = False
+              ends, todo = [], [start]
+              while todo:
+                  pos = todo.pop()
+                  if pos in seen or pos >= len(text):
+                      continue
+                  seen.add(pos)
+                  if pos != start:
+                      ends.append(pos)
+                  opener = inline_hidden.match(text, pos)
+                  if opener is not None:
+                      search = pos + 2 if opener.group() == "<!--" else opener.end()
+                      jumps = [
+                          found_at + len(closer)
+                          for closer in closers.get(opener.group(), (">",))
+                          if (found_at := text.find(closer, search)) >= 0
+                      ]
+                      if opener.group() == "<!--":
+                          jumps = jumps and [min(jumps)]
+                      todo.extend(jumps)
+                  markup = tag.match(text, pos)
+                  if markup is not None:
+                      is_link = is_link or re.match(r"<a[\s>]", markup.group(), re.I) is not None
+                      todo.append(markup.end())
+                  if separator.match(text, pos):
+                      is_link = is_link or text[pos] == "["
+                      todo.append(pos + 1)
+              return ends, is_link
+
+          def check(text: str) -> None:
+              links = False
+              seen = set()
+              for word in keyword.finditer(text):
+                  ends, is_link = gap_ends(text, word.end(), seen)
+                  links = links or is_link
+                  for pos in ends:
+                      match = reference.match(text, pos)
+                      while match is not None:  # "Closes #1, owner/repo#2" closes both.
+                          target = f"{match['owner']}/{match['repo']}".lower()
+                          if match["owner"] and target != local_repo:
+                              found[f"{target}#{int(match['number'])}"] = target
+                          more = next_ref.match(text, match.end())
+                          match = reference.match(text, more.end()) if more else None
+              if links:
+                  # A link's text hides its target, which a definition or nested
+                  # brackets can place anywhere: any foreign issue link may be it.
+                  for match in issue_url.finditer(text):
+                      # "../../repo" from a PR page stays in the same owner.
+                      owner = local_repo.split("/")[0] if match["owner"] == ".." else match["owner"]
+                      target = f"{owner}/{match['repo']}".lower()
+                      if target != local_repo and not target.startswith("github.com/"):
+                          found[f"{target}#{int(match['number'])}"] = target
+
+          check(body)
+          # Without markup and emphasis, "Close**s**" and "Clo<b>ses</b>" read "Closes".
+          for instruction_end, cdata_end in ((r"\?>", r"\]\]>"), (">", ">")):
+              check(
+                  re.sub(
+                      r"[*_~]",
+                      "",
+                      tag.sub(
+                          "",
+                          re.sub(
+                              r"<!--(?:(?!<!--).)*?--!?>|<![a-z][^<>]*>"
+                              rf"|<\?(?:(?!<\?).)*?{instruction_end}"
+                              rf"|<!\[CDATA\[(?:(?!<!\[CDATA\[).)*?{cdata_end}",
+                              "",
+                              body,
+                              flags=re.I | re.S,
+                          ),
+                      ),
                   )
+              )
+          for issue, target in found.items():
+              errors.append(
+                  f"Cross-repository issue closure of {issue} is forbidden; use "
+                  f"'Refs {issue}' and let its own repo close it."
+              )
           # END cross-repo-closing-guard
 
           for message in warnings:

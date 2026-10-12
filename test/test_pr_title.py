@@ -11,6 +11,7 @@ import re
 import subprocess
 import sys
 import textwrap
+import time
 import unittest
 from pathlib import Path
 
@@ -79,6 +80,9 @@ INVALID = (
     "fix: 커서 상태 보존",
     "Keep new issue metadata visible without requiring reporter label access",
 )
+
+TICK = chr(96)
+FENCE = TICK * 3
 
 
 def _validator() -> str:
@@ -158,74 +162,302 @@ class PrTitleValidatorTest(unittest.TestCase):
         assert match is not None
         self.assertEqual(tuple(re.findall(r'"([a-z]+)"', match[1])), TYPES)
 
-    def test_foreign_repository_closing_keywords_fail(self) -> None:
-        for body in (
-            "Closes cubrid-lab/pycubrid#833.",
-            "Fixes https://github.com/cubrid-lab/cubrid-mcp-server/issues/271",
-            "Resolves another-org/another-repo#42",
-            "Closes: another-org/another-repo#42",
-            "FIXES: another-org/another-repo#42",
-        ):
+    def assert_blocked(self, *bodies: str) -> None:
+        for body in bodies:
             with self.subTest(body=body):
                 result = _run("docs: align issue ownership", body)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn("Cross-repository issue closure", result.stdout)
+                self.assertIn("another-org/another-repo#43", result.stdout)
 
-    def test_local_closures_and_foreign_refs_pass(self) -> None:
-        for body in (
-            "Closes #810. Refs cubrid-lab/pycubrid#833.",
-            "Closes cubrid-lab/sqlalchemy-cubrid#810",
-            "Closes https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/810",
-            "Refs #810 and cubrid-lab/cubrid-cookbook-python#240.",
-            "<!-- Closes another-org/another-repo#42 -->",
-            f"{chr(96) * 3}markdown\nCloses another-org/another-repo#42\n{chr(96) * 3}",
-            f"{chr(96) * 4}markdown\nCloses another-org/another-repo#42\n{chr(96) * 5}",
-            "~~~~yaml\nCloses another-org/another-repo#42\n~~~~~",
-            f"{chr(96) * 4}md\nCloses another-org/another-repo#42\n~~~\nCloses another-org/another-repo#43\n{chr(96) * 4}",
-            "    Closes another-org/another-repo#42",
-            "\tCloses another-org/another-repo#42",
-            "Example: `Closes another-org/another-repo#42`.",
-            f"Use {chr(96) * 2}Closes another-org/another-repo#42{chr(96) * 2} only there.",
-            "<!--\nCloses another-org/another-repo#42\n-->",
-            f"<!-- {chr(96) * 3} -->\nCloses #810",
-            "# Example\n    Closes another-org/another-repo#42",
-            "Intro <!-- Closes another-org/another-repo#42 --> outro",
-        ):
+    def assert_allowed(self, *bodies: str) -> None:
+        for body in bodies:
             with self.subTest(body=body):
                 result = _run("docs: align issue ownership", body)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def test_foreign_closure_after_long_fence_is_rejected(self) -> None:
-        body = (
-            f"{chr(96) * 4}markdown\nCloses another-org/another-repo#42\n{chr(96) * 4}\n"
-            "Closes another-org/another-repo#43"
+    def test_foreign_repository_closing_keywords_fail(self) -> None:
+        self.assert_blocked(
+            "Closes another-org/another-repo#43.",
+            "Fixes https://github.com/another-org/another-repo/issues/43",
+            "Resolves another-org/another-repo#43",
+            "Closes: another-org/another-repo#43",
+            "FIXES: another-org/another-repo#43",
+            "Closes http://github.com/another-org/another-repo/issues/43",
+            "Closes www.github.com/another-org/another-repo/issues/43",
+            "Closes github.com/another-org/another-repo/issues/43",
+            "Closes <https://github.com/another-org/another-repo/issues/43>",
         )
-        result = _run("docs: align issue ownership", body)
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("Cross-repository issue closure", result.stdout)
 
-    def test_inert_markdown_cannot_hide_a_later_foreign_closure(self) -> None:
-        fence = chr(96) * 3
-        for body in (
-            f"{fence}html\n<!-- example\n{fence}\nCloses another-org/another-repo#43\n<!-- -->",
-            f"<!-- note -->\n{fence}\n<!--\n{fence}\nCloses another-org/another-repo#43",
-            f"<!-- {fence} -->\nCloses another-org/another-repo#43",
-            "Unclosed `code and Closes another-org/another-repo#43",
+    def test_local_closures_and_foreign_refs_pass(self) -> None:
+        self.assert_allowed(
+            "Closes #810. Refs another-org/another-repo#43.",
+            "Closes cubrid-lab/sqlalchemy-cubrid#810",
+            "Closes https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/810",
+            "Refs #810 and another-org/another-repo#43.",
+            "Refs **another-org/another-repo#43**",
+            "Closes #810, refs another-org/another-repo#43",
+            "Fixed in another-org/another-repo#43",
+            "Disclosed another-org/another-repo#43",
+            "Closes #810.\n\nanother-org/another-repo#43 is related.",
+            "## Related Issues\n\n<!-- Use Closes #N for a LOCAL issue.\n"
+            "     Cite sibling dependencies as Refs owner/repo#N. -->\nCloses #810",
+        )
+
+    def test_emphasis_and_markup_around_a_closure_fail(self) -> None:
+        self.assert_blocked(
+            "**Closes** another-org/another-repo#43",
+            "*Fixes* another-org/another-repo#43",
+            "__Resolves__ another-org/another-repo#43",
+            "_Closes another-org/another-repo#43_",
+            "__Fixes another-org/another-repo#43__",
+            "**Closes:** another-org/another-repo#43",
+            "**Fixes**: another-org/another-repo#43",
+            "Closes **another-org/another-repo#43**",
+            "Closes _another-org/another-repo#43_",
+            "***Closes*** ***another-org/another-repo#43***",
+            "~~Closes~~ another-org/another-repo#43",
+            "<b>Closes</b> <code>another-org/another-repo#43</code>",
+        )
+
+    def test_links_escapes_and_lists_of_issues_fail(self) -> None:
+        self.assert_blocked(
+            "Closes [the bug](https://github.com/another-org/another-repo/issues/43)",
+            "Closes [another-org/another-repo#43](https://example.com)",
+            "Closes [the bug][1]\n\n[1]: https://github.com/another-org/another-repo/issues/43",
+            "Closes [bug]\n\n[Bug]: <https://github.com/another-org/another-repo/issues/43>",
+            "Closes another-org/another-repo\\#43",
+            "Closes another-org/another-repo&#35;43",
+            "Closes&nbsp;another-org/another-repo#43",
+            "Closes #810, another-org/another-repo#43",
+            "Fixes #810 and **another-org/another-repo#43**",
+        )
+
+    def test_code_blocks_and_comment_blocks_are_ignored(self) -> None:
+        self.assert_allowed(
+            "<!-- Closes another-org/another-repo#43 -->",
+            "<!--\nCloses another-org/another-repo#43\n-->",
+            "<!-- Use Closes #N.\n     Closes another-org/another-repo#43 -->\nCloses #810",
+            f"<!-- {FENCE} -->\nCloses #810",
+            f"{FENCE}markdown\nCloses another-org/another-repo#43\n{FENCE}",
+            f"{TICK * 4}markdown\nCloses another-org/another-repo#43\n{TICK * 5}",
+            "~~~~yaml\nCloses another-org/another-repo#43\n~~~~~",
+            f"{TICK * 4}md\nCloses another-org/another-repo#43\n~~~\nCloses x/y#1\n{TICK * 4}",
+            "    Closes another-org/another-repo#43",
+            "\tCloses another-org/another-repo#43",
+            "# Example\n    Closes another-org/another-repo#43",
+            f"<details>\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}\n\n</details>",
+        )
+
+    def test_foreign_closure_after_long_fence_is_rejected(self) -> None:
+        self.assert_blocked(
+            f"{TICK * 4}markdown\nCloses x/y#1\n{TICK * 4}\nCloses another-org/another-repo#43"
+        )
+
+    def test_fences_and_comments_cannot_hide_each_other(self) -> None:
+        self.assert_blocked(
+            f"{FENCE}\n<!--\n{FENCE}\nCloses another-org/another-repo#43\n-->",
+            f"{FENCE}html\n<!-- example\n{FENCE}\nCloses another-org/another-repo#43\n<!-- -->",
+            f"<!-- note -->\n{FENCE}\n<!--\n{FENCE}\nCloses another-org/another-repo#43",
+            f"<!--\n{FENCE}\n-->\nCloses another-org/another-repo#43",
+            f"<!-- {FENCE} -->\nCloses another-org/another-repo#43",
+            "<!-- a --> <!-- b\nCloses another-org/another-repo#43\n-->",
+            f"{FENCE} a{TICK}b\nCloses another-org/another-repo#43",
+        )
+
+    def test_comment_ends_and_inline_comments_stay_live(self) -> None:
+        # Only a comment block is hidden; "-->", "--!>", "<!-->" and an inline
+        # or escaped comment opener all leave the closure visible.
+        self.assert_blocked(
+            "<!-->Closes another-org/another-repo#43 -->",
+            "<!-->\nCloses another-org/another-repo#43",
+            "<!-- a --!> Closes another-org/another-repo#43 -->",
+            f"<!-- a --!>\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}\n-->",
+            "Intro <!--> Closes another-org/another-repo#43 -->",
+            "Intro <!-- Closes another-org/another-repo#43 --> outro",
+            "Use <!-- to start a comment.\n\nCloses another-org/another-repo#43",
+            "\\<!-- Closes another-org/another-repo#43 -->",
+            '<a title="<!--">Closes another-org/another-repo#43<a title="-->">',
+            '<div title="\n\n<!--\n">Closes another-org/another-repo#43<a title="\n-->',
+        )
+
+    def test_inline_code_stays_live(self) -> None:
+        # Code spans need inline parsing (link destinations, HTML attributes and
+        # autolinks take precedence over backticks), so they are always scanned.
+        self.assert_blocked(
+            f"Example: {TICK}Closes another-org/another-repo#43{TICK}.",
+            f"Use {TICK * 2}Closes another-org/another-repo#43{TICK * 2} only there.",
+            f"Unclosed {TICK}code and Closes another-org/another-repo#43",
+            f"\\{TICK}Closes another-org/another-repo#43\\{TICK}",
+            f"{TICK}<!--{TICK} Closes another-org/another-repo#43 {TICK}-->{TICK}",
+            f"[a](b{TICK}c) Closes another-org/another-repo#43 {TICK}d)",
+        )
+
+    def test_html_blocks_keep_fences_and_code_live(self) -> None:
+        self.assert_blocked(
+            f"<details>\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}\n</details>",
+            f"<pre>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
+            f"<?x\n\n{FENCE}\n?>\nCloses another-org/another-repo#43\n{FENCE}",
+            "<pre>\n\n    Closes another-org/another-repo#43\n</pre>",
+            f"<div>\n{TICK}Closes another-org/another-repo#43{TICK}\n</div>",
+            f"<textarea>\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            "<textarea>\n\n<!--\nCloses another-org/another-repo#43\n-->",
+            f"- <div>\n  {FENCE}\n  Closes another-org/another-repo#43\n  </div>",
+        )
+
+    def test_list_items_keep_their_text_live(self) -> None:
+        self.assert_blocked(
             "Paragraph text\n    Closes another-org/another-repo#43",
             "- Summary\n\n    Closes another-org/another-repo#43",
             "1. Summary\n\n    Closes another-org/another-repo#43",
             "- a\n\n    - Closes another-org/another-repo#43",
+            "- Item\n    - Closes another-org/another-repo#43",
             "- Summary\nlazy continuation\n\n    Closes another-org/another-repo#43",
-            "Intro <!--> Closes another-org/another-repo#43 -->",
-            "Use <!-- to start a comment.\n\nCloses another-org/another-repo#43",
-            "<!-->\nCloses another-org/another-repo#43",
-            f"{fence}a{chr(96)}b\nCloses another-org/another-repo#43",
-            f"\\{chr(96)}Closes another-org/another-repo#43\\{chr(96)}",
+            "- a\n<span>\n\n    Closes another-org/another-repo#43",
+            "- a\n # h\n\n  Closes another-org/another-repo#43",
+            "- a\n# h\n- b\n\n    Closes another-org/another-repo#43",
+            "Text[^1]\n\n[^1]: Note\n\n    Closes another-org/another-repo#43",
+            f"- a\n  {FENCE}\n  code\nCloses another-org/another-repo#43\n{FENCE}",
+            f"1. {FENCE}\n   {FENCE}\n   Closes another-org/another-repo#43",
+            f"- a\n    {FENCE}\n   {FENCE}\n   Closes another-org/another-repo#43",
+            f"- a\n  {FENCE}\n  <!--\n  {FENCE}\nCloses another-org/another-repo#43\n-->",
+        )
+
+    def test_block_after_a_list_item_ends_the_list(self) -> None:
+        # A heading, quote, fence, thematic break or comment block cannot be a
+        # lazy continuation, so indented code after it is a real code block.
+        self.assert_allowed(
+            "- Summary\nlazy\n\nend\n\n    Closes another-org/another-repo#43",
+            "- a\n# Heading\n\n    Closes another-org/another-repo#43",
+            "- a\n# Heading\n    Closes another-org/another-repo#43",
+            "- a\n> quote\n\n    Closes another-org/another-repo#43",
+            f"- a\n{FENCE}\nCloses x/y#1\n{FENCE}\n\n    Closes another-org/another-repo#43",
+            "- a\n---\n\n    Closes another-org/another-repo#43",
+            "1. a\n  # Heading\n    Closes another-org/another-repo#43",
+            "- a\n<!-- c -->\n\n    Closes another-org/another-repo#43",
+            "- a\n\n<!--\nCloses another-org/another-repo#43\n-->",
+        )
+
+    def test_a_fence_of_unknown_extent_stops_all_hiding(self) -> None:
+        # A fence in a list item, a quote or raw HTML is not tracked, so its
+        # closing line could look like an opener; later fences and comments stay live.
+        self.assert_blocked(
+            f"-  a\n  {FENCE}\n  x\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"-  a\n  {FENCE}\n<!--\n{FENCE}\nCloses another-org/another-repo#43\n-->",
+            f"- a\n  {FENCE}\n  {FENCE}\nz\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"* * *\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"- - -\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"- a\n<pre>\n</pre>\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"[^1]: note\n\n {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"> {FENCE}\n> x\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"<b>hi</b> there\n{FENCE}\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"para\n<span>\n{FENCE}\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"<!x\n{FENCE}\n>\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"<!x\n<details>\n{FENCE}\nCloses another-org/another-repo#43",
+            f"<pre\x0c>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
+            f"<pre\x0b>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
+            f"<select>\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            "Text <select> here\n\n    Closes another-org/another-repo#43",
+            # GitHub drops a leading byte order mark before parsing.
+            f"\ufeff{FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            "\ufeff<div>\n# h\n    Closes another-org/another-repo#43",
+            f"\ufeff<pre>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
+        )
+        self.assert_allowed(
+            f"- step:\n  {FENCE}bash\n  make test\n  {FENCE}\n\n"
+            "Closes #810. Refs another-org/another-repo#43.",
+        )
+
+    def test_inline_markup_between_or_inside_words_fails(self) -> None:
+        self.assert_blocked(
+            "Closes <!-- x --> another-org/another-repo#43",
+            "Closes <?x?> another-org/another-repo#43",
+            "Closes <![CDATA[x]]> another-org/another-repo#43",
+            "Closes <!X y> another-org/another-repo#43",
+            "Closes <b title='>'>another-org/another-repo#43</b>",
+            'Closes <b title="<">another-org/another-repo#43</b>',
+            "Close**s** another-org/another-repo#43",
+            "Clo<b>ses</b> another-org/another-repo#43",
+            "Closes\\\nanother-org/another-repo#43",
+            "Closes another-org/another-repo#043",
+            "Closes <!-- a <? b --> another-org/another-repo#43",
+            "Closes <!-- " + "x" * 4100 + " --> another-org/another-repo#43",
+            "Closes <?" + "x" * 4100 + "?> another-org/another-repo#43",
+            # An unclosed opener in an earlier paragraph is plain text.
+            "Use <? to open.\n\nCloses <?x?> another-org/another-repo#43",
+            "a <!-- b\n\nCloses <!-- c --> another-org/another-repo#43",
+            "a <!x\n\nCloses <!-- c --> another-org/another-repo#43",
+            "a <![CDATA[ b\n\nCloses <![CDATA[x]]> another-org/another-repo#43",
+            "a <!-- b -- c Closes <!-- x --> another-org/another-repo#43",
+            # A browser ends "<?" and "<![CDATA[" at the first ">".
+            "Closes <?x> another-org/another-repo#43 ?>",
+            "Closes <?> another-org/another-repo#43 ?>",
+            "Closes <![CDATA[> another-org/another-repo#43 ]]>",
+            "Closes&#32;<?\n</b>another-org/another-repo#43<?x?><span>)",
+        )
+
+    def test_a_closing_link_fails_when_any_foreign_issue_is_linked(self) -> None:
+        self.assert_blocked(
+            "Closes [a `]` b](https://github.com/another-org/another-repo/issues/43)",
+            "Closes [a [b] c](https://github.com/another-org/another-repo/issues/43)",
+            "Closes [![badge](https://x/y.png)](https://github.com/another-org/another-repo/issues/43)",
+            "Closes [bug][1]\n\n> [1]: https://github.com/another-org/another-repo/issues/43",
+            "Closes [bug][1]\n\n- [1]: https://github.com/another-org/another-repo/issues/43",
+            "Closes [bug][a\\]b]\n\n[a\\]b]: https://github.com/another-org/another-repo/issues/43",
+            "Closes [\u1e9e]\n\n[SS]: https://github.com/another-org/another-repo/issues/43",
+            "Closes [a`](x)`](https://github.com/another-org/another-repo/issues/43)",
+            "Closes [a\\](x)](https://github.com/another-org/another-repo/issues/43)",
+            'Closes <a href="https://github.com/another-org/another-repo/issues/43">bug</a>',
+            # Fails closed: a closing link with any foreign issue link in the body.
+            "Closes [#810](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/810).\n\n"
+            "See https://github.com/another-org/another-repo/issues/43.",
+        )
+        self.assert_blocked(
+            "Closes [bug](/another-org/another-repo/issues/43)",
+            "Closes [bug](../../../another-org/another-repo/issues/43)",
+        )
+        result = _run("docs: align issue ownership", "Closes [bug](../../other-repo/issues/43)")
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("cubrid-lab/other-repo#43", result.stdout)
+        self.assert_allowed(
+            "Closes [the bug](../issues/810)",
+            "Closes [the bug](../../sqlalchemy-cubrid/issues/810)",
+            "Closes [#810](/cubrid-lab/sqlalchemy-cubrid/issues/810)",
+            "Closes [#810](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/810). "
+            "Refs another-org/another-repo#43.",
+        )
+
+    def test_long_adversarial_bodies_finish_quickly(self) -> None:
+        # GitHub caps a PR body at 65,536 characters; the check must stay fast.
+        for body in (
+            "Closes" + "*" * 65000 + "x",
+            "Closes" + "<b>" * 21000 + "x",
+            "[" * 65000,
+            "<?" * 32000,
+            "<![CDATA[" * 7000,
+            "Closes [" * 8000,
+            "Closes <!--" * 6000,
+            "Closes <?" * 7000,
+            "fix<?" * 5000 + ">" + " " * 35000,
+            "fix<!--" * 4000 + "-->" + " " * 35000,
+            "Closes #1" + ", #2" * 15000 + ", a",
+            f"- a\n  {FENCE}\n" * 6000,
         ):
-            with self.subTest(body=body):
+            with self.subTest(body=body[:20]):
+                start = time.monotonic()
                 result = _run("docs: align issue ownership", body)
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn("another-org/another-repo#43", result.stdout)
+                self.assertLess(time.monotonic() - start, 20)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_only_cr_and_lf_split_lines(self) -> None:
+        # GitHub keeps U+2028, form feeds and no-break spaces inside a line, so
+        # they cannot start a fence, make a blank line or form a heading.
+        self.assert_blocked(
+            f"x\u2028{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"x\x0c{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            "Para\n\u00a0\n    Closes another-org/another-repo#43",
+            "#\u00a0x\n    Closes another-org/another-repo#43",
+        )
 
 
 if __name__ == "__main__":
