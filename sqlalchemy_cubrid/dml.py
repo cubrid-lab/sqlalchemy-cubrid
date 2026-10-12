@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Dict, List, Mapping, Optional, Self, Tuple, Union
 
 from sqlalchemy import exc, util
 from sqlalchemy.sql._typing import _DMLTableArgument
@@ -24,7 +24,6 @@ from sqlalchemy.sql.dml import Insert as StandardInsert
 from sqlalchemy.sql.elements import ClauseElement, KeyedColumnElement
 from sqlalchemy.sql.expression import Executable, alias
 from sqlalchemy.sql.selectable import NamedFromClause
-from sqlalchemy.util.typing import Self
 
 __all__ = ("Insert", "Merge", "Replace", "insert", "merge", "replace")
 
