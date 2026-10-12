@@ -2,9 +2,9 @@
 
 > **Last updated**: 2026-10-13
 >
-> This roadmap reflects current priorities. The released version is the latest
-> entry in [CHANGELOG.md](CHANGELOG.md) and on
-> [PyPI](https://pypi.org/project/sqlalchemy-cubrid/); supported Python, SQLAlchemy,
+> This roadmap reflects current priorities. The released version is the newest
+> dated version entry in [CHANGELOG.md](CHANGELOG.md) (below `[Unreleased]`) and the
+> latest release on [PyPI](https://pypi.org/project/sqlalchemy-cubrid/); supported Python, SQLAlchemy,
 > CUBRID and driver versions are kept in
 > [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md), which this page does not repeat.
 > For the ecosystem-wide view, see the
