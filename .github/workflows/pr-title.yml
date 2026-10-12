@@ -6,7 +6,8 @@ name: PR title
 # Security: runs on `pull_request` (never `pull_request_target`), requests no
 # token permissions, checks out nothing and receives the title and body only
 # through environment variables, so no PR-controlled code or string is executed.
-# Also rejects accidental foreign-issue closing keywords in inert PR body data.
+# Also rejects closing keywords for another repository's issue in the PR body,
+# ignoring only code blocks and comment blocks.
 # The job name "PR title" is the required-status-check context; keep it stable.
 
 on:
@@ -100,6 +101,26 @@ jobs:
 
           # BEGIN cross-repo-closing-guard
           # No checkout or execution of untrusted PR-body text is needed.
+          # Raw HTML block starts with an end other than a blank line (CommonMark
+          # types 1, 3, 4 and 5); any other line starting with a tag is raw HTML
+          # until a blank line, which may run longer than GitHub's block.
+          RAW_HTML_ENDS = (
+              (
+                  r"(?i:<(?:script|pre|style|textarea))(?:[ \t\x0b\x0c>]|$)",
+                  r"(?i:</(?:script|pre|style|textarea)>)",
+              ),
+              (r"<\?", r"\?>"),
+              (r"<![A-Z]", r">"),
+              (r"<!\[CDATA\[", r"\]\]>"),
+          )
+          # Lines that cannot be a lazy continuation of a list item's paragraph.
+          BLOCK_START = re.compile(r" {0,3}(?:#{1,6}(?:[ \t]|$)|>|<!--)")
+          RAW_TEXT = re.compile(
+              r"<(?:script|style|textarea|title|xmp|iframe|noembed|noframes|noscript"
+              r"|plaintext|select)(?![a-z0-9-])",
+              re.I,
+          )
+
           def strip_inert_markdown(text: str) -> str:
               # Hide only what GitHub never renders as text: fenced and indented
               # code blocks and HTML comment blocks. Anything that needs inline
@@ -109,21 +130,28 @@ jobs:
               # a body edit, a false negative closes a foreign issue.
               output = []
               fence = None  # Character and length of the open fenced code block.
-              fences_inert = True  # False once a fence was seen that is not tracked.
+              # False after any fence-like line that is not tracked as a top-level
+              # fence (in a list, a quote or raw HTML): its end is unknown.
+              fences_inert = True
               raw_end = None  # End rule of the raw HTML block: a regex or "blank".
               in_comment = False
-              comments_inert = True  # Earlier raw HTML (an open attribute) can show one.
+              # False after any HTML tag or untracked fence: an open attribute or
+              # raw block could make a later "<!--" render as text.
+              comments_inert = True
               after_blank = True  # No open paragraph: indented code may start.
               in_list = False  # Indented text in a list item or footnote is prose.
               list_floor = 0  # Lowest possible content column of the open items.
-              # GitHub splits lines only at CR and LF; str.splitlines() splits at more.
+              # GitHub drops a leading byte order mark and splits lines only at CR
+              # and LF; str.splitlines() splits at more characters.
               lines = re.split(r"\r\n|\r|\n", text.removeprefix("\ufeff"))
-              for number, line in enumerate(lines):
+              for index, line in enumerate(lines):
                   expanded = line.expandtabs(4)
                   stripped = expanded.lstrip(" ")
                   indent = len(expanded) - len(stripped)
                   blank = not stripped.strip(" \t")
-                  delimiter = re.match(r"\x60{3,}(?!.*\x60)|~{3,}", stripped) if indent <= 3 else None
+                  delimiter = None
+                  if indent <= 3:
+                      delimiter = re.match(r"\x60{3,}(?!.*\x60)|~{3,}", stripped)
                   if fence is not None:
                       if (
                           delimiter is not None
@@ -149,20 +177,25 @@ jobs:
                           raw_end, after_blank = None, False
                   else:
                       thematic_break = re.match(
-                          r" {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$", expanded
+                          r" {0,3}(?:(?:\*[ \t]*){3,}|(?:-[ \t]*){3,}|(?:_[ \t]*){3,})$",
+                          expanded,
                       )
                       marker = None
                       if indent <= 3 and thematic_break is None:
-                          marker = re.match(r"(?:[-*+]|[0-9]{1,9}[.)])(?=[ \t]|$)|\[\^[^\]]+\]:", stripped)
+                          marker = re.match(
+                              r"(?:[-*+]|[0-9]{1,9}[.)])(?=[ \t]|$)|\[\^[^\]]+\]:", stripped
+                          )
                       if marker is not None:
-                          column = indent + (1 if marker.group()[0] == "[" else len(marker.group()) + 1)
+                          # Footnote text needs 4 spaces; use 1 so it never ends early.
+                          width = 0 if marker.group()[0] == "[" else len(marker.group())
+                          column = indent + width + 1
                           list_floor = min(list_floor, column) if in_list else column
                           in_list = True
                       elif in_list and not blank and indent < list_floor and (
                           after_blank
                           or delimiter is not None
                           or thematic_break is not None
-                          or re.match(r" {0,3}(?:#{1,6}(?:[ \t]|$)|>|<!--)", expanded)
+                          or BLOCK_START.match(expanded)
                       ):
                           in_list = False  # Outside every item and not a lazy continuation.
                       if indent >= 4 and after_blank and not in_list and not blank:
@@ -179,36 +212,24 @@ jobs:
                               live = "" if close is None else line[close.end():]
                           after_blank = False
                       elif indent <= 3 and re.match(r"(?i:<(?:[a-z/?]|![a-z\[]))", stripped):
-                          raw_end = "blank"  # Any other tag line: raw until a blank line.
-                          for opener, closer in (
-                              (
-                                  r"(?i:<(?:script|pre|style|textarea))(?:[ \t\x0b\x0c>]|$)",
-                                  r"(?i:</(?:script|pre|style|textarea)>)",
-                              ),
-                              (r"<\?", r"\?>"),
-                              (r"<![A-Z]", r">"),
-                              (r"<!\[CDATA\[", r"\]\]>"),
-                          ):
+                          raw_end = "blank"
+                          for opener, closer in RAW_HTML_ENDS:
                               if re.match(opener, stripped):
                                   raw_end = re.compile(closer)
                           if raw_end != "blank" and raw_end.search(line):
                               raw_end = None
                           after_blank = False
                       else:
-                          after_blank = blank or re.match(r" {0,3}#{1,6}(?:[ \t]|$)", expanded) is not None
+                          heading = re.match(r" {0,3}#{1,6}(?:[ \t]|$)", expanded)
+                          after_blank = blank or heading is not None
                   if fence_like is not None:
-                      fences_inert = comments_inert = False  # Its extent is unknown here.
+                      fences_inert = comments_inert = False
                   output.append(live + "\n")
                   if re.search(r"<(?:[a-z/?]|!(?!--))", live, re.I):
                       comments_inert = False
-                  if re.search(
-                      r"<(?:script|style|textarea|title|xmp|iframe|noembed|noframes|noscript"
-                      r"|plaintext|select)(?![a-z0-9-])",
-                      live,
-                      re.I,
-                  ):
+                  if RAW_TEXT.search(live):
                       # A raw text element shows the code and comments after it as text.
-                      return "".join(output) + "\n".join(lines[number + 1:])
+                      return "".join(output) + "\n".join(lines[index + 1:])
               return "".join(output)
 
           body = strip_inert_markdown(os.environ.get("PR_BODY", ""))
@@ -216,25 +237,37 @@ jobs:
           body = html.unescape(re.sub(r"\\([!-/:-@\[-\x60{-~])", r"\1", body))
           tag = re.compile(r"</?[a-z][a-z0-9-]*(?:\s(?:[^<>\"']|\"[^\"]*\"|'[^']*')*)?/?>", re.I)
           inline_hidden = re.compile(r"<!--|<\?|<!\[CDATA\[|<![a-z]", re.I)
-          # cmark ends these at the closer, a browser ends "<?" and "<![CDATA["
-          # at the first ">": both ends are tried.
+          # cmark-gfm ends these at the closer; a browser ends "<?" and "<![CDATA["
+          # at the first ">". Both ends are tried.
           closers = {"<!--": ("-->", "--!>"), "<?": ("?>", ">"), "<![CDATA[": ("]]>", ">")}
           separator = re.compile(r"[\s:*_~\[(<\\]")
           keyword = re.compile(
-              r"(?<![a-z0-9])(?:closes|closed|close|fixes|fixed|fix|resolves|resolved|resolve)(?![a-z0-9])",
-              re.I,
+              r"(?<![a-z0-9])(?:closes|closed|close|fixes|fixed|fix|resolves|resolved|resolve)"
+              r"(?![a-z0-9])",
+              re.I | re.A,
           )
           reference = re.compile(
               r"(?:(?:https?://)?(?:www\.)?github\.com/)?"
               r"(?:(?P<owner>[a-z0-9][a-z0-9-]*)/(?P<repo>[a-z0-9_.-]+)(?:#|/issues/)|#|gh-)"
               r"(?P<number>[0-9]+)(?![0-9])",
-              re.I,
+              re.I | re.A,
           )
           next_ref = re.compile(r"[\s*_~)\]>]*(?:,|&|\band\b)[\s*_~\[(<\\]*", re.I)
-          # Absolute or relative ("/o/r/issues/N", "../../r/issues/N") issue links.
-          issue_url = re.compile(r"(?P<owner>[a-z0-9_.-]+)/(?P<repo>[a-z0-9_.-]+)/issues/(?P<number>[0-9]+)", re.I)
+          # An absolute or relative ("/o/r/issues/N", "../../r/issues/N") issue link.
+          issue_link = re.compile(
+              r"(?<![a-z0-9_.-])(?P<owner>\.\.|[a-z0-9][a-z0-9-]*)/(?P<repo>[a-z0-9_.-]+)"
+              r"/issues/(?P<number>[0-9]+)",
+              re.I | re.A,
+          )
           local_repo = os.environ.get("GITHUB_REPOSITORY", "").lower()
-          found = {}
+          found = {}  # Foreign issue -> "direct" or "link", in the order found.
+
+          def note(owner: str, repo: str, number: str, how: str) -> None:
+              target = f"{owner}/{repo}".lower()
+              if target != local_repo:
+                  issue = f"{target}#{number.lstrip('0') or '0'}"
+                  if found.get(issue) != "direct":
+                      found[issue] = how
 
           def gap_ends(text: str, start: int, seen: set) -> tuple[list, bool]:
               # New positions reachable from start over spaces, a colon, emphasis,
@@ -279,46 +312,46 @@ jobs:
                   for pos in ends:
                       match = reference.match(text, pos)
                       while match is not None:  # "Closes #1, owner/repo#2" closes both.
-                          target = f"{match['owner']}/{match['repo']}".lower()
-                          if match["owner"] and target != local_repo:
-                              found[f"{target}#{int(match['number'])}"] = target
+                          if match["owner"]:
+                              note(match["owner"], match["repo"], match["number"], "direct")
                           more = next_ref.match(text, match.end())
                           match = reference.match(text, more.end()) if more else None
               if links:
                   # A link's text hides its target, which a definition or nested
                   # brackets can place anywhere: any foreign issue link may be it.
-                  for match in issue_url.finditer(text):
-                      # "../../repo" from a PR page stays in the same owner.
-                      owner = local_repo.split("/")[0] if match["owner"] == ".." else match["owner"]
-                      target = f"{owner}/{match['repo']}".lower()
-                      if target != local_repo and not target.startswith("github.com/"):
-                          found[f"{target}#{int(match['number'])}"] = target
+                  for match in issue_link.finditer(text):
+                      # "../../repo" from a PR page stays under the same owner.
+                      owner = match["owner"]
+                      if owner == "..":
+                          owner = local_repo.split("/")[0]
+                      note(owner, match["repo"], match["number"], "link")
+
+          def without_markup(text: str, instruction_end: str, cdata_end: str) -> str:
+              hidden = (
+                  r"<!--(?:(?!<!--).)*?--!?>|<![a-z][^<>]*>"
+                  rf"|<\?(?:(?!<\?).)*?{instruction_end}"
+                  rf"|<!\[CDATA\[(?:(?!<!\[CDATA\[).)*?{cdata_end}"
+              )
+              text = re.sub(hidden, "", text, flags=re.I | re.S)
+              return re.sub(r"[*_~]", "", tag.sub("", text))
 
           check(body)
-          # Without markup and emphasis, "Close**s**" and "Clo<b>ses</b>" read "Closes".
-          for instruction_end, cdata_end in ((r"\?>", r"\]\]>"), (">", ">")):
-              check(
-                  re.sub(
-                      r"[*_~]",
-                      "",
-                      tag.sub(
-                          "",
-                          re.sub(
-                              r"<!--(?:(?!<!--).)*?--!?>|<![a-z][^<>]*>"
-                              rf"|<\?(?:(?!<\?).)*?{instruction_end}"
-                              rf"|<!\[CDATA\[(?:(?!<!\[CDATA\[).)*?{cdata_end}",
-                              "",
-                              body,
-                              flags=re.I | re.S,
-                          ),
-                      ),
+          # Without markup and emphasis, "Close**s**" and "Clo<b>ses</b>" read
+          # "Closes". Strip once with cmark-gfm's closers, once with a browser's ">".
+          check(without_markup(body, r"\?>", r"\]\]>"))
+          check(without_markup(body, ">", ">"))
+          for issue, how in found.items():
+              if how == "direct":
+                  errors.append(
+                      f"Cross-repository issue closure of {issue} is forbidden; use "
+                      f"'Refs {issue}' and let its own repo close it."
                   )
-              )
-          for issue, target in found.items():
-              errors.append(
-                  f"Cross-repository issue closure of {issue} is forbidden; use "
-                  f"'Refs {issue}' and let its own repo close it."
-              )
+              else:
+                  errors.append(
+                      "Cross-repository issue closure through a link: a closing keyword "
+                      f"is followed by a link and the body links {issue}. Write local "
+                      f"closures as 'Closes #N' and cite {issue} as 'Refs {issue}'."
+                  )
           # END cross-repo-closing-guard
 
           for message in warnings:

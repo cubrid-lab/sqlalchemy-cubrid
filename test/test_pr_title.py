@@ -1,11 +1,13 @@
 """Offline checks for the PR-title workflow (.github/workflows/pr-title.yml).
 
 The validator lives only inside the workflow (it runs without a checkout), so
-these tests extract the embedded script and execute it with PR_TITLE set.
+these tests extract the embedded script and execute it with PR_TITLE,
+PR_BODY and GITHUB_REPOSITORY set.
 """
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import subprocess
@@ -83,6 +85,7 @@ INVALID = (
 
 TICK = chr(96)
 FENCE = TICK * 3
+GUARD_SHA256 = "cc334ccb5a0b24b3632857534f8c8ace84871cb0bd2f4257a6a343e650485bf9"
 
 
 def _validator() -> str:
@@ -162,19 +165,29 @@ class PrTitleValidatorTest(unittest.TestCase):
         assert match is not None
         self.assertEqual(tuple(re.findall(r'"([a-z]+)"', match[1])), TYPES)
 
-    def assert_blocked(self, *bodies: str) -> None:
+    def assert_blocked(self, *bodies: str, issue: str = "another-org/another-repo#43") -> None:
         for body in bodies:
-            with self.subTest(body=body):
+            with self.subTest(body=body[:200]):
                 result = _run("docs: align issue ownership", body)
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertIn("Cross-repository issue closure", result.stdout)
-                self.assertIn("another-org/another-repo#43", result.stdout)
+                self.assertIn(issue, result.stdout)
+                self.assertNotIn("Traceback", result.stderr)
 
     def assert_allowed(self, *bodies: str) -> None:
         for body in bodies:
-            with self.subTest(body=body):
+            with self.subTest(body=body[:200]):
                 result = _run("docs: align issue ownership", body)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_guard_block_matches_the_shared_copy(self) -> None:
+        # sqlalchemy-cubrid, cubrid-mcp-server and cubrid-cookbook-python carry
+        # the same guard; change every copy and this hash together.
+        text = WORKFLOW.read_text(encoding="utf-8")
+        start = text.index("# BEGIN cross-repo-closing-guard")
+        stop = text.index("# END cross-repo-closing-guard")
+        digest = hashlib.sha256(text[start:stop].encode("utf-8")).hexdigest()
+        self.assertEqual(digest, GUARD_SHA256)
 
     def test_foreign_repository_closing_keywords_fail(self) -> None:
         self.assert_blocked(
@@ -189,10 +202,19 @@ class PrTitleValidatorTest(unittest.TestCase):
             "Closes <https://github.com/another-org/another-repo/issues/43>",
         )
 
+    def test_sibling_repository_closures_fail(self) -> None:
+        # The realistic accident: closing a sibling cubrid-lab repository's issue.
+        self.assert_blocked(
+            "Closes cubrid-lab/pycubrid#833.",
+            "Fixes https://github.com/cubrid-lab/pycubrid/issues/833",
+            issue="cubrid-lab/pycubrid#833",
+        )
+
     def test_local_closures_and_foreign_refs_pass(self) -> None:
         self.assert_allowed(
             "Closes #810. Refs another-org/another-repo#43.",
             "Closes cubrid-lab/sqlalchemy-cubrid#810",
+            "Closes CUBRID-LAB/SQLALCHEMY-CUBRID#810",
             "Closes https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/810",
             "Refs #810 and another-org/another-repo#43.",
             "Refs **another-org/another-repo#43**",
@@ -220,17 +242,29 @@ class PrTitleValidatorTest(unittest.TestCase):
             "<b>Closes</b> <code>another-org/another-repo#43</code>",
         )
 
-    def test_links_escapes_and_lists_of_issues_fail(self) -> None:
+    def test_escapes_entities_and_lists_of_issues_fail(self) -> None:
         self.assert_blocked(
-            "Closes [the bug](https://github.com/another-org/another-repo/issues/43)",
-            "Closes [another-org/another-repo#43](https://example.com)",
-            "Closes [the bug][1]\n\n[1]: https://github.com/another-org/another-repo/issues/43",
-            "Closes [bug]\n\n[Bug]: <https://github.com/another-org/another-repo/issues/43>",
             "Closes another-org/another-repo\\#43",
             "Closes another-org/another-repo&#35;43",
             "Closes&nbsp;another-org/another-repo#43",
             "Closes #810, another-org/another-repo#43",
             "Fixes #810 and **another-org/another-repo#43**",
+            "Closes GH-1, another-org/another-repo#43",
+            "Closes #1 & another-org/another-repo#43",
+        )
+
+    def test_each_foreign_issue_is_reported_once(self) -> None:
+        result = _run(
+            "docs: align issue ownership",
+            "Closes another-org/another-repo#43 and fixes another-org/another-repo#043",
+        )
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.count("::error"), 1, result.stdout)
+
+    def test_a_very_long_issue_number_is_reported_without_a_crash(self) -> None:
+        self.assert_blocked(
+            "Closes another-org/another-repo#" + "4" * 5000,
+            issue="another-org/another-repo#4444",
         )
 
     def test_code_blocks_and_comment_blocks_are_ignored(self) -> None:
@@ -300,14 +334,22 @@ class PrTitleValidatorTest(unittest.TestCase):
             f"<?x\n\n{FENCE}\n?>\nCloses another-org/another-repo#43\n{FENCE}",
             "<pre>\n\n    Closes another-org/another-repo#43\n</pre>",
             f"<div>\n{TICK}Closes another-org/another-repo#43{TICK}\n</div>",
-            f"<textarea>\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
-            "<textarea>\n\n<!--\nCloses another-org/another-repo#43\n-->",
             f"- <div>\n  {FENCE}\n  Closes another-org/another-repo#43\n  </div>",
         )
 
+    def test_raw_text_elements_end_all_hiding(self) -> None:
+        self.assert_blocked(
+            f"<textarea>\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            "<textarea>\n\n<!--\nCloses another-org/another-repo#43\n-->",
+            f"<select>\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            "Text <select> here\n\n    Closes another-org/another-repo#43",
+        )
+
+    def test_paragraph_continuation_stays_live(self) -> None:
+        self.assert_blocked("Paragraph text\n    Closes another-org/another-repo#43")
+
     def test_list_items_keep_their_text_live(self) -> None:
         self.assert_blocked(
-            "Paragraph text\n    Closes another-org/another-repo#43",
             "- Summary\n\n    Closes another-org/another-repo#43",
             "1. Summary\n\n    Closes another-org/another-repo#43",
             "- a\n\n    - Closes another-org/another-repo#43",
@@ -344,10 +386,12 @@ class PrTitleValidatorTest(unittest.TestCase):
         self.assert_blocked(
             f"-  a\n  {FENCE}\n  x\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
             f"-  a\n  {FENCE}\n<!--\n{FENCE}\nCloses another-org/another-repo#43\n-->",
-            f"- a\n  {FENCE}\n  {FENCE}\nz\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"- a\n  {FENCE}\n  {FENCE}\nz\n  {FENCE}\nx\n{FENCE}\n"
+            f"Closes another-org/another-repo#43\n{FENCE}",
             f"* * *\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
             f"- - -\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
-            f"- a\n<pre>\n</pre>\n  {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"- a\n<pre>\n</pre>\n  {FENCE}\nx\n{FENCE}\n"
+            f"Closes another-org/another-repo#43\n{FENCE}",
             f"[^1]: note\n\n {FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
             f"> {FENCE}\n> x\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
             f"<b>hi</b> there\n{FENCE}\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
@@ -356,12 +400,6 @@ class PrTitleValidatorTest(unittest.TestCase):
             f"<!x\n<details>\n{FENCE}\nCloses another-org/another-repo#43",
             f"<pre\x0c>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
             f"<pre\x0b>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
-            f"<select>\n\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
-            "Text <select> here\n\n    Closes another-org/another-repo#43",
-            # GitHub drops a leading byte order mark before parsing.
-            f"\ufeff{FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
-            "\ufeff<div>\n# h\n    Closes another-org/another-repo#43",
-            f"\ufeff<pre>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
         )
         self.assert_allowed(
             f"- step:\n  {FENCE}bash\n  make test\n  {FENCE}\n\n"
@@ -397,28 +435,33 @@ class PrTitleValidatorTest(unittest.TestCase):
         )
 
     def test_a_closing_link_fails_when_any_foreign_issue_is_linked(self) -> None:
+        # Inline, reference, nested, image and raw HTML links, then absolute
+        # and relative issue paths: the link text hides its target.
         self.assert_blocked(
+            "Closes [the bug](https://github.com/another-org/another-repo/issues/43)",
+            "Closes [another-org/another-repo#43](https://example.com)",
+            "Closes [the bug][1]\n\n[1]: https://github.com/another-org/another-repo/issues/43",
+            "Closes [bug]\n\n[Bug]: <https://github.com/another-org/another-repo/issues/43>",
             "Closes [a `]` b](https://github.com/another-org/another-repo/issues/43)",
             "Closes [a [b] c](https://github.com/another-org/another-repo/issues/43)",
-            "Closes [![badge](https://x/y.png)](https://github.com/another-org/another-repo/issues/43)",
+            "Closes [![badge](https://x/y.png)]"
+            "(https://github.com/another-org/another-repo/issues/43)",
             "Closes [bug][1]\n\n> [1]: https://github.com/another-org/another-repo/issues/43",
             "Closes [bug][1]\n\n- [1]: https://github.com/another-org/another-repo/issues/43",
             "Closes [bug][a\\]b]\n\n[a\\]b]: https://github.com/another-org/another-repo/issues/43",
-            "Closes [\u1e9e]\n\n[SS]: https://github.com/another-org/another-repo/issues/43",
+            "Closes [ẞ]\n\n[SS]: https://github.com/another-org/another-repo/issues/43",
             "Closes [a`](x)`](https://github.com/another-org/another-repo/issues/43)",
             "Closes [a\\](x)](https://github.com/another-org/another-repo/issues/43)",
             'Closes <a href="https://github.com/another-org/another-repo/issues/43">bug</a>',
             # Fails closed: a closing link with any foreign issue link in the body.
             "Closes [#810](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/810).\n\n"
             "See https://github.com/another-org/another-repo/issues/43.",
-        )
-        self.assert_blocked(
             "Closes [bug](/another-org/another-repo/issues/43)",
             "Closes [bug](../../../another-org/another-repo/issues/43)",
         )
-        result = _run("docs: align issue ownership", "Closes [bug](../../other-repo/issues/43)")
-        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("cubrid-lab/other-repo#43", result.stdout)
+        self.assert_blocked(
+            "Closes [bug](../../other-repo/issues/43)", issue="cubrid-lab/other-repo#43"
+        )
         self.assert_allowed(
             "Closes [the bug](../issues/810)",
             "Closes [the bug](../../sqlalchemy-cubrid/issues/810)",
@@ -427,8 +470,30 @@ class PrTitleValidatorTest(unittest.TestCase):
             "Refs another-org/another-repo#43.",
         )
 
+    def test_a_leading_byte_order_mark_is_dropped(self) -> None:
+        self.assert_blocked(
+            f"﻿{FENCE}\nx\n{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            "﻿<div>\n# h\n    Closes another-org/another-repo#43",
+            f"﻿<pre>\n\n{FENCE}\n</pre>\nCloses another-org/another-repo#43\n{FENCE}",
+        )
+
+    def test_only_cr_and_lf_split_lines(self) -> None:
+        # GitHub keeps U+2028 and form feeds inside a line, so they cannot
+        # start a fence on what str.splitlines() would call a new line.
+        self.assert_blocked(
+            f"x {FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+            f"x\x0c{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
+        )
+
+    def test_only_spaces_and_tabs_count_as_whitespace(self) -> None:
+        # A no-break space neither makes a line blank nor ends a heading marker.
+        self.assert_blocked(
+            "Para\n \n    Closes another-org/another-repo#43",
+            "# x\n    Closes another-org/another-repo#43",
+        )
+
     def test_long_adversarial_bodies_finish_quickly(self) -> None:
-        # GitHub caps a PR body at 65,536 characters; the check must stay fast.
+        # GitHub caps a PR body at 65,536 characters; each runs well under a second.
         for body in (
             "Closes" + "*" * 65000 + "x",
             "Closes" + "<b>" * 21000 + "x",
@@ -446,18 +511,8 @@ class PrTitleValidatorTest(unittest.TestCase):
             with self.subTest(body=body[:20]):
                 start = time.monotonic()
                 result = _run("docs: align issue ownership", body)
-                self.assertLess(time.monotonic() - start, 20)
+                self.assertLess(time.monotonic() - start, 5)
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_only_cr_and_lf_split_lines(self) -> None:
-        # GitHub keeps U+2028, form feeds and no-break spaces inside a line, so
-        # they cannot start a fence, make a blank line or form a heading.
-        self.assert_blocked(
-            f"x\u2028{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
-            f"x\x0c{FENCE}\nCloses another-org/another-repo#43\n{FENCE}",
-            "Para\n\u00a0\n    Closes another-org/another-repo#43",
-            "#\u00a0x\n    Closes another-org/another-repo#43",
-        )
 
 
 if __name__ == "__main__":
