@@ -33,7 +33,7 @@ unterstützt.
 - **Umfangreiche Offline-Testsuite** — zum Ausführen ist keine Datenbank erforderlich; CI erzwingt im `offline-tests`-Job eine Mindestabdeckung von 95 % (`--cov-fail-under=95`)
 - **Nebenläufigkeits-Stresstests** — `QueuePool`-basierte synchrone Threads + `asyncio.gather`-Workloads gegen echtes CUBRID validiert
 - **SQLAlchemy-2.1-fähiger Compat-Shim** — Zugriff auf private APIs in `_compat.py` gekapselt (bis zur vollständigen SA-2.1-Validierung weiterhin auf `<2.2` festgelegt)
-- Gegen **4 CUBRID-Versionen** (10.2, 11.0, 11.2, 11.4) auf **Python 3.10 -- 3.14** getestet
+- Gegen **4 CUBRID-Versionen** (10.2, 11.0, 11.2, 11.4) auf **Python 3.11 -- 3.15** getestet
 - CUBRID-spezifische DML-Konstrukte: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic-Migrationsunterstützung sofort einsatzbereit
 - **Drei Treiberoptionen** — C-Erweiterung (`cubrid://`), reines Python (`cubrid+pycubrid://`) oder asynchrones reines Python (`cubrid+aiopycubrid://`)
@@ -59,7 +59,7 @@ flowchart TD
 
 ## Anforderungen
 
-- Python 3.10+
+- Python 3.11 oder neuer
 - SQLAlchemy 2.0 – 2.1
 - [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-Erweiterung) **oder** [pycubrid](https://github.com/cubrid-lab/pycubrid) (reines Python)
 
@@ -180,7 +180,7 @@ async with AsyncSession(engine) as session:
 
 | Komponente | Unterstützte Versionen |
 |---|---|
-| Python | 3.10, 3.11, 3.12, 3.13, 3.14 |
+| Python | 3.11, 3.12, 3.13, 3.14, 3.15 |
 | CUBRID | 10.2, 11.0, 11.2, 11.4 |
 | SQLAlchemy | 2.0–2.1 |
 | Alembic | >=1.7.2 |
@@ -208,7 +208,7 @@ Ja. Installieren Sie mit `pip install "sqlalchemy-cubrid[alembic]"`. Die CUBRID-
 
 ### Welche Python-Versionen werden unterstützt?
 
-Python 3.10, 3.11, 3.12, 3.13 und 3.14.
+Python 3.11, 3.12, 3.13, 3.14 und 3.15 (Standard-GIL-Builds).
 
 ### Unterstützt CUBRID RETURNING-Klauseln?
 
