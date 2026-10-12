@@ -24,9 +24,19 @@ Key invariants:
 
 ### 1. Prepare the release PR
 
-On each push to `main`, or a manual `release-please.yml` dispatch from `main`,
-the SHA-pinned upstream action prepares a Python release PR. It never creates
-tags or GitHub Releases (`skip-github-release: true`). The former
+On each push to `main`, or a manual dispatch from `main`, the SHA-pinned
+upstream action (`googleapis/release-please-action` v5.0.0, commit
+`45996ed1f6d02564a971a2fa1b5860e934307cf7`, bundled core 17.6.0) prepares a
+Python release PR:
+
+```bash
+gh workflow run release-please.yml -R cubrid-lab/sqlalchemy-cubrid --ref main
+```
+
+The workflow's run name is **Prepare release**. It never creates
+tags or GitHub Releases (`skip-github-release: true`). The offline migration
+validation and the live evidence since the cutover are recorded in
+[`docs/RELEASE_PLEASE_VALIDATION.md`](docs/RELEASE_PLEASE_VALIDATION.md). The former
 `prepare-release.yml` entry point is removed; `prepare_release.py` remains only
 as tested legacy transformation code, without an active workflow caller.
 
@@ -84,7 +94,22 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
 - The workflow uses `GITHUB_TOKEN`; bot-created or updated PRs do **not**
   automatically start normal PR CI. After preparation completes, a maintainer
   closes/reopens the PR or pushes a commit, then verifies checks cover the
-  final composed head. No new PAT or contributor secret is required.
+  final composed head. No new PAT or contributor secret is required. With the
+  `gh` CLI the close/reopen is:
+
+  ```bash
+  gh api -X PATCH repos/cubrid-lab/sqlalchemy-cubrid/pulls/<N> -f state=closed
+  gh api -X PATCH repos/cubrid-lab/sqlalchemy-cubrid/pulls/<N> -f state=open
+  ```
+
+- A candidate that is behind `main` or shows merge conflicts is stale, not
+  broken: regenerate it instead of editing or rebasing the release branch.
+  If it carries `autorelease: review`, first move any branch-only edits to
+  main's Unreleased section through a normal PR, then remove the label
+  (`gh api -X DELETE repos/cubrid-lab/sqlalchemy-cubrid/issues/<N>/labels/autorelease:%20review`).
+  Dispatch `release-please.yml` from `main`, wait for the run to finish, and
+  confirm `gh api repos/cubrid-lab/sqlalchemy-cubrid/compare/main...release-please--branches--main--components--sqlalchemy-cubrid --jq .behind_by`
+  prints `0` before starting CI with the close/reopen above.
 - Run `make release-check VERSION=X.Y.Z` again after manual edits. Require
   all normal PR checks before squash-merging; the merged version change
   starts the existing guarded publisher, regardless of PR title.
@@ -335,52 +360,49 @@ the workflow's own commit): a run against an older revision of those scripts
 does not cover code paths changed since. An ordinary push whose `detect`
 finds "no release" proves detection only, not the full dry-run path below.
 
-Last full dry run: [run 36862681247](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/36862681247),
-dispatched `-f action=dry-run -f version=1.8.0` from `main` at commit
-[`ae80955`](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ae80955999da710bb9f62e68dd2394b7daeb5383)
-(workflow file and scripts unchanged since
-[`d27b414`](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d27b414755f7b7247492225524a00288824255df),
-#606). An earlier full dry run,
-[run 36721019106](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/36721019106),
-had passed at commit `5f1e07e`, but `scripts/release_summary.py` changed in
-`d27b414` (#606) after that run, so it no longer covered the summary job's
-current code; this run re-exercises the full path at the current revision.
-
-Job conclusions for 36862681247: `detect` success (mode `dry-run`, tag
-`v1.8.0` reported `different` — it already exists at the published commit,
-untouched by this dry run), `consistency` success, `matrix` (full
-compatibility matrix) success — the nightly, non-gating "Mutation testing"
-lane failed as it also did on the prior evidence run, and does not affect
-the matrix's own gating result, which succeeded — `build` success, `publish`
-**skipped** (no tag, Release or PyPI upload — verified: nothing changed on
-PyPI or in this repository's tags/Releases), `verify-cookbook` success,
-`require-cookbook` success (installed `1.8.0` == requested `1.8.0`),
-`summary` success with final state `dry run passed; nothing published;
-cookbook verification success`.
-
-Build artifact SHA-256 (built fresh by this run and uploaded only as the
-14-day `release-dist` run artifact, never to PyPI; recorded here as
-dry-run evidence):
+Last full dry run: [run 38156819662](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/38156819662),
+dispatched on 2026-10-11 as `-f action=dry-run -f version=1.10.0` from the
+#814 branch at commit
+[`2f1083d`](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2f1083daeaadc67a92d54382ad126c21ffb5af94).
+`publish-pypi.yml`, `integration-full.yml`, `scripts/` and the `Makefile` at
+that commit are identical to `main` after #814 was merged, so the run covers
+the current candidate gate. Job conclusions: `detect`, `consistency`, the full
+compatibility matrix (`Full compatibility matrix result`), `build`, all four
+`Cookbook candidate verification` jobs and `Require a verified candidate`
+succeeded; the non-gating mutation lane was skipped as designed;
+`Tag, GitHub Release and PyPI`, `Cookbook release verification` and
+`Require a verified release` were **skipped**. The summary's final state was
+`dry run passed; nothing published; candidate verification success`. The
+build artifact SHA-256 (uploaded only as the 14-day `release-dist` run
+artifact, never to PyPI):
 
 ```
-ed8fd12ef6b8b1f4d2ad833eeca2d794bb29b6cb7a3232fd1669bbcdeb1fe74c  sqlalchemy_cubrid-1.8.0-py3-none-any.whl
-09c065db710ab93720e65d329b6c38efa8a7b01977b9ae25d89ce1279632c9be  sqlalchemy_cubrid-1.8.0.tar.gz
+6d5b1ed69c091ade603c73804bbb4dddc7c803fcd4c7a6e8bb0b5195023c9d88  sqlalchemy_cubrid-1.10.0-py3-none-any.whl
+3d153603c548576c2a6f9c87a2030efa4482ed8da24d230d2e5adc0206710a17  sqlalchemy_cubrid-1.10.0.tar.gz
 ```
 
-**Limit (before the candidate gate):** the `build` job's own smoke tests do install the freshly built
+What a dry run proves: the `build` job's smoke tests install the freshly built
 wheel and sdist into clean virtual environments and check their imports,
-metadata, entry points and the `py.typed` marker, so a passing dry run
-proves the fresh artifacts install cleanly. What it does not prove is that
-those fresh artifacts pass the cookbook suite: `verify-cookbook` on a
-`dry-run` installs the already-published `sqlalchemy-cubrid==1.8.0` from
-PyPI (the cookbook's release verification contract only ever installs from
-PyPI), never the wheel this dry run just built. Only `publish` followed by
-its own `verify-cookbook` verified the newly built artifact through the
-cookbook. Since the candidate gate, a dry run verifies the freshly built
-wheel through the cookbook (`verify-candidate`) instead of the published
-version. A dry run never reaches `publish`, so the `scripts/verify_dist.py`
-steps first run on a real release; they run before the tag step, so a
-failure there leaves nothing tagged or uploaded.
+metadata, entry points and the `py.typed` marker, and `verify-candidate` runs
+the cookbook smoke test on that same freshly built wheel. It does not run the
+post-publication `verify-cookbook`, which installs the published version from
+PyPI and therefore only says something about a real release. A dry run never
+reaches `publish`, so the `scripts/verify_dist.py` steps first run on a real
+release; they run before the tag step, so a failure there leaves nothing
+tagged or uploaded.
+
+Earlier dry runs are kept as history; they ran before the candidate gate
+(#812, #814) and do not cover it.
+[Run 36862681247](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/36862681247)
+(`-f version=1.8.0` from `main` at
+[`ae80955`](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ae80955999da710bb9f62e68dd2394b7daeb5383))
+passed with `publish` skipped and final state `dry run passed; nothing
+published; cookbook verification success`; its `verify-cookbook` installed the
+already-published `sqlalchemy-cubrid==1.8.0` from PyPI, not the wheel the run
+built (SHA-256 `ed8fd12ef6b8b1f4d2ad833eeca2d794bb29b6cb7a3232fd1669bbcdeb1fe74c`
+for the wheel and `09c065db710ab93720e65d329b6c38efa8a7b01977b9ae25d89ce1279632c9be`
+for the sdist). [Run 36721019106](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/36721019106)
+at `5f1e07e` predates the #606 change to `scripts/release_summary.py`.
 
 ## Repository settings this relies on
 

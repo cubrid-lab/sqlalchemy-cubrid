@@ -7672,6 +7672,24 @@ Existing publisher dry-run evidence in RELEASING.md covers unchanged publisher
 code; it installs a published package and does not prove the fresh candidate
 artifact's database/cookbook behavior. Required CI must pass at the final heads.
 
+## Live evidence since the migration
+
+The checks above are the 2026-10-03 offline record and stay unchanged. Live
+runs since then, recorded on #651 and #654:
+
+| Evidence | Revision | Result |
+| --- | --- | --- |
+| First live release PR #661 (1.9.0) | final head `d221ccf`; merge `4d41a22` | One release PR from manifest 1.8.0; the diff touched only the manifest, `CHANGELOG.md`, `RELEASE_CHANGELOG.md` and `__version__`. Bot updates left the PR checks waiting until a maintainer closed and reopened it; the checks then passed at the final head. |
+| Publication of 1.9.0, [run 37209737260](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37209737260) | `4d41a22` | Every job passed, including the live PyPI Trusted Publishing exchange and cookbook verification; reconciliation moved #661 to `autorelease: tagged`. |
+| Publication of 1.10.0, [run 37871732934](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/37871732934) | `57850be` | Attempt 1 failed only in post-publication cookbook verification (PyPI served stale metadata for a short time); re-running the failed jobs passed without publishing again. Reconciliation then moved #704 to `autorelease: tagged`. |
+| No-publication dry run with the candidate gate, [run 38156819662](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/38156819662) | `2f1083d` (#814) | The cookbook verified the freshly built 1.10.0 wheel before `publish`; `publish` was skipped and nothing was published. See RELEASING.md "Dry-run evidence". |
+
+Still not exercised live, covered only by the offline release tests: a failed
+required check that prevents publication of a merged release, a partial upload
+finished by `gh run rerun --failed`, a `resume` or `verify-only` dispatch, and
+the manual relabeling after recovery at another SHA. A review of the runbook by
+a maintainer other than its author is not recorded either.
+
 ## Reproduce the pinned-core scenarios
 
 Install the pinned core at the exact path used by this script:
