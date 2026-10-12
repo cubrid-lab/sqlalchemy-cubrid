@@ -69,7 +69,7 @@ body:
       label: Environment
       description: Provide details about your environment
       placeholder: |
-        - Python version: 3.10
+        - Python version: 3.12
         - SQLAlchemy version: 2.0.0
         - CUBRID version: 11.2
         - sqlalchemy-cubrid version: 1.4.0
