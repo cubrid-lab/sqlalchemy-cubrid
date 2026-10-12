@@ -126,7 +126,11 @@ def async_probe(url: URL, timeout: float = 15.0) -> None:
         finally:
             await engine.dispose()
 
-    asyncio.run(asyncio.wait_for(run(), timeout))
+    async def bounded() -> None:
+        async with asyncio.timeout(timeout):
+            await run()
+
+    asyncio.run(bounded())
 
 
 def error_summary(exc: BaseException, url: URL) -> str:

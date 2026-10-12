@@ -15,13 +15,14 @@ password, from a single probe per session, instead of silently skipping.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import socket
 import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from sqlalchemy.engine import make_url
@@ -123,6 +124,23 @@ def test_probe_disposes_the_engine_on_failure(monkeypatch: pytest.MonkeyPatch) -
         integration_urls.probe(url)
     engine.dispose.assert_called_once()
     assert create.call_args.kwargs["connect_args"] == integration_urls.PYCUBRID_TIMEOUTS
+
+
+def test_async_probe_times_out_and_disposes_the_engine(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def hang(*args: object, **kw: object) -> None:
+        await asyncio.sleep(60)
+
+    engine = MagicMock()
+    connection = MagicMock()
+    connection.execute = hang
+    engine.connect.return_value.__aenter__ = AsyncMock(return_value=connection)
+    engine.dispose = AsyncMock()
+    monkeypatch.setattr(
+        "sqlalchemy.ext.asyncio.create_async_engine", MagicMock(return_value=engine)
+    )
+    with pytest.raises(TimeoutError):
+        integration_urls.async_probe(make_url("cubrid+aiopycubrid://dba@h/db"), timeout=0.05)
+    engine.dispose.assert_awaited_once()
 
 
 # ----- the conftest gate -----

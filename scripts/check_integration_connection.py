@@ -43,7 +43,8 @@ def main() -> int:
         sync_probe(sync)
 
         async def bounded_probe() -> None:
-            await asyncio.wait_for(async_probe(asynchronous), timeout=15)
+            async with asyncio.timeout(15):
+                await async_probe(asynchronous)
 
         asyncio.run(bounded_probe())
     except Exception as exc:
