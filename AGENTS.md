@@ -8,8 +8,10 @@ Project knowledge base for AI coding agents.
 It provides SQL compilation, type mapping, schema reflection, DDL/DML extensions,
 Alembic migration support, and PEP 561 typing.
 
-- **Language**: Python 3.11+
-- **Framework**: SQLAlchemy 2.0 – 2.1
+- **Language**: Python 3.11+ (`requires-python = ">=3.11"`)
+- **Framework**: SQLAlchemy 2.0 – 2.1 (`sqlalchemy>=2.0,<2.2`)
+- **Supported versions**: Python, SQLAlchemy, CUBRID and driver versions are maintained in
+  [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md); `pyproject.toml` owns dependency bounds
 - **License**: MIT
 - **Version**: single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__` (Production/Stable); see [CHANGELOG.md](CHANGELOG.md) for the current release
 
@@ -69,8 +71,12 @@ graph TD
 [project.entry-points."sqlalchemy.dialects"]
 cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.cubrid" = "sqlalchemy_cubrid.dialect:CubridDialect"
+"cubrid.cubriddb" = "sqlalchemy_cubrid.dialect:CubridDialect"
 "cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
 "cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
+
+[project.entry-points."alembic.plugins"]
+sqlalchemy_cubrid = "_sqlalchemy_cubrid_alembic"
 ```
 
 ## Development
@@ -91,8 +97,11 @@ make test-repo        # Repository-tooling tests (Makefile, signal handling, rep
 make test-offline     # Every offline test (fast + repo) with coverage
 make lint             # ruff check + format
 make format           # Auto-fix lint/format
-make integration      # Run-owned Docker project → integration tests → cleanup
-make test-all         # tox across Python 3.11–3.15
+make typecheck        # mypy
+make check            # lint + typecheck
+make integration      # Run-owned Docker project → integration tests → cleanup (INTEGRATION_DRIVER=pycubrid|cubriddb)
+make integration-local # Integration tests against an already-running CUBRID (set CUBRID_TEST_URL)
+make test-all         # tox (envlist in tox.ini)
 ```
 
 ### Test Commands (manual)
@@ -105,10 +114,10 @@ pytest test/ -v -m "not integration and not repo" \
 # Repository-tooling tests (Makefile, signal handling, repo scripts; same as `make test-repo`)
 pytest test/ -v -m repo
 
-# Integration (requires Docker)
+# Integration (requires a live CUBRID; `make integration` manages Docker for you)
 docker compose up -d
-export CUBRID_TEST_URL="cubrid://dba@localhost:33000/testdb"
-pytest test/test_integration.py -v
+export CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb"  # cubrid:// needs CUBRIDdb
+pytest test/ -v -m integration
 ```
 
 ### Docker
@@ -257,8 +266,10 @@ test/
 ### Running Tests
 
 Most tests are **offline** — they mock the CUBRID connection and test SQL compilation,
-type mapping, and reflection logic without a database. Only `test_integration.py` and
-`test_suite.py` need a live CUBRID instance.
+type mapping, and reflection logic without a database. Tests that need a live CUBRID
+instance carry the `integration` marker (`test_integration.py`, `test_aio_integration.py`,
+`test_suite.py` and several contract, fuzz and regression modules); the offline lanes
+deselect them with `-m "not integration"`.
 
 ## CUBRID-Specific Knowledge
 
@@ -324,6 +335,11 @@ copying versions here.
 | `docs/ORM_COOKBOOK.md` | Practical ORM usage examples with CUBRID |
 | `docs/PRD.md` | Product requirements document |
 | `CHANGELOG.md` | Release history (Keep a Changelog format) |
+| `RELEASING.md` | Release procedure (release-please + `publish-pypi.yml`), failure matrix, recovery |
+| `docs/ARCHITECTURE.md` | Dialect architecture and design objectives |
+| `docs/SA_COMPAT.md` | SQLAlchemy internal APIs used by the dialect and their verified range |
+| `docs/QUICKSTART.md` | Minimal working setup |
+| `benchmarks/` | Dated benchmark records with environment and exact commands |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security vulnerability reporting |
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
