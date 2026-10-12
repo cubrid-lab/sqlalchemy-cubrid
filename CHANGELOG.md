@@ -162,12 +162,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the keyword stopped at `]`. The `PR title` check now crosses a link's `]`,
   `](destination)` or `][label]`, and also a quoted continuation line, an image's
   alt text and a link reference definition, including one whose destination and
-  title sit on the next lines, each of which renders nothing between the keyword and
-  the reference. Scanning stays linear in the body length, so adversarial link
-  syntax at GitHub's 65,536-character limit stays well under the tests' 5-second
-  timeout. The fix came from Copilot's review of cubrid-lab/pycubrid#849, and
-  `pr-title.yml` is again byte-identical across pycubrid, sqlalchemy-cubrid,
-  cubrid-mcp-server and cubrid-cookbook-python.
+  title run on to later lines of the paragraph, each of which renders nothing
+  between the keyword and the reference. Scanning stays linear in the body length,
+  so adversarial link syntax at GitHub's 65,536-character limit stays well under the
+  tests' 5-second timeout. The fix came from Copilot's review of
+  cubrid-lab/pycubrid#849, and `pr-title.yml` is again byte-identical across
+  pycubrid, sqlalchemy-cubrid, cubrid-mcp-server and cubrid-cookbook-python.
 - **The release PR body also writes generated issue references as "refs"** — GitHub reads
   release-please's `, closes [#N](…)` in the release PR body as a closing keyword, so merging
   a release PR could close an issue that a commit only referenced. The **Prepare release**
