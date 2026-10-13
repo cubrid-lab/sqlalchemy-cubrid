@@ -701,6 +701,46 @@ class TestCubridImplAutogenerate:
         )
         assert "import sqlalchemy as sa" in autogen_context.imports
 
+    @pytest.mark.parametrize(
+        ("collection", "expected"),
+        [
+            (
+                cubrid_types.MULTISET(cubrid_types.MONETARY()),
+                "cubrid_types.MULTISET(cubrid_types.MONETARY())",
+            ),
+            (
+                cubrid_types.SEQUENCE(cubrid_types.BIT(8), cubrid_types.BIT(8, varying=True)),
+                "cubrid_types.SEQUENCE(cubrid_types.BIT(length=8), "
+                "cubrid_types.BIT(length=8, varying=True))",
+            ),
+            (
+                cubrid_types.SET(cubrid_types.STRING(), cubrid_types.VARCHAR(10), sa.Integer()),
+                "cubrid_types.SET(cubrid_types.STRING(), cubrid_types.VARCHAR(length=10), "
+                "sa.Integer())",
+            ),
+            (
+                cubrid_types.SET(cubrid_types.TIMESTAMPTZ(), cubrid_types.DATETIMELTZ()),
+                "cubrid_types.SET(cubrid_types.TIMESTAMPTZ(), cubrid_types.DATETIMELTZ())",
+            ),
+        ],
+    )
+    def test_render_type_cubrid_member_types_use_dialect_prefix(self, collection, expected):
+        """#868: dialect member types are not in ``sa``; the rendered code must import."""
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        autogen_context = _AutogenContext()
+
+        rendered = impl.render_type(collection, autogen_context)
+
+        assert rendered == expected
+        namespace: dict[str, Any] = {}
+        for line in sorted(autogen_context.imports):
+            exec(line, namespace)  # noqa: S102 - the rendered migration imports
+        rebuilt = eval(rendered, namespace)  # noqa: S307 - the rendered migration code
+        assert type(rebuilt) is type(collection)
+        assert repr(rebuilt) == repr(collection)
+
     def test_render_type_non_cubrid_type_returns_false(self):
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 

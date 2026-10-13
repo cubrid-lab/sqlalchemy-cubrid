@@ -133,7 +133,7 @@ wheel/sdist의 새 환경 설치를 확인합니다. 지원 범위:
 |---|---|---|
 | 자동 등록 | ✅ | 방언 로드 시 등록 (`env.py` 임포트 불필요) |
 | 스키마 마이그레이션 | ✅ | CREATE, ALTER, DROP |
-| Autogenerate | ✅ | 컬렉션 타입(SET, MULTISET, SEQUENCE) 포함 |
+| Autogenerate | ✅ | 컬렉션 타입(SET, MULTISET, SEQUENCE) 포함. CUBRID 전용 멤버 타입은 `cubrid_types.MONETARY()`, `cubrid_types.BIT(...)` 등으로 렌더링됩니다 |
 | 트랜잭션 DDL | ✅ | DDL은 트랜잭션과 함께 롤백됨. 기본적으로 업그레이드 전체가 원자적 (리비전별 커밋은 `transaction_per_migration=True`) |
 
 ### DML 확장

@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Alembic renders CUBRID collection member types with the dialect prefix (#868)** —
+  `render_type` wrote every member type with `sa.`, so autogenerate produced
+  `cubrid_types.MULTISET(sa.MONETARY())` or `cubrid_types.SEQUENCE(sa.BIT(length=8))`,
+  which raised `AttributeError` when the migration file was loaded. Member types from
+  `sqlalchemy_cubrid.types` now render as `cubrid_types.MONETARY()`,
+  `cubrid_types.BIT(length=8)` and so on; generic SQLAlchemy members keep `sa.`.
+
 - **`Select.fetch()` renders as `LIMIT` (#867)** — there was no `fetch_clause`
   override, so `select(...).fetch(2)` and `.offset(1).fetch(2)` emitted the generic
   `OFFSET ... ROWS FETCH FIRST n ROWS ONLY`, which CUBRID rejects with -493. They now

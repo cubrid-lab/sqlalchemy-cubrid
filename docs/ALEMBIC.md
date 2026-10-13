@@ -407,6 +407,16 @@ lock until the transaction commits. Be aware:
 - Test migrations against a staging database before production
 - Maintain database backups before running migrations
 
+### Collection types in autogenerate
+
+`SET`, `MULTISET` and `SEQUENCE` columns render as `cubrid_types.SET(...)` with
+`from sqlalchemy_cubrid import types as cubrid_types` added to the script's imports.
+A member type defined by the dialect, such as `MONETARY`, `BIT`, `STRING`,
+`TIMESTAMPTZ` or `DATETIMELTZ`, renders with the same `cubrid_types.` prefix
+(`cubrid_types.MULTISET(cubrid_types.MONETARY())`); a generic SQLAlchemy member keeps
+`sa.` (#868). Earlier versions wrote `sa.MONETARY()`, which raised `AttributeError`
+when the migration was loaded.
+
 ### Foreign key referential actions in autogenerate
 
 CUBRID's default `ON DELETE` / `ON UPDATE` action is `RESTRICT`, and

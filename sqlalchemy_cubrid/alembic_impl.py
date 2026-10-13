@@ -281,6 +281,12 @@ class CubridImpl(DefaultImpl):
         for value in values:
             if isinstance(value, str):
                 rendered_values.append(repr(value))
+            elif isinstance(value, sa.types.TypeEngine) and (
+                type(value).__module__ == "sqlalchemy_cubrid.types"
+            ):
+                # A dialect type (MONETARY, BIT, STRING, ...) is not in ``sa``;
+                # cubrid_types is imported below (#868).
+                rendered_values.append(f"cubrid_types.{repr(value)}")
             elif isinstance(value, sa.types.TypeEngine):
                 # Render as sa.TypeName(...) preserving constructor args
                 autogen_context.imports.add("import sqlalchemy as sa")

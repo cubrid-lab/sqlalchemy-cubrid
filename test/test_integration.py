@@ -3856,3 +3856,69 @@ class TestFetchAsLimitLive867:
                 .compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
             )
             assert conn.exec_driver_sql(str(inline)).scalars().all() == [4, 5]
+
+
+class TestAutogenerateCollectionMemberTypes868:
+    """#868: a rendered migration with CUBRID-only member types imports and runs."""
+
+    TABLE = "mig868"
+
+    def test_rendered_migration_runs(self, engine):
+        from alembic.autogenerate import produce_migrations, render
+        from alembic.autogenerate.api import AutogenContext
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+
+        from sqlalchemy_cubrid import types as cubrid_types
+
+        meta = MetaData()
+        Table(
+            self.TABLE,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("m", cubrid_types.MULTISET(cubrid_types.MONETARY())),
+            Column(
+                "b", cubrid_types.SEQUENCE(cubrid_types.BIT(8), cubrid_types.BIT(16, varying=True))
+            ),
+            Column("s", cubrid_types.SET(cubrid_types.STRING(), cubrid_types.VARCHAR(10))),
+            Column("t", cubrid_types.SET(cubrid_types.TIMESTAMPTZ(), cubrid_types.DATETIMELTZ())),
+        )
+        with engine.connect() as conn:
+            conn.exec_driver_sql(f"DROP TABLE IF EXISTS {self.TABLE}")
+            conn.commit()
+            try:
+                context = MigrationContext.configure(
+                    conn,
+                    opts={
+                        "target_metadata": meta,
+                        "sqlalchemy_module_prefix": "sa.",
+                        "alembic_module_prefix": "op.",
+                        "user_module_prefix": None,
+                    },
+                )
+                upgrade_ops = produce_migrations(context, meta).upgrade_ops
+                autogen = AutogenContext(context, meta)
+                body = render._render_cmd_body(upgrade_ops, autogen)
+                assert "sa.MONETARY" not in body and "sa.BIT" not in body
+                # The script template always imports ``sa`` and ``op``.
+                source = "\n".join(["import sqlalchemy as sa", *sorted(autogen.imports)])
+                source += "\ndef upgrade():\n" + "".join(
+                    f"    {line}\n" for line in body.splitlines()
+                )
+                namespace: dict[str, object] = {"op": Operations(context)}
+                exec(compile(source, "<migration>", "exec"), namespace)  # noqa: S102
+                upgrade = namespace["upgrade"]
+                assert callable(upgrade)
+                upgrade()
+                conn.commit()
+                shown = {
+                    row[0]: row[1] for row in conn.exec_driver_sql(f"SHOW COLUMNS IN {self.TABLE}")
+                }
+                assert "MONETARY" in shown["m"]
+                assert "BIT" in shown["b"]
+                assert "STRING" in shown["s"] or "VARCHAR" in shown["s"]
+                assert "TIMESTAMPTZ" in shown["t"] and "DATETIMELTZ" in shown["t"]
+            finally:
+                conn.rollback()
+                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {self.TABLE}")
+                conn.commit()

@@ -287,6 +287,15 @@ DDL은 트랜잭션으로 처리되므로([트랜잭션 DDL](#트랜잭션-ddl) 
 - 프로덕션 전 스테이징 데이터베이스에서 마이그레이션 테스트
 - 마이그레이션 실행 전 데이터베이스 백업 유지
 
+### autogenerate의 컬렉션 타입
+
+`SET`, `MULTISET`, `SEQUENCE` 컬럼은 `cubrid_types.SET(...)`으로 렌더링되며, 스크립트 import에
+`from sqlalchemy_cubrid import types as cubrid_types`가 추가됩니다. `MONETARY`, `BIT`, `STRING`,
+`TIMESTAMPTZ`, `DATETIMELTZ`처럼 방언이 정의한 멤버 타입도 같은 `cubrid_types.` 접두사로
+렌더링되고(`cubrid_types.MULTISET(cubrid_types.MONETARY())`), 일반 SQLAlchemy 멤버는 `sa.`를
+유지합니다 (#868). 이전 버전은 `sa.MONETARY()`를 써서 마이그레이션을 불러올 때 `AttributeError`가
+발생했습니다.
+
 ### autogenerate의 외래 키 참조 동작
 
 CUBRID의 기본 `ON DELETE` / `ON UPDATE` 동작은 `RESTRICT`이며

@@ -133,7 +133,7 @@ scope of the claim:
 |---|---|---|
 | Auto-registration | ✅ | Registered when the dialect loads (no `env.py` import) |
 | Schema migrations | ✅ | CREATE, ALTER, DROP |
-| Autogenerate | ✅ | Including collection types (SET, MULTISET, SEQUENCE) |
+| Autogenerate | ✅ | Including collection types (SET, MULTISET, SEQUENCE); CUBRID-specific member types render as `cubrid_types.MONETARY()`, `cubrid_types.BIT(...)` and so on |
 | Transactional DDL | ✅ | DDL rolls back with the transaction; the whole upgrade is atomic by default (`transaction_per_migration=True` for per-revision commits) |
 
 ### DML Extensions
