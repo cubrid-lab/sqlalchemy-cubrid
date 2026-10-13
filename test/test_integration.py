@@ -3894,9 +3894,15 @@ class TestAutogenerateCollectionMemberTypes868:
                         "sqlalchemy_module_prefix": "sa.",
                         "alembic_module_prefix": "op.",
                         "user_module_prefix": None,
+                        # Compare only this table: the database holds other
+                        # tests' tables, which must not become drop_table ops.
+                        "include_name": lambda name, type_, parent: (
+                            type_ != "table" or name == self.TABLE
+                        ),
                     },
                 )
                 upgrade_ops = produce_migrations(context, meta).upgrade_ops
+                assert [type(op).__name__ for op in upgrade_ops.ops] == ["CreateTableOp"]
                 autogen = AutogenContext(context, meta)
                 body = render._render_cmd_body(upgrade_ops, autogen)
                 assert "sa.MONETARY" not in body and "sa.BIT" not in body
