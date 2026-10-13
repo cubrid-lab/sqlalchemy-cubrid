@@ -3861,7 +3861,7 @@ class TestFetchAsLimitLive867:
 class TestAutogenerateCollectionMemberTypes868:
     """#868: a rendered migration with CUBRID-only member types imports and runs."""
 
-    TABLE = "mig868"
+    TABLE = f"mig868_{_TABLE_SUFFIX}"
 
     def test_rendered_migration_runs(self, engine):
         from alembic.autogenerate import produce_migrations, render

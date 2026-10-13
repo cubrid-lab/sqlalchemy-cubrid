@@ -741,6 +741,43 @@ class TestCubridImplAutogenerate:
         assert type(rebuilt) is type(collection)
         assert repr(rebuilt) == repr(collection)
 
+    @staticmethod
+    def _public_dialect_member_types() -> list[Any]:
+        members = []
+        for name in dir(cubrid_types):
+            cls = getattr(cubrid_types, name)
+            if (
+                name.startswith("_")
+                or not isinstance(cls, type)
+                or not issubclass(cls, sa.types.TypeEngine)
+                or cls.__module__ != "sqlalchemy_cubrid.types"
+                or name in {"SET", "MULTISET", "SEQUENCE", "JSONIndexType", "JSONPathType"}
+            ):
+                continue
+            members.append(cls("a", "it's") if name == "ENUM" else cls())
+        return members
+
+    def test_render_type_every_public_dialect_member_type_rebuilds(self):
+        """#868: each public dialect type, as a member, renders to code that imports."""
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        members = self._public_dialect_member_types()
+        names = {type(member).__name__ for member in members}
+        assert {"ENUM", "OBJECT", "MONETARY", "BIT", "STRING", "VARCHAR", "JSON"} <= names
+        impl = object.__new__(CubridImpl)
+        for member in members:
+            autogen_context = _AutogenContext()
+            rendered = impl.render_type(cubrid_types.SET(member), autogen_context)
+            assert isinstance(rendered, str)
+            assert f"cubrid_types.{type(member).__name__}(" in rendered
+            namespace: dict[str, Any] = {}
+            for line in sorted(autogen_context.imports):
+                exec(line, namespace)  # noqa: S102 - the rendered migration imports
+            rebuilt = eval(rendered, namespace)  # noqa: S307 - the rendered migration code
+            (rebuilt_member,) = rebuilt._ddl_values
+            assert type(rebuilt_member) is type(member)
+            assert repr(rebuilt_member) == repr(member)
+
     def test_render_type_non_cubrid_type_returns_false(self):
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
