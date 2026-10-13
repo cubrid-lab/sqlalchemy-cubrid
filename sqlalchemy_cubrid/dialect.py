@@ -894,7 +894,7 @@ class CubridDialect(default.DefaultDialect):
             return []
         result = connection.execute(
             text(
-                "SELECT class_name FROM db_class "
+                "SELECT class_name FROM db_class "  # nosec B608 - constant clause
                 "WHERE class_type = 'CLASS' AND is_system_class = 'NO'"
                 + self._current_owner_condition()
                 + " ORDER BY class_name"
@@ -914,7 +914,7 @@ class CubridDialect(default.DefaultDialect):
             return []
         result = connection.execute(
             text(
-                "SELECT class_name FROM db_class "
+                "SELECT class_name FROM db_class "  # nosec B608 - constant clause
                 "WHERE class_type = 'VCLASS' AND is_system_class = 'NO'"
                 + self._current_owner_condition()
                 + " ORDER BY class_name"
@@ -1569,7 +1569,7 @@ class CubridDialect(default.DefaultDialect):
             return False
         result = connection.execute(
             text(
-                "SELECT COUNT(*) FROM db_class "
+                "SELECT COUNT(*) FROM db_class "  # nosec B608 - constant clause
                 "WHERE class_type IN ('CLASS', 'VCLASS') "
                 "AND is_system_class = 'NO' "
                 "AND class_name IN (:name, LOWER(:name))" + self._current_owner_condition()
