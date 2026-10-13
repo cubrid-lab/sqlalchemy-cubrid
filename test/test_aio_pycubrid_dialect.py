@@ -345,3 +345,41 @@ class TestPyCubridAsyncDialectGetDriverConnection:
         adapter = AsyncAdapt_pycubrid_connection(MagicMock(), mock_async_conn)
 
         assert PyCubridAsyncDialect().get_driver_connection(adapter) is mock_async_conn
+
+
+class TestAsyncTerminate872:
+    """#872: a garbage-collected async connection can be terminated."""
+
+    def test_dialect_supports_terminate(self):
+        dialect = PyCubridAsyncDialect()
+        assert dialect.has_terminate is True
+        adapted = MagicMock()
+        dialect.do_terminate(adapted)
+        adapted.terminate.assert_called_once_with()
+
+    def test_force_close_drops_the_driver_connection(self):
+        mock_async_conn = MagicMock()
+        conn = AsyncAdapt_pycubrid_connection(MagicMock(), mock_async_conn)
+
+        conn.terminate()  # outside a greenlet: the garbage-collection path
+
+        mock_async_conn._drop_connection.assert_called_once_with()
+
+    @pytest.mark.parametrize("error", [OSError("gone"), RuntimeError("Event loop is closed")])
+    def test_force_close_suppresses_transport_errors(self, error):
+        mock_async_conn = MagicMock()
+        mock_async_conn._drop_connection.side_effect = error
+        conn = AsyncAdapt_pycubrid_connection(MagicMock(), mock_async_conn)
+
+        conn._terminate_force_close()
+
+        mock_async_conn._drop_connection.assert_called_once_with()
+
+    def test_graceful_close_awaits_the_driver_close(self):
+        mock_async_conn = MagicMock()
+        mock_async_conn.close = AsyncMock()
+        conn = AsyncAdapt_pycubrid_connection(MagicMock(), mock_async_conn)
+
+        asyncio.run(conn._terminate_graceful_close())
+
+        mock_async_conn.close.assert_awaited_once_with()

@@ -1261,3 +1261,44 @@ class TestAsyncPycubridValueRoundTrips:
         finally:
             await eng.dispose()
         assert tuple(row) == (value, len(value.encode("utf-8")))
+
+
+class TestAsyncTerminateLive872:
+    """#872: garbage-collected and invalidated async connections close their socket."""
+
+    async def test_garbage_collected_connection_is_terminated(self) -> None:
+        import gc
+        import warnings
+
+        eng = create_async_engine(_async_url(), echo=False)
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+
+                async def leak() -> Any:
+                    conn = await eng.connect()
+                    await conn.execute(sa.text("SELECT 1 FROM db_root"))
+                    raw = await conn.get_raw_connection()
+                    return raw.driver_connection
+
+                driver = await leak()
+                for _ in range(3):
+                    gc.collect()
+                    await asyncio.sleep(0.05)
+                assert driver._writer is None
+                assert not driver._connected
+            messages = [f"{w.category.__name__}: {w.message}" for w in caught]
+            assert not [m for m in messages if "cannot be safely terminated" in m], messages
+            assert not [m for m in messages if m.startswith("ResourceWarning")], messages
+            assert eng.pool.checkedout() == 0
+        finally:
+            await eng.dispose()
+
+    async def test_invalidated_connection_closes_gracefully(self, engine: AsyncEngine) -> None:
+        async with engine.connect() as conn:
+            raw = await conn.get_raw_connection()
+            driver = raw.driver_connection
+            await conn.invalidate()
+            assert not driver._connected
+        async with engine.connect() as conn:
+            assert (await conn.execute(sa.text("SELECT 1 FROM db_root"))).scalar() == 1

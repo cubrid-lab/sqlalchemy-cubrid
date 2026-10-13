@@ -430,6 +430,13 @@ async with engine.connect() as conn:
     print(result.scalar())
 ```
 
+Return connections with `async with` or `await conn.close()`. If an application loses a
+checked-out connection without closing it, the garbage collector's cleanup now terminates
+it (#872): the dialect closes the socket synchronously, so there is no "cannot be safely
+terminated" message and no `ResourceWarning` for an unclosed stream. SQLAlchemy still
+warns that the connection was not checked in. An invalidated connection is closed with
+the normal `CLOSE_DATABASE` shutdown.
+
 ### Async insert with PK retrieval
 
 CUBRID has no `RETURNING` clause. To obtain an auto-increment primary key after an

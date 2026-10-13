@@ -18,6 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Garbage-collected async connections are terminated (#872)** — the
+  `cubrid+aiopycubrid://` adapter had no terminate support, so when a checked-out
+  connection was garbage-collected the pool logged "cannot be safely terminated" and
+  the unclosed stream raised a `ResourceWarning`. The adapter now uses SQLAlchemy's
+  `AsyncAdapt_terminate`: the garbage-collection path closes the socket synchronously
+  and marks the pycubrid session disconnected, an invalidated connection closes with
+  `CLOSE_DATABASE`, and the dialect sets `has_terminate`.
+
 - **`on_duplicate_key_update()` is cacheable (#871)** — `OnDuplicateClause` had no
   `_traverse_internals`, so the first `INSERT ... ON DUPLICATE KEY UPDATE` emitted
   SQLAlchemy's "will not make use of SQL compilation caching" `SAWarning` and every
