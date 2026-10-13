@@ -3526,6 +3526,8 @@ class TestCurrentOwnerListings864:
 
     @pytest.fixture
     def other_owner(self, engine):
+        if engine.url.username is None or engine.url.username.lower() != "dba":
+            pytest.skip("needs a DBA connection to create a user")
         if not _server_at_least(engine, (11, 2)):
             pytest.skip("class names are global before CUBRID 11.2")
         other = create_engine(engine.url.set(username=self._USER, password=None))
