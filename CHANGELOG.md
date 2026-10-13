@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Inline literals follow the server's backslash mode (#863)** — the dialect assumed
+  `no_backslash_escapes=yes` unless told otherwise, so on a server with
+  `no_backslash_escapes=no` the value `\' OR 1=1 -- ` rendered with `literal_binds` as
+  `'\'' OR 1=1 -- '` and the compiled SQL matched every row. When
+  `create_engine(no_backslash_escapes=...)` is not passed, the first connection now
+  probes the server with `SELECT CHAR_LENGTH('\\')` and literal rendering doubles
+  backslashes when the server treats them as escapes; an unexpected probe result fails
+  the connection. Native `ENUM` labels now use the same escaping. An explicit option
+  still pins the mode and skips the probe; a dialect that has not connected still
+  assumes the server default.
+
 ### Documentation
 
 - **`ROADMAP.md` no longer presents shipped releases as plans (#833)** — the stale

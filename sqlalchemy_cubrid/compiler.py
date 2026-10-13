@@ -916,9 +916,15 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
         return self.visit_SMALLINT(type_)
 
     def _render_native_enum(self, type_: Any) -> str:
-        # CUBRID native ENUM('a', 'b', ...) — supported on 10.2–11.4.
+        # CUBRID native ENUM('a', 'b', ...) — supported on 10.2–11.4. Labels
+        # are string literals, escaped as render_literal_value() does (#863).
+        double_backslashes = not getattr(self.dialect, "no_backslash_escapes", True)
+
         def _quote(element: str) -> str:
-            return "'" + element.replace("'", "''") + "'"
+            element = element.replace("'", "''")
+            if double_backslashes:
+                element = element.replace("\\", "\\\\")
+            return "'" + element + "'"
 
         return "ENUM(%s)" % ", ".join(_quote(e) for e in type_.enums)
 

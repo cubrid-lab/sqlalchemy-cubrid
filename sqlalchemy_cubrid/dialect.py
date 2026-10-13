@@ -34,7 +34,7 @@ from typing import Any, Callable, Optional, Sequence, cast
 
 from sqlalchemy import types as sqltypes
 from sqlalchemy import util
-from sqlalchemy.exc import ArgumentError, NoSuchTableError
+from sqlalchemy.exc import ArgumentError, InvalidRequestError, NoSuchTableError
 from sqlalchemy.engine import default, reflection
 from sqlalchemy.engine.interfaces import (
     DBAPIConnection,
@@ -121,6 +121,11 @@ def _count_is_positive(count: Any) -> bool:
 # (#583, #585). Only (major, minor) is compared: a source build's fourth
 # component is a git commit count, not the release tag.
 _MIN_TESTED_CUBRIDDB = (11, 3)
+
+# The SQL literal '\\' (two backslashes): its length is 2 when the server
+# treats a backslash literally and 1 when it is an escape character (#863).
+# The same probe pycubrid runs for its own parameter escaping.
+_BACKSLASH_PROBE_SQL = "SELECT CHAR_LENGTH('\\\\')"
 
 
 def _cubriddb_version(dbapi: Any) -> tuple[str, tuple[int, int]] | None:
@@ -393,7 +398,7 @@ class CubridDialect(default.DefaultDialect):
         isolation_level: str | None = None,
         json_serializer: Any = None,
         json_deserializer: Any = None,
-        no_backslash_escapes: bool = True,
+        no_backslash_escapes: bool | None = None,
         **kwargs: Any,
     ) -> None:
         if isolation_level is not None:
@@ -415,10 +420,13 @@ class CubridDialect(default.DefaultDialect):
         self._json_deserializer = json_deserializer
         # CUBRID's `no_backslash_escapes` system parameter defaults to `yes`,
         # meaning a backslash is a LITERAL character (opposite of MySQL). When
-        # True (the default) literal rendering does NOT double backslashes.
-        # Set False only for servers configured with no_backslash_escapes=no,
-        # where a backslash acts as an escape character and must be doubled.
-        self.no_backslash_escapes = no_backslash_escapes
+        # True literal rendering does NOT double backslashes; when False (a
+        # server with no_backslash_escapes=no) a backslash is an escape
+        # character and must be doubled. Unless the option is passed
+        # explicitly, initialize() replaces the server-default assumption with
+        # the mode probed on the first connection (#863).
+        self._no_backslash_escapes_explicit = no_backslash_escapes is not None
+        self.no_backslash_escapes = True if no_backslash_escapes is None else no_backslash_escapes
 
     @classmethod
     def import_dbapi(cls) -> DBAPIModule:
@@ -491,9 +499,31 @@ class CubridDialect(default.DefaultDialect):
     def initialize(self, connection: Any) -> None:
         super().initialize(connection)
         self._warn_if_untested_cubriddb()
+        if not self._no_backslash_escapes_explicit:
+            self.no_backslash_escapes = self._detect_no_backslash_escapes(connection)
         log.debug(
             "CUBRID dialect initialized: server_version=%s",
             self.server_version_info,
+        )
+
+    def _detect_no_backslash_escapes(self, connection: Any) -> bool:
+        """Probe the server's backslash mode for literal rendering (#863).
+
+        ``'\\\\'`` is two characters when a backslash is literal (the server
+        default, ``no_backslash_escapes=yes``) and one when the server treats a
+        backslash as an escape character. Guessing would let a rendered literal
+        such as ``'\\'' OR 1=1 -- '`` break out of its quotes, so any other
+        result fails the first connection instead of falling back to a default.
+        """
+        length = connection.exec_driver_sql(_BACKSLASH_PROBE_SQL).scalar()
+        if length == 2:
+            return True
+        if length == 1:
+            return False
+        raise InvalidRequestError(
+            f"Could not determine the CUBRID server's no_backslash_escapes mode: "
+            f"{_BACKSLASH_PROBE_SQL} returned {length!r}. Pass "
+            "create_engine(..., no_backslash_escapes=True or False) to set it explicitly."
         )
 
     def _warn_if_untested_cubriddb(self) -> None:

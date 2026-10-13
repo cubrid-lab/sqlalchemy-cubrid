@@ -127,7 +127,7 @@ engine = create_engine(
 | `charset` | 코덱 이름 | Python 코덱 또는 CUBRID `utf8` / `euckr` / `iso88591`. 데이터베이스 문자셋으로 설정합니다. pycubrid 1.9.0 이상이 필요합니다 ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)). pycubrid 1.8.0에서는 `create_engine()`이 설치된 버전을 알려 주는 `ArgumentError`를 발생시킵니다 |
 | `ssl` | 불리언 | `true`이면 pycubrid 기본 컨텍스트(TLS 1.2+)로 TLS를 사용합니다. 그 밖의 설정은 `connect_args`로 `ssl.SSLContext`를 전달합니다 |
 | `decode_collections` | 불리언 | `SET` / `MULTISET` / `SEQUENCE` 값을 Python 컬렉션으로 디코딩 |
-| `no_backslash_escapes` | 불리언 | pycubrid 자체의 문자열 이스케이프 모드 (생략하면 자동 감지). `literal_binds` 렌더링을 제어하는 [아래](#백슬래시-이스케이프-no_backslash_escapes)의 `create_engine(no_backslash_escapes=...)` 방언 옵션과는 별개입니다 |
+| `no_backslash_escapes` | 불리언 | pycubrid 자체의 문자열 이스케이프 모드 (생략하면 자동 감지). 방언의 인라인 리터럴 렌더링을 고정하지 않습니다. 방언은 첫 연결 시 프로브한 서버 모드나 [아래](#백슬래시-이스케이프-no_backslash_escapes)의 `create_engine(no_backslash_escapes=...)` 옵션을 따릅니다 |
 | `enable_timing` | 불리언 | pycubrid 타이밍 통계 |
 
 불리언은 `true`/`false`, `yes`/`no`, `on`/`off`, `1`/`0`을 받습니다. 잘못된 값, 반복된 옵션,
@@ -278,14 +278,16 @@ with engine.connect().execution_options(
 
 ### 백슬래시 이스케이프 (`no_backslash_escapes`)
 
-CUBRID의 `no_backslash_escapes` 시스템 파라미터 기본값은 `yes`입니다. 즉 백슬래시는 문자열 리터럴에서 **리터럴 문자**입니다 (MySQL과 반대). 방언은 이 기본값에 맞습니다: `literal_binds=True`로 렌더링된 인라인 SQL 리터럴은 백슬래시를 그대로 보존하며 doubling하지 **않습니다**.
+CUBRID의 `no_backslash_escapes` 시스템 파라미터 기본값은 `yes`입니다. 즉 백슬래시는 문자열 리터럴에서 **리터럴 문자**입니다 (MySQL과 반대). 서버가 `no_backslash_escapes=no`이면 백슬래시는 이스케이프 문자이므로 인라인 리터럴에서 두 번 써야 합니다. 그렇지 않으면 `\' OR 1=1 -- ` 같은 값이 리터럴을 일찍 끝냅니다.
+
+방언은 서버의 실제 모드를 따릅니다. 옵션을 전달하지 않으면 각 엔진의 첫 연결에서 `SELECT CHAR_LENGTH('\\')` (pycubrid도 쓰는 프로브)를 실행하고, `literal_binds=True`로 렌더링된 리터럴, 컬럼과 테이블 주석, 문자열 서버 기본값, 네이티브 `ENUM` 레이블이 그 결과를 따릅니다. 프로브 결과가 `1`이나 `2`가 아니면 추측하지 않고 첫 연결이 실패합니다.
 
 ```python
-# 기본: 백슬래시 보존 (서버에서 no_backslash_escapes=yes)
+# 모드는 첫 연결 시 서버에서 가져옵니다
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
-서버가 명시적으로 `no_backslash_escapes=no`로 설정된 경우(백슬래시가 이스케이프 문자로 동작), `no_backslash_escapes=False`를 전달해 방언이 인라인 리터럴 렌더링 시 백슬래시를 doubling하게 하세요:
+모드를 고정하고 프로브를 건너뛰려면 `no_backslash_escapes`를 전달하세요. 예를 들어 연결하지 않는 서버용 SQL을 오프라인으로 컴파일할 때입니다:
 
 ```python
 # 서버가 no_backslash_escapes=no로 구성됨
@@ -295,7 +297,7 @@ engine = create_engine(
 )
 ```
 
-이것은 연결 협상이 아니라 정적 방언 옵션입니다 — `literal_binds` 컴파일은 라이브 연결 없이 오프라인으로 실행될 수 있기 때문입니다. 인라인 리터럴 렌더링에만 영향을 미치며, 파라미터 바인딩 값은 이 설정과 무관하게 항상 드라이버가 올바르게 이스케이프합니다.
+아직 연결하지 않은 방언(예: `stmt.compile(dialect=CubridDialect())`)은 서버 기본값인 `True`를 가정합니다. 같은 이름의 URL 쿼리 옵션은 pycubrid 자체의 이스케이프만 설정하며 방언을 고정하지 않습니다. 파라미터 바인딩 값은 이 설정과 무관하게 항상 드라이버가 올바르게 이스케이프합니다.
 
 ---
 

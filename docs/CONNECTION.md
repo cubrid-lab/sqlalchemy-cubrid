@@ -137,7 +137,7 @@ engine = create_engine(
 | `charset` | codec name | Python codec, or CUBRID `utf8` / `euckr` / `iso88591`; set it to the database charset. Requires pycubrid 1.9.0 or newer ([cubrid-lab/pycubrid#510](https://github.com/cubrid-lab/pycubrid/pull/510)); with pycubrid 1.8.0, `create_engine()` raises `ArgumentError` naming the installed version |
 | `ssl` | boolean | `true` enables TLS with pycubrid's default context (TLS 1.2+); pass an `ssl.SSLContext` through `connect_args` for anything else |
 | `decode_collections` | boolean | Decode `SET` / `MULTISET` / `SEQUENCE` values into Python collections |
-| `no_backslash_escapes` | boolean | pycubrid's own string-escape mode (auto-detected when omitted). This is not the `create_engine(no_backslash_escapes=...)` dialect option described [below](#backslash-escaping-no_backslash_escapes), which controls `literal_binds` rendering |
+| `no_backslash_escapes` | boolean | pycubrid's own string-escape mode (auto-detected when omitted). It does not pin the dialect's inline literal rendering, which follows the server mode probed on first connect or the `create_engine(no_backslash_escapes=...)` option described [below](#backslash-escaping-no_backslash_escapes) |
 | `enable_timing` | boolean | pycubrid timing statistics |
 
 Booleans accept `true`/`false`, `yes`/`no`, `on`/`off` and `1`/`0`. An invalid value,
@@ -294,17 +294,24 @@ See [Isolation Levels](ISOLATION_LEVELS.md) for all supported levels.
 
 CUBRID's `no_backslash_escapes` system parameter defaults to `yes`, meaning a
 backslash is a **literal character** in string literals (the opposite of MySQL).
-The dialect matches this default: inline SQL literals rendered with
-`literal_binds=True` preserve backslashes as-is and do **not** double them.
+With `no_backslash_escapes=no` on the server, a backslash is an escape character
+and inline literals must double it, or a value such as `\' OR 1=1 -- ` would end
+its literal early.
+
+The dialect follows the server's actual mode. Unless you pass the option, the
+first connection of each engine runs `SELECT CHAR_LENGTH('\\')` (the probe
+pycubrid also uses) and literals rendered with `literal_binds=True`, column and
+table comments, string server defaults and native `ENUM` labels then match it.
+A probe result other than `1` or `2` fails the first connection instead of
+guessing.
 
 ```python
-# Default: backslash preserved (no_backslash_escapes=yes on the server)
+# The mode is taken from the server on first connect
 engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
-If your server is explicitly configured with `no_backslash_escapes=no` (backslash
-acts as an escape character), pass `no_backslash_escapes=False` so the dialect
-doubles backslashes when rendering inline literals:
+Pass `no_backslash_escapes` to pin the mode and skip the probe, for example when
+you compile SQL offline for a server you do not connect to:
 
 ```python
 # Server configured with no_backslash_escapes=no
@@ -314,10 +321,10 @@ engine = create_engine(
 )
 ```
 
-This is a static dialect option (not connection-negotiated) because
-`literal_binds` compilation may run offline with no live connection. It only
-affects inline literal rendering; parameter-bound values are always escaped
-correctly by the driver regardless of this setting.
+A dialect that has not connected yet (for example `stmt.compile(dialect=CubridDialect())`)
+assumes the server default, `True`. The URL query option of the same name only sets
+pycubrid's own escaping and does not pin the dialect. Parameter-bound values are always
+escaped correctly by the driver regardless of this setting.
 
 ---
 

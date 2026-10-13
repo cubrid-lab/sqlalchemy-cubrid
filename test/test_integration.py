@@ -2571,6 +2571,42 @@ class TestBackslashLiteralRoundtrip:
             matched = conn.exec_driver_sql(str(compiled)).scalar()
         assert matched == value, f"literal_binds roundtrip corrupted: {matched!r}"
 
+    def test_dialect_follows_the_server_backslash_mode(self, engine):
+        """#863: without an explicit option the dialect takes the probed mode."""
+        with engine.connect() as conn:
+            length = conn.exec_driver_sql("SELECT CHAR_LENGTH('\\\\')").scalar()
+        assert engine.dialect.no_backslash_escapes is (length == 2)
+
+    def test_rendered_quote_after_backslash_cannot_break_out(self, engine, metadata):
+        """#863: ``\\' OR 1=1 --`` rendered inline matches no row, as when bound."""
+        users = metadata.tables[_USERS_TABLE]
+        with engine.begin() as conn:
+            conn.execute(users.insert().values(name="alice", email="a@example.com"))
+        payload = "\\' OR 1=1 -- "
+        stmt = sa.select(users.c.name).where(users.c.name == payload)
+        compiled = stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+        with engine.connect() as conn:
+            assert conn.execute(stmt).fetchall() == []
+            assert conn.exec_driver_sql(str(compiled)).fetchall() == []
+
+    def test_enum_label_with_backslash_roundtrips(self, engine):
+        """#863: a native ENUM label keeps its backslash in either server mode."""
+        meta = MetaData()
+        tbl = Table(
+            f"integration_enum863_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("e", sa.Enum("C:\\temp", "plain")),
+        )
+        meta.create_all(engine)
+        try:
+            with engine.begin() as conn:
+                conn.execute(tbl.insert().values(id=1, e="C:\\temp"))
+            with engine.connect() as conn:
+                assert conn.execute(sa.select(tbl.c.e)).scalar() == "C:\\temp"
+        finally:
+            meta.drop_all(engine)
+
 
 class TestJSONRoundTrip:
     """#394: sa.JSON columns must return Python dict/list, not str, on read."""

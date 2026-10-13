@@ -402,6 +402,20 @@ class TestLiteralValueCompilation:
         """Default dialect option matches CUBRID's default (no doubling)."""
         assert CubridDialect().no_backslash_escapes is True
 
+    @pytest.mark.parametrize(
+        ("no_backslash_escapes", "expected"),
+        [
+            (True, "users.name = '\\'' OR 1=1 -- '"),
+            (False, "users.name = '\\\\'' OR 1=1 -- '"),
+        ],
+    )
+    def test_quote_after_backslash_stays_inside_the_literal(self, no_backslash_escapes, expected):
+        """#863: ``\\' OR 1=1 --`` renders as one literal in each server mode."""
+        dialect = CubridDialect(no_backslash_escapes=no_backslash_escapes)
+        stmt = select(users.c.id).where(users.c.name == "\\' OR 1=1 -- ")
+        sql = stmt.compile(dialect=dialect, compile_kwargs={"literal_binds": True}).string
+        assert expected in sql
+
     def test_dialect_option_opt_out(self):
         """Explicit keyword construction stores the opt-out flag as given."""
         assert CubridDialect(no_backslash_escapes=False).no_backslash_escapes is False
@@ -2763,6 +2777,17 @@ class TestEnumCompilation:
         t = Table("t_enum3", MetaData(), Column("e", ENUM("it's", "b")))
         sql = _compile(sa.schema.CreateTable(t))
         assert "ENUM('it''s', 'b')" in sql
+
+    @pytest.mark.parametrize(
+        ("no_backslash_escapes", "expected"),
+        [(True, "ENUM('a\\''b', 'c')"), (False, "ENUM('a\\\\''b', 'c')")],
+    )
+    def test_enum_label_backslash_follows_server_mode(self, no_backslash_escapes, expected):
+        """#863: ENUM labels escape a backslash as other string literals do."""
+        t = Table("t_enum5", MetaData(), Column("e", sa.Enum("a\\'b", "c")))
+        dialect = CubridDialect(no_backslash_escapes=no_backslash_escapes)
+        sql = _compile(sa.schema.CreateTable(t), dialect=dialect)
+        assert expected in sql
 
     def test_enum_select_param(self):
         t = Table("t_enum4", MetaData(), Column("e", sa.Enum("a", "b")))

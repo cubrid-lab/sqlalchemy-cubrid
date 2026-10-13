@@ -9,9 +9,11 @@ from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy import types as sqltypes
 from sqlalchemy.exc import (
     ArgumentError,
+    InvalidRequestError,
     NoSuchTableError,
     OperationalError,
     ProgrammingError,
@@ -235,11 +237,58 @@ class TestDialectBasics:
     def test_initialize_delegates_to_default_dialect(self):
         dialect = CubridDialect()
         connection = MagicMock()
+        connection.exec_driver_sql.return_value.scalar.return_value = 2
 
         with patch("sqlalchemy.engine.default.DefaultDialect.initialize") as init_super:
             dialect.initialize(connection)
 
         init_super.assert_called_once_with(connection)
+
+
+class TestBackslashModeDetection:
+    """#863: literal rendering follows the server's probed backslash mode."""
+
+    @staticmethod
+    def _initialize(dialect: CubridDialect, length: object) -> MagicMock:
+        connection = MagicMock()
+        connection.exec_driver_sql.return_value.scalar.return_value = length
+        with patch("sqlalchemy.engine.default.DefaultDialect.initialize"):
+            dialect.initialize(connection)
+        return connection
+
+    @pytest.mark.parametrize(("length", "expected"), [(2, True), (1, False)])
+    def test_unset_option_takes_the_probed_mode(self, length: int, expected: bool) -> None:
+        dialect = CubridDialect()
+
+        connection = self._initialize(dialect, length)
+
+        connection.exec_driver_sql.assert_called_once_with("SELECT CHAR_LENGTH('\\\\')")
+        assert dialect.no_backslash_escapes is expected
+
+    def test_escape_server_doubles_backslashes_after_initialize(self) -> None:
+        dialect = CubridDialect()
+        self._initialize(dialect, 1)
+
+        stmt = sa.select(sa.literal_column("1")).where(sa.literal("\\' OR 1=1 -- ") == "x")
+        sql = stmt.compile(dialect=dialect, compile_kwargs={"literal_binds": True}).string
+
+        assert "'\\\\'' OR 1=1 -- '" in sql
+
+    @pytest.mark.parametrize("explicit", [True, False])
+    def test_explicit_option_skips_the_probe(self, explicit: bool) -> None:
+        dialect = CubridDialect(no_backslash_escapes=explicit)
+
+        connection = self._initialize(dialect, 2 if not explicit else 1)
+
+        connection.exec_driver_sql.assert_not_called()
+        assert dialect.no_backslash_escapes is explicit
+
+    @pytest.mark.parametrize("length", [None, 0, 3, "2"])
+    def test_unexpected_probe_result_fails_the_connection(self, length: object) -> None:
+        dialect = CubridDialect()
+
+        with pytest.raises(InvalidRequestError, match="no_backslash_escapes mode"):
+            self._initialize(dialect, length)
 
 
 def _fake_cubriddb(version: object) -> types.ModuleType:
@@ -320,9 +369,12 @@ class TestCubriddbVersionGuard:
         dialect = CubridDialect()
         dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
 
+        connection = MagicMock()
+        connection.exec_driver_sql.return_value.scalar.return_value = 2
+
         with patch("sqlalchemy.engine.default.DefaultDialect.initialize"):
             with pytest.warns(SAWarning, match="CUBRIDdb 9.3.0.0001 is older"):
-                dialect.initialize(MagicMock())
+                dialect.initialize(connection)
 
 
 class TestIsolationLevelMethods:
