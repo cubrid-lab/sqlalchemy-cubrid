@@ -946,6 +946,14 @@ class CubridDDLCompiler(compiler.DDLCompiler):
                 for expr in index.expressions
                 if isinstance(getattr(expr, "element", expr), elements.ColumnClause)
             }
+            invalid = sorted(
+                str(key) for key, value in length.items() if type(value) is not int or value < 1
+            )
+            if invalid:
+                raise CompileError(
+                    "cubrid_length needs a positive integer per column key; got %s for %s"
+                    % (", ".join(repr(length[key]) for key in invalid), ", ".join(invalid))
+                )
             unknown = sorted(str(key) for key in length if key not in plain)
             if unknown:
                 raise CompileError(

@@ -54,6 +54,7 @@ CUBRID-specific notes
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any, Literal
 
 import sqlalchemy as sa
@@ -600,7 +601,12 @@ class CubridImpl(DefaultImpl):
     def _index_signature(self, index: Any) -> tuple[Any, ...]:
         table_name = index.table.name if index.table is not None else None
         keys = tuple(
-            self._normalize_index_sql(self._compile_index_element(expr), table_name)
+            # ASC is CUBRID's default order, and reflection reports only DESC.
+            re.sub(
+                r" asc$",
+                "",
+                self._normalize_index_sql(self._compile_index_element(expr), table_name),
+            )
             for expr in index.expressions
         )
         options = index.dialect_options["cubrid"]
@@ -643,7 +649,10 @@ class CubridImpl(DefaultImpl):
             segment = segment.lower().replace("[", "").replace("]", "").replace('"', "")
             if table_name:
                 segment = segment.replace(f"{table_name.lower()}.", "")
-            return "".join(segment.split())
+            # Collapse whitespace but keep token boundaries (``a desc`` is not
+            # the column ``adesc``); spaces next to punctuation carry nothing.
+            segment = re.sub(r"\s+", " ", segment)
+            return re.sub(r" ?([^\w ]) ?", r"\1", segment)
 
         parts = []
         position = 0
@@ -663,7 +672,7 @@ class CubridImpl(DefaultImpl):
                 end += 1
             parts.append(sql[quote : end + 1])
             position = end + 1
-        sql = "".join(parts)
+        sql = "".join(parts).strip()
         while sql.startswith("(") and sql.endswith(")"):
             depth = 0
             for position, char in enumerate(sql):

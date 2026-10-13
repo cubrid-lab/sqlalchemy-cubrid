@@ -3416,6 +3416,11 @@ class TestIndexDialectOptions869:
             sa.Index("i5", t.c.a.asc(), cubrid_length={"a": 2}, cubrid_where=t.c.b > 1)
         ) == ("CREATE INDEX i5 ON t869 (a(2) ASC) WHERE b > 1")
 
+    @pytest.mark.parametrize("value", [None, 0, "5"])
+    def test_invalid_mapping_value_raises(self, value):
+        with pytest.raises(CompileError, match="positive integer"):
+            self._ddl(sa.Index("i10", self._t.c.a, cubrid_length={"a": value}))
+
     @pytest.mark.parametrize("length", [0, -1, "5", 2.5])
     def test_invalid_length_raises(self, length):
         with pytest.raises(CompileError, match="cubrid_length"):

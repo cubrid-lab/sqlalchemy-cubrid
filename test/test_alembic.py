@@ -1262,6 +1262,9 @@ class TestCompareIndexShapes869:
             ("a = 't.x'", "a='t.x'"),
             ("a = '[X] y'", "a='[X] y'"),
             ("T.A = 'It''s'", "a='It''s'"),
+            ("a  DESC", "a desc"),
+            ("adesc", "adesc"),
+            ("x in (1, 2)", "x in(1,2)"),
         ],
     )
     def test_normalize_index_sql(self, sql, expected):
@@ -1291,3 +1294,20 @@ class TestCompareIndexShapes869:
 
         assert conn_indexes == {r_filt}
         assert metadata_indexes == {m_filt, m_new}
+
+    def test_explicit_asc_equals_reflected_default_order(self):
+        model, reflected = self._pair()
+        result = self._impl().compare_indexes(
+            sa.Index("ix", model.c.a.asc(), _table=model),
+            sa.Index("ix", reflected.c.a, _table=reflected),
+        )
+        assert result.is_equal
+
+    def test_desc_key_differs_from_a_column_named_like_it(self):
+        model = sa.Table("t", sa.MetaData(), sa.Column("adesc", sa.Integer))
+        reflected = sa.Table("t", sa.MetaData(), sa.Column("a", sa.Integer))
+        result = self._impl().compare_indexes(
+            sa.Index("ix", model.c.adesc, _table=model),
+            sa.Index("ix", reflected.c.a.desc(), _table=reflected),
+        )
+        assert result.is_different
