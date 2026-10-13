@@ -28,7 +28,9 @@ Workloads (per trial; the variant order rotates from trial to trial):
                   own connection, start together: ``--concurrent-ops`` one-row
                   SELECTs by primary key per worker (raw, Core, ORM), then
                   ``--concurrent-writes`` single-row Core UPDATEs, each committed,
-                  on the worker's own rows. Reports throughput and the p50 latency.
+                  on the worker's own rows. Reports the p50 latency and the throughput
+                  from the first counted operation's start to the last one's end
+                  (connection setup and cleanup excluded).
 
 Drivers: ``cubrid+pycubrid://`` runs everything; ``cubrid://`` (CUBRIDdb) runs
 the same workloads with a raw CUBRIDdb connection and without the two
@@ -395,21 +397,26 @@ def bench_reflect(engine: Engine, rounds: int) -> dict:
 # ----- concurrency -----------------------------------------------------------------------
 
 
-def concurrency_result(times: list[list[int]], wall_ns: int) -> dict[str, float]:
-    flat = [t for worker in times for t in worker]
-    return {"ops_per_s": len(flat) / (wall_ns / 1e9), "p50_us": us(flat)}
+Span = tuple[int, int]  # perf_counter_ns at the start and the end of one operation
 
 
-def run_threads(n: int, work: Callable[[int, threading.Barrier], list[int]]) -> dict:
+def concurrency_result(spans: list[list[Span]]) -> dict[str, float]:
+    """Throughput from the first counted operation's start to the last one's end."""
+    flat = [s for worker in spans for s in worker]
+    wall_ns = max(end for _, end in flat) - min(start for start, _ in flat)
+    return {"ops_per_s": len(flat) / (wall_ns / 1e9), "p50_us": us([e - s for s, e in flat])}
+
+
+def run_threads(n: int, work: Callable[[int, threading.Barrier], list[Span]]) -> dict:
     """Run ``work(i, barrier)`` in ``n`` threads; each opens its connection, then waits."""
     barrier = threading.Barrier(n + 1)
-    times: list[list[int]] = [[] for _ in range(n)]
-    errors: list[BaseException] = []
+    times: list[list[Span]] = [[] for _ in range(n)]
+    errors: list[Exception] = []
 
     def target(i: int) -> None:
         try:
             times[i] = work(i, barrier)
-        except BaseException as exc:  # reported after join
+        except Exception as exc:  # reported after join
             errors.append(exc)
             barrier.abort()
 
@@ -420,13 +427,11 @@ def run_threads(n: int, work: Callable[[int, threading.Barrier], list[int]]) -> 
         barrier.wait()
     except threading.BrokenBarrierError:
         pass  # a worker failed before the start; its error is raised below
-    t0 = pc()
     for t in threads:
         t.join()
-    wall = pc() - t0
     if errors:
         raise errors[0]
-    return concurrency_result(times, wall)
+    return concurrency_result(times)
 
 
 def bench_concurrency(
@@ -440,7 +445,7 @@ def bench_concurrency(
     def keys(i: int) -> list[int]:
         return [((i * ops + j) * 7919) % rows for j in range(ops)]
 
-    def raw_select(i: int, barrier: threading.Barrier) -> list[int]:
+    def raw_select(i: int, barrier: threading.Barrier) -> list[Span]:
         raw = raw_connect()
         try:
             cur = raw.cursor()
@@ -452,7 +457,7 @@ def bench_concurrency(
                     "SELECT id, name, amount FROM bench_dialect_baseline WHERE id = ?", (k,)
                 )
                 row = cur.fetchone()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(row[0] == k, "raw concurrent select returned the wrong row")
             cur.close()
             raw.commit()
@@ -460,7 +465,7 @@ def bench_concurrency(
         finally:
             raw.close()
 
-    def core_select(i: int, barrier: threading.Barrier) -> list[int]:
+    def core_select(i: int, barrier: threading.Barrier) -> list[Span]:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1 FROM db_root")).all()  # check out before the start
             barrier.wait()
@@ -468,11 +473,11 @@ def bench_concurrency(
             for k in keys(i):
                 t0 = pc()
                 row = conn.execute(stmt, {"k": k}).first()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(row is not None and row.id == k, "Core concurrent select wrong row")
             return times
 
-    def orm_select(i: int, barrier: threading.Barrier) -> list[int]:
+    def orm_select(i: int, barrier: threading.Barrier) -> list[Span]:
         with Session(engine) as session:
             session.execute(text("SELECT 1 FROM db_root")).all()
             barrier.wait()
@@ -480,12 +485,12 @@ def bench_concurrency(
             for k in keys(i):
                 t0 = pc()
                 obj = session.execute(orm_stmt, {"k": k}).scalar_one()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(obj.id == k, "ORM concurrent select returned the wrong row")
                 session.expunge_all()
             return times
 
-    def core_update_commit(i: int, barrier: threading.Barrier) -> list[int]:
+    def core_update_commit(i: int, barrier: threading.Barrier) -> list[Span]:
         own = list(range(i, rows, n))  # rows no other worker touches
         with engine.connect() as conn:
             conn.execute(text("SELECT 1 FROM db_root")).all()
@@ -497,11 +502,11 @@ def bench_concurrency(
                 t0 = pc()
                 result = conn.execute(upd, {"k": k, "a": j})
                 conn.commit()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(result.rowcount == 1, f"concurrent UPDATE rowcount {result.rowcount}")
             return times
 
-    variants: list[tuple[str, Callable[[int, threading.Barrier], list[int]]]] = [
+    variants: list[tuple[str, Callable[[int, threading.Barrier], list[Span]]]] = [
         ("raw_select_pk", raw_select),
         ("core_select_pk", core_select),
         ("orm_select_pk", orm_select),
@@ -736,10 +741,7 @@ async def run_tasks(n: int, work: Callable[[int, asyncio.Barrier], Any]) -> dict
     if waiter not in done:  # a task failed before the start
         await barrier.abort()
         await asyncio.gather(*tasks)
-    t0 = pc()
-    times = await asyncio.gather(*tasks)
-    wall = pc() - t0
-    return concurrency_result(list(times), wall)
+    return concurrency_result(list(await asyncio.gather(*tasks)))
 
 
 async def async_concurrency(
@@ -753,7 +755,7 @@ async def async_concurrency(
     def keys(i: int) -> list[int]:
         return [((i * ops + j) * 7919) % rows for j in range(ops)]
 
-    async def raw_select(i: int, barrier: asyncio.Barrier) -> list[int]:
+    async def raw_select(i: int, barrier: asyncio.Barrier) -> list[Span]:
         raw = await pycubrid.aio.connect(**raw_kw, autocommit=False)
         try:
             cur = raw.cursor()
@@ -765,7 +767,7 @@ async def async_concurrency(
                     "SELECT id, name, amount FROM bench_dialect_baseline WHERE id = ?", (k,)
                 )
                 row = await cur.fetchone()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(row[0] == k, "async raw concurrent select returned the wrong row")
             await cur.close()
             await raw.commit()
@@ -773,7 +775,7 @@ async def async_concurrency(
         finally:
             await raw.close()
 
-    async def core_select(i: int, barrier: asyncio.Barrier) -> list[int]:
+    async def core_select(i: int, barrier: asyncio.Barrier) -> list[Span]:
         async with engine.connect() as conn:
             (await conn.execute(text("SELECT 1 FROM db_root"))).all()
             await barrier.wait()
@@ -781,11 +783,11 @@ async def async_concurrency(
             for k in keys(i):
                 t0 = pc()
                 row = (await conn.execute(stmt, {"k": k})).first()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(row is not None and row.id == k, "async Core concurrent select wrong row")
             return times
 
-    async def orm_select(i: int, barrier: asyncio.Barrier) -> list[int]:
+    async def orm_select(i: int, barrier: asyncio.Barrier) -> list[Span]:
         async with AsyncSession(engine) as session:
             (await session.execute(text("SELECT 1 FROM db_root"))).all()
             await barrier.wait()
@@ -793,12 +795,12 @@ async def async_concurrency(
             for k in keys(i):
                 t0 = pc()
                 obj = (await session.execute(orm_stmt, {"k": k})).scalar_one()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(obj.id == k, "async ORM concurrent select returned the wrong row")
                 session.expunge_all()
             return times
 
-    async def core_update_commit(i: int, barrier: asyncio.Barrier) -> list[int]:
+    async def core_update_commit(i: int, barrier: asyncio.Barrier) -> list[Span]:
         own = list(range(i, rows, n))
         async with engine.connect() as conn:
             (await conn.execute(text("SELECT 1 FROM db_root"))).all()
@@ -810,7 +812,7 @@ async def async_concurrency(
                 t0 = pc()
                 result = await conn.execute(upd, {"k": k, "a": j})
                 await conn.commit()
-                times.append(pc() - t0)
+                times.append((t0, pc()))
                 check(result.rowcount == 1, f"async concurrent UPDATE rowcount {result.rowcount}")
             return times
 
