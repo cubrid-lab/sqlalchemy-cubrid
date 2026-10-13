@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **JSON path keys use JSON string escaping (#866)** — `col["key"]` and
+  `col[("a", "b")]` doubled a `"` in the key, which CUBRID reads as a JSON string:
+  `doc['a"b']` failed with -1200 "Invalid JSON path" and `doc['a\\b']` silently
+  returned `None`. Keys are now built with `json.dumps()`, so `"` and `\` are
+  backslash-escaped and non-ASCII characters become `\uXXXX` escapes that do not
+  depend on the connection charset.
+
 - **String and date server defaults reflect as quoted SQL literals (#865)** —
   `get_columns()` returned the `SHOW COLUMNS` default text, which drops a string's
   quotes: `DEFAULT 'it''s'` reflected as `it''s`, `''` as an empty string and the

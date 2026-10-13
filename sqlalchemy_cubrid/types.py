@@ -13,6 +13,7 @@ See: https://www.cubrid.org/manual/en/11.0/sql/datatype.html
 from __future__ import annotations
 
 import inspect
+import json
 from importlib import import_module
 from typing import Any, Callable, Sequence
 
@@ -555,6 +556,17 @@ class _FormatTypeMixin:
         return process
 
 
+def _json_path_key(key: Any) -> str:
+    """Quote a JSON path member name with JSON string escaping (#866).
+
+    CUBRID reads ``$."..."`` keys as JSON strings: ``"`` and ``\\`` are
+    backslash-escaped (doubling ``"`` is an invalid path, -1200). Non-ASCII
+    characters become ``\\uXXXX`` escapes, so the path does not depend on the
+    connection charset.
+    """
+    return json.dumps(str(key))
+
+
 class JSONIndexType(_FormatTypeMixin, sqltypes.JSON.JSONIndexType):
     """CUBRID JSON index type for single-key access.
 
@@ -567,7 +579,7 @@ class JSONIndexType(_FormatTypeMixin, sqltypes.JSON.JSONIndexType):
         if isinstance(value, int):
             return "$[%s]" % value
         else:
-            return '$."%s"' % str(value).replace('"', '""')
+            return "$." + _json_path_key(value)
 
 
 class JSONPathType(_FormatTypeMixin, sqltypes.JSON.JSONPathType):
@@ -580,7 +592,7 @@ class JSONPathType(_FormatTypeMixin, sqltypes.JSON.JSONPathType):
     def _format_value(self, value: Any) -> str:
         return "$%s" % (
             "".join(
-                "[%s]" % elem if isinstance(elem, int) else '."%s"' % str(elem).replace('"', '""')
+                "[%s]" % elem if isinstance(elem, int) else "." + _json_path_key(elem)
                 for elem in value
             )
         )

@@ -297,7 +297,10 @@ events = Table(
 )
 ```
 
-**Path expressions** use `JSON_EXTRACT` under the hood:
+**Path expressions** use `JSON_EXTRACT` under the hood. Each key is quoted as a JSON
+string (#866): `"` and `\` are backslash-escaped and non-ASCII characters become
+`\uXXXX` escapes, so `col['a"b']` reads `$."a\"b"` and `col["한글"]` reads
+`$."\ud55c\uae00"` whatever the connection charset:
 
 ```python
 # Single key access: col["key"] → JSON_EXTRACT(col, '$."key"')

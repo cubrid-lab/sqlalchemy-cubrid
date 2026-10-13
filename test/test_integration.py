@@ -3788,3 +3788,42 @@ class TestReflectedDefaultRoundTrip865:
         assert copy_row == source_row
         assert source_row[:5] == ("it's", "", "NULL", " a, b ", "CURRENT_USER")
         assert source_row[-1] is None
+
+
+class TestJSONPathKeyEscaping866:
+    """#866: JSON path keys use JSON string escaping on the live server."""
+
+    DOC = {'a"b': 7, "a\\b": 8, "한글": 9, "é x": 10, "it's": 11, "n": {'q"k': 12}}
+
+    @pytest.fixture
+    def json_table(self, engine):
+        meta = MetaData()
+        tbl = Table(
+            f"integration_json866_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("doc", sa.JSON),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(tbl.insert().values(id=1, doc=self.DOC))
+        try:
+            yield tbl
+        finally:
+            meta.drop_all(engine)
+
+    @pytest.mark.parametrize(
+        ("key", "expected"), [('a"b', 7), ("a\\b", 8), ("한글", 9), ("é x", 10), ("it's", 11)]
+    )
+    def test_index_key(self, engine, json_table, key, expected):
+        stmt = sa.select(json_table.c.doc[key].as_integer())
+        inline = stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+        with engine.connect() as conn:
+            assert conn.execute(stmt).scalar() == expected
+            assert conn.exec_driver_sql(str(inline)).scalar() == expected
+
+    def test_path_with_escaped_keys(self, engine, json_table):
+        stmt = sa.select(json_table.c.doc[("n", 'q"k')].as_integer())
+        with engine.connect() as conn:
+            assert conn.execute(stmt).scalar() == 12

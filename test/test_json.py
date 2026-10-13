@@ -243,7 +243,18 @@ class TestJSONPathExpressionCompilation:
 class TestJSONKeyEscaping:
     def test_key_with_embedded_quote(self):
         idx = JSONIndexType()
-        assert idx._format_value('a"b') == '$."a""b"'
+        # #866: JSON string escaping; a doubled quote is an invalid path (-1200).
+        assert idx._format_value('a"b') == '$."a\\"b"'
+
+    def test_key_with_backslash(self):
+        idx = JSONIndexType()
+        assert idx._format_value("a\\b") == '$."a\\\\b"'
+
+    def test_key_with_unicode_and_control_characters(self):
+        idx = JSONIndexType()
+        assert idx._format_value("한글") == '$."\\ud55c\\uae00"'
+        assert idx._format_value("tab\t") == '$."tab\\t"'
+        assert idx._format_value("it's") == '$."it\'s"'
 
     def test_key_with_dot(self):
         idx = JSONIndexType()
@@ -259,7 +270,7 @@ class TestJSONKeyEscaping:
 
     def test_path_with_embedded_quote(self):
         pth = JSONPathType()
-        assert pth._format_value(('a"b', "c")) == '$."a""b"."c"'
+        assert pth._format_value(('a"b', 0, "c\\d")) == '$."a\\"b"[0]."c\\\\d"'
 
 
 class TestFuncJSONExtract:
@@ -361,7 +372,7 @@ class TestFormatTypeMixinProcessors:
 
     def test_index_bind_processor_string_escapes(self):
         proc = JSONIndexType().bind_processor(self._dialect())
-        assert proc('a"b') == '$."a""b"'
+        assert proc('a"b') == '$."a\\"b"'
 
     def test_index_literal_processor_int(self):
         proc = JSONIndexType().literal_processor(self._dialect())
@@ -399,8 +410,11 @@ class TestFormatTypeMixinProcessors:
         assert proc("k") == '$."k"'
 
     def test_index_literal_processor_backslash_not_doubled(self):
-        """Regression #313: JSON path literals must not double backslashes."""
+        """Regression #313: the SQL literal adds no backslash doubling of its own.
+
+        The JSON path itself escapes the key's backslash (#866), so the rendered
+        literal holds exactly that one JSON escape.
+        """
         proc = JSONIndexType().literal_processor(self._dialect())
         assert proc is not None
-        result = proc("a\\b")
-        assert "\\\\" not in result
+        assert proc("a\\b") == """'$."a\\\\b"'"""
