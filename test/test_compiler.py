@@ -8,6 +8,7 @@ a database connection.
 from __future__ import annotations
 
 import operator
+import warnings
 import re
 
 import pytest
@@ -959,22 +960,6 @@ class TestTypeCompilation:
         dt = MockDATETIME()
         result = self._compile_type(dt)
         assert result == "DATETIME"
-
-    def test_get_method_direct(self):
-        """Test _get helper method in TypeCompiler."""
-        dialect = CubridDialect()
-        compiler = dialect.type_compiler_instance
-        # The _get method retrieves attribute from type or kwargs
-        from sqlalchemy_cubrid.types import VARCHAR
-
-        t = VARCHAR(length=100)
-        # _get(key, type_, kw) should return kw[key] or type_.key
-        get_method = getattr(compiler, "_get")
-        result = get_method("length", t, {})
-        assert result == 100
-        # Test with kw override
-        result = get_method("length", t, {"length": 200})
-        assert result == 200
 
 
 # Column types CUBRID rejects in CREATE TABLE, and the ones it accepts.
@@ -3445,3 +3430,55 @@ class TestIndexDialectOptions869:
     def test_unique_filtered_index_raises(self):
         with pytest.raises(CompileError, match="UNIQUE filtered"):
             self._ddl(sa.Index("i8", self._t.c.b, unique=True, cubrid_where="b>0"))
+
+
+# ---------------------------------------------------------------------------
+# Join linting, collection type classes and removed dead code (#870)
+# ---------------------------------------------------------------------------
+
+
+class TestDialectSmallCorrectness870:
+    @staticmethod
+    def _lint(stmt):
+        from sqlalchemy.sql import compiler as sa_compiler
+
+        dialect = CubridDialect()
+        return dialect.statement_compiler(
+            dialect, stmt, linting=sa_compiler.COLLECT_CARTESIAN_PRODUCTS | sa_compiler.WARN_LINTING
+        )
+
+    def test_join_is_not_reported_as_a_cartesian_product(self):
+        a = Table("a870", MetaData(), Column("id", Integer))
+        b = Table("b870", MetaData(), Column("a_id", Integer))
+        stmt = select(a.c.id).select_from(a.join(b, a.c.id == b.c.a_id))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self._lint(stmt)
+
+    def test_unjoined_from_item_is_still_reported(self):
+        a = Table("a870", MetaData(), Column("id", Integer))
+        b = Table("b870", MetaData(), Column("a_id", Integer))
+        c = Table("c870", MetaData(), Column("x", Integer))
+        stmt = select(a.c.id, c.c.x).select_from(a.join(b, a.c.id == b.c.a_id))
+        with pytest.warns(sa.exc.SAWarning, match="cartesian product"):
+            self._lint(stmt)
+
+    @pytest.mark.parametrize(
+        ("collection", "expected"),
+        [
+            (cubrid_types.SET(Integer), "SET(INTEGER)"),
+            (cubrid_types.MULTISET(Integer, String), "MULTISET(INTEGER,VARCHAR(4096))"),
+            (cubrid_types.SEQUENCE(cubrid_types.MONETARY), "SEQUENCE(MONETARY)"),
+        ],
+    )
+    def test_collection_member_type_class(self, collection, expected):
+        assert CubridDialect().type_compiler_instance.process(collection) == expected
+
+    def test_dead_code_is_removed(self):
+        from sqlalchemy_cubrid.compiler import CubridTypeCompiler
+
+        assert not hasattr(CubridTypeCompiler, "_get")
+        with pytest.raises(TypeError):
+            cubrid_types.SMALLINT(display_width=5)
+        with pytest.raises(TypeError):
+            cubrid_types.VARCHAR(10, values=["a"])

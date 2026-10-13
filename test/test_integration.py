@@ -4018,3 +4018,76 @@ class TestIndexShapes869:
         for changed in ({"where": 4}, {"length": 6}, {"desc": False}):
             kinds = sorted(d[0] for d in diff(self._model(**changed)))
             assert kinds == ["add_index", "remove_index"], changed
+
+
+class TestColonNamesAndCollectionClasses870:
+    """#870: reflect names containing ``:name``; create ``SET(Integer)`` columns."""
+
+    PARENT = f"p870 :y {_TABLE_SUFFIX}"
+    CHILD = f"x :y {_TABLE_SUFFIX}"
+    VIEW = f"w (:z) {_TABLE_SUFFIX}"
+
+    @pytest.fixture
+    def colon_tables(self, engine):
+        meta = MetaData()
+        parent = Table(self.PARENT, meta, Column("id", Integer, primary_key=True))
+        child = Table(
+            self.CHILD,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("pid", Integer, sa.ForeignKey(parent.c.id)),
+            Column("code", String(10), unique=True),
+            Column("tags", cubrid_set_of_integer()),
+        )
+        sa.Index(f"ix870_{_TABLE_SUFFIX}", child.c.code.desc())._set_parent(child)
+        preparer = engine.dialect.identifier_preparer
+        view = preparer.quote_identifier(self.VIEW)
+
+        def drop():
+            with engine.begin() as conn:
+                conn.exec_driver_sql(f"DROP VIEW IF EXISTS {view}")
+            meta.drop_all(engine)
+
+        drop()
+        meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.exec_driver_sql(
+                f"CREATE VIEW {view} AS SELECT id FROM {preparer.quote_identifier(self.CHILD)}"
+            )
+        try:
+            yield
+        finally:
+            drop()
+
+    def test_reflection_of_colon_names(self, engine, colon_tables):
+        with engine.connect() as conn:
+            insp = inspect(conn)
+            assert [c["name"] for c in insp.get_columns(self.CHILD)] == [
+                "id",
+                "pid",
+                "code",
+                "tags",
+            ]
+            indexes = {i["name"]: i for i in insp.get_indexes(self.CHILD)}
+            assert indexes[f"ix870_{_TABLE_SUFFIX}"]["column_sorting"] == {"code": ("desc",)}
+            assert sorted(i["column_names"] for i in indexes.values()) == [["code"], ["code"]]
+            assert [u["column_names"] for u in insp.get_unique_constraints(self.CHILD)] == [
+                ["code"]
+            ]
+            assert [fk["referred_table"] for fk in insp.get_foreign_keys(self.CHILD)] == [
+                self.PARENT
+            ]
+            assert insp.get_pk_constraint(self.CHILD)["constrained_columns"] == ["id"]
+            assert "SELECT" in insp.get_view_definition(self.VIEW).upper()
+            assert [c["name"] for c in insp.get_columns(self.VIEW)] == ["id"]
+        reflected = MetaData()
+        reflected.reflect(engine, only=[self.CHILD, self.PARENT])
+        assert set(reflected.tables) == {self.CHILD, self.PARENT}
+        member = reflected.tables[self.CHILD].c.tags.type._ddl_values
+        assert [type(m).__name__ for m in member] == ["INTEGER"]
+
+
+def cubrid_set_of_integer():
+    from sqlalchemy_cubrid import types as cubrid_types
+
+    return cubrid_types.SET(Integer)

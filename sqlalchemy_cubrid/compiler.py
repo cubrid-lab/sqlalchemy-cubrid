@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+import itertools
+from typing import Any, Iterable, Iterator, Protocol, cast
 
 from sqlalchemy.exc import CompileError
 from sqlalchemy.schema import CreateIndex
@@ -71,6 +72,12 @@ class _BaseDDLCompiler(Protocol):
         include_table_schema: bool = True,
         **kw: Any,
     ) -> str: ...
+
+
+def _de_clone(elements: Iterable[Any]) -> Iterator[Any]:
+    """The original of each FROM object, as SQLAlchemy's join linting uses."""
+    for element in elements:
+        yield element._de_clone()
 
 
 class CubridCompiler(compiler.SQLCompiler):
@@ -200,13 +207,21 @@ class CubridCompiler(compiler.SQLCompiler):
         # https://www.cubrid.org/manual/en/11.0/sql/query/select.html#join-query
         if getattr(join, "full", False):
             raise CompileError("CUBRID does not support FULL OUTER JOIN")
+        if from_linter:
+            # Record the join edges like the base class, so SQLAlchemy's
+            # cartesian-product warning sees joined FROM items (#870).
+            from_linter.edges.update(
+                itertools.product(
+                    _de_clone(join.left._from_objects), _de_clone(join.right._from_objects)
+                )
+            )
         return "".join(
             (
-                self.process(join.left, asfrom=True, **kwargs),
+                self.process(join.left, asfrom=True, from_linter=from_linter, **kwargs),
                 (join.isouter and " LEFT OUTER JOIN " or " INNER JOIN "),
-                self.process(join.right, asfrom=True, **kwargs),
+                self.process(join.right, asfrom=True, from_linter=from_linter, **kwargs),
                 " ON ",
-                self.process(join.onclause, **kwargs),
+                self.process(join.onclause, from_linter=from_linter, **kwargs),
             )
         )
 
@@ -1021,9 +1036,6 @@ class CubridDDLCompiler(compiler.DDLCompiler):
 
 class CubridTypeCompiler(compiler.GenericTypeCompiler):
     """TypeCompiler for CUBRID data types."""
-
-    def _get(self, key: str, type_: Any, kw: dict[str, Any]) -> Any:
-        return kw.get(key, getattr(type_, key, None))
 
     def visit_BOOLEAN(self, type_: Any, **kw: Any) -> str:
         # CUBRID has no native BOOLEAN; map to SMALLINT.

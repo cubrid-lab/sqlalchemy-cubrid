@@ -15,7 +15,7 @@ from __future__ import annotations
 import inspect
 import json
 from importlib import import_module
-from typing import Any, Callable, Sequence
+from typing import Any, Callable
 
 from sqlalchemy import exc
 from sqlalchemy.engine.interfaces import Dialect
@@ -40,22 +40,14 @@ class _FloatType(_NumericType, sqltypes.Float[Any]):  # pyright: ignore[reportUn
 
 
 class _IntegerType(_NumericType, sqltypes.Integer):
-    def __init__(self, display_width: int | None = None, **kw: Any) -> None:
-        self.display_width = display_width
-        super().__init__(**kw)
+    pass
 
 
 class _StringType(sqltypes.String):
     """Base for CUBRID string types."""
 
-    def __init__(
-        self,
-        national: bool = False,
-        values: Sequence[Any] | None = None,
-        **kw: Any,
-    ) -> None:
+    def __init__(self, national: bool = False, **kw: Any) -> None:
         self.national = national
-        self.values = values
         super().__init__(**kw)
 
     def __repr__(self) -> str:
@@ -374,8 +366,17 @@ class _CollectionType(_StringType):
     _ordered: bool = False
 
     def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct the type; *values* are the element types for the DDL."""
-        self._ddl_values = values
+        """Construct the type; *values* are the element types for the DDL.
+
+        A type class (``SET(Integer)``) is instantiated, as SQLAlchemy accepts
+        a class wherever it takes a type (#870).
+        """
+        self._ddl_values = tuple(
+            sqltypes.to_instance(value)
+            if isinstance(value, type) and issubclass(value, sqltypes.TypeEngine)
+            else value
+            for value in values
+        )
         super().__init__(**kw)
 
     def bind_processor(self, dialect: Dialect) -> Callable[[Any], Any] | None:
