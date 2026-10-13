@@ -225,6 +225,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measured runner minutes after the #760 and #797 consolidation and the first
   grouped Dependabot run.
 
+### Tests
+
+- **Isolated live CTE coverage (#849)** — the 14 SQLAlchemy `CTETest` compliance nodes
+  are strict xfails because their fixture cleanup fails on CUBRID's per-row foreign-key
+  check, so they supplied no behavior evidence. `TestIsolatedCTE849` replays their
+  scenarios on fresh FK-safe tables against CUBRID 10.2 to 11.4. SELECT, recursive
+  SELECT, bound parameters, DELETE with a CTE scalar subquery and every values-via-CTE
+  variant pass; UPDATE/DELETE ... FROM are asserted as the documented limits; INSERT
+  FROM SELECT over a CTE is a strict xfail tracked by #897. The ledger entries are
+  kept, with a pointer to this evidence.
+
 ## [1.11.0] - 2026-10-12
 
 ### Upgrade notes

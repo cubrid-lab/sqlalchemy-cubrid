@@ -4175,3 +4175,161 @@ class TestAsyncTerminateClosedLoop872:
         messages = [f"{w.category.__name__}: {w.message}" for w in caught]
         assert not [m for m in messages if m.startswith("ResourceWarning")], messages
         assert not [m for m in messages if "cannot be safely terminated" in m], messages
+
+
+class TestIsolatedCTE849:
+    """#849: the scenarios of SQLAlchemy's CTETest on a fresh, FK-safe fixture.
+
+    The compliance-suite nodes stay strict xfails in test/known_failures.txt:
+    their harness empties the self-referencing table with one DELETE, which
+    CUBRID rejects per row (-924), so later setups fail. Here every test gets
+    new tables that are dropped afterwards, so each result is real evidence.
+    """
+
+    ROWS = [
+        {"id": 1, "data": "d1", "parent_id": None},
+        {"id": 2, "data": "d2", "parent_id": 1},
+        {"id": 3, "data": "d3", "parent_id": 1},
+        {"id": 4, "data": "d4", "parent_id": 3},
+        {"id": 5, "data": "d5", "parent_id": 3},
+    ]
+
+    @pytest.fixture
+    def tables(self, engine):
+        meta = MetaData()
+        some = Table(
+            f"cte849_some_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("data", String(50)),
+            Column("parent_id", sa.ForeignKey(f"cte849_some_{_TABLE_SUFFIX}.id")),
+        )
+        other = Table(
+            f"cte849_other_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("data", String(50)),
+            Column("parent_id", Integer),
+        )
+        meta.drop_all(engine)
+        try:
+            meta.create_all(engine)
+            with engine.begin() as conn:
+                conn.execute(some.insert(), self.ROWS)
+            yield some, other
+        finally:
+            meta.drop_all(engine)
+
+    @staticmethod
+    def _cte(some):
+        return sa.select(some).where(some.c.data.in_(["d2", "d3", "d4"])).cte("some_cte")
+
+    @staticmethod
+    def _copy(conn, some, other):
+        conn.execute(other.insert().from_select(["id", "data", "parent_id"], sa.select(some)))
+
+    def test_select_nonrecursive(self, engine, tables):
+        some, _ = tables
+        cte = self._cte(some)
+        with engine.connect() as conn:
+            stmt = sa.select(cte.c.data).where(cte.c.data.in_(["d4", "d5"]))
+            assert conn.execute(stmt).fetchall() == [("d4",)]
+
+    def test_select_recursive(self, engine, tables):
+        some, _ = tables
+        cte = (
+            sa.select(some)
+            .where(some.c.data.in_(["d2", "d3", "d4"]))
+            .cte("some_cte", recursive=True)
+        )
+        cte_alias = cte.alias("c1")
+        parent = some.alias()
+        cte = cte.union_all(sa.select(parent).where(parent.c.id == cte_alias.c.parent_id))
+        stmt = sa.select(cte.c.data).where(cte.c.data != "d2").order_by(cte.c.data.desc())
+        with engine.connect() as conn:
+            assert conn.execute(stmt).fetchall() == [
+                ("d4",),
+                ("d3",),
+                ("d3",),
+                ("d1",),
+                ("d1",),
+                ("d1",),
+            ]
+
+    def test_bound_parameters_inside_the_cte(self, engine, tables):
+        some, _ = tables
+        cte = (
+            sa.select(some)
+            .where(some.c.data.in_(sa.bindparam("names", expanding=True)))
+            .cte("some_cte")
+        )
+        stmt = sa.select(cte.c.id).where(cte.c.parent_id == sa.bindparam("parent"))
+        with engine.connect() as conn:
+            rows = conn.execute(
+                stmt.order_by(cte.c.id), {"names": ["d2", "d3", "d4", "d5"], "parent": 3}
+            )
+            assert rows.fetchall() == [(4,), (5,)]
+
+    @pytest.mark.xfail(
+        reason="#897: SQLAlchemy renders WITH before INSERT; CUBRID needs INSERT INTO t WITH ...",
+        raises=sa.exc.DBAPIError,
+        strict=True,
+    )
+    def test_insert_from_select(self, engine, tables):
+        some, other = tables
+        with engine.begin() as conn:
+            stmt = other.insert().from_select(
+                ["id", "data", "parent_id"], sa.select(self._cte(some))
+            )
+            conn.execute(stmt)
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (2, "d2", 1),
+                (3, "d3", 1),
+                (4, "d4", 3),
+            ]
+
+    def test_update_from_is_a_documented_limit(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            stmt = other.update().values(parent_id=5).where(other.c.data == cte.c.data)
+            with pytest.raises(sa.exc.CompileError, match="does not support UPDATE ... FROM"):
+                conn.execute(stmt)
+
+    def test_delete_from_is_a_documented_limit(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            with pytest.raises(NotImplementedError, match="multiple-table criteria"):
+                conn.execute(other.delete().where(other.c.data == cte.c.data))
+
+    def test_delete_with_a_cte_scalar_subquery(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            subquery = sa.select(cte.c.data).where(cte.c.id == other.c.id).scalar_subquery()
+            conn.execute(other.delete().where(other.c.data == subquery))
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (1, "d1", None),
+                (5, "d5", 3),
+            ]
+
+    @pytest.mark.parametrize("literal_binds", [True, False])
+    @pytest.mark.parametrize("values_named", [True, False])
+    @pytest.mark.parametrize("cte_named", [True, False])
+    def test_values_named_via_cte(self, engine, literal_binds, values_named, cte_named):
+        cte = (
+            sa.values(
+                sa.column("col1", String),
+                sa.column("col2", Integer),
+                literal_binds=literal_binds,
+                name="some name" if values_named else None,
+            )
+            .data([("a", 2), ("b", 3)])
+            .cte("cte1" if cte_named else None)
+        )
+        with engine.connect() as conn:
+            assert conn.execute(sa.select(cte)).all() == [("a", 2), ("b", 3)]

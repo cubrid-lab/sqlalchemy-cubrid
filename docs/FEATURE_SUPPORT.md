@@ -125,7 +125,7 @@ High-level overview by feature category.
 | Query trace / EXPLAIN | ⚠️ | ✅ | ✅ | ✅ |
 ### Notes
 
-- **CTEs**: CUBRID 11.0+ supports `WITH` clauses for read queries. Writable CTEs (`WITH … INSERT/UPDATE/DELETE`) are not supported.
+- **CTEs**: CUBRID supports `WITH` clauses for read queries; `TestIsolatedCTE849` in `test/test_integration.py` checks them live on CUBRID 10.2, 11.0, 11.2 and 11.4 (#849): non-recursive and recursive `SELECT`, bound parameters inside the CTE, `values()` via a CTE, and `DELETE ... WHERE col = (SELECT ... FROM cte)` return the expected rows. Writable CTEs (`WITH … INSERT/UPDATE/DELETE`) are not supported. `UPDATE ... FROM cte` and `DELETE ... FROM cte` raise, because CUBRID has no multi-table `UPDATE` / `DELETE`. `insert().from_select(..., select(cte))` currently fails with a syntax error, because SQLAlchemy puts `WITH` before `INSERT` and CUBRID needs `INSERT INTO t (...) WITH ... SELECT` (#897). SQLAlchemy's own `CTETest` nodes stay baselined in `test/known_failures.txt`, because their fixture cleanup fails on CUBRID's per-row foreign-key check, not because of these queries.
 - **Recursive CTEs**: CUBRID 11.x+ supports `WITH RECURSIVE` for recursive queries. SQLAlchemy's base compiler generates correct syntax — no dialect-specific compilation needed.
 - **Window functions**: CUBRID supports `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()`, and other window functions with `OVER(PARTITION BY … ORDER BY …)`. The SA base compiler handles these natively.
 - **NULLS FIRST / NULLS LAST**: CUBRID supports `ORDER BY col ASC NULLS FIRST` and `ORDER BY col DESC NULLS LAST`. The SA base compiler handles these natively.
