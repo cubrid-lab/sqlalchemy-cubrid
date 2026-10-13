@@ -489,7 +489,7 @@ the server, and without `existing_type` the call raises `ValueError`.
 | `alter_column` (comment) | ✅ | `MODIFY`; needs `existing_type`, plus the other `existing_*` values to keep |
 | `alter_column` (type) | ✅ | `batch_alter_table` for lossy conversions |
 | `alter_column` (rename) | ✅ | — |
-| `create_index` | ✅ | `if_not_exists=True` raises `CompileError` (CUBRID has no `CREATE INDEX IF NOT EXISTS`); check `inspect(conn).has_index()` first instead |
+| `create_index` | ✅ | Expression, `DESC`, filtered (`cubrid_where`) and prefix (`cubrid_length`) indexes are reflected and compared by autogenerate (#869); `if_not_exists=True` raises `CompileError` (CUBRID has no `CREATE INDEX IF NOT EXISTS`); check `inspect(conn).has_index()` first instead |
 | `drop_index` | ✅ | Emits `DROP INDEX <name> ON <table>`, so `table_name` is required (`CompileError` without it); `if_exists=True` raises `CompileError` (CUBRID has no `DROP INDEX IF EXISTS`) |
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |

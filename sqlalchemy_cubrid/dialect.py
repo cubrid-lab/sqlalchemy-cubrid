@@ -273,6 +273,31 @@ def _default_is_shown_as_sql(column: Any) -> bool:
 _RE_DEFAULT_KEYWORD = re.compile(r"\bDEFAULT\b", re.IGNORECASE)
 
 
+def _strip_table_qualifier(sql: str, table_name: str) -> str:
+    """Drop ``table.`` / ``[table].`` / ``[owner.table].`` column qualifiers (#869).
+
+    CUBRID prints index expressions and filters with the column qualified by
+    its table; the reflected text is re-emitted for a table that may have
+    another name. Quoted string literals are left alone.
+    """
+    table = re.escape(str(table_name))
+    pattern = re.compile(
+        rf"(?<![\w\].])(?:\[(?:[^\].]+\.)?{table}\]|{table})\.(?=[\[\w])", re.IGNORECASE
+    )
+    parts = []
+    i = 0
+    while i < len(sql):
+        quote = sql.find("'", i)
+        if quote < 0:
+            parts.append(pattern.sub("", sql[i:]))
+            break
+        parts.append(pattern.sub("", sql[i:quote]))
+        end = _skip_quoted(sql, quote)
+        parts.append(sql[quote:end])
+        i = end
+    return "".join(parts)
+
+
 def _skip_quoted(text: str, i: int) -> int:
     """Return the index after the ``'...'`` literal starting at *text[i]*."""
     i += 1
@@ -1203,11 +1228,12 @@ class CubridDialect(default.DefaultDialect):
         # See cubrid-lab/sqlalchemy-cubrid#120.
         pk_indexes: set[str] = set()
         fk_indexes: set[str] = set()
+        filters: dict[str, str] = {}
         class_filter, filter_params = self._catalog_class_filter(connection, table_name, **kw)
         flag_result = connection.execute(
             text(
-                "SELECT index_name, is_primary_key, is_foreign_key "  # nosec B608 - constant clause
-                "FROM db_index WHERE " + class_filter
+                "SELECT index_name, is_primary_key, is_foreign_key, "  # nosec B608 - constant clause
+                "filter_expression FROM db_index WHERE " + class_filter
             ),
             filter_params,
         )
@@ -1216,6 +1242,10 @@ class CubridDialect(default.DefaultDialect):
                 pk_indexes.add(flag_row[0])
             if flag_row[2] == "YES":
                 fk_indexes.add(flag_row[0])
+            if len(flag_row) > 3 and flag_row[3]:
+                # A filtered index (#869): the condition qualifies columns
+                # with the table, ``ix.c>3`` (10.2) or ``[dba.ix].c>3`` (11.2+).
+                filters[flag_row[0]] = _strip_table_qualifier(str(flag_row[3]), table_name)
 
         quoted = self.identifier_preparer.quote_identifier(table_name)
         try:
@@ -1224,18 +1254,43 @@ class CubridDialect(default.DefaultDialect):
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
             raise
+        # SHOW INDEXES: Key_name [2], Column_name [4], Collation [5] ('D' for
+        # DESC), Sub_part [7] (a key prefix length) and Func [11] (the
+        # expression of a function-based key, whose Column_name is NULL) (#869).
+        expressions: dict[str, list[str | None]] = {}
         for row in result:
             index_name = row[2]
+            if index_name in pk_indexes or index_name in fk_indexes:
+                continue
+            entry = idict.setdefault(
+                index_name, {"name": index_name, "column_names": [], "unique": row[1] == 0}
+            )
+            # Collation, Sub_part and Func are read only when the row has them.
+            column = row[4]
+            descending = len(row) > 5 and row[5] == "D"
+            prefix = row[7] if len(row) > 7 else None
+            func = row[11] if len(row) > 11 else None
+            index_expressions = expressions.setdefault(index_name, [])
+            if column is None and func:
+                expression = _strip_table_qualifier(str(func).strip(), table_name)
+                index_expressions.append(expression + (" DESC" if descending else ""))
+            else:
+                index_expressions.append(column)
+                if descending:
+                    entry.setdefault("column_sorting", {})[column] = ("desc",)
+                if prefix is not None:
+                    options = entry.setdefault("dialect_options", {})
+                    options.setdefault("cubrid_length", {})[column] = int(prefix)
+            entry["column_names"].append(column)
 
-            if index_name not in pk_indexes and index_name not in fk_indexes:
-                if index_name in idict:
-                    idict[index_name]["column_names"].append(row[4])
-                else:
-                    idict[index_name] = {
-                        "name": index_name,
-                        "column_names": [row[4]],
-                        "unique": row[1] == 0,
-                    }
+        for index_name, entry in idict.items():
+            if None in entry["column_names"]:
+                entry["expressions"] = [
+                    expression if expression is not None else str(column)
+                    for expression, column in zip(expressions[index_name], entry["column_names"])
+                ]
+            if index_name in filters:
+                entry.setdefault("dialect_options", {})["cubrid_where"] = filters[index_name]
 
         return list(idict.values())
 

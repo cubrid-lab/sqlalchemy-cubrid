@@ -3058,3 +3058,83 @@ class TestReflectedDefaultsFromDdl865:
             rows, _class_type_result("CLASS"), self._ddl_result("CREATE TABLE [d865] ('open")
         )
         assert columns[0]["default"] == "x"
+
+
+class TestIndexShapes869:
+    """#869: expression, DESC, filtered and prefix index keys reflect fully."""
+
+    @staticmethod
+    def _show(name, seq, column, collation="A", sub_part=None, func=None):
+        # Table, Non_unique, Key_name, Seq_in_index, Column_name, Collation,
+        # Cardinality, Sub_part, Packed, Null, Index_type, Func, Comment, Visible
+        return (
+            "dba.t",
+            1,
+            name,
+            seq,
+            column,
+            collation,
+            0,
+            sub_part,
+            None,
+            "YES",
+            "BTREE",
+            func,
+            None,
+            "YES",
+        )
+
+    def test_get_indexes_maps_func_collation_sub_part_and_filter(self):
+        dialect = CubridDialect()
+        connection = MagicMock()
+        flags = [
+            ("ix_func", "NO", "NO", None),
+            ("ix_desc", "NO", "NO", None),
+            ("ix_filt", "NO", "NO", "[dba.t].c>3"),
+            ("ix_pref", "NO", "NO", None),
+            ("ix_mix", "NO", "NO", None),
+        ]
+        show = [
+            self._show("ix_func", 1, None, func=" lower([dba.t].[a])"),
+            self._show("ix_desc", 1, "b", collation="D"),
+            self._show("ix_desc", 2, "c"),
+            self._show("ix_filt", 1, "c"),
+            self._show("ix_pref", 1, "a", sub_part=5),
+            self._show("ix_mix", 1, "b"),
+            self._show("ix_mix", 2, None, collation="D", func=" lower([dba.t].[a])"),
+        ]
+        connection.execute.side_effect = [_class_type_result("CLASS"), flags, show]
+
+        indexes = {
+            i["name"]: i for i in _invoke_reflection(dialect, "get_indexes", connection, "t")
+        }
+
+        assert indexes["ix_func"] == {
+            "name": "ix_func",
+            "column_names": [None],
+            "unique": False,
+            "expressions": ["lower([a])"],
+        }
+        assert indexes["ix_desc"]["column_sorting"] == {"b": ("desc",)}
+        assert "expressions" not in indexes["ix_desc"]
+        assert indexes["ix_filt"]["dialect_options"] == {"cubrid_where": "c>3"}
+        assert indexes["ix_pref"]["dialect_options"] == {"cubrid_length": {"a": 5}}
+        assert indexes["ix_mix"]["column_names"] == ["b", None]
+        assert indexes["ix_mix"]["expressions"] == ["b", "lower([a]) DESC"]
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            (" lower([dba.t].[a])", " lower([a])"),
+            ("[dba.t].c>3", "c>3"),
+            ("t.c>3", "c>3"),
+            ("[t].[a] + t.b", "[a] + b"),
+            ("t.a = 't.x'", "a = 't.x'"),
+            ("other.c>3", "other.c>3"),
+            ("xt.c", "xt.c"),
+        ],
+    )
+    def test_strip_table_qualifier(self, sql, expected):
+        from sqlalchemy_cubrid.dialect import _strip_table_qualifier
+
+        assert _strip_table_qualifier(sql, "t") == expected

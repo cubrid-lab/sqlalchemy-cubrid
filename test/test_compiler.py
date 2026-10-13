@@ -3381,3 +3381,50 @@ class TestFetchAsLimit867:
         assert compiler.fetch_clause(select(users.c.id), fetch_clause=sa.literal(3)) == (
             " \n LIMIT ?"
         )
+
+
+# ---------------------------------------------------------------------------
+# Filtered and prefix-length indexes (#869)
+# ---------------------------------------------------------------------------
+
+
+class TestIndexDialectOptions869:
+    _t = Table("t869", MetaData(), Column("a", String(20)), Column("b", Integer))
+
+    @staticmethod
+    def _ddl(index):
+        return str(sa.schema.CreateIndex(index).compile(dialect=CubridDialect()))
+
+    def test_where_expression_and_text(self):
+        t = self._t
+        assert self._ddl(sa.Index("i1", t.c.b, cubrid_where=t.c.b > 3)) == (
+            "CREATE INDEX i1 ON t869 (b) WHERE b > 3"
+        )
+        assert self._ddl(sa.Index("i2", t.c.b, cubrid_where="b>3")) == (
+            "CREATE INDEX i2 ON t869 (b) WHERE b>3"
+        )
+
+    def test_length_mapping_integer_and_desc(self):
+        t = self._t
+        assert self._ddl(sa.Index("i3", t.c.a.desc(), t.c.b, cubrid_length={"a": 5})) == (
+            "CREATE INDEX i3 ON t869 (a(5) DESC, b)"
+        )
+        assert self._ddl(sa.Index("i4", t.c.a, cubrid_length=4, unique=True)) == (
+            "CREATE UNIQUE INDEX i4 ON t869 (a(4))"
+        )
+        assert self._ddl(
+            sa.Index("i5", t.c.a.asc(), cubrid_length={"a": 2}, cubrid_where=t.c.b > 1)
+        ) == ("CREATE INDEX i5 ON t869 (a(2) ASC) WHERE b > 1")
+
+    @pytest.mark.parametrize("length", [0, -1, "5", 2.5])
+    def test_invalid_length_raises(self, length):
+        with pytest.raises(CompileError, match="cubrid_length"):
+            self._ddl(sa.Index("i6", self._t.c.a, cubrid_length=length))
+
+    def test_length_on_expression_raises(self):
+        with pytest.raises(CompileError, match="cubrid_length"):
+            self._ddl(sa.Index("i7", sa.func.lower(self._t.c.a), cubrid_length=3))
+
+    def test_unique_filtered_index_raises(self):
+        with pytest.raises(CompileError, match="UNIQUE filtered"):
+            self._ddl(sa.Index("i8", self._t.c.b, unique=True, cubrid_where="b>0"))

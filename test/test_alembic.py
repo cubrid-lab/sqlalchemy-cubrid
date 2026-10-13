@@ -1171,3 +1171,97 @@ class TestAutogenerateRegression:
             reflected_schema,
             compare_type=self._compare_type_with_collection_alias,
         )
+
+
+class TestCompareIndexShapes869:
+    """#869: reflected CUBRID index spellings compare equal to the model."""
+
+    @staticmethod
+    def _impl():
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        impl.dialect = CubridDialect()
+        return impl
+
+    @staticmethod
+    def _pair():
+        model = sa.Table(
+            "t", sa.MetaData(), sa.Column("a", sa.String(20)), sa.Column("b", sa.Integer)
+        )
+        reflected = sa.Table(
+            "t", sa.MetaData(), sa.Column("a", sa.String(20)), sa.Column("b", sa.Integer)
+        )
+        return model, reflected
+
+    @pytest.mark.parametrize(
+        ("model_args", "model_kw", "reflected_args", "reflected_kw"),
+        [
+            (lambda t: [sa.func.lower(t.c.a)], {}, lambda t: [sa.text("lower([a])")], {}),
+            (lambda t: [t.c.b.desc(), t.c.a], {}, lambda t: [t.c.b.desc(), t.c.a], {}),
+            (
+                lambda t: [t.c.b],
+                {"cubrid_where": lambda t: t.c.b > 3},
+                lambda t: [t.c.b],
+                {"cubrid_where": "b>3"},
+            ),
+            (
+                lambda t: [t.c.a],
+                {"cubrid_length": 5},
+                lambda t: [t.c.a],
+                {"cubrid_length": {"a": 5}},
+            ),
+            (
+                lambda t: [t.c.b, sa.func.lower(t.c.a).desc()],
+                {},
+                lambda t: [t.c.b, sa.text("lower([a]) DESC")],
+                {},
+            ),
+        ],
+    )
+    def test_equal(self, model_args, model_kw, reflected_args, reflected_kw):
+        model, reflected = self._pair()
+        kw = {k: (v(model) if callable(v) else v) for k, v in model_kw.items()}
+        m_index = sa.Index("ix", *model_args(model), _table=model, **kw)
+        r_index = sa.Index("ix", *reflected_args(reflected), _table=reflected, **reflected_kw)
+        assert self._impl().compare_indexes(m_index, r_index).is_equal
+
+    @pytest.mark.parametrize(
+        ("model_kw", "reflected_kw", "label"),
+        [
+            ({"cubrid_where": "b>4"}, {"cubrid_where": "b>3"}, "cubrid_where"),
+            ({"cubrid_length": {"a": 6}}, {"cubrid_length": {"a": 5}}, "cubrid_length"),
+            ({}, {"cubrid_where": "b>3"}, "cubrid_where"),
+        ],
+    )
+    def test_option_change_is_different(self, model_kw, reflected_kw, label):
+        model, reflected = self._pair()
+        m_index = sa.Index("ix", model.c.a, _table=model, **model_kw)
+        r_index = sa.Index("ix", reflected.c.a, _table=reflected, **reflected_kw)
+        result = self._impl().compare_indexes(m_index, r_index)
+        assert result.is_different
+        assert label in result.message
+
+    def test_sort_order_and_unique_changes_are_different(self):
+        model, reflected = self._pair()
+        result = self._impl().compare_indexes(
+            sa.Index("ix", model.c.b, _table=model, unique=True),
+            sa.Index("ix", reflected.c.b.desc(), _table=reflected),
+        )
+        assert result.is_different
+        assert "unique=False to unique=True" in result.message
+        assert "expressions" in result.message
+
+    @pytest.mark.parametrize(
+        ("sql", "expected"),
+        [
+            ("((a))", "a"),
+            ("(a)+(b)", "(a)+(b)"),
+            ("lower([T].[A])", "lower(a)"),
+            ("(c > 3)", "c>3"),
+        ],
+    )
+    def test_normalize_index_sql(self, sql, expected):
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        assert CubridImpl._normalize_index_sql(sql, "t") == expected

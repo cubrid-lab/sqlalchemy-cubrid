@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Expression, descending, filtered and prefix indexes reflect and autogenerate (#869)** —
+  `get_indexes()` reported `CREATE INDEX ix ON t (LOWER(a))` as `column_names: [None]`
+  without `expressions`, so `Table` reflection warned "Skipping index" and dropped it
+  and autogenerate proposed it again on every run, and `b DESC`, `WHERE c > 3` and the
+  prefix `a(5)` reflected as plain columns. The `SHOW INDEXES` `Func`, `Collation` and
+  `Sub_part` columns and `db_index.filter_expression` now map to `expressions`,
+  `column_sorting` and the new `cubrid_where` / `cubrid_length` index options, with the
+  table qualifier CUBRID prints dropped (`lower([a])`, `c>3`). `CREATE INDEX` renders
+  `cubrid_where` and `cubrid_length`, which were silently ignored before, and the
+  Alembic implementation compares these keys after normalizing both sides.
+
 - **Alembic renders CUBRID collection member types with the dialect prefix (#868)** —
   `render_type` wrote every member type with `sa.`, so autogenerate produced
   `cubrid_types.MULTISET(sa.MONETARY())` or `cubrid_types.SEQUENCE(sa.BIT(length=8))`,

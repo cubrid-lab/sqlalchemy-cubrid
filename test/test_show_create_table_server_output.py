@@ -335,9 +335,11 @@ class _CatalogStub:
             # 11.2+ query; the recordings were captured as the owner, DBA.
             rows = [(*f, "DBA") for f in flags]
         elif sql.startswith(
-            "SELECT index_name, is_primary_key, is_foreign_key FROM db_index WHERE "
+            "SELECT index_name, is_primary_key, is_foreign_key, filter_expression "
+            "FROM db_index WHERE "
         ):
-            rows = [(f[0], f[2], f[3]) for f in flags]
+            # The recorded tables have no filtered index (#869).
+            rows = [(f[0], f[2], f[3], None) for f in flags]
         elif sql.startswith("SHOW INDEXES IN"):
             rows = [tuple(row) for row in self._recorded["show_indexes"]]
         elif sql.startswith("SHOW CREATE TABLE"):

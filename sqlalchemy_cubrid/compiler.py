@@ -13,7 +13,8 @@ from typing import Any, Protocol, cast
 
 from sqlalchemy.exc import CompileError
 from sqlalchemy.schema import CreateIndex
-from sqlalchemy.sql import compiler, dml, elements, schema, selectable
+from sqlalchemy.sql import compiler, dml, elements, operators, schema, selectable
+from sqlalchemy.sql.expression import text as text_clause
 from sqlalchemy.sql import sqltypes
 
 from sqlalchemy_cubrid._compat import (
@@ -903,11 +904,65 @@ class CubridDDLCompiler(compiler.DDLCompiler):
                         "that already have an FK auto-index (%s). %s" % (cols, hint)
                     )
 
-        return cast(_BaseDDLCompiler, super()).visit_create_index(
-            create,
-            include_schema=include_schema,
-            include_table_schema=include_table_schema,
-            **kw,
+        length = index.dialect_options["cubrid"].get("length")
+        where = index.dialect_options["cubrid"].get("where")
+        if length is None:
+            text = cast(_BaseDDLCompiler, super()).visit_create_index(
+                create,
+                include_schema=include_schema,
+                include_table_schema=include_table_schema,
+                **kw,
+            )
+        else:
+            text = self._create_prefix_length_index(
+                index, length, include_schema, include_table_schema
+            )
+        if where is not None:
+            # CUBRID filtered index: CREATE INDEX ... (cols) WHERE <cond> (#869).
+            if index.unique:
+                raise CompileError("CUBRID does not support a UNIQUE filtered index (cubrid_where)")
+            if isinstance(where, str):
+                where = text_clause(where)
+            text += " WHERE " + self.sql_compiler.process(
+                where, include_table=False, literal_binds=True
+            )
+        return text
+
+    def _create_prefix_length_index(
+        self, index: Any, length: Any, include_schema: bool, include_table_schema: bool
+    ) -> str:
+        """Render ``CREATE INDEX`` with ``cubrid_length`` key prefixes (#869).
+
+        *length* is one prefix length for every column key or a mapping of
+        column name to length; CUBRID writes the prefix as ``col(n)``, before
+        ``DESC``.
+        """
+        self._verify_index_table(index)
+        keys = []
+        for expr in index.expressions:
+            column, modifier = expr, ""
+            if isinstance(expr, elements.UnaryExpression) and expr.modifier in (
+                operators.desc_op,
+                operators.asc_op,
+            ):
+                column = expr.element
+                modifier = " DESC" if expr.modifier is operators.desc_op else " ASC"
+            rendered = self.sql_compiler.process(column, include_table=False, literal_binds=True)
+            name = column.name if isinstance(column, elements.ColumnClause) else None
+            prefix = length.get(name) if isinstance(length, dict) else length
+            if prefix is not None:
+                if name is None or type(prefix) is not int or prefix < 1:
+                    raise CompileError(
+                        "cubrid_length needs a positive integer per column key, got %r for %r"
+                        % (prefix, rendered)
+                    )
+                rendered += "(%d)" % prefix
+            keys.append(rendered + modifier)
+        return "CREATE %sINDEX %s ON %s (%s)" % (
+            "UNIQUE " if index.unique else "",
+            self._prepared_index_name(index, include_schema=include_schema),
+            self.preparer.format_table(index.table, use_schema=include_table_schema),
+            ", ".join(keys),
         )
 
     def visit_drop_index(self, drop: Any, **kw: Any) -> str:

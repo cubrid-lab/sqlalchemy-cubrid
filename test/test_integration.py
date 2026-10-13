@@ -3928,3 +3928,93 @@ class TestAutogenerateCollectionMemberTypes868:
                 conn.rollback()
                 conn.exec_driver_sql(f"DROP TABLE IF EXISTS {self.TABLE}")
                 conn.commit()
+
+
+class TestIndexShapes869:
+    """#869: expression, DESC, filtered and prefix indexes reflect and autogenerate."""
+
+    TABLE = f"ix869_{_TABLE_SUFFIX}"
+
+    def _model(self, where=3, length=5, desc=True):
+        meta = MetaData()
+        tbl = Table(
+            self.TABLE,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("a", String(20)),
+            Column("b", Integer),
+            Column("c", Integer),
+        )
+        sa.Index("ix869_func", sa.func.lower(tbl.c.a))._set_parent(tbl)
+        sa.Index("ix869_desc", tbl.c.b.desc() if desc else tbl.c.b, tbl.c.c)._set_parent(tbl)
+        sa.Index("ix869_filt", tbl.c.c, cubrid_where=tbl.c.c > where)._set_parent(tbl)
+        sa.Index("ix869_pref", tbl.c.a, cubrid_length={"a": length})._set_parent(tbl)
+        sa.Index("ix869_mix", tbl.c.b, sa.func.lower(tbl.c.a).desc())._set_parent(tbl)
+        return meta
+
+    @pytest.fixture
+    def created(self, engine):
+        meta = self._model()
+        copy = f"{self.TABLE}_copy"
+        with engine.begin() as conn:
+            conn.exec_driver_sql(f"DROP TABLE IF EXISTS {copy}")
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            yield meta
+        finally:
+            with engine.begin() as conn:
+                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {copy}")
+            meta.drop_all(engine)
+
+    def _indexes(self, engine, table):
+        with engine.connect() as conn:
+            return {i["name"]: i for i in inspect(conn).get_indexes(table)}
+
+    def test_reflection(self, engine, created):
+        indexes = self._indexes(engine, self.TABLE)
+        assert indexes["ix869_func"]["column_names"] == [None]
+        assert indexes["ix869_func"]["expressions"] == ["lower([a])"]
+        assert indexes["ix869_desc"]["column_sorting"] == {"b": ("desc",)}
+        assert indexes["ix869_filt"]["dialect_options"] == {"cubrid_where": "c>3"}
+        assert indexes["ix869_pref"]["dialect_options"] == {"cubrid_length": {"a": 5}}
+        assert indexes["ix869_mix"]["expressions"] == ["b", "lower([a]) DESC"]
+
+    def test_reflected_table_recreates_the_same_indexes(self, engine, created):
+        import warnings
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", sa.exc.SAWarning)
+            reflected = Table(self.TABLE, MetaData(), autoload_with=engine)
+        copy_name = f"{self.TABLE}_copy"
+        copy = reflected.to_metadata(MetaData(), name=copy_name)
+        for index in copy.indexes:
+            index.name = f"{index.name}_c"
+        copy.create(engine)
+
+        def shapes(table, suffix):
+            return {
+                name[: len(name) - len(suffix)] if suffix else name: {
+                    k: v for k, v in index.items() if k != "name"
+                }
+                for name, index in self._indexes(engine, table).items()
+            }
+
+        assert shapes(copy_name, "_c") == shapes(self.TABLE, "")
+
+    def test_autogenerate_is_stable_and_detects_changes(self, engine, created):
+        from alembic.autogenerate import compare_metadata
+        from alembic.migration import MigrationContext
+
+        def diff(meta):
+            with engine.connect() as conn:
+                context = MigrationContext.configure(
+                    conn,
+                    opts={"include_name": lambda n, t, p: t != "table" or n == self.TABLE},
+                )
+                return compare_metadata(context, meta)
+
+        assert diff(self._model()) == []
+        for changed in ({"where": 4}, {"length": 6}, {"desc": False}):
+            kinds = sorted(d[0] for d in diff(self._model(**changed)))
+            assert kinds == ["add_index", "remove_index"], changed

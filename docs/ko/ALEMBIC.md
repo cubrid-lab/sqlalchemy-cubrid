@@ -338,7 +338,7 @@ CUBRID Alembic 구현은 `alter_column()`을 네이티브 CUBRID DDL로 매핑�
 | `alter_column` (comment) | ✅ | `MODIFY`. `existing_type`과 유지할 다른 `existing_*` 값 필요 |
 | `alter_column` (type) | ✅ | 손실 변환에는 `batch_alter_table` |
 | `alter_column` (rename) | ✅ | — |
-| `create_index` | ✅ | `if_not_exists=True`는 `CompileError`를 발생시킵니다(CUBRID에는 `CREATE INDEX IF NOT EXISTS`가 없음). 대신 먼저 `inspect(conn).has_index()`로 확인하세요 |
+| `create_index` | ✅ | 식, `DESC`, 필터(`cubrid_where`), 접두사(`cubrid_length`) 인덱스를 리플렉트하고 autogenerate에서 비교합니다 (#869). `if_not_exists=True`는 `CompileError`를 발생시킵니다(CUBRID에는 `CREATE INDEX IF NOT EXISTS`가 없음). 대신 먼저 `inspect(conn).has_index()`로 확인하세요 |
 | `drop_index` | ✅ | `DROP INDEX <name> ON <table>`을 생성하므로 `table_name`이 필수입니다(없으면 `CompileError`). `if_exists=True`는 `CompileError`를 발생시킵니다(CUBRID에는 `DROP INDEX IF EXISTS`가 없음) |
 | `add_constraint` | ✅ | — |
 | `drop_constraint` | ✅ | — |
