@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **A MERGE assignment key that is a column of another table now raises `CompileError`
+  (#847)**, also when the target has a column of the same name. Such a key was silently
+  read as the target's column, as the MERGE documentation then described. Use the
+  target's column (`target.c.name`) or the string `"name"`; the column-list shorthand
+  `when_not_matched_then_insert([source.c.id, ...])` is unchanged.
+
+### Changed
+
+- **MERGE assignment keys must belong to the target (#847)** — `visit_merge()` resolved a
+  Column key by name, so `source.c.name` used as an UPDATE or INSERT key in
+  `when_matched_then_update()` / `when_not_matched_then_insert()` mappings or pairs was
+  accepted as `target.c.name`. A bound column key now has to have lineage to the target
+  (the target's own column or one of an alias of it); any other table's column raises
+  `CompileError` naming that table. String keys, unbound `sa.column()` keys and the
+  column-list shorthand still resolve by name, and the SQL and bind order of legitimate
+  statements are unchanged.
+
 ### Deprecated
 
 - **Unused `display_width` and `values` type arguments (#870)** — `SMALLINT` /

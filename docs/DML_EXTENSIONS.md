@@ -289,7 +289,8 @@ stmt = (
 Column keys in `when_matched_then_update()` and `when_not_matched_then_insert()` dictionaries are resolved as follows:
 
 1. **String keys** — must match a column name in the target table. Raises `CompileError` if no matching column exists.
-2. **Column objects** — if the column belongs to the target table, its DB-level name is used directly. If it belongs to another table but a column with the same key exists in the target, the target column's name is used.
+2. **Column objects** — a column of the target table, or of an alias of it, resolves to that target column, and its DB-level name is used. A column of another table raises `CompileError`, also when the target has a column of the same name (#847): `source.c.name` is not `target.c.name`, so use the target's column or the string `"name"`. A column not bound to any table (`sa.column("name")`) is matched by name.
+3. **Column-list shorthand** — `when_not_matched_then_insert([source.c.id, source.c.name])` inserts each listed source column into the target column of the same name, so these keys are matched by name.
 
 ```python
 # Valid: string key matches target column
@@ -300,6 +301,10 @@ Column keys in `when_matched_then_update()` and `when_not_matched_then_insert()`
 
 # Invalid: string key not in target table → CompileError
 .when_matched_then_update({"nonexistent_col": source_table.c.name})
+
+# Invalid: a source column as the assignment key, even with a same-named
+# target column → CompileError (#847)
+.when_matched_then_update({source_table.c.name: source_table.c.name})
 ```
 
 **Compile-time errors:**
@@ -310,6 +315,7 @@ Column keys in `when_matched_then_update()` and `when_not_matched_then_insert()`
 | `MERGE statement requires a USING source` | `.using()` not called |
 | `MERGE statement requires an ON condition` | `.on()` not called |
 | `MERGE: column 'X' not found in target table` | String/Column key doesn't resolve to a target column |
+| `MERGE: assignment key column 'X' belongs to 'T', not the MERGE target` | A Column of another table is used as an assignment key |
 
 ---
 

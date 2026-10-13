@@ -575,18 +575,34 @@ class CubridCompiler(compiler.SQLCompiler):
 
         target_columns = getattr(target, "c", None)
 
-        def _resolve_target_column(column_key: Any) -> Any | None:
+        def _resolve_target_column(column_key: Any, *, by_name: bool = False) -> Any | None:
             if isinstance(column_key, str):
                 if target_columns is not None and column_key in target_columns:
                     return target_columns[column_key]
                 return None
             if hasattr(column_key, "name"):
                 name = column_key.name
-                if target_columns is not None and name in target_columns:
-                    return target_columns[name]
-                if target_columns is not None:
+                if target_columns is None:
+                    return column_key
+                owner = getattr(column_key, "table", None)
+                if not by_name and owner is not None and hasattr(target, "corresponding_column"):
+                    # A column bound to a table must come from the target (or
+                    # an alias of it), not just share a name with one of its
+                    # columns: source.c.name is not target.c.name (#847).
+                    owned = target.corresponding_column(column_key)
+                    if owned is not None:
+                        return owned
+                    if name in target_columns:
+                        owner_name = getattr(owner, "name", None) or repr(owner)
+                        raise exc.CompileError(
+                            f"MERGE: assignment key column '{name}' belongs to "
+                            f"'{owner_name}', not the MERGE target; use the target's "
+                            f"column or the string '{name}'"
+                        )
                     raise exc.CompileError(f"MERGE: column '{name}' not found in target table")
-                return column_key
+                if name in target_columns:
+                    return target_columns[name]
+                raise exc.CompileError(f"MERGE: column '{name}' not found in target table")
             return None
 
         def _render_column_name(column_key: Any, resolved: Any | None = None) -> str:
@@ -658,8 +674,12 @@ class CubridCompiler(compiler.SQLCompiler):
 
             rendered_columns = []
             rendered_values = []
+            # The column-list shorthand, when_not_matched_then_insert([src.c.a, ...]),
+            # inserts source columns into the same-named target columns, so its keys
+            # are matched by name on purpose (#847).
+            by_name = bool(when_not_matched.get("by_name"))
             for column_key, value in zip(insert_columns, insert_values):
-                target_column = _resolve_target_column(column_key)
+                target_column = _resolve_target_column(column_key, by_name=by_name)
                 if target_column is None and isinstance(column_key, str):
                     raise exc.CompileError(
                         f"MERGE WHEN NOT MATCHED: column '{column_key}' not found in target table"

@@ -3540,3 +3540,75 @@ class TestDialectSmallCorrectness870:
             warnings.simplefilter("error")
             cubrid_types.BIGINT()
             cubrid_types.CHAR(3)
+
+
+# ---------------------------------------------------------------------------
+# MERGE assignment keys must belong to the target (#847)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeForeignColumnKeys847:
+    target = Table(
+        "t847", MetaData(), Column("id", Integer, primary_key=True), Column("name", String(20))
+    )
+    source = Table(
+        "s847", MetaData(), Column("id", Integer, primary_key=True), Column("name", String(20))
+    )
+
+    def _base(self, target=None):
+        from sqlalchemy_cubrid.dml import merge
+
+        target = self.target if target is None else target
+        return merge(target).using(self.source).on(target.c.id == self.source.c.id)
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda m, s: m.when_matched_then_update({s.c.name: "x"}),
+            lambda m, s: m.when_matched_then_update([(s.c.name, "x")]),
+            lambda m, s: m.when_not_matched_then_insert({s.c.id: s.c.id, s.c.name: s.c.name}),
+            lambda m, s: m.when_not_matched_then_insert([(s.c.id, 1), (s.c.name, "x")]),
+        ],
+    )
+    def test_foreign_column_with_a_colliding_name_is_rejected(self, build):
+        stmt = build(self._base(), self.source)
+        with pytest.raises(CompileError, match="belongs to 's847', not the MERGE target"):
+            _compile(stmt)
+
+    def test_foreign_column_with_an_unknown_name_keeps_the_202_error(self):
+        other = Table("o847", MetaData(), Column("zzz", Integer))
+        stmt = self._base().when_matched_then_update({other.c.zzz: 1})
+        with pytest.raises(CompileError, match="column 'zzz' not found in target table"):
+            _compile(stmt)
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda m, t, s: m.when_matched_then_update({t.c.name: s.c.name}),
+            lambda m, t, s: m.when_matched_then_update([("name", s.c.name)]),
+            lambda m, t, s: m.when_matched_then_update({sa.column("name"): s.c.name}),
+            lambda m, t, s: m.when_not_matched_then_insert([s.c.id, s.c.name]),
+            lambda m, t, s: m.when_not_matched_then_insert(s.c),
+            lambda m, t, s: m.when_not_matched_then_insert({t.c.id: s.c.id, "name": s.c.name}),
+        ],
+    )
+    def test_legitimate_keys_still_compile(self, build):
+        sql = _compile(build(self._base(), self.target, self.source))
+        assert "t847" in sql
+        assert "belongs to" not in sql
+
+    def test_alias_target_accepts_base_and_alias_columns(self):
+        alias = self.target.alias("tgt")
+        stmt = self._base(alias).when_matched_then_update(
+            {self.target.c.name: self.source.c.name, alias.c.id: self.source.c.id}
+        )
+        sql = _norm(_compile(stmt))
+        assert "UPDATE SET name = s847.name, id = s847.id" in sql
+
+    def test_bind_order_of_legitimate_statement_is_unchanged(self):
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        stmt = self._base().when_matched_then_update({self.target.c.name: "a"})
+        stmt = stmt.when_not_matched_then_insert({self.target.c.id: 7, "name": "b"})
+        compiled = stmt.compile(dialect=PyCubridDialect())
+        assert [compiled.params[key] for key in compiled.positiontup] == ["a", 7, "b"]

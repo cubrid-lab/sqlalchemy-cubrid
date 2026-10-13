@@ -291,7 +291,8 @@ stmt = (
 `when_matched_then_update()`와 `when_not_matched_then_insert()` 딕셔너리의 컬럼 키는 다음과 같이 해석됩니다:
 
 1. **문자열 키** — 대상 테이블의 컬럼 이름과 일치해야 함. 일치하는 컬럼이 없으면 `CompileError` 발생.
-2. **Column 객체** — 컬럼이 대상 테이블에 속하면 DB 수준 이름을 직접 사용. 다른 테이블에 속하지만 같은 키의 컬럼이 대상에 있으면 대상 컬럼 이름을 사용.
+2. **Column 객체** — 대상 테이블이나 그 별칭의 컬럼은 해당 대상 컬럼으로 해석되며 DB 수준 이름을 사용. 다른 테이블의 컬럼은 대상에 같은 이름의 컬럼이 있어도 `CompileError` 발생 (#847): `source.c.name`은 `target.c.name`이 아니므로 대상 컬럼이나 문자열 `"name"`을 사용. 어떤 테이블에도 묶이지 않은 컬럼(`sa.column("name")`)은 이름으로 대응.
+3. **컬럼 목록 축약형** — `when_not_matched_then_insert([source.c.id, source.c.name])`은 나열한 각 소스 컬럼을 같은 이름의 대상 컬럼에 삽입하므로, 이 키들은 이름으로 대응.
 
 ```python
 # 유효: 문자열 키가 대상 컬럼과 일치
@@ -302,6 +303,9 @@ stmt = (
 
 # 무효: 대상 테이블에 없는 문자열 키 → CompileError
 .when_matched_then_update({"nonexistent_col": source_table.c.name})
+
+# 무효: 대상에 같은 이름의 컬럼이 있어도 소스 컬럼을 할당 키로 사용 → CompileError (#847)
+.when_matched_then_update({source_table.c.name: source_table.c.name})
 ```
 
 **컴파일 시점 오류:**
@@ -311,6 +315,7 @@ stmt = (
 | `MERGE statement requires a target table` | 대상 테이블 미지정 |
 | `MERGE statement requires a USING source` | `.using()` 미호출 |
 | `MERGE statement requires an ON condition` | `.on()` 미호출 |
+| `MERGE: assignment key column 'X' belongs to 'T', not the MERGE target` | 다른 테이블의 Column을 할당 키로 사용 |
 | `MERGE: column 'X' not found in target table` | 문자열/Column 키가 대상 컬럼으로 해석되지 않음 |
 
 ---

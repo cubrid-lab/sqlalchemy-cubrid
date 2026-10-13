@@ -276,6 +276,9 @@ class Merge(Executable, ClauseElement, Generative):
     ) -> Self:
         columns: List[Any]
         values: List[Any]
+        # The column-list shorthand inserts each source column into the target
+        # column of the same name, so its keys are matched by name (#847).
+        by_name = False
 
         if isinstance(values_dict_or_column_list, Mapping):
             pairs = self._normalize_key_value_pairs(
@@ -307,6 +310,7 @@ class Merge(Executable, ClauseElement, Generative):
                         "a list of tuples, or a non-empty column list"
                     )
                 values = list(columns)
+                by_name = True
         else:
             raise ValueError(
                 "values_dict_or_column_list must be a non-empty dictionary, "
@@ -317,6 +321,7 @@ class Merge(Executable, ClauseElement, Generative):
             "columns": columns,
             "values": values,
             "where": where,
+            "by_name": by_name,
         }
         return self
 
