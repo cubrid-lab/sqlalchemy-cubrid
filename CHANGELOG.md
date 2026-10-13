@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`on_duplicate_key_update()` is cacheable (#871)** — `OnDuplicateClause` had no
+  `_traverse_internals`, so every `INSERT ... ON DUPLICATE KEY UPDATE` emitted an
+  `SAWarning` on first use and was compiled again on every execution. It now declares
+  the column order and update values as cache-key elements, as SQLAlchemy's MySQL
+  construct does, with the update values coerced to SQL expressions; a cached
+  statement binds each execution's own values.
+
 - **Reflection of names containing `:name`, collection type classes and join linting
   (#870)** — the `SHOW COLUMNS` / `SHOW INDEXES` / `SHOW CREATE TABLE` / `SHOW CREATE
   VIEW` statements were built with `text()`, so a table named `x :y` or `w (:z)` failed

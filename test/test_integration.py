@@ -4091,3 +4091,46 @@ def cubrid_set_of_integer():
     from sqlalchemy_cubrid import types as cubrid_types
 
     return cubrid_types.SET(Integer)
+
+
+class TestOnDuplicateKeyUpdateCaching871:
+    """#871: cached ON DUPLICATE KEY UPDATE statements apply their own values."""
+
+    def test_cached_statements_use_fresh_values(self, engine):
+        import warnings
+
+        from sqlalchemy_cubrid.dml import insert
+
+        meta = MetaData()
+        tbl = Table(
+            f"odku871_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("name", String(10)),
+            Column("hits", Integer),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            with engine.begin() as conn:
+                conn.execute(tbl.insert(), [{"id": 1, "name": "x", "hits": 0}])
+            cache_hits = []
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", sa.exc.SAWarning)
+                for name, step in (("b", 1), ("c", 2), ("d", 3)):
+                    stmt = insert(tbl).values(id=1, name="z", hits=0)
+                    stmt = stmt.on_duplicate_key_update(name=name, hits=tbl.c.hits + step)
+                    with engine.begin() as conn:
+                        result = conn.execute(stmt)
+                        cache_hits.append(result.context.cache_hit)
+                        row = conn.execute(sa.select(tbl.c.name, tbl.c.hits)).one()
+                    assert tuple(row) == (name, {"b": 1, "c": 3, "d": 6}[name])
+                for name in ("p", "q"):
+                    stmt = insert(tbl).values(id=1, name=name, hits=0)
+                    with engine.begin() as conn:
+                        conn.execute(stmt.on_duplicate_key_update(name=stmt.inserted.name))
+                        assert conn.execute(sa.select(tbl.c.name)).scalar() == name
+            assert cache_hits[0] != cache_hits[1]
+            assert cache_hits[1] == cache_hits[2]
+        finally:
+            meta.drop_all(engine)

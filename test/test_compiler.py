@@ -1883,30 +1883,58 @@ class TestCacheKeyRegression:
         # Same structure, different bind values → same cache key
         assert key1[0] == key2[0]
 
-    def test_insert_odku_cache_key_is_none(self):
-        """INSERT … ODKU returns None cache key (matches MySQL dialect behavior).
+    @staticmethod
+    def _key(stmt):
+        import warnings
 
-        OnDuplicateClause doesn't define _traverse_internals, so SA correctly
-        disables caching for ODKU statements. This is intentional — the dynamic
-        update dict makes safe caching non-trivial without full traversal support.
-        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", sa.exc.SAWarning)
+            return stmt._generate_cache_key()
+
+    def test_insert_odku_is_cacheable(self):
+        """#871: ON DUPLICATE KEY UPDATE has a cache key and emits no SAWarning."""
         from sqlalchemy_cubrid.dml import insert
 
         odku = insert(users).values(name="a").on_duplicate_key_update(name="b")
-        odku_key = odku._generate_cache_key()
-        assert odku_key is None
+        assert self._key(odku) is not None
 
-    def test_two_odku_variants_both_uncacheable(self):
-        """ODKU with different column sets both return None (uncacheable)."""
+    def test_odku_with_other_values_shares_the_cache_key(self):
         from sqlalchemy_cubrid.dml import insert
 
-        odku1 = insert(users).values(name="a").on_duplicate_key_update(name="updated")
-        odku2 = insert(users).values(name="a").on_duplicate_key_update(email="updated")
-        key1 = odku1._generate_cache_key()
-        key2 = odku2._generate_cache_key()
-        # Both uncacheable due to OnDuplicateClause
-        assert key1 is None
-        assert key2 is None
+        key1 = self._key(insert(users).values(name="a").on_duplicate_key_update(name="b"))
+        key2 = self._key(insert(users).values(name="z").on_duplicate_key_update(name="c"))
+        assert key1 == key2
+
+    @pytest.mark.parametrize(
+        "other",
+        [
+            lambda stmt: stmt.on_duplicate_key_update(email="b"),
+            lambda stmt: stmt.on_duplicate_key_update(name=users.c.name + "x"),
+            lambda stmt: stmt.on_duplicate_key_update(name=stmt.inserted.name),
+            lambda stmt: stmt.on_duplicate_key_update([("email", "b"), ("name", "b")]),
+            lambda stmt: stmt,
+        ],
+    )
+    def test_different_odku_clauses_have_distinct_cache_keys(self, other):
+        from sqlalchemy_cubrid.dml import insert
+
+        base = insert(users).values(name="a")
+        reference = self._key(base.on_duplicate_key_update([("name", "b"), ("email", "b")]))
+        assert self._key(other(base)) != reference
+
+    def test_cached_odku_compiles_the_new_values(self):
+        """The cached compiled form must bind the new statement's update value."""
+        from sqlalchemy_cubrid.dml import insert
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        dialect = PyCubridDialect()
+        first = insert(users).values(name="a").on_duplicate_key_update(name="b")
+        second = insert(users).values(name="z").on_duplicate_key_update(name="c")
+        compiled = dialect.statement_compiler(dialect, first, cache_key=self._key(first))
+        params = compiled.construct_params(
+            extracted_parameters=self._key(second)[1], escape_names=False
+        )
+        assert sorted(v for v in params.values() if isinstance(v, str)) == ["c", "z"]
 
     def test_replace_cache_key(self):
         """REPLACE should produce a stable, non-None cache key."""
