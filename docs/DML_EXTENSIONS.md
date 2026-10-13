@@ -665,7 +665,7 @@ Practical guidance:
 1. Benchmark with representative cardinality and index layout.
 2. Keep matched predicates sargable (`ON` keys indexed).
 3. Use tuple ordering in ODKU when deterministic SQL text benefits statement cache behavior.
-4. `INSERT ... ON DUPLICATE KEY UPDATE` statements use SQLAlchemy's compiled cache (#871): statements with the same columns and update expressions compile once, and each execution binds its own values. Earlier versions emitted an `SAWarning` and compiled every statement again.
+4. `INSERT ... ON DUPLICATE KEY UPDATE` statements use SQLAlchemy's compiled cache (#871): statements with the same columns and update expressions compile once, and each execution binds its own values. Earlier versions emitted an `SAWarning` the first time and compiled every such statement again.
 
 ---
 

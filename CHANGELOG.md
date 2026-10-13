@@ -19,11 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`on_duplicate_key_update()` is cacheable (#871)** — `OnDuplicateClause` had no
-  `_traverse_internals`, so every `INSERT ... ON DUPLICATE KEY UPDATE` emitted an
-  `SAWarning` on first use and was compiled again on every execution. It now declares
-  the column order and update values as cache-key elements, as SQLAlchemy's MySQL
-  construct does, with the update values coerced to SQL expressions; a cached
-  statement binds each execution's own values.
+  `_traverse_internals`, so the first `INSERT ... ON DUPLICATE KEY UPDATE` emitted
+  SQLAlchemy's "will not make use of SQL compilation caching" `SAWarning` and every
+  such statement was compiled again on each execution. It now declares the column order
+  and the update values as cache-key elements (the traversal of SQLAlchemy 2.1's MySQL
+  construct), with the update values coerced to SQL expressions; a cached statement
+  binds each execution's own values, on SQLAlchemy 2.0 and 2.1.
 
 - **Reflection of names containing `:name`, collection type classes and join linting
   (#870)** — the `SHOW COLUMNS` / `SHOW INDEXES` / `SHOW CREATE TABLE` / `SHOW CREATE

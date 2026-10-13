@@ -1922,6 +1922,22 @@ class TestCacheKeyRegression:
         reference = self._key(base.on_duplicate_key_update([("name", "b"), ("email", "b")]))
         assert self._key(other(base)) != reference
 
+    @pytest.mark.parametrize(
+        "update",
+        [
+            lambda stmt: users.c.name + "x",
+            lambda stmt: stmt.inserted.name,
+            lambda stmt: sa.func.upper(users.c.name),
+        ],
+    )
+    def test_update_expression_is_part_of_the_cache_key(self, update):
+        """Same update column: only the value expression differs from the baseline."""
+        from sqlalchemy_cubrid.dml import insert
+
+        base = insert(users).values(name="a")
+        literal = self._key(base.on_duplicate_key_update(name="b"))
+        assert self._key(base.on_duplicate_key_update(name=update(base))) != literal
+
     def test_cached_odku_compiles_the_new_values(self):
         """The cached compiled form must bind the new statement's update value."""
         from sqlalchemy_cubrid.dml import insert

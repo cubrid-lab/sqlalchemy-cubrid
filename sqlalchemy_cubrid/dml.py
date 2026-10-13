@@ -144,9 +144,10 @@ class OnDuplicateClause(ClauseElement):
     update: Dict[str, Any]
     stringify_dialect = "cubrid"
 
-    # Cache key: the column order and the update values (#871), as in
-    # SQLAlchemy's MySQL OnDuplicateClause. The inserted alias derives from
-    # the INSERT's table, which the statement's own cache key covers.
+    # Cache key: the column order and the update values (#871), the same
+    # traversal as SQLAlchemy 2.1's MySQL OnDuplicateClause (2.0's MySQL
+    # construct is not cacheable at all). The inserted alias derives from the
+    # INSERT's table, which the statement's own cache key covers.
     _traverse_internals = [
         ("_parameter_ordering", InternalTraversal.dp_string_list),
         ("update", InternalTraversal.dp_dml_values),
