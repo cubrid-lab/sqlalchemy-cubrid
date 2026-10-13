@@ -73,7 +73,7 @@ sequenceDiagram
       note over SA, TypeCompiler: SQL Compilation
       SA->>Compiler: process(select_statement)
       Compiler->>Compiler: visit_select() → column clause
-      Compiler->>Compiler: limit_clause() → LIMIT/OFFSET (no FETCH FIRST)
+      Compiler->>Compiler: limit_clause() / fetch_clause() → LIMIT (no FETCH FIRST)
       Compiler->>Compiler: for_update_clause()
       Compiler->>TypeCompiler: process column types
       TypeCompiler-->>Compiler: CUBRID SQL type strings

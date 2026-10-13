@@ -3827,3 +3827,32 @@ class TestJSONPathKeyEscaping866:
         stmt = sa.select(json_table.c.doc[("n", 'q"k')].as_integer())
         with engine.connect() as conn:
             assert conn.execute(stmt).scalar() == 12
+
+
+class TestFetchAsLimitLive867:
+    """#867: Select.fetch() runs on the live server as LIMIT."""
+
+    @pytest.fixture
+    def numbers(self, engine):
+        meta = MetaData()
+        tbl = Table(f"integration_fetch867_{_TABLE_SUFFIX}", meta, Column("n", Integer))
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(tbl.insert(), [{"n": i} for i in range(1, 6)])
+        try:
+            yield tbl
+        finally:
+            meta.drop_all(engine)
+
+    def test_fetch_and_offset_fetch(self, engine, numbers):
+        ordered = sa.select(numbers.c.n).order_by(numbers.c.n)
+        with engine.connect() as conn:
+            assert conn.execute(ordered.fetch(2)).scalars().all() == [1, 2]
+            assert conn.execute(ordered.offset(1).fetch(2)).scalars().all() == [2, 3]
+            inline = (
+                ordered.offset(3)
+                .fetch(5)
+                .compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+            )
+            assert conn.exec_driver_sql(str(inline)).scalars().all() == [4, 5]

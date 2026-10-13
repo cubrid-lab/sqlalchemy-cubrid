@@ -316,6 +316,43 @@ class CubridCompiler(compiler.SQLCompiler):
             )
         return " \n LIMIT %s" % (self.process(limit_clause, **kw),)
 
+    def fetch_clause(
+        self,
+        select: Any,
+        fetch_clause: Any = None,
+        require_offset: bool = False,
+        use_literal_execute_for_simple_int: bool = False,
+        **kw: Any,
+    ) -> str:
+        """Render ``Select.fetch()`` as CUBRID ``LIMIT`` (#867).
+
+        CUBRID has no ``OFFSET ... ROWS`` / ``FETCH FIRST ... ROWS ONLY``, and
+        no ``LIMIT`` form for ``PERCENT`` or ``WITH TIES``.
+        """
+        if fetch_clause is None:
+            fetch_clause = select._fetch_clause
+            options = select._fetch_clause_options or {}
+        else:
+            options = {}
+        if options.get("percent"):
+            raise CompileError("CUBRID does not support FETCH FIRST ... PERCENT")
+        if options.get("with_ties"):
+            raise CompileError("CUBRID does not support FETCH FIRST ... WITH TIES")
+
+        def render(clause: Any) -> str:
+            if use_literal_execute_for_simple_int and select._simple_int_clause(clause):
+                clause = clause.render_literal_execute()
+            return str(self.process(clause, **kw))
+
+        offset_clause = select._offset_clause
+        if fetch_clause is None:
+            if offset_clause is None:
+                return ""
+            return " \n LIMIT %s, %s" % (render(offset_clause), _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT)
+        if offset_clause is not None:
+            return " \n LIMIT %s, %s" % (render(offset_clause), render(fetch_clause))
+        return " \n LIMIT %s" % (render(fetch_clause),)
+
     def update_limit_clause(self, update_stmt: Any) -> str | None:  # pyright: ignore[reportIncompatibleMethodOverride]
         # https://www.cubrid.org/manual/en/11.0/sql/query/update.html
         limit = update_stmt.kwargs.get(f"{self.dialect.name}_limit", None)

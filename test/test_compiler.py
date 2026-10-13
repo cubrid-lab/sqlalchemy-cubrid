@@ -3333,3 +3333,51 @@ class TestCompileOptionsForwarded862:
         )
         assert rendered == "SET(VARCHAR(10))"
         assert seen and seen[-1].get("type_expression") is marker
+
+
+# ---------------------------------------------------------------------------
+# Select.fetch() renders as LIMIT (#867)
+# ---------------------------------------------------------------------------
+
+
+class TestFetchAsLimit867:
+    """CUBRID has no FETCH FIRST ... ROWS ONLY; fetch() uses LIMIT."""
+
+    def test_fetch(self):
+        sql = _compile(select(users.c.id).order_by(users.c.id).fetch(2))
+        assert _norm(sql).endswith("ORDER BY users.id LIMIT 2")
+        assert "FETCH" not in sql
+
+    def test_offset_fetch(self):
+        sql = _compile(select(users.c.id).offset(1).fetch(2))
+        assert _norm(sql).endswith("LIMIT 1, 2")
+        assert "OFFSET" not in sql
+
+    def test_fetch_binds_without_literal_binds(self):
+        compiled = select(users.c.id).offset(3).fetch(4).compile(dialect=CubridDialect())
+        assert _norm(compiled.string).endswith("LIMIT ?, ?")
+        assert sorted(compiled.params.values()) == [3, 4]
+
+    def test_fetch_in_subquery(self):
+        inner = select(users.c.id).fetch(1).scalar_subquery()
+        sql = _compile(select(users.c.name).where(users.c.id == inner))
+        assert "LIMIT 1)" in _norm(sql)
+
+    @pytest.mark.parametrize(
+        ("option", "message"), [("percent", "PERCENT"), ("with_ties", "WITH TIES")]
+    )
+    def test_fetch_options_raise(self, option, message):
+        stmt = select(users.c.id).order_by(users.c.id).fetch(2, **{option: True})
+        with pytest.raises(CompileError, match=message):
+            _compile(stmt)
+
+    def test_fetch_clause_with_explicit_clause_and_offset_only(self):
+        compiler = CubridDialect().statement_compiler(CubridDialect(), None)
+        offset_only = select(users.c.id).offset(5)
+        assert compiler.fetch_clause(offset_only, fetch_clause=None) == (
+            " \n LIMIT %s, %s" % ("?", _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT)
+        )
+        assert compiler.fetch_clause(select(users.c.id)) == ""
+        assert compiler.fetch_clause(select(users.c.id), fetch_clause=sa.literal(3)) == (
+            " \n LIMIT ?"
+        )

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`Select.fetch()` renders as `LIMIT` (#867)** — there was no `fetch_clause`
+  override, so `select(...).fetch(2)` and `.offset(1).fetch(2)` emitted the generic
+  `OFFSET ... ROWS FETCH FIRST n ROWS ONLY`, which CUBRID rejects with -493. They now
+  render as `LIMIT 2` and `LIMIT 1, 2`; `percent=True` and `with_ties=True` raise
+  `CompileError`, since CUBRID has no `LIMIT` form for them.
+
 - **JSON path keys use JSON string escaping (#866)** — `col["key"]` and
   `col[("a", "b")]` doubled a `"` in the key, which CUBRID reads as a JSON string:
   `doc['a"b']` failed with -1200 "Invalid JSON path" and `doc['a\\b']` silently
