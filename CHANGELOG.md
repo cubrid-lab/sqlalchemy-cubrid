@@ -10,8 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - **`literal_binds` and other compile options reach CAST operands, ON DUPLICATE KEY
-  UPDATE values and collection members (#862)** — four nested `process()` calls
-  dropped the compile keyword arguments, so `CAST(t.name || ? AS VARCHAR(10))` and
+  UPDATE values and collection members (#862)** — the nested `process()` calls in
+  four places (`visit_cast`, both ON DUPLICATE KEY UPDATE value paths and collection
+  member DDL) dropped the compile keyword arguments, so `CAST(t.name || ? AS VARCHAR(10))` and
   `ON DUPLICATE KEY UPDATE name = ?` kept placeholders under `literal_binds`,
   `server_default=cast(literal(5), String(10))` rendered `DEFAULT CAST(? AS
   VARCHAR(10))` and failed `create_all` with "wrong number of parameters", a
