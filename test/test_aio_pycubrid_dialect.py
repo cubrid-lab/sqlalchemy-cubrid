@@ -429,3 +429,25 @@ class TestAsyncTerminateClosedLoop872:
 
         assert driver._connected is False
         assert driver.invalidated is True
+
+
+def test_module_imports_without_the_terminate_mixin(monkeypatch):
+    """#872: SQLAlchemy 2.0.0 to 2.0.43 lack AsyncAdapt_terminate; the adapter still builds."""
+    import importlib.util
+
+    import sqlalchemy.connectors.asyncio as sa_asyncio
+
+    import sqlalchemy_cubrid.aio_pycubrid_dialect as module
+
+    monkeypatch.delattr(sa_asyncio, "AsyncAdapt_terminate")
+    # A private copy, so the real module and the classes other tests hold stay intact.
+    spec = importlib.util.spec_from_file_location("_aio_without_terminate", module.__file__)
+    assert spec is not None and spec.loader is not None
+    copy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(copy)
+
+    assert copy._HAS_TERMINATE is False
+    assert copy.PyCubridAsyncDialect.has_terminate is False
+    conn = copy.AsyncAdapt_pycubrid_connection(MagicMock(), MagicMock())
+    assert not hasattr(conn, "terminate")
+    assert module.PyCubridAsyncDialect.has_terminate is True

@@ -4140,6 +4140,7 @@ class TestAsyncTerminateClosedLoop872:
     """#872: an async connection collected after its event loop closed is retired."""
 
     def test_connection_collected_after_its_loop_closed(self):
+        pytest.importorskip("pycubrid.aio")
         import asyncio
         import gc
         import os

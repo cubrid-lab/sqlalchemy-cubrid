@@ -41,8 +41,11 @@ else:
         from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate as _TerminateMixin
 
         _HAS_TERMINATE = True
-    except ImportError:  # pragma: no cover — SQLAlchemy 2.0.0 to 2.0.43
-        _TerminateMixin = object
+    except ImportError:  # SQLAlchemy 2.0.0 to 2.0.43
+
+        class _TerminateMixin:
+            """Empty stand-in: ``object`` itself would give an inconsistent MRO."""
+
         _HAS_TERMINATE = False
 
 _LOGGER = logging.getLogger(__name__)
