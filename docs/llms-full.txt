@@ -4901,43 +4901,43 @@ default path. Its contracts would allow an opt-in, but not a silent default:
 The same `scripts/bench_dialect_baseline.py`, extended with a CUBRIDdb route, an
 async mode and a concurrent-connections workload, was run on CUBRID 10.2.18.9024,
 11.0.16.0419, 11.2.9.0866 and 11.4.6.1963 (official `cubrid/cubrid` images in
-Docker, one server at a time, port bound to 127.0.0.1) through
+Docker, one benchmark server at a time, port bound to 127.0.0.1) through
 `cubrid+pycubrid://`, `cubrid://` (CUBRIDdb built from cubrid-python v11.3.0.51,
 reported as `11.3.0.1`) and `cubrid+aiopycubrid://`. Same host, CPython 3.12.13,
-pycubrid 1.12.0 and SQLAlchemy 2.1.4 as above; no other CUBRID container ran this
-time. Each figure is the median of 5 trials; the IQRs, every trial value and the
-exact commands are in
+pycubrid 1.12.0 and SQLAlchemy 2.1.4 as above. From the 11.0 async run onward, one
+to five CUBRID containers of unrelated work also ran on the host (mostly idle,
+3–5% CPU each when sampled). Each figure is the median of 5 trials; the IQRs,
+every trial value and the exact commands are in
 [`benchmarks/2026-10-13-dialect-baseline-followup/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-13-dialect-baseline-followup).
-Compare figures within this run only: CUBRID 11.4 through pycubrid was measured
-again here, and its literal `executemany()` batches took 2–4 times as long as on
-2026-10-12 (raw INSERT 1,790 versus 480 ms; each trial now runs the concurrency
-workload before the batches), while its reads matched within the noise.
+The CUBRID 11.4 pycubrid reads match the 2026-10-12 run within the trial
+spread; batch timings vary widely in both runs.
 
 One connection, one-row SELECT by primary key in µs and SELECT of 1,000 rows in ms:
 
 | Server | Driver | raw | Core | Core, no cache | ORM | Core fetch | ORM fetch |
 |---|---|---:|---:|---:|---:|---:|---:|
-| 10.2 | pycubrid | 538 | 821 | 936 | 819 | 4.55 | 8.09 |
-| 10.2 | CUBRIDdb | 461 | 689 | 852 | 662 | 4.15 | 7.60 |
-| 10.2 | aiopycubrid | 645 | 910 | 1118 | 985 | 5.23 | 8.36 |
-| 11.0 | pycubrid | 511 | 654 | 877 | 728 | 4.43 | 8.05 |
-| 11.0 | CUBRIDdb | 470 | 582 | 870 | 687 | 4.30 | 7.25 |
-| 11.0 | aiopycubrid | 1028 | 890 | 1063 | 990 | 4.61 | 8.10 |
-| 11.2 | pycubrid | 922 | 749 | 1024 | 900 | 4.75 | 8.26 |
-| 11.2 | CUBRIDdb | 484 | 938 | 856 | 775 | 4.27 | 7.76 |
-| 11.2 | aiopycubrid | 856 | 1274 | 1172 | 1387 | 4.70 | 8.46 |
-| 11.4 | pycubrid | 603 | 889 | 1016 | 836 | 4.26 | 7.67 |
-| 11.4 | CUBRIDdb | 528 | 653 | 913 | 777 | 4.22 | 7.47 |
-| 11.4 | aiopycubrid | 883 | 1384 | 1617 | 2222 | 4.78 | 8.18 |
+| 10.2 | pycubrid | 506 | 627 | 892 | 760 | 4.57 | 7.83 |
+| 10.2 | CUBRIDdb | 455 | 646 | 842 | 748 | 4.24 | 7.46 |
+| 10.2 | aiopycubrid | 553 | 767 | 946 | 986 | 4.51 | 8.15 |
+| 11.0 | pycubrid | 435 | 579 | 767 | 649 | 3.98 | 7.29 |
+| 11.0 | CUBRIDdb | 447 | 582 | 789 | 736 | 4.09 | 7.33 |
+| 11.0 | aiopycubrid | 635 | 859 | 1123 | 988 | 4.65 | 8.31 |
+| 11.2 | pycubrid | 730 | 762 | 1019 | 905 | 4.35 | 7.99 |
+| 11.2 | CUBRIDdb | 509 | 651 | 863 | 753 | 4.06 | 7.52 |
+| 11.2 | aiopycubrid | 1295 | 1367 | 1456 | 1508 | 4.84 | 8.30 |
+| 11.4 | pycubrid | 595 | 764 | 973 | 956 | 4.90 | 8.11 |
+| 11.4 | CUBRIDdb | 551 | 691 | 899 | 765 | 3.79 | 7.25 |
+| 11.4 | aiopycubrid | 653 | 876 | 1158 | 1062 | 4.49 | 8.03 |
 
-- No server version is consistently faster or slower for reads; differences of a
-  few hundred µs between rows are within the trial-to-trial spread.
-- CUBRIDdb's raw one-row SELECT (461–528 µs) is the lowest on every server, and
-  its Core and ORM figures are close to pycubrid's.
-- The async route adds about 0.1–0.5 ms to a Core one-row SELECT and up to 0.7 ms
-  to a Core 1,000-row fetch on one connection (event loop and greenlet bridge).
-- Reflection (sync drivers only) takes 13.5–18.9 ms with a fresh `Inspector` and
-  16.7–20.6 ms with `MetaData.reflect()`, with the same 8 and 10 SQL statements on
+- No server version is consistently faster or slower; the differences between
+  rows are within the trial-to-trial spread.
+- The two sync drivers are close: a raw one-row SELECT takes 447–551 µs through
+  CUBRIDdb and 435–730 µs through pycubrid, and Core and ORM differ by less than
+  0.2 ms.
+- The async route adds 0.1–0.6 ms to a Core one-row SELECT on one connection
+  (event loop and greenlet bridge) and at most 0.7 ms to a Core 1,000-row fetch.
+- Reflection (sync drivers only) takes 13.3–16.2 ms with a fresh `Inspector` and
+  16.4–21.1 ms with `MetaData.reflect()`, with the same 8 and 10 SQL statements on
   every server and both drivers.
 
 Batch UPDATE of 1,000 rows with its commit, in ms (INSERT through
@@ -4945,53 +4945,54 @@ insertmanyvalues is in the last column):
 
 | Server | raw `executemany()` | raw `prepared=True` | Core, pycubrid | Core, CUBRIDdb | Core, async | Core INSERT, any driver |
 |---|---:|---:|---:|---:|---:|---:|
-| 10.2 | 275 | 189 | 272 | 648 | 814 | 125–132 |
-| 11.0 | 289 | 139 | 522 | 439 | 1172 | 125–133 |
-| 11.2 | 1055 | 247 | 1114 | 1074 | 1201 | 131–133 |
-| 11.4 | 1121 | 213 | 1648 | 1605 | 1098 | 126–133 |
+| 10.2 | 798 | 257 | 1032 | 1047 | 351 | 126–190 |
+| 11.0 | 413 | 259 | 633 | 556 | 391 | 116–264 |
+| 11.2 | 703 | 231 | 778 | 497 | 805 | 82–125 |
+| 11.4 | 637 | 220 | 409 | 805 | 398 | 81–124 |
 
-- Literal batches were slower on 11.2 and 11.4 than on 10.2 and 11.0 in this
-  run, with wide IQRs: 2–6 times through pycubrid (raw `executemany()` and Core
-  UPDATE/DELETE lists) and 1.7–4.6 times through CUBRIDdb. The async route's
-  literal batches took 656–1,581 ms on every server. The prepared INSERT and
-  UPDATE (139–247 ms) and the insertmanyvalues INSERT (Core 125–133 ms, ORM
-  114–160 ms) stayed flat; the prepared DELETE rose from 159–173 ms to 604–713 ms
-  on 11.2 and 11.4. The cause was not investigated.
+- Literal batches (raw `executemany()` and Core UPDATE/DELETE lists) took
+  231–1,296 ms with wide IQRs and no consistent order by server or driver. The
+  prepared INSERT and UPDATE (164–261 ms) and the insertmanyvalues INSERT (72–264
+  ms, mostly 81–131 ms) stay the cheaper paths on every server and driver.
 - On CUBRIDdb, Core UPDATE/DELETE lists run one `execute()` per row (the
   dialect's `do_executemany()` guard for CUBRIDdb's unbound `None` and last-row
   `rowcount`), not the driver's own `executemany()`.
 
 Concurrent connections on CUBRID 11.4: N workers start together, each on its own
 connection (threads for the sync drivers, `asyncio` tasks for async); 500 one-row
-SELECTs or 50 committed single-row UPDATEs per worker, in operations per second:
+SELECTs or 50 committed single-row UPDATEs per worker, in operations per second
+from the first counted operation's start to the last one's end:
 
 | Driver | Connections | raw SELECT | Core SELECT | ORM SELECT | Core UPDATE + commit |
 |---|---:|---:|---:|---:|---:|
-| pycubrid (threads) | 4 | 4940 | 3825 | 3124 | 53 |
-| pycubrid (threads) | 8 | 5976 | 3901 | 3082 | 103 |
-| CUBRIDdb (threads) | 4 | 262 | 238 | 210 | 32 |
-| CUBRIDdb (threads) | 8 | 264 | 226 | 194 | 31 |
-| aiopycubrid (tasks) | 4 | 4878 | 3337 | 2656 | 58 |
-| aiopycubrid (tasks) | 8 | 5923 | 3458 | 2675 | 115 |
+| pycubrid (threads) | 4 | 4781 | 3672 | 3017 | 64 |
+| pycubrid (threads) | 8 | 5450 | 3814 | 3047 | 107 |
+| CUBRIDdb (threads) | 4 | 1623 | 390 | 433 | 28 |
+| CUBRIDdb (threads) | 8 | 839 | 479 | 581 | 25 |
+| aiopycubrid (tasks) | 4 | 4222 | 3030 | 2536 | 52 |
+| aiopycubrid (tasks) | 8 | 4814 | 3238 | 2598 | 89 |
 
-- pycubrid threads scale on every server: 4,940–5,089 raw and 3,327–3,895 Core
-  SELECTs/s with 4 connections, 5,080–6,029 and 3,539–3,901 with 8. Committed
-  UPDATEs roughly double with the connection count (about 21/s on one
-  connection, 44–53/s with 4, 95–103/s with 8) while their p50 stays at 70–84 ms,
-  so the server overlaps the commits. Core and ORM level off at about
-  3,500–3,900 and 2,500–3,100 SELECTs/s, which suggests the client process (one
-  Python interpreter) is the limit there.
-- The async route scales the same way: 4,853–5,619 raw and 3,337–3,393 Core
-  SELECTs/s with 4 tasks, 5,705–6,515 and 3,408–3,482 with 8, and 49–58 and
-  98–115 committed UPDATEs/s.
-- CUBRIDdb does not scale: with 4 or 8 threads it handled 194–1,600 SELECTs/s
-  (one connection alone does about 1,900–2,200 raw SELECTs/s, first table; the
-  newer servers were the slowest) and 21–32 committed UPDATEs/s on every server.
-  Its C extension (`cubrid_ext/python_cubrid.c` at v11.3.0.51) contains no
-  `Py_BEGIN_ALLOW_THREADS`, so it holds the GIL during server round trips and the
-  threads wait for each other. Multi-threaded applications should use pycubrid.
+- pycubrid threads scale on every server: 4,781–5,771 raw and 3,672–3,966 Core
+  SELECTs/s with 4 connections, 5,450–5,982 and 3,587–3,916 with 8. Core and ORM
+  level off at about 3,600–3,900 and 2,700–3,100 SELECTs/s, which suggests the
+  client process (one Python interpreter) is the limit there.
+- The async route scales the same way, slightly lower: 4,222–5,184 raw and
+  3,030–3,378 Core SELECTs/s with 4 tasks, 4,814–5,955 and 3,238–3,405 with 8.
+- Committed UPDATEs, about 22/s on one connection, mostly rise to 30–64/s with 4
+  connections and 89–110/s with 8 through pycubrid and the async route, with a
+  p50 of 66–83 ms, so the server overlaps the commits. Two runs did not (11.0
+  pycubrid threads: 6, 15 and 30/s with 1, 4 and 8 connections, p50 155–218 ms;
+  10.2 async: 15 and 34/s with 4 and 8, p50 202–224 ms); the cause was not
+  investigated.
+- CUBRIDdb does not scale: with 4 or 8 threads it never exceeded one
+  connection's throughput (278–1,782 SELECTs/s; one connection alone does about
+  1,800–2,200 raw SELECTs/s, first table) and stayed at 20–28 committed UPDATEs/s
+  on every server. Its C extension (`cubrid_ext/python_cubrid.c` at v11.3.0.51)
+  contains no `Py_BEGIN_ALLOW_THREADS`, so it holds the GIL during server round
+  trips and the threads wait for each other. Multi-threaded applications should
+  use pycubrid.
 - The one-connection row of this workload varied widely between servers and
-  trials (294–2,065 raw SELECTs/s), so the single-connection comparison uses the
+  trials (433–2,046 raw SELECTs/s), so the single-connection comparison uses the
   first table.
 
 Not measured: `pool_pre_ping`, Python other than 3.12, SQLAlchemy 2.0 on the
