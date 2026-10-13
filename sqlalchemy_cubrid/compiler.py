@@ -938,6 +938,20 @@ class CubridDDLCompiler(compiler.DDLCompiler):
         ``DESC``.
         """
         self._verify_index_table(index)
+        if isinstance(length, dict):
+            # Every mapped key must be a plain column key of the index, or the
+            # prefix would silently disappear (#869).
+            plain = {
+                getattr(expr, "element", expr).name
+                for expr in index.expressions
+                if isinstance(getattr(expr, "element", expr), elements.ColumnClause)
+            }
+            unknown = sorted(str(key) for key in length if key not in plain)
+            if unknown:
+                raise CompileError(
+                    "cubrid_length names %s, which %s not a plain column key of index %r"
+                    % (", ".join(unknown), "is" if len(unknown) == 1 else "are", index.name)
+                )
         keys = []
         for expr in index.expressions:
             column, modifier = expr, ""

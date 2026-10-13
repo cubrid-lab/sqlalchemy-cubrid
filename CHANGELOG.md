@@ -18,7 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `column_sorting` and the new `cubrid_where` / `cubrid_length` index options, with the
   table qualifier CUBRID prints dropped (`lower([a])`, `c>3`). `CREATE INDEX` renders
   `cubrid_where` and `cubrid_length`, which were silently ignored before, and the
-  Alembic implementation compares these keys after normalizing both sides.
+  Alembic implementation compares these keys after normalizing both sides (outside
+  string literals), so autogenerate no longer proposes an unchanged index again;
+  detecting a changed sort order, filter or prefix length needs Alembic 1.12+.
 
 - **Alembic renders CUBRID collection member types with the dialect prefix (#868)** —
   `render_type` wrote every member type with `sa.`, so autogenerate produced

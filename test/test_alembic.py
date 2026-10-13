@@ -1259,9 +1259,35 @@ class TestCompareIndexShapes869:
             ("(a)+(b)", "(a)+(b)"),
             ("lower([T].[A])", "lower(a)"),
             ("(c > 3)", "c>3"),
+            ("a = 't.x'", "a='t.x'"),
+            ("a = '[X] y'", "a='[X] y'"),
+            ("T.A = 'It''s'", "a='It''s'"),
         ],
     )
     def test_normalize_index_sql(self, sql, expected):
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
 
         assert CubridImpl._normalize_index_sql(sql, "t") == expected
+
+    def test_string_literal_change_is_different(self):
+        model, reflected = self._pair()
+        result = self._impl().compare_indexes(
+            sa.Index("ix", model.c.a, _table=model, cubrid_where="a = 't.x'"),
+            sa.Index("ix", reflected.c.a, _table=reflected, cubrid_where="a = 'x'"),
+        )
+        assert result.is_different
+
+    def test_correct_for_autogen_constraints_drops_only_equal_pairs(self):
+        """Alembic < 1.12 never calls compare_indexes; equal pairs leave the sets."""
+        model, reflected = self._pair()
+        m_func = sa.Index("ix_func", sa.func.lower(model.c.a), _table=model)
+        r_func = sa.Index("ix_func", sa.text("lower([a])"), _table=reflected)
+        m_filt = sa.Index("ix_filt", model.c.b, _table=model, cubrid_where="b>4")
+        r_filt = sa.Index("ix_filt", reflected.c.b, _table=reflected, cubrid_where="b>3")
+        m_new = sa.Index("ix_new", model.c.a, _table=model)
+        conn_indexes, metadata_indexes = {r_func, r_filt}, {m_func, m_filt, m_new}
+
+        self._impl().correct_for_autogen_constraints(set(), conn_indexes, set(), metadata_indexes)
+
+        assert conn_indexes == {r_filt}
+        assert metadata_indexes == {m_filt, m_new}

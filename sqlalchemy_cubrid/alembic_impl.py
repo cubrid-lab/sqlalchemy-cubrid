@@ -542,6 +542,35 @@ class CubridImpl(DefaultImpl):
             return getattr(unbounded_side, "length", None) is None
         return False
 
+    def correct_for_autogen_constraints(
+        self,
+        conn_unique_constraints: Any,
+        conn_indexes: Any,
+        metadata_unique_constraints: Any,
+        metadata_indexes: Any,
+    ) -> None:
+        """Drop same-named index pairs whose CUBRID signatures match (#869).
+
+        Alembic before 1.12 never calls :meth:`compare_indexes` and compares
+        only column names, so an unchanged expression, filtered or prefix
+        index would be proposed again on every run. Taking the equal pairs out
+        here keeps autogenerate stable on every supported Alembic; detecting a
+        changed sort order, filter or prefix length needs Alembic 1.12+.
+        """
+        super().correct_for_autogen_constraints(
+            conn_unique_constraints, conn_indexes, metadata_unique_constraints, metadata_indexes
+        )
+        metadata_by_name = {index.name: index for index in metadata_indexes if index.name}
+        for conn_index in list(conn_indexes):
+            metadata_index = metadata_by_name.get(conn_index.name)
+            if (
+                metadata_index is not None
+                and bool(metadata_index.unique) == bool(conn_index.unique)
+                and self._index_signature(metadata_index) == self._index_signature(conn_index)
+            ):
+                conn_indexes.discard(conn_index)
+                metadata_indexes.discard(metadata_index)
+
     def compare_indexes(self, metadata_index: Any, reflected_index: Any) -> Any:
         """Compare expression, sort order, filter and prefix-length keys (#869).
 
@@ -604,10 +633,37 @@ class CubridImpl(DefaultImpl):
 
     @staticmethod
     def _normalize_index_sql(sql: str, table_name: str | None) -> str:
-        sql = sql.lower().replace("[", "").replace("]", "").replace('"', "")
-        if table_name:
-            sql = sql.replace(f"{table_name.lower()}.", "")
-        sql = "".join(sql.split())
+        """Normalize case, identifier quotes, table qualifiers and whitespace.
+
+        Only outside ``'...'`` literals: ``a = 't.x'`` and ``a = '[x]'`` stay
+        different from ``a = 'x'``.
+        """
+
+        def outside(segment: str) -> str:
+            segment = segment.lower().replace("[", "").replace("]", "").replace('"', "")
+            if table_name:
+                segment = segment.replace(f"{table_name.lower()}.", "")
+            return "".join(segment.split())
+
+        parts = []
+        position = 0
+        while position < len(sql):
+            quote = sql.find("'", position)
+            if quote < 0:
+                parts.append(outside(sql[position:]))
+                break
+            parts.append(outside(sql[position:quote]))
+            end = quote + 1
+            while end < len(sql):
+                if sql[end] == "'" and sql[end + 1 : end + 2] == "'":
+                    end += 2
+                    continue
+                if sql[end] == "'":
+                    break
+                end += 1
+            parts.append(sql[quote : end + 1])
+            position = end + 1
+        sql = "".join(parts)
         while sql.startswith("(") and sql.endswith(")"):
             depth = 0
             for position, char in enumerate(sql):

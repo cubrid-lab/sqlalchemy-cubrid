@@ -3425,6 +3425,18 @@ class TestIndexDialectOptions869:
         with pytest.raises(CompileError, match="cubrid_length"):
             self._ddl(sa.Index("i7", sa.func.lower(self._t.c.a), cubrid_length=3))
 
+    @pytest.mark.parametrize(
+        ("keys", "length"),
+        [
+            (lambda t: [sa.func.lower(t.c.a)], {"a": 5}),
+            (lambda t: [t.c.a], {"misspelled": 5}),
+            (lambda t: [t.c.a.desc(), sa.func.lower(t.c.a)], {"a": 2, "lower": 3}),
+        ],
+    )
+    def test_length_mapping_keys_must_be_plain_columns(self, keys, length):
+        with pytest.raises(CompileError, match="not a plain column key"):
+            self._ddl(sa.Index("i9", *keys(self._t), cubrid_length=length))
+
     def test_unique_filtered_index_raises(self):
         with pytest.raises(CompileError, match="UNIQUE filtered"):
             self._ddl(sa.Index("i8", self._t.c.b, unique=True, cubrid_where="b>0"))
