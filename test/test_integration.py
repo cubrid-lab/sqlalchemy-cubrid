@@ -1980,6 +1980,140 @@ class TestAlembicAlterColumnIntegration:
                 conn.commit()
 
 
+class TestAlembicAlterColumnAttributes861:
+    """#861: nullability, dropped defaults and comments run live on 10.2 and 11.4.
+
+    CUBRID has no ALTER COLUMN SET/DROP NOT NULL, DROP DEFAULT or COMMENT ON;
+    11.4 keeps an attribute that MODIFY omits while 10.2 resets it.
+    """
+
+    TABLE = "alter_it_861"
+
+    @pytest.fixture
+    def op_conn(self, engine):
+        from alembic.migration import MigrationContext
+        from alembic.operations import Operations
+
+        with engine.connect() as conn:
+            conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+            conn.execute(
+                text(
+                    f"CREATE TABLE {self.TABLE} (id INT PRIMARY KEY, "
+                    "c INT NOT NULL DEFAULT 5 COMMENT 'hello', "
+                    "n INT DEFAULT 3 COMMENT 'hi')"
+                )
+            )
+            conn.commit()
+            try:
+                yield Operations(MigrationContext.configure(connection=conn)), conn
+            finally:
+                conn.rollback()
+                conn.execute(text(f"DROP TABLE IF EXISTS {self.TABLE}"))
+                conn.commit()
+
+    def _column(self, conn):
+        insp = inspect(conn)
+        return {c["name"]: c for c in insp.get_columns(self.TABLE)}
+
+    def _existing(self, **overrides):
+        existing = {
+            "existing_type": Integer(),
+            "existing_nullable": False,
+            "existing_server_default": "5",
+            "existing_comment": "hello",
+        }
+        existing.update(overrides)
+        return existing
+
+    def test_nullable_true_then_false(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(self.TABLE, "c", nullable=True, **self._existing())
+        col = self._column(conn)["c"]
+        assert col["nullable"] is True
+        assert col["default"] == "5"
+        assert col["comment"] == "hello"
+        op.alter_column(self.TABLE, "c", nullable=False, **self._existing(existing_nullable=True))
+        assert self._column(conn)["c"]["nullable"] is False
+
+    def test_drop_default_alone(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(self.TABLE, "c", server_default=None, **self._existing())
+        col = self._column(conn)["c"]
+        assert col["default"] is None
+        assert col["nullable"] is False
+        assert col["comment"] == "hello"
+
+    def test_drop_default_of_nullable_column_alone(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(self.TABLE, "n", server_default=None)
+        col = self._column(conn)["n"]
+        assert col["default"] is None
+        assert col["comment"] == "hi"
+
+    def test_nullable_true_on_nullable_column(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(
+            self.TABLE,
+            "n",
+            nullable=True,
+            existing_type=Integer(),
+            existing_nullable=True,
+            existing_server_default="3",
+            existing_comment="hi",
+        )
+        col = self._column(conn)["n"]
+        assert col["nullable"] is True
+        assert col["default"] == "3"
+        assert col["comment"] == "hi"
+
+    def test_drop_default_and_make_not_null(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(
+            self.TABLE,
+            "n",
+            nullable=False,
+            server_default=None,
+            existing_type=Integer(),
+            existing_nullable=True,
+            existing_server_default="3",
+            existing_comment="hi",
+        )
+        col = self._column(conn)["n"]
+        assert col["nullable"] is False
+        assert col["default"] is None
+        assert col["comment"] == "hi"
+
+    def test_set_default_alone(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(self.TABLE, "c", server_default="7", **self._existing())
+        assert self._column(conn)["c"]["default"] == "7"
+
+    def test_comment_change_and_removal(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(self.TABLE, "c", comment="it's new", **self._existing())
+        col = self._column(conn)["c"]
+        assert col["comment"] == "it's new"
+        assert col["nullable"] is False
+        assert col["default"] == "5"
+        op.alter_column(
+            self.TABLE, "c", comment=None, **self._existing(existing_comment="it's new")
+        )
+        assert not self._column(conn)["c"]["comment"]
+
+    def test_rename_with_nullable_change(self, op_conn):
+        op, conn = op_conn
+        op.alter_column(self.TABLE, "c", new_column_name="d", nullable=True, **self._existing())
+        cols = self._column(conn)
+        assert "c" not in cols
+        assert cols["d"]["nullable"] is True
+        assert cols["d"]["default"] == "5"
+
+    def test_nullable_without_existing_type_raises(self, op_conn):
+        op, _ = op_conn
+        with pytest.raises(ValueError, match="requires the column type"):
+            op.alter_column(self.TABLE, "c", nullable=True)
+
+
 class TestAutogenerateTextStringIntegration:
     """#544: autogenerate against live STRING / VARCHAR(n) columns."""
 

@@ -63,9 +63,41 @@ def test_unique_index_requires_live_connection_for_fk_guard():
     index = sa.Index("ux_child_parent", table.c.parent_id, unique=True)
     impl = object.__new__(CubridImpl)
     impl.connection = None
+    impl.as_sql = False
 
     with pytest.raises(sa.exc.CompileError, match="live connection"):
         impl.create_index(index)
+
+
+def test_unique_index_offline_mock_connection_raises_compile_error():
+    """#861: --sql mode has a MockConnection, which cannot be inspected."""
+    from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+    table = sa.Table("child", sa.MetaData(), sa.Column("parent_id", sa.Integer))
+    index = sa.Index("ux_child_parent", table.c.parent_id, unique=True)
+    impl = object.__new__(CubridImpl)
+    impl.connection = sa.create_mock_engine("cubrid://", lambda *a, **k: None)
+    impl.as_sql = True
+
+    with pytest.raises(sa.exc.CompileError, match="live connection"):
+        impl.create_index(index)
+
+
+def test_unique_create_index_in_offline_migration_raises_compile_error():
+    """#861: ``alembic upgrade --sql`` gets the documented CompileError."""
+    import io
+
+    from alembic.migration import MigrationContext
+    from alembic.operations import Operations
+
+    buf = io.StringIO()
+    ctx = MigrationContext.configure(
+        dialect_name="cubrid", opts={"as_sql": True, "output_buffer": buf}
+    )
+    with pytest.raises(sa.exc.CompileError, match="live connection"):
+        Operations(ctx).create_index("ux_child_parent", "child", ["parent_id"], unique=True)
+    Operations(ctx).create_index("ix_child_parent", "child", ["parent_id"])
+    assert "CREATE INDEX ix_child_parent ON child (parent_id)" in buf.getvalue()
 
 
 class _MockInspector:
@@ -436,7 +468,7 @@ class TestCubridImpl:
             server_default=None,
             existing_server_default="0",
         )
-        assert sql == "ALTER TABLE users MODIFY age BIGINT"
+        assert sql == "ALTER TABLE users MODIFY age BIGINT DEFAULT NULL"
 
     def test_modify_column_requires_type(self):
         """The DDL element guards against a missing column type."""
@@ -445,7 +477,146 @@ class TestCubridImpl:
         with pytest.raises(ValueError, match="requires the column type"):
             CubridModifyColumn("users", "age", type_=None)
 
-    def test_alter_column_nullable_delegates(self):
+    # #861: CUBRID has no ALTER COLUMN SET/DROP NOT NULL, DROP DEFAULT or
+    # COMMENT ON COLUMN; these changes need a CUBRID-specific statement.
+
+    def test_alter_column_nullable_emits_modify(self):
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="email",
+            nullable=False,
+            existing_type=sa.String(50),
+            existing_server_default="x",
+            existing_comment="mail",
+        )
+        assert (
+            sql == "ALTER TABLE users MODIFY email VARCHAR(50) NOT NULL DEFAULT 'x' COMMENT 'mail'"
+        )
+
+    def test_alter_column_nullable_true_is_explicit(self):
+        """CUBRID 11.4 keeps NOT NULL unless MODIFY says NULL."""
+        sql = self._capture_alter_column_sql(
+            table_name="users", column_name="email", nullable=True, existing_type=sa.Integer()
+        )
+        assert sql == "ALTER TABLE users MODIFY email INTEGER NULL"
+
+    def test_alter_column_nullable_without_type_raises(self):
+        with pytest.raises(ValueError, match="requires the column type"):
+            self._capture_alter_column_sql(table_name="users", column_name="email", nullable=False)
+
+    def test_alter_column_comment_emits_modify(self):
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="email",
+            comment="new it's",
+            existing_type=sa.Integer(),
+            existing_nullable=False,
+        )
+        assert sql == "ALTER TABLE users MODIFY email INTEGER NOT NULL COMMENT 'new it''s'"
+
+    def test_alter_column_comment_removal_is_explicit(self):
+        """CUBRID 11.4 keeps a comment unless MODIFY gives an empty one."""
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="email",
+            comment=None,
+            existing_type=sa.Integer(),
+            existing_comment="old",
+        )
+        assert sql == "ALTER TABLE users MODIFY email INTEGER COMMENT ''"
+
+    def test_alter_column_rename_and_nullable_emits_change(self):
+        sql = self._capture_alter_column_sql(
+            table_name="users",
+            column_name="email",
+            name="mail",
+            nullable=False,
+            existing_type=sa.Integer(),
+        )
+        assert sql == "ALTER TABLE users CHANGE email mail INTEGER NOT NULL"
+
+    def test_alter_column_drop_default_sets_null(self):
+        sql = self._capture_alter_column_sql(
+            table_name="users", column_name="email", server_default=None
+        )
+        assert sql == "ALTER TABLE users ALTER COLUMN email SET DEFAULT NULL"
+
+    def test_alter_column_rename_then_drop_default(self):
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        captured: list[Any] = []
+        with mock.patch.object(
+            CubridImpl, "_exec", side_effect=lambda element, *a, **k: captured.append(element)
+        ):
+            impl.alter_column("users", "email", name="mail", server_default=None)
+        assert [str(e.compile(dialect=CubridDialect())).strip() for e in captured] == [
+            "ALTER TABLE users RENAME COLUMN email TO mail",
+            "ALTER TABLE users ALTER COLUMN mail SET DEFAULT NULL",
+        ]
+
+    @staticmethod
+    def _capture_all(**kwargs: Any) -> list[str]:
+        from sqlalchemy_cubrid.alembic_impl import CubridImpl
+
+        impl = object.__new__(CubridImpl)
+        captured: list[Any] = []
+        with mock.patch.object(
+            CubridImpl, "_exec", side_effect=lambda element, *a, **k: captured.append(element)
+        ):
+            impl.alter_column(**kwargs)
+        return [str(e.compile(dialect=CubridDialect())).strip() for e in captured]
+
+    def test_alter_column_nullable_true_when_already_nullable_is_omitted(self):
+        """From 11.2 an explicit NULL on a nullable column is error -709."""
+        assert self._capture_all(
+            table_name="users",
+            column_name="email",
+            nullable=True,
+            existing_type=sa.Integer(),
+            existing_nullable=True,
+        ) == ["ALTER TABLE users MODIFY email INTEGER"]
+
+    def test_alter_column_drop_default_of_not_null_column_uses_two_steps(self):
+        """A NOT NULL column cannot get DEFAULT NULL; drop it while nullable."""
+        assert self._capture_all(
+            table_name="users",
+            column_name="email",
+            server_default=None,
+            existing_type=sa.Integer(),
+            existing_nullable=False,
+            existing_server_default="5",
+            existing_comment="mail",
+        ) == [
+            "ALTER TABLE users MODIFY email INTEGER NULL DEFAULT NULL COMMENT 'mail'",
+            "ALTER TABLE users MODIFY email INTEGER NOT NULL COMMENT 'mail'",
+        ]
+
+    def test_alter_column_drop_default_with_new_not_null_uses_two_steps(self):
+        assert self._capture_all(
+            table_name="users",
+            column_name="email",
+            name="mail",
+            nullable=False,
+            server_default=None,
+            existing_type=sa.Integer(),
+            existing_nullable=True,
+            existing_server_default="5",
+        ) == [
+            "ALTER TABLE users CHANGE email mail INTEGER DEFAULT NULL",
+            "ALTER TABLE users MODIFY mail INTEGER NOT NULL",
+        ]
+
+    def test_alter_column_existing_no_default_is_not_restated(self):
+        assert self._capture_all(
+            table_name="users",
+            column_name="email",
+            nullable=False,
+            existing_type=sa.Integer(),
+            existing_server_default=None,
+        ) == ["ALTER TABLE users MODIFY email INTEGER NOT NULL"]
+
+    def test_alter_column_set_default_delegates(self):
         from alembic.ddl.impl import DefaultImpl
 
         from sqlalchemy_cubrid.alembic_impl import CubridImpl
@@ -453,16 +624,9 @@ class TestCubridImpl:
         impl = object.__new__(CubridImpl)
 
         with mock.patch.object(DefaultImpl, "alter_column", return_value=None) as mocked:
-            impl.alter_column("users", "email", nullable=False)
+            impl.alter_column("users", "email", server_default="'x'")
 
-        mocked.assert_called_once_with(
-            "users",
-            "email",
-            nullable=False,
-            server_default=False,
-            name=None,
-            type_=None,
-        )
+        mocked.assert_called_once_with("users", "email", server_default="'x'", type_=None)
 
 
 class TestAlembicImportError:

@@ -134,6 +134,18 @@ class CubridModifyColumn(AlterColumn):
         self.type_ = sa.types.to_instance(type_)
 
 
+class CubridDropColumnDefault(AlterColumn):
+    """Represents ``ALTER TABLE t ALTER COLUMN c SET DEFAULT NULL`` for CUBRID.
+
+    CUBRID has no ``ALTER COLUMN ... DROP DEFAULT`` (a syntax error on 10.2
+    and 11.4); setting the default to ``NULL`` removes it (#861).
+    """
+
+    def __init__(self, name: str, column_name: str, schema: str | None = None) -> None:
+        AlterTable.__init__(self, name, schema=schema)
+        self.column_name = column_name
+
+
 class CubridChangeColumn(CubridModifyColumn):
     """Represents ``ALTER TABLE t CHANGE old new <definition>`` for CUBRID."""
 
@@ -143,18 +155,27 @@ class CubridChangeColumn(CubridModifyColumn):
 
 
 def _cubrid_colspec(compiler: Any, element: CubridModifyColumn) -> str:
-    """Build the CUBRID column definition for MODIFY/CHANGE clauses."""
+    """Build the CUBRID column definition for MODIFY/CHANGE clauses.
+
+    Every known attribute is stated explicitly (#861): CUBRID 11.4 keeps an
+    attribute that MODIFY/CHANGE omits (NOT NULL, the default, the comment)
+    while 10.2 resets it, so only an explicit ``NULL``, ``DEFAULT NULL`` or
+    ``COMMENT ''`` has the same effect on both. ``nullable=None``,
+    ``default=False`` and ``comment=False`` mean "unknown" and are omitted.
+    """
     spec = [compiler.dialect.type_compiler_instance.process(element.type_)]
-    if element.nullable is False:
-        spec.append("NOT NULL")
+    if element.nullable is not None:
+        spec.append("NULL" if element.nullable else "NOT NULL")
     if element.autoincrement:
         spec.append("AUTO_INCREMENT")
-    elif element.default is not False and element.default is not None:
+    elif element.default is None:
+        spec.append("DEFAULT NULL")
+    elif element.default is not False:
         spec.append("DEFAULT " + format_server_default(compiler, element.default))
-    if element.comment:
+    if element.comment is not False:
         spec.append(
             "COMMENT "
-            + compiler.sql_compiler.render_literal_value(element.comment, sa.types.String())
+            + compiler.sql_compiler.render_literal_value(element.comment or "", sa.types.String())
         )
     return " ".join(spec)
 
@@ -165,6 +186,14 @@ def _cubrid_rename_column(element: CubridRenameColumn, compiler: Any, **kw: Any)
         alter_table(compiler, element.table_name, element.schema),
         format_column_name(compiler, element.column_name),
         format_column_name(compiler, element.newname),
+    )
+
+
+@compiles(CubridDropColumnDefault, "cubrid")
+def _cubrid_drop_column_default(element: CubridDropColumnDefault, compiler: Any, **kw: Any) -> str:
+    return "%s ALTER COLUMN %s SET DEFAULT NULL" % (
+        alter_table(compiler, element.table_name, element.schema),
+        format_column_name(compiler, element.column_name),
     )
 
 
@@ -327,71 +356,93 @@ class CubridImpl(DefaultImpl):
         restates the *entire* column definition, this method reconstructs the
         definition from the ``existing_*`` metadata that Alembic supplies so
         that attributes such as ``NOT NULL`` / ``DEFAULT`` / ``COMMENT`` are
-        not silently dropped.  Incompatible conversions may be rejected by the
-        server depending on the ``alter_table_change_type_strict`` system
+        not silently dropped.  A ``nullable`` or ``comment`` change also needs
+        that definition, so it is emitted the same way and requires ``type_``
+        or ``existing_type``.  Dropping a default (``server_default=None``)
+        without other changes emits ``ALTER COLUMN c SET DEFAULT NULL``, since
+        CUBRID has no ``DROP DEFAULT`` (#861).  Incompatible conversions may be
+        rejected by the server depending on the ``alter_table_change_type_strict`` system
         parameter; use ``batch_alter_table`` as a fallback for lossy
         migrations.
         """
-        if type_ is not None:
-            schema = kw.get("schema")
-            resolved_type = type_ if type_ is not None else kw.get("existing_type")
-            resolved_nullable = nullable if nullable is not None else kw.get("existing_nullable")
-            resolved_default = (
-                server_default if server_default is not False else kw.get("existing_server_default")
-            )
-            autoincrement = kw.get("autoincrement")
-            resolved_autoincrement = (
-                autoincrement if autoincrement is not None else kw.get("existing_autoincrement")
-            )
-            comment = kw.get("comment", False)
-            resolved_comment = comment if comment is not False else kw.get("existing_comment")
+        schema = kw.get("schema")
+        comment = kw.get("comment", False)
+        existing_nullable = kw.get("existing_nullable")
+        existing_default = kw.get("existing_server_default", False)
+        drop_default = server_default is None and existing_default is not None
+        if drop_default and existing_nullable is False and nullable is None:
+            # SET DEFAULT NULL is rejected for a NOT NULL column (#861).
+            nullable_target: bool | None = False
+        else:
+            nullable_target = nullable
+        if type_ is None and nullable_target is None and comment is False:
             if name is not None:
-                self._exec(
-                    CubridChangeColumn(
-                        table_name,
-                        column_name,
-                        newname=name,
-                        type_=resolved_type,
-                        nullable=resolved_nullable,
-                        default=resolved_default,
-                        autoincrement=resolved_autoincrement,
-                        comment=resolved_comment,
-                        schema=schema,
-                    )
-                )
-            else:
-                self._exec(
-                    CubridModifyColumn(
-                        table_name,
-                        column_name,
-                        type_=resolved_type,
-                        nullable=resolved_nullable,
-                        default=resolved_default,
-                        autoincrement=resolved_autoincrement,
-                        comment=resolved_comment,
-                        schema=schema,
-                    )
-                )
-            return
-        if name is not None:
-            self._exec(
-                CubridRenameColumn(
+                self._exec(CubridRenameColumn(table_name, column_name, newname=name, schema=schema))
+                column_name = name
+            if drop_default:
+                self._exec(CubridDropColumnDefault(table_name, column_name, schema=schema))
+            elif server_default is not False and server_default is not None:
+                super().alter_column(
                     table_name,
                     column_name,
-                    newname=name,
-                    schema=kw.get("schema"),
+                    server_default=server_default,
+                    type_=type_,
+                    **kw,
                 )
-            )
             return
-        super().alter_column(
-            table_name,
-            column_name,
-            nullable=nullable,
-            server_default=server_default,
-            name=name,
-            type_=type_,
-            **kw,
+
+        # NOT NULL and COMMENT exist only in a full column definition on
+        # CUBRID (no ALTER COLUMN SET/DROP NOT NULL, no COMMENT ON), so a
+        # nullability or comment change is a MODIFY/CHANGE too (#861).
+        # CUBRID 10.2/11.0 reset an attribute that MODIFY omits, 11.2+ keep
+        # it, so every known attribute is stated and only changes use NULL /
+        # DEFAULT NULL / COMMENT '' (an explicit NULL on a nullable column is
+        # error -709 from 11.2).
+        resolved_type = type_ if type_ is not None else kw.get("existing_type")
+        resolved_nullable = nullable_target if nullable_target is not None else existing_nullable
+        if resolved_nullable is True and existing_nullable is True:
+            resolved_nullable = None
+        if server_default is not False and server_default is not None:
+            resolved_default: Any = server_default
+        elif drop_default:
+            resolved_default = None
+        elif existing_default is None:
+            resolved_default = False
+        else:
+            resolved_default = existing_default
+        autoincrement = kw.get("autoincrement")
+        resolved_autoincrement = (
+            autoincrement if autoincrement is not None else kw.get("existing_autoincrement")
         )
+        # Alembic's existing_comment defaults to None, which cannot tell
+        # "no comment" from "not given"; only a real one is restated.
+        resolved_comment = comment if comment is not False else kw.get("existing_comment")
+        if comment is False and not resolved_comment:
+            resolved_comment = False
+
+        definition = {
+            "type_": resolved_type,
+            "autoincrement": resolved_autoincrement,
+            "comment": resolved_comment,
+            "schema": schema,
+        }
+        steps: list[dict[str, Any]] = [{"nullable": resolved_nullable, "default": resolved_default}]
+        if resolved_default is None and resolved_nullable is False:
+            # A NOT NULL column cannot get a NULL default, and dropping the
+            # default by omission works only before 11.2: drop it while the
+            # column is nullable, then restore NOT NULL.
+            steps = [
+                {"nullable": True if existing_nullable is not True else None, "default": None},
+                {"nullable": False, "default": False},
+            ]
+        for step in steps:
+            if name is not None:
+                self._exec(
+                    CubridChangeColumn(table_name, column_name, newname=name, **definition, **step)
+                )
+                column_name, name = name, None
+            else:
+                self._exec(CubridModifyColumn(table_name, column_name, **definition, **step))
 
     def correct_for_autogen_foreignkeys(
         self,
@@ -500,7 +551,9 @@ class CubridImpl(DefaultImpl):
 
         table = index.table
         if index.unique and table is not None and table.name:
-            if self.connection is None:
+            # Offline (--sql) mode has a MockConnection, not None, and
+            # cannot be inspected (#861).
+            if self.as_sql or self.connection is None:
                 raise CompileError(
                     "CUBRID UNIQUE index FK collision checks require a live connection"
                 )

@@ -328,7 +328,8 @@ The implementation inherits all standard Alembic operations from `DefaultImpl`:
 - `add_constraint`, `drop_constraint`
 - `create_table`, `drop_table`
 - `create_index`, `drop_index`
-- `alter_column` (type change, rename, nullable, default — all native)
+- `alter_column` (type change, rename, nullable, default, comment — all native; see
+  "`alter_column()` behavior" below)
 - `bulk_insert`
 
 ---
@@ -337,8 +338,9 @@ The implementation inherits all standard Alembic operations from `DefaultImpl`:
 
 Creating a UNIQUE index through Alembic requires a live connection so the dialect
 can inspect CUBRID's FK auto-indexes and detect collisions. Without a connection,
-the guard raises `CompileError` with a live-connection requirement; it does not
-silently skip validation. Non-unique index generation is unaffected.
+including offline `alembic upgrade --sql` mode (#861), the guard raises `CompileError`
+with a live-connection requirement; it does not silently skip validation. Non-unique
+index generation is unaffected.
 
 ### ✅ ALTER COLUMN TYPE (native)
 
@@ -428,10 +430,24 @@ The CUBRID Alembic implementation maps `alter_column()` to native CUBRID DDL:
 
 - `type_=` changes → `MODIFY` (or `CHANGE` when combined with a rename)
 - `new_column_name=` renames → `RENAME COLUMN` (or `CHANGE` with a type change)
-- `nullable=` / `server_default=` / comment changes routed through `DefaultImpl`
+- `nullable=` and `comment=` changes → `MODIFY` (or `CHANGE` with a rename), because
+  CUBRID has no `ALTER COLUMN ... SET/DROP NOT NULL` and no `COMMENT ON COLUMN`. They
+  need the column type: pass `existing_type=` (autogenerate does), or the call raises
+  `ValueError` naming the column
+- `server_default=` alone → `ALTER COLUMN c SET DEFAULT <value>`; `server_default=None`
+  → `ALTER COLUMN c SET DEFAULT NULL`, since CUBRID has no `DROP DEFAULT` (#861)
 
-Type changes reconstruct the full column definition from `existing_*` metadata
-so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
+These definitions are rebuilt from the `existing_*` metadata so that attributes such
+as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved. CUBRID 10.2 and 11.0 reset an
+attribute that `MODIFY` leaves out, while 11.2 and 11.4 keep it, so the dialect states
+every attribute it knows and makes changes explicit: `NULL` when a `NOT NULL` column
+becomes nullable (11.2+ rejects `NULL` on a column that is already nullable with error
+-709, so it is left out then), and `COMMENT ''` when `comment=None` removes a comment.
+A `NOT NULL` column cannot have a `NULL` default on any version, so dropping its
+default emits two statements: one that makes the column nullable without a default,
+then one that restores `NOT NULL`. Pass `existing_nullable=False` with
+`server_default=None` for a `NOT NULL` column; without it, the single
+`SET DEFAULT NULL` is rejected by the server.
 
 > **Important — hand-written type-changing migrations must pass `existing_*`.**
 > Because CUBRID's `MODIFY` / `CHANGE` restate the *entire* column definition,
@@ -453,8 +469,9 @@ so that attributes such as `NOT NULL` / `DEFAULT` / `COMMENT` are preserved.
 | `drop_table` | ✅ | — |
 | `add_column` | ✅ | — |
 | `drop_column` | ✅ | — |
-| `alter_column` (nullable) | ✅ | — |
-| `alter_column` (default) | ✅ | — |
+| `alter_column` (nullable) | ✅ | `MODIFY`; needs `existing_type` |
+| `alter_column` (default) | ✅ | `SET DEFAULT NULL` drops it; pass `existing_nullable=False` for a `NOT NULL` column |
+| `alter_column` (comment) | ✅ | `MODIFY`; needs `existing_type` |
 | `alter_column` (type) | ✅ | `batch_alter_table` for lossy conversions |
 | `alter_column` (rename) | ✅ | — |
 | `create_index` | ✅ | `if_not_exists=True` raises `CompileError` (CUBRID has no `CREATE INDEX IF NOT EXISTS`); check `inspect(conn).has_index()` first instead |

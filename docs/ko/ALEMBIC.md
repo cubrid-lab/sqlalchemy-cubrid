@@ -225,7 +225,8 @@ class CubridImpl(DefaultImpl):
 - `add_constraint`, `drop_constraint`
 - `create_table`, `drop_table`
 - `create_index`, `drop_index`
-- `alter_column` (타입 변경, 이름 변경, nullable, default — 전부 네이티브)
+- `alter_column` (타입 변경, 이름 변경, nullable, default, 코멘트 — 전부 네이티브.
+  아래 "`alter_column()` 동작" 참고)
 - `bulk_insert`
 
 ---
@@ -233,8 +234,8 @@ class CubridImpl(DefaultImpl):
 ## 한계와 회피
 
 Alembic으로 UNIQUE 인덱스를 만들 때는 CUBRID의 FK 자동 인덱스 충돌을 확인하기 위해
-라이브 연결이 필요합니다. 연결이 없으면 검증을 건너뛰지 않고 라이브 연결 요구사항을
-설명하는 `CompileError`를 발생시킵니다. 비고유 인덱스 생성에는 영향이 없습니다.
+라이브 연결이 필요합니다. 오프라인 `alembic upgrade --sql` 모드를 포함해 연결이 없으면
+(#861) 검증을 건너뛰지 않고 라이브 연결 요구사항을 설명하는 `CompileError`를 발생시킵니다. 비고유 인덱스 생성에는 영향이 없습니다.
 
 ### ✅ ALTER COLUMN TYPE (네이티브)
 
@@ -307,9 +308,10 @@ CUBRID Alembic 구현은 `alter_column()`을 네이티브 CUBRID DDL로 매핑�
 
 - `type_=` 변경 → `MODIFY` (이름 변경과 결합 시 `CHANGE`)
 - `new_column_name=` 이름 변경 → `RENAME COLUMN` (타입 변경 시 `CHANGE`)
-- `nullable=` / `server_default=` / 코멘트 변경은 `DefaultImpl`을 경유
+- `nullable=`와 `comment=` 변경 → `MODIFY` (이름 변경과 결합 시 `CHANGE`). CUBRID에는 `ALTER COLUMN ... SET/DROP NOT NULL`과 `COMMENT ON COLUMN`이 없기 때문입니다. 컬럼 타입이 필요하므로 `existing_type=`을 전달하세요(autogenerate는 전달합니다). 없으면 컬럼 이름을 알려 주는 `ValueError`가 발생합니다
+- `server_default=`만 바꾸면 → `ALTER COLUMN c SET DEFAULT <value>`. `server_default=None` → CUBRID에는 `DROP DEFAULT`가 없으므로 `ALTER COLUMN c SET DEFAULT NULL` (#861)
 
-타입 변경은 `existing_*` 메타데이터에서 전체 컬럼 정의를 재구성해 `NOT NULL` / `DEFAULT` / `COMMENT` 같은 속성이 보존됩니다.
+이 정의는 `existing_*` 메타데이터에서 재구성되어 `NOT NULL` / `DEFAULT` / `COMMENT` 같은 속성이 보존됩니다. CUBRID 10.2와 11.0은 `MODIFY`에서 빠진 속성을 초기화하고 11.2와 11.4는 유지하므로, 방언은 아는 속성을 모두 명시하고 변경을 명시적으로 냅니다: `NOT NULL` 컬럼을 nullable로 바꿀 때 `NULL`을 내고(11.2 이상은 이미 nullable인 컬럼의 `NULL`을 오류 -709로 거부하므로 그때는 생략), `comment=None`으로 코멘트를 제거할 때 `COMMENT ''`를 냅니다. 어느 버전에서도 `NOT NULL` 컬럼은 `NULL` 기본값을 가질 수 없으므로, 그런 컬럼의 기본값 제거는 두 문장을 냅니다: 컬럼을 기본값 없는 nullable로 바꾼 다음 `NOT NULL`을 복원합니다. `NOT NULL` 컬럼에는 `server_default=None`과 함께 `existing_nullable=False`를 전달하세요. 없으면 단일 `SET DEFAULT NULL`을 서버가 거부합니다.
 
 > **중요 — 손으로 작성한 타입 변경 마이그레이션은 `existing_*`를 전달해야 합니다.**
 > CUBRID의 `MODIFY` / `CHANGE`는 컬럼 정의 *전체*를 재진술하므로, 방언은 알려준 속성만 보존할 수 있습니다. Alembic autogenerate는 리플렉트된 컬럼에서 `existing_type`, `existing_nullable`, `existing_server_default`, `existing_comment`를 채우지만, 수동 `op.alter_column(..., type_=...)`은 그렇지 **않습니다**. 마이그레이션을 손으로 편집할 때, 타입 변경에서 살아남아야 하는 모든 속성에 대해 `existing_nullable=`, `existing_server_default=`, `existing_comment=`, `existing_autoincrement=`를 전달하세요 — 그렇지 않으면 삭제됩니다. 속성을 *의도적으로* 제거하려면 (예: 기본값) 명시적으로 전달하세요(`server_default=None`). 이것이 `existing_*` 값을 오버라이드합니다.
@@ -322,8 +324,9 @@ CUBRID Alembic 구현은 `alter_column()`을 네이티브 CUBRID DDL로 매핑�
 | `drop_table` | ✅ | — |
 | `add_column` | ✅ | — |
 | `drop_column` | ✅ | — |
-| `alter_column` (nullable) | ✅ | — |
-| `alter_column` (default) | ✅ | — |
+| `alter_column` (nullable) | ✅ | `MODIFY`. `existing_type` 필요 |
+| `alter_column` (default) | ✅ | `SET DEFAULT NULL`로 제거. `NOT NULL` 컬럼에는 `existing_nullable=False` 전달 |
+| `alter_column` (comment) | ✅ | `MODIFY`. `existing_type` 필요 |
 | `alter_column` (type) | ✅ | 손실 변환에는 `batch_alter_table` |
 | `alter_column` (rename) | ✅ | — |
 | `create_index` | ✅ | `if_not_exists=True`는 `CompileError`를 발생시킵니다(CUBRID에는 `CREATE INDEX IF NOT EXISTS`가 없음). 대신 먼저 `inspect(conn).has_index()`로 확인하세요 |
