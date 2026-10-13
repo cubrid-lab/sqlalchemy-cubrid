@@ -3736,9 +3736,10 @@ class TestReflectedDefaultRoundTrip865:
         "w VARCHAR(20) DEFAULT 'CURRENT_USER', w2 VARCHAR(40) DEFAULT USER, "
         "nc NCHAR VARYING(10) DEFAULT N'n', d DATE DEFAULT DATE '2020-01-02', "
         "ts TIMESTAMP DEFAULT TIMESTAMP '2020-01-02 03:04:05', i INT DEFAULT -3, "
-        "e ENUM('it''s', 'a, b', 'c (d)') DEFAULT 'it''s', nn VARCHAR(20))"
+        "e ENUM('it''s', 'a, b', 'c (d)') DEFAULT 'it''s', five VARCHAR(5) DEFAULT '5', "
+        "nn VARCHAR(20))"
     )
-    DEFAULTED = ("q", "em", "nl", "sp", "w", "w2", "nc", "d", "ts", "i", "e", "nn")
+    DEFAULTED = ("q", "em", "nl", "sp", "w", "w2", "nc", "d", "ts", "i", "e", "five", "nn")
 
     @pytest.fixture
     def source(self, engine):
@@ -3772,6 +3773,8 @@ class TestReflectedDefaultRoundTrip865:
         assert reflected["nl"] == "'NULL'"
         assert reflected["w"] == "'CURRENT_USER'"
         assert reflected["w2"] == "CURRENT_USER"
+        assert reflected["five"] == "'5'"
+        assert reflected["i"] == "-3"
         assert reflected["nn"] is None
 
         meta = MetaData()

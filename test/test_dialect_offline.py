@@ -3039,6 +3039,13 @@ class TestReflectedDefaultsFromDdl865:
         assert [c["default"] for c in columns] == ["5", "1.50"]
         assert connection.execute.call_count == 2
 
+    def test_numeric_looking_string_default_reads_the_ddl(self):
+        """A VARCHAR DEFAULT '5' is printed as 5 by SHOW COLUMNS too."""
+        rows = [("s", "VARCHAR(20)", "YES", "", "5", ""), ("i", "INTEGER", "YES", "", "5", "")]
+        ddl = "CREATE TABLE [d865] ([s] CHARACTER VARYING(20) DEFAULT '5', [i] INTEGER DEFAULT 5)"
+        columns, _ = self._reflect(rows, _class_type_result("CLASS"), self._ddl_result(ddl))
+        assert [c["default"] for c in columns] == ["'5'", "5"]
+
     def test_view_columns_do_not_read_the_ddl(self):
         rows = [("q", "VARCHAR(20)", "YES", "", "x", "")]
         columns, connection = self._reflect(rows, _class_type_result("VCLASS"))

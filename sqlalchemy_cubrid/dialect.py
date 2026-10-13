@@ -254,6 +254,22 @@ _RE_BRACKET_IDENT = re.compile(r"\[([^\]]+)\]")
 # A SHOW COLUMNS default that is already valid SQL as printed (a number); any
 # other default is read from SHOW CREATE TABLE (#865).
 _RE_NUMERIC_DEFAULT = re.compile(r"^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
+
+
+def _default_is_shown_as_sql(column: Any) -> bool:
+    """Whether a reflected ``SHOW COLUMNS`` default is valid SQL as printed.
+
+    Only a number on a numeric column is; a string column's ``'5'`` is also
+    printed as ``5`` and must be read from ``SHOW CREATE TABLE`` (#865).
+    """
+    default = column["default"]
+    if default is None:
+        return True
+    return isinstance(column["type"], (sqltypes.Numeric, sqltypes.Integer, MONETARY)) and bool(
+        _RE_NUMERIC_DEFAULT.match(str(default).strip())
+    )
+
+
 _RE_DEFAULT_KEYWORD = re.compile(r"\bDEFAULT\b", re.IGNORECASE)
 
 
@@ -869,11 +885,7 @@ class CubridDialect(default.DefaultDialect):
             column["comment"] = comment_map.get(column["name"])
 
         if (
-            any(
-                column["default"] is not None
-                and not _RE_NUMERIC_DEFAULT.match(str(column["default"]).strip())
-                for column in columns
-            )
+            not all(_default_is_shown_as_sql(column) for column in columns)
             and self._get_class_type(connection, table_name, **kw) == "CLASS"
         ):
             self._quote_defaults_from_ddl(connection, table_name, columns)
@@ -1022,8 +1034,7 @@ class CubridDialect(default.DefaultDialect):
             log.debug("could not parse column defaults of %s from SHOW CREATE TABLE", table_name)
             return
         for column in columns:
-            default = column["default"]
-            if default is None or _RE_NUMERIC_DEFAULT.match(str(default).strip()):
+            if _default_is_shown_as_sql(column):
                 continue
             if column["name"] in defaults:
                 column["default"] = defaults[column["name"]]
