@@ -3323,7 +3323,11 @@ The CUBRID Alembic implementation maps `alter_column()` to native CUBRID DDL:
 - `nullable=` and `comment=` changes → `MODIFY` (or `CHANGE` with a rename), because
   CUBRID has no `ALTER COLUMN ... SET/DROP NOT NULL` and no `COMMENT ON COLUMN`. They
   need the column type: pass `existing_type=` (autogenerate does), or the call raises
-  `ValueError` naming the column
+  `ValueError` naming the column. In a hand-written migration also pass
+  `existing_nullable=`, `existing_server_default=` and `existing_comment=` for every
+  attribute that must survive: on CUBRID 10.2 and 11.0 the `MODIFY` resets any attribute
+  it is not told about, so a comment-only change without `existing_nullable=False`
+  drops `NOT NULL` and the default there
 - `server_default=` alone → `ALTER COLUMN c SET DEFAULT <value>`; `server_default=None`
   → `ALTER COLUMN c SET DEFAULT NULL`, since CUBRID has no `DROP DEFAULT` (#861)
 
@@ -3335,9 +3339,10 @@ becomes nullable (11.2+ rejects `NULL` on a column that is already nullable with
 -709, so it is left out then), and `COMMENT ''` when `comment=None` removes a comment.
 A `NOT NULL` column cannot have a `NULL` default on any version, so dropping its
 default emits two statements: one that makes the column nullable without a default,
-then one that restores `NOT NULL`. Pass `existing_nullable=False` with
-`server_default=None` for a `NOT NULL` column; without it, the single
-`SET DEFAULT NULL` is rejected by the server.
+then one that restores `NOT NULL`. For a `NOT NULL` column pass `server_default=None`
+with `existing_type=` and `existing_nullable=False` (plus `existing_comment=` to keep a
+comment); without `existing_nullable=False` the single `SET DEFAULT NULL` is rejected by
+the server, and without `existing_type` the call raises `ValueError`.
 
 > **Important — hand-written type-changing migrations must pass `existing_*`.**
 > Because CUBRID's `MODIFY` / `CHANGE` restate the *entire* column definition,
@@ -3359,9 +3364,9 @@ then one that restores `NOT NULL`. Pass `existing_nullable=False` with
 | `drop_table` | ✅ | — |
 | `add_column` | ✅ | — |
 | `drop_column` | ✅ | — |
-| `alter_column` (nullable) | ✅ | `MODIFY`; needs `existing_type` |
-| `alter_column` (default) | ✅ | `SET DEFAULT NULL` drops it; pass `existing_nullable=False` for a `NOT NULL` column |
-| `alter_column` (comment) | ✅ | `MODIFY`; needs `existing_type` |
+| `alter_column` (nullable) | ✅ | `MODIFY`; needs `existing_type`, plus the other `existing_*` values to keep |
+| `alter_column` (default) | ✅ | `SET DEFAULT NULL` drops it; for a `NOT NULL` column pass `existing_type` and `existing_nullable=False` |
+| `alter_column` (comment) | ✅ | `MODIFY`; needs `existing_type`, plus the other `existing_*` values to keep |
 | `alter_column` (type) | ✅ | `batch_alter_table` for lossy conversions |
 | `alter_column` (rename) | ✅ | — |
 | `create_index` | ✅ | `if_not_exists=True` raises `CompileError` (CUBRID has no `CREATE INDEX IF NOT EXISTS`); check `inspect(conn).has_index()` first instead |
