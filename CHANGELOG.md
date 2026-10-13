@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`literal_binds` and other compile options reach CAST operands, ON DUPLICATE KEY
+  UPDATE values and collection members (#862)** — four nested `process()` calls
+  dropped the compile keyword arguments, so `CAST(t.name || ? AS VARCHAR(10))` and
+  `ON DUPLICATE KEY UPDATE name = ?` kept placeholders under `literal_binds`,
+  `server_default=cast(literal(5), String(10))` rendered `DEFAULT CAST(? AS
+  VARCHAR(10))` and failed `create_all` with "wrong number of parameters", a
+  functional `Index` over a `CAST` rendered a `?`, and Alembic `--sql` output
+  contained placeholders. CUBRID itself still rejects `CAST` in a function-based
+  index on 10.2 and 11.4.
+
 ### Security
 
 - **Inline literals follow the server's backslash mode (#863)** — the dialect assumed

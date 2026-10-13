@@ -143,10 +143,10 @@ class CubridCompiler(compiler.SQLCompiler):
 
     def visit_cast(self, cast: Any, **kw: Any) -> str:
         # https://www.cubrid.org/manual/en/11.0/sql/function/typecast_fn.html#cast
-        type_ = self.process(cast.typeclause)
+        type_ = self.process(cast.typeclause, **kw)
         if type_ is None:
-            return self.process(cast.clause.self_group())
-        return f"CAST({self.process(cast.clause)} AS {type_})"
+            return self.process(cast.clause.self_group(), **kw)
+        return f"CAST({self.process(cast.clause, **kw)} AS {type_})"
 
     def default_from(self) -> str:
         # CUBRID rejects a FROM-less SELECT that carries a WHERE clause
@@ -423,7 +423,7 @@ class CubridCompiler(compiler.SQLCompiler):
             val = on_duplicate_update[column.key]
             if is_literal_value(val):
                 val = elements.BindParameter(None, val, type_=column.type)
-                value_text = self.process(val.self_group(), use_schema=False)
+                value_text = self.process(val.self_group(), **{**kw, "use_schema": False})
             else:
 
                 def replace(
@@ -469,7 +469,7 @@ class CubridCompiler(compiler.SQLCompiler):
                         return None
 
                 val = visitors.replacement_traverse(val, {}, replace)
-                value_text = self.process(val.self_group(), use_schema=False)
+                value_text = self.process(val.self_group(), **{**kw, "use_schema": False})
 
             name_text = self.preparer.quote(column.name)
             clauses.append(f"{name_text} = {value_text}")
@@ -1127,13 +1127,13 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
         return "STRING"
 
     def visit_SET(self, type_: Any, **kw: Any) -> str:
-        return self._visit_collection(type_, "SET")
+        return self._visit_collection(type_, "SET", **kw)
 
     def visit_MULTISET(self, type_: Any, **kw: Any) -> str:
-        return self._visit_collection(type_, "MULTISET")
+        return self._visit_collection(type_, "MULTISET", **kw)
 
     def visit_SEQUENCE(self, type_: Any, **kw: Any) -> str:
-        return self._visit_collection(type_, "SEQUENCE")
+        return self._visit_collection(type_, "SEQUENCE", **kw)
 
     def _visit_collection(self, type_: Any, collection_type: str, **kw: Any) -> str:
         """Compile CUBRID collection types (SET, MULTISET, LIST/SEQUENCE).
@@ -1145,7 +1145,7 @@ class CubridTypeCompiler(compiler.GenericTypeCompiler):
             if isinstance(value, str):
                 parts.append(value)
             else:
-                parts.append(self.process(value))
+                parts.append(self.process(value, **kw))
         return f"{collection_type}({','.join(parts)})"
 
     def visit_JSON(self, type_: Any, **kw: Any) -> str:

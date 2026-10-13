@@ -3268,3 +3268,68 @@ class TestPositionalBindOrderAcrossConstructs:
         c_b = stmt_b.compile(dialect=CubridDialect())
         assert c_a.positiontup == c_b.positiontup == ["e", "minid"]
         assert self._ordered_values(c_a) == self._ordered_values(c_b) == ["x", 1]
+
+
+# ---------------------------------------------------------------------------
+# Compile options reach nested process() calls (#862)
+# ---------------------------------------------------------------------------
+
+
+class TestCompileOptionsForwarded862:
+    """``literal_binds`` and other compile options reach every nested element."""
+
+    def test_cast_operand_renders_literal(self):
+        stmt = select(sa.cast(users.c.name + "x", String(10)))
+        assert "CAST(users.name || 'x' AS VARCHAR(10))" in _compile(stmt)
+
+    def test_on_duplicate_key_update_values_render_literals(self):
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="a", email="e")
+        stmt = stmt.on_duplicate_key_update(name="b", id=users.c.id + 1)
+        sql = _compile(stmt)
+        assert "?" not in sql
+        assert "name = 'b'" in sql
+        assert "id = (users.id + 1)" in sql
+
+    def test_on_duplicate_key_update_keeps_binds_without_literal_binds(self):
+        from sqlalchemy_cubrid.dml import insert
+
+        stmt = insert(users).values(id=1, name="a", email="e")
+        stmt = stmt.on_duplicate_key_update(name="b")
+        assert "name = ?" in str(stmt.compile(dialect=CubridDialect()))
+
+    def test_server_default_cast_renders_literal(self):
+        t = Table(
+            "t862_default",
+            MetaData(),
+            Column("id", Integer, primary_key=True),
+            Column("s", String(10), server_default=sa.cast(sa.literal(5), String(10))),
+        )
+        ddl = str(sa.schema.CreateTable(t).compile(dialect=CubridDialect()))
+        assert "DEFAULT CAST(5 AS VARCHAR(10))" in ddl
+
+    def test_functional_index_cast_renders_literal(self):
+        t = Table("t862_index", MetaData(), Column("a", Integer))
+        index = sa.Index("ix_t862", sa.cast(t.c.a + 1, String(10)))
+        index._set_parent(t)
+        ddl = str(sa.schema.CreateIndex(index).compile(dialect=CubridDialect()))
+        assert "CAST(a + 1 AS VARCHAR(10))" in ddl
+
+    def test_collection_member_receives_type_compiler_options(self, monkeypatch):
+        from sqlalchemy_cubrid.compiler import CubridTypeCompiler
+
+        seen: list[dict[str, Any]] = []
+        original = CubridTypeCompiler.visit_VARCHAR
+
+        def spy(self: Any, type_: Any, **kw: Any) -> str:
+            seen.append(kw)
+            return original(self, type_, **kw)
+
+        monkeypatch.setattr(CubridTypeCompiler, "visit_VARCHAR", spy)
+        marker = object()
+        rendered = CubridDialect().type_compiler_instance.process(
+            cubrid_types.SET(sa.VARCHAR(10)), type_expression=marker
+        )
+        assert rendered == "SET(VARCHAR(10))"
+        assert seen and seen[-1].get("type_expression") is marker

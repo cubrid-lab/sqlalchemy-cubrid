@@ -3488,3 +3488,32 @@ class TestPycubridValueRoundTrips:
             engine.dispose()
         # The column is in the database charset; the bytes stored are UTF-8.
         assert tuple(row) == (value, len(value.encode("utf-8")))
+
+
+class TestCompileOptionsForwardedLive862:
+    """#862: nested CAST and ON DUPLICATE KEY UPDATE values honour literal_binds."""
+
+    def test_cast_server_default_and_inline_upsert(self, engine):
+        from sqlalchemy_cubrid.dml import insert
+
+        meta = MetaData()
+        tbl = Table(
+            f"integration_cast862_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("a", Integer),
+            Column("s", String(10), server_default=sa.cast(sa.literal(5), String(10))),
+        )
+        meta.create_all(engine)
+        try:
+            upsert = insert(tbl).values(id=1, a=1).on_duplicate_key_update(a=tbl.c.a + 10)
+            inline = str(
+                upsert.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+            )
+            with engine.begin() as conn:
+                conn.execute(tbl.insert().values(id=1, a=1))
+                conn.exec_driver_sql(inline)
+            with engine.connect() as conn:
+                assert conn.execute(sa.select(tbl.c.a, tbl.c.s)).one() == (11, "5")
+        finally:
+            meta.drop_all(engine)
