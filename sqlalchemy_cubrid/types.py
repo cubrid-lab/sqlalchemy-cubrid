@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import inspect
 import json
+import sys
 import warnings
 from importlib import import_module
+from types import FrameType
 from typing import Any, Callable
 
 from sqlalchemy import exc
@@ -41,11 +43,19 @@ class _FloatType(_NumericType, sqltypes.Float[Any]):  # pyright: ignore[reportUn
 
 
 def _warn_ignored_argument(name: str, type_name: str) -> None:
+    # Point at the caller: skip every constructor frame of this module, whose
+    # depth differs between types (VARCHAR -> _StringType, SMALLINT -> _IntegerType).
+    # Level 1 is this helper; level 2 is its caller, the first frame examined.
+    stacklevel = 2
+    frame: FrameType | None = sys._getframe(1)
+    while frame is not None and frame.f_code.co_filename == __file__:
+        frame = frame.f_back
+        stacklevel += 1
     warnings.warn(
         f"The {name!r} argument of {type_name} has no effect and is deprecated; "
         "it will be removed in a future major release (#870)",
         DeprecationWarning,
-        stacklevel=3,
+        stacklevel=stacklevel,
     )
 
 

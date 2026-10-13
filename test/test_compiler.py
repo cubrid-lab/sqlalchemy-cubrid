@@ -3480,10 +3480,14 @@ class TestDialectSmallCorrectness870:
         assert not hasattr(CubridTypeCompiler, "_get")
 
     def test_ignored_type_arguments_are_deprecated(self):
-        with pytest.warns(DeprecationWarning, match="'display_width' argument of SMALLINT"):
+        with pytest.warns(DeprecationWarning, match="'display_width' argument of SMALLINT") as w1:
             small = cubrid_types.SMALLINT(display_width=5)
-        with pytest.warns(DeprecationWarning, match="'values' argument of VARCHAR"):
+        with pytest.warns(DeprecationWarning, match="'values' argument of VARCHAR") as w2:
             varchar = cubrid_types.VARCHAR(10, values=["a"])
+        with pytest.warns(DeprecationWarning, match="'values' argument of STRING") as w3:
+            cubrid_types.STRING(values=["a"])
+        # Each warning points at this caller, not at a constructor in types.py.
+        assert {w[0].filename for w in (w1, w2, w3)} == {__file__}
         assert not hasattr(small, "display_width")
         assert not hasattr(varchar, "values")
         assert repr(small) == "SMALLINT()"
