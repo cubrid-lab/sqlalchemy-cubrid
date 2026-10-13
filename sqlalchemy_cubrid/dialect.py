@@ -895,8 +895,9 @@ class CubridDialect(default.DefaultDialect):
         result = connection.execute(
             text(
                 "SELECT class_name FROM db_class "
-                "WHERE class_type = 'CLASS' AND is_system_class = 'NO' "
-                "ORDER BY class_name"
+                "WHERE class_type = 'CLASS' AND is_system_class = 'NO'"
+                + self._current_owner_condition()
+                + " ORDER BY class_name"
             )
         )
         return [row[0] for row in result]
@@ -914,8 +915,9 @@ class CubridDialect(default.DefaultDialect):
         result = connection.execute(
             text(
                 "SELECT class_name FROM db_class "
-                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO' "
-                "ORDER BY class_name"
+                "WHERE class_type = 'VCLASS' AND is_system_class = 'NO'"
+                + self._current_owner_condition()
+                + " ORDER BY class_name"
             )
         )
         return [row[0] for row in result]
@@ -1252,6 +1254,21 @@ class CubridDialect(default.DefaultDialect):
         normalize = cast(Callable[[str], str], self.normalize_name)
         return normalize(str(schema)) == normalize(str(default))
 
+    def _current_owner_condition(self) -> str:
+        """Return the ``db_class`` filter for the current user's own classes (#864).
+
+        Since CUBRID 11.2 each user has a schema and ``db_class`` lists the
+        classes of every owner the user may read, while an unqualified name
+        resolves only in the current user's schema. Listings and
+        :meth:`has_table` are therefore limited to ``owner_name =
+        CURRENT_USER``, the owner of :attr:`default_schema_name`. Before 11.2
+        class names are global and ``owner_name`` does not scope them.
+        """
+        version = self.server_version_info
+        if version is None or version < (11, 2):
+            return ""
+        return " AND owner_name = CURRENT_USER"
+
     def _raise_if_non_default_schema(self, schema: str | None, object_name: str) -> None:
         """Raise :class:`NoSuchTableError` if *schema* is not the default schema.
 
@@ -1555,7 +1572,7 @@ class CubridDialect(default.DefaultDialect):
                 "SELECT COUNT(*) FROM db_class "
                 "WHERE class_type IN ('CLASS', 'VCLASS') "
                 "AND is_system_class = 'NO' "
-                "AND class_name IN (:name, LOWER(:name))"
+                "AND class_name IN (:name, LOWER(:name))" + self._current_owner_condition()
             ),
             {"name": table_name},
         )

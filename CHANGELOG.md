@@ -20,6 +20,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   contained placeholders. CUBRID itself still rejects `CAST` in a function-based
   index on 10.2 and 11.4.
 
+- **`has_table()`, `get_table_names()` and `get_view_names()` see only the current
+  owner's classes on CUBRID 11.2 and later (#864)** — `db_class` lists every owner's
+  classes the user may read, but an unqualified name resolves only in the current
+  user's schema. With another user's `own_t` present, `has_table("own_t")` was `True`
+  for `dba`, so `create_all()` skipped `dba.own_t` and the next `INSERT` failed with
+  `Unknown class "dba.own_t"`; `MetaData.reflect()` aborted with `NoSuchTableError`;
+  and two owners' same-named tables were listed twice. These methods now filter on
+  `owner_name = CURRENT_USER`. CUBRID 10.2 and 11.0 are unchanged.
+
 ### Security
 
 - **Inline literals follow the server's backslash mode (#863)** — the dialect assumed

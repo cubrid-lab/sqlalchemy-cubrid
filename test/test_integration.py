@@ -3517,3 +3517,72 @@ class TestCompileOptionsForwardedLive862:
                 assert conn.execute(sa.select(tbl.c.a, tbl.c.s)).one() == (11, "5")
         finally:
             meta.drop_all(engine)
+
+
+class TestCurrentOwnerListings864:
+    """#864: from CUBRID 11.2 listings and has_table() see only the current owner."""
+
+    _USER = "u864"
+
+    @pytest.fixture
+    def other_owner(self, engine):
+        if not _server_at_least(engine, (11, 2)):
+            pytest.skip("class names are global before CUBRID 11.2")
+        other = create_engine(engine.url.set(username=self._USER, password=None))
+
+        def run(eng, *statements):
+            with eng.connect() as conn:
+                for statement in statements:
+                    conn.exec_driver_sql(statement)
+                    conn.commit()
+
+        def cleanup():
+            with engine.connect() as conn:
+                conn.exec_driver_sql("DROP TABLE IF EXISTS own864")
+                conn.exec_driver_sql("DROP VIEW IF EXISTS own864_v")
+                conn.commit()
+            if _user_exists(engine, self._USER):
+                run(other, "DROP VIEW IF EXISTS own864_v", "DROP TABLE IF EXISTS own864")
+                other.dispose()
+                _drop_user_verified(engine, self._USER)
+            else:
+                other.dispose()
+
+        cleanup()
+        run(engine, f"CREATE USER {self._USER}")
+        try:
+            run(
+                other,
+                "CREATE TABLE own864 (id INT PRIMARY KEY)",
+                "CREATE VIEW own864_v AS SELECT id FROM own864",
+                "GRANT SELECT ON own864 TO PUBLIC",
+                "GRANT SELECT ON own864_v TO PUBLIC",
+            )
+            yield other
+        finally:
+            cleanup()
+
+    def test_other_owners_classes_are_not_listed(self, engine, other_owner):
+        with engine.connect() as conn:
+            insp = inspect(conn)
+            assert insp.has_table("own864") is False
+            assert "own864" not in insp.get_table_names()
+            assert "own864_v" not in insp.get_view_names()
+        with other_owner.connect() as conn:
+            insp = inspect(conn)
+            assert insp.has_table("own864") is True
+            assert "own864" in insp.get_table_names()
+            assert "own864_v" in insp.get_view_names()
+
+    def test_create_all_and_reflect_ignore_the_other_owner(self, engine, other_owner):
+        meta = MetaData()
+        tbl = Table("own864", meta, Column("id", Integer, primary_key=True), Column("v", Integer))
+        meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(tbl.insert().values(id=1, v=2))
+        reflected = MetaData()
+        reflected.reflect(engine)
+        assert [c.name for c in reflected.tables["own864"].columns] == ["id", "v"]
+        assert "own864_v" not in reflected.tables
+        with engine.connect() as conn:
+            assert inspect(conn).get_table_names().count("own864") == 1

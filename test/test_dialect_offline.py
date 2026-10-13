@@ -1221,6 +1221,34 @@ class TestReflectionMethods:
         statement = connection.execute.call_args[0][0]
         assert "is_system_class = 'NO' ORDER BY class_name" in str(statement)
 
+    @pytest.mark.parametrize(
+        ("version", "owner_filtered"),
+        [
+            (None, False),
+            ((10, 2, 0, 0), False),
+            ((11, 0, 0, 0), False),
+            ((11, 2, 0, 0), True),
+            ((11, 4, 0, 0), True),
+        ],
+    )
+    @pytest.mark.parametrize("method", ["get_table_names", "get_view_names", "has_table"])
+    def test_listings_are_limited_to_the_current_owner_from_11_2(
+        self, version, owner_filtered, method
+    ):
+        """#864: from 11.2 another owner's class of the same name is not ours."""
+        dialect = CubridDialect()
+        dialect.server_version_info = version
+        connection = MagicMock()
+        connection.execute.return_value = MagicMock()
+        connection.execute.return_value.__iter__.return_value = iter([])
+        connection.execute.return_value.scalar.return_value = 0
+        args = ("own_t",) if method == "has_table" else ()
+
+        _invoke_reflection(dialect, method, connection, *args)
+
+        statement = str(connection.execute.call_args[0][0])
+        assert ("owner_name = CURRENT_USER" in statement) is owner_filtered
+
     def test_get_view_names(self):
         dialect = CubridDialect()
         connection = MagicMock()
