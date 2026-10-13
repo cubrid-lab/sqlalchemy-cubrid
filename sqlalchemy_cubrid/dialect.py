@@ -270,6 +270,43 @@ def _skip_quoted(text: str, i: int) -> int:
     raise ValueError("unterminated string literal")
 
 
+def _skip_enum_labels(text: str, i: int) -> int:
+    """Return the index after the ``ENUM(...)`` label list opening at *text[i]*.
+
+    ``SHOW CREATE TABLE`` prints ENUM labels without doubling their quotes
+    (``ENUM('it's', 'a, b', 'c (d)')``), so a label ends only at a quote
+    followed by ``, '`` or ``)``. A label that itself contains ``', '`` stays
+    ambiguous, as in ``SHOW COLUMNS`` (#631).
+    """
+    i += 1
+    while i < len(text):
+        while i < len(text) and text[i] == " ":
+            i += 1
+        if i < len(text) and text[i] == ")":
+            return i + 1
+        if i >= len(text) or text[i] != "'":
+            raise ValueError("unexpected ENUM label list")
+        j = i + 1
+        while True:
+            j = text.find("'", j)
+            if j < 0:
+                raise ValueError("unterminated ENUM label")
+            rest = text[j + 1 :]
+            if rest.startswith(")"):
+                return j + 2
+            if re.match(r",\s*'", rest):
+                i = j + 1 + rest.index("'")
+                break
+            j += 1
+    raise ValueError("unterminated ENUM label list")
+
+
+def _is_enum_open(text: str, i: int) -> bool:
+    """Whether the ``(`` at *text[i]* opens an ``ENUM(...)`` label list."""
+    head = text[max(0, i - 5) : i]
+    return head.upper().endswith("ENUM") and (len(head) < 5 or not head[0].isalnum())
+
+
 def _split_ddl_items(ddl: str) -> list[str]:
     """Split the parenthesized CREATE TABLE body on top-level commas.
 
@@ -278,7 +315,14 @@ def _split_ddl_items(ddl: str) -> list[str]:
     ``COMMENT='...)'`` after it are not read.
     """
     items: list[str] = []
-    i = ddl.index("(") + 1
+    i = 0
+    # The body opens at the first parenthesis outside a [bracketed] name,
+    # which may itself contain one (``CREATE TABLE [sct ref, (x)] (``).
+    while i < len(ddl) and ddl[i] != "(":
+        i = ddl.index("]", i) + 1 if ddl[i] == "[" else i + 1
+    if i >= len(ddl):
+        raise ValueError("no CREATE TABLE body")
+    i += 1
     start = i
     depth = 0
     while i < len(ddl):
@@ -288,6 +332,9 @@ def _split_ddl_items(ddl: str) -> list[str]:
             continue
         if ch == "[":
             i = ddl.index("]", i) + 1
+            continue
+        if ch == "(" and _is_enum_open(ddl, i):
+            i = _skip_enum_labels(ddl, i)
             continue
         if ch == "(":
             depth += 1
@@ -359,6 +406,9 @@ def _column_defaults_from_ddl(ddl: str) -> dict[str, str]:
             ch = rest[i]
             if ch == "'":
                 i = _skip_quoted(rest, i)
+                continue
+            if ch == "(" and _is_enum_open(rest, i):
+                i = _skip_enum_labels(rest, i)
                 continue
             if ch == "(":
                 depth = 1

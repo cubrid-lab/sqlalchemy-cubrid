@@ -2969,6 +2969,38 @@ class TestReflectedDefaultsFromDdl865:
         with pytest.raises(ValueError):
             _column_defaults_from_ddl(ddl)
 
+    @pytest.mark.parametrize("version", ["10.2", "11.0", "11.2", "11.4"])
+    @pytest.mark.parametrize("table", ["sct_types", "sct ref, (x)"])
+    def test_parser_reads_captured_server_ddl(self, version, table):
+        """The captured DDL prints ENUM labels undoubled (``ENUM('it's', ...)``)
+        and a table name may hold a parenthesis (``[sct ref, (x)]``)."""
+        import json
+        from pathlib import Path
+
+        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
+
+        fixture = (
+            Path(__file__).parent / "fixtures" / "show_create_table" / f"cubrid-{version}.json"
+        )
+        ddl = json.loads(fixture.read_text())["tables"][table]["show_create_table"]
+        ddl = ddl[1] if isinstance(ddl, list) else ddl
+        assert _column_defaults_from_ddl(ddl) == {}
+        head, sep, tail = ddl.partition(",  CONSTRAINT")
+        assert sep
+        with_default = head + ", [zz] CHARACTER VARYING(9) DEFAULT 'it''s (a, b)'" + sep + tail
+        assert _column_defaults_from_ddl(with_default) == {"zz": "'it''s (a, b)'"}
+
+    def test_parser_reads_enum_default_after_undoubled_labels(self):
+        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
+
+        ddl = (
+            "CREATE TABLE [e865 (x)] ([id] INTEGER NOT NULL, "
+            "[e] ENUM('it's', 'a, b', 'c (d)') DEFAULT 'it''s', "
+            "[q] CHARACTER VARYING(9) DEFAULT 'q''q',  "
+            "CONSTRAINT [pk_e865 (x)_id] PRIMARY KEY  ([id])) COLLATE iso88591_bin"
+        )
+        assert _column_defaults_from_ddl(ddl) == {"e": "'it''s'", "q": "'q''q'"}
+
     @staticmethod
     def _reflect(rows, *extra):
         dialect = CubridDialect()
