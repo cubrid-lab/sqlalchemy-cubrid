@@ -1414,6 +1414,19 @@ class CubridDialect(default.DefaultDialect):
             if index_name in unique_names:
                 constraints.setdefault(index_name, []).append(row[4])
 
+        # Fail closed (#848): a unique index the catalog lists but SHOW INDEXES
+        # does not resolve must not be reported as absent, or Alembic would
+        # propose to create a constraint that exists.
+        unresolved = sorted(unique_names - constraints.keys())
+        if unresolved:
+            raise InvalidRequestError(
+                f"CUBRID catalog mismatch for table {table_name!r}: db_index lists the "
+                f"unique index(es) {', '.join(map(repr, unresolved))}, but SHOW INDEXES "
+                f"returned no key columns for them (resolved: "
+                f"{', '.join(map(repr, sorted(constraints))) or 'none'}); refusing to "
+                "report an incomplete set of unique constraints"
+            )
+
         return [
             {"name": name, "column_names": cols, "duplicates_index": name}
             for name, cols in constraints.items()

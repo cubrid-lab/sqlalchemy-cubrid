@@ -37,6 +37,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Unique-constraint reflection fails closed on a catalog mismatch (#848)** —
+  `get_unique_constraints()` took the unique index names from `db_index` and their
+  columns from `SHOW INDEXES`, and returned only the names `SHOW INDEXES` resolved. A
+  unique index the catalog listed but `SHOW INDEXES` omitted was therefore reported as
+  absent, which Alembic autogenerate would read as a constraint to create. Such a
+  mismatch now raises `InvalidRequestError` naming the unresolved and resolved indexes.
+  A verified-empty catalog still returns `[]`. No such mismatch has been seen on a live
+  CUBRID server; this hardens the reflection invariant.
+
 - **Garbage-collected async connections are terminated (#872)** — the
   `cubrid+aiopycubrid://` adapter had no terminate support, so when a checked-out
   connection was garbage-collected the pool logged "cannot be safely terminated" and
