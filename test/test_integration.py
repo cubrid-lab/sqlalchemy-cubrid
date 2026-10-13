@@ -4134,3 +4134,43 @@ class TestOnDuplicateKeyUpdateCaching871:
             assert cache_hits[1] == cache_hits[2]
         finally:
             meta.drop_all(engine)
+
+
+class TestAsyncTerminateClosedLoop872:
+    """#872: an async connection collected after its event loop closed is retired."""
+
+    def test_connection_collected_after_its_loop_closed(self):
+        import asyncio
+        import gc
+        import os
+        import warnings
+
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from scripts.integration_urls import async_url
+
+        holder: dict[str, object] = {}
+
+        async def leak() -> None:
+            eng = create_async_engine(async_url(_cubrid_url(), os.environ.get("CUBRID_TEST_AURL")))
+            holder["engine"] = eng
+            conn = await eng.connect()
+            await conn.execute(sa.text("SELECT 1 FROM db_root"))
+            raw = await conn.get_raw_connection()
+            holder["driver"] = raw.driver_connection
+            holder["sock"] = raw.driver_connection._writer.transport.get_extra_info("socket")
+            holder["conn"] = conn
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            asyncio.run(leak())  # closes the loop that owns the transport
+            del holder["conn"]
+            gc.collect()
+            gc.collect()
+        driver = holder["driver"]
+        assert getattr(driver, "_connected") is False
+        assert getattr(driver, "_writer") is None
+        assert getattr(holder["sock"], "fileno")() == -1  # the socket is closed
+        messages = [f"{w.category.__name__}: {w.message}" for w in caught]
+        assert not [m for m in messages if m.startswith("ResourceWarning")], messages
+        assert not [m for m in messages if "cannot be safely terminated" in m], messages

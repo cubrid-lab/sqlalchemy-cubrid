@@ -7,28 +7,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from importlib import import_module
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,
     AsyncAdapt_dbapi_cursor,
 )
-
-# AsyncAdapt_terminate (terminate support for garbage-collected connections)
-# arrived during the SQLAlchemy 2.0 series; without it the pool keeps its
-# "cannot be safely terminated" fallback.
-try:
-    from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate
-
-    _HAS_TERMINATE = True
-except ImportError:  # pragma: no cover — early SA 2.0 releases
-
-    class AsyncAdapt_terminate:  # type: ignore[no-redef]
-        """Placeholder when SQLAlchemy has no terminate mixin."""
-
-    _HAS_TERMINATE = False
 
 # AsyncAdapt_dbapi_module was added in SQLAlchemy 2.1.
 try:
@@ -41,6 +28,22 @@ from sqlalchemy.engine.url import URL
 from sqlalchemy.util.concurrency import await_only
 
 from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect, PyCubridExecutionContext
+
+# AsyncAdapt_terminate (terminate support for garbage-collected connections)
+# arrived in SQLAlchemy 2.0.44; before it the pool keeps its "cannot be safely
+# terminated" fallback.
+if TYPE_CHECKING:
+    from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate as _TerminateMixin
+
+    _HAS_TERMINATE = True
+else:
+    try:
+        from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate as _TerminateMixin
+
+        _HAS_TERMINATE = True
+    except ImportError:  # pragma: no cover — SQLAlchemy 2.0.0 to 2.0.43
+        _TerminateMixin = object
+        _HAS_TERMINATE = False
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -55,7 +58,7 @@ class AsyncAdapt_pycubrid_cursor(AsyncAdapt_dbapi_cursor):
         pass
 
 
-class AsyncAdapt_pycubrid_connection(AsyncAdapt_terminate, AsyncAdapt_dbapi_connection):
+class AsyncAdapt_pycubrid_connection(_TerminateMixin, AsyncAdapt_dbapi_connection):
     _cursor_cls = AsyncAdapt_pycubrid_cursor
     # SA 2.0 exposed ``await_`` on AsyncAdapt_dbapi_connection; SA 2.1 dropped
     # it in favour of the module-level helper. Redeclare so ``self.await_(...)``
@@ -81,11 +84,25 @@ class AsyncAdapt_pycubrid_connection(AsyncAdapt_terminate, AsyncAdapt_dbapi_conn
         # Garbage-collection cleanup outside a greenlet (#872): nothing can be
         # awaited, so close the socket synchronously and mark the session
         # disconnected, which is what pycubrid's own failure path does.
+        driver = self._connection
+        transport = getattr(getattr(driver, "_writer", None), "transport", None)
         try:
-            self._connection._drop_connection()
+            driver._drop_connection()
+            return
         except (OSError, RuntimeError):
-            # RuntimeError: the event loop that owned the transport is closed.
             _LOGGER.debug("Suppressed error force-closing a pycubrid.aio connection", exc_info=True)
+        # The event loop that owned the transport is closed: StreamWriter.close()
+        # could not schedule connection_lost, so _drop_connection() stopped
+        # before retiring the session. Close the socket and retire it here.
+        sock = getattr(transport, "_sock", None)
+        if transport is not None and sock is not None:
+            with contextlib.suppress(OSError):
+                sock.close()
+            transport._sock = None
+        driver._connected = False
+        invalidate = getattr(driver, "_invalidate_query_handles", None)
+        if invalidate is not None:
+            invalidate()
 
 
 # PEP 249 module-level names copied from the sync ``pycubrid`` module onto the

@@ -22,9 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cubrid+aiopycubrid://` adapter had no terminate support, so when a checked-out
   connection was garbage-collected the pool logged "cannot be safely terminated" and
   the unclosed stream raised a `ResourceWarning`. The adapter now uses SQLAlchemy's
-  `AsyncAdapt_terminate`: the garbage-collection path closes the socket synchronously
-  and marks the pycubrid session disconnected, an invalidated connection closes with
-  `CLOSE_DATABASE`, and the dialect sets `has_terminate`.
+  `AsyncAdapt_terminate` (SQLAlchemy 2.0.44+; earlier 2.0 releases keep the old
+  behavior): the garbage-collection path closes the socket synchronously and retires the
+  pycubrid session, also when the connection's event loop has already closed, an
+  invalidated connection closes with `CLOSE_DATABASE`, and the dialect sets
+  `has_terminate`.
 
 - **`on_duplicate_key_update()` is cacheable (#871)** — `OnDuplicateClause` had no
   `_traverse_internals`, so the first `INSERT ... ON DUPLICATE KEY UPDATE` emitted

@@ -383,3 +383,49 @@ class TestAsyncTerminate872:
         asyncio.run(conn._terminate_graceful_close())
 
         mock_async_conn.close.assert_awaited_once_with()
+
+
+class _ClosedLoopDriver:
+    """Mimics pycubrid.aio when the owning event loop is closed (#872).
+
+    pycubrid's ``_drop_connection()`` clears the stream references in a
+    ``finally`` and then raises before it marks the session disconnected.
+    """
+
+    def __init__(self, transport: Any) -> None:
+        self._writer = types.SimpleNamespace(transport=transport)
+        self._connected = True
+        self.invalidated = False
+
+    def _drop_connection(self) -> None:
+        self._writer = None
+        raise RuntimeError("Event loop is closed")
+
+    def _invalidate_query_handles(self) -> None:
+        self.invalidated = True
+
+
+class TestAsyncTerminateClosedLoop872:
+    def test_closed_loop_force_close_retires_the_session(self):
+        import socket
+
+        sock = socket.socket()
+        transport = types.SimpleNamespace(_sock=sock)
+        driver = _ClosedLoopDriver(transport)
+        conn = AsyncAdapt_pycubrid_connection(MagicMock(), driver)
+
+        conn._terminate_force_close()
+
+        assert sock.fileno() == -1
+        assert transport._sock is None
+        assert driver._connected is False
+        assert driver.invalidated is True
+
+    def test_closed_loop_force_close_without_a_transport(self):
+        driver = _ClosedLoopDriver(None)
+        conn = AsyncAdapt_pycubrid_connection(MagicMock(), driver)
+
+        conn._terminate_force_close()
+
+        assert driver._connected is False
+        assert driver.invalidated is True
