@@ -4049,12 +4049,12 @@ class TestColonNamesAndCollectionClasses870:
             meta.drop_all(engine)
 
         drop()
-        meta.create_all(engine)
-        with engine.begin() as conn:
-            conn.exec_driver_sql(
-                f"CREATE VIEW {view} AS SELECT id FROM {preparer.quote_identifier(self.CHILD)}"
-            )
         try:
+            meta.create_all(engine)
+            with engine.begin() as conn:
+                conn.exec_driver_sql(
+                    f"CREATE VIEW {view} AS SELECT id FROM {preparer.quote_identifier(self.CHILD)}"
+                )
             yield
         finally:
             drop()

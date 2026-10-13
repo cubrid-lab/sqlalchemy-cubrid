@@ -7,12 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
+### Deprecated
 
 - **Unused `display_width` and `values` type arguments (#870)** — `SMALLINT` /
-  `BIGINT` accepted `display_width` and `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` /
-  `STRING` accepted `values`, but neither changed the DDL or any behavior; passing them
-  now raises `TypeError`. The unused private `CubridTypeCompiler._get` helper is gone.
+  `BIGINT` accept `display_width` and `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` /
+  `STRING` accept `values`, but neither ever changed the DDL or any behavior. Passing
+  them now emits a `DeprecationWarning`; they are still accepted and ignored, and will
+  be removed in a future major release. The unused private `CubridTypeCompiler._get`
+  helper is gone.
 
 ### Fixed
 

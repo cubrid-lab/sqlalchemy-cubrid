@@ -3478,7 +3478,17 @@ class TestDialectSmallCorrectness870:
         from sqlalchemy_cubrid.compiler import CubridTypeCompiler
 
         assert not hasattr(CubridTypeCompiler, "_get")
-        with pytest.raises(TypeError):
-            cubrid_types.SMALLINT(display_width=5)
-        with pytest.raises(TypeError):
-            cubrid_types.VARCHAR(10, values=["a"])
+
+    def test_ignored_type_arguments_are_deprecated(self):
+        with pytest.warns(DeprecationWarning, match="'display_width' argument of SMALLINT"):
+            small = cubrid_types.SMALLINT(display_width=5)
+        with pytest.warns(DeprecationWarning, match="'values' argument of VARCHAR"):
+            varchar = cubrid_types.VARCHAR(10, values=["a"])
+        assert not hasattr(small, "display_width")
+        assert not hasattr(varchar, "values")
+        assert repr(small) == "SMALLINT()"
+        assert repr(varchar) == "VARCHAR(length=10)"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            cubrid_types.BIGINT()
+            cubrid_types.CHAR(3)
