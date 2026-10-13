@@ -3722,3 +3722,66 @@ class TestCurrentOwnerListings864:
         assert "own864_v" not in reflected.tables
         with engine.connect() as conn:
             assert inspect(conn).get_table_names().count("own864") == 1
+
+
+class TestReflectedDefaultRoundTrip865:
+    """#865: reflected string and date defaults re-create the same table."""
+
+    SOURCE = "dflt865_src"
+    COPY = "dflt865_copy"
+    DDL = (
+        f"CREATE TABLE {SOURCE} (id INT PRIMARY KEY, "
+        "q VARCHAR(20) DEFAULT 'it''s', em VARCHAR(20) DEFAULT '', "
+        "nl VARCHAR(20) DEFAULT 'NULL', sp VARCHAR(20) DEFAULT ' a, b ', "
+        "w VARCHAR(20) DEFAULT 'CURRENT_USER', w2 VARCHAR(40) DEFAULT USER, "
+        "nc NCHAR VARYING(10) DEFAULT N'n', d DATE DEFAULT DATE '2020-01-02', "
+        "ts TIMESTAMP DEFAULT TIMESTAMP '2020-01-02 03:04:05', i INT DEFAULT -3, "
+        "nn VARCHAR(20))"
+    )
+    DEFAULTED = ("q", "em", "nl", "sp", "w", "w2", "nc", "d", "ts", "i", "nn")
+
+    @pytest.fixture
+    def source(self, engine):
+        def drop():
+            with engine.begin() as conn:
+                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {self.COPY}")
+                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {self.SOURCE}")
+
+        drop()
+        with engine.begin() as conn:
+            conn.exec_driver_sql(self.DDL)
+        try:
+            yield
+        finally:
+            drop()
+
+    def _defaults(self, engine, table):
+        with engine.connect() as conn:
+            return {c["name"]: c["default"] for c in inspect(conn).get_columns(table)}
+
+    def _inserted(self, engine, table):
+        with engine.begin() as conn:
+            conn.exec_driver_sql(f"INSERT INTO {table} (id) VALUES (1)")
+            cols = ", ".join(self.DEFAULTED)
+            return conn.exec_driver_sql(f"SELECT {cols} FROM {table}").one()
+
+    def test_reflect_create_reflect(self, engine, source):
+        reflected = self._defaults(engine, self.SOURCE)
+        assert reflected["q"] == "'it''s'"
+        assert reflected["em"] == "''"
+        assert reflected["nl"] == "'NULL'"
+        assert reflected["w"] == "'CURRENT_USER'"
+        assert reflected["w2"] == "CURRENT_USER"
+        assert reflected["nn"] is None
+
+        meta = MetaData()
+        src = Table(self.SOURCE, meta, autoload_with=engine)
+        copy = src.to_metadata(MetaData(), name=self.COPY)
+        copy.create(engine)
+
+        assert self._defaults(engine, self.COPY) == reflected
+        source_row = self._inserted(engine, self.SOURCE)
+        copy_row = self._inserted(engine, self.COPY)
+        assert copy_row == source_row
+        assert source_row[:5] == ("it's", "", "NULL", " a, b ", "CURRENT_USER")
+        assert source_row[-1] is None

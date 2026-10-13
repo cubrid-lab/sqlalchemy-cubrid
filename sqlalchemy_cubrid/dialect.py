@@ -251,6 +251,135 @@ _RE_UNIQUE_KEY = re.compile(
 )
 _RE_BRACKET_IDENT = re.compile(r"\[([^\]]+)\]")
 
+# A SHOW COLUMNS default that is already valid SQL as printed (a number); any
+# other default is read from SHOW CREATE TABLE (#865).
+_RE_NUMERIC_DEFAULT = re.compile(r"^[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?$")
+_RE_DEFAULT_KEYWORD = re.compile(r"\bDEFAULT\b", re.IGNORECASE)
+
+
+def _skip_quoted(text: str, i: int) -> int:
+    """Return the index after the ``'...'`` literal starting at *text[i]*."""
+    i += 1
+    while i < len(text):
+        if text[i] == "'":
+            if i + 1 < len(text) and text[i + 1] == "'":
+                i += 2
+                continue
+            return i + 1
+        i += 1
+    raise ValueError("unterminated string literal")
+
+
+def _split_ddl_items(ddl: str) -> list[str]:
+    """Split the parenthesized CREATE TABLE body on top-level commas.
+
+    Quotes, ``[identifiers]`` and nested parentheses are skipped, and the
+    body ends at the parenthesis that closes it, so table options such as a
+    ``COMMENT='...)'`` after it are not read.
+    """
+    items: list[str] = []
+    i = ddl.index("(") + 1
+    start = i
+    depth = 0
+    while i < len(ddl):
+        ch = ddl[i]
+        if ch == "'":
+            i = _skip_quoted(ddl, i)
+            continue
+        if ch == "[":
+            i = ddl.index("]", i) + 1
+            continue
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            if depth == 0:
+                items.append(ddl[start:i])
+                return items
+            depth -= 1
+        elif ch == "," and depth == 0:
+            items.append(ddl[start:i])
+            start = i + 1
+        i += 1
+    raise ValueError("unbalanced CREATE TABLE body")
+
+
+def _default_term(text: str, i: int) -> str:
+    """Return the default expression that starts at *text[i]*.
+
+    One term, as ``SHOW CREATE TABLE`` prints it: a string literal with an
+    optional prefix (``N'..'``, ``X'..'``, ``_utf8'..'``, ``date '..'``), a
+    number, or a keyword or function call (``SYS_DATETIME``,
+    ``TO_CHAR(SYS_DATETIME, 'YYYY')``).
+    """
+    start = i
+    match = re.compile(r"[-+]?[\w.]*").match(text, i)
+    i = match.end() if match else i
+    j = i
+    while j < len(text) and text[j] == " ":
+        j += 1
+    if j < len(text) and text[j] == "'" and (i == start or text[start:i].isidentifier()):
+        return text[start : _skip_quoted(text, j)]
+    if i < len(text) and text[i] == "(":
+        depth = 0
+        while i < len(text):
+            if text[i] == "'":
+                i = _skip_quoted(text, i)
+                continue
+            if text[i] == "(":
+                depth += 1
+            elif text[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
+            i += 1
+        raise ValueError("unbalanced parentheses")
+    if i == start:
+        raise ValueError("no default expression")
+    return text[start:i]
+
+
+def _column_defaults_from_ddl(ddl: str) -> dict[str, str]:
+    """Map column names to their ``DEFAULT`` SQL in ``SHOW CREATE TABLE`` DDL (#865).
+
+    ``SHOW COLUMNS`` prints a string default without its quotes (``it''s``,
+    an empty string, or ``NULL`` for the string ``'NULL'``), a date as
+    ``01/02/2020`` and both ``'CURRENT_USER'`` and ``USER`` as
+    ``CURRENT_USER``; the DDL prints each as valid, unambiguous SQL.
+    """
+    defaults: dict[str, str] = {}
+    for item in _split_ddl_items(ddl):
+        item = item.strip()
+        if not item.startswith("["):
+            continue
+        end = item.index("]")
+        name = item[1:end]
+        rest = item[end + 1 :]
+        i = 0
+        while i < len(rest):
+            ch = rest[i]
+            if ch == "'":
+                i = _skip_quoted(rest, i)
+                continue
+            if ch == "(":
+                depth = 1
+                i += 1
+                while depth and i < len(rest):
+                    if rest[i] == "'":
+                        i = _skip_quoted(rest, i)
+                        continue
+                    depth += {"(": 1, ")": -1}.get(rest[i], 0)
+                    i += 1
+                continue
+            match = _RE_DEFAULT_KEYWORD.match(rest, i)
+            if match and (i == 0 or not (rest[i - 1].isalnum() or rest[i - 1] == "_")):
+                j = match.end()
+                while j < len(rest) and rest[j] == " ":
+                    j += 1
+                defaults[name] = _default_term(rest, j)
+                break
+            i += 1
+    return defaults
+
 
 # -----------------------------------------------------------------------
 # Column-spec and ischema_names mappings
@@ -689,6 +818,16 @@ class CubridDialect(default.DefaultDialect):
         for column in columns:
             column["comment"] = comment_map.get(column["name"])
 
+        if (
+            any(
+                column["default"] is not None
+                and not _RE_NUMERIC_DEFAULT.match(str(column["default"]).strip())
+                for column in columns
+            )
+            and self._get_class_type(connection, table_name, **kw) == "CLASS"
+        ):
+            self._quote_defaults_from_ddl(connection, table_name, columns)
+
         return columns
 
     def _decode_show_columns_type(self, type_text: str) -> Any | None:
@@ -815,6 +954,29 @@ class CubridDialect(default.DefaultDialect):
         if class_type == "VCLASS":
             return []
         return self._get_foreign_keys_from_ddl(connection, table_name, schema)
+
+    def _quote_defaults_from_ddl(
+        self, connection: Any, table_name: str, columns: list[ReflectedColumn]
+    ) -> None:
+        """Replace non-numeric ``SHOW COLUMNS`` defaults with their DDL SQL (#865).
+
+        A string default reflects as a quoted literal (``'it''s'``, ``''``,
+        ``'NULL'``), a date as ``date '01/02/2020'`` and a function as
+        itself, so ``CreateTable`` and Alembic re-emit them unchanged. A
+        default the DDL parser cannot find keeps the ``SHOW COLUMNS`` text.
+        """
+        ddl = self._get_show_create_table_ddl(connection, table_name)
+        try:
+            defaults = _column_defaults_from_ddl(ddl)
+        except ValueError:
+            log.debug("could not parse column defaults of %s from SHOW CREATE TABLE", table_name)
+            return
+        for column in columns:
+            default = column["default"]
+            if default is None or _RE_NUMERIC_DEFAULT.match(str(default).strip()):
+                continue
+            if column["name"] in defaults:
+                column["default"] = defaults[column["name"]]
 
     def _get_show_create_table_ddl(self, connection: Any, table_name: str) -> str:
         """Return the ``SHOW CREATE TABLE`` DDL of *table_name*.

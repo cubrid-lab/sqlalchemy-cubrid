@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **String and date server defaults reflect as quoted SQL literals (#865)** —
+  `get_columns()` returned the `SHOW COLUMNS` default text, which drops a string's
+  quotes: `DEFAULT 'it''s'` reflected as `it''s`, `''` as an empty string and the
+  string `'NULL'` as `NULL`, a date as `01/02/2020`, and `'CURRENT_USER'` the same as
+  the `USER` function. Reflecting and then emitting `CreateTable` produced `DEFAULT
+  it''s` and `DEFAULT ,`, and Alembic's `existing_server_default` carried the bad value
+  into `MODIFY`. Non-numeric defaults are now read from `SHOW CREATE TABLE` (one extra
+  query per table that has one) and reflect as `'it''s'`, `''`, `'NULL'`, `date
+  '01/02/2020'` or the function itself; numeric defaults are unchanged.
+
 - **Alembic `alter_column` emits CUBRID-compatible SQL for nullability, dropped
   defaults and comments (#861)** — these changes went to Alembic's generic SQL, which
   CUBRID rejects: `nullable=` emitted `ALTER COLUMN c SET/DROP NOT NULL`,

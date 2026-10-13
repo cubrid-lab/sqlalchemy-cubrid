@@ -771,7 +771,12 @@ class TestReflectionMethods:
             ("int_col", "int comment"),
             ("unknown_col", None),
         ]
-        connection.execute.side_effect = [rows, comment_rows]
+        ddl = MagicMock()
+        ddl.first.return_value = (
+            "sample_table",
+            "CREATE TABLE [sample_table] ([varchar_col] CHARACTER VARYING(100) DEFAULT 'v')",
+        )
+        connection.execute.side_effect = [rows, comment_rows, _class_type_result("CLASS"), ddl]
 
         with patch("sqlalchemy.util.warn") as warn:
             columns = _invoke_reflection(dialect, "get_columns", connection, "sample_table")
@@ -783,7 +788,9 @@ class TestReflectionMethods:
 
         assert columns[1]["type"].__class__.__name__ == "VARCHAR"
         assert columns[1]["type"].length == 100
-        assert columns[1]["default"] == "v"
+        # #865: a string default reflects as its SHOW CREATE TABLE literal.
+        assert columns[1]["default"] == "'v'"
+        assert columns[3]["default"] == "0"
 
         assert columns[2]["type"].__class__.__name__ == "NCHAR"
         assert columns[2]["type"].length == 10
@@ -2907,3 +2914,108 @@ class TestSchemaNameNormalization:
         assert TIMESTAMPLTZ().timezone is True
         assert DATETIMETZ().timezone is True
         assert DATETIMELTZ().timezone is True
+
+
+class TestReflectedDefaultsFromDdl865:
+    """#865: non-numeric defaults reflect as the SQL that SHOW CREATE TABLE prints."""
+
+    _DDL = (
+        "CREATE TABLE [d865] ([id] INTEGER AUTO_INCREMENT (1, 1) NOT NULL, "
+        "[q] CHARACTER VARYING(20) DEFAULT 'it''s', [em] CHARACTER VARYING(20) DEFAULT '', "
+        "[nl] CHARACTER VARYING(20) DEFAULT 'NULL', [nn] CHARACTER VARYING(20), "
+        "[a] CHARACTER VARYING(20) DEFAULT 'x, y' NOT NULL COMMENT 'c, ''m'' DEFAULT 1', "
+        "[s] CHARACTER VARYING(30) COLLATE utf8_bin DEFAULT _utf8'q', "
+        "[nc] NATIONAL CHARACTER VARYING(10) DEFAULT N'n', [bt] BIT(8) DEFAULT X'a0', "
+        "[d] DATE DEFAULT date '01/02/2020', "
+        "[ts] TIMESTAMP DEFAULT timestamp '03:04:05 AM 01/02/2020', "
+        "[u] DATETIME DEFAULT SYS_DATETIME ON UPDATE CURRENT_DATETIME, "
+        "[tc] CHARACTER VARYING(30) DEFAULT TO_CHAR(SYS_DATETIME, 'YYYY'), "
+        "[w] CHARACTER VARYING(20) DEFAULT 'CURRENT_USER', "
+        "[w2] CHARACTER VARYING(20) DEFAULT CURRENT_USER, [neg] INTEGER DEFAULT -3, "
+        "[sp ace] INTEGER DEFAULT 1, [e] ENUM('a', 'b') DEFAULT 'b',  "
+        "CONSTRAINT [pk_d865_id] PRIMARY KEY  ([id])) REUSE_OID, COLLATE iso88591_bin, "
+        "COMMENT='t) DEFAULT 2'"
+    )
+
+    def test_parser_reads_each_default_form(self):
+        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
+
+        assert _column_defaults_from_ddl(self._DDL) == {
+            "q": "'it''s'",
+            "em": "''",
+            "nl": "'NULL'",
+            "a": "'x, y'",
+            "s": "_utf8'q'",
+            "nc": "N'n'",
+            "bt": "X'a0'",
+            "d": "date '01/02/2020'",
+            "ts": "timestamp '03:04:05 AM 01/02/2020'",
+            "u": "SYS_DATETIME",
+            "tc": "TO_CHAR(SYS_DATETIME, 'YYYY')",
+            "w": "'CURRENT_USER'",
+            "w2": "CURRENT_USER",
+            "neg": "-3",
+            "sp ace": "1",
+            "e": "'b'",
+        }
+
+    @pytest.mark.parametrize(
+        "ddl",
+        ["no parenthesis", "CREATE TABLE [t] ([a] VARCHAR DEFAULT 'open", "CREATE TABLE [t] ("],
+    )
+    def test_parser_rejects_malformed_ddl(self, ddl):
+        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
+
+        with pytest.raises(ValueError):
+            _column_defaults_from_ddl(ddl)
+
+    @staticmethod
+    def _reflect(rows, *extra):
+        dialect = CubridDialect()
+        connection = MagicMock()
+        connection.execute.side_effect = [rows, [], *extra]
+        return _invoke_reflection(dialect, "get_columns", connection, "d865"), connection
+
+    @staticmethod
+    def _ddl_result(ddl):
+        result = MagicMock()
+        result.first.return_value = ("d865", ddl)
+        return result
+
+    def test_get_columns_quotes_string_and_date_defaults(self):
+        rows = [
+            ("q", "VARCHAR(20)", "YES", "", "it''s", ""),
+            ("em", "VARCHAR(20)", "YES", "", "", ""),
+            ("nl", "VARCHAR(20)", "YES", "", "NULL", ""),
+            ("nn", "VARCHAR(20)", "YES", "", None, ""),
+            ("d", "DATE", "YES", "", "01/02/2020", ""),
+            ("neg", "INTEGER", "YES", "", "-3", ""),
+        ]
+        columns, _ = self._reflect(rows, _class_type_result("CLASS"), self._ddl_result(self._DDL))
+        assert [c["default"] for c in columns] == [
+            "'it''s'",
+            "''",
+            "'NULL'",
+            None,
+            "date '01/02/2020'",
+            "-3",
+        ]
+
+    def test_numeric_defaults_do_not_read_the_ddl(self):
+        rows = [("i", "INTEGER", "YES", "", "5", ""), ("n", "NUMERIC(10,2)", "YES", "", "1.50", "")]
+        columns, connection = self._reflect(rows)
+        assert [c["default"] for c in columns] == ["5", "1.50"]
+        assert connection.execute.call_count == 2
+
+    def test_view_columns_do_not_read_the_ddl(self):
+        rows = [("q", "VARCHAR(20)", "YES", "", "x", "")]
+        columns, connection = self._reflect(rows, _class_type_result("VCLASS"))
+        assert columns[0]["default"] == "x"
+        assert connection.execute.call_count == 3
+
+    def test_unparsable_ddl_keeps_the_show_columns_default(self):
+        rows = [("q", "VARCHAR(20)", "YES", "", "x", "")]
+        columns, _ = self._reflect(
+            rows, _class_type_result("CLASS"), self._ddl_result("CREATE TABLE [d865] ('open")
+        )
+        assert columns[0]["default"] == "x"
