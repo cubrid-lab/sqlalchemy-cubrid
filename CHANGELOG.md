@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   figures are now dated. No dialect hotspot or regression was found; runtime
   behavior is unchanged.
 
+- **The dialect baseline now covers CUBRID 10.2, 11.0 and 11.2, CUBRIDdb, the async
+  driver and concurrent connections (#830 follow-up)** — `docs/PERFORMANCE.md` (+
+  Korean) adds a 2026-10-13 run of `scripts/bench_dialect_baseline.py` on CUBRID
+  10.2, 11.0, 11.2 and 11.4 through `cubrid+pycubrid://`, `cubrid://` (CUBRIDdb built
+  from cubrid-python v11.3.0.51) and `cubrid+aiopycubrid://`, 5 trials each. The
+  script gained a CUBRIDdb route, an async mode and a `--concurrency` workload
+  (one-row SELECTs and committed UPDATEs on 1, 4 and 8 connections); raw files,
+  commands and `summary.json` are in
+  `benchmarks/2026-10-13-dialect-baseline-followup/`. Reads differ little between
+  servers and drivers; pycubrid and the async driver scale with connections, while
+  CUBRIDdb, whose C extension never releases the GIL, does not scale across threads.
+  Runtime behavior is unchanged.
+
 - **The feature support table no longer marks CUBRID `BLOB` / `CLOB` as fully supported
   (#829)** — `docs/FEATURE_SUPPORT.md` (and its Korean page) shows ⚠️ in the CUBRID
   `BLOB` and `CLOB` cells, with a note that separates the supported parts (DDL and type

@@ -166,9 +166,103 @@ pycubrid 1.12.0의 옵트인 `executemany(..., prepared=True)`(대량 배치 안
   문구는 리터럴 문구 대신 "Cannot coerce host var"입니다. 모든 플레이스홀더는
   서버가 타입을 정할 수 있어야 합니다.
 
-측정하지 않음: CUBRID 10.2, 11.0, 11.2, `cubrid://`(CUBRIDdb)와
-`cubrid+aiopycubrid://` 경로, 연결 하나를 넘는 동시성, `pool_pre_ping`,
-Python 3.12 이외 버전, 원격 네트워크, 서버 측 자원 사용량.
+### 후속 측정: CUBRID 버전, 드라이버, 비동기, 동시성 (2026-10-13)
+
+CUBRIDdb 경로, 비동기 모드, 동시 연결 워크로드를 추가한 같은
+`scripts/bench_dialect_baseline.py`를 CUBRID 10.2.18.9024, 11.0.16.0419,
+11.2.9.0866, 11.4.6.1963(Docker의 공식 `cubrid/cubrid` 이미지, 한 번에 서버
+하나, 포트는 127.0.0.1에 바인딩)에서 `cubrid+pycubrid://`, `cubrid://`(cubrid-python
+v11.3.0.51로 빌드한 CUBRIDdb, `11.3.0.1`로 표시), `cubrid+aiopycubrid://`로
+실행했습니다. 호스트, CPython 3.12.13, pycubrid 1.12.0, SQLAlchemy 2.1.4는 위와
+같고, 이번에는 다른 CUBRID 컨테이너가 실행되지 않았습니다. 각 수치는 5회
+시행의 중앙값이며, IQR, 모든 시행 값, 정확한 명령은
+[`benchmarks/2026-10-13-dialect-baseline-followup/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-13-dialect-baseline-followup)에
+있습니다. 수치는 이번 실행 안에서만 비교하세요. pycubrid로 CUBRID 11.4를 다시
+측정했더니 리터럴 `executemany()` 배치가 2026-10-12보다 2–4배 오래 걸렸고(raw
+INSERT 1,790 대 480 ms, 이제 각 시행이 배치 전에 동시성 워크로드를 실행함),
+조회는 잡음 범위 안에서 같았습니다.
+
+연결 하나, 기본 키로 한 행 SELECT(µs)와 1,000행 SELECT(ms):
+
+| 서버 | 드라이버 | raw | Core | Core, 캐시 없음 | ORM | Core 조회 | ORM 조회 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| 10.2 | pycubrid | 538 | 821 | 936 | 819 | 4.55 | 8.09 |
+| 10.2 | CUBRIDdb | 461 | 689 | 852 | 662 | 4.15 | 7.60 |
+| 10.2 | aiopycubrid | 645 | 910 | 1118 | 985 | 5.23 | 8.36 |
+| 11.0 | pycubrid | 511 | 654 | 877 | 728 | 4.43 | 8.05 |
+| 11.0 | CUBRIDdb | 470 | 582 | 870 | 687 | 4.30 | 7.25 |
+| 11.0 | aiopycubrid | 1028 | 890 | 1063 | 990 | 4.61 | 8.10 |
+| 11.2 | pycubrid | 922 | 749 | 1024 | 900 | 4.75 | 8.26 |
+| 11.2 | CUBRIDdb | 484 | 938 | 856 | 775 | 4.27 | 7.76 |
+| 11.2 | aiopycubrid | 856 | 1274 | 1172 | 1387 | 4.70 | 8.46 |
+| 11.4 | pycubrid | 603 | 889 | 1016 | 836 | 4.26 | 7.67 |
+| 11.4 | CUBRIDdb | 528 | 653 | 913 | 777 | 4.22 | 7.47 |
+| 11.4 | aiopycubrid | 883 | 1384 | 1617 | 2222 | 4.78 | 8.18 |
+
+- 조회에서 일관되게 더 빠르거나 느린 서버 버전은 없습니다. 행 사이의 수백 µs
+  차이는 시행 간 편차 안에 있습니다.
+- CUBRIDdb의 raw 한 행 SELECT(461–528 µs)가 모든 서버에서 가장 낮고, Core와 ORM
+  수치는 pycubrid와 비슷합니다.
+- 비동기 경로는 연결 하나에서 Core 한 행 SELECT에 약 0.1–0.5 ms, Core 1,000행
+  조회에 최대 0.7 ms를 더합니다(이벤트 루프와 greenlet 브리지).
+- 리플렉션(동기 드라이버만)은 새 `Inspector`로 13.5–18.9 ms,
+  `MetaData.reflect()`로 16.7–20.6 ms이며, 모든 서버와 두 드라이버에서 SQL 문이
+  같은 8개와 10개입니다.
+
+커밋을 포함한 1,000행 배치 UPDATE(ms, insertmanyvalues를 통한 INSERT는 마지막 열):
+
+| 서버 | raw `executemany()` | raw `prepared=True` | Core, pycubrid | Core, CUBRIDdb | Core, 비동기 | Core INSERT, 모든 드라이버 |
+|---|---:|---:|---:|---:|---:|---:|
+| 10.2 | 275 | 189 | 272 | 648 | 814 | 125–132 |
+| 11.0 | 289 | 139 | 522 | 439 | 1172 | 125–133 |
+| 11.2 | 1055 | 247 | 1114 | 1074 | 1201 | 131–133 |
+| 11.4 | 1121 | 213 | 1648 | 1605 | 1098 | 126–133 |
+
+- 이번 실행에서 리터럴 배치는 11.2와 11.4에서 10.2와 11.0보다 느렸고 IQR이
+  넓었습니다. pycubrid(raw `executemany()`와 Core UPDATE/DELETE 목록)로는 2–6배,
+  CUBRIDdb로는 1.7–4.6배입니다. 비동기 경로의 리터럴 배치는 모든 서버에서
+  656–1,581 ms였습니다. prepared INSERT와 UPDATE(139–247 ms), insertmanyvalues
+  INSERT(Core 125–133 ms, ORM 114–160 ms)는 일정했고, prepared DELETE는 11.2와
+  11.4에서 159–173 ms에서 604–713 ms로 늘었습니다. 원인은 조사하지 않았습니다.
+- CUBRIDdb에서 Core UPDATE/DELETE 목록은 드라이버 자체 `executemany()`가 아니라
+  행마다 `execute()` 하나로 실행됩니다(CUBRIDdb가 `None`을 바인딩하지 않고
+  `rowcount`가 마지막 행 값인 문제에 대한 방언의 `do_executemany()` 보호).
+
+CUBRID 11.4의 동시 연결: 작업자 N개가 각자 연결 하나로 동시에 시작합니다(동기
+드라이버는 스레드, 비동기는 `asyncio` 태스크). 작업자마다 한 행 SELECT 500개 또는
+커밋하는 한 행 UPDATE 50개이며, 단위는 초당 연산 수입니다:
+
+| 드라이버 | 연결 수 | raw SELECT | Core SELECT | ORM SELECT | Core UPDATE + 커밋 |
+|---|---:|---:|---:|---:|---:|
+| pycubrid(스레드) | 4 | 4940 | 3825 | 3124 | 53 |
+| pycubrid(스레드) | 8 | 5976 | 3901 | 3082 | 103 |
+| CUBRIDdb(스레드) | 4 | 262 | 238 | 210 | 32 |
+| CUBRIDdb(스레드) | 8 | 264 | 226 | 194 | 31 |
+| aiopycubrid(태스크) | 4 | 4878 | 3337 | 2656 | 58 |
+| aiopycubrid(태스크) | 8 | 5923 | 3458 | 2675 | 115 |
+
+- pycubrid 스레드는 모든 서버에서 확장됩니다. 연결 4개에서 raw 4,940–5,089,
+  Core 3,327–3,895 SELECT/s, 8개에서 5,080–6,029와 3,539–3,901입니다. 커밋하는
+  UPDATE는 연결 수에 따라 대략 두 배가 되며(연결 하나 약 21/s, 4개 44–53/s,
+  8개 95–103/s) p50은 70–84 ms에 머물러, 서버가 커밋을 겹쳐 처리합니다. Core와
+  ORM은 약 3,500–3,900과 2,500–3,100 SELECT/s에서 멈추며, 이는 클라이언트
+  프로세스(Python 인터프리터 하나)가 한계임을 시사합니다.
+- 비동기 경로도 같은 방식으로 확장됩니다. 태스크 4개에서 raw 4,853–5,619,
+  Core 3,337–3,393 SELECT/s, 8개에서 5,705–6,515와 3,408–3,482이며, 커밋하는
+  UPDATE는 49–58과 98–115/s입니다.
+- CUBRIDdb는 확장되지 않습니다. 스레드 4개나 8개에서 194–1,600 SELECT/s(연결
+  하나만으로 raw SELECT 약 1,900–2,200/s, 첫 번째 표 기준이며, 최신 서버일수록
+  느렸음)와 모든 서버에서 커밋하는 UPDATE 21–32/s를 처리했습니다. C 확장
+  (v11.3.0.51의 `cubrid_ext/python_cubrid.c`)에는 `Py_BEGIN_ALLOW_THREADS`가 없어
+  서버 왕복 동안 GIL을 잡고 있으므로 스레드가 서로를 기다립니다. 멀티스레드
+  애플리케이션은 pycubrid를 사용하세요.
+- 이 워크로드의 연결 하나 행은 서버와 시행에 따라 크게 달랐으므로(raw
+  294–2,065 SELECT/s) 연결 하나 비교에는 첫 번째 표를 사용합니다.
+
+측정하지 않음: `pool_pre_ping`, Python 3.12 이외 버전, 후속 측정의 서버와
+드라이버에서의 SQLAlchemy 2.0, 연결 8개 초과나 여러 클라이언트 프로세스, 비동기
+경로의 리플렉션(같은 동기 방언 코드를 `run_sync`로 실행), 원격 네트워크, 서버 측
+자원 사용량.
 
 ---
 
@@ -273,4 +367,7 @@ flowchart TD
 스크립트는 하나의 CUBRID 컨테이너에 대해 `scripts/bench_dialect_baseline.py`,
 `scripts/bench_compile.py`, `scripts/profile_orm.py`, cubrid-benchmark
 `orm-overhead` 워커를 실행하며, 그 디렉터리에서 `python aggregate.py`를 실행하면
-`raw/`로부터 `summary.json`을 다시 만듭니다.
+`raw/`로부터 `summary.json`을 다시 만듭니다. 2026-10-13 후속 측정은
+`benchmarks/2026-10-13-dialect-baseline-followup/run.sh`로 재현하며, 이 스크립트는
+CUBRID 버전을 차례로 시작하고 세 드라이버로 `--concurrency 1,4,8`과 함께
+`scripts/bench_dialect_baseline.py`를 실행합니다.

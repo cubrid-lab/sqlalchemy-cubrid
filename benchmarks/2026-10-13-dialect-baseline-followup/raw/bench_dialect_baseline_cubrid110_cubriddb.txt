@@ -1,0 +1,51 @@
+== select_pk_us
+  raw                                      median 469.873  [445.210..1756.446]
+  core_cached                              median 581.660  [563.064..1968.630]
+  core_uncached                            median 869.759  [778.553..1072.632]
+  orm                                      median 686.841  [663.366..734.579]
+== fetch_all_us
+  raw                                      median 3475.204  [3407.827..4605.686]
+  core                                     median 4295.079  [3521.149..7386.749]
+  orm                                      median 7249.066  [6845.381..7363.924]
+== batch_ms
+  raw insert                               median 298.024  [256.547..1043.477]
+  raw update                               median 281.058  [230.879..1006.919]
+  raw delete                               median 320.688  [272.761..905.551]
+  core insert                              median 130.339  [89.842..148.433]
+  core update                              median 439.332  [422.623..1196.194]
+  core delete                              median 498.388  [448.374..1009.302]
+  orm insert                               median 122.038  [88.854..148.036]
+  orm update                               median 473.208  [430.660..1490.335]
+  orm delete                               median 499.676  [450.419..574.902]
+== concurrency
+  1 raw_select_pk ops_per_s                median 2064.723  [663.902..2085.644]
+  1 raw_select_pk p50_us                   median 465.186  [459.899..1197.516]
+  1 core_select_pk ops_per_s               median 1647.772  [441.292..1671.634]
+  1 core_select_pk p50_us                  median 578.876  [560.806..1861.890]
+  1 orm_select_pk ops_per_s                median 1346.486  [543.917..1387.255]
+  1 orm_select_pk p50_us                   median 695.624  [691.073..1219.763]
+  1 core_update_commit ops_per_s           median 21.018  [20.472..24.338]
+  1 core_update_commit p50_us              median 41780.712  [41733.438..49843.106]
+  4 raw_select_pk ops_per_s                median 749.596  [472.395..1950.345]
+  4 raw_select_pk p50_us                   median 846.309  [490.986..3289.133]
+  4 core_select_pk ops_per_s               median 456.008  [411.196..555.444]
+  4 core_select_pk p50_us                  median 2792.738  [1084.585..3975.617]
+  4 orm_select_pk ops_per_s                median 351.546  [270.880..1238.923]
+  4 orm_select_pk p50_us                   median 4804.265  [821.341..20821.273]
+  4 core_update_commit ops_per_s           median 20.854  [11.352..22.374]
+  4 core_update_commit p50_us              median 167123.083  [167064.944..283961.894]
+  8 raw_select_pk ops_per_s                median 684.717  [428.824..1974.434]
+  8 raw_select_pk p50_us                   median 822.175  [483.473..3423.675]
+  8 core_select_pk ops_per_s               median 483.924  [331.151..1426.003]
+  8 core_select_pk p50_us                  median 1843.760  [654.086..9294.759]
+  8 orm_select_pk ops_per_s                median 407.151  [257.111..1099.206]
+  8 orm_select_pk p50_us                   median 12542.294  [858.660..34301.450]
+  8 core_update_commit ops_per_s           median 20.950  [17.384..21.865]
+  8 core_update_commit p50_us              median 250856.758  [250424.627..277957.765]
+== reflect_ms
+  inspector_table                          median 13.458  [12.771..25.980]
+  metadata_reflect                         median 19.853  [17.687..27.368]
+== reflect_sql_statements
+  inspector_table                          8
+  metadata_reflect                         10
+wrote raw/bench_dialect_baseline_cubrid110_cubriddb.json
