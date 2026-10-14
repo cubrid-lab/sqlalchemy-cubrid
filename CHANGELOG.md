@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.2] - 2026-10-14
+
 ### Documentation
 
 - **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
@@ -19,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialect, sync pools included. SQLAlchemy 2.0 and Python 3.14 and earlier are not
   affected, and the dialect's own terminate path is unchanged. The Connection Guide and
   the Support Matrix describe the limitation.
+
+* **async:** document the Python 3.15 limit of garbage-collected connection cleanup ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/909)) ([a0ec6a6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a0ec6a67043281262c1db6d499b2d2f1c9fc273f))
 
 ### CI
 
