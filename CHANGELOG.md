@@ -178,6 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The README and the documentation site show the CUBRID Lab repository icon (#886)** — the
+  English README and its Korean, Chinese, Hindi, German and Russian translations open with the
+  sqlalchemy-cubrid ORM icon, centered and without a caption, and the documentation site uses
+  it as its header logo and favicon. All of them load the SVG from one immutable
+  [cubrid-lab/brand](https://github.com/cubrid-lab/brand) commit.
+
 - **`ROADMAP.md` no longer presents shipped releases as plans (#833)** — the stale
   "Current Release Line — v1.8.x" heading is now "Current Focus", the Python 3.10
   retirement (shipped in 1.10.0) and Python 3.15 support (shipped in 1.11.0) moved

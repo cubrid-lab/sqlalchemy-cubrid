@@ -1,3 +1,9 @@
+<!-- CUBRID-LAB-ICON:START -->
+<p align="center">
+  <a href="https://github.com/cubrid-lab/brand"><img src="https://raw.githubusercontent.com/cubrid-lab/brand/94e2bf6b915d7ef6a1111e06376f693f70bf6c4e/dist/icons/sqlalchemy-cubrid.svg" alt="sqlalchemy-cubrid icon (CUBRID Lab brand repository)" width="120"></a>
+</p>
+<!-- CUBRID-LAB-ICON:END -->
+
 # sqlalchemy-cubrid
 
 **SQLAlchemy 2.0–2.1 dialect for the CUBRID database** — Python ORM, schema reflection, Alembic migrations, and type mapping for SQLAlchemy and CUBRID-specific types.
