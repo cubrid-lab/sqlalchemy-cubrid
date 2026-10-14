@@ -13,7 +13,9 @@ body:
         Keep the `chore:` title prefix. You do not need to apply labels;
         maintainers assign priority and size after triage.
         Keep this body as the current specification; put dated progress in comments.
-        Confirm availability and Assignee ownership before implementation.
+        Before implementation, check existing Assignees, claims and open PRs.
+        Maintainer-operated autonomous agents also need issue-specific approval
+        and assignment; human-led contributors need neither.
 
   - type: textarea
     id: problem
