@@ -26,7 +26,7 @@
   },
   "workload": {
     "script": "scripts/bench_dialect_baseline.py",
-    "script_sha256": "4023544f87e6e429d3b14f601bf12536010cdf67346664d1799b33bdca3860d0",
+    "script_sha256": "86400a9f0bc7dcccd7cb4a3650e4c85cf441189fa52f0c6a803f1b88a5d6f9a8",
     "table": "bench_dialect_baseline",
     "args": {
       "trials": 5,
@@ -46,12 +46,12 @@
     {
       "path": "raw/bench_dialect_baseline.json",
       "role": "raw",
-      "sha256": "07f99e4576853771f6aea5560fdbd582caa011ac133de57a987d3846cd81e589"
+      "sha256": "8e37c76cb199aea08d91b622e713c94010419c9058ad75a124b7b5b9530c43ae"
     },
     {
       "path": "raw/bench_dialect_baseline.txt",
       "role": "log",
-      "sha256": "d9ebefcaf982975480d5eea064bbb87fff5f5eeba73307e419ec27087314a697"
+      "sha256": "c50094fc1ebc41249d1b995828cc90c5ed19ec7665ca6c155a062584f4d495b2"
     }
   ],
   "metrics": [
@@ -66,13 +66,13 @@
       "sql_shape": "raw cursor execute + fetchone",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        595.977,
-        544.605,
-        532.162,
-        530.5935,
-        586.5615
+        645.9195,
+        566.319,
+        558.854,
+        533.184,
+        561.8415
       ],
-      "median": 544.605
+      "median": 561.8415
     },
     {
       "id": "select_pk.core_cached",
@@ -85,13 +85,13 @@
       "sql_shape": "Core select() with the compiled cache",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        717.476,
-        784.59,
-        735.0645,
-        808.542,
-        692.3045
+        730.225,
+        752.321,
+        743.709,
+        938.5025,
+        793.888
       ],
-      "median": 735.0645
+      "median": 752.321
     },
     {
       "id": "select_pk.core_uncached",
@@ -104,13 +104,13 @@
       "sql_shape": "Core select() with compiled_cache=None",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        948.3575,
-        992.911,
-        1008.8215,
-        997.4635,
-        965.0925
+        1197.186,
+        1049.187,
+        988.266,
+        1007.1425,
+        949.684
       ],
-      "median": 992.911
+      "median": 1007.1425
     },
     {
       "id": "select_pk.orm",
@@ -123,13 +123,13 @@
       "sql_shape": "ORM select(Item) scalar_one",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        768.8695,
-        814.9645,
-        792.282,
-        1258.583,
-        873.45
+        804.533,
+        915.9115,
+        826.058,
+        865.0155,
+        849.751
       ],
-      "median": 814.9645
+      "median": 849.751
     },
     {
       "id": "fetch_all.raw",
@@ -142,13 +142,13 @@
       "sql_shape": "raw cursor fetchall()",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        3550.583,
-        3999.3395,
-        3808.7765,
-        3785.907,
-        3663.424
+        4026.4355,
+        3639.2435,
+        4169.5045,
+        3923.612,
+        3848.831
       ],
-      "median": 3785.907
+      "median": 3923.612
     },
     {
       "id": "fetch_all.core",
@@ -161,13 +161,13 @@
       "sql_shape": "Core execute().all()",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        4535.2495,
-        4428.0135,
-        4380.9805,
-        4116.3405,
-        4225.623
+        3962.0635,
+        4525.3755,
+        4629.6865,
+        4111.7745,
+        4340.028
       ],
-      "median": 4380.9805
+      "median": 4340.028
     },
     {
       "id": "fetch_all.orm",
@@ -180,13 +180,13 @@
       "sql_shape": "ORM scalars().all()",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        7381.9395,
-        7952.5505,
-        7723.199,
-        7904.577,
-        7651.9705
+        7217.777,
+        7943.1755,
+        7730.4105,
+        7734.26,
+        7775.878
       ],
-      "median": 7723.199
+      "median": 7734.26
     },
     {
       "id": "batch.raw.insert",
@@ -199,13 +199,13 @@
       "sql_shape": "cursor.executemany() of literal-rendered rows: one EXECUTE_BATCH (FC20)",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        423.505502,
-        1599.587862,
-        1098.546043,
-        960.477427,
-        857.259495
+        1014.94714,
+        1605.163714,
+        1531.665879,
+        1073.89337,
+        1472.831866
       ],
-      "median": 960.477427
+      "median": 1472.831866
     },
     {
       "id": "batch.raw_prepared.insert",
@@ -218,13 +218,13 @@
       "sql_shape": "cursor.executemany(prepared=True): PREPARE + EXECUTE_ARRAY (FC2 + FC21), opt-in",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        186.727157,
-        189.405099,
-        197.901696,
-        207.049225,
-        165.140071
+        178.33673,
+        222.641986,
+        205.865467,
+        215.031915,
+        197.526198
       ],
-      "median": 189.405099
+      "median": 205.865467
     },
     {
       "id": "batch.raw.update",
@@ -237,13 +237,13 @@
       "sql_shape": "cursor.executemany() of literal-rendered rows: one EXECUTE_BATCH (FC20)",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        872.812532,
-        1730.178603,
-        763.264407,
-        2138.188993,
-        796.047228
+        614.007002,
+        854.285523,
+        1346.272647,
+        2354.850043,
+        1547.197442
       ],
-      "median": 872.812532
+      "median": 1346.272647
     },
     {
       "id": "batch.raw_prepared.update",
@@ -256,13 +256,13 @@
       "sql_shape": "cursor.executemany(prepared=True): PREPARE + EXECUTE_ARRAY (FC2 + FC21), opt-in",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        163.372761,
-        200.325319,
-        235.512918,
-        163.501034,
-        205.234721
+        204.606905,
+        229.36212,
+        179.858723,
+        179.502759,
+        188.23486
       ],
-      "median": 200.325319
+      "median": 188.23486
     },
     {
       "id": "batch.raw.delete",
@@ -275,13 +275,13 @@
       "sql_shape": "cursor.executemany() of literal-rendered rows: one EXECUTE_BATCH (FC20)",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        1029.945591,
-        954.212597,
-        530.424389,
-        1471.043722,
-        971.580903
+        1817.970379,
+        1371.446799,
+        2104.671694,
+        1888.129193,
+        844.460682
       ],
-      "median": 971.580903
+      "median": 1817.970379
     },
     {
       "id": "batch.raw_prepared.delete",
@@ -294,13 +294,13 @@
       "sql_shape": "cursor.executemany(prepared=True): PREPARE + EXECUTE_ARRAY (FC2 + FC21), opt-in",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        246.526566,
-        228.961647,
-        654.786404,
-        180.834138,
-        387.623883
+        355.380006,
+        329.30944,
+        637.665643,
+        554.360108,
+        671.392501
       ],
-      "median": 246.526566
+      "median": 554.360108
     },
     {
       "id": "batch.core.insert",
@@ -313,13 +313,13 @@
       "sql_shape": "Core insert() executemany through insertmanyvalues: multi-row INSERT ... VALUES",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        122.611899,
-        117.944363,
-        114.744308,
-        116.163412,
-        81.323749
+        132.549374,
+        132.382641,
+        115.955182,
+        103.585122,
+        131.711092
       ],
-      "median": 116.163412
+      "median": 131.711092
     },
     {
       "id": "batch.core.update",
@@ -332,13 +332,13 @@
       "sql_shape": "Core executemany through PyCubridDialect.do_executemany: literal FC20",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        1556.516388,
-        2021.85,
-        2163.758522,
-        1239.282358,
-        664.408723
+        1531.673903,
+        1506.027497,
+        1513.3665,
+        1925.811679,
+        1483.24038
       ],
-      "median": 1556.516388
+      "median": 1513.3665
     },
     {
       "id": "batch.core.delete",
@@ -351,13 +351,13 @@
       "sql_shape": "Core executemany through PyCubridDialect.do_executemany: literal FC20",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        1489.718354,
-        1011.653053,
-        880.521425,
-        981.506103,
-        1324.116905
+        623.30673,
+        2348.058953,
+        2098.607603,
+        781.930149,
+        1531.801118
       ],
-      "median": 1011.653053
+      "median": 1531.801118
     },
     {
       "id": "batch.orm.insert",
@@ -370,13 +370,13 @@
       "sql_shape": "ORM bulk insert(Item) through insertmanyvalues",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        99.753872,
-        94.271266,
-        81.840014,
-        108.539056,
-        93.794678
+        114.485911,
+        136.282172,
+        108.838355,
+        132.346059,
+        102.412555
       ],
-      "median": 94.271266
+      "median": 114.485911
     },
     {
       "id": "batch.orm.update",
@@ -389,13 +389,13 @@
       "sql_shape": "ORM bulk update(Item) by primary key through do_executemany",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        390.458582,
-        1235.046569,
-        390.717034,
-        501.354297,
-        551.871422
+        1359.851918,
+        655.348807,
+        1108.713495,
+        417.992727,
+        767.515823
       ],
-      "median": 501.354297
+      "median": 767.515823
     },
     {
       "id": "batch.orm.delete",
@@ -408,13 +408,13 @@
       "sql_shape": "ORM unit-of-work DELETE of loaded objects",
       "warmup": "one unrecorded pass of the variant before each trial's timed pass",
       "trials": [
-        453.739605,
-        418.463508,
-        465.12725,
-        375.961391,
-        370.161569
+        487.019994,
+        401.946685,
+        476.028275,
+        502.556094,
+        403.432491
       ],
-      "median": 418.463508
+      "median": 476.028275
     }
   ]
 }
