@@ -10,6 +10,7 @@
 
 - [개요](#개요)
 - [현재 기준선 (2026-10-12)](#현재-기준선-2026-10-12)
+- [벤치마크 아티팩트 계약](#벤치마크-아티팩트-계약)
 - [벤치마크 결과](#벤치마크-결과)
 - [성능 특성](#성능-특성)
 - [최적화 팁](#최적화-팁)
@@ -266,6 +267,118 @@ CUBRID 11.4의 동시 연결: 작업자 N개가 각자 연결 하나로 동시�
 
 ---
 
+## 벤치마크 아티팩트 계약
+
+버전이 붙은 매니페스트(#901)는
+[cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark) 같은 외부 소비자가
+기록되지 않은 가정 없이 기준 실행이나 후보 실행을 확인하게 합니다. 이는 참고용입니다.
+어떤 CI 잡도 이를 요구하지 않으며, 어떤 임계값도 풀 리퀘스트를 실패시키지 않습니다.
+
+`scripts/bench_dialect_baseline.py`가 보고서를 만듭니다. 이제 다음도 기록합니다:
+
+- 워크로드 식별자인 `workload.script_sha256`(스크립트의 SHA-256);
+- `pool_pre_ping`(꺼짐)과 autocommit(꺼짐);
+- 방언의 `use_insertmanyvalues`와 `insertmanyvalues_page_size`;
+- `"status": "complete"`. 보고서는 실행의 모든 검사가 통과한 뒤에만 기록됩니다.
+
+`scripts/bench_artifact.py`가 매니페스트를 다룹니다:
+
+- `export`는 완전한 보고서 하나를 `manifest.json`으로 바꿉니다. CUBRID 이미지
+  다이제스트, 호스트 레이블, 비교 그룹 이름은 직접 지정합니다.
+- `validate`는 매니페스트를 검사합니다. 나열된 파일을 다시 해시하고 그 파일로
+  매니페스트를 다시 만들므로, 편집되었거나 손상되었거나 리비전이 섞인 입력은
+  실패합니다.
+- `compare`는 기준과 후보의 지표별 중앙값과 비율을 보고합니다. 두 실행이 같은
+  그룹이고 방언 소스 SHA와 버전 외에는 다른 점이 없을 때만 그렇게 하며, 그렇지
+  않으면 이유와 함께 `not comparable`을 출력합니다.
+
+종료 코드: 0 유효 또는 비교 가능, 1 유효하지 않음, 2 사용법 오류, 3 비교 불가.
+
+```bash
+python scripts/bench_artifact.py export raw/bench_dialect_baseline.json \
+    --log raw/bench_dialect_baseline.txt --output manifest.json \
+    --server-image-digest sha256:<64 hex> --host <label> --comparable-group <name>
+python scripts/bench_artifact.py validate manifest.json
+python scripts/bench_artifact.py compare baseline/manifest.json candidate/manifest.json
+```
+
+**계약 `sqlalchemy-cubrid-benchmark-artifact/1`.**
+
+- `environment`:
+  - 방언 소스 SHA(40자)와 sqlalchemy-cubrid 버전;
+  - SQLAlchemy, 2.0.x 또는 2.1.x만;
+  - 드라이버와 그 버전, pycubrid 버전;
+  - CUBRID 서버 버전과 이미지 다이제스트;
+  - Python, 구현, 플랫폼, CPU, 호스트 레이블;
+  - 풀, `pool_pre_ping`, autocommit, insertmanyvalues 설정.
+- `workload`: 스크립트, 그 SHA-256, 테이블, `source_sha`를 뺀 모든 인자. 인자
+  `rows`는 1,000이어야 합니다.
+- `trials`: 독립 시행 3회 이상.
+- `files`: 보고서(`raw`)와 그 로그(`log`), 각각 상대 경로와 SHA-256. 중복 경로는
+  거부됩니다.
+- `metrics`: 참고용 지표 집합. 각 지표에는 단위, 측정 호출당 행 수, SQL 형태,
+  커밋 정책, 워밍업, 검증 조건, 모든 시행 값, 중앙값이 있습니다.
+
+| 지표 | 단위 | SQL 형태 | 커밋 |
+|---|---|---|---|
+| `select_pk.raw`, `.core_cached`, `.core_uncached`, `.orm` | 문장당 µs | 기본 키 단일 행 SELECT: raw 커서, 컴파일 캐시를 쓰는 Core, `compiled_cache=None` Core, ORM | 없음 |
+| `fetch_all.raw`, `.core`, `.orm` | 조회당 µs | 1,000행 SELECT: `fetchall()`, `.all()`, `scalars().all()` | 없음 |
+| `batch.raw.{insert,update,delete}` | 배치당 ms | 리터럴로 렌더링한 행의 raw `executemany()`: EXECUTE_BATCH (FC20) 한 번 | 측정 구간 안, 배치마다 한 번 |
+| `batch.raw_prepared.{insert,update,delete}` (pycubrid만) | 배치당 ms | 옵트인 `executemany(prepared=True)`: PREPARE + EXECUTE_ARRAY (FC2 + FC21) | 측정 구간 안, 배치마다 한 번 |
+| `batch.core.insert` | 배치당 ms | insertmanyvalues를 거치는 Core `insert()` executemany: 여러 행 `INSERT ... VALUES` | 측정 구간 안, 배치마다 한 번 |
+| `batch.core.update`, `batch.core.delete` | 배치당 ms | `PyCubridDialect.do_executemany`를 거치는 Core executemany (리터럴 FC20; 방언은 `prepared` 플래그를 넘기지 않음) | 측정 구간 안, 배치마다 한 번 |
+| `batch.orm.insert`, `.update`, `.delete` | 배치당 ms | ORM 대량 INSERT(insertmanyvalues), 기본 키 대량 UPDATE(`do_executemany`), 작업 단위 DELETE | 측정 구간 안, 배치마다 한 번 |
+
+실험용 `core_prepared_experiment` 배치, 리플렉션, 동시성 워크로드는 보고서에 남지만
+계약에는 들어가지 않습니다.
+
+**고정 쌍 (2026-10-14).**
+[`benchmarks/2026-10-14-artifact-pair/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-14-artifact-pair)에
+`run.sh`, 두 원시 보고서와 로그, 두 매니페스트, `compare.json`이 있습니다. 설치된
+방언만 다릅니다:
+
+- 기준: v1.11.0, `3a0c289`;
+- 후보: `main`의 `db5ccdd`.
+
+나머지는 모두 같습니다: 같은 스크립트, pycubrid 1.12.0, SQLAlchemy 2.1.4, CPython
+3.12.13, 한 호스트에서 이미지 `sha256:1248b77ad398`로 띄운 CUBRID 11.4.6.1963. 각
+실행은 시행 5회였습니다. `compare`는 `comparable`을 보고합니다. 수치는 중앙값이며
+괄호 안은 시행 값의 사분위 범위입니다:
+
+| 지표 | 단위 | 기준 v1.11.0 | 후보 `db5ccdd` | 비율 |
+|---|---|---:|---:|---:|
+| `select_pk.raw` | us | 619.9 (566.3–679.3) | 590.3 (567.7–957.1) | 0.95 |
+| `select_pk.core_cached` | us | 743.2 (740.7–2231.9) | 826.3 (726.3–1788.7) | 1.11 |
+| `select_pk.core_uncached` | us | 958.1 (933.8–1003.6) | 947.7 (917.8–1010.8) | 0.99 |
+| `select_pk.orm` | us | 867.5 (832.6–1442.8) | 912.8 (841.2–914.7) | 1.05 |
+| `fetch_all.raw` | us | 4143.5 (4018.1–4156.0) | 3859.4 (3811.0–3903.7) | 0.93 |
+| `fetch_all.core` | us | 4281.2 (4200.6–4411.9) | 4242.1 (4108.8–4421.1) | 0.99 |
+| `fetch_all.orm` | us | 7811.8 (7535.8–7887.2) | 7460.7 (7458.2–7563.4) | 0.96 |
+| `batch.raw.insert` | ms | 1007.1 (728.8–1396.9) | 1386.9 (1159.1–1806.6) | 1.38 |
+| `batch.raw_prepared.insert` | ms | 212.2 (198.6–223.4) | 217.7 (215.8–227.9) | 1.03 |
+| `batch.raw.update` | ms | 1763.1 (1039.0–1830.8) | 1322.2 (1114.0–1355.2) | 0.75 |
+| `batch.raw_prepared.update` | ms | 238.4 (183.0–238.9) | 230.2 (224.6–238.6) | 0.97 |
+| `batch.raw.delete` | ms | 1871.3 (887.6–2287.7) | 1737.9 (1654.8–1846.1) | 0.93 |
+| `batch.raw_prepared.delete` | ms | 411.3 (337.7–421.4) | 746.0 (638.0–788.6) | 1.81 |
+| `batch.core.insert` | ms | 139.9 (132.5–140.2) | 140.0 (122.9–140.8) | 1.00 |
+| `batch.core.update` | ms | 1606.9 (1298.4–1629.6) | 1421.6 (1146.0–2390.5) | 0.88 |
+| `batch.core.delete` | ms | 1272.8 (1122.4–1740.1) | 1423.7 (1356.9–1481.7) | 1.12 |
+| `batch.orm.insert` | ms | 135.1 (127.6–135.2) | 118.1 (116.0–123.9) | 0.87 |
+| `batch.orm.update` | ms | 1351.0 (1335.9–1603.1) | 805.0 (785.6–1319.2) | 0.60 |
+| `batch.orm.delete` | ms | 468.4 (463.2–518.0) | 447.9 (436.1–455.0) | 0.96 |
+
+이 비율은 한 호스트의 잡음 수준을 보여 줄 뿐이며 회귀 판단이 아닙니다. `raw`와
+`raw_prepared` 행은 방언을 전혀 실행하지 않는데도 0.75와 1.81 사이에서 움직였습니다.
+이 호스트에서 배치 DML은 시행마다 크게 달라집니다. 이후 후보 결과는 같은 환경에서
+이런 분산과 견줄 때에만 의미가 있습니다.
+
+#830 아카이브(`2026-10-12-dialect-baseline`, `2026-10-13-dialect-baseline-followup`)는
+바뀌지 않은 과거 기록으로 남습니다. 그 보고서는 계약보다 먼저 만들어져 `status`,
+워크로드 식별자, 풀 필드가 없습니다. `export`가 이를 거부하므로 새 아티팩트와 비교할
+수 없습니다.
+
+---
+
 ## 벤치마크 결과
 
 이 절의 결과는 과거 기록입니다. 이전 릴리스와 다른 호스트에서 측정되었으며
@@ -371,3 +484,7 @@ flowchart TD
 `benchmarks/2026-10-13-dialect-baseline-followup/run.sh`로 재현하며, 이 스크립트는
 CUBRID 버전을 차례로 시작하고 세 드라이버로 `--concurrency 1,4,8`과 함께
 `scripts/bench_dialect_baseline.py`를 실행합니다.
+
+고정 아티팩트 쌍은 `benchmarks/2026-10-14-artifact-pair/run.sh`로 재현합니다. 이
+스크립트는 설치된 방언 리비전 두 개에 대해 같은 스크립트를 실행한 뒤 두 매니페스트를
+내보내고, 검증하고, 비교합니다([벤치마크 아티팩트 계약](#벤치마크-아티팩트-계약) 참조).

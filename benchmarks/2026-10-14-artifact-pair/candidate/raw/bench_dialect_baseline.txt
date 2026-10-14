@@ -1,0 +1,32 @@
+== select_pk_us
+  raw                                      median 590.280  [564.699..3346.551]
+  core_cached                              median 826.293  [693.569..4380.859]
+  core_uncached                            median 947.682  [901.871..1091.386]
+  orm                                      median 912.774  [830.711..1547.293]
+== fetch_all_us
+  raw                                      median 3859.428  [3640.195..3974.943]
+  core                                     median 4242.100  [3840.245..4434.324]
+  orm                                      median 7460.736  [7387.398..7782.636]
+== batch_ms
+  raw insert                               median 1386.944  [1131.854..1823.909]
+  raw update                               median 1322.194  [905.376..1763.725]
+  raw delete                               median 1737.918  [780.767..2512.679]
+  raw_prepared insert                      median 217.743  [213.962..272.850]
+  raw_prepared update                      median 230.174  [204.434..247.274]
+  raw_prepared delete                      median 746.029  [637.955..800.652]
+  core insert                              median 139.978  [116.055..141.101]
+  core update                              median 1421.581  [1119.404..2523.022]
+  core delete                              median 1423.661  [951.360..1948.529]
+  core_prepared_experiment insert          median 140.300  [114.121..182.370]
+  core_prepared_experiment update          median 232.081  [181.264..434.064]
+  core_prepared_experiment delete          median 323.399  [290.020..722.527]
+  orm insert                               median 118.107  [94.995..135.448]
+  orm update                               median 804.960  [635.391..2002.127]
+  orm delete                               median 447.865  [421.317..519.224]
+== reflect_ms
+  inspector_table                          median 15.590  [14.581..20.801]
+  metadata_reflect                         median 18.519  [18.056..24.870]
+== reflect_sql_statements
+  inspector_table                          8
+  metadata_reflect                         10
+wrote .logs/pair-cand.json

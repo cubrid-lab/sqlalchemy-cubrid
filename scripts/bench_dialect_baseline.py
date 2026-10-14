@@ -43,6 +43,12 @@ concurrency) of ``select_pk``, ``fetch_all``, ``batch`` (no prepared variants)
 and ``concurrency``; reflection is skipped there (it runs the same synchronous
 dialect code through ``run_sync``).
 
+The report records the workload identity (``workload.script_sha256``, the
+SHA-256 of this file), ``pool_pre_ping`` and the dialect's insertmanyvalues
+settings, and ends with ``"status": "complete"``. It is written only after every
+check passed. ``scripts/bench_artifact.py`` turns a report into a versioned
+artifact manifest and compares a baseline with a candidate (#901).
+
 Usage:
     python scripts/bench_dialect_baseline.py \\
         --dsn cubrid+pycubrid://dba@localhost:33000/testdb --trials 5 \\
@@ -53,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import platform
 import statistics
@@ -87,6 +94,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engin
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 TABLE = "bench_dialect_baseline"
+POOL_PRE_PING = False
 pc = time.perf_counter_ns
 
 
@@ -834,7 +842,7 @@ async def async_concurrency(
 
 def prepared_executemany_engine(dsn: str) -> Engine:
     """Engine whose dialect passes ``prepared=True`` (benchmark experiment only)."""
-    engine = create_engine(dsn)
+    engine = create_engine(dsn, pool_pre_ping=POOL_PRE_PING)
 
     def do_executemany(cursor: Any, statement: str, parameters: Any, context: Any = None) -> None:
         cursor.executemany(statement, parameters, prepared=True)
@@ -876,7 +884,9 @@ def raw_connector(engine: Engine) -> Callable[[], Any]:
     return connect_cubriddb
 
 
-def environment(server: str, driver: str, pool: str, args: argparse.Namespace) -> dict[str, Any]:
+def environment(
+    server: str, driver: str, pool: str, args: argparse.Namespace, dialect: Any
+) -> dict[str, Any]:
     cpu = ""
     try:
         for line in Path("/proc/cpuinfo").read_text().splitlines():
@@ -897,6 +907,10 @@ def environment(server: str, driver: str, pool: str, args: argparse.Namespace) -
         "cubrid_server": server,
         "driver": driver,
         "pool": pool,
+        "pool_pre_ping": POOL_PRE_PING,
+        "autocommit": False,
+        "use_insertmanyvalues": dialect.use_insertmanyvalues,
+        "insertmanyvalues_page_size": dialect.insertmanyvalues_page_size,
         "args": {k: v for k, v in vars(args).items() if k not in ("dsn", "output")},
     }
     if driver == "cubrid":
@@ -906,7 +920,7 @@ def environment(server: str, driver: str, pool: str, args: argparse.Namespace) -
 
 def run_sync(args: argparse.Namespace) -> dict[str, Any]:
     pool_size = max([5, *args.concurrency])
-    engine = create_engine(args.dsn, pool_size=pool_size)
+    engine = create_engine(args.dsn, pool_size=pool_size, pool_pre_ping=POOL_PRE_PING)
     check(
         engine.dialect.driver in ("pycubrid", "cubrid"),
         "this baseline needs cubrid+pycubrid://, cubrid:// or cubrid+aiopycubrid://",
@@ -921,7 +935,9 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
     raw = raw_connect()
     with engine.connect() as conn:
         server = conn.execute(text("SELECT version()")).scalar()
-    env = environment(str(server), engine.dialect.driver, type(engine.pool).__name__, args)
+    env = environment(
+        str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
+    )
     report: dict[str, Any] = {"environment": env, "trials": []}
     try:
         for trial in range(args.trials):
@@ -955,7 +971,7 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
 
 async def run_async(args: argparse.Namespace) -> dict[str, Any]:
     pool_size = max([5, *args.concurrency])
-    engine = create_async_engine(args.dsn, pool_size=pool_size)
+    engine = create_async_engine(args.dsn, pool_size=pool_size, pool_pre_ping=POOL_PRE_PING)
     async with engine.begin() as conn:
         await conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
         await conn.run_sync(Base.metadata.create_all)
@@ -963,7 +979,9 @@ async def run_async(args: argparse.Namespace) -> dict[str, Any]:
     raw = await pycubrid.aio.connect(**raw_kw, autocommit=False)
     async with engine.connect() as conn:
         server = (await conn.execute(text("SELECT version()"))).scalar()
-    env = environment(str(server), engine.dialect.driver, type(engine.pool).__name__, args)
+    env = environment(
+        str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
+    )
     report: dict[str, Any] = {"environment": env, "trials": []}
     try:
         for trial in range(args.trials):
@@ -1054,6 +1072,12 @@ def main() -> None:
     else:
         report = run_sync(args)
     report["summary"] = aggregate(report["trials"])
+    report["workload"] = {
+        "script": "scripts/bench_dialect_baseline.py",
+        "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "table": TABLE,
+    }
+    report["status"] = "complete"
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for section, data in report["summary"].items():
         print(f"== {section}")
