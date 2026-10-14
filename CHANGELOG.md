@@ -7,41 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Documentation
-
-- **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
-  SQLAlchemy 2.1 (2.1.0 to 2.1.4 checked) on CPython 3.15, the pool never cleans up a
-  pooled connection that Python's cycle collector reclaims, such as one lost while its
-  autobegun transaction is still open. CPython 3.15 clears weak references later
-  (python/cpython#136189), and SQLAlchemy 2.1's pool finalizer then returns early: the
-  connection is not terminated, its socket closes only through Python's stream finalizer
-  with a `ResourceWarning`, and the pool slot stays checked out. This affects every
-  dialect, sync pools included. SQLAlchemy 2.0 and Python 3.14 and earlier are not
-  affected, and the dialect's own terminate path is unchanged. The Connection Guide and
-  the Support Matrix describe the limitation.
-
-### CI
-
-- **Release preparation starts after the abandoned 1.11.1** — 1.11.1 has no tag, so
-  release-please fell back to `bootstrap-sha` and proposed 1.12.0 with every commit since
-  1.8.0. `release-please-config.json` now sets `last-release-sha` to the 1.11.1 merge, so the
-  next candidate is computed from the commits after it, and RELEASING.md's abandoned-version
-  recovery documents setting that override and removing it after the next release is tagged.
-
-### Tests
-
-- **#872 garbage-collection tests no longer depend on the cycle collector** — the live
-  async terminate test and the closed-event-loop test now commit before losing the
-  connection, so the pool's cleanup runs when the last reference goes and terminates the
-  connection on every supported Python, including 3.15, and they assert that the cleanup
-  chose terminate. The reference-cycle case is a separate test that probes the installed
-  SQLAlchemy and is an expected failure where the pool cannot clean such a connection up
-  (SQLAlchemy 2.1 on CPython 3.15). Both failed on all four Python 3.15 cells of the full
-  compatibility matrix.
-
-## [1.11.1] - 2026-10-14
+## [1.11.2] - 2026-10-14
 
 ### Upgrade notes
+
+- **1.11.1 was never published (#838).** Its release gate failed on Python 3.15, so no
+  1.11.1 tag, GitHub Release or PyPI version exists. 1.11.2 contains every 1.11.1 change
+  below; upgrade from 1.11.0 directly to 1.11.2.
 
 - **A MERGE assignment key that is a column of another table now raises `CompileError`
   (#847)**, also when the target has a column of the same name. Such a key was silently
@@ -228,6 +200,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
+  SQLAlchemy 2.1 (2.1.0 to 2.1.4 checked) on CPython 3.15, the pool never cleans up a
+  pooled connection that Python's cycle collector reclaims, such as one lost while its
+  autobegun transaction is still open. CPython 3.15 clears weak references later
+  (python/cpython#136189), and SQLAlchemy 2.1's pool finalizer then returns early: the
+  connection is not terminated, its socket closes only through Python's stream finalizer
+  with a `ResourceWarning`, and the pool slot stays checked out. This affects every
+  dialect, sync pools included. SQLAlchemy 2.0 and Python 3.14 and earlier are not
+  affected, and the dialect's own terminate path is unchanged. The Connection Guide and
+  the Support Matrix describe the limitation.
+
+* **async:** document the Python 3.15 limit of garbage-collected connection cleanup ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/909)) ([a0ec6a6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a0ec6a67043281262c1db6d499b2d2f1c9fc273f))
+
 - **The README and the documentation site show the CUBRID Lab repository icon (#886)** — the
   English README and its Korean, Chinese, Hindi, German and Russian translations open with the
   sqlalchemy-cubrid ORM icon, centered and without a caption, and the documentation site uses
@@ -286,6 +271,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **Release preparation starts after the abandoned 1.11.1** — 1.11.1 has no tag, so
+  release-please fell back to `bootstrap-sha` and proposed 1.12.0 with every commit since
+  1.8.0. `release-please-config.json` now sets `last-release-sha` to the 1.11.1 merge, so the
+  next candidate is computed from the commits after it, and RELEASING.md's abandoned-version
+  recovery documents setting that override and removing it after the next release is tagged.
+
 - **A release commit's `main` push no longer repeats the release's runtime lanes
   (#737)** — `ci.yml` runs `scripts/release_detect.py --mode push`, the decision
   `publish-pypi.yml` makes on the same SHA, and on a release commit skips
@@ -300,6 +291,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grouped Dependabot run.
 
 ### Tests
+
+- **#872 garbage-collection tests no longer depend on the cycle collector** — the live
+  async terminate test and the closed-event-loop test now commit before losing the
+  connection, so the pool's cleanup runs when the last reference goes and terminates the
+  connection on every supported Python, including 3.15, and they assert that the cleanup
+  chose terminate. The reference-cycle case is a separate test that probes the installed
+  SQLAlchemy and is an expected failure where the pool cannot clean such a connection up
+  (SQLAlchemy 2.1 on CPython 3.15). Both failed on all four Python 3.15 cells of the full
+  compatibility matrix.
 
 - **Benchmark artifacts verify the measured dialect and carry their provenance in the report
   (#903)** — before measuring, `scripts/bench_dialect_baseline.py` now checks the installed

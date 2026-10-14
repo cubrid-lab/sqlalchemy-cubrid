@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.2](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.1...v1.11.2) (2026-10-14)
+
+
+### Documentation
+
+* **async:** document the Python 3.15 limit of garbage-collected connection cleanup ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/909)) ([a0ec6a6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a0ec6a67043281262c1db6d499b2d2f1c9fc273f))
+
 ## [1.11.1](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.0...v1.11.1) (2026-10-14)
 
 
