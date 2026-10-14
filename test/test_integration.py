@@ -4315,6 +4315,21 @@ class TestIsolatedCTE849:
             with pytest.raises(NotImplementedError, match="multiple-table criteria"):
                 conn.execute(other.delete().where(other.c.data == cte.c.data))
 
+    def test_update_with_a_cte_scalar_subquery(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            subquery = sa.select(cte.c.data).where(cte.c.id == other.c.id).scalar_subquery()
+            conn.execute(other.update().values(parent_id=5).where(other.c.data == subquery))
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (1, "d1", None),
+                (2, "d2", 5),
+                (3, "d3", 5),
+                (4, "d4", 5),
+                (5, "d5", 3),
+            ]
+
     def test_delete_with_a_cte_scalar_subquery(self, engine, tables):
         some, other = tables
         cte = self._cte(some)
