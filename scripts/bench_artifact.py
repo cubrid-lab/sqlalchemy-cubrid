@@ -90,6 +90,17 @@ _FC20 = "cursor.executemany() of literal-rendered rows: one EXECUTE_BATCH (FC20)
 _FC21 = "cursor.executemany(prepared=True): PREPARE + EXECUTE_ARRAY (FC2 + FC21), opt-in"
 _IMV = "Core insert() executemany through insertmanyvalues: multi-row INSERT ... VALUES"
 _DIALECT_EM = "Core executemany through PyCubridDialect.do_executemany: literal FC20"
+_PER_ROW = "through CubridDialect.do_executemany: one cursor.execute() per parameter set"
+# CUBRIDdb runs its own executemany and the base dialect's per-row guard (#502).
+CUBRIDDB_SHAPES = {
+    **{
+        f"batch.raw.{s}": "raw CUBRIDdb cursor.executemany()"
+        for s in ("insert", "update", "delete")
+    },
+    "batch.core.update": f"Core executemany {_PER_ROW}",
+    "batch.core.delete": f"Core executemany {_PER_ROW}",
+    "batch.orm.update": f"ORM bulk update(Item) by primary key {_PER_ROW}",
+}
 
 # id -> (path in the report's summary, contract fields, SQL shape, drivers that run it)
 METRICS: dict[str, tuple[tuple[str, ...], dict[str, Any], str, frozenset[str]]] = {}
@@ -239,6 +250,7 @@ def _environment(report: dict[str, Any], digest: str, host: str) -> dict[str, An
         "platform": env.get("platform"),
         "cpu": env.get("cpu"),
         "host": host,
+        "target": env.get("target"),
         "pool": env.get("pool"),
         "pool_pre_ping": env.get("pool_pre_ping"),
         "autocommit": env.get("autocommit"),
@@ -251,6 +263,24 @@ def _environment(report: dict[str, Any], digest: str, host: str) -> dict[str, An
 
 
 def build_manifest(
+    report_path: Path,
+    *,
+    root: Path,
+    digest: str,
+    host: str,
+    group: str,
+    logs: Sequence[Path] = (),
+) -> dict[str, Any]:
+    """Build the manifest of one complete report; paths are relative to ``root``."""
+    try:
+        return _build_manifest(
+            report_path, root=root, digest=digest, host=host, group=group, logs=logs
+        )
+    except (AttributeError, KeyError, TypeError) as exc:
+        raise ArtifactError(f"{report_path}: malformed report ({exc!r})") from None
+
+
+def _build_manifest(
     report_path: Path,
     *,
     root: Path,
@@ -301,6 +331,10 @@ def build_manifest(
         for key in path:
             _require(isinstance(node, dict) and key in node, f"{mid}: summary.{'.'.join(path)}")
             node = node[key]
+        _require(isinstance(node, dict), f"{mid}: summary.{'.'.join(path)} is not an object")
+        _require(
+            isinstance(node.get("median"), (int, float)), f"{mid}: summary median is not a number"
+        )
         values = _trial_values(node.get("trials"), trials, mid)
         median = statistics.median(values)
         _require(
@@ -315,7 +349,9 @@ def build_manifest(
                 "id": mid,
                 "source": "summary." + ".".join(path),
                 **fields,
-                "sql_shape": shape,
+                "sql_shape": CUBRIDDB_SHAPES.get(mid, shape)
+                if env["driver"] == "cubrid"
+                else shape,
                 "warmup": _WARMUP,
                 "trials": values,
                 "median": median,
@@ -346,12 +382,20 @@ def build_manifest(
 
 def validate(manifest_path: Path) -> dict[str, Any]:
     """Check a manifest and rebuild it from the files it lists; return it."""
+    try:
+        return _validate(manifest_path)
+    except (AttributeError, KeyError, TypeError) as exc:
+        raise ArtifactError(f"{manifest_path}: malformed manifest ({exc!r})") from None
+
+
+def _validate(manifest_path: Path) -> dict[str, Any]:
     manifest: dict[str, Any] = _load_json(manifest_path)
     _require(isinstance(manifest, dict), f"{manifest_path} is not a manifest object")
     _require(manifest.get("schema") == SCHEMA, f"schema {manifest.get('schema')!r}, not {SCHEMA}")
     root = manifest_path.parent
     files: Any = manifest.get("files")
     _require(isinstance(files, list) and bool(files), "manifest lists no files")
+    _require(all(isinstance(f, dict) for f in files), "every file entry must be an object")
     paths = [_relative(str(f.get("path", ""))) for f in files]
     _require(len(set(paths)) == len(paths), f"duplicate file paths {paths}")
     for f, path in zip(files, paths):
@@ -362,7 +406,12 @@ def validate(manifest_path: Path) -> dict[str, Any]:
     _require(len(raws) == 1, f"expected exactly one raw report, got {raws}")
     env: Any = manifest.get("environment")
     _require(isinstance(env, dict), "manifest has no environment")
-    for m in manifest.get("metrics") or []:
+    metrics: Any = manifest.get("metrics")
+    _require(
+        isinstance(metrics, list) and all(isinstance(m, dict) for m in metrics),
+        "manifest metrics must be a list of objects",
+    )
+    for m in metrics:
         mid = m.get("id")
         _require(mid in METRICS, f"unknown metric {mid!r}")
         unit = METRICS[mid][1]["unit"]

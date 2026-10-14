@@ -44,15 +44,16 @@ and ``concurrency``; reflection is skipped there (it runs the same synchronous
 dialect code through ``run_sync``).
 
 The report records the workload identity (``workload.script_sha256``, the
-SHA-256 of this file), ``pool_pre_ping`` and the dialect's insertmanyvalues
-settings, and ends with ``"status": "complete"``. It is written only after every
-check passed. ``scripts/bench_artifact.py`` turns a report into a versioned
-artifact manifest and compares a baseline with a candidate (#901).
+SHA-256 of this file), the connection target (the DSN without its password),
+``pool_pre_ping`` and the dialect's insertmanyvalues settings, and ends with
+``"status": "complete"``. It is written only after every check passed.
+``scripts/bench_artifact.py`` turns a report into a versioned artifact manifest
+and compares a baseline with a candidate (#901).
 
 Usage:
     python scripts/bench_dialect_baseline.py \\
         --dsn cubrid+pycubrid://dba@localhost:33000/testdb --trials 5 \\
-        --output baseline.json
+        --source-sha "$(git rev-parse HEAD)" --output baseline.json
 """
 
 from __future__ import annotations
@@ -89,7 +90,7 @@ from sqlalchemy import (
     text,
     update,
 )
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import URL, Connection, Engine, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
@@ -884,6 +885,14 @@ def raw_connector(engine: Engine) -> Callable[[], Any]:
     return connect_cubriddb
 
 
+def target(dsn: str) -> str:
+    """The DSN without its password: the connection identity of the run."""
+    url = make_url(dsn)
+    return URL.create(
+        url.drivername, url.username, None, url.host, url.port, url.database, url.query
+    ).render_as_string(hide_password=False)
+
+
 def environment(
     server: str, driver: str, pool: str, args: argparse.Namespace, dialect: Any
 ) -> dict[str, Any]:
@@ -906,6 +915,7 @@ def environment(
         "source_sha": args.source_sha,
         "cubrid_server": server,
         "driver": driver,
+        "target": target(args.dsn),
         "pool": pool,
         "pool_pre_ping": POOL_PRE_PING,
         "autocommit": False,

@@ -277,6 +277,7 @@ CUBRID 11.4의 동시 연결: 작업자 N개가 각자 연결 하나로 동시�
 `scripts/bench_dialect_baseline.py`가 보고서를 만듭니다. 이제 다음도 기록합니다:
 
 - 워크로드 식별자인 `workload.script_sha256`(스크립트의 SHA-256);
+- 연결 식별자인 `target`(비밀번호를 뺀 DSN);
 - `pool_pre_ping`(꺼짐)과 autocommit(꺼짐);
 - 방언의 `use_insertmanyvalues`와 `insertmanyvalues_page_size`;
 - `"status": "complete"`. 보고서는 실행의 모든 검사가 통과한 뒤에만 기록됩니다.
@@ -310,6 +311,7 @@ python scripts/bench_artifact.py compare baseline/manifest.json candidate/manife
   - 드라이버와 그 버전, pycubrid 버전;
   - CUBRID 서버 버전과 이미지 다이제스트;
   - Python, 구현, 플랫폼, CPU, 호스트 레이블;
+  - 연결 대상(비밀번호를 뺀 DSN);
   - 풀, `pool_pre_ping`, autocommit, insertmanyvalues 설정.
 - `workload`: 스크립트, 그 SHA-256, 테이블, `source_sha`를 뺀 모든 인자. 인자
   `rows`는 1,000이어야 합니다.
@@ -329,6 +331,11 @@ python scripts/bench_artifact.py compare baseline/manifest.json candidate/manife
 | `batch.core.update`, `batch.core.delete` | 배치당 ms | `PyCubridDialect.do_executemany`를 거치는 Core executemany (리터럴 FC20; 방언은 `prepared` 플래그를 넘기지 않음) | 측정 구간 안, 배치마다 한 번 |
 | `batch.orm.insert`, `.update`, `.delete` | 배치당 ms | ORM 대량 INSERT(insertmanyvalues), 기본 키 대량 UPDATE(`do_executemany`), 작업 단위 DELETE | 측정 구간 안, 배치마다 한 번 |
 
+`cubrid://`(CUBRIDdb) 보고서의 SQL 형태는 그 드라이버를 따릅니다: `batch.raw.*`는
+CUBRIDdb 자체의 `executemany()`이고, `batch.core.update`, `batch.core.delete`,
+`batch.orm.update`는 `CubridDialect.do_executemany`를 거쳐 매개변수 집합마다
+`cursor.execute()`를 한 번씩 실행합니다(#502).
+
 실험용 `core_prepared_experiment` 배치, 리플렉션, 동시성 워크로드는 보고서에 남지만
 계약에는 들어가지 않습니다.
 
@@ -347,29 +354,31 @@ python scripts/bench_artifact.py compare baseline/manifest.json candidate/manife
 
 | 지표 | 단위 | 기준 v1.11.0 | 후보 `db5ccdd` | 비율 |
 |---|---|---:|---:|---:|
-| `select_pk.raw` | us | 619.9 (566.3–679.3) | 590.3 (567.7–957.1) | 0.95 |
-| `select_pk.core_cached` | us | 743.2 (740.7–2231.9) | 826.3 (726.3–1788.7) | 1.11 |
-| `select_pk.core_uncached` | us | 958.1 (933.8–1003.6) | 947.7 (917.8–1010.8) | 0.99 |
-| `select_pk.orm` | us | 867.5 (832.6–1442.8) | 912.8 (841.2–914.7) | 1.05 |
-| `fetch_all.raw` | us | 4143.5 (4018.1–4156.0) | 3859.4 (3811.0–3903.7) | 0.93 |
-| `fetch_all.core` | us | 4281.2 (4200.6–4411.9) | 4242.1 (4108.8–4421.1) | 0.99 |
-| `fetch_all.orm` | us | 7811.8 (7535.8–7887.2) | 7460.7 (7458.2–7563.4) | 0.96 |
-| `batch.raw.insert` | ms | 1007.1 (728.8–1396.9) | 1386.9 (1159.1–1806.6) | 1.38 |
-| `batch.raw_prepared.insert` | ms | 212.2 (198.6–223.4) | 217.7 (215.8–227.9) | 1.03 |
-| `batch.raw.update` | ms | 1763.1 (1039.0–1830.8) | 1322.2 (1114.0–1355.2) | 0.75 |
-| `batch.raw_prepared.update` | ms | 238.4 (183.0–238.9) | 230.2 (224.6–238.6) | 0.97 |
-| `batch.raw.delete` | ms | 1871.3 (887.6–2287.7) | 1737.9 (1654.8–1846.1) | 0.93 |
-| `batch.raw_prepared.delete` | ms | 411.3 (337.7–421.4) | 746.0 (638.0–788.6) | 1.81 |
-| `batch.core.insert` | ms | 139.9 (132.5–140.2) | 140.0 (122.9–140.8) | 1.00 |
-| `batch.core.update` | ms | 1606.9 (1298.4–1629.6) | 1421.6 (1146.0–2390.5) | 0.88 |
-| `batch.core.delete` | ms | 1272.8 (1122.4–1740.1) | 1423.7 (1356.9–1481.7) | 1.12 |
-| `batch.orm.insert` | ms | 135.1 (127.6–135.2) | 118.1 (116.0–123.9) | 0.87 |
-| `batch.orm.update` | ms | 1351.0 (1335.9–1603.1) | 805.0 (785.6–1319.2) | 0.60 |
-| `batch.orm.delete` | ms | 468.4 (463.2–518.0) | 447.9 (436.1–455.0) | 0.96 |
+| `select_pk.raw` | us | 633.8 (545.7–762.3) | 833.6 (669.2–2203.4) | 1.32 |
+| `select_pk.core_cached` | us | 762.2 (748.1–772.2) | 800.6 (736.1–803.2) | 1.05 |
+| `select_pk.core_uncached` | us | 997.5 (977.5–1007.4) | 973.2 (971.3–990.6) | 0.98 |
+| `select_pk.orm` | us | 886.6 (864.9–896.4) | 894.0 (804.4–917.4) | 1.01 |
+| `fetch_all.raw` | us | 3759.4 (3708.4–3886.1) | 3812.0 (3812.0–3916.5) | 1.01 |
+| `fetch_all.core` | us | 4422.5 (4379.9–4492.4) | 4225.5 (4020.6–4330.8) | 0.96 |
+| `fetch_all.orm` | us | 7680.6 (7607.1–7732.2) | 7581.5 (7421.9–7679.6) | 0.99 |
+| `batch.raw.insert` | ms | 1581.0 (906.4–1771.4) | 1398.0 (1098.8–1448.1) | 0.88 |
+| `batch.raw_prepared.insert` | ms | 215.9 (215.7–223.7) | 207.0 (198.8–216.7) | 0.96 |
+| `batch.raw.update` | ms | 1546.9 (1438.2–1746.6) | 1663.7 (1663.3–1854.8) | 1.08 |
+| `batch.raw_prepared.update` | ms | 237.8 (196.2–237.8) | 242.4 (237.8–246.3) | 1.02 |
+| `batch.raw.delete` | ms | 1891.7 (1371.0–1966.3) | 1488.2 (1071.4–2155.5) | 0.79 |
+| `batch.raw_prepared.delete` | ms | 554.6 (401.6–604.8) | 546.6 (496.7–621.6) | 0.99 |
+| `batch.core.insert` | ms | 140.7 (140.1–140.8) | 140.8 (131.1–141.0) | 1.00 |
+| `batch.core.update` | ms | 1798.2 (1701.7–1923.3) | 1415.1 (1180.7–1432.2) | 0.79 |
+| `batch.core.delete` | ms | 1507.1 (1125.6–1573.0) | 1498.3 (1115.3–1548.6) | 0.99 |
+| `batch.orm.insert` | ms | 135.1 (134.1–135.4) | 134.8 (128.0–134.9) | 1.00 |
+| `batch.orm.update` | ms | 919.5 (772.0–1320.1) | 1696.2 (1394.6–1893.8) | 1.84 |
+| `batch.orm.delete` | ms | 469.2 (467.6–478.7) | 467.0 (442.6–486.6) | 1.00 |
 
 이 비율은 한 호스트의 잡음 수준을 보여 줄 뿐이며 회귀 판단이 아닙니다. `raw`와
-`raw_prepared` 행은 방언을 전혀 실행하지 않는데도 0.75와 1.81 사이에서 움직였습니다.
-이 호스트에서 배치 DML은 시행마다 크게 달라집니다. 이후 후보 결과는 같은 환경에서
+`raw_prepared` 행은 방언을 전혀 실행하지 않는데도 `select_pk.raw`는 1.32배 움직였고
+raw 배치 행은 0.79와 1.08 사이에서 움직였습니다. `batch.orm.update`는 이전 스크립트
+리비전으로 한 앞선 쌍 실행에서는 0.60이었고 여기서는 1.85입니다. 이 호스트에서 배치
+DML은 시행마다 크게 달라집니다. 이후 후보 결과는 같은 환경에서
 이런 분산과 견줄 때에만 의미가 있습니다.
 
 #830 아카이브(`2026-10-12-dialect-baseline`, `2026-10-13-dialect-baseline-followup`)는

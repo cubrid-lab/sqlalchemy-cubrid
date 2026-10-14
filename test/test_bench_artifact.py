@@ -41,6 +41,7 @@ def make_report(driver: str = "pycubrid", sha: str = SHA_A, trials: int = 5) -> 
         "source_sha": sha,
         "cubrid_server": "11.4.6.1963",
         "driver": driver,
+        "target": "cubrid+pycubrid://dba@localhost:34114/testdb",
         "pool": "QueuePool",
         "pool_pre_ping": False,
         "autocommit": False,
@@ -144,6 +145,12 @@ def test_cubriddb_artifact_has_no_prepared_metrics(tmp_path: Path) -> None:
     manifest = ba.validate(write_artifact(tmp_path, make_report(driver="cubrid")))
     assert manifest["environment"]["driver_version"] == "11.3.0.51"
     assert not [m for m in manifest["metrics"] if "prepared" in m["id"]]
+    shapes = {m["id"]: m["sql_shape"] for m in manifest["metrics"]}
+    assert shapes["batch.raw.insert"] == "raw CUBRIDdb cursor.executemany()"
+    assert "one cursor.execute() per parameter set" in shapes["batch.core.update"]
+    assert "one cursor.execute() per parameter set" in shapes["batch.orm.update"]
+    assert "insertmanyvalues" in shapes["batch.core.insert"]
+    assert not [s for s in shapes.values() if "FC20" in s or "PyCubridDialect" in s]
 
 
 @pytest.mark.parametrize(
@@ -151,6 +158,13 @@ def test_cubriddb_artifact_has_no_prepared_metrics(tmp_path: Path) -> None:
     [
         (lambda r: r["environment"].pop("pycubrid"), "missing driver_version, pycubrid"),
         (lambda r: r["environment"].pop("cubrid_server"), "missing cubrid_server"),
+        (lambda r: r["environment"].pop("target"), "missing target"),
+        (lambda r: r["environment"].update(args=None), "no args"),
+        (lambda r: r.update(summary=[]), "no summary"),
+        (lambda r: r["summary"]["select_pk_us"].update(orm=[1]), "is not an object"),
+        (lambda r: r["summary"]["select_pk_us"]["orm"].update(median="x"), "not a number"),
+        (lambda r: r["environment"]["args"].update(rows=None), "rows None"),
+        (lambda r: r.update(trials=None), "report holds 0 trials"),
         (lambda r: r["environment"].update(pool_pre_ping=None), "missing pool_pre_ping"),
         (lambda r: r.pop("environment"), "no environment"),
         (lambda r: r["environment"].update(source_sha="unknown"), "not a full 40-character"),
@@ -210,6 +224,11 @@ def test_validate_rejects_edited_files_and_manifests(tmp_path: Path) -> None:
     check(lambda m: m["files"][1].update(role="raw"), "exactly one raw report")
     check(lambda m: m["files"][0].update(path="../raw/report.json"), "without '..'")
     check(lambda m: m.update(files=[]), "lists no files")
+    check(lambda m: m.update(files=[1]), "every file entry must be an object")
+    check(lambda m: m.update(metrics=[1]), "metrics must be a list of objects")
+    check(lambda m: m.update(metrics=None), "metrics must be a list of objects")
+    check(lambda m: m.update(environment=None), "no environment")
+    check(lambda m: m["files"][0].update(path=3), "SHA-256|cannot read")
     manifest_path.write_text(json.dumps(good))
     (tmp_path / "raw" / "report.txt").write_text("changed\n")
     with pytest.raises(ba.ArtifactError, match="does not match the manifest"):
@@ -245,6 +264,13 @@ def test_compare_reports_ratios_when_only_the_dialect_varies(
         (lambda r: r["environment"].update(cubrid_server="10.2.18"), {}, "cubrid_server"),
         (lambda r: r["environment"].update(python="3.11.9"), {}, "environment.python"),
         (lambda r: r["environment"].update(pool_pre_ping=True), {}, "pool_pre_ping"),
+        (
+            lambda r: r["environment"].update(
+                target="cubrid+pycubrid://dba@otherhost:33000/testdb"
+            ),
+            {},
+            "environment.target",
+        ),
         (lambda r: r["workload"].update(script_sha256="3" * 64), {}, "workload.script_sha256"),
         (lambda r: r["environment"]["args"].update(batch=100), {}, "workload.args"),
         (lambda r: None, {"digest": "sha256:" + "4" * 64}, "cubrid_image_digest"),
@@ -295,7 +321,7 @@ def test_export_rejects_a_report_outside_the_manifest_directory(tmp_path: Path) 
     [
         "benchmarks/2026-10-12-dialect-baseline/raw/bench_dialect_baseline_sa21.json",
         "benchmarks/2026-10-13-dialect-baseline-followup/raw/"
-        "bench_dialect_baseline_cubrid114_pycubrid.json",
+        + "bench_dialect_baseline_cubrid114_pycubrid.json",
     ],
 )
 def test_historical_archives_are_not_comparable_artifacts(raw: str) -> None:
@@ -312,8 +338,14 @@ def test_baseline_script_records_pool_and_insertmanyvalues_settings() -> None:
     from scripts import bench_dialect_baseline as bdb
 
     dialect = argparse.Namespace(use_insertmanyvalues=True, insertmanyvalues_page_size=1000)
-    args = argparse.Namespace(dsn="x", output="y", trials=5, source_sha=SHA_A)
+    args = argparse.Namespace(
+        dsn="cubrid+pycubrid://dba:secret@localhost:34114/testdb",
+        output="y",
+        trials=5,
+        source_sha=SHA_A,
+    )
     env = bdb.environment("11.4.6.1963", "pycubrid", "QueuePool", args, dialect)
+    assert env["target"] == "cubrid+pycubrid://dba@localhost:34114/testdb"
     assert env["pool_pre_ping"] is False
     assert env["autocommit"] is False
     assert env["use_insertmanyvalues"] is True
@@ -330,3 +362,22 @@ def test_the_committed_pinned_pair_is_valid_and_comparable() -> None:
     assert result["baseline"]["dialect_source_sha"] != result["candidate"]["dialect_source_sha"]
     assert json.loads((pair / "compare.json").read_text()) == result
     assert len(result["metrics"]) == 19
+
+
+def test_malformed_inputs_report_invalid_instead_of_a_traceback(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    manifest_path = write_artifact(tmp_path, make_report())
+    bad = json.loads(manifest_path.read_text())
+    bad["files"] = [1]
+    manifest_path.write_text(json.dumps(bad))
+    assert ba.main(["validate", str(manifest_path)]) == ba.EXIT_INVALID
+    assert "invalid:" in capsys.readouterr().err
+    (tmp_path / "raw" / "report.json").write_text("[1, 2]")
+    argv = ["export", str(tmp_path / "raw" / "report.json"), "--output", str(manifest_path)]
+    argv += ["--server-image-digest", DIGEST, "--host", "h", "--comparable-group", "g"]
+    assert ba.main(argv) == ba.EXIT_INVALID
+    report = make_report()
+    report["environment"]["args"]["trials"] = "5"
+    (tmp_path / "raw" / "report.json").write_text(json.dumps(report))
+    assert ba.main(argv) == ba.EXIT_INVALID
