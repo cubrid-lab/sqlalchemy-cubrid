@@ -224,6 +224,31 @@ class TestInsertCompilation:
         assert CubridCompiler._insert_has_bind_expression(insert(with_expr)) is True
         assert CubridCompiler._insert_has_bind_expression(insert(plain)) is False
 
+    def test_insert_from_cte_select_puts_with_after_the_column_list(self):
+        """#897: CUBRID needs INSERT INTO t (...) WITH ... SELECT, not WITH ... INSERT."""
+        source = sa.table("src", sa.column("id", Integer), sa.column("s", String))
+        target = sa.table("t", sa.column("id", Integer), sa.column("s", String))
+        cte = select(source.c.id, source.c.s).where(source.c.id > sa.bindparam("low", 2)).cte("c")
+        stmt = sa.insert(target).from_select(
+            ["id", "s"], select(cte.c.id, cte.c.s).where(cte.c.id < sa.bindparam("high", 9))
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert _norm(compiled.string) == _norm(
+            "INSERT INTO t (id, s) "
+            "WITH c AS (SELECT src.id AS id, src.s AS s FROM src WHERE src.id > ?) "
+            "SELECT c.id, c.s FROM c WHERE c.id < ?"
+        )
+        assert compiled.positiontup == ["low", "high"]
+
+    def test_insert_from_recursive_cte_select_puts_with_after_the_column_list(self):
+        """#897: a recursive CTE renders WITH RECURSIVE after the column list."""
+        target = sa.table("t", sa.column("id", Integer))
+        base = select(sa.literal(1).label("n")).cte("c", recursive=True)
+        cte = base.union_all(select(base.c.n + 1).where(base.c.n < 3))
+        stmt = sa.insert(target).from_select(["id"], select(cte.c.n))
+        sql = _norm(_compile(stmt))
+        assert sql.startswith("INSERT INTO t (id) WITH RECURSIVE c(n) AS ("), sql
+
 
 class TestWindowFunctionCompilation:
     """Test window function compilation."""
@@ -1728,8 +1753,9 @@ class TestReplaceKeywordIsStructural:
         )
         sql = _norm(_compile(stmt))
         assert sql == _norm(
+            "REPLACE /* c */ INTO t (id, s) "
             "WITH c AS (SELECT src.id AS id, 'INSERT INTO' AS s FROM src) "
-            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c"
+            "SELECT c.id, c.s FROM c"
         )
 
     def test_cte_from_select_with_bound_values_and_prefix(self):
@@ -1752,8 +1778,9 @@ class TestReplaceKeywordIsStructural:
         compiled = stmt.compile(dialect=CubridDialect())
 
         assert _norm(compiled.string) == _norm(
+            "REPLACE /* c */ INTO t (id, s) "
             "WITH c AS (SELECT src.id AS id, src.s AS s FROM src WHERE src.id > ?) "
-            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c WHERE c.id < ?"
+            "SELECT c.id, c.s FROM c WHERE c.id < ?"
         )
         assert compiled.string.count("?") == 2
         assert compiled.positiontup == ["low", "high"]
@@ -1766,8 +1793,9 @@ class TestReplaceKeywordIsStructural:
         stmt = replace(self.target).from_select(["id", "s"], select(cte.c.id, cte.c.s))
         sql = _norm(_compile(stmt))
         assert sql == _norm(
+            "REPLACE INTO t (id, s) "
             "WITH c AS (SELECT src.id AS id, src.s AS s FROM src) "
-            "REPLACE INTO t (id, s) SELECT c.id, c.s FROM c"
+            "SELECT c.id, c.s FROM c"
         )
 
     def test_insert_is_unchanged(self):

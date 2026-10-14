@@ -619,6 +619,11 @@ class CubridDialect(default.DefaultDialect):
 
     postfetch_lastrowid = True
 
+    # CUBRID accepts a CTE only after the column list, as in
+    # INSERT INTO t (...) WITH c AS (...) SELECT ...; WITH ... INSERT (or
+    # WITH ... REPLACE) is a -493 syntax error on 10.2 and 11.4 (#897).
+    cte_follows_insert = True
+
     # Two-phase commit not supported by CUBRID
     supports_twophase_commit = False
 

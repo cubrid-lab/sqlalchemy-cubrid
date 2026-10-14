@@ -4177,10 +4177,6 @@ class TestAsyncTerminateClosedLoop872:
         assert not [m for m in messages if "cannot be safely terminated" in m], messages
 
 
-class _CteInsertSyntaxError(Exception):
-    """CUBRID's -493 syntax error for ``WITH ... INSERT INTO`` (#897)."""
-
-
 class TestIsolatedCTE849:
     """#849: the scenarios of SQLAlchemy's CTETest on a fresh, FK-safe fixture.
 
@@ -4274,23 +4270,46 @@ class TestIsolatedCTE849:
             )
             assert rows.fetchall() == [(4,), (5,)]
 
-    @pytest.mark.xfail(
-        reason="#897: SQLAlchemy renders WITH before INSERT; CUBRID needs INSERT INTO t WITH ...",
-        raises=_CteInsertSyntaxError,
-        strict=True,
-    )
     def test_insert_from_select(self, engine, tables):
+        # #897: rendered as INSERT INTO t (...) WITH ... SELECT, the only order
+        # CUBRID accepts.
         some, other = tables
         stmt = other.insert().from_select(["id", "data", "parent_id"], sa.select(self._cte(some)))
         with engine.begin() as conn:
-            try:
-                conn.execute(stmt)
-            except sa.exc.DBAPIError as error:
-                # Only CUBRID's syntax error for this statement is the known #897
-                # failure; any other error (a disconnect, a constraint) fails.
-                if "-493" in str(error.orig) and "INTO" in str(error.orig):
-                    raise _CteInsertSyntaxError(str(error.orig)) from error
-                raise
+            conn.execute(stmt)
+        with engine.connect() as conn:
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (2, "d2", 1),
+                (3, "d3", 1),
+                (4, "d4", 3),
+            ]
+
+    def test_insert_from_recursive_select(self, engine, tables):
+        _, other = tables
+        base = sa.select(sa.literal(10).label("id"), sa.literal("r").label("data")).cte(
+            "walk", recursive=True
+        )
+        walk = base.union_all(sa.select(base.c.id + 1, base.c.data).where(base.c.id < 12))
+        stmt = other.insert().from_select(["id", "data"], sa.select(walk.c.id, walk.c.data))
+        with engine.begin() as conn:
+            conn.execute(stmt)
+        with engine.connect() as conn:
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (10, "r", None),
+                (11, "r", None),
+                (12, "r", None),
+            ]
+
+    def test_replace_from_select(self, engine, tables):
+        # #897: REPLACE takes the same INSERT INTO t (...) WITH ... SELECT shape.
+        from sqlalchemy_cubrid import replace
+
+        some, other = tables
+        with engine.begin() as conn:
+            conn.execute(other.insert(), [{"id": 2, "data": "old", "parent_id": None}])
+            conn.execute(
+                replace(other).from_select(["id", "data", "parent_id"], sa.select(self._cte(some)))
+            )
         with engine.connect() as conn:
             assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
                 (2, "d2", 1),

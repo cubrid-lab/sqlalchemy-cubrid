@@ -146,6 +146,7 @@ VALUES (1, 'alice', 'alice@example.com')
 ### 동작 참고
 
 - `REPLACE INTO`는 모든 표준 INSERT 값 패턴(`values`, `from_select` 등)을 사용합니다
+- CUBRID는 `WITH ... REPLACE`를 거부하므로 `from_select()` 안의 CTE는 컬럼 목록 뒤에 `REPLACE INTO t (...) WITH c AS (...) SELECT ...` 형태로 렌더링됩니다 (#897)
 - 중복 키 충돌 시 CUBRID는 기존 행을 새 행으로 교체합니다
 - `prefix_with()` 텍스트는 `insert()`와 똑같이 동사와 `INTO` 사이에 렌더링됩니다(`replace(users).prefix_with("/* audit */")`는 `REPLACE /* audit */ INTO users ...`로 렌더링). 접두사, 주석, 리터럴, 식별자는 `INSERT INTO` 텍스트를 포함하더라도 재작성되지 않습니다
 - `REPLACE INTO`는 `ON DUPLICATE KEY UPDATE`를 지원하지 않습니다. 제자리 갱신에는 `insert(...).on_duplicate_key_update(...)`를 사용하세요

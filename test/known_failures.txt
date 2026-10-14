@@ -150,7 +150,8 @@ test/test_suite.py::BizarroCharacterTest::test_reflect_comments[plain-[brack]]  
 # (#849), which replays these scenarios on fresh FK-safe tables: SELECT,
 # recursive SELECT, bound parameters, UPDATE/DELETE with a CTE scalar subquery and
 # every values-via-CTE variant pass; UPDATE ... FROM and DELETE ... FROM are
-# the dialect's documented limits; INSERT FROM SELECT over a CTE is #897.
+# the dialect's documented limits; INSERT FROM SELECT over a CTE passes since
+# #897 renders INSERT INTO t (...) WITH ... SELECT.
 test/test_suite.py::CTETest::test_delete_from_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_delete_scalar_subq_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1
 test/test_suite.py::CTETest::test_insert_from_select_round_trip  cubrid@sa2.0 pycubrid@sa2.0 pycubrid@sa2.1

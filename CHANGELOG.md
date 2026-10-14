@@ -37,6 +37,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`INSERT` / `REPLACE ... FROM SELECT` over a CTE renders the `WITH` clause after the
+  column list (#897)** — SQLAlchemy put the CTE first (`WITH c AS (...) INSERT INTO t
+  (...) SELECT ...`), which CUBRID 10.2 and 11.4 reject with a -493 syntax error, so
+  `insert(t).from_select([...], select(cte))` and the dialect's `replace()` equivalent
+  always failed. The dialect now sets `cte_follows_insert`, rendering `INSERT INTO t
+  (...) WITH c AS (...) SELECT ...`, the order CUBRID accepts; recursive CTEs and bind
+  order are unchanged. `TestIsolatedCTE849::test_insert_from_select` is no longer a
+  strict xfail, and live INSERT, recursive INSERT and REPLACE cases pass on CUBRID 10.2
+  and 11.4.
+
 - **Unique-constraint reflection fails closed on a catalog mismatch (#848)** —
   `get_unique_constraints()` took the unique index names from `db_index` and their
   columns from `SHOW INDEXES`, and returned only the names `SHOW INDEXES` resolved. A
@@ -233,8 +243,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scenarios on fresh FK-safe tables against CUBRID 10.2 to 11.4. SELECT, recursive
   SELECT, bound parameters, UPDATE and DELETE with a CTE scalar subquery and every values-via-CTE
   variant pass; UPDATE/DELETE ... FROM are asserted as the documented limits; INSERT
-  FROM SELECT over a CTE is a strict xfail tracked by #897. The ledger entries are
-  kept, with a pointer to this evidence.
+  FROM SELECT over a CTE passes since #897. The ledger entries are kept, with a
+  pointer to this evidence.
 
 ## [1.11.0] - 2026-10-12
 
