@@ -4157,6 +4157,11 @@ class TestAsyncTerminateClosedLoop872:
             holder["engine"] = eng
             conn = await eng.connect()
             await conn.execute(sa.text("SELECT 1 FROM db_root"))
+            # End the autobegun transaction so no Connection <-> RootTransaction
+            # cycle keeps the fairy alive: the del below frees it directly. On
+            # CPython 3.15 SQLAlchemy never cleans up a fairy reclaimed by the
+            # cycle collector (see test_aio_integration._pool_reclaims_cyclic_garbage).
+            await conn.commit()
             raw = await conn.get_raw_connection()
             holder["driver"] = raw.driver_connection
             holder["sock"] = raw.driver_connection._writer.transport.get_extra_info("socket")
@@ -4173,6 +4178,7 @@ class TestAsyncTerminateClosedLoop872:
         assert getattr(driver, "_writer") is None
         assert getattr(holder["sock"], "fileno")() == -1  # the socket is closed
         messages = [f"{w.category.__name__}: {w.message}" for w in caught]
+        assert [m for m in messages if "which will be terminated" in m], messages
         assert not [m for m in messages if m.startswith("ResourceWarning")], messages
         assert not [m for m in messages if "cannot be safely terminated" in m], messages
 

@@ -179,6 +179,8 @@ async with engine.connect() as conn:
 
 연결은 `async with`나 `await conn.close()`로 반환하세요. 애플리케이션이 체크아웃한 연결을 닫지 않고 잃어버리면, 방언이 사용하는 종료 지원을 제공하는 SQLAlchemy 2.0.44 이상에서는 가비지 컬렉터의 정리 과정이 그 연결을 종료합니다 (#872). 방언은 연결의 이벤트 루프가 이미 닫힌 뒤에도 소켓을 동기적으로 닫고 pycubrid 세션을 정리하므로 "cannot be safely terminated" 메시지와 닫히지 않은 스트림의 `ResourceWarning`이 없습니다. SQLAlchemy는 연결이 반환되지 않았다는 경고를 여전히 냅니다. 무효화된 연결은 일반적인 `CLOSE_DATABASE` 종료로 닫힙니다. SQLAlchemy 2.0.0부터 2.0.43까지는 풀이 이전 동작을 유지해 그런 연결을 종료하지 않고 버립니다.
 
+**Python 3.15와 SQLAlchemy 2.1:** Python의 순환 수집기(cycle collector)가 회수하는 연결에 대해서는 SQLAlchemy 풀이 이 정리 과정을 실행하지 않습니다. 자동 시작된 트랜잭션이 열린 채로 잃어버린 연결이 일반적으로 이 경우에 해당합니다. CPython 3.15는 가비지 컬렉션 중 약한 참조를 더 늦게 지우고([python/cpython#136189](https://github.com/python/cpython/pull/136189)), SQLAlchemy 2.1의 풀 종료자(2.1.0부터 2.1.4까지 확인)는 그 연결이 아직 참조되고 있다고 판단해 바로 반환합니다. 방언은 호출되지 않습니다. Python 자체의 스트림 종료자가 `ResourceWarning`과 함께 소켓을 닫고, 풀은 그 슬롯을 계속 체크아웃된 것으로 세므로 이런 누수가 쌓이면 풀이 고갈됩니다(`TimeoutError`). 이는 SQLAlchemy의 동작이며 동기 풀을 포함한 모든 방언에 영향을 줍니다. 트랜잭션을 이미 커밋하거나 롤백한 연결처럼 참조 순환이 붙잡고 있지 않은 연결은 위에서 설명한 대로 계속 종료됩니다. Python 3.15의 SQLAlchemy 2.0과 Python 3.14 이하는 영향을 받지 않습니다. 연결은 명시적으로 닫으세요.
+
 ### PK 조회를 동반한 비동기 삽입
 
 CUBRID에는 `RETURNING` 절이 없습니다. 비동기 ORM 삽입 후 auto-increment 기본 키를 얻으려면, 트랜잭션 블록 안에서 `await session.flush()`를 호출해 커밋 전에 객체의 PK를 채우세요:

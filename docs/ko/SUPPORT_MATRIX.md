@@ -70,6 +70,10 @@ wheel/sdist의 새 환경 설치를 확인합니다. 지원 범위:
   참고하세요.
 - **3.15에서 실행하지 않는 검사:** SQLAlchemy 컴플라이언스 레인은 Python 3.14/CUBRID
   11.4와 Python 3.11/CUBRID 10.2에 그대로 둡니다.
+- **가비지 컬렉션된 연결:** SQLAlchemy 2.1에서는 참조 순환 안에서 잃어버린 풀 연결(트랜잭션이
+  아직 열린 연결 등)이 3.15에서 종료되지도 풀로 반환되지도 않습니다. 이는 모든 방언에 영향을
+  주는 SQLAlchemy 2.1/CPython 3.15 상호작용이며, 해당 통합 테스트는 그 환경에서 예상된
+  실패(xfail)로 처리됩니다. [연결 가이드](CONNECTION.md#비동기-연결)를 참고하세요.
 - **환경:** pycubrid를 통한 Decimal 하위 클래스 파라미터에는 C `_decimal` 모듈이
   필요합니다. `libmpdec` 없이 빌드한 Python에는 이 모듈이 없으며, 이때 pycubrid는
   이런 파라미터에 `ProgrammingError`를 발생시킵니다. 일반 `Decimal` 값은 영향이 없습니다.

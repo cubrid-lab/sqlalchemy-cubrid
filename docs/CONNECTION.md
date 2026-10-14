@@ -198,6 +198,20 @@ warns that the connection was not checked in. An invalidated connection is close
 the normal `CLOSE_DATABASE` shutdown. On SQLAlchemy 2.0.0 to 2.0.43 the pool keeps its
 previous behavior and drops such a connection without terminating it.
 
+**Python 3.15 with SQLAlchemy 2.1:** SQLAlchemy's pool does not run this cleanup for a
+connection that Python's cycle collector reclaims. That is the usual case for a
+connection lost while its autobegun transaction is still open. CPython 3.15 clears
+weak references later during garbage collection
+([python/cpython#136189](https://github.com/python/cpython/pull/136189)), and SQLAlchemy
+2.1's pool finalizer (2.1.0 to 2.1.4 checked) then treats the connection as still
+referenced and returns early. The dialect is never called. Python's own stream finalizer
+closes the socket with a `ResourceWarning`, and the pool keeps counting the slot as
+checked out, so enough such leaks exhaust the pool (`TimeoutError`). This is
+SQLAlchemy behavior. It affects every dialect, sync pools included. A lost connection
+that no reference cycle keeps alive, for example one whose transaction was already
+committed or rolled back, is still terminated as described above. SQLAlchemy 2.0 on
+Python 3.15 and Python 3.14 and earlier are not affected. Close connections explicitly.
+
 ### Async insert with PK retrieval
 
 CUBRID has no `RETURNING` clause. To obtain an auto-increment primary key after an

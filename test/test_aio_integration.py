@@ -1263,10 +1263,89 @@ class TestAsyncPycubridValueRoundTrips:
         assert tuple(row) == (value, len(value.encode("utf-8")))
 
 
+def _pool_reclaims_cyclic_garbage() -> bool:
+    """Whether SQLAlchemy's pool cleans up a fairy that dies inside a reference cycle.
+
+    CPython 3.15 clears weakrefs without callbacks only after the weakref callbacks of
+    the same collection have run (python/cpython#136189). SQLAlchemy 2.1 (2.1.0 to
+    2.1.4 checked) checks ``_ConnectionRecord.needs_gc`` (``fairy_ref() is None``)
+    inside the fairy's ``weakref.finalize`` callback, still sees the fairy and returns
+    early, so a fairy reclaimed by the cycle collector is never reset, terminated or
+    checked in. SQLAlchemy 2.0 compares the callback's own weakref instead and is not
+    affected. This probes the installed SQLAlchemy on this interpreter with a plain
+    sync pool, so the test runs fully again once SQLAlchemy handles it.
+    """
+    import gc
+
+    class _Conn:
+        def rollback(self) -> None:
+            pass
+
+        def close(self) -> None:
+            pass
+
+    probe = sa.pool.QueuePool(_Conn, pool_size=1, max_overflow=0)
+    fairy = probe.connect()
+    fairy._cycle = fairy  # only the cycle collector can reclaim it now
+    del fairy
+    gc.collect()
+    reclaimed = probe.checkedout() == 0
+    probe.dispose()
+    return reclaimed
+
+
 class TestAsyncTerminateLive872:
     """#872: garbage-collected and invalidated async connections close their socket."""
 
+    @staticmethod
+    def _assert_terminated(driver: Any, caught: list[Any], eng: AsyncEngine) -> None:
+        assert driver._writer is None
+        assert not driver._connected
+        messages = [f"{w.category.__name__}: {w.message}" for w in caught]
+        # The pool's garbage-collection cleanup ran and chose terminate.
+        assert [m for m in messages if "which will be terminated" in m], messages
+        assert not [m for m in messages if "cannot be safely terminated" in m], messages
+        assert not [m for m in messages if m.startswith("ResourceWarning")], messages
+        assert eng.pool.checkedout() == 0
+
     async def test_garbage_collected_connection_is_terminated(self) -> None:
+        # No transaction is left open, so nothing keeps the fairy in a reference
+        # cycle: it is freed as soon as the last reference goes, and SQLAlchemy's
+        # garbage-collection cleanup terminates it outside a greenlet on every
+        # supported Python, without depending on the cycle collector's ordering.
+        import gc
+        import warnings
+
+        eng = create_async_engine(_async_url(), echo=False)
+        try:
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter("always")
+
+                async def leak() -> Any:
+                    conn = await eng.connect()
+                    await conn.execute(sa.text("SELECT 1 FROM db_root"))
+                    await conn.commit()
+                    raw = await conn.get_raw_connection()
+                    return raw.driver_connection
+
+                gc.disable()
+                try:
+                    driver = await leak()
+                finally:
+                    gc.enable()
+                self._assert_terminated(driver, caught, eng)
+        finally:
+            await eng.dispose()
+
+    async def test_connection_collected_in_a_reference_cycle_is_terminated(self) -> None:
+        # A connection lost with its autobegun transaction open is cyclic garbage
+        # (Connection <-> RootTransaction), reclaimed only by the cycle collector.
+        if not _pool_reclaims_cyclic_garbage():
+            pytest.xfail(
+                "SQLAlchemy 2.1 on CPython 3.15 never cleans up a pooled connection "
+                "reclaimed by the cycle collector (python/cpython#136189), so the "
+                "dialect's terminate is never called"
+            )
         import gc
         import warnings
 
@@ -1282,15 +1361,8 @@ class TestAsyncTerminateLive872:
                     return raw.driver_connection
 
                 driver = await leak()
-                for _ in range(3):
-                    gc.collect()
-                    await asyncio.sleep(0.05)
-                assert driver._writer is None
-                assert not driver._connected
-            messages = [f"{w.category.__name__}: {w.message}" for w in caught]
-            assert not [m for m in messages if "cannot be safely terminated" in m], messages
-            assert not [m for m in messages if m.startswith("ResourceWarning")], messages
-            assert eng.pool.checkedout() == 0
+                gc.collect()
+                self._assert_terminated(driver, caught, eng)
         finally:
             await eng.dispose()
 

@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
+  SQLAlchemy 2.1 (2.1.0 to 2.1.4 checked) on CPython 3.15, the pool never cleans up a
+  pooled connection that Python's cycle collector reclaims, such as one lost while its
+  autobegun transaction is still open. CPython 3.15 clears weak references later
+  (python/cpython#136189), and SQLAlchemy 2.1's pool finalizer then returns early: the
+  connection is not terminated, its socket closes only through Python's stream finalizer
+  with a `ResourceWarning`, and the pool slot stays checked out. This affects every
+  dialect, sync pools included. SQLAlchemy 2.0 and Python 3.14 and earlier are not
+  affected, and the dialect's own terminate path is unchanged. The Connection Guide and
+  the Support Matrix describe the limitation.
+
+### Tests
+
+- **#872 garbage-collection tests no longer depend on the cycle collector** — the live
+  async terminate test and the closed-event-loop test now commit before losing the
+  connection, so the pool's cleanup runs when the last reference goes and terminates the
+  connection on every supported Python, including 3.15, and they assert that the cleanup
+  chose terminate. The reference-cycle case is a separate test that probes the installed
+  SQLAlchemy and is an expected failure where the pool cannot clean such a connection up
+  (SQLAlchemy 2.1 on CPython 3.15). Both failed on all four Python 3.15 cells of the full
+  compatibility matrix.
+
 ## [1.11.1] - 2026-10-14
 
 ### Upgrade notes

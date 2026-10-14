@@ -71,6 +71,11 @@ scope of the claim:
   CI; see [Driver Compatibility](DRIVER_COMPAT.md).
 - **Not run on 3.15:** the SQLAlchemy compliance lanes stay on Python 3.14/CUBRID
   11.4 and Python 3.11/CUBRID 10.2.
+- **Garbage-collected connections:** with SQLAlchemy 2.1, a pooled connection lost
+  inside a reference cycle (such as one with its transaction still open) is neither
+  terminated nor returned to the pool on 3.15. This is a SQLAlchemy 2.1/CPython 3.15
+  interaction that affects every dialect, and the integration test for it is an
+  expected failure there; see [Connection Guide](CONNECTION.md#async-connection).
 - **Environment:** Decimal-subclass parameters through pycubrid need the C
   `_decimal` module, which a Python built without `libmpdec` lacks; pycubrid then
   raises `ProgrammingError` for them, and plain `Decimal` values are unaffected.
