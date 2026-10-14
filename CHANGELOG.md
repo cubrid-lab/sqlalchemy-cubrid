@@ -243,6 +243,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- **Benchmark artifacts verify the measured dialect and carry their provenance in the report
+  (#903)** — before measuring, `scripts/bench_dialect_baseline.py` now checks the installed
+  `sqlalchemy_cubrid` against `--source-sha`. An install from a local git checkout must have
+  that commit's `*.py` files, and a VCS install must record that commit; a mismatch stops the
+  run. The report records the package SHA-256, the verification method, and the image
+  digest, host label and comparable group, which are now benchmark arguments
+  (`--server-image-digest`, `--host-label`, `--comparable-group`) instead of `export`
+  arguments. Contract `sqlalchemy-cubrid-benchmark-artifact/2`: `export` rejects an
+  unverified install such as a PyPI wheel; `validate` rejects an in-place edit of those
+  fields, because it rebuilds them from the hashed report; and `validate`/`compare
+  --source-repo DIR` recompute the package hash from git. `/1` manifests, including the
+  first pinned pair, are rejected and kept unchanged; the re-recorded pair is in
+  `benchmarks/2026-10-14-artifact-pair-v2`. Benchmark tooling only.
+
 - **Versioned benchmark artifact manifests for external regression tracking (#901)** —
   the new `scripts/bench_artifact.py` exports one complete
   `scripts/bench_dialect_baseline.py` report as a `sqlalchemy-cubrid-benchmark-artifact/1`
