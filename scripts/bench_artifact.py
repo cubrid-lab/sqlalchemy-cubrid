@@ -25,6 +25,11 @@ A comparison is valid only within one ``comparable_group`` and when everything
 except the dialect source SHA and version is identical; otherwise it reports
 ``not comparable`` with the reasons. The result is advisory, not a gate.
 
+``validate`` checks everything derived from the listed files. The operator's
+assertions are taken as given: the dialect source SHA (``--source-sha`` of the
+benchmark, not checked against the installed package), the image digest, the
+host label and the group. Keep artifacts in git for immutability (#903).
+
 Usage:
     python scripts/bench_artifact.py export raw/report.json --output manifest.json \\
         --server-image-digest sha256:<64 hex> --host <label> --comparable-group <name> \\
@@ -320,6 +325,11 @@ def _build_manifest(
         f"report holds {len(report.get('trials') or [])} trials, args say {trials}",
     )
     _require(args.get("rows") == FETCH_ROWS, f"rows {args.get('rows')!r}, expected {FETCH_ROWS}")
+    batch = args.get("batch")
+    _require(
+        isinstance(batch, int) and not isinstance(batch, bool) and batch > 0,
+        f"batch {batch!r} is not a positive integer",
+    )
     summary = report.get("summary")
     _require(isinstance(summary, dict), "report has no summary")
 
@@ -343,7 +353,7 @@ def _build_manifest(
         )
         fields = dict(kind)
         if fields["rows_per_call"] is None:
-            fields["rows_per_call"] = args.get("batch")
+            fields["rows_per_call"] = batch
         metrics.append(
             {
                 "id": mid,

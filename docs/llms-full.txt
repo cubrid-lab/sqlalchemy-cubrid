@@ -5092,6 +5092,10 @@ requires it, and no threshold fails a pull request.
   image digest, a host label and a comparable-group name.
 - `validate` checks a manifest. It re-hashes the files it lists and rebuilds the
   manifest from them, so an edited, corrupt or mixed-revision input fails.
+  The operator's assertions are taken as given: the dialect source SHA (the
+  benchmark's `--source-sha`, not checked against the installed package), the
+  image digest, the host label and the group. An in-place edit of those fields
+  still passes, so keep artifacts in git; verifying them is tracked in #903.
 - `compare` reports per-metric medians and ratios for a baseline and a candidate.
   It does so only when they share a group and differ in nothing but the dialect
   source SHA and version; otherwise it prints `not comparable` with the reasons.

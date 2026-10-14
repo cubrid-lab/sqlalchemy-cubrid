@@ -254,7 +254,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   literal FC20, opt-in FC21 and Core insertmanyvalues apart (CUBRIDdb reports name that
   driver's per-row path). Missing, corrupt or
   mixed-revision inputs are rejected, and any difference other than the dialect makes a
-  comparison `not comparable`. The baseline script now records its SHA-256, the connection target, `pool_pre_ping`,
+  comparison `not comparable`. The source SHA, image digest, host label and group are taken
+  as the operator supplies them; verifying them is tracked in #903. The baseline script now records its SHA-256, the connection target, `pool_pre_ping`,
   autocommit, the insertmanyvalues settings and a completion status. A pinned pair (v1.11.0
   against `main`, CUBRID 11.4) is in `benchmarks/2026-10-14-artifact-pair`; the #830 archives
   are unchanged. Benchmark tooling only; no dialect change and no CI gate.
