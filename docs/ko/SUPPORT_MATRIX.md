@@ -146,7 +146,7 @@ wheel/sdist의 새 환경 설치를 확인합니다. 지원 범위:
 | `GROUP_CONCAT` | ✅ | |
 | `TRUNCATE TABLE` | ✅ | 둘러싼 트랜잭션과 함께 커밋 |
 | `FOR UPDATE` | ✅ | `OF` 절 포함 |
-| 재귀 CTE | ✅ | `WITH RECURSIVE` (CUBRID 11.x+) |
+| 재귀 CTE | ✅ | `WITH RECURSIVE` (CUBRID 10.2, 11.0, 11.2, 11.4에서 확인) |
 | 윈도우 함수 | ✅ | ROW_NUMBER, RANK, LAG, LEAD 등 |
 | 인덱스 힌트 | ✅ | SA `with_hint()` / `suffix_with()`를 통해 |
 

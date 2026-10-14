@@ -146,7 +146,7 @@ scope of the claim:
 | `GROUP_CONCAT` | ✅ | |
 | `TRUNCATE TABLE` | ✅ | Committed with the enclosing transaction |
 | `FOR UPDATE` | ✅ | Including `OF` clause |
-| Recursive CTE | ✅ | `WITH RECURSIVE` (CUBRID 11.x+) |
+| Recursive CTE | ✅ | `WITH RECURSIVE` (verified on CUBRID 10.2, 11.0, 11.2 and 11.4) |
 | Window functions | ✅ | ROW_NUMBER, RANK, LAG, LEAD, etc. |
 | Index hints | ✅ | Via SA `with_hint()` / `suffix_with()` |
 
