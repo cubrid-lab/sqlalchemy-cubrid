@@ -9,7 +9,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Protocol, cast
+import itertools
+from typing import Any, Iterable, Iterator, Protocol, cast
 
 from sqlalchemy.exc import CompileError
 from sqlalchemy.schema import CreateIndex
@@ -71,6 +72,12 @@ class _BaseDDLCompiler(Protocol):
         include_table_schema: bool = True,
         **kw: Any,
     ) -> str: ...
+
+
+def _de_clone(elements: Iterable[Any]) -> Iterator[Any]:
+    """The original of each FROM object, as SQLAlchemy's join linting uses."""
+    for element in elements:
+        yield element._de_clone()
 
 
 class CubridCompiler(compiler.SQLCompiler):
@@ -200,13 +207,21 @@ class CubridCompiler(compiler.SQLCompiler):
         # https://www.cubrid.org/manual/en/11.0/sql/query/select.html#join-query
         if getattr(join, "full", False):
             raise CompileError("CUBRID does not support FULL OUTER JOIN")
+        if from_linter:
+            # Record the join edges like the base class, so SQLAlchemy's
+            # cartesian-product warning sees joined FROM items (#870).
+            from_linter.edges.update(
+                itertools.product(
+                    _de_clone(join.left._from_objects), _de_clone(join.right._from_objects)
+                )
+            )
         return "".join(
             (
-                self.process(join.left, asfrom=True, **kwargs),
+                self.process(join.left, asfrom=True, from_linter=from_linter, **kwargs),
                 (join.isouter and " LEFT OUTER JOIN " or " INNER JOIN "),
-                self.process(join.right, asfrom=True, **kwargs),
+                self.process(join.right, asfrom=True, from_linter=from_linter, **kwargs),
                 " ON ",
-                self.process(join.onclause, **kwargs),
+                self.process(join.onclause, from_linter=from_linter, **kwargs),
             )
         )
 
@@ -560,18 +575,34 @@ class CubridCompiler(compiler.SQLCompiler):
 
         target_columns = getattr(target, "c", None)
 
-        def _resolve_target_column(column_key: Any) -> Any | None:
+        def _resolve_target_column(column_key: Any, *, by_name: bool = False) -> Any | None:
             if isinstance(column_key, str):
                 if target_columns is not None and column_key in target_columns:
                     return target_columns[column_key]
                 return None
             if hasattr(column_key, "name"):
                 name = column_key.name
-                if target_columns is not None and name in target_columns:
-                    return target_columns[name]
-                if target_columns is not None:
+                if target_columns is None:
+                    return column_key
+                owner = getattr(column_key, "table", None)
+                if not by_name and owner is not None and hasattr(target, "corresponding_column"):
+                    # A column bound to a table must come from the target (or
+                    # an alias of it), not just share a name with one of its
+                    # columns: source.c.name is not target.c.name (#847).
+                    owned = target.corresponding_column(column_key)
+                    if owned is not None:
+                        return owned
+                    if name in target_columns:
+                        owner_name = getattr(owner, "name", None) or repr(owner)
+                        raise exc.CompileError(
+                            f"MERGE: assignment key column '{name}' belongs to "
+                            f"'{owner_name}', not the MERGE target; use the target's "
+                            f"column or the string '{name}'"
+                        )
                     raise exc.CompileError(f"MERGE: column '{name}' not found in target table")
-                return column_key
+                if name in target_columns:
+                    return target_columns[name]
+                raise exc.CompileError(f"MERGE: column '{name}' not found in target table")
             return None
 
         def _render_column_name(column_key: Any, resolved: Any | None = None) -> str:
@@ -643,8 +674,12 @@ class CubridCompiler(compiler.SQLCompiler):
 
             rendered_columns = []
             rendered_values = []
+            # The column-list shorthand, when_not_matched_then_insert([src.c.a, ...]),
+            # inserts source columns into the same-named target columns, so its keys
+            # are matched by name on purpose (#847).
+            by_name = bool(when_not_matched.get("by_name"))
             for column_key, value in zip(insert_columns, insert_values):
-                target_column = _resolve_target_column(column_key)
+                target_column = _resolve_target_column(column_key, by_name=by_name)
                 if target_column is None and isinstance(column_key, str):
                     raise exc.CompileError(
                         f"MERGE WHEN NOT MATCHED: column '{column_key}' not found in target table"
@@ -1021,9 +1056,6 @@ class CubridDDLCompiler(compiler.DDLCompiler):
 
 class CubridTypeCompiler(compiler.GenericTypeCompiler):
     """TypeCompiler for CUBRID data types."""
-
-    def _get(self, key: str, type_: Any, kw: dict[str, Any]) -> Any:
-        return kw.get(key, getattr(type_, key, None))
 
     def visit_BOOLEAN(self, type_: Any, **kw: Any) -> str:
         # CUBRID has no native BOOLEAN; map to SMALLINT.

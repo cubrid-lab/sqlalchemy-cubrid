@@ -3138,3 +3138,16 @@ class TestIndexShapes869:
         from sqlalchemy_cubrid.dialect import _strip_table_qualifier
 
         assert _strip_table_qualifier(sql, "t") == expected
+
+
+class TestShowStatementColons870:
+    """#870: a ``:name`` inside a quoted table name is not a bind parameter."""
+
+    @pytest.mark.parametrize("name", ["x :y", "w (:z)", "a::b"])
+    def test_show_statement_keeps_colons(self, name):
+        from sqlalchemy_cubrid.dialect import _show_statement
+
+        quoted = CubridDialect().identifier_preparer.quote_identifier(name)
+        compiled = _show_statement(f"SHOW COLUMNS IN {quoted}").compile(dialect=CubridDialect())
+        assert compiled.params == {}
+        assert str(compiled) == f"SHOW COLUMNS IN {quoted}"

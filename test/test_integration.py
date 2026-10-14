@@ -4018,3 +4018,362 @@ class TestIndexShapes869:
         for changed in ({"where": 4}, {"length": 6}, {"desc": False}):
             kinds = sorted(d[0] for d in diff(self._model(**changed)))
             assert kinds == ["add_index", "remove_index"], changed
+
+
+class TestColonNamesAndCollectionClasses870:
+    """#870: reflect names containing ``:name``; create ``SET(Integer)`` columns."""
+
+    PARENT = f"p870 :y {_TABLE_SUFFIX}"
+    CHILD = f"x :y {_TABLE_SUFFIX}"
+    VIEW = f"w (:z) {_TABLE_SUFFIX}"
+
+    @pytest.fixture
+    def colon_tables(self, engine):
+        meta = MetaData()
+        parent = Table(self.PARENT, meta, Column("id", Integer, primary_key=True))
+        child = Table(
+            self.CHILD,
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("pid", Integer, sa.ForeignKey(parent.c.id)),
+            Column("code", String(10), unique=True),
+            Column("tags", cubrid_set_of_integer()),
+        )
+        sa.Index(f"ix870_{_TABLE_SUFFIX}", child.c.code.desc())._set_parent(child)
+        preparer = engine.dialect.identifier_preparer
+        view = preparer.quote_identifier(self.VIEW)
+
+        def drop():
+            with engine.begin() as conn:
+                conn.exec_driver_sql(f"DROP VIEW IF EXISTS {view}")
+            meta.drop_all(engine)
+
+        drop()
+        try:
+            meta.create_all(engine)
+            with engine.begin() as conn:
+                conn.exec_driver_sql(
+                    f"CREATE VIEW {view} AS SELECT id FROM {preparer.quote_identifier(self.CHILD)}"
+                )
+            yield
+        finally:
+            drop()
+
+    def test_reflection_of_colon_names(self, engine, colon_tables):
+        with engine.connect() as conn:
+            insp = inspect(conn)
+            assert [c["name"] for c in insp.get_columns(self.CHILD)] == [
+                "id",
+                "pid",
+                "code",
+                "tags",
+            ]
+            indexes = {i["name"]: i for i in insp.get_indexes(self.CHILD)}
+            assert indexes[f"ix870_{_TABLE_SUFFIX}"]["column_sorting"] == {"code": ("desc",)}
+            assert sorted(i["column_names"] for i in indexes.values()) == [["code"], ["code"]]
+            assert [u["column_names"] for u in insp.get_unique_constraints(self.CHILD)] == [
+                ["code"]
+            ]
+            assert [fk["referred_table"] for fk in insp.get_foreign_keys(self.CHILD)] == [
+                self.PARENT
+            ]
+            assert insp.get_pk_constraint(self.CHILD)["constrained_columns"] == ["id"]
+            assert "SELECT" in insp.get_view_definition(self.VIEW).upper()
+            assert [c["name"] for c in insp.get_columns(self.VIEW)] == ["id"]
+        reflected = MetaData()
+        reflected.reflect(engine, only=[self.CHILD, self.PARENT])
+        assert set(reflected.tables) == {self.CHILD, self.PARENT}
+        member = reflected.tables[self.CHILD].c.tags.type._ddl_values
+        assert [type(m).__name__ for m in member] == ["INTEGER"]
+
+
+def cubrid_set_of_integer():
+    from sqlalchemy_cubrid import types as cubrid_types
+
+    return cubrid_types.SET(Integer)
+
+
+class TestOnDuplicateKeyUpdateCaching871:
+    """#871: cached ON DUPLICATE KEY UPDATE statements apply their own values."""
+
+    def test_cached_statements_use_fresh_values(self, engine):
+        import warnings
+
+        from sqlalchemy_cubrid.dml import insert
+
+        meta = MetaData()
+        tbl = Table(
+            f"odku871_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("name", String(10)),
+            Column("hits", Integer),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        try:
+            with engine.begin() as conn:
+                conn.execute(tbl.insert(), [{"id": 1, "name": "x", "hits": 0}])
+            cache_hits = []
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", sa.exc.SAWarning)
+                for name, step in (("b", 1), ("c", 2), ("d", 3)):
+                    stmt = insert(tbl).values(id=1, name="z", hits=0)
+                    stmt = stmt.on_duplicate_key_update(name=name, hits=tbl.c.hits + step)
+                    with engine.begin() as conn:
+                        result = conn.execute(stmt)
+                        cache_hits.append(result.context.cache_hit)
+                        row = conn.execute(sa.select(tbl.c.name, tbl.c.hits)).one()
+                    assert tuple(row) == (name, {"b": 1, "c": 3, "d": 6}[name])
+                for name in ("p", "q"):
+                    stmt = insert(tbl).values(id=1, name=name, hits=0)
+                    with engine.begin() as conn:
+                        conn.execute(stmt.on_duplicate_key_update(name=stmt.inserted.name))
+                        assert conn.execute(sa.select(tbl.c.name)).scalar() == name
+            assert cache_hits[0] != cache_hits[1]
+            assert cache_hits[1] == cache_hits[2]
+        finally:
+            meta.drop_all(engine)
+
+
+class TestAsyncTerminateClosedLoop872:
+    """#872: an async connection collected after its event loop closed is retired."""
+
+    def test_connection_collected_after_its_loop_closed(self):
+        pytest.importorskip("pycubrid.aio")
+        import asyncio
+        import gc
+        import os
+        import warnings
+
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from scripts.integration_urls import async_url
+
+        holder: dict[str, object] = {}
+
+        async def leak() -> None:
+            eng = create_async_engine(async_url(_cubrid_url(), os.environ.get("CUBRID_TEST_AURL")))
+            holder["engine"] = eng
+            conn = await eng.connect()
+            await conn.execute(sa.text("SELECT 1 FROM db_root"))
+            raw = await conn.get_raw_connection()
+            holder["driver"] = raw.driver_connection
+            holder["sock"] = raw.driver_connection._writer.transport.get_extra_info("socket")
+            holder["conn"] = conn
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            asyncio.run(leak())  # closes the loop that owns the transport
+            del holder["conn"]
+            gc.collect()
+            gc.collect()
+        driver = holder["driver"]
+        assert getattr(driver, "_connected") is False
+        assert getattr(driver, "_writer") is None
+        assert getattr(holder["sock"], "fileno")() == -1  # the socket is closed
+        messages = [f"{w.category.__name__}: {w.message}" for w in caught]
+        assert not [m for m in messages if m.startswith("ResourceWarning")], messages
+        assert not [m for m in messages if "cannot be safely terminated" in m], messages
+
+
+class TestIsolatedCTE849:
+    """#849: the scenarios of SQLAlchemy's CTETest on a fresh, FK-safe fixture.
+
+    The compliance-suite nodes stay strict xfails in test/known_failures.txt:
+    their harness empties the self-referencing table with one DELETE, which
+    CUBRID rejects per row (-924), so later setups fail. Here every test gets
+    new tables that are dropped afterwards, so each result is real evidence.
+    """
+
+    ROWS = [
+        {"id": 1, "data": "d1", "parent_id": None},
+        {"id": 2, "data": "d2", "parent_id": 1},
+        {"id": 3, "data": "d3", "parent_id": 1},
+        {"id": 4, "data": "d4", "parent_id": 3},
+        {"id": 5, "data": "d5", "parent_id": 3},
+    ]
+
+    @pytest.fixture
+    def tables(self, engine):
+        meta = MetaData()
+        some = Table(
+            f"cte849_some_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("data", String(50)),
+            Column("parent_id", sa.ForeignKey(f"cte849_some_{_TABLE_SUFFIX}.id")),
+        )
+        other = Table(
+            f"cte849_other_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("data", String(50)),
+            Column("parent_id", Integer),
+        )
+        meta.drop_all(engine)
+        try:
+            meta.create_all(engine)
+            with engine.begin() as conn:
+                conn.execute(some.insert(), self.ROWS)
+            yield some, other
+        finally:
+            meta.drop_all(engine)
+
+    @staticmethod
+    def _cte(some):
+        return sa.select(some).where(some.c.data.in_(["d2", "d3", "d4"])).cte("some_cte")
+
+    @staticmethod
+    def _copy(conn, some, other):
+        conn.execute(other.insert().from_select(["id", "data", "parent_id"], sa.select(some)))
+
+    def test_select_nonrecursive(self, engine, tables):
+        some, _ = tables
+        cte = self._cte(some)
+        with engine.connect() as conn:
+            stmt = sa.select(cte.c.data).where(cte.c.data.in_(["d4", "d5"]))
+            assert conn.execute(stmt).fetchall() == [("d4",)]
+
+    def test_select_recursive(self, engine, tables):
+        some, _ = tables
+        cte = (
+            sa.select(some)
+            .where(some.c.data.in_(["d2", "d3", "d4"]))
+            .cte("some_cte", recursive=True)
+        )
+        cte_alias = cte.alias("c1")
+        parent = some.alias()
+        cte = cte.union_all(sa.select(parent).where(parent.c.id == cte_alias.c.parent_id))
+        stmt = sa.select(cte.c.data).where(cte.c.data != "d2").order_by(cte.c.data.desc())
+        with engine.connect() as conn:
+            assert conn.execute(stmt).fetchall() == [
+                ("d4",),
+                ("d3",),
+                ("d3",),
+                ("d1",),
+                ("d1",),
+                ("d1",),
+            ]
+
+    def test_bound_parameters_inside_the_cte(self, engine, tables):
+        some, _ = tables
+        cte = (
+            sa.select(some)
+            .where(some.c.data.in_(sa.bindparam("names", expanding=True)))
+            .cte("some_cte")
+        )
+        stmt = sa.select(cte.c.id).where(cte.c.parent_id == sa.bindparam("parent"))
+        with engine.connect() as conn:
+            rows = conn.execute(
+                stmt.order_by(cte.c.id), {"names": ["d2", "d3", "d4", "d5"], "parent": 3}
+            )
+            assert rows.fetchall() == [(4,), (5,)]
+
+    def test_insert_from_select(self, engine, tables):
+        # #897: rendered as INSERT INTO t (...) WITH ... SELECT, the only order
+        # CUBRID accepts.
+        some, other = tables
+        stmt = other.insert().from_select(["id", "data", "parent_id"], sa.select(self._cte(some)))
+        with engine.begin() as conn:
+            conn.execute(stmt)
+        with engine.connect() as conn:
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (2, "d2", 1),
+                (3, "d3", 1),
+                (4, "d4", 3),
+            ]
+
+    def test_insert_from_recursive_select(self, engine, tables):
+        _, other = tables
+        base = sa.select(sa.literal(10).label("id"), sa.literal("r").label("data")).cte(
+            "walk", recursive=True
+        )
+        walk = base.union_all(sa.select(base.c.id + 1, base.c.data).where(base.c.id < 12))
+        stmt = other.insert().from_select(["id", "data"], sa.select(walk.c.id, walk.c.data))
+        with engine.begin() as conn:
+            conn.execute(stmt)
+        with engine.connect() as conn:
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (10, "r", None),
+                (11, "r", None),
+                (12, "r", None),
+            ]
+
+    def test_replace_from_select(self, engine, tables):
+        # #897: REPLACE takes the same INSERT INTO t (...) WITH ... SELECT shape.
+        from sqlalchemy_cubrid import replace
+
+        some, other = tables
+        with engine.begin() as conn:
+            conn.execute(other.insert(), [{"id": 2, "data": "old", "parent_id": None}])
+            conn.execute(
+                replace(other).from_select(["id", "data", "parent_id"], sa.select(self._cte(some)))
+            )
+        with engine.connect() as conn:
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (2, "d2", 1),
+                (3, "d3", 1),
+                (4, "d4", 3),
+            ]
+
+    def test_update_from_is_a_documented_limit(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            stmt = other.update().values(parent_id=5).where(other.c.data == cte.c.data)
+            with pytest.raises(sa.exc.CompileError, match="does not support UPDATE ... FROM"):
+                conn.execute(stmt)
+
+    def test_delete_from_is_a_documented_limit(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            with pytest.raises(NotImplementedError, match="multiple-table criteria"):
+                conn.execute(other.delete().where(other.c.data == cte.c.data))
+
+    def test_update_with_a_cte_scalar_subquery(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            subquery = sa.select(cte.c.data).where(cte.c.id == other.c.id).scalar_subquery()
+            conn.execute(other.update().values(parent_id=5).where(other.c.data == subquery))
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (1, "d1", None),
+                (2, "d2", 5),
+                (3, "d3", 5),
+                (4, "d4", 5),
+                (5, "d5", 3),
+            ]
+
+    def test_delete_with_a_cte_scalar_subquery(self, engine, tables):
+        some, other = tables
+        cte = self._cte(some)
+        with engine.begin() as conn:
+            self._copy(conn, some, other)
+            subquery = sa.select(cte.c.data).where(cte.c.id == other.c.id).scalar_subquery()
+            conn.execute(other.delete().where(other.c.data == subquery))
+            assert conn.execute(sa.select(other).order_by(other.c.id)).fetchall() == [
+                (1, "d1", None),
+                (5, "d5", 3),
+            ]
+
+    @pytest.mark.parametrize("literal_binds", [True, False])
+    @pytest.mark.parametrize("values_named", [True, False])
+    @pytest.mark.parametrize("cte_named", [True, False])
+    def test_values_named_via_cte(self, engine, literal_binds, values_named, cte_named):
+        cte = (
+            sa.values(
+                sa.column("col1", String),
+                sa.column("col2", Integer),
+                literal_binds=literal_binds,
+                name="some name" if values_named else None,
+            )
+            .data([("a", 2), ("b", 3)])
+            .cte("cte1" if cte_named else None)
+        )
+        with engine.connect() as conn:
+            assert conn.execute(sa.select(cte)).all() == [("a", 2), ("b", 3)]

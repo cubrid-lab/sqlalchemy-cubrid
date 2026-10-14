@@ -7,8 +7,10 @@
 
 from __future__ import annotations
 
+import contextlib
+import logging
 from importlib import import_module
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,
@@ -27,6 +29,27 @@ from sqlalchemy.util.concurrency import await_only
 
 from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect, PyCubridExecutionContext
 
+# AsyncAdapt_terminate (terminate support for garbage-collected connections)
+# arrived in SQLAlchemy 2.0.44; before it the pool keeps its "cannot be safely
+# terminated" fallback.
+if TYPE_CHECKING:
+    from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate as _TerminateMixin
+
+    _HAS_TERMINATE = True
+else:
+    try:
+        from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate as _TerminateMixin
+
+        _HAS_TERMINATE = True
+    except ImportError:  # SQLAlchemy 2.0.0 to 2.0.43
+
+        class _TerminateMixin:
+            """Empty stand-in: ``object`` itself would give an inconsistent MRO."""
+
+        _HAS_TERMINATE = False
+
+_LOGGER = logging.getLogger(__name__)
+
 
 class AsyncAdapt_pycubrid_cursor(AsyncAdapt_dbapi_cursor):
     _awaitable_cursor_close: bool = True
@@ -38,7 +61,7 @@ class AsyncAdapt_pycubrid_cursor(AsyncAdapt_dbapi_cursor):
         pass
 
 
-class AsyncAdapt_pycubrid_connection(AsyncAdapt_dbapi_connection):
+class AsyncAdapt_pycubrid_connection(_TerminateMixin, AsyncAdapt_dbapi_connection):
     _cursor_cls = AsyncAdapt_pycubrid_cursor
     # SA 2.0 exposed ``await_`` on AsyncAdapt_dbapi_connection; SA 2.1 dropped
     # it in favour of the module-level helper. Redeclare so ``self.await_(...)``
@@ -55,6 +78,34 @@ class AsyncAdapt_pycubrid_connection(AsyncAdapt_dbapi_connection):
 
     def ping(self, reconnect: bool = True) -> bool:
         return bool(self.await_(self._connection.ping(reconnect)))
+
+    async def _terminate_graceful_close(self) -> None:
+        # Invalidation inside a greenlet: the normal CLOSE_DATABASE shutdown.
+        await self._connection.close()
+
+    def _terminate_force_close(self) -> None:
+        # Garbage-collection cleanup outside a greenlet (#872): nothing can be
+        # awaited, so close the socket synchronously and mark the session
+        # disconnected, which is what pycubrid's own failure path does.
+        driver = self._connection
+        transport = getattr(getattr(driver, "_writer", None), "transport", None)
+        try:
+            driver._drop_connection()
+            return
+        except (OSError, RuntimeError):
+            _LOGGER.debug("Suppressed error force-closing a pycubrid.aio connection", exc_info=True)
+        # The event loop that owned the transport is closed: StreamWriter.close()
+        # could not schedule connection_lost, so _drop_connection() stopped
+        # before retiring the session. Close the socket and retire it here.
+        sock = getattr(transport, "_sock", None)
+        if transport is not None and sock is not None:
+            with contextlib.suppress(OSError):
+                sock.close()
+            transport._sock = None
+        driver._connected = False
+        invalidate = getattr(driver, "_invalidate_query_handles", None)
+        if invalidate is not None:
+            invalidate()
 
 
 # PEP 249 module-level names copied from the sync ``pycubrid`` module onto the
@@ -117,6 +168,7 @@ class PyCubridAsyncDialect(PyCubridDialect):
 
     driver = "aiopycubrid"
     is_async = True
+    has_terminate = _HAS_TERMINATE
     supports_statement_cache = True
     execution_ctx_cls = PyCubridExecutionContext
 
@@ -129,6 +181,10 @@ class PyCubridAsyncDialect(PyCubridDialect):
         aio_module = import_module("pycubrid.aio")
 
         return cast(DBAPIModule, AsyncAdapt_pycubrid_dbapi(aio_module))
+
+    def do_terminate(self, dbapi_connection: Any) -> None:
+        """Terminate a connection the pool cannot close normally (#872)."""
+        dbapi_connection.terminate()
 
     def get_driver_connection(self, connection: Any) -> Any:
         # ``connection`` is the AsyncAdapt adapter; return the ``pycubrid.aio``

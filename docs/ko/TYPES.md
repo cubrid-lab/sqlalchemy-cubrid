@@ -213,6 +213,8 @@ CREATE TABLE tagged_items (
 | `SET` 조회 | `?decode_collections=true`이면 `frozenset`, 없으면 원시 `bytes` | 같음 | `str`의 `set` |
 | `MULTISET` / `SEQUENCE` 조회 | `?decode_collections=true`이면 `list`, 없으면 원시 `bytes` | 같음 | `str`의 `list` |
 
+멤버 타입은 클래스나 인스턴스로 줄 수 있습니다: `SET(Integer)`와 `SET(Integer())`는 같은 `SET(INTEGER)` DDL을 냅니다 (#870).
+
 ```python
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
 from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET

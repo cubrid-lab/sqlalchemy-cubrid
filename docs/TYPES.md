@@ -222,6 +222,8 @@ never sorts it for you. What happens next depends on the driver:
 | Reading `SET` | `frozenset` with `?decode_collections=true`, raw `bytes` without it | Same | `set` of `str` |
 | Reading `MULTISET` / `SEQUENCE` | `list` with `?decode_collections=true`, raw `bytes` without it | Same | `list` of `str` |
 
+A member type may be given as a class or an instance: `SET(Integer)` and `SET(Integer())` render the same `SET(INTEGER)` DDL (#870).
+
 ```python
 from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine, select
 from sqlalchemy_cubrid import MULTISET, SEQUENCE, SET

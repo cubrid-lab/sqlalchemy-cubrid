@@ -430,3 +430,36 @@ def test_live_own_table_as_non_dba(live_engine: sa.Engine, live_users: Any) -> N
     result, statements = _reflect_unique(user_engine, "ucf_own_pk")
     assert result == []
     assert len(statements) == 2, statements
+
+
+SECOND_UNIQUE = ("uq_t_email", "YES", "NO", "NO")
+
+
+@pytest.mark.parametrize(
+    ("indexes", "show_indexes", "missing", "resolved"),
+    [
+        # The catalog lists a unique index that SHOW INDEXES does not return.
+        ((PK, UNIQUE), (("t", 0, "pk_t_id", 1, "id"),), "'uq_t_code'", "none"),
+        # Two unique indexes, only one of them resolved.
+        (
+            (PK, UNIQUE, SECOND_UNIQUE),
+            (("t", 0, "pk_t_id", 1, "id"), ("t", 0, "uq_t_code", 1, "code")),
+            "'uq_t_email'",
+            "'uq_t_code'",
+        ),
+    ],
+)
+def test_unresolved_catalog_unique_index_fails_closed(
+    dialect: CubridDialect, indexes, show_indexes, missing, resolved
+) -> None:
+    """#848: an incomplete catalog/SHOW INDEXES reconciliation is an error, not []."""
+    connection = _Connection(indexes, show_indexes=show_indexes)
+
+    with pytest.raises(sa.exc.InvalidRequestError) as info:
+        dialect.get_unique_constraints(connection, "t")
+
+    message = str(info.value)
+    assert "catalog mismatch for table 't'" in message
+    assert f"unique index(es) {missing}" in message
+    assert f"(resolved: {resolved})" in message
+    assert connection.count("SHOW CREATE TABLE") == 0

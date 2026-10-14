@@ -69,6 +69,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_sqlalchemy_range.py",
         "test_support_claims.py",
         "test_verify_dist.py",
+        "test_bench_artifact.py",
     }
 )
 _missing_repo_modules = sorted(

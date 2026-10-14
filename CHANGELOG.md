@@ -7,7 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **A MERGE assignment key that is a column of another table now raises `CompileError`
+  (#847)**, also when the target has a column of the same name. Such a key was silently
+  read as the target's column, as the MERGE documentation then described. Use the
+  target's column (`target.c.name`) or the string `"name"`; the column-list shorthand
+  `when_not_matched_then_insert([source.c.id, ...])` is unchanged.
+
+### Changed
+
+- **MERGE assignment keys must belong to the target (#847)** — `visit_merge()` resolved a
+  Column key by name, so `source.c.name` used as an UPDATE or INSERT key in
+  `when_matched_then_update()` / `when_not_matched_then_insert()` mappings or pairs was
+  accepted as `target.c.name`. A bound column key now has to have lineage to the target
+  (the target's own column or one of an alias of it); any other table's column raises
+  `CompileError` naming that table. String keys, unbound `sa.column()` keys and the
+  column-list shorthand still resolve by name, and the SQL and bind order of legitimate
+  statements are unchanged.
+
+### Deprecated
+
+- **Unused `display_width` and `values` type arguments (#870)** — `SMALLINT` /
+  `BIGINT` accept `display_width` and `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` /
+  `STRING` accept `values`, but neither ever changed the DDL or any behavior. Passing
+  them now emits a `DeprecationWarning`; they are still accepted and ignored, and will
+  be removed in a future major release. The unused private `CubridTypeCompiler._get`
+  helper is gone.
+
 ### Fixed
+
+- **`INSERT` / `REPLACE ... FROM SELECT` over a CTE renders the `WITH` clause after the
+  column list (#897)** — SQLAlchemy put the CTE first (`WITH c AS (...) INSERT INTO t
+  (...) SELECT ...`), which CUBRID 10.2 and 11.4 reject with a -493 syntax error, so
+  `insert(t).from_select([...], select(cte))` and the dialect's `replace()` equivalent
+  always failed. The dialect now sets `cte_follows_insert`, rendering `INSERT INTO t
+  (...) WITH c AS (...) SELECT ...`, the order CUBRID accepts; recursive CTEs and bind
+  order are unchanged. `TestIsolatedCTE849::test_insert_from_select` is no longer a
+  strict xfail, and live INSERT, recursive INSERT and REPLACE cases pass on CUBRID 10.2
+  and 11.4.
+
+- **Unique-constraint reflection fails closed on a catalog mismatch (#848)** —
+  `get_unique_constraints()` took the unique index names from `db_index` and their
+  columns from `SHOW INDEXES`, and returned only the names `SHOW INDEXES` resolved. A
+  unique index the catalog listed but `SHOW INDEXES` omitted was therefore reported as
+  absent, which Alembic autogenerate would read as a constraint to create. Such a
+  mismatch now raises `InvalidRequestError` naming the unresolved and resolved indexes.
+  A verified-empty catalog still returns `[]`. No such mismatch has been seen on a live
+  CUBRID server; this hardens the reflection invariant.
+
+- **Garbage-collected async connections are terminated (#872)** — the
+  `cubrid+aiopycubrid://` adapter had no terminate support, so when a checked-out
+  connection was garbage-collected the pool logged "cannot be safely terminated" and
+  the unclosed stream raised a `ResourceWarning`. The adapter now uses SQLAlchemy's
+  `AsyncAdapt_terminate` (SQLAlchemy 2.0.44+; earlier 2.0 releases keep the old
+  behavior): the garbage-collection path closes the socket synchronously and retires the
+  pycubrid session, also when the connection's event loop has already closed, an
+  invalidated connection closes with `CLOSE_DATABASE`, and the dialect sets
+  `has_terminate`.
+
+- **`on_duplicate_key_update()` is cacheable (#871)** — `OnDuplicateClause` had no
+  `_traverse_internals`, so the first `INSERT ... ON DUPLICATE KEY UPDATE` emitted
+  SQLAlchemy's "will not make use of SQL compilation caching" `SAWarning` and every
+  such statement was compiled again on each execution. It now declares the column order
+  and the update values as cache-key elements (the traversal of SQLAlchemy 2.1's MySQL
+  construct), with the update values coerced to SQL expressions; a cached statement
+  binds each execution's own values, on SQLAlchemy 2.0 and 2.1.
+
+- **Reflection of names containing `:name`, collection type classes and join linting
+  (#870)** — the `SHOW COLUMNS` / `SHOW INDEXES` / `SHOW CREATE TABLE` / `SHOW CREATE
+  VIEW` statements were built with `text()`, so a table named `x :y` or `w (:z)` failed
+  with "A value is required for bind parameter 'y'"; colons are now escaped, and the
+  SQL sent is unchanged. `SET(Integer)` (a type class, which SQLAlchemy accepts
+  elsewhere) failed `create_all` with "_compiler_dispatch() missing ... 'visitor'";
+  collection member classes are now instantiated. `visit_join` dropped `from_linter`, so
+  SQLAlchemy reported a joined select as a cartesian product and missed a real one; the
+  join edges are now recorded as in the base compiler.
 
 - **Expression, descending, filtered and prefix indexes reflect and autogenerate (#869)** —
   `get_indexes()` reported `CREATE INDEX ix ON t (LOWER(a))` as `column_names: [None]`
@@ -103,6 +178,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The README and the documentation site show the CUBRID Lab repository icon (#886)** — the
+  English README and its Korean, Chinese, Hindi, German and Russian translations open with the
+  sqlalchemy-cubrid ORM icon, centered and without a caption, and the documentation site uses
+  it as its header logo and favicon. All of them load the SVG from one immutable
+  [cubrid-lab/brand](https://github.com/cubrid-lab/brand) commit.
+
 - **`ROADMAP.md` no longer presents shipped releases as plans (#833)** — the stale
   "Current Release Line — v1.8.x" heading is now "Current Focus", the Python 3.10
   retirement (shipped in 1.10.0) and Python 3.15 support (shipped in 1.11.0) moved
@@ -159,6 +240,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runner minutes for about 1.4 added to the release. `docs/CI_POLICY.md` records
   measured runner minutes after the #760 and #797 consolidation and the first
   grouped Dependabot run.
+
+### Tests
+
+- **Benchmark artifacts verify the measured dialect and carry their provenance in the report
+  (#903)** — before measuring, `scripts/bench_dialect_baseline.py` now checks the installed
+  `sqlalchemy_cubrid` against `--source-sha`. An install from a local git checkout must have
+  that commit's `*.py` files, and a VCS install must record that commit; a mismatch stops the
+  run. The report records the package SHA-256, the verification method, and the image
+  digest, host label and comparable group, which are now benchmark arguments
+  (`--server-image-digest`, `--host-label`, `--comparable-group`) instead of `export`
+  arguments. Contract `sqlalchemy-cubrid-benchmark-artifact/2`: `export` rejects an
+  unverified install such as a PyPI wheel; `validate` rejects an in-place edit of those
+  fields, because it rebuilds them from the hashed report; and `validate`/`compare
+  --source-repo DIR` recompute the package hash from git. `/1` manifests, including the
+  first pinned pair, are rejected and kept unchanged; the re-recorded pair is in
+  `benchmarks/2026-10-14-artifact-pair-v2`. Benchmark tooling only.
+
+- **Versioned benchmark artifact manifests for external regression tracking (#901)** —
+  the new `scripts/bench_artifact.py` exports one complete
+  `scripts/bench_dialect_baseline.py` report as a `sqlalchemy-cubrid-benchmark-artifact/1`
+  manifest, validates a manifest against the files it lists and compares a baseline with a
+  candidate. The manifest records the exact environment (dialect source SHA, SQLAlchemy 2.0
+  or 2.1, driver, CUBRID server and image digest, Python, host, connection target without
+  the password, pool and `pool_pre_ping`),
+  the workload identity, every trial value and an advisory metric set that keeps raw
+  literal FC20, opt-in FC21 and Core insertmanyvalues apart (CUBRIDdb reports name that
+  driver's per-row path). Missing, corrupt or
+  mixed-revision inputs are rejected, and any difference other than the dialect makes a
+  comparison `not comparable`. The source SHA, image digest, host label and group are taken
+  as the operator supplies them; verifying them is tracked in #903. The baseline script now records its SHA-256, the connection target, `pool_pre_ping`,
+  autocommit, the insertmanyvalues settings and a completion status. A pinned pair (v1.11.0
+  against `main`, CUBRID 11.4) is in `benchmarks/2026-10-14-artifact-pair`; the #830 archives
+  are unchanged. Benchmark tooling only; no dialect change and no CI gate.
+
+- **Isolated live CTE coverage (#849)** — the 14 SQLAlchemy `CTETest` compliance nodes
+  are strict xfails because their fixture cleanup fails on CUBRID's per-row foreign-key
+  check, so they supplied no behavior evidence. `TestIsolatedCTE849` replays their
+  scenarios on fresh FK-safe tables against CUBRID 10.2 to 11.4. SELECT, recursive
+  SELECT, bound parameters, UPDATE and DELETE with a CTE scalar subquery and every values-via-CTE
+  variant pass; UPDATE/DELETE ... FROM are asserted as the documented limits; INSERT
+  FROM SELECT over a CTE passes since #897. The ledger entries are kept, with a
+  pointer to this evidence.
 
 ## [1.11.0] - 2026-10-12
 

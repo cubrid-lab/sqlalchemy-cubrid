@@ -1,0 +1,418 @@
+{
+  "schema": "sqlalchemy-cubrid-benchmark-artifact/1",
+  "comparable_group": "devbox-cubrid114-py312-sa214-pycubrid1120-2026-10-14",
+  "environment": {
+    "dialect_source_sha": "3a0c2898b2954e59eb675ef89ab237d252434713",
+    "sqlalchemy_cubrid": "1.11.0",
+    "sqlalchemy": "2.1.4",
+    "driver": "pycubrid",
+    "driver_version": "1.12.0",
+    "pycubrid": "1.12.0",
+    "cubrid_server": "11.4.6.1963",
+    "cubrid_image_digest": "sha256:1248b77ad39888df9e064655937188ab99fe056ed7e35b57d06155a015dc1791",
+    "python": "3.12.13",
+    "implementation": "CPython",
+    "platform": "Linux-5.15.0-198-generic-x86_64-with-glibc2.35",
+    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz",
+    "host": "devbox",
+    "target": "cubrid+pycubrid://dba@localhost:34114/testdb",
+    "pool": "QueuePool",
+    "pool_pre_ping": false,
+    "autocommit": false,
+    "use_insertmanyvalues": true,
+    "insertmanyvalues_page_size": 1000
+  },
+  "workload": {
+    "script": "scripts/bench_dialect_baseline.py",
+    "script_sha256": "b5480c46bbf425295a74a5448b5da69bf3780d25262cae2691b656723d742528",
+    "table": "bench_dialect_baseline",
+    "args": {
+      "trials": 5,
+      "rows": 1000,
+      "iterations": 1000,
+      "fetch_rounds": 30,
+      "batch": 1000,
+      "batch_rounds": 5,
+      "reflect_rounds": 20,
+      "concurrency": [],
+      "concurrent_ops": 500,
+      "concurrent_writes": 50
+    }
+  },
+  "trials": 5,
+  "files": [
+    {
+      "path": "raw/bench_dialect_baseline.json",
+      "role": "raw",
+      "sha256": "3e9865396707300934f0224c07cdc2e68fae37681b50595dae1caceef2b449f2"
+    },
+    {
+      "path": "raw/bench_dialect_baseline.txt",
+      "role": "log",
+      "sha256": "7034f4c671ef4a029485e70a4f85ae6b7fa3ed251ac016e44473a10d14a9672f"
+    }
+  ],
+  "metrics": [
+    {
+      "id": "select_pk.raw",
+      "source": "summary.select_pk_us.raw",
+      "unit": "us",
+      "statistic": "median latency of one statement within a trial",
+      "rows_per_call": 1,
+      "commit": "none (read in an open transaction)",
+      "verified": "every returned row has the requested primary key",
+      "sql_shape": "raw cursor execute + fetchone",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        762.295,
+        3476.133,
+        540.8935,
+        545.665,
+        633.797
+      ],
+      "median": 633.797
+    },
+    {
+      "id": "select_pk.core_cached",
+      "source": "summary.select_pk_us.core_cached",
+      "unit": "us",
+      "statistic": "median latency of one statement within a trial",
+      "rows_per_call": 1,
+      "commit": "none (read in an open transaction)",
+      "verified": "every returned row has the requested primary key",
+      "sql_shape": "Core select() with the compiled cache",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        729.2745,
+        748.132,
+        762.1645,
+        877.476,
+        772.182
+      ],
+      "median": 762.1645
+    },
+    {
+      "id": "select_pk.core_uncached",
+      "source": "summary.select_pk_us.core_uncached",
+      "unit": "us",
+      "statistic": "median latency of one statement within a trial",
+      "rows_per_call": 1,
+      "commit": "none (read in an open transaction)",
+      "verified": "every returned row has the requested primary key",
+      "sql_shape": "Core select() with compiled_cache=None",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        997.505,
+        1007.439,
+        938.0535,
+        1028.3085,
+        977.487
+      ],
+      "median": 997.505
+    },
+    {
+      "id": "select_pk.orm",
+      "source": "summary.select_pk_us.orm",
+      "unit": "us",
+      "statistic": "median latency of one statement within a trial",
+      "rows_per_call": 1,
+      "commit": "none (read in an open transaction)",
+      "verified": "every returned row has the requested primary key",
+      "sql_shape": "ORM select(Item) scalar_one",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        864.94,
+        886.6335,
+        896.356,
+        805.2515,
+        978.2465
+      ],
+      "median": 886.6335
+    },
+    {
+      "id": "fetch_all.raw",
+      "source": "summary.fetch_all_us.raw",
+      "unit": "us",
+      "statistic": "median latency of one fetch within a trial",
+      "rows_per_call": 1000,
+      "commit": "none (read in an open transaction)",
+      "verified": "every fetch returns all seeded rows",
+      "sql_shape": "raw cursor fetchall()",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        3886.0915,
+        3658.96,
+        3708.4265,
+        3759.41,
+        4075.4955
+      ],
+      "median": 3759.41
+    },
+    {
+      "id": "fetch_all.core",
+      "source": "summary.fetch_all_us.core",
+      "unit": "us",
+      "statistic": "median latency of one fetch within a trial",
+      "rows_per_call": 1000,
+      "commit": "none (read in an open transaction)",
+      "verified": "every fetch returns all seeded rows",
+      "sql_shape": "Core execute().all()",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        4422.5465,
+        4492.373,
+        4713.5215,
+        4379.8885,
+        3990.5435
+      ],
+      "median": 4422.5465
+    },
+    {
+      "id": "fetch_all.orm",
+      "source": "summary.fetch_all_us.orm",
+      "unit": "us",
+      "statistic": "median latency of one fetch within a trial",
+      "rows_per_call": 1000,
+      "commit": "none (read in an open transaction)",
+      "verified": "every fetch returns all seeded rows",
+      "sql_shape": "ORM scalars().all()",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        7518.46,
+        7732.222,
+        7680.6075,
+        7777.0915,
+        7607.1345
+      ],
+      "median": 7680.6075
+    },
+    {
+      "id": "batch.raw.insert",
+      "source": "summary.batch_ms.raw.insert",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "cursor.executemany() of literal-rendered rows: one EXECUTE_BATCH (FC20)",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        906.391963,
+        1972.601676,
+        1581.044174,
+        806.827477,
+        1771.388476
+      ],
+      "median": 1581.044174
+    },
+    {
+      "id": "batch.raw_prepared.insert",
+      "source": "summary.batch_ms.raw_prepared.insert",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "cursor.executemany(prepared=True): PREPARE + EXECUTE_ARRAY (FC2 + FC21), opt-in",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        215.681029,
+        215.854659,
+        214.044766,
+        240.742293,
+        223.70998
+      ],
+      "median": 215.854659
+    },
+    {
+      "id": "batch.raw.update",
+      "source": "summary.batch_ms.raw.update",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "cursor.executemany() of literal-rendered rows: one EXECUTE_BATCH (FC20)",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        2062.794773,
+        1438.225711,
+        1546.871109,
+        1746.637859,
+        1162.656319
+      ],
+      "median": 1546.871109
+    },
+    {
+      "id": "batch.raw_prepared.update",
+      "source": "summary.batch_ms.raw_prepared.update",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "cursor.executemany(prepared=True): PREPARE + EXECUTE_ARRAY (FC2 + FC21), opt-in",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        237.845866,
+        237.832843,
+        238.403996,
+        196.248138,
+        196.167501
+      ],
+      "median": 237.832843
+    },
+    {
+      "id": "batch.raw.delete",
+      "source": "summary.batch_ms.raw.delete",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "cursor.executemany() of literal-rendered rows: one EXECUTE_BATCH (FC20)",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        1370.985683,
+        2088.611721,
+        1129.304132,
+        1966.265368,
+        1891.73768
+      ],
+      "median": 1891.73768
+    },
+    {
+      "id": "batch.raw_prepared.delete",
+      "source": "summary.batch_ms.raw_prepared.delete",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "cursor.executemany(prepared=True): PREPARE + EXECUTE_ARRAY (FC2 + FC21), opt-in",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        604.8356,
+        401.637037,
+        721.297153,
+        396.219903,
+        554.56395
+      ],
+      "median": 554.56395
+    },
+    {
+      "id": "batch.core.insert",
+      "source": "summary.batch_ms.core.insert",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "Core insert() executemany through insertmanyvalues: multi-row INSERT ... VALUES",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        139.960162,
+        140.705387,
+        140.836449,
+        140.062786,
+        157.94633
+      ],
+      "median": 140.705387
+    },
+    {
+      "id": "batch.core.update",
+      "source": "summary.batch_ms.core.update",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "Core executemany through PyCubridDialect.do_executemany: literal FC20",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        1701.70523,
+        2190.636223,
+        1923.258321,
+        1439.282695,
+        1798.190991
+      ],
+      "median": 1798.190991
+    },
+    {
+      "id": "batch.core.delete",
+      "source": "summary.batch_ms.core.delete",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "Core executemany through PyCubridDialect.do_executemany: literal FC20",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        1572.950079,
+        1940.529741,
+        956.829088,
+        1507.110131,
+        1125.575239
+      ],
+      "median": 1507.110131
+    },
+    {
+      "id": "batch.orm.insert",
+      "source": "summary.batch_ms.orm.insert",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "ORM bulk insert(Item) through insertmanyvalues",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        134.143939,
+        128.257242,
+        138.525532,
+        135.144431,
+        135.448602
+      ],
+      "median": 135.144431
+    },
+    {
+      "id": "batch.orm.update",
+      "source": "summary.batch_ms.orm.update",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "ORM bulk update(Item) by primary key through do_executemany",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        771.973914,
+        1320.108314,
+        753.907496,
+        1793.971345,
+        919.485334
+      ],
+      "median": 919.485334
+    },
+    {
+      "id": "batch.orm.delete",
+      "source": "summary.batch_ms.orm.delete",
+      "unit": "ms",
+      "statistic": "median time of one batch statement and its commit within a trial",
+      "rows_per_call": 1000,
+      "commit": "one commit per batch statement, inside the timed region",
+      "verified": "table COUNT and SUM after each stage; statement rowcount where reported",
+      "sql_shape": "ORM unit-of-work DELETE of loaded objects",
+      "warmup": "one unrecorded pass of the variant before each trial's timed pass",
+      "trials": [
+        478.65317,
+        419.206686,
+        469.174943,
+        518.782608,
+        467.634121
+      ],
+      "median": 469.174943
+    }
+  ]
+}

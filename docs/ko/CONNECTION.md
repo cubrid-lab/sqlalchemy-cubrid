@@ -177,6 +177,8 @@ async with engine.connect() as conn:
     print(result.scalar())
 ```
 
+연결은 `async with`나 `await conn.close()`로 반환하세요. 애플리케이션이 체크아웃한 연결을 닫지 않고 잃어버리면, 방언이 사용하는 종료 지원을 제공하는 SQLAlchemy 2.0.44 이상에서는 가비지 컬렉터의 정리 과정이 그 연결을 종료합니다 (#872). 방언은 연결의 이벤트 루프가 이미 닫힌 뒤에도 소켓을 동기적으로 닫고 pycubrid 세션을 정리하므로 "cannot be safely terminated" 메시지와 닫히지 않은 스트림의 `ResourceWarning`이 없습니다. SQLAlchemy는 연결이 반환되지 않았다는 경고를 여전히 냅니다. 무효화된 연결은 일반적인 `CLOSE_DATABASE` 종료로 닫힙니다. SQLAlchemy 2.0.0부터 2.0.43까지는 풀이 이전 동작을 유지해 그런 연결을 종료하지 않고 버립니다.
+
 ### PK 조회를 동반한 비동기 삽입
 
 CUBRID에는 `RETURNING` 절이 없습니다. 비동기 ORM 삽입 후 auto-increment 기본 키를 얻으려면, 트랜잭션 블록 안에서 `await session.flush()`를 호출해 커밋 전에 객체의 PK를 채우세요:

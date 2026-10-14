@@ -1,0 +1,657 @@
+{
+  "environment": {
+    "python": "3.12.13",
+    "implementation": "CPython",
+    "platform": "Linux-5.15.0-198-generic-x86_64-with-glibc2.35",
+    "cpu": "Intel(R) Core(TM) i5-9400F CPU @ 2.90GHz",
+    "sqlalchemy": "2.1.4",
+    "pycubrid": "1.12.0",
+    "sqlalchemy_cubrid": "1.11.0",
+    "source_sha": "0dfe938ee8387ed8cea283a9c1ae89f0e91b99c4",
+    "cubrid_server": "11.4.6.1963",
+    "driver": "pycubrid",
+    "target": "cubrid+pycubrid://dba@localhost:34114/testdb",
+    "pool": "QueuePool",
+    "pool_pre_ping": false,
+    "autocommit": false,
+    "use_insertmanyvalues": true,
+    "insertmanyvalues_page_size": 1000,
+    "cubrid_image_digest": "sha256:1248b77ad39888df9e064655937188ab99fe056ed7e35b57d06155a015dc1791",
+    "host": "devbox",
+    "comparable_group": "devbox-cubrid114-py312-sa214-pycubrid1120-2026-10-14",
+    "args": {
+      "trials": 5,
+      "rows": 1000,
+      "iterations": 1000,
+      "fetch_rounds": 30,
+      "batch": 1000,
+      "batch_rounds": 5,
+      "reflect_rounds": 20,
+      "concurrency": [],
+      "concurrent_ops": 500,
+      "concurrent_writes": 50,
+      "source_sha": "0dfe938ee8387ed8cea283a9c1ae89f0e91b99c4"
+    },
+    "dialect_package_sha256": "4a4c8ba5b32e943e336e1b5849549b7cebf3eda004ff5adabce728cae8307f9f",
+    "source_verification": "local_checkout",
+    "installed_revision": "0dfe938ee8387ed8cea283a9c1ae89f0e91b99c4"
+  },
+  "trials": [
+    {
+      "select_pk_us": {
+        "raw": 645.9195,
+        "core_cached": 730.225,
+        "core_uncached": 1197.186,
+        "orm": 804.533
+      },
+      "fetch_all_us": {
+        "raw": 4026.4355,
+        "core": 3962.0635,
+        "orm": 7217.777
+      },
+      "reflect": {
+        "inspector_table": {
+          "ms": 25.163614,
+          "sql_statements": 8
+        },
+        "metadata_reflect": {
+          "ms": 93.762811,
+          "sql_statements": 10
+        }
+      },
+      "batch_ms": {
+        "raw": {
+          "insert": 1014.94714,
+          "update": 614.007002,
+          "delete": 1817.970379
+        },
+        "raw_prepared": {
+          "insert": 178.33673,
+          "update": 204.606905,
+          "delete": 355.380006
+        },
+        "core": {
+          "insert": 132.549374,
+          "update": 1531.673903,
+          "delete": 623.30673
+        },
+        "core_prepared_experiment": {
+          "insert": 140.961549,
+          "update": 307.198222,
+          "delete": 706.08499
+        },
+        "orm": {
+          "insert": 114.485911,
+          "update": 1359.851918,
+          "delete": 487.019994
+        }
+      }
+    },
+    {
+      "select_pk_us": {
+        "core_cached": 752.321,
+        "core_uncached": 1049.187,
+        "orm": 915.9115,
+        "raw": 566.319
+      },
+      "fetch_all_us": {
+        "core": 4525.3755,
+        "orm": 7943.1755,
+        "raw": 3639.2435
+      },
+      "reflect": {
+        "inspector_table": {
+          "ms": 14.5563365,
+          "sql_statements": 8
+        },
+        "metadata_reflect": {
+          "ms": 18.9542625,
+          "sql_statements": 10
+        }
+      },
+      "batch_ms": {
+        "raw_prepared": {
+          "insert": 222.641986,
+          "update": 229.36212,
+          "delete": 329.30944
+        },
+        "core": {
+          "insert": 132.382641,
+          "update": 1506.027497,
+          "delete": 2348.058953
+        },
+        "core_prepared_experiment": {
+          "insert": 139.544535,
+          "update": 240.301558,
+          "delete": 299.134024
+        },
+        "orm": {
+          "insert": 136.282172,
+          "update": 655.348807,
+          "delete": 401.946685
+        },
+        "raw": {
+          "insert": 1605.163714,
+          "update": 854.285523,
+          "delete": 1371.446799
+        }
+      }
+    },
+    {
+      "select_pk_us": {
+        "core_uncached": 988.266,
+        "orm": 826.058,
+        "raw": 558.854,
+        "core_cached": 743.709
+      },
+      "fetch_all_us": {
+        "orm": 7730.4105,
+        "raw": 4169.5045,
+        "core": 4629.6865
+      },
+      "reflect": {
+        "inspector_table": {
+          "ms": 15.664889,
+          "sql_statements": 8
+        },
+        "metadata_reflect": {
+          "ms": 20.0279325,
+          "sql_statements": 10
+        }
+      },
+      "batch_ms": {
+        "core": {
+          "insert": 115.955182,
+          "update": 1513.3665,
+          "delete": 2098.607603
+        },
+        "core_prepared_experiment": {
+          "insert": 147.681246,
+          "update": 269.883272,
+          "delete": 305.352556
+        },
+        "orm": {
+          "insert": 108.838355,
+          "update": 1108.713495,
+          "delete": 476.028275
+        },
+        "raw": {
+          "insert": 1531.665879,
+          "update": 1346.272647,
+          "delete": 2104.671694
+        },
+        "raw_prepared": {
+          "insert": 205.865467,
+          "update": 179.858723,
+          "delete": 637.665643
+        }
+      }
+    },
+    {
+      "select_pk_us": {
+        "orm": 865.0155,
+        "raw": 533.184,
+        "core_cached": 938.5025,
+        "core_uncached": 1007.1425
+      },
+      "fetch_all_us": {
+        "raw": 3923.612,
+        "core": 4111.7745,
+        "orm": 7734.26
+      },
+      "reflect": {
+        "inspector_table": {
+          "ms": 24.9725465,
+          "sql_statements": 8
+        },
+        "metadata_reflect": {
+          "ms": 21.6956905,
+          "sql_statements": 10
+        }
+      },
+      "batch_ms": {
+        "core_prepared_experiment": {
+          "insert": 115.721134,
+          "update": 165.054162,
+          "delete": 290.161211
+        },
+        "orm": {
+          "insert": 132.346059,
+          "update": 417.992727,
+          "delete": 502.556094
+        },
+        "raw": {
+          "insert": 1073.89337,
+          "update": 2354.850043,
+          "delete": 1888.129193
+        },
+        "raw_prepared": {
+          "insert": 215.031915,
+          "update": 179.502759,
+          "delete": 554.360108
+        },
+        "core": {
+          "insert": 103.585122,
+          "update": 1925.811679,
+          "delete": 781.930149
+        }
+      }
+    },
+    {
+      "select_pk_us": {
+        "raw": 561.8415,
+        "core_cached": 793.888,
+        "core_uncached": 949.684,
+        "orm": 849.751
+      },
+      "fetch_all_us": {
+        "core": 4340.028,
+        "orm": 7775.878,
+        "raw": 3848.831
+      },
+      "reflect": {
+        "inspector_table": {
+          "ms": 18.235134,
+          "sql_statements": 8
+        },
+        "metadata_reflect": {
+          "ms": 37.9833935,
+          "sql_statements": 10
+        }
+      },
+      "batch_ms": {
+        "orm": {
+          "insert": 102.412555,
+          "update": 767.515823,
+          "delete": 403.432491
+        },
+        "raw": {
+          "insert": 1472.831866,
+          "update": 1547.197442,
+          "delete": 844.460682
+        },
+        "raw_prepared": {
+          "insert": 197.526198,
+          "update": 188.23486,
+          "delete": 671.392501
+        },
+        "core": {
+          "insert": 131.711092,
+          "update": 1483.24038,
+          "delete": 1531.801118
+        },
+        "core_prepared_experiment": {
+          "insert": 98.45193,
+          "update": 222.402702,
+          "delete": 304.883897
+        }
+      }
+    }
+  ],
+  "summary": {
+    "select_pk_us": {
+      "raw": {
+        "median": 561.8415,
+        "min": 533.184,
+        "max": 645.9195,
+        "q1": 558.854,
+        "q3": 566.319,
+        "trials": [
+          645.9195,
+          566.319,
+          558.854,
+          533.184,
+          561.8415
+        ]
+      },
+      "core_cached": {
+        "median": 752.321,
+        "min": 730.225,
+        "max": 938.5025,
+        "q1": 743.709,
+        "q3": 793.888,
+        "trials": [
+          730.225,
+          752.321,
+          743.709,
+          938.5025,
+          793.888
+        ]
+      },
+      "core_uncached": {
+        "median": 1007.1425,
+        "min": 949.684,
+        "max": 1197.186,
+        "q1": 988.266,
+        "q3": 1049.187,
+        "trials": [
+          1197.186,
+          1049.187,
+          988.266,
+          1007.1425,
+          949.684
+        ]
+      },
+      "orm": {
+        "median": 849.751,
+        "min": 804.533,
+        "max": 915.9115,
+        "q1": 826.058,
+        "q3": 865.0155,
+        "trials": [
+          804.533,
+          915.9115,
+          826.058,
+          865.0155,
+          849.751
+        ]
+      }
+    },
+    "fetch_all_us": {
+      "raw": {
+        "median": 3923.612,
+        "min": 3639.2435,
+        "max": 4169.5045,
+        "q1": 3848.831,
+        "q3": 4026.4355,
+        "trials": [
+          4026.4355,
+          3639.2435,
+          4169.5045,
+          3923.612,
+          3848.831
+        ]
+      },
+      "core": {
+        "median": 4340.028,
+        "min": 3962.0635,
+        "max": 4629.6865,
+        "q1": 4111.7745,
+        "q3": 4525.3755,
+        "trials": [
+          3962.0635,
+          4525.3755,
+          4629.6865,
+          4111.7745,
+          4340.028
+        ]
+      },
+      "orm": {
+        "median": 7734.26,
+        "min": 7217.777,
+        "max": 7943.1755,
+        "q1": 7730.4105,
+        "q3": 7775.878,
+        "trials": [
+          7217.777,
+          7943.1755,
+          7730.4105,
+          7734.26,
+          7775.878
+        ]
+      }
+    },
+    "batch_ms": {
+      "raw": {
+        "insert": {
+          "median": 1472.831866,
+          "min": 1014.94714,
+          "max": 1605.163714,
+          "q1": 1073.89337,
+          "q3": 1531.665879,
+          "trials": [
+            1014.94714,
+            1605.163714,
+            1531.665879,
+            1073.89337,
+            1472.831866
+          ]
+        },
+        "update": {
+          "median": 1346.272647,
+          "min": 614.007002,
+          "max": 2354.850043,
+          "q1": 854.285523,
+          "q3": 1547.197442,
+          "trials": [
+            614.007002,
+            854.285523,
+            1346.272647,
+            2354.850043,
+            1547.197442
+          ]
+        },
+        "delete": {
+          "median": 1817.970379,
+          "min": 844.460682,
+          "max": 2104.671694,
+          "q1": 1371.446799,
+          "q3": 1888.129193,
+          "trials": [
+            1817.970379,
+            1371.446799,
+            2104.671694,
+            1888.129193,
+            844.460682
+          ]
+        }
+      },
+      "raw_prepared": {
+        "insert": {
+          "median": 205.865467,
+          "min": 178.33673,
+          "max": 222.641986,
+          "q1": 197.526198,
+          "q3": 215.031915,
+          "trials": [
+            178.33673,
+            222.641986,
+            205.865467,
+            215.031915,
+            197.526198
+          ]
+        },
+        "update": {
+          "median": 188.23486,
+          "min": 179.502759,
+          "max": 229.36212,
+          "q1": 179.858723,
+          "q3": 204.606905,
+          "trials": [
+            204.606905,
+            229.36212,
+            179.858723,
+            179.502759,
+            188.23486
+          ]
+        },
+        "delete": {
+          "median": 554.360108,
+          "min": 329.30944,
+          "max": 671.392501,
+          "q1": 355.380006,
+          "q3": 637.665643,
+          "trials": [
+            355.380006,
+            329.30944,
+            637.665643,
+            554.360108,
+            671.392501
+          ]
+        }
+      },
+      "core": {
+        "insert": {
+          "median": 131.711092,
+          "min": 103.585122,
+          "max": 132.549374,
+          "q1": 115.955182,
+          "q3": 132.382641,
+          "trials": [
+            132.549374,
+            132.382641,
+            115.955182,
+            103.585122,
+            131.711092
+          ]
+        },
+        "update": {
+          "median": 1513.3665,
+          "min": 1483.24038,
+          "max": 1925.811679,
+          "q1": 1506.027497,
+          "q3": 1531.673903,
+          "trials": [
+            1531.673903,
+            1506.027497,
+            1513.3665,
+            1925.811679,
+            1483.24038
+          ]
+        },
+        "delete": {
+          "median": 1531.801118,
+          "min": 623.30673,
+          "max": 2348.058953,
+          "q1": 781.930149,
+          "q3": 2098.607603,
+          "trials": [
+            623.30673,
+            2348.058953,
+            2098.607603,
+            781.930149,
+            1531.801118
+          ]
+        }
+      },
+      "core_prepared_experiment": {
+        "insert": {
+          "median": 139.544535,
+          "min": 98.45193,
+          "max": 147.681246,
+          "q1": 115.721134,
+          "q3": 140.961549,
+          "trials": [
+            140.961549,
+            139.544535,
+            147.681246,
+            115.721134,
+            98.45193
+          ]
+        },
+        "update": {
+          "median": 240.301558,
+          "min": 165.054162,
+          "max": 307.198222,
+          "q1": 222.402702,
+          "q3": 269.883272,
+          "trials": [
+            307.198222,
+            240.301558,
+            269.883272,
+            165.054162,
+            222.402702
+          ]
+        },
+        "delete": {
+          "median": 304.883897,
+          "min": 290.161211,
+          "max": 706.08499,
+          "q1": 299.134024,
+          "q3": 305.352556,
+          "trials": [
+            706.08499,
+            299.134024,
+            305.352556,
+            290.161211,
+            304.883897
+          ]
+        }
+      },
+      "orm": {
+        "insert": {
+          "median": 114.485911,
+          "min": 102.412555,
+          "max": 136.282172,
+          "q1": 108.838355,
+          "q3": 132.346059,
+          "trials": [
+            114.485911,
+            136.282172,
+            108.838355,
+            132.346059,
+            102.412555
+          ]
+        },
+        "update": {
+          "median": 767.515823,
+          "min": 417.992727,
+          "max": 1359.851918,
+          "q1": 655.348807,
+          "q3": 1108.713495,
+          "trials": [
+            1359.851918,
+            655.348807,
+            1108.713495,
+            417.992727,
+            767.515823
+          ]
+        },
+        "delete": {
+          "median": 476.028275,
+          "min": 401.946685,
+          "max": 502.556094,
+          "q1": 403.432491,
+          "q3": 487.019994,
+          "trials": [
+            487.019994,
+            401.946685,
+            476.028275,
+            502.556094,
+            403.432491
+          ]
+        }
+      }
+    },
+    "reflect_ms": {
+      "inspector_table": {
+        "median": 18.235134,
+        "min": 14.5563365,
+        "max": 25.163614,
+        "q1": 15.664889,
+        "q3": 24.9725465,
+        "trials": [
+          25.163614,
+          14.5563365,
+          15.664889,
+          24.9725465,
+          18.235134
+        ]
+      },
+      "metadata_reflect": {
+        "median": 21.6956905,
+        "min": 18.9542625,
+        "max": 93.762811,
+        "q1": 20.0279325,
+        "q3": 37.9833935,
+        "trials": [
+          93.762811,
+          18.9542625,
+          20.0279325,
+          21.6956905,
+          37.9833935
+        ]
+      }
+    },
+    "reflect_sql_statements": {
+      "inspector_table": 8,
+      "metadata_reflect": 10
+    }
+  },
+  "workload": {
+    "script": "scripts/bench_dialect_baseline.py",
+    "script_sha256": "86400a9f0bc7dcccd7cb4a3650e4c85cf441189fa52f0c6a803f1b88a5d6f9a8",
+    "table": "bench_dialect_baseline"
+  },
+  "status": "complete"
+}

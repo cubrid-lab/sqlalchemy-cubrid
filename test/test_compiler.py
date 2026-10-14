@@ -8,6 +8,7 @@ a database connection.
 from __future__ import annotations
 
 import operator
+import warnings
 import re
 
 import pytest
@@ -222,6 +223,31 @@ class TestInsertCompilation:
 
         assert CubridCompiler._insert_has_bind_expression(insert(with_expr)) is True
         assert CubridCompiler._insert_has_bind_expression(insert(plain)) is False
+
+    def test_insert_from_cte_select_puts_with_after_the_column_list(self):
+        """#897: CUBRID needs INSERT INTO t (...) WITH ... SELECT, not WITH ... INSERT."""
+        source = sa.table("src", sa.column("id", Integer), sa.column("s", String))
+        target = sa.table("t", sa.column("id", Integer), sa.column("s", String))
+        cte = select(source.c.id, source.c.s).where(source.c.id > sa.bindparam("low", 2)).cte("c")
+        stmt = sa.insert(target).from_select(
+            ["id", "s"], select(cte.c.id, cte.c.s).where(cte.c.id < sa.bindparam("high", 9))
+        )
+        compiled = stmt.compile(dialect=CubridDialect())
+        assert _norm(compiled.string) == _norm(
+            "INSERT INTO t (id, s) "
+            "WITH c AS (SELECT src.id AS id, src.s AS s FROM src WHERE src.id > ?) "
+            "SELECT c.id, c.s FROM c WHERE c.id < ?"
+        )
+        assert compiled.positiontup == ["low", "high"]
+
+    def test_insert_from_recursive_cte_select_puts_with_after_the_column_list(self):
+        """#897: a recursive CTE renders WITH RECURSIVE after the column list."""
+        target = sa.table("t", sa.column("id", Integer))
+        base = select(sa.literal(1).label("n")).cte("c", recursive=True)
+        cte = base.union_all(select(base.c.n + 1).where(base.c.n < 3))
+        stmt = sa.insert(target).from_select(["id"], select(cte.c.n))
+        sql = _norm(_compile(stmt))
+        assert sql.startswith("INSERT INTO t (id) WITH RECURSIVE c(n) AS ("), sql
 
 
 class TestWindowFunctionCompilation:
@@ -959,22 +985,6 @@ class TestTypeCompilation:
         dt = MockDATETIME()
         result = self._compile_type(dt)
         assert result == "DATETIME"
-
-    def test_get_method_direct(self):
-        """Test _get helper method in TypeCompiler."""
-        dialect = CubridDialect()
-        compiler = dialect.type_compiler_instance
-        # The _get method retrieves attribute from type or kwargs
-        from sqlalchemy_cubrid.types import VARCHAR
-
-        t = VARCHAR(length=100)
-        # _get(key, type_, kw) should return kw[key] or type_.key
-        get_method = getattr(compiler, "_get")
-        result = get_method("length", t, {})
-        assert result == 100
-        # Test with kw override
-        result = get_method("length", t, {"length": 200})
-        assert result == 200
 
 
 # Column types CUBRID rejects in CREATE TABLE, and the ones it accepts.
@@ -1743,8 +1753,9 @@ class TestReplaceKeywordIsStructural:
         )
         sql = _norm(_compile(stmt))
         assert sql == _norm(
+            "REPLACE /* c */ INTO t (id, s) "
             "WITH c AS (SELECT src.id AS id, 'INSERT INTO' AS s FROM src) "
-            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c"
+            "SELECT c.id, c.s FROM c"
         )
 
     def test_cte_from_select_with_bound_values_and_prefix(self):
@@ -1767,8 +1778,9 @@ class TestReplaceKeywordIsStructural:
         compiled = stmt.compile(dialect=CubridDialect())
 
         assert _norm(compiled.string) == _norm(
+            "REPLACE /* c */ INTO t (id, s) "
             "WITH c AS (SELECT src.id AS id, src.s AS s FROM src WHERE src.id > ?) "
-            "REPLACE /* c */ INTO t (id, s) SELECT c.id, c.s FROM c WHERE c.id < ?"
+            "SELECT c.id, c.s FROM c WHERE c.id < ?"
         )
         assert compiled.string.count("?") == 2
         assert compiled.positiontup == ["low", "high"]
@@ -1781,8 +1793,9 @@ class TestReplaceKeywordIsStructural:
         stmt = replace(self.target).from_select(["id", "s"], select(cte.c.id, cte.c.s))
         sql = _norm(_compile(stmt))
         assert sql == _norm(
+            "REPLACE INTO t (id, s) "
             "WITH c AS (SELECT src.id AS id, src.s AS s FROM src) "
-            "REPLACE INTO t (id, s) SELECT c.id, c.s FROM c"
+            "SELECT c.id, c.s FROM c"
         )
 
     def test_insert_is_unchanged(self):
@@ -1898,30 +1911,74 @@ class TestCacheKeyRegression:
         # Same structure, different bind values → same cache key
         assert key1[0] == key2[0]
 
-    def test_insert_odku_cache_key_is_none(self):
-        """INSERT … ODKU returns None cache key (matches MySQL dialect behavior).
+    @staticmethod
+    def _key(stmt):
+        import warnings
 
-        OnDuplicateClause doesn't define _traverse_internals, so SA correctly
-        disables caching for ODKU statements. This is intentional — the dynamic
-        update dict makes safe caching non-trivial without full traversal support.
-        """
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", sa.exc.SAWarning)
+            return stmt._generate_cache_key()
+
+    def test_insert_odku_is_cacheable(self):
+        """#871: ON DUPLICATE KEY UPDATE has a cache key and emits no SAWarning."""
         from sqlalchemy_cubrid.dml import insert
 
         odku = insert(users).values(name="a").on_duplicate_key_update(name="b")
-        odku_key = odku._generate_cache_key()
-        assert odku_key is None
+        assert self._key(odku) is not None
 
-    def test_two_odku_variants_both_uncacheable(self):
-        """ODKU with different column sets both return None (uncacheable)."""
+    def test_odku_with_other_values_shares_the_cache_key(self):
         from sqlalchemy_cubrid.dml import insert
 
-        odku1 = insert(users).values(name="a").on_duplicate_key_update(name="updated")
-        odku2 = insert(users).values(name="a").on_duplicate_key_update(email="updated")
-        key1 = odku1._generate_cache_key()
-        key2 = odku2._generate_cache_key()
-        # Both uncacheable due to OnDuplicateClause
-        assert key1 is None
-        assert key2 is None
+        key1 = self._key(insert(users).values(name="a").on_duplicate_key_update(name="b"))
+        key2 = self._key(insert(users).values(name="z").on_duplicate_key_update(name="c"))
+        assert key1 == key2
+
+    @pytest.mark.parametrize(
+        "other",
+        [
+            lambda stmt: stmt.on_duplicate_key_update(email="b"),
+            lambda stmt: stmt.on_duplicate_key_update(name=users.c.name + "x"),
+            lambda stmt: stmt.on_duplicate_key_update(name=stmt.inserted.name),
+            lambda stmt: stmt.on_duplicate_key_update([("email", "b"), ("name", "b")]),
+            lambda stmt: stmt,
+        ],
+    )
+    def test_different_odku_clauses_have_distinct_cache_keys(self, other):
+        from sqlalchemy_cubrid.dml import insert
+
+        base = insert(users).values(name="a")
+        reference = self._key(base.on_duplicate_key_update([("name", "b"), ("email", "b")]))
+        assert self._key(other(base)) != reference
+
+    @pytest.mark.parametrize(
+        "update",
+        [
+            lambda stmt: users.c.name + "x",
+            lambda stmt: stmt.inserted.name,
+            lambda stmt: sa.func.upper(users.c.name),
+        ],
+    )
+    def test_update_expression_is_part_of_the_cache_key(self, update):
+        """Same update column: only the value expression differs from the baseline."""
+        from sqlalchemy_cubrid.dml import insert
+
+        base = insert(users).values(name="a")
+        literal = self._key(base.on_duplicate_key_update(name="b"))
+        assert self._key(base.on_duplicate_key_update(name=update(base))) != literal
+
+    def test_cached_odku_compiles_the_new_values(self):
+        """The cached compiled form must bind the new statement's update value."""
+        from sqlalchemy_cubrid.dml import insert
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        dialect = PyCubridDialect()
+        first = insert(users).values(name="a").on_duplicate_key_update(name="b")
+        second = insert(users).values(name="z").on_duplicate_key_update(name="c")
+        compiled = dialect.statement_compiler(dialect, first, cache_key=self._key(first))
+        params = compiled.construct_params(
+            extracted_parameters=self._key(second)[1], escape_names=False
+        )
+        assert sorted(v for v in params.values() if isinstance(v, str)) == ["c", "z"]
 
     def test_replace_cache_key(self):
         """REPLACE should produce a stable, non-None cache key."""
@@ -3445,3 +3502,141 @@ class TestIndexDialectOptions869:
     def test_unique_filtered_index_raises(self):
         with pytest.raises(CompileError, match="UNIQUE filtered"):
             self._ddl(sa.Index("i8", self._t.c.b, unique=True, cubrid_where="b>0"))
+
+
+# ---------------------------------------------------------------------------
+# Join linting, collection type classes and removed dead code (#870)
+# ---------------------------------------------------------------------------
+
+
+class TestDialectSmallCorrectness870:
+    @staticmethod
+    def _lint(stmt):
+        from sqlalchemy.sql import compiler as sa_compiler
+
+        dialect = CubridDialect()
+        return dialect.statement_compiler(
+            dialect, stmt, linting=sa_compiler.COLLECT_CARTESIAN_PRODUCTS | sa_compiler.WARN_LINTING
+        )
+
+    def test_join_is_not_reported_as_a_cartesian_product(self):
+        a = Table("a870", MetaData(), Column("id", Integer))
+        b = Table("b870", MetaData(), Column("a_id", Integer))
+        stmt = select(a.c.id).select_from(a.join(b, a.c.id == b.c.a_id))
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self._lint(stmt)
+
+    def test_unjoined_from_item_is_still_reported(self):
+        a = Table("a870", MetaData(), Column("id", Integer))
+        b = Table("b870", MetaData(), Column("a_id", Integer))
+        c = Table("c870", MetaData(), Column("x", Integer))
+        stmt = select(a.c.id, c.c.x).select_from(a.join(b, a.c.id == b.c.a_id))
+        with pytest.warns(sa.exc.SAWarning, match="cartesian product"):
+            self._lint(stmt)
+
+    @pytest.mark.parametrize(
+        ("collection", "expected"),
+        [
+            (cubrid_types.SET(Integer), "SET(INTEGER)"),
+            (cubrid_types.MULTISET(Integer, String), "MULTISET(INTEGER,VARCHAR(4096))"),
+            (cubrid_types.SEQUENCE(cubrid_types.MONETARY), "SEQUENCE(MONETARY)"),
+        ],
+    )
+    def test_collection_member_type_class(self, collection, expected):
+        assert CubridDialect().type_compiler_instance.process(collection) == expected
+
+    def test_dead_code_is_removed(self):
+        from sqlalchemy_cubrid.compiler import CubridTypeCompiler
+
+        assert not hasattr(CubridTypeCompiler, "_get")
+
+    def test_ignored_type_arguments_are_deprecated(self):
+        with pytest.warns(DeprecationWarning, match="'display_width' argument of SMALLINT") as w1:
+            small = cubrid_types.SMALLINT(display_width=5)
+        with pytest.warns(DeprecationWarning, match="'values' argument of VARCHAR") as w2:
+            varchar = cubrid_types.VARCHAR(10, values=["a"])
+        with pytest.warns(DeprecationWarning, match="'values' argument of STRING") as w3:
+            cubrid_types.STRING(values=["a"])
+        # Each warning points at this caller, not at a constructor in types.py.
+        assert {w[0].filename for w in (w1, w2, w3)} == {__file__}
+        assert not hasattr(small, "display_width")
+        assert not hasattr(varchar, "values")
+        assert repr(small) == "SMALLINT()"
+        assert repr(varchar) == "VARCHAR(length=10)"
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            cubrid_types.BIGINT()
+            cubrid_types.CHAR(3)
+
+
+# ---------------------------------------------------------------------------
+# MERGE assignment keys must belong to the target (#847)
+# ---------------------------------------------------------------------------
+
+
+class TestMergeForeignColumnKeys847:
+    target = Table(
+        "t847", MetaData(), Column("id", Integer, primary_key=True), Column("name", String(20))
+    )
+    source = Table(
+        "s847", MetaData(), Column("id", Integer, primary_key=True), Column("name", String(20))
+    )
+
+    def _base(self, target=None):
+        from sqlalchemy_cubrid.dml import merge
+
+        target = self.target if target is None else target
+        return merge(target).using(self.source).on(target.c.id == self.source.c.id)
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda m, s: m.when_matched_then_update({s.c.name: "x"}),
+            lambda m, s: m.when_matched_then_update([(s.c.name, "x")]),
+            lambda m, s: m.when_not_matched_then_insert({s.c.id: s.c.id, s.c.name: s.c.name}),
+            lambda m, s: m.when_not_matched_then_insert([(s.c.id, 1), (s.c.name, "x")]),
+        ],
+    )
+    def test_foreign_column_with_a_colliding_name_is_rejected(self, build):
+        stmt = build(self._base(), self.source)
+        with pytest.raises(CompileError, match="belongs to 's847', not the MERGE target"):
+            _compile(stmt)
+
+    def test_foreign_column_with_an_unknown_name_keeps_the_202_error(self):
+        other = Table("o847", MetaData(), Column("zzz", Integer))
+        stmt = self._base().when_matched_then_update({other.c.zzz: 1})
+        with pytest.raises(CompileError, match="column 'zzz' not found in target table"):
+            _compile(stmt)
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda m, t, s: m.when_matched_then_update({t.c.name: s.c.name}),
+            lambda m, t, s: m.when_matched_then_update([("name", s.c.name)]),
+            lambda m, t, s: m.when_matched_then_update({sa.column("name"): s.c.name}),
+            lambda m, t, s: m.when_not_matched_then_insert([s.c.id, s.c.name]),
+            lambda m, t, s: m.when_not_matched_then_insert(s.c),
+            lambda m, t, s: m.when_not_matched_then_insert({t.c.id: s.c.id, "name": s.c.name}),
+        ],
+    )
+    def test_legitimate_keys_still_compile(self, build):
+        sql = _compile(build(self._base(), self.target, self.source))
+        assert "t847" in sql
+        assert "belongs to" not in sql
+
+    def test_alias_target_accepts_base_and_alias_columns(self):
+        alias = self.target.alias("tgt")
+        stmt = self._base(alias).when_matched_then_update(
+            {self.target.c.name: self.source.c.name, alias.c.id: self.source.c.id}
+        )
+        sql = _norm(_compile(stmt))
+        assert "UPDATE SET name = s847.name, id = s847.id" in sql
+
+    def test_bind_order_of_legitimate_statement_is_unchanged(self):
+        from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
+
+        stmt = self._base().when_matched_then_update({self.target.c.name: "a"})
+        stmt = stmt.when_not_matched_then_insert({self.target.c.id: 7, "name": "b"})
+        compiled = stmt.compile(dialect=PyCubridDialect())
+        assert [compiled.params[key] for key in compiled.positiontup] == ["a", 7, "b"]

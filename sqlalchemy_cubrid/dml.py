@@ -13,6 +13,7 @@ from typing import Any, Dict, List, Mapping, Optional, Self, Tuple, Union
 
 from sqlalchemy import exc, util
 from sqlalchemy.sql._typing import _DMLTableArgument
+from sqlalchemy.sql import coercions, roles
 from sqlalchemy.sql.base import (
     _exclusive_against,
     _generative,
@@ -24,6 +25,8 @@ from sqlalchemy.sql.dml import Insert as StandardInsert
 from sqlalchemy.sql.elements import ClauseElement, KeyedColumnElement
 from sqlalchemy.sql.expression import Executable, alias
 from sqlalchemy.sql.selectable import NamedFromClause
+from sqlalchemy.sql.sqltypes import NULLTYPE
+from sqlalchemy.sql.visitors import InternalTraversal
 
 __all__ = ("Insert", "Merge", "Replace", "insert", "merge", "replace")
 
@@ -141,6 +144,15 @@ class OnDuplicateClause(ClauseElement):
     update: Dict[str, Any]
     stringify_dialect = "cubrid"
 
+    # Cache key: the column order and the update values (#871), the same
+    # traversal as SQLAlchemy 2.1's MySQL OnDuplicateClause (2.0's MySQL
+    # construct is not cacheable at all). The inserted alias derives from the
+    # INSERT's table, which the statement's own cache key covers.
+    _traverse_internals = [
+        ("_parameter_ordering", InternalTraversal.dp_string_list),
+        ("update", InternalTraversal.dp_dml_values),
+    ]
+
     def __init__(self, inserted_alias: NamedFromClause, update: _UpdateArg) -> None:
         self.inserted_alias = inserted_alias
         if isinstance(update, list) and (update and isinstance(update[0], tuple)):
@@ -157,7 +169,12 @@ class OnDuplicateClause(ClauseElement):
                 "or a ColumnCollection such as the `.c.` collection "
                 "of a Table object"
             )
-        self.update = update
+        # Coerce values so they take part in the cache key; a plain value
+        # becomes an untyped bind that the compiler types from its column.
+        self.update = {
+            key: coercions.expect(roles.ExpressionElementRole, value, type_=NULLTYPE, is_crud=True)
+            for key, value in update.items()
+        }
 
 
 def merge(target: _DMLTableArgument) -> Merge:
@@ -259,6 +276,9 @@ class Merge(Executable, ClauseElement, Generative):
     ) -> Self:
         columns: List[Any]
         values: List[Any]
+        # The column-list shorthand inserts each source column into the target
+        # column of the same name, so its keys are matched by name (#847).
+        by_name = False
 
         if isinstance(values_dict_or_column_list, Mapping):
             pairs = self._normalize_key_value_pairs(
@@ -290,6 +310,7 @@ class Merge(Executable, ClauseElement, Generative):
                         "a list of tuples, or a non-empty column list"
                     )
                 values = list(columns)
+                by_name = True
         else:
             raise ValueError(
                 "values_dict_or_column_list must be a non-empty dictionary, "
@@ -300,6 +321,7 @@ class Merge(Executable, ClauseElement, Generative):
             "columns": columns,
             "values": values,
             "where": where,
+            "by_name": by_name,
         }
         return self
 

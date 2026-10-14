@@ -298,6 +298,15 @@ def _strip_table_qualifier(sql: str, table_name: str) -> str:
     return "".join(parts)
 
 
+def _show_statement(sql: str) -> Any:
+    """Return ``SHOW ... <quoted name>`` as a ``text()`` with colons escaped (#870).
+
+    A table name may contain ``:y`` (``x :y``), which ``text()`` would read as
+    a bind parameter; ``\\:`` sends a literal colon, so the SQL is unchanged.
+    """
+    return text(sql.replace(":", "\\:"))
+
+
 def _skip_quoted(text: str, i: int) -> int:
     """Return the index after the ``'...'`` literal starting at *text[i]*."""
     i += 1
@@ -610,6 +619,11 @@ class CubridDialect(default.DefaultDialect):
 
     postfetch_lastrowid = True
 
+    # CUBRID accepts a CTE only after the column list, as in
+    # INSERT INTO t (...) WITH c AS (...) SELECT ...; WITH ... INSERT (or
+    # WITH ... REPLACE) is a -493 syntax error on 10.2 and 11.4 (#897).
+    cte_follows_insert = True
+
     # Two-phase commit not supported by CUBRID
     supports_twophase_commit = False
 
@@ -793,7 +807,7 @@ class CubridDialect(default.DefaultDialect):
         columns: list[ReflectedColumn] = []
         quoted = self.identifier_preparer.quote_identifier(table_name)
         try:
-            result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+            result = connection.execute(_show_statement(f"SHOW COLUMNS IN {quoted}"))
         except Exception as error:
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
@@ -1000,7 +1014,7 @@ class CubridDialect(default.DefaultDialect):
         if not constrained_columns:
             quoted = self.identifier_preparer.quote_identifier(table_name)
             try:
-                result = connection.execute(text(f"SHOW COLUMNS IN {quoted}"))
+                result = connection.execute(_show_statement(f"SHOW COLUMNS IN {quoted}"))
             except Exception as error:
                 if _is_unknown_class_error(error):
                     raise NoSuchTableError(table_name) from error
@@ -1074,7 +1088,7 @@ class CubridDialect(default.DefaultDialect):
         """
         quoted = self.identifier_preparer.quote_identifier(table_name)
         try:
-            row = connection.execute(text(f"SHOW CREATE TABLE {quoted}")).first()
+            row = connection.execute(_show_statement(f"SHOW CREATE TABLE {quoted}")).first()
         except Exception as error:
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
@@ -1183,7 +1197,7 @@ class CubridDialect(default.DefaultDialect):
 
         quoted = self.identifier_preparer.quote_identifier(view_name)
         try:
-            result = connection.execute(text(f"SHOW CREATE VIEW {quoted}"))
+            result = connection.execute(_show_statement(f"SHOW CREATE VIEW {quoted}"))
         except Exception as error:
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(view_name) from error
@@ -1249,7 +1263,7 @@ class CubridDialect(default.DefaultDialect):
 
         quoted = self.identifier_preparer.quote_identifier(table_name)
         try:
-            result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+            result = connection.execute(_show_statement(f"SHOW INDEXES IN {quoted}"))
         except Exception as error:
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
@@ -1394,7 +1408,7 @@ class CubridDialect(default.DefaultDialect):
         # Step 2: resolve column names from SHOW INDEXES
         quoted = self.identifier_preparer.quote_identifier(table_name)
         try:
-            col_result = connection.execute(text(f"SHOW INDEXES IN {quoted}"))
+            col_result = connection.execute(_show_statement(f"SHOW INDEXES IN {quoted}"))
         except Exception as error:
             if _is_unknown_class_error(error):
                 raise NoSuchTableError(table_name) from error
@@ -1404,6 +1418,19 @@ class CubridDialect(default.DefaultDialect):
             index_name = row[2]
             if index_name in unique_names:
                 constraints.setdefault(index_name, []).append(row[4])
+
+        # Fail closed (#848): a unique index the catalog lists but SHOW INDEXES
+        # does not resolve must not be reported as absent, or Alembic would
+        # propose to create a constraint that exists.
+        unresolved = sorted(unique_names - constraints.keys())
+        if unresolved:
+            raise InvalidRequestError(
+                f"CUBRID catalog mismatch for table {table_name!r}: db_index lists the "
+                f"unique index(es) {', '.join(map(repr, unresolved))}, but SHOW INDEXES "
+                f"returned no key columns for them (resolved: "
+                f"{', '.join(map(repr, sorted(constraints))) or 'none'}); refusing to "
+                "report an incomplete set of unique constraints"
+            )
 
         return [
             {"name": name, "column_names": cols, "duplicates_index": name}

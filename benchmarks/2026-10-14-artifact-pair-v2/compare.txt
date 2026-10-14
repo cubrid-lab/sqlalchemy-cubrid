@@ -1,0 +1,20 @@
+comparable: benchmarks/2026-10-14-artifact-pair-v2/baseline/manifest.json -> benchmarks/2026-10-14-artifact-pair-v2/candidate/manifest.json
+  select_pk.raw                     732.602 ->      561.841 us  x0.767
+  select_pk.core_cached             802.221 ->      752.321 us  x0.938
+  select_pk.core_uncached           916.130 ->     1007.143 us  x1.099
+  select_pk.orm                     837.938 ->      849.751 us  x1.014
+  fetch_all.raw                    3948.927 ->     3923.612 us  x0.994
+  fetch_all.core                   4303.576 ->     4340.028 us  x1.008
+  fetch_all.orm                    7781.754 ->     7734.260 us  x0.994
+  batch.raw.insert                 1758.478 ->     1472.832 ms  x0.838
+  batch.raw_prepared.insert         157.147 ->      205.865 ms  x1.310
+  batch.raw.update                 1146.339 ->     1346.273 ms  x1.174
+  batch.raw_prepared.update         178.852 ->      188.235 ms  x1.052
+  batch.raw.delete                 1429.483 ->     1817.970 ms  x1.272
+  batch.raw_prepared.delete         288.904 ->      554.360 ms  x1.919
+  batch.core.insert                 114.372 ->      131.711 ms  x1.152
+  batch.core.update                 797.968 ->     1513.367 ms  x1.897
+  batch.core.delete                1507.765 ->     1531.801 ms  x1.016
+  batch.orm.insert                   91.199 ->      114.486 ms  x1.255
+  batch.orm.update                  622.548 ->      767.516 ms  x1.233
+  batch.orm.delete                  444.234 ->      476.028 ms  x1.072

@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import inspect
 import json
+import sys
+import warnings
 from importlib import import_module
-from typing import Any, Callable, Sequence
+from types import FrameType
+from typing import Any, Callable
 
 from sqlalchemy import exc
 from sqlalchemy.engine.interfaces import Dialect
@@ -39,23 +42,39 @@ class _FloatType(_NumericType, sqltypes.Float[Any]):  # pyright: ignore[reportUn
         super().__init__(precision=precision, **kw)
 
 
+def _warn_ignored_argument(name: str, type_name: str) -> None:
+    # Point at the caller: skip every constructor frame of this module, whose
+    # depth differs between types (VARCHAR -> _StringType, SMALLINT -> _IntegerType).
+    # Level 1 is this helper; level 2 is its caller, the first frame examined.
+    stacklevel = 2
+    frame: FrameType | None = sys._getframe(1)
+    while frame is not None and frame.f_code.co_filename == __file__:
+        frame = frame.f_back
+        stacklevel += 1
+    warnings.warn(
+        f"The {name!r} argument of {type_name} has no effect and is deprecated; "
+        "it will be removed in a future major release (#870)",
+        DeprecationWarning,
+        stacklevel=stacklevel,
+    )
+
+
 class _IntegerType(_NumericType, sqltypes.Integer):
     def __init__(self, display_width: int | None = None, **kw: Any) -> None:
-        self.display_width = display_width
+        # Accepted for compatibility only; CUBRID has no display width.
+        if display_width is not None:
+            _warn_ignored_argument("display_width", type(self).__name__)
         super().__init__(**kw)
 
 
 class _StringType(sqltypes.String):
     """Base for CUBRID string types."""
 
-    def __init__(
-        self,
-        national: bool = False,
-        values: Sequence[Any] | None = None,
-        **kw: Any,
-    ) -> None:
+    def __init__(self, national: bool = False, values: Any = None, **kw: Any) -> None:
+        # ``values`` is accepted for compatibility only and has no effect.
+        if values is not None:
+            _warn_ignored_argument("values", type(self).__name__)
         self.national = national
-        self.values = values
         super().__init__(**kw)
 
     def __repr__(self) -> str:
@@ -374,8 +393,17 @@ class _CollectionType(_StringType):
     _ordered: bool = False
 
     def __init__(self, *values: Any, **kw: Any) -> None:
-        """Construct the type; *values* are the element types for the DDL."""
-        self._ddl_values = values
+        """Construct the type; *values* are the element types for the DDL.
+
+        A type class (``SET(Integer)``) is instantiated, as SQLAlchemy accepts
+        a class wherever it takes a type (#870).
+        """
+        self._ddl_values = tuple(
+            sqltypes.to_instance(value)
+            if isinstance(value, type) and issubclass(value, sqltypes.TypeEngine)
+            else value
+            for value in values
+        )
         super().__init__(**kw)
 
     def bind_processor(self, dialect: Dialect) -> Callable[[Any], Any] | None:

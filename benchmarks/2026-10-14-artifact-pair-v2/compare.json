@@ -1,0 +1,152 @@
+{
+  "schema": "sqlalchemy-cubrid-benchmark-artifact/2",
+  "status": "comparable",
+  "reasons": [],
+  "baseline": {
+    "dialect_source_sha": "3a0c2898b2954e59eb675ef89ab237d252434713",
+    "sqlalchemy_cubrid": "1.11.0",
+    "dialect_package_sha256": "a4843433ddebd7a7b2aecd5e41b9eaa10ba9abbc616cb85babc7edd2044ae33f",
+    "source_verification": "local_checkout"
+  },
+  "candidate": {
+    "dialect_source_sha": "0dfe938ee8387ed8cea283a9c1ae89f0e91b99c4",
+    "sqlalchemy_cubrid": "1.11.0",
+    "dialect_package_sha256": "4a4c8ba5b32e943e336e1b5849549b7cebf3eda004ff5adabce728cae8307f9f",
+    "source_verification": "local_checkout"
+  },
+  "metrics": [
+    {
+      "id": "select_pk.raw",
+      "unit": "us",
+      "baseline_median": 732.602,
+      "candidate_median": 561.8415,
+      "ratio": 0.7669123207416851
+    },
+    {
+      "id": "select_pk.core_cached",
+      "unit": "us",
+      "baseline_median": 802.2215,
+      "candidate_median": 752.321,
+      "ratio": 0.9377971046649834
+    },
+    {
+      "id": "select_pk.core_uncached",
+      "unit": "us",
+      "baseline_median": 916.1305,
+      "candidate_median": 1007.1425,
+      "ratio": 1.0993439253468802
+    },
+    {
+      "id": "select_pk.orm",
+      "unit": "us",
+      "baseline_median": 837.938,
+      "candidate_median": 849.751,
+      "ratio": 1.0140977017392694
+    },
+    {
+      "id": "fetch_all.raw",
+      "unit": "us",
+      "baseline_median": 3948.9275,
+      "candidate_median": 3923.612,
+      "ratio": 0.9935892720238597
+    },
+    {
+      "id": "fetch_all.core",
+      "unit": "us",
+      "baseline_median": 4303.576,
+      "candidate_median": 4340.028,
+      "ratio": 1.008470165276505
+    },
+    {
+      "id": "fetch_all.orm",
+      "unit": "us",
+      "baseline_median": 7781.754,
+      "candidate_median": 7734.26,
+      "ratio": 0.9938967487278575
+    },
+    {
+      "id": "batch.raw.insert",
+      "unit": "ms",
+      "baseline_median": 1758.477664,
+      "candidate_median": 1472.831866,
+      "ratio": 0.8375607470894779
+    },
+    {
+      "id": "batch.raw_prepared.insert",
+      "unit": "ms",
+      "baseline_median": 157.147137,
+      "candidate_median": 205.865467,
+      "ratio": 1.3100172929017473
+    },
+    {
+      "id": "batch.raw.update",
+      "unit": "ms",
+      "baseline_median": 1146.33877,
+      "candidate_median": 1346.272647,
+      "ratio": 1.1744108131316189
+    },
+    {
+      "id": "batch.raw_prepared.update",
+      "unit": "ms",
+      "baseline_median": 178.852205,
+      "candidate_median": 188.23486,
+      "ratio": 1.0524603820232465
+    },
+    {
+      "id": "batch.raw.delete",
+      "unit": "ms",
+      "baseline_median": 1429.483306,
+      "candidate_median": 1817.970379,
+      "ratio": 1.2717674780596564
+    },
+    {
+      "id": "batch.raw_prepared.delete",
+      "unit": "ms",
+      "baseline_median": 288.904055,
+      "candidate_median": 554.360108,
+      "ratio": 1.9188381000744346
+    },
+    {
+      "id": "batch.core.insert",
+      "unit": "ms",
+      "baseline_median": 114.371617,
+      "candidate_median": 131.711092,
+      "ratio": 1.1516064514502755
+    },
+    {
+      "id": "batch.core.update",
+      "unit": "ms",
+      "baseline_median": 797.967608,
+      "candidate_median": 1513.3665,
+      "ratio": 1.896526230924401
+    },
+    {
+      "id": "batch.core.delete",
+      "unit": "ms",
+      "baseline_median": 1507.765465,
+      "candidate_median": 1531.801118,
+      "ratio": 1.015941241232767
+    },
+    {
+      "id": "batch.orm.insert",
+      "unit": "ms",
+      "baseline_median": 91.198785,
+      "candidate_median": 114.485911,
+      "ratio": 1.255344695655759
+    },
+    {
+      "id": "batch.orm.update",
+      "unit": "ms",
+      "baseline_median": 622.548216,
+      "candidate_median": 767.515823,
+      "ratio": 1.2328616535622678
+    },
+    {
+      "id": "batch.orm.delete",
+      "unit": "ms",
+      "baseline_median": 444.23374,
+      "candidate_median": 476.028275,
+      "ratio": 1.0715716347884787
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+== select_pk_us
+  raw                                      median 561.841  [533.184..645.919]
+  core_cached                              median 752.321  [730.225..938.503]
+  core_uncached                            median 1007.143  [949.684..1197.186]
+  orm                                      median 849.751  [804.533..915.912]
+== fetch_all_us
+  raw                                      median 3923.612  [3639.244..4169.505]
+  core                                     median 4340.028  [3962.064..4629.686]
+  orm                                      median 7734.260  [7217.777..7943.176]
+== batch_ms
+  raw insert                               median 1472.832  [1014.947..1605.164]
+  raw update                               median 1346.273  [614.007..2354.850]
+  raw delete                               median 1817.970  [844.461..2104.672]
+  raw_prepared insert                      median 205.865  [178.337..222.642]
+  raw_prepared update                      median 188.235  [179.503..229.362]
+  raw_prepared delete                      median 554.360  [329.309..671.393]
+  core insert                              median 131.711  [103.585..132.549]
+  core update                              median 1513.367  [1483.240..1925.812]
+  core delete                              median 1531.801  [623.307..2348.059]
+  core_prepared_experiment insert          median 139.545  [98.452..147.681]
+  core_prepared_experiment update          median 240.302  [165.054..307.198]
+  core_prepared_experiment delete          median 304.884  [290.161..706.085]
+  orm insert                               median 114.486  [102.413..136.282]
+  orm update                               median 767.516  [417.993..1359.852]
+  orm delete                               median 476.028  [401.947..502.556]
+== reflect_ms
+  inspector_table                          median 18.235  [14.556..25.164]
+  metadata_reflect                         median 21.696  [18.954..93.763]
+== reflect_sql_statements
+  inspector_table                          8
+  metadata_reflect                         10
+wrote /tmp/claude-1000/-data-GitHub-pycubrid/0a1784df-1111-416b-a8a3-bccbbb2734e8/scratchpad/sac-903/.logs/pair2-cand.json

@@ -8,6 +8,7 @@ This guide covers observed performance for `sqlalchemy-cubrid` and practical opt
 
 - [Overview](#overview)
 - [Current Baseline (2026-10-12)](#current-baseline-2026-10-12)
+- [Benchmark Artifact Contract](#benchmark-artifact-contract)
 - [Benchmark Results](#benchmark-results)
 - [Performance Characteristics](#performance-characteristics)
 - [Optimization Tips](#optimization-tips)
@@ -275,6 +276,164 @@ code through `run_sync`), remote networks and server-side resource use.
 
 ---
 
+## Benchmark Artifact Contract
+
+A versioned manifest (#901) lets an external consumer, such as
+[cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark), check a baseline
+or candidate run without unrecorded assumptions. It is advisory: no CI job
+requires it, and no threshold fails a pull request.
+
+`scripts/bench_dialect_baseline.py` produces the report. It now also records:
+
+- `workload.script_sha256`, the SHA-256 of the script, as the workload identity;
+- `target`, the DSN without its password, as the connection identity;
+- `pool_pre_ping` (off) and autocommit (off);
+- the dialect's `use_insertmanyvalues` and `insertmanyvalues_page_size`;
+- `"status": "complete"`. A report is written only after every check of the run
+  passed;
+- the provenance of the measured dialect (#903): `dialect_package_sha256`, a
+  SHA-256 over the installed `sqlalchemy_cubrid/*.py` files, and
+  `source_verification`;
+- the `--server-image-digest`, `--host-label` and `--comparable-group` you pass
+  to the benchmark.
+
+Before measuring, the benchmark checks the installed dialect against
+`--source-sha`, and a mismatch stops the run:
+
+- For an install from a local git checkout (`pip`/`uv pip install <dir>`,
+  editable or not), the installed `*.py` files must equal those of that commit
+  in the checkout (`source_verification: local_checkout`).
+- For a VCS install (`git+https://...@<sha>`), the recorded commit must equal it
+  (`vcs_info`).
+- Any other install, such as a wheel from PyPI, is recorded as `unverified`, and
+  `export` rejects it.
+
+Run the benchmark with `python -I`. Otherwise an `sqlalchemy_cubrid.egg-info`
+in the current directory can hide the installed distribution's metadata.
+
+`scripts/bench_artifact.py` handles the manifest:
+
+- `export` turns one complete, verified report into `manifest.json`.
+- `validate` checks a manifest. It re-hashes the files it lists and rebuilds the
+  manifest from them. An edited, corrupt or mixed-revision input therefore fails,
+  and so does an in-place edit of the image digest, host label, group, source SHA
+  or package hash, because those now come from the hashed report. With
+  `--source-repo DIR`, it also recomputes the package hash from the source SHA in
+  that git repository. Editing the report and the manifest together is not
+  detected, so keep artifacts in git.
+- `compare` reports per-metric medians and ratios for a baseline and a candidate.
+  It does so only when they share a group and differ in nothing but the dialect
+  (source SHA, version, package hash and verification method); otherwise it
+  prints `not comparable` with the reasons. It takes `--source-repo` as well.
+
+Exit codes: 0 valid or comparable, 1 invalid, 2 usage error, 3 not comparable.
+
+```bash
+python -I scripts/bench_dialect_baseline.py --dsn <dsn> --trials 5 \
+    --source-sha <40-character SHA of the installed dialect> \
+    --server-image-digest sha256:<64 hex> --host-label <label> --comparable-group <name> \
+    --output raw/bench_dialect_baseline.json > raw/bench_dialect_baseline.txt
+python scripts/bench_artifact.py export raw/bench_dialect_baseline.json \
+    --log raw/bench_dialect_baseline.txt --output manifest.json
+python scripts/bench_artifact.py validate manifest.json --source-repo <checkout>
+python scripts/bench_artifact.py compare baseline/manifest.json candidate/manifest.json
+```
+
+**Contract `sqlalchemy-cubrid-benchmark-artifact/2`.** Version 2 (#903) adds the
+provenance fields and moves the digest, host label and group into the report.
+`validate` rejects `/1` manifests.
+
+- `environment`:
+  - the dialect source SHA (40 characters) and sqlalchemy-cubrid version;
+  - `dialect_package_sha256` and `source_verification` (`local_checkout` or
+    `vcs_info`);
+  - SQLAlchemy, 2.0.x or 2.1.x only;
+  - the driver and its version, and the pycubrid version;
+  - the CUBRID server version and its image digest;
+  - Python, implementation, platform, CPU and the host label;
+  - the connection target (the DSN without its password);
+  - the pool, `pool_pre_ping`, autocommit and the insertmanyvalues settings.
+- `workload`: the script, its SHA-256, the table and every argument except
+  `source_sha`. The argument `rows` must be 1,000.
+- `trials`: at least 3 independent trials.
+- `files`: the report (`raw`) and its log (`log`), each with a relative path and
+  SHA-256. Duplicate paths are rejected.
+- `metrics`: the advisory set. Each metric has its unit, rows per timed call, SQL
+  shape, commit policy, warm-up, verified condition, every trial value and the
+  median.
+
+| Metric | Unit | SQL shape | Commit |
+|---|---|---|---|
+| `select_pk.raw`, `.core_cached`, `.core_uncached`, `.orm` | µs per statement | one-row SELECT by primary key: raw cursor, Core with the compiled cache, Core with `compiled_cache=None`, ORM | none |
+| `fetch_all.raw`, `.core`, `.orm` | µs per fetch | SELECT of 1,000 rows: `fetchall()`, `.all()`, `scalars().all()` | none |
+| `batch.raw.{insert,update,delete}` | ms per batch | raw `executemany()` of literal-rendered rows: one EXECUTE_BATCH (FC20) | timed, one per batch |
+| `batch.raw_prepared.{insert,update,delete}` (pycubrid only) | ms per batch | opt-in `executemany(prepared=True)`: PREPARE + EXECUTE_ARRAY (FC2 + FC21) | timed, one per batch |
+| `batch.core.insert` | ms per batch | Core `insert()` executemany through insertmanyvalues: multi-row `INSERT ... VALUES` | timed, one per batch |
+| `batch.core.update`, `batch.core.delete` | ms per batch | Core executemany through `PyCubridDialect.do_executemany` (literal FC20; the dialect passes no `prepared` flag) | timed, one per batch |
+| `batch.orm.insert`, `.update`, `.delete` | ms per batch | ORM bulk INSERT (insertmanyvalues), bulk UPDATE by primary key (`do_executemany`), unit-of-work DELETE | timed, one per batch |
+
+For `cubrid://` (CUBRIDdb) reports, the SQL shapes follow that driver:
+`batch.raw.*` is CUBRIDdb's own `executemany()`, and `batch.core.update`,
+`batch.core.delete` and `batch.orm.update` go through
+`CubridDialect.do_executemany`, one `cursor.execute()` per parameter set (#502).
+
+The experimental `core_prepared_experiment` batch, reflection and the concurrency
+workload stay in the report but are not part of the contract.
+
+**Pinned pair (2026-10-14, contract 2).**
+[`benchmarks/2026-10-14-artifact-pair-v2/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-14-artifact-pair-v2)
+holds `run.sh`, both raw reports and logs, both manifests and `compare.json`.
+Only the installed dialect varies, and both installs were verified as
+`local_checkout`:
+
+- baseline: v1.11.0, `3a0c289`;
+- candidate: `main` at `0dfe938`.
+
+Everything else is shared: the same script, pycubrid 1.12.0, SQLAlchemy 2.1.4,
+CPython 3.12.13, and CUBRID 11.4.6.1963 from image `sha256:1248b77ad398` on one
+host. Each run had 5 trials. `compare` reports `comparable`. Figures are medians,
+with the interquartile range of the trial values:
+
+| Metric | Unit | Baseline v1.11.0 | Candidate `0dfe938` | Ratio |
+|---|---|---:|---:|---:|
+| `select_pk.raw` | us | 732.6 (582.2–2963.6) | 561.8 (558.9–566.3) | 0.77 |
+| `select_pk.core_cached` | us | 802.2 (727.2–803.9) | 752.3 (743.7–793.9) | 0.94 |
+| `select_pk.core_uncached` | us | 916.1 (912.2–1012.8) | 1007.1 (988.3–1049.2) | 1.10 |
+| `select_pk.orm` | us | 837.9 (804.0–872.9) | 849.8 (826.1–865.0) | 1.01 |
+| `fetch_all.raw` | us | 3948.9 (3830.1–3971.4) | 3923.6 (3848.8–4026.4) | 0.99 |
+| `fetch_all.core` | us | 4303.6 (4228.0–4539.3) | 4340.0 (4111.8–4525.4) | 1.01 |
+| `fetch_all.orm` | us | 7781.8 (7596.0–7869.8) | 7734.3 (7730.4–7775.9) | 0.99 |
+| `batch.raw.insert` | ms | 1758.5 (1740.3–1954.4) | 1472.8 (1073.9–1531.7) | 0.84 |
+| `batch.raw_prepared.insert` | ms | 157.1 (152.5–197.6) | 205.9 (197.5–215.0) | 1.31 |
+| `batch.raw.update` | ms | 1146.3 (1112.4–1455.3) | 1346.3 (854.3–1547.2) | 1.17 |
+| `batch.raw_prepared.update` | ms | 178.9 (170.6–196.1) | 188.2 (179.9–204.6) | 1.05 |
+| `batch.raw.delete` | ms | 1429.5 (880.6–1463.6) | 1818.0 (1371.4–1888.1) | 1.27 |
+| `batch.raw_prepared.delete` | ms | 288.9 (256.3–315.8) | 554.4 (355.4–637.7) | 1.92 |
+| `batch.core.insert` | ms | 114.4 (99.5–115.7) | 131.7 (116.0–132.4) | 1.15 |
+| `batch.core.update` | ms | 798.0 (597.4–880.1) | 1513.4 (1506.0–1531.7) | 1.90 |
+| `batch.core.delete` | ms | 1507.8 (1281.9–1515.1) | 1531.8 (781.9–2098.6) | 1.02 |
+| `batch.orm.insert` | ms | 91.2 (89.6–107.2) | 114.5 (108.8–132.3) | 1.26 |
+| `batch.orm.update` | ms | 622.5 (443.9–636.2) | 767.5 (655.3–1108.7) | 1.23 |
+| `batch.orm.delete` | ms | 444.2 (377.5–460.0) | 476.0 (403.4–487.0) | 1.07 |
+
+These ratios show the noise floor of one host. They are not a regression
+finding. The `raw` and `raw_prepared` rows do not run the dialect at all, yet
+`select_pk.raw` moved by 0.77 and the raw batch rows between 0.84 and 1.92.
+`batch.orm.update` is 1.23 here and was 1.84 in the contract 1 pair of the same
+day. Batch DML varies widely from trial to trial on this host. A future candidate result means something only against this kind
+of spread, from the same environment.
+
+The first pinned pair, `2026-10-14-artifact-pair` (contract 1, #901), is kept
+unchanged. `validate` rejects it as `/1`: the benchmark did not verify its installs, and its
+digest, host label and group were `export` arguments.
+
+The #830 archives (`2026-10-12-dialect-baseline` and
+`2026-10-13-dialect-baseline-followup`) stay unchanged and historical. Their
+reports predate the contract: they have no `status`, workload identity or pool
+fields. `export` rejects them, so they cannot be compared with a new artifact.
+
+---
+
 ## Benchmark Results
 
 The results in this section are historical. They were measured on earlier
@@ -386,3 +545,8 @@ one CUBRID container; `python aggregate.py` in that directory rebuilds
 `benchmarks/2026-10-13-dialect-baseline-followup/run.sh`, which starts each CUBRID
 version in turn and runs `scripts/bench_dialect_baseline.py` through the three
 drivers with `--concurrency 1,4,8`.
+
+The pinned artifact pair is reproduced with
+`benchmarks/2026-10-14-artifact-pair-v2/run.sh`. It runs one script against two
+installed dialect revisions, then exports, validates and compares their
+manifests (see [Benchmark Artifact Contract](#benchmark-artifact-contract)).

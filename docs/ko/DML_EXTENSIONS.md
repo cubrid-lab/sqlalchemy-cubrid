@@ -146,6 +146,7 @@ VALUES (1, 'alice', 'alice@example.com')
 ### 동작 참고
 
 - `REPLACE INTO`는 모든 표준 INSERT 값 패턴(`values`, `from_select` 등)을 사용합니다
+- CUBRID는 `WITH ... REPLACE`를 거부하므로 `from_select()` 안의 CTE는 컬럼 목록 뒤에 `REPLACE INTO t (...) WITH c AS (...) SELECT ...` 형태로 렌더링됩니다 (#897)
 - 중복 키 충돌 시 CUBRID는 기존 행을 새 행으로 교체합니다
 - `prefix_with()` 텍스트는 `insert()`와 똑같이 동사와 `INTO` 사이에 렌더링됩니다(`replace(users).prefix_with("/* audit */")`는 `REPLACE /* audit */ INTO users ...`로 렌더링). 접두사, 주석, 리터럴, 식별자는 `INSERT INTO` 텍스트를 포함하더라도 재작성되지 않습니다
 - `REPLACE INTO`는 `ON DUPLICATE KEY UPDATE`를 지원하지 않습니다. 제자리 갱신에는 `insert(...).on_duplicate_key_update(...)`를 사용하세요
@@ -291,7 +292,8 @@ stmt = (
 `when_matched_then_update()`와 `when_not_matched_then_insert()` 딕셔너리의 컬럼 키는 다음과 같이 해석됩니다:
 
 1. **문자열 키** — 대상 테이블의 컬럼 이름과 일치해야 함. 일치하는 컬럼이 없으면 `CompileError` 발생.
-2. **Column 객체** — 컬럼이 대상 테이블에 속하면 DB 수준 이름을 직접 사용. 다른 테이블에 속하지만 같은 키의 컬럼이 대상에 있으면 대상 컬럼 이름을 사용.
+2. **Column 객체** — 대상 테이블이나 그 별칭의 컬럼은 해당 대상 컬럼으로 해석되며 DB 수준 이름을 사용. 다른 테이블의 컬럼은 대상에 같은 이름의 컬럼이 있어도 `CompileError` 발생 (#847): `source.c.name`은 `target.c.name`이 아니므로 대상 컬럼이나 문자열 `"name"`을 사용. 어떤 테이블에도 묶이지 않은 컬럼(`sa.column("name")`)은 이름으로 대응.
+3. **컬럼 목록 축약형** — `when_not_matched_then_insert([source.c.id, source.c.name])`은 나열한 각 소스 컬럼을 같은 이름의 대상 컬럼에 삽입하므로, 이 키들은 이름으로 대응.
 
 ```python
 # 유효: 문자열 키가 대상 컬럼과 일치
@@ -302,6 +304,9 @@ stmt = (
 
 # 무효: 대상 테이블에 없는 문자열 키 → CompileError
 .when_matched_then_update({"nonexistent_col": source_table.c.name})
+
+# 무효: 대상에 같은 이름의 컬럼이 있어도 소스 컬럼을 할당 키로 사용 → CompileError (#847)
+.when_matched_then_update({source_table.c.name: source_table.c.name})
 ```
 
 **컴파일 시점 오류:**
@@ -311,6 +316,7 @@ stmt = (
 | `MERGE statement requires a target table` | 대상 테이블 미지정 |
 | `MERGE statement requires a USING source` | `.using()` 미호출 |
 | `MERGE statement requires an ON condition` | `.on()` 미호출 |
+| `MERGE: assignment key column 'X' belongs to 'T', not the MERGE target` | 다른 테이블의 Column을 할당 키로 사용 |
 | `MERGE: column 'X' not found in target table` | 문자열/Column 키가 대상 컬럼으로 해석되지 않음 |
 
 ---
@@ -667,6 +673,7 @@ sequenceDiagram
 1. 대표적인 카디널리티와 인덱스 레이아웃으로 벤치마크하세요.
 2. 매치 조건자를 sargable하게 유지하세요 (`ON` 키에 인덱스).
 3. 결정적 SQL 텍스트가 문장 캐시 동작에 도움이 될 때 ODKU에서 튜플 순서를 사용하세요.
+4. `INSERT ... ON DUPLICATE KEY UPDATE` 문장은 SQLAlchemy의 컴파일 캐시를 사용합니다 (#871): 컬럼과 갱신 식이 같은 문장은 한 번만 컴파일되고, 실행마다 그 문장의 값을 바인딩합니다. 이전 버전은 처음 한 번 `SAWarning`을 내고 그런 문장을 매번 다시 컴파일했습니다.
 
 ---
 

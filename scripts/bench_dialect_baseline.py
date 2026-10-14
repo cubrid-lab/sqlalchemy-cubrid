@@ -43,29 +43,50 @@ concurrency) of ``select_pk``, ``fetch_all``, ``batch`` (no prepared variants)
 and ``concurrency``; reflection is skipped there (it runs the same synchronous
 dialect code through ``run_sync``).
 
+The report records the workload identity (``workload.script_sha256``, the
+SHA-256 of this file), the connection target (the DSN without its password),
+``pool_pre_ping`` and the dialect's insertmanyvalues settings, and ends with
+``"status": "complete"``. It is written only after every check passed.
+``scripts/bench_artifact.py`` turns a report into a versioned artifact manifest
+and compares a baseline with a candidate (#901).
+
+Provenance (#903): before measuring, the installed ``sqlalchemy_cubrid`` is
+checked against ``--source-sha``. An install from a local git checkout must have
+the same ``*.py`` files as that commit; a VCS install must record that commit.
+A mismatch stops the run. The report records the package SHA-256, the
+verification method, and the operator's ``--server-image-digest``,
+``--host-label`` and ``--comparable-group``.
+
 Usage:
     python scripts/bench_dialect_baseline.py \\
         --dsn cubrid+pycubrid://dba@localhost:33000/testdb --trials 5 \\
-        --output baseline.json
+        --source-sha "$(git rev-parse HEAD)" --output baseline.json \\
+        --server-image-digest sha256:<64 hex> --host-label <label> --comparable-group <name>
 """
 
 from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
+import importlib.util
 import json
 import platform
+import re
 import statistics
 import sys
 import threading
 import time
 from collections.abc import Callable
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 import pycubrid
 import pycubrid.aio
+import sqlalchemy_cubrid
 from sqlalchemy import (
     Integer,
     MetaData,
@@ -82,11 +103,12 @@ from sqlalchemy import (
     text,
     update,
 )
-from sqlalchemy.engine import Connection, Engine
+from sqlalchemy.engine import URL, Connection, Engine, make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 TABLE = "bench_dialect_baseline"
+POOL_PRE_PING = False
 pc = time.perf_counter_ns
 
 
@@ -834,7 +856,7 @@ async def async_concurrency(
 
 def prepared_executemany_engine(dsn: str) -> Engine:
     """Engine whose dialect passes ``prepared=True`` (benchmark experiment only)."""
-    engine = create_engine(dsn)
+    engine = create_engine(dsn, pool_pre_ping=POOL_PRE_PING)
 
     def do_executemany(cursor: Any, statement: str, parameters: Any, context: Any = None) -> None:
         cursor.executemany(statement, parameters, prepared=True)
@@ -876,7 +898,90 @@ def raw_connector(engine: Engine) -> Callable[[], Any]:
     return connect_cubriddb
 
 
-def environment(server: str, driver: str, pool: str, args: argparse.Namespace) -> dict[str, Any]:
+# Arguments that describe the run's environment, not its workload.
+NOT_WORKLOAD_ARGS = ("dsn", "output", "server_image_digest", "host_label", "comparable_group")
+
+
+def _artifact_module() -> Any:
+    """``scripts/bench_artifact.py``, loaded by path (``python -I`` drops the script dir)."""
+    spec = importlib.util.spec_from_file_location(
+        "bench_artifact", Path(__file__).with_name("bench_artifact.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def file_url_path(url: str) -> Path:
+    """The local path of a PEP 610 ``file://`` URL (drive letters and UNC hosts kept)."""
+    parts = urlsplit(url)
+    path = url2pathname(parts.path)
+    if parts.netloc and parts.netloc != "localhost":
+        path = f"//{parts.netloc}{path}"
+    return Path(path)
+
+
+def dialect_provenance(source_sha: str, package_dir: Path | None = None) -> dict[str, Any]:
+    """Check the installed dialect against ``source_sha``; raise ``SystemExit`` on a mismatch.
+
+    Returns the package SHA-256, the verification method (``local_checkout``,
+    ``vcs_info`` or ``unverified``) and the verified revision.
+    """
+    ba = _artifact_module()
+    package_dir = package_dir or Path(sqlalchemy_cubrid.__file__).resolve().parent
+    installed = ba.installed_package_files(package_dir)
+    out: dict[str, Any] = {
+        "dialect_package_sha256": ba.tree_sha256(installed),
+        "source_verification": "unverified",
+        "installed_revision": None,
+    }
+    if source_sha == "unknown":  # nothing claimed, nothing to verify
+        return out
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise SystemExit(f"--source-sha {source_sha!r} is not a full 40-character commit SHA")
+    try:
+        direct = distribution("sqlalchemy-cubrid").read_text("direct_url.json")
+    except PackageNotFoundError:
+        direct = None
+    info = json.loads(direct) if direct else {}
+    vcs_commit = (info.get("vcs_info") or {}).get("commit_id")
+    url = str(info.get("url", ""))
+    if vcs_commit:
+        if vcs_commit != source_sha:
+            raise SystemExit(
+                f"installed sqlalchemy-cubrid is commit {vcs_commit}, not --source-sha {source_sha}"
+            )
+        out.update(source_verification="vcs_info", installed_revision=vcs_commit)
+    elif url.startswith("file://") and "dir_info" in info:
+        checkout = file_url_path(url)
+        try:
+            expected = ba.git_package_files(checkout, source_sha)
+        except ba.ArtifactError as exc:
+            raise SystemExit(f"cannot verify --source-sha {source_sha}: {exc}") from None
+        if expected != installed:
+            changed = sorted(set(expected) ^ set(installed)) or sorted(
+                k for k in expected if expected[k] != installed.get(k)
+            )
+            raise SystemExit(
+                f"installed sqlalchemy_cubrid ({package_dir}) differs from commit {source_sha} "
+                f"of {checkout}: {', '.join(changed)}"
+            )
+        out.update(source_verification="local_checkout", installed_revision=source_sha)
+    return out
+
+
+def target(dsn: str) -> str:
+    """The DSN without its password: the connection identity of the run."""
+    url = make_url(dsn)
+    return URL.create(
+        url.drivername, url.username, None, url.host, url.port, url.database, url.query
+    ).render_as_string(hide_password=False)
+
+
+def environment(
+    server: str, driver: str, pool: str, args: argparse.Namespace, dialect: Any
+) -> dict[str, Any]:
     cpu = ""
     try:
         for line in Path("/proc/cpuinfo").read_text().splitlines():
@@ -896,8 +1001,16 @@ def environment(server: str, driver: str, pool: str, args: argparse.Namespace) -
         "source_sha": args.source_sha,
         "cubrid_server": server,
         "driver": driver,
+        "target": target(args.dsn),
         "pool": pool,
-        "args": {k: v for k, v in vars(args).items() if k not in ("dsn", "output")},
+        "pool_pre_ping": POOL_PRE_PING,
+        "autocommit": False,
+        "use_insertmanyvalues": dialect.use_insertmanyvalues,
+        "insertmanyvalues_page_size": dialect.insertmanyvalues_page_size,
+        "cubrid_image_digest": args.server_image_digest,
+        "host": args.host_label,
+        "comparable_group": args.comparable_group,
+        "args": {k: v for k, v in vars(args).items() if k not in NOT_WORKLOAD_ARGS},
     }
     if driver == "cubrid":
         env["cubrid_python"] = version("cubrid_python")
@@ -906,7 +1019,7 @@ def environment(server: str, driver: str, pool: str, args: argparse.Namespace) -
 
 def run_sync(args: argparse.Namespace) -> dict[str, Any]:
     pool_size = max([5, *args.concurrency])
-    engine = create_engine(args.dsn, pool_size=pool_size)
+    engine = create_engine(args.dsn, pool_size=pool_size, pool_pre_ping=POOL_PRE_PING)
     check(
         engine.dialect.driver in ("pycubrid", "cubrid"),
         "this baseline needs cubrid+pycubrid://, cubrid:// or cubrid+aiopycubrid://",
@@ -921,7 +1034,9 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
     raw = raw_connect()
     with engine.connect() as conn:
         server = conn.execute(text("SELECT version()")).scalar()
-    env = environment(str(server), engine.dialect.driver, type(engine.pool).__name__, args)
+    env = environment(
+        str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
+    )
     report: dict[str, Any] = {"environment": env, "trials": []}
     try:
         for trial in range(args.trials):
@@ -955,7 +1070,7 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
 
 async def run_async(args: argparse.Namespace) -> dict[str, Any]:
     pool_size = max([5, *args.concurrency])
-    engine = create_async_engine(args.dsn, pool_size=pool_size)
+    engine = create_async_engine(args.dsn, pool_size=pool_size, pool_pre_ping=POOL_PRE_PING)
     async with engine.begin() as conn:
         await conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
         await conn.run_sync(Base.metadata.create_all)
@@ -963,7 +1078,9 @@ async def run_async(args: argparse.Namespace) -> dict[str, Any]:
     raw = await pycubrid.aio.connect(**raw_kw, autocommit=False)
     async with engine.connect() as conn:
         server = (await conn.execute(text("SELECT version()"))).scalar()
-    env = environment(str(server), engine.dialect.driver, type(engine.pool).__name__, args)
+    env = environment(
+        str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
+    )
     report: dict[str, Any] = {"environment": env, "trials": []}
     try:
         for trial in range(args.trials):
@@ -1047,13 +1164,24 @@ def main() -> None:
     ap.add_argument("--concurrent-writes", type=int, default=50, help="UPDATEs per worker")
     ap.add_argument("--source-sha", default="unknown", help="sqlalchemy-cubrid commit measured")
     ap.add_argument("--output", type=Path, default=Path("bench_dialect_baseline.json"))
+    ap.add_argument("--server-image-digest", help="sha256:<64 hex> of the CUBRID server image")
+    ap.add_argument("--host-label", help="label of the benchmark host")
+    ap.add_argument("--comparable-group", help="name of the group of comparable runs")
     args = ap.parse_args()
+    provenance = dialect_provenance(args.source_sha)
 
     if args.dsn.startswith("cubrid+aiopycubrid://"):
         report = asyncio.run(run_async(args))
     else:
         report = run_sync(args)
+    report["environment"].update(provenance)
     report["summary"] = aggregate(report["trials"])
+    report["workload"] = {
+        "script": "scripts/bench_dialect_baseline.py",
+        "script_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+        "table": TABLE,
+    }
+    report["status"] = "complete"
     args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     for section, data in report["summary"].items():
         print(f"== {section}")
