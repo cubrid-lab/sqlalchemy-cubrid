@@ -6,12 +6,13 @@ that names its exact environment, workload identity, independent trial values
 and the advisory metric set, validates such a manifest against the files it
 lists, and compares a baseline with a candidate. It adds no benchmark of its own.
 
-Contract ``sqlalchemy-cubrid-benchmark-artifact/1`` (see docs/PERFORMANCE.md,
-"Benchmark artifact contract"):
+Contract ``sqlalchemy-cubrid-benchmark-artifact/2`` (see docs/PERFORMANCE.md,
+"Benchmark artifact contract"; ``/1`` manifests are rejected):
 
-* ``environment``: the dialect source SHA and version, SQLAlchemy 2.0.x or 2.1.x,
-  the driver and its version, the CUBRID server version and image digest, Python,
-  the host label, the pool, ``pool_pre_ping``, autocommit and the dialect's
+* ``environment``: the dialect source SHA and version, the installed package's
+  SHA-256 and how the SHA was verified, SQLAlchemy 2.0.x or 2.1.x, the driver and
+  its version, the CUBRID server version and image digest, Python, the host
+  label, the pool, ``pool_pre_ping``, autocommit and the dialect's
   insertmanyvalues settings.
 * ``workload``: the script and its SHA-256, the table and every argument except
   ``source_sha``.
@@ -25,17 +26,23 @@ A comparison is valid only within one ``comparable_group`` and when everything
 except the dialect source SHA and version is identical; otherwise it reports
 ``not comparable`` with the reasons. The result is advisory, not a gate.
 
-``validate`` checks everything derived from the listed files. The operator's
-assertions are taken as given: the dialect source SHA (``--source-sha`` of the
-benchmark, not checked against the installed package), the image digest, the
-host label and the group. Keep artifacts in git for immutability (#903).
+Provenance (#903). The benchmark refuses to run when the installed dialect
+does not match ``--source-sha``: for an install from a local checkout it compares
+the installed ``sqlalchemy_cubrid/*.py`` with that commit's files, for a VCS
+install it compares the recorded commit. ``export`` rejects an unverified install
+(for example from PyPI). The image digest, host label and group are benchmark
+arguments recorded in the report, so ``validate``, which rebuilds the manifest
+from the hashed report, rejects an in-place edit of them in the manifest.
+``validate --source-repo DIR`` also recomputes the package SHA-256 from that
+commit in ``DIR``. Editing the report and the manifest together is not detected;
+keep artifacts in git.
 
 Usage:
     python scripts/bench_artifact.py export raw/report.json --output manifest.json \\
-        --server-image-digest sha256:<64 hex> --host <label> --comparable-group <name> \\
         [--log raw/report.txt]
-    python scripts/bench_artifact.py validate manifest.json
-    python scripts/bench_artifact.py compare baseline/manifest.json candidate/manifest.json
+    python scripts/bench_artifact.py validate manifest.json [--source-repo DIR]
+    python scripts/bench_artifact.py compare baseline/manifest.json \\
+        candidate/manifest.json [--source-repo DIR]
 
 Exit codes: 0 valid / comparable, 1 invalid input, 2 usage error, 3 not comparable.
 """
@@ -48,12 +55,15 @@ import json
 import math
 import re
 import statistics
+import subprocess
 import sys
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-SCHEMA = "sqlalchemy-cubrid-benchmark-artifact/1"
+SCHEMA = "sqlalchemy-cubrid-benchmark-artifact/2"
+PACKAGE = "sqlalchemy_cubrid"
+VERIFIED_SOURCES = ("local_checkout", "vcs_info")
 SCRIPT = "scripts/bench_dialect_baseline.py"
 TABLE = "bench_dialect_baseline"
 MIN_TRIALS = 3
@@ -64,7 +74,12 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 DRIVERS = {"pycubrid": "pycubrid", "cubrid": "cubrid_python", "aiopycubrid": "pycubrid"}
 # The environment fields a candidate may change; everything else must match.
-CANDIDATE_FIELDS = ("dialect_source_sha", "sqlalchemy_cubrid")
+CANDIDATE_FIELDS = (
+    "dialect_source_sha",
+    "sqlalchemy_cubrid",
+    "dialect_package_sha256",
+    "source_verification",
+)
 
 EXIT_INVALID = 1
 EXIT_NOT_COMPARABLE = 3
@@ -196,6 +211,47 @@ def _require(cond: bool, msg: str) -> None:
         raise ArtifactError(msg)
 
 
+def tree_sha256(files: Mapping[str, bytes]) -> str:
+    """SHA-256 over ``relative path NUL sha256(content) LF`` of every file, in path order."""
+    h = hashlib.sha256()
+    for name in sorted(files):
+        h.update(name.encode() + b"\0" + hashlib.sha256(files[name]).hexdigest().encode() + b"\n")
+    return h.hexdigest()
+
+
+def installed_package_files(package_dir: Path) -> dict[str, bytes]:
+    """The ``*.py`` files of an installed package, keyed by path inside the package."""
+    return {
+        p.relative_to(package_dir).as_posix(): p.read_bytes()
+        for p in package_dir.rglob("*.py")
+        if "__pycache__" not in p.parts
+    }
+
+
+def _git(repo: Path, *args: str) -> bytes:
+    try:
+        return subprocess.run(
+            ["git", "-C", str(repo), *args], capture_output=True, check=True
+        ).stdout
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = getattr(exc, "stderr", b"") or b""
+        raise ArtifactError(
+            f"git {' '.join(args)} failed in {repo}: {detail.decode(errors='replace').strip()}"
+        ) from None
+
+
+def git_package_files(repo: Path, sha: str) -> dict[str, bytes]:
+    """The ``sqlalchemy_cubrid/*.py`` files of commit ``sha`` in ``repo``."""
+    names = _git(repo, "ls-tree", "-r", "--name-only", sha, "--", f"{PACKAGE}/").decode()
+    files = {
+        name[len(PACKAGE) + 1 :]: _git(repo, "show", f"{sha}:{name}")
+        for name in names.splitlines()
+        if name.endswith(".py")
+    }
+    _require(bool(files), f"commit {sha} in {repo} has no {PACKAGE}/*.py files")
+    return files
+
+
 def _relative(path: str) -> str:
     pure = PurePosixPath(path)
     _require(
@@ -216,7 +272,7 @@ def _trial_values(values: Any, trials: int, mid: str) -> list[float]:
     return [float(v) for v in values]
 
 
-def _environment(report: dict[str, Any], digest: str, host: str) -> dict[str, Any]:
+def _environment(report: dict[str, Any]) -> dict[str, Any]:
     env: Any = report.get("environment")
     _require(isinstance(env, dict), "report has no environment")
     args = env.get("args")
@@ -239,10 +295,32 @@ def _environment(report: dict[str, Any], digest: str, host: str) -> dict[str, An
     driver = env.get("driver")
     _require(driver in DRIVERS, f"unsupported driver {driver!r}")
     driver_version = env.get(DRIVERS[driver])
-    _require(digest is not None and DIGEST.match(digest) is not None, f"bad digest {digest!r}")
-    _require(bool(host), "host label is empty")
+    digest = env.get("cubrid_image_digest")
+    _require(
+        isinstance(digest, str) and DIGEST.match(digest) is not None,
+        f"bad or missing image digest {digest!r} (benchmark --server-image-digest)",
+    )
+    host = env.get("host")
+    _require(isinstance(host, str) and bool(host), "host label missing (benchmark --host-label)")
+    verification = env.get("source_verification")
+    _require(
+        verification in VERIFIED_SOURCES,
+        f"installed dialect not verified against the source SHA ({verification!r}); "
+        "install it from a git checkout or a VCS URL",
+    )
+    package_sha = env.get("dialect_package_sha256")
+    _require(
+        isinstance(package_sha, str) and SHA256.match(package_sha) is not None,
+        "dialect_package_sha256 missing",
+    )
+    _require(
+        env.get("installed_revision") == sha,
+        f"installed revision {env.get('installed_revision')!r} is not the source SHA {sha}",
+    )
     out = {
         "dialect_source_sha": sha,
+        "dialect_package_sha256": package_sha,
+        "source_verification": verification,
         "sqlalchemy_cubrid": env.get("sqlalchemy_cubrid"),
         "sqlalchemy": sa,
         "driver": driver,
@@ -267,33 +345,15 @@ def _environment(report: dict[str, Any], digest: str, host: str) -> dict[str, An
     return out
 
 
-def build_manifest(
-    report_path: Path,
-    *,
-    root: Path,
-    digest: str,
-    host: str,
-    group: str,
-    logs: Sequence[Path] = (),
-) -> dict[str, Any]:
+def build_manifest(report_path: Path, *, root: Path, logs: Sequence[Path] = ()) -> dict[str, Any]:
     """Build the manifest of one complete report; paths are relative to ``root``."""
     try:
-        return _build_manifest(
-            report_path, root=root, digest=digest, host=host, group=group, logs=logs
-        )
+        return _build_manifest(report_path, root=root, logs=logs)
     except (AttributeError, KeyError, TypeError) as exc:
         raise ArtifactError(f"{report_path}: malformed report ({exc!r})") from None
 
 
-def _build_manifest(
-    report_path: Path,
-    *,
-    root: Path,
-    digest: str,
-    host: str,
-    group: str,
-    logs: Sequence[Path] = (),
-) -> dict[str, Any]:
+def _build_manifest(report_path: Path, *, root: Path, logs: Sequence[Path] = ()) -> dict[str, Any]:
     """Build the manifest of one complete report; paths are relative to ``root``."""
     report = _load_json(report_path)
     _require(isinstance(report, dict), f"{report_path} is not a report object")
@@ -302,8 +362,12 @@ def _build_manifest(
         f"{report_path}: status {report.get('status')!r}, not 'complete' "
         "(an older or interrupted run is not a comparable artifact)",
     )
-    _require(bool(group), "comparable group is empty")
-    env = _environment(report, digest, host)
+    env = _environment(report)
+    group = report["environment"].get("comparable_group")
+    _require(
+        isinstance(group, str) and bool(group),
+        "comparable group missing (benchmark --comparable-group)",
+    )
     workload = report.get("workload")
     _require(isinstance(workload, dict), "report has no workload identity")
     _require(workload.get("script") == SCRIPT, f"workload script {workload.get('script')!r}")
@@ -390,10 +454,23 @@ def _build_manifest(
     }
 
 
-def validate(manifest_path: Path) -> dict[str, Any]:
-    """Check a manifest and rebuild it from the files it lists; return it."""
+def validate(manifest_path: Path, source_repo: Path | None = None) -> dict[str, Any]:
+    """Check a manifest and rebuild it from the files it lists; return it.
+
+    With ``source_repo``, also recompute the installed package's SHA-256 from the
+    manifest's dialect source SHA in that git repository.
+    """
     try:
-        return _validate(manifest_path)
+        manifest = _validate(manifest_path)
+        if source_repo is not None:
+            env = manifest["environment"]
+            expected = tree_sha256(git_package_files(source_repo, env["dialect_source_sha"]))
+            _require(
+                expected == env["dialect_package_sha256"],
+                f"dialect_package_sha256 {env['dialect_package_sha256']} is not the "
+                f"{PACKAGE} of commit {env['dialect_source_sha']} ({expected})",
+            )
+        return manifest
     except (AttributeError, KeyError, TypeError) as exc:
         raise ArtifactError(f"{manifest_path}: malformed manifest ({exc!r})") from None
 
@@ -414,8 +491,7 @@ def _validate(manifest_path: Path) -> dict[str, Any]:
         _require(actual == f.get("sha256"), f"{path}: SHA-256 {actual} does not match the manifest")
     raws = [p for f, p in zip(files, paths) if f["role"] == "raw"]
     _require(len(raws) == 1, f"expected exactly one raw report, got {raws}")
-    env: Any = manifest.get("environment")
-    _require(isinstance(env, dict), "manifest has no environment")
+    _require(isinstance(manifest.get("environment"), dict), "manifest has no environment")
     metrics: Any = manifest.get("metrics")
     _require(
         isinstance(metrics, list) and all(isinstance(m, dict) for m in metrics),
@@ -429,9 +505,6 @@ def _validate(manifest_path: Path) -> dict[str, Any]:
     rebuilt = build_manifest(
         root / raws[0],
         root=root,
-        digest=env.get("cubrid_image_digest"),
-        host=env.get("host"),
-        group=str(manifest.get("comparable_group") or ""),
         logs=[root / p for f, p in zip(files, paths) if f["role"] == "log"],
     )
     for key in ("comparable_group", "environment", "workload", "trials", "files", "metrics"):
@@ -492,9 +565,6 @@ def main(argv: list[str] | None = None) -> int:
     ex = sub.add_parser("export", help="write the manifest of one complete report")
     ex.add_argument("report", type=Path)
     ex.add_argument("--output", type=Path, required=True)
-    ex.add_argument("--server-image-digest", required=True)
-    ex.add_argument("--host", required=True, help="label of the benchmark host")
-    ex.add_argument("--comparable-group", required=True)
     ex.add_argument("--log", type=Path, action="append", default=[])
     va = sub.add_parser("validate", help="check a manifest against its files")
     va.add_argument("manifest", type=Path)
@@ -502,27 +572,30 @@ def main(argv: list[str] | None = None) -> int:
     co.add_argument("baseline", type=Path)
     co.add_argument("candidate", type=Path)
     co.add_argument("--output", type=Path)
+    for p in (va, co):
+        p.add_argument(
+            "--source-repo",
+            type=Path,
+            help="git repository to recompute the installed package SHA-256 from",
+        )
     args = ap.parse_args(argv)
 
     try:
         if args.command == "export":
             root = args.output.resolve().parent
             manifest = build_manifest(
-                args.report.resolve(),
-                root=root,
-                digest=args.server_image_digest,
-                host=args.host,
-                group=args.comparable_group,
-                logs=[p.resolve() for p in args.log],
+                args.report.resolve(), root=root, logs=[p.resolve() for p in args.log]
             )
             args.output.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
             print(f"wrote {args.output}: {len(manifest['metrics'])} metrics")
             return 0
         if args.command == "validate":
-            manifest = validate(args.manifest)
+            manifest = validate(args.manifest, args.source_repo)
             print(f"valid: {args.manifest} ({len(manifest['metrics'])} metrics)")
             return 0
-        result = compare(validate(args.baseline), validate(args.candidate))
+        result = compare(
+            validate(args.baseline, args.source_repo), validate(args.candidate, args.source_repo)
+        )
     except ArtifactError as exc:
         print(f"invalid: {exc}", file=sys.stderr)
         return EXIT_INVALID

@@ -7,6 +7,7 @@ import copy
 import json
 import math
 import statistics
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +48,12 @@ def make_report(driver: str = "pycubrid", sha: str = SHA_A, trials: int = 5) -> 
         "autocommit": False,
         "use_insertmanyvalues": True,
         "insertmanyvalues_page_size": 1000,
+        "cubrid_image_digest": DIGEST,
+        "host": "devbox",
+        "comparable_group": "g",
+        "dialect_package_sha256": "5" * 64,
+        "source_verification": "local_checkout",
+        "installed_revision": sha,
         "args": {"trials": trials, "rows": 1000, "batch": 1000, "source_sha": sha},
     }
     if driver == "cubrid":
@@ -70,24 +77,11 @@ def make_report(driver: str = "pycubrid", sha: str = SHA_A, trials: int = 5) -> 
     }
 
 
-def write_artifact(
-    tmp: Path, report: dict[str, Any], *, group: str = "g", digest: str = DIGEST, log: bool = True
-) -> Path:
+def write_artifact(tmp: Path, report: dict[str, Any], *, log: bool = True) -> Path:
     tmp.mkdir(parents=True, exist_ok=True)
     (tmp / "raw").mkdir(exist_ok=True)
     (tmp / "raw" / "report.json").write_text(json.dumps(report), encoding="utf-8")
-    argv = [
-        "export",
-        str(tmp / "raw" / "report.json"),
-        "--output",
-        str(tmp / "manifest.json"),
-        "--server-image-digest",
-        digest,
-        "--host",
-        "devbox",
-        "--comparable-group",
-        group,
-    ]
+    argv = ["export", str(tmp / "raw" / "report.json"), "--output", str(tmp / "manifest.json")]
     if log:
         (tmp / "raw" / "report.txt").write_text("log\n", encoding="utf-8")
         argv += ["--log", str(tmp / "raw" / "report.txt")]
@@ -99,19 +93,12 @@ def invalid(tmp: Path, report: dict[str, Any], match: str, **kw: Any) -> None:
     (tmp / "raw").mkdir(parents=True, exist_ok=True)
     (tmp / "raw" / "report.json").write_text(json.dumps(report), encoding="utf-8")
     with pytest.raises(ba.ArtifactError, match=match):
-        ba.build_manifest(
-            tmp / "raw" / "report.json",
-            root=tmp,
-            digest=kw.get("digest", DIGEST),
-            host="devbox",
-            group="g",
-            logs=kw.get("logs", ()),
-        )
+        ba.build_manifest(tmp / "raw" / "report.json", root=tmp, logs=kw.get("logs", ()))
 
 
 def test_export_writes_the_advisory_metric_set(tmp_path: Path) -> None:
     manifest = ba.validate(write_artifact(tmp_path, make_report()))
-    assert manifest["schema"] == "sqlalchemy-cubrid-benchmark-artifact/1"
+    assert manifest["schema"] == "sqlalchemy-cubrid-benchmark-artifact/2"
     assert manifest["environment"]["dialect_source_sha"] == SHA_A
     assert manifest["environment"]["cubrid_image_digest"] == DIGEST
     assert manifest["environment"]["pool_pre_ping"] is False
@@ -203,8 +190,68 @@ def test_incomplete_or_inconsistent_reports_are_rejected(
     invalid(tmp_path, report, match)
 
 
-def test_bad_digest_and_duplicate_paths_are_rejected(tmp_path: Path) -> None:
-    invalid(tmp_path, make_report(), "bad digest", digest="1248b77ad398")
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("cubrid_image_digest", "1248b77ad398", "bad or missing image digest"),
+        ("cubrid_image_digest", None, "bad or missing image digest"),
+        ("host", "", "host label missing"),
+        ("comparable_group", None, "comparable group missing"),
+        ("source_verification", "unverified", "not verified against the source SHA"),
+        ("source_verification", None, "not verified against the source SHA"),
+        ("dialect_package_sha256", "x", "dialect_package_sha256 missing"),
+        ("installed_revision", SHA_B, "installed revision"),
+        ("installed_revision", None, "installed revision"),
+    ],
+)
+def test_unverified_or_incomplete_provenance_is_rejected(
+    tmp_path: Path, field: str, value: Any, match: str
+) -> None:
+    report = make_report()
+    report["environment"][field] = value
+    invalid(tmp_path, report, match)
+
+
+def test_vcs_verified_reports_export(tmp_path: Path) -> None:
+    report = make_report()
+    report["environment"]["source_verification"] = "vcs_info"
+    manifest = ba.validate(write_artifact(tmp_path, report))
+    assert manifest["environment"]["source_verification"] == "vcs_info"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cubrid_image_digest", "sha256:" + "9" * 64),
+        ("host", "otherhost"),
+        ("dialect_package_sha256", "6" * 64),
+        ("source_verification", "vcs_info"),
+        ("dialect_source_sha", SHA_B),
+    ],
+)
+def test_validate_rejects_in_place_edits_of_provenance(
+    tmp_path: Path, field: str, value: str
+) -> None:
+    """These fields come from the hashed report, so editing the manifest alone fails (#903)."""
+    manifest_path = write_artifact(tmp_path, make_report())
+    manifest = json.loads(manifest_path.read_text())
+    manifest["environment"][field] = value
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ba.ArtifactError, match="environment does not match"):
+        ba.validate(manifest_path)
+    manifest = json.loads(manifest_path.read_text())
+
+
+def test_validate_rejects_an_in_place_edit_of_the_group(tmp_path: Path) -> None:
+    manifest_path = write_artifact(tmp_path, make_report())
+    manifest = json.loads(manifest_path.read_text())
+    manifest["comparable_group"] = "other"
+    manifest_path.write_text(json.dumps(manifest))
+    with pytest.raises(ba.ArtifactError, match="comparable_group does not match"):
+        ba.validate(manifest_path)
+
+
+def test_duplicate_paths_are_rejected(tmp_path: Path) -> None:
     raw = tmp_path / "raw" / "report.json"
     invalid(tmp_path, make_report(), "duplicate file paths", logs=[raw])
 
@@ -252,8 +299,17 @@ def test_compare_reports_ratios_when_only_the_dialect_varies(
     assert ba.main(["compare", str(base), str(cand), "--output", str(out)]) == 0
     result = json.loads(out.read_text())
     assert result["status"] == "comparable"
-    assert result["baseline"] == {"dialect_source_sha": SHA_A, "sqlalchemy_cubrid": "1.11.0"}
-    assert result["candidate"] == {"dialect_source_sha": SHA_B, "sqlalchemy_cubrid": "1.12.0"}
+    provenance = {"dialect_package_sha256": "5" * 64, "source_verification": "local_checkout"}
+    assert result["baseline"] == {
+        "dialect_source_sha": SHA_A,
+        "sqlalchemy_cubrid": "1.11.0",
+        **provenance,
+    }
+    assert result["candidate"] == {
+        "dialect_source_sha": SHA_B,
+        "sqlalchemy_cubrid": "1.12.0",
+        **provenance,
+    }
     by_id = {m["id"]: m for m in result["metrics"]}
     assert by_id["select_pk.raw"]["ratio"] == pytest.approx(2.0)
     assert by_id["batch.orm.delete"]["ratio"] == pytest.approx(1.0)
@@ -277,8 +333,13 @@ def test_compare_reports_ratios_when_only_the_dialect_varies(
         ),
         (lambda r: r["workload"].update(script_sha256="3" * 64), {}, "workload.script_sha256"),
         (lambda r: r["environment"]["args"].update(batch=100), {}, "workload.args"),
-        (lambda r: None, {"digest": "sha256:" + "4" * 64}, "cubrid_image_digest"),
-        (lambda r: None, {"group": "other-host"}, "comparable_group"),
+        (
+            lambda r: r["environment"].update(cubrid_image_digest="sha256:" + "4" * 64),
+            {},
+            "cubrid_image_digest",
+        ),
+        (lambda r: r["environment"].update(host="otherhost"), {}, "environment.host"),
+        (lambda r: r["environment"].update(comparable_group="other"), {}, "comparable_group"),
     ],
 )
 def test_compare_rejects_any_other_difference(
@@ -287,7 +348,7 @@ def test_compare_rejects_any_other_difference(
     base = write_artifact(tmp_path / "base", make_report(sha=SHA_A))
     cand_report = make_report(sha=SHA_B)
     edit(cand_report)
-    cand = write_artifact(tmp_path / "cand", cand_report, **kw)
+    cand = write_artifact(tmp_path / "cand", cand_report)
     out = tmp_path / "compare.json"
     assert ba.main(["compare", str(base), str(cand), "--output", str(out)]) == 3
     result = json.loads(out.read_text())
@@ -316,7 +377,6 @@ def test_export_rejects_a_report_outside_the_manifest_directory(tmp_path: Path) 
     (tmp_path / "report.json").write_text(json.dumps(make_report()))
     (tmp_path / "out").mkdir()
     argv = ["export", str(tmp_path / "report.json"), "--output", str(tmp_path / "out" / "m.json")]
-    argv += ["--server-image-digest", DIGEST, "--host", "h", "--comparable-group", "g"]
     assert ba.main(argv) == ba.EXIT_INVALID
 
 
@@ -333,7 +393,7 @@ def test_historical_archives_are_not_comparable_artifacts(raw: str) -> None:
     path = REPO / raw
     before = path.read_bytes()
     with pytest.raises(ba.ArtifactError, match="not 'complete'"):
-        ba.build_manifest(path, root=REPO, digest=DIGEST, host="devbox", group="g")
+        ba.build_manifest(path, root=REPO)
     assert path.read_bytes() == before
 
 
@@ -347,6 +407,9 @@ def test_baseline_script_records_pool_and_insertmanyvalues_settings() -> None:
         output="y",
         trials=5,
         source_sha=SHA_A,
+        server_image_digest=DIGEST,
+        host_label="devbox",
+        comparable_group="g",
     )
     env = bdb.environment("11.4.6.1963", "pycubrid", "QueuePool", args, dialect)
     assert env["target"] == "cubrid+pycubrid://dba@localhost:34114/testdb"
@@ -355,10 +418,21 @@ def test_baseline_script_records_pool_and_insertmanyvalues_settings() -> None:
     assert env["use_insertmanyvalues"] is True
     assert env["insertmanyvalues_page_size"] == 1000
     assert env["args"] == {"trials": 5, "source_sha": SHA_A}
+    assert (env["cubrid_image_digest"], env["host"], env["comparable_group"]) == (
+        DIGEST,
+        "devbox",
+        "g",
+    )
+
+
+def test_the_first_pinned_pair_is_kept_but_rejected_as_contract_1() -> None:
+    pair = REPO / "benchmarks" / "2026-10-14-artifact-pair"
+    with pytest.raises(ba.ArtifactError, match="artifact/1"):
+        ba.validate(pair / "baseline" / "manifest.json")
 
 
 def test_the_committed_pinned_pair_is_valid_and_comparable() -> None:
-    pair = REPO / "benchmarks" / "2026-10-14-artifact-pair"
+    pair = REPO / "benchmarks" / "2026-10-14-artifact-pair-v2"
     base = ba.validate(pair / "baseline" / "manifest.json")
     cand = ba.validate(pair / "candidate" / "manifest.json")
     result = ba.compare(base, cand)
@@ -379,9 +453,126 @@ def test_malformed_inputs_report_invalid_instead_of_a_traceback(
     assert "invalid:" in capsys.readouterr().err
     (tmp_path / "raw" / "report.json").write_text("[1, 2]")
     argv = ["export", str(tmp_path / "raw" / "report.json"), "--output", str(manifest_path)]
-    argv += ["--server-image-digest", DIGEST, "--host", "h", "--comparable-group", "g"]
     assert ba.main(argv) == ba.EXIT_INVALID
     report = make_report()
     report["environment"]["args"]["trials"] = "5"
     (tmp_path / "raw" / "report.json").write_text(json.dumps(report))
     assert ba.main(argv) == ba.EXIT_INVALID
+
+
+# ----- installed-source verification (#903) ---------------------------------------------
+
+
+def _git_repo(tmp: Path, files: dict[str, str]) -> tuple[Path, str]:
+    repo = tmp / "repo"
+    (repo / "sqlalchemy_cubrid").mkdir(parents=True)
+    for name, text in files.items():
+        (repo / "sqlalchemy_cubrid" / name).write_text(text)
+    (repo / "sqlalchemy_cubrid" / "py.typed").write_text("")
+    (repo / "README").write_text("not part of the package\n")
+    env = ["-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(repo), *env, "commit", "-qm", "c"], check=True)
+    sha = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"]).decode().strip()
+    return repo, sha
+
+
+FILES = {"__init__.py": "x = 1\n", "dialect.py": "y = 2\n"}
+
+
+def test_git_and_installed_package_hashes_agree(tmp_path: Path) -> None:
+    repo, sha = _git_repo(tmp_path, FILES)
+    installed = ba.installed_package_files(repo / "sqlalchemy_cubrid")
+    assert set(installed) == {"__init__.py", "dialect.py"}
+    assert ba.tree_sha256(installed) == ba.tree_sha256(ba.git_package_files(repo, sha))
+    assert ba.tree_sha256(installed) != ba.tree_sha256({**installed, "dialect.py": b"y = 3\n"})
+    with pytest.raises(ba.ArtifactError, match="failed"):
+        ba.git_package_files(repo, "f" * 40)
+
+
+def test_validate_with_source_repo_recomputes_the_package_hash(tmp_path: Path) -> None:
+    repo, sha = _git_repo(tmp_path, FILES)
+    report = make_report(sha=sha)
+    report["environment"]["dialect_package_sha256"] = ba.tree_sha256(
+        ba.installed_package_files(repo / "sqlalchemy_cubrid")
+    )
+    manifest_path = write_artifact(tmp_path / "a", report)
+    assert ba.main(["validate", str(manifest_path), "--source-repo", str(repo)]) == 0
+    report["environment"]["dialect_package_sha256"] = "7" * 64
+    manifest_path = write_artifact(tmp_path / "b", report)
+    with pytest.raises(ba.ArtifactError, match="is not the sqlalchemy_cubrid of commit"):
+        ba.validate(manifest_path, repo)
+    assert ba.main(["validate", str(manifest_path), "--source-repo", str(repo)]) == 1
+
+
+class _Dist:
+    def __init__(self, direct_url: dict[str, Any] | None) -> None:
+        self.direct_url = direct_url
+
+    def read_text(self, name: str) -> str | None:
+        assert name == "direct_url.json"
+        return None if self.direct_url is None else json.dumps(self.direct_url)
+
+
+@pytest.fixture
+def bdb() -> Any:
+    pytest.importorskip("pycubrid")
+    from scripts import bench_dialect_baseline
+
+    return bench_dialect_baseline
+
+
+def test_provenance_of_a_matching_local_checkout(tmp_path: Path, bdb: Any, monkeypatch) -> None:
+    repo, sha = _git_repo(tmp_path, FILES)
+    monkeypatch.setattr(
+        bdb, "distribution", lambda _: _Dist({"url": repo.as_uri(), "dir_info": {}})
+    )
+    out = bdb.dialect_provenance(sha, repo / "sqlalchemy_cubrid")
+    assert out == {
+        "dialect_package_sha256": ba.tree_sha256(ba.git_package_files(repo, sha)),
+        "source_verification": "local_checkout",
+        "installed_revision": sha,
+    }
+
+
+def test_provenance_rejects_a_changed_or_wrong_install(
+    tmp_path: Path, bdb: Any, monkeypatch
+) -> None:
+    repo, sha = _git_repo(tmp_path, FILES)
+    monkeypatch.setattr(
+        bdb, "distribution", lambda _: _Dist({"url": repo.as_uri(), "dir_info": {"editable": True}})
+    )
+    (repo / "sqlalchemy_cubrid" / "dialect.py").write_text("y = 3\n")
+    with pytest.raises(SystemExit, match="differs from commit .*: dialect.py"):
+        bdb.dialect_provenance(sha, repo / "sqlalchemy_cubrid")
+    with pytest.raises(SystemExit, match="cannot verify --source-sha"):
+        bdb.dialect_provenance("f" * 40, repo / "sqlalchemy_cubrid")
+
+
+def test_provenance_of_a_vcs_install(tmp_path: Path, bdb: Any, monkeypatch) -> None:
+    repo, sha = _git_repo(tmp_path, FILES)
+    vcs = {"url": "https://example.com/r.git", "vcs_info": {"vcs": "git", "commit_id": sha}}
+    monkeypatch.setattr(bdb, "distribution", lambda _: _Dist(vcs))
+    out = bdb.dialect_provenance(sha, repo / "sqlalchemy_cubrid")
+    assert (out["source_verification"], out["installed_revision"]) == ("vcs_info", sha)
+    with pytest.raises(SystemExit, match="not --source-sha"):
+        bdb.dialect_provenance(SHA_B, repo / "sqlalchemy_cubrid")
+
+
+@pytest.mark.parametrize(
+    "direct_url", [None, {"url": "https://pypi.org/x.whl", "archive_info": {}}]
+)
+def test_provenance_of_an_unverifiable_install(
+    tmp_path: Path, bdb: Any, monkeypatch, direct_url: Any
+) -> None:
+    repo, sha = _git_repo(tmp_path, FILES)
+    monkeypatch.setattr(bdb, "distribution", lambda _: _Dist(direct_url))
+    out = bdb.dialect_provenance(sha, repo / "sqlalchemy_cubrid")
+    assert (out["source_verification"], out["installed_revision"]) == ("unverified", None)
+    report = make_report(sha=sha)
+    report["environment"].update(out)
+    invalid(tmp_path / "art", report, "not verified against the source SHA")
+    assert bdb.dialect_provenance("unknown", repo / "sqlalchemy_cubrid")["source_verification"] == (
+        "unverified"
+    )

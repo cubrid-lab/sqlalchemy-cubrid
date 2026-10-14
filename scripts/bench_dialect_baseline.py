@@ -50,10 +50,18 @@ SHA-256 of this file), the connection target (the DSN without its password),
 ``scripts/bench_artifact.py`` turns a report into a versioned artifact manifest
 and compares a baseline with a candidate (#901).
 
+Provenance (#903): before measuring, the installed ``sqlalchemy_cubrid`` is
+checked against ``--source-sha``. An install from a local git checkout must have
+the same ``*.py`` files as that commit; a VCS install must record that commit.
+A mismatch stops the run. The report records the package SHA-256, the
+verification method, and the operator's ``--server-image-digest``,
+``--host-label`` and ``--comparable-group``.
+
 Usage:
     python scripts/bench_dialect_baseline.py \\
         --dsn cubrid+pycubrid://dba@localhost:33000/testdb --trials 5 \\
-        --source-sha "$(git rev-parse HEAD)" --output baseline.json
+        --source-sha "$(git rev-parse HEAD)" --output baseline.json \\
+        --server-image-digest sha256:<64 hex> --host-label <label> --comparable-group <name>
 """
 
 from __future__ import annotations
@@ -61,6 +69,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import hashlib
+import importlib.util
 import json
 import platform
 import statistics
@@ -68,12 +77,14 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import pycubrid
 import pycubrid.aio
+import sqlalchemy_cubrid
 from sqlalchemy import (
     Integer,
     MetaData,
@@ -885,6 +896,68 @@ def raw_connector(engine: Engine) -> Callable[[], Any]:
     return connect_cubriddb
 
 
+# Arguments that describe the run's environment, not its workload.
+NOT_WORKLOAD_ARGS = ("dsn", "output", "server_image_digest", "host_label", "comparable_group")
+
+
+def _artifact_module() -> Any:
+    """``scripts/bench_artifact.py``, loaded by path (``python -I`` drops the script dir)."""
+    spec = importlib.util.spec_from_file_location(
+        "bench_artifact", Path(__file__).with_name("bench_artifact.py")
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def dialect_provenance(source_sha: str, package_dir: Path | None = None) -> dict[str, Any]:
+    """Check the installed dialect against ``source_sha``; raise ``SystemExit`` on a mismatch.
+
+    Returns the package SHA-256, the verification method (``local_checkout``,
+    ``vcs_info`` or ``unverified``) and the verified revision.
+    """
+    ba = _artifact_module()
+    package_dir = package_dir or Path(sqlalchemy_cubrid.__file__).resolve().parent
+    installed = ba.installed_package_files(package_dir)
+    out: dict[str, Any] = {
+        "dialect_package_sha256": ba.tree_sha256(installed),
+        "source_verification": "unverified",
+        "installed_revision": None,
+    }
+    if source_sha == "unknown":  # nothing claimed, nothing to verify
+        return out
+    try:
+        direct = distribution("sqlalchemy-cubrid").read_text("direct_url.json")
+    except PackageNotFoundError:
+        direct = None
+    info = json.loads(direct) if direct else {}
+    vcs_commit = (info.get("vcs_info") or {}).get("commit_id")
+    url = str(info.get("url", ""))
+    if vcs_commit:
+        if vcs_commit != source_sha:
+            raise SystemExit(
+                f"installed sqlalchemy-cubrid is commit {vcs_commit}, not --source-sha {source_sha}"
+            )
+        out.update(source_verification="vcs_info", installed_revision=vcs_commit)
+    elif url.startswith("file://") and "dir_info" in info:
+        checkout = Path(unquote(urlsplit(url).path))
+        try:
+            expected = ba.git_package_files(checkout, source_sha)
+        except ba.ArtifactError as exc:
+            raise SystemExit(f"cannot verify --source-sha {source_sha}: {exc}") from None
+        if expected != installed:
+            changed = sorted(set(expected) ^ set(installed)) or sorted(
+                k for k in expected if expected[k] != installed.get(k)
+            )
+            raise SystemExit(
+                f"installed sqlalchemy_cubrid ({package_dir}) differs from commit {source_sha} "
+                f"of {checkout}: {', '.join(changed)}"
+            )
+        out.update(source_verification="local_checkout", installed_revision=source_sha)
+    return out
+
+
 def target(dsn: str) -> str:
     """The DSN without its password: the connection identity of the run."""
     url = make_url(dsn)
@@ -921,7 +994,10 @@ def environment(
         "autocommit": False,
         "use_insertmanyvalues": dialect.use_insertmanyvalues,
         "insertmanyvalues_page_size": dialect.insertmanyvalues_page_size,
-        "args": {k: v for k, v in vars(args).items() if k not in ("dsn", "output")},
+        "cubrid_image_digest": args.server_image_digest,
+        "host": args.host_label,
+        "comparable_group": args.comparable_group,
+        "args": {k: v for k, v in vars(args).items() if k not in NOT_WORKLOAD_ARGS},
     }
     if driver == "cubrid":
         env["cubrid_python"] = version("cubrid_python")
@@ -1075,12 +1151,17 @@ def main() -> None:
     ap.add_argument("--concurrent-writes", type=int, default=50, help="UPDATEs per worker")
     ap.add_argument("--source-sha", default="unknown", help="sqlalchemy-cubrid commit measured")
     ap.add_argument("--output", type=Path, default=Path("bench_dialect_baseline.json"))
+    ap.add_argument("--server-image-digest", help="sha256:<64 hex> of the CUBRID server image")
+    ap.add_argument("--host-label", help="label of the benchmark host")
+    ap.add_argument("--comparable-group", help="name of the group of comparable runs")
     args = ap.parse_args()
+    provenance = dialect_provenance(args.source_sha)
 
     if args.dsn.startswith("cubrid+aiopycubrid://"):
         report = asyncio.run(run_async(args))
     else:
         report = run_sync(args)
+    report["environment"].update(provenance)
     report["summary"] = aggregate(report["trials"])
     report["workload"] = {
         "script": "scripts/bench_dialect_baseline.py",
