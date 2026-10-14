@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   affected, and the dialect's own terminate path is unchanged. The Connection Guide and
   the Support Matrix describe the limitation.
 
+### CI
+
+- **Release preparation starts after the abandoned 1.11.1** — 1.11.1 has no tag, so
+  release-please fell back to `bootstrap-sha` and proposed 1.12.0 with every commit since
+  1.8.0. `release-please-config.json` now sets `last-release-sha` to the 1.11.1 merge, so the
+  next candidate is computed from the commits after it, and RELEASING.md's abandoned-version
+  recovery documents setting that override and removing it after the next release is tagged.
+
 ### Tests
 
 - **#872 garbage-collection tests no longer depend on the cycle collector** — the live
