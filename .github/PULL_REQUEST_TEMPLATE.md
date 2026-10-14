@@ -29,7 +29,7 @@ See CONTRIBUTING.md#pull-request-and-commit-titles.
 
 ## Checklist
 
-- [ ] The implementation issue has the actual owner in Assignees; existing claims and PRs were coordinated
+- [ ] I checked existing Assignees, claims and PRs; maintainer-operated autonomous agents taking `good first issue` work have issue-specific approval and assignment. Human-led outside contributors need no preapproval or Assignee rights.
 - [ ] The linked issue has current scope, verifiable completion criteria and validation instructions; completed dependencies are not still blockers
 
 - [ ] My code follows the project's code style
