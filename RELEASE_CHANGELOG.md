@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.11.1](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.0...v1.11.1) (2026-10-14)
+
+
+### Fixed
+
+* **alembic:** emit CUBRID-compatible SQL for nullability, dropped defaults and comments in alter_column ([#877](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/877)) ([45fe81a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/45fe81a8321076a484e1800b53d2f682ab49e484))
+* **alembic:** render CUBRID collection member types with the dialect module prefix ([#884](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/884)) ([f3b00da](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f3b00daa8e9762320a7931360530c63e849dc8e4))
+* **async:** support terminating garbage-collected async connections ([#894](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/894)) ([fb11bbc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fb11bbca0ccae5d14e52d50f2647d55295280072))
+* **compiler:** escape rendered literals for the server's actual backslash mode ([#874](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/874)) ([8969586](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8969586e1b52f96d9d2a72612dbf63316bad14c7)), closes [#863](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/863)
+* **compiler:** forward compile options through CAST, ON DUPLICATE KEY UPDATE and collection members ([#875](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/875)) ([b3cc17b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b3cc17b070f46a99e23a35eca422cb157ca570cc))
+* **compiler:** make on_duplicate_key_update() cacheable ([#893](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/893)) ([39361db](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/39361db81aa519c3216977bc3be9e086f4b907ce))
+* **compiler:** reject foreign MERGE Column keys with colliding target names ([#895](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/895)) ([1a2379d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1a2379d1ed0610dde7ba0fa5225a7c658e367ff5)), closes [#847](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/847)
+* **compiler:** render a CTE after INSERT INTO for insert from a CTE select ([#899](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/899)) ([a14b31a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a14b31aa6f8ed702cfebb93b2ed5b4e6ab289d64)), closes [#897](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/897)
+* **compiler:** render Select.fetch() as LIMIT ([#880](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/880)) ([5edda8b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5edda8b09b6f90c60269da484b7afed80dc20c8a)), closes [#867](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/867)
+* **dialect:** handle colons in reflected names, type classes in collections and join linting ([#891](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/891)) ([97c44ce](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/97c44cebb50e613ba6fcd88a5fec9492622084bd))
+* **reflection:** fail closed on missing unique-index catalog reconciliation ([#896](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/896)) ([034eb34](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/034eb34bd98393af077a68f13c830ed3353da30c))
+* **reflection:** limit has_table and table listings to the current owner on CUBRID 11.2 and later ([#876](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/876)) ([5a33ba8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5a33ba8bb43feb6f749bd7d511d13504bed91329))
+* **reflection:** reflect expression, descending, filtered and prefix indexes ([#885](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/885)) ([64258de](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/64258de9e3e2ffc17d16388e40bcf772e95ef3b5))
+* **reflection:** reflect string server defaults as quoted literals ([#878](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/878)) ([14eeafa](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/14eeafa79fe2bbcdbb85973626faedcf0e8a8481))
+* **types:** escape JSON path keys with JSON string syntax ([#879](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/879)) ([ade2741](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ade2741e264376806c916b0dbc31c8e8bf0a8539)), closes [#866](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/866)
+
+
+### Documentation
+
+* **agents:** correct stale entry points, integration commands and doc map in AGENTS.md ([#846](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/846)) ([340a587](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/340a587ae1cfe6f98123669f25555948f84255cd))
+* **brand:** show the centered repository icon in the README and docs site ([#900](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/900)) ([db5ccdd](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/db5ccdd83787b3489cf61ed2f3b5fe641e171ca7)), closes [#886](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/886)
+* **i18n:** update the Python requirement in the German README ([#837](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/837)) ([fcdb443](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fcdb443891cef3a2109e9f419b5ba374434401b9)), closes [#698](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/698)
+* **i18n:** update the Python requirement in the Hindi README ([#839](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/839)) ([3f79d2d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3f79d2db34694417f31b46f0573f2038d6c2a0ee)), closes [#699](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/699)
+* **i18n:** update the Python requirement in the Russian README ([#840](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/840)) ([793b6ef](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/793b6ef8d6a5b7a764b8589bef6d77b90da84fbf)), closes [#700](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/700)
+* **roadmap:** move shipped 1.10.0 and 1.11.0 plans to completed history ([#844](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/844)) ([3d9dd99](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3d9dd99a33e79770d431172de8cb3de9950960c0))
+* **types:** mark CUBRID BLOB/CLOB value reads as partial in the feature table ([#842](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/842)) ([a570ea4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a570ea4d3aa7f222553a925677e0b324b8b39cde))
+
 ## [1.11.0](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.10.0...v1.11.0) (2026-10-12)
 
 
