@@ -51,3 +51,17 @@ def test_every_section_is_a_standard_changelog_section() -> None:
 def test_hidden_types_are_exactly_the_non_releasing_types() -> None:
     hidden = {e["type"] for e in sections() if e.get("hidden") is True}
     assert hidden == {"ci", "test", "refactor", "chore", "build", "style"}
+
+
+def test_last_release_sha_is_a_full_commit_sha_when_set() -> None:
+    # release-please 17.6.0 compares the override with each commit's full SHA;
+    # an abbreviated or mistyped value never matches and silently falls back to
+    # bootstrap-sha, listing every commit since then again (RELEASING.md,
+    # abandoned-version recovery).
+    config = json.loads((ROOT / "release-please-config.json").read_text(encoding="utf-8"))
+    assert "last-release-sha" not in config["packages"]["."]  # top-level option only
+    sha = config.get("last-release-sha")
+    if sha is not None:
+        assert isinstance(sha, str)
+        assert len(sha) == 40 and set(sha) <= set("0123456789abcdef"), sha
+        assert sha != config.get("bootstrap-sha")
