@@ -239,7 +239,6 @@ def test_validate_rejects_in_place_edits_of_provenance(
     manifest_path.write_text(json.dumps(manifest))
     with pytest.raises(ba.ArtifactError, match="environment does not match"):
         ba.validate(manifest_path)
-    manifest = json.loads(manifest_path.read_text())
 
 
 def test_validate_rejects_an_in_place_edit_of_the_group(tmp_path: Path) -> None:
@@ -576,3 +575,21 @@ def test_provenance_of_an_unverifiable_install(
     assert bdb.dialect_provenance("unknown", repo / "sqlalchemy_cubrid")["source_verification"] == (
         "unverified"
     )
+
+
+def test_provenance_rejects_an_abbreviated_sha_before_git(
+    tmp_path: Path, bdb: Any, monkeypatch
+) -> None:
+    repo, sha = _git_repo(tmp_path, FILES)
+    monkeypatch.setattr(
+        bdb, "distribution", lambda _: _Dist({"url": repo.as_uri(), "dir_info": {}})
+    )
+    for claimed in (sha[:12], sha.upper(), sha + "0"):
+        with pytest.raises(SystemExit, match="not a full 40-character commit SHA"):
+            bdb.dialect_provenance(claimed, repo / "sqlalchemy_cubrid")
+
+
+def test_file_url_paths(bdb: Any) -> None:
+    assert bdb.file_url_path("file:///srv/my%20repo") == Path("/srv/my repo")
+    assert bdb.file_url_path("file://localhost/srv/repo") == Path("/srv/repo")
+    assert str(bdb.file_url_path("file://server/share/repo")).startswith("//server/share")

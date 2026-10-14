@@ -72,6 +72,7 @@ import hashlib
 import importlib.util
 import json
 import platform
+import re
 import statistics
 import sys
 import threading
@@ -80,7 +81,8 @@ from collections.abc import Callable
 from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 import pycubrid
 import pycubrid.aio
@@ -911,6 +913,15 @@ def _artifact_module() -> Any:
     return module
 
 
+def file_url_path(url: str) -> Path:
+    """The local path of a PEP 610 ``file://`` URL (drive letters and UNC hosts kept)."""
+    parts = urlsplit(url)
+    path = url2pathname(parts.path)
+    if parts.netloc and parts.netloc != "localhost":
+        path = f"//{parts.netloc}{path}"
+    return Path(path)
+
+
 def dialect_provenance(source_sha: str, package_dir: Path | None = None) -> dict[str, Any]:
     """Check the installed dialect against ``source_sha``; raise ``SystemExit`` on a mismatch.
 
@@ -927,6 +938,8 @@ def dialect_provenance(source_sha: str, package_dir: Path | None = None) -> dict
     }
     if source_sha == "unknown":  # nothing claimed, nothing to verify
         return out
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise SystemExit(f"--source-sha {source_sha!r} is not a full 40-character commit SHA")
     try:
         direct = distribution("sqlalchemy-cubrid").read_text("direct_url.json")
     except PackageNotFoundError:
@@ -941,7 +954,7 @@ def dialect_provenance(source_sha: str, package_dir: Path | None = None) -> dict
             )
         out.update(source_verification="vcs_info", installed_revision=vcs_commit)
     elif url.startswith("file://") and "dir_info" in info:
-        checkout = Path(unquote(urlsplit(url).path))
+        checkout = file_url_path(url)
         try:
             expected = ba.git_package_files(checkout, source_sha)
         except ba.ArtifactError as exc:
