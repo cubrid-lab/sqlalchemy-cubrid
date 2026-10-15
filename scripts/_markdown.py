@@ -12,9 +12,9 @@ diagnostic and its suppression comment refer to the same line.
 from __future__ import annotations
 
 import re
-import shlex
 import unicodedata
 from dataclasses import dataclass
+from html.parser import HTMLParser
 from pathlib import Path
 
 from markdown_it import MarkdownIt
@@ -22,11 +22,7 @@ from markdown_it.token import Token
 
 _PARSER = MarkdownIt("commonmark").enable("table")
 _ATTR_ID = re.compile(r"\s*\{[^}]*#([\w-]+)[^}]*\}\s*$")
-_HTML_ANCHOR = re.compile(r"<a\s[^>]*?\b(?:id|name)\s*=\s*[\"']([^\"']+)[\"']", re.I)
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
-_HTML_TARGET = re.compile(
-    r"<(?:a|img|source)\s[^>]*?\b(?:href|src)\s*=\s*[\"']([^\"']+)[\"']", re.I
-)
 _BACKTICKS = re.compile(r"`+")
 # A full or collapsed reference link whose brackets are not escaped; an opening
 # bracket after a word character (``rows[0][1]``) is an index, not a link.
@@ -229,24 +225,52 @@ def _undefined_references(token: Token, defined: set[str]) -> list[Link]:
     return found
 
 
+class _HtmlAttributes(HTMLParser):
+    """Collect link targets and ``<a>`` anchors from HTML, as a browser parses it.
+
+    The standard library parser reads quoted and unquoted attribute values,
+    decodes entities and skips comments, so ``data-src`` is not ``src``.
+    """
+
+    TARGETS = {"a": "href", "img": "src", "source": "src"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.targets: list[tuple[int, str]] = []
+        self.anchors: set[str] = set()
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {name: value for name, value in attrs if value is not None}
+        wanted = self.TARGETS.get(tag)
+        if wanted and values.get(wanted):
+            self.targets.append((self.getpos()[0], values[wanted]))
+        if tag == "a":
+            self.anchors |= {values[name] for name in ("id", "name") if values.get(name)}
+
+    handle_startendtag = handle_starttag
+
+
+def _html_parse(source: str) -> _HtmlAttributes:
+    parser = _HtmlAttributes()
+    parser.feed(source)
+    parser.close()
+    return parser
+
+
 def _html_targets(line: int, source: str) -> list[Link]:
     """Return ``href``/``src`` targets of HTML, outside comments, with their lines."""
-    masked = _HTML_COMMENT.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), source)
-    return [
-        Link(line + masked.count("\n", 0, match.start()), match.group(1))
-        for match in _HTML_TARGET.finditer(masked)
-    ]
+    return [Link(line + row - 1, target) for row, target in _html_parse(source).targets]
 
 
 def _html_anchors(tokens: list[Token]) -> set[str]:
     """Return ``<a id>``/``<a name>`` anchors of HTML blocks and inline HTML, not comments."""
-    found = set()
+    found: set[str] = set()
     for token in tokens:
         sources = [token.content] if token.type == "html_block" else []
         if token.type == "inline":
             sources += [c.content for c in token.children or [] if c.type == "html_inline"]
         for source in sources:
-            found |= set(_HTML_ANCHOR.findall(_HTML_COMMENT.sub("", source)))
+            found |= _html_parse(source).anchors
     return found
 
 
@@ -272,7 +296,7 @@ def parse(path: Path) -> Parsed:
             continue
         line = token.map[0] + 1
         if token.type == "fence":
-            code += [(line + 1 + n, body) for n, body in enumerate(token.content.splitlines())]
+            code += _logical_lines(line + 1, token.content.splitlines())
             continue
         if token.type == "html_block":
             links += _html_targets(line, token.content)
@@ -314,6 +338,24 @@ def parse(path: Path) -> Parsed:
     )
 
 
+def _logical_lines(first: int, lines: list[str]) -> list[tuple[int, str]]:
+    """Join backslash-continued lines into one command, reported at its first line."""
+    result: list[tuple[int, str]] = []
+    start, parts = first, []
+    for number, line in enumerate(lines, first):
+        if not parts:
+            start = number
+        if line.rstrip().endswith("\\"):
+            parts.append(line.rstrip()[:-1])
+            continue
+        parts.append(line)
+        result.append((start, " ".join(parts)))
+        parts = []
+    if parts:
+        result.append((start, " ".join(parts)))
+    return result
+
+
 def _definition_line(lines: list[str], label: str) -> int:
     pattern = re.compile(rf"^ {{0,3}}\[{re.escape(label)}\]:", re.I)
     for number, line in enumerate(lines, 1):
@@ -322,14 +364,62 @@ def _definition_line(lines: list[str], label: str) -> int:
     return 1
 
 
-def _shell_tokens(command: str) -> list[str]:
-    """Split a shell command into words and operators, honouring quotes and comments."""
-    lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        return list(lexer)
-    except ValueError:  # an unbalanced quote: the command is not shell; no goals
-        return []
+_OPERATOR_CHARS = frozenset(";&|()<>")
+
+
+def _shell_tokens(command: str) -> list[tuple[str, bool]]:
+    """Split a shell command into ``(text, is_operator)`` tokens.
+
+    Quotes and backslashes make text literal, so a quoted or escaped ``;`` is
+    a word, not a separator. ``#`` starts a comment at the start of a word.
+    An unbalanced quote means the text is not a shell command: no tokens.
+    """
+    tokens: list[tuple[str, bool]] = []
+    word: list[str] = []
+    in_word = False
+    index, size = 0, len(command)
+
+    def flush() -> None:
+        nonlocal in_word
+        if in_word:
+            tokens.append(("".join(word), False))
+            word.clear()
+            in_word = False
+
+    while index < size:
+        char = command[index]
+        if char in " \t\n":
+            flush()
+            index += 1
+        elif char == "#" and not in_word:
+            break
+        elif char == "\\":
+            word.append(command[index + 1 : index + 2])
+            in_word = True
+            index += 2
+        elif char in "'\"":
+            end = index + 1
+            while end < size and command[end] != char:
+                end += 2 if char == '"' and command[end] == "\\" else 1
+            if end >= size:
+                return []
+            text = command[index + 1 : end]
+            word.append(re.sub(r'\\(["\\$`])', r"\1", text) if char == '"' else text)
+            in_word = True
+            index = end + 1
+        elif char in _OPERATOR_CHARS:
+            flush()
+            end = index
+            while end < size and command[end] in _OPERATOR_CHARS:
+                end += 1
+            tokens.append((command[index:end], True))
+            index = end
+        else:
+            word.append(char)
+            in_word = True
+            index += 1
+    flush()
+    return tokens
 
 
 def make_goals(command: str) -> list[str]:
@@ -347,9 +437,9 @@ def make_goals(command: str) -> list[str]:
     # ``VAR=value`` prefixes: ``echo make test`` names no goal.
     index, in_make, at_start = 0, False, True
     while index < len(tokens):
-        token = tokens[index]
+        token, operator = tokens[index]
         index += 1
-        if set(token) <= set("();|&<>"):
+        if operator:
             if "<" in token or ">" in token:
                 index += 1  # the redirection's operand
             else:
@@ -363,7 +453,7 @@ def make_goals(command: str) -> list[str]:
         if token in _MAKE_ARG:
             index += 1
         elif token in _MAKE_OPTIONAL_NUMBER:
-            if index < len(tokens) and tokens[index].isdigit():
+            if index < len(tokens) and tokens[index][0].isdigit():
                 index += 1
         elif token.startswith("-") or "=" in token:
             continue
@@ -373,5 +463,5 @@ def make_goals(command: str) -> list[str]:
 
 
 def is_external(target: str) -> bool:
-    """Return whether a link target has a URI scheme (``https:``, ``mailto:`` ...)."""
-    return bool(re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", target))
+    """Return whether a target is a URL: a scheme (``https:``, ``mailto:``) or ``//host``."""
+    return target.startswith("//") or bool(re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", target))

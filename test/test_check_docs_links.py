@@ -208,6 +208,43 @@ def test_html_link_and_image_targets_are_checked(tmp_path: Path) -> None:
     ]
 
 
+def test_html_attributes_are_parsed_like_a_browser(tmp_path: Path) -> None:
+    page = (
+        '<img data-src="https://example.invalid/lazy.svg" src="GONE.svg">\n\n'
+        "<img src=GONE2.svg alt=x>\n\n"
+        '<img src="demo&#46;gif"> <a data-href="x" href="TARGET.md#options">o</a>\n'
+    )
+    root = _tree(tmp_path, page, {"docs/demo.gif": ""})
+    assert check.run(root) == [
+        "docs/PAGE.md:1: link target 'GONE.svg' does not exist",
+        "docs/PAGE.md:3: link target 'GONE2.svg' does not exist",
+    ]
+
+
+def test_protocol_relative_urls_are_external(tmp_path: Path) -> None:
+    page = (
+        "![logo](//cdn.example.invalid/logo.svg) "
+        '<img src="//cdn.example.invalid/a.svg"> [x](//example.invalid/page)\n'
+    )
+    assert check.run(_tree(tmp_path, page)) == []
+
+
+def test_continued_shell_lines_are_one_command(tmp_path: Path) -> None:
+    page = "```bash\nmake removed \\\n  VAR=1\nmake \\\n  removed lint\n```\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:2: `make removed` is not a Makefile target",
+        "docs/PAGE.md:4: `make removed` is not a Makefile target",
+    ]
+
+
+@pytest.mark.parametrize(
+    "command", ["echo ';' make tset", "echo \\; make tset", 'echo "a && make" tset']
+)
+def test_quoted_or_escaped_separators_are_words(tmp_path: Path, command: str) -> None:
+    assert make_goals(command) == []
+    assert check.run(_tree(tmp_path, f"Run `{command}`.\n")) == []
+
+
 def test_brackets_in_urls_titles_and_comments_are_not_references(tmp_path: Path) -> None:
     page = (
         "[search](https://example.invalid/?filter=[a][b]) and\n"
