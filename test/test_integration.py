@@ -3829,6 +3829,50 @@ class TestJSONPathKeyEscaping866:
             assert conn.execute(stmt).scalar() == 12
 
 
+class TestJSONBooleanPathIndexLive914:
+    """#914: a bool JSON path index fails before any SQL reaches the server."""
+
+    @pytest.fixture
+    def json_table(self, engine):
+        meta = MetaData()
+        tbl = Table(
+            f"integration_json914_{_TABLE_SUFFIX}",
+            meta,
+            Column("id", Integer, primary_key=True),
+            Column("doc", sa.JSON),
+        )
+        meta.drop_all(engine)
+        meta.create_all(engine)
+        with engine.begin() as conn:
+            conn.execute(tbl.insert().values(id=1, doc={"items": [10, 20]}))
+        try:
+            yield tbl
+        finally:
+            meta.drop_all(engine)
+
+    @pytest.mark.parametrize("index", [True, ("items", False)])
+    def test_bool_index_is_rejected_before_execution(self, engine, json_table, index):
+        stmt = sa.select(json_table.c.doc[index])
+        with engine.connect() as conn:
+            with pytest.raises(sa.exc.StatementError) as raised:
+                conn.execute(stmt)
+            assert isinstance(raised.value.orig, TypeError)
+            assert not isinstance(raised.value, sa.exc.DBAPIError)
+            # The connection is still usable: nothing was sent.
+            value = conn.execute(sa.select(json_table.c.doc[("items", 1)].as_integer())).scalar()
+            assert value == 20
+        with pytest.raises(sa.exc.CompileError):
+            stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+
+    def test_int_indices_are_unchanged(self, engine, json_table):
+        stmt = sa.select(json_table.c.doc[("items", 0)].as_integer())
+        inline = stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
+        with engine.connect() as conn:
+            bound = conn.execute(stmt).scalar()
+            rendered = conn.exec_driver_sql(str(inline)).scalar()
+        assert (bound, rendered) == (10, 10)
+
+
 class TestFetchAsLimitLive867:
     """#867: Select.fetch() runs on the live server as LIMIT."""
 

@@ -595,6 +595,19 @@ def _json_path_key(key: Any) -> str:
     return json.dumps(str(key))
 
 
+def _reject_bool_path_index(value: Any) -> None:
+    """Refuse ``bool`` path components, which ``isinstance(value, int)`` accepts (#914).
+
+    ``True``/``False`` would render as ``[True]``/``[False]``, which is not a
+    JSON array index.
+    """
+    if isinstance(value, bool):
+        raise TypeError(
+            "JSON path index must be an int or a str, not bool; "
+            "use 0 or 1 for an array position or a string key"
+        )
+
+
 class JSONIndexType(_FormatTypeMixin, sqltypes.JSON.JSONIndexType):
     """CUBRID JSON index type for single-key access.
 
@@ -604,6 +617,7 @@ class JSONIndexType(_FormatTypeMixin, sqltypes.JSON.JSONIndexType):
     """
 
     def _format_value(self, value: Any) -> str:
+        _reject_bool_path_index(value)
         if isinstance(value, int):
             return "$[%s]" % value
         else:
@@ -618,6 +632,8 @@ class JSONPathType(_FormatTypeMixin, sqltypes.JSON.JSONPathType):
     """
 
     def _format_value(self, value: Any) -> str:
+        for elem in value:
+            _reject_bool_path_index(elem)
         return "$%s" % (
             "".join(
                 "[%s]" % elem if isinstance(elem, int) else "." + _json_path_key(elem)

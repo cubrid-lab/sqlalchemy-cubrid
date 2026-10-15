@@ -290,6 +290,14 @@ stmt = select(events).where(
 stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 ```
 
+**경로 구성 요소**는 `int` 배열 위치(`col[0]`은 `$[0]`을 읽고, 음수는 주어진 그대로
+렌더링됨) 또는 `str` 키입니다. `bool`은 `int`의 하위 클래스지만 거부됩니다(#914):
+`col[True]`나 `col[("items", False)]`는 `$[True]`로 렌더링되며, CUBRID 10.2와 11.4는 이를
+잘못된 JSON 경로(`-494`)로 거부합니다. 실행 시 SQL을 보내기 전에 `TypeError`를 감싼
+`sqlalchemy.exc.StatementError`가 발생하고, `literal_binds` 렌더링은
+`sqlalchemy.exc.CompileError`를 발생시킵니다. 배열 위치에는 `0`/`1`을, 키에는 `"True"`를
+사용하십시오.
+
 > **참고**: 일반 `sa.JSON`은 `colspecs`를 통해 CUBRID의 `JSON` 타입으로 자동 적용됩니다. JSON 컬럼은 기존 테이블에서 올바르게 리플렉트됩니다.
 
 ---

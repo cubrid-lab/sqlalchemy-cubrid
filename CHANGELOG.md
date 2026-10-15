@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`bool` JSON path indices are rejected (#914)** — `bool` is an `int` subclass, so
+  `json_col[True]` and `json_col[("items", False)]` rendered the paths `$[True]` and
+  `$."items"[False]`. CUBRID 10.2 and 11.4 reject these as invalid JSON paths (`-494`),
+  but the statement had already been sent. `JSONIndexType` and `JSONPathType` now raise
+  `TypeError` for a `bool` component. Execution reports it as
+  `sqlalchemy.exc.StatementError` before any SQL is sent, and `literal_binds` rendering as
+  `sqlalchemy.exc.CompileError`. Integer (including `0`, `1` and negative) and string
+  components render byte for byte as before, on SQLAlchemy 2.0 and 2.1. The Types guide
+  lists the supported path component types.
+
 ### Documentation
 
 - **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with

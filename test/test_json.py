@@ -107,6 +107,52 @@ class TestJSONPathType:
         assert pth._format_value((0, 1, 2)) == "$[0][1][2]"
 
 
+class TestJSONBooleanPathIndex:
+    """``bool`` is an ``int`` subclass but not a JSON array index (#914)."""
+
+    BOOL_ERROR = "JSON path index must be an int or a str, not bool"
+
+    @pytest.mark.parametrize("value", [True, False])
+    def test_index_formatter_rejects_bool(self, value):
+        with pytest.raises(TypeError, match=self.BOOL_ERROR):
+            JSONIndexType()._format_value(value)
+
+    @pytest.mark.parametrize("path", [("items", False), (True,), ("a", 0, True), (False, "b")])
+    def test_path_formatter_rejects_bool_component(self, path):
+        with pytest.raises(TypeError, match=self.BOOL_ERROR):
+            JSONPathType()._format_value(path)
+
+    def test_int_and_string_components_are_unchanged(self):
+        assert JSONIndexType()._format_value(0) == "$[0]"
+        assert JSONIndexType()._format_value(1) == "$[1]"
+        assert JSONIndexType()._format_value(-1) == "$[-1]"
+        assert JSONIndexType()._format_value("True") == '$."True"'
+        assert JSONPathType()._format_value(("items", 0, "a", 1)) == '$."items"[0]."a"[1]'
+
+    @pytest.mark.parametrize("index", [True, ("items", False)])
+    def test_bind_processor_rejects_bool(self, index):
+        compiled = select(json_table.c.data[index]).compile(dialect=CubridDialect())
+        (name,) = compiled._bind_processors
+        params = compiled.construct_params()
+        with pytest.raises(TypeError, match=self.BOOL_ERROR):
+            compiled._bind_processors[name](params[name])
+
+    @pytest.mark.parametrize("index", [True, ("items", False)])
+    def test_literal_rendering_rejects_bool(self, index):
+        with pytest.raises(sa.exc.CompileError) as raised:
+            _compile(select(json_table.c.data[index]))
+        assert isinstance(raised.value.__cause__, TypeError)
+        assert self.BOOL_ERROR in str(raised.value.__cause__)
+
+    def test_bind_processor_keeps_int_and_nested_paths(self):
+        for index, expected in ((0, "$[0]"), (("items", 1), '$."items"[1]')):
+            compiled = select(json_table.c.data[index]).compile(dialect=CubridDialect())
+            (name,) = compiled._bind_processors
+            params = compiled.construct_params()
+            sent = compiled._bind_processors[name](params[name])
+            assert sent == expected
+
+
 class TestJSONPathExpressionCompilation:
     def test_json_getitem_string_key(self):
         stmt = select(json_table.c.data["name"])

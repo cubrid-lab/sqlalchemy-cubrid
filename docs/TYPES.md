@@ -320,6 +320,14 @@ stmt = select(events).where(
 stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
 ```
 
+**Path components** are `int` array positions (`col[0]` reads `$[0]`, negative values
+render as given) or `str` keys. `bool` is rejected even though it is an `int` subclass
+(#914): `col[True]` or `col[("items", False)]` would render `$[True]`, which CUBRID 10.2
+and 11.4 reject as an invalid JSON path (`-494`). Execution raises
+`sqlalchemy.exc.StatementError` wrapping `TypeError`, before any SQL is sent, and
+`literal_binds` rendering raises `sqlalchemy.exc.CompileError`. Use `0`/`1` for an array
+position, or `"True"` for a key.
+
 > **Note**: Generic `sa.JSON` is automatically adapted to CUBRID's `JSON` type via `colspecs`. JSON columns are reflected correctly from existing tables.
 
 ---
