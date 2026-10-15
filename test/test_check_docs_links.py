@@ -301,6 +301,7 @@ def test_a_word_split_across_a_continuation_is_one_word(tmp_path: Path) -> None:
         ("echo ok;>log make removed", ["removed"]),
         ("make a&&make b", ["a", "b"]),
         ("make test &>log", ["test"]),
+        ("make test &>>build.log", ["test"]),
     ],
 )
 def test_adjacent_shell_operators_are_separate(command: str, goals: list[str]) -> None:
@@ -320,6 +321,41 @@ def test_decoded_inline_titles_still_count_their_lines(tmp_path: Path, first: st
 
 def test_a_backslash_in_a_comment_does_not_continue(tmp_path: Path) -> None:
     page = "```bash\necho ok # note \\\nmake removed\necho 'a # b\\\nc'\n```\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:3: `make removed` is not a Makefile target"
+    ]
+
+
+def test_an_entity_newline_in_a_title_adds_no_line(tmp_path: Path) -> None:
+    page = '[t](TARGET.md "a&#10;b")\n[bad](GONE.md)\n'
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:2: link target 'GONE.md' does not exist"
+    ]
+
+
+def test_an_inline_title_equal_to_a_definition_title_still_counts(tmp_path: Path) -> None:
+    page = '[t](TARGET.md "a &amp;\nb") then\n[bad](GONE.md)\n\n[r]: TARGET.md "a &\nb"\n'
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:3: link target 'GONE.md' does not exist"
+    ]
+
+
+def test_a_link_like_fragment_in_a_comment_does_not_hide_references(tmp_path: Path) -> None:
+    page = "Inline <!-- [x](https://example.invalid/-->[broken][missing])\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:1: reference [missing] has no definition"
+    ]
+
+
+def test_a_make_line_inside_a_multi_line_quote_is_not_a_command(tmp_path: Path) -> None:
+    page = "```bash\necho 'a\\\nmake removed\nb'\nmake gone\n```\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:5: `make gone` is not a Makefile target"
+    ]
+
+
+def test_a_quote_never_closed_in_a_block_is_not_shell(tmp_path: Path) -> None:
+    page = "```text\nDon't run\nmake removed\n```\n"
     assert check.run(_tree(tmp_path, page)) == [
         "docs/PAGE.md:3: `make removed` is not a Makefile target"
     ]

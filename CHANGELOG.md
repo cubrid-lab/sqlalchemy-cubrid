@@ -50,14 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `scripts/check_docs_links.py` now match pycubrid's reviewed parser
   (cubrid-lab/pycubrid#940), plus fixes for the three cases of cubrid-lab/pycubrid#941:
   - findings keep their exact line after multi-line HTML tags and inline link or image
-    titles, including titles with entities or escapes; reference-link titles add no line;
+    titles, counted from the source text (an `&#10;` entity is no line break, and an inline
+    title is not mistaken for a definition's); reference-link titles add no line;
   - grouped (`a b:`) and double-colon Makefile rules declare every target, while `:=` and
     `::=` assignments don't;
   - an apostrophe in a bare link destination, or a malformed link tail, no longer hides a
-    later undefined reference, and `<...>` destinations keep their titles masked;
+    later undefined reference, nor does a link-like fragment inside an HTML comment, and
+    `<...>` destinations keep their titles masked;
   - continued shell lines are concatenated without an added space, only for a real
-    trailing backslash (not `\\`, not in single quotes, not in a comment);
-  - adjacent shell operators such as `;>` are separate;
+    trailing backslash (not `\\`, not in single quotes, not in a comment), and a quote that
+    spans lines keeps its `make` lines quoted (a quote never closed in the block is prose);
+  - adjacent shell operators such as `;>` are separate, and `&>>` is one redirection;
   - `<source src>` is checked.
 
 - **Deterministic documentation defects block the merge (#908)** — a new `docs-check` job

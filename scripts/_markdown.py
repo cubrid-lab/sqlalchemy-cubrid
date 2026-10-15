@@ -18,6 +18,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from markdown_it import MarkdownIt
+from markdown_it.common.utils import unescapeAll
 from markdown_it.token import Token
 
 _PARSER = MarkdownIt("commonmark").enable("table")
@@ -130,23 +131,25 @@ def _mask_code_spans(raw: str) -> str:
         position = closing.end()
 
 
-def _inline_title_newlines(raw: str, child: Token, reference_titles: set[str]) -> int:
-    """Return the newlines of a link or image title written in this inline source.
+def _inline_title_newlines(child: Token, raw_titles: list[str]) -> int:
+    """Return the source newlines of a link or image title written in this inline source.
 
-    A reference link or image takes its title from the definition, elsewhere in
-    the file, so its title adds no line here. markdown-it decodes entities and
-    escapes in the title, which changes its text but not its newlines, so a
-    title that is not found verbatim still counts unless it is a definition's.
+    ``raw_titles`` are the titles of the inline link tails of the source, as
+    written. markdown-it decodes entities and escapes in a title (``&#10;`` is a
+    newline), so the title is matched to the first unused raw title that decodes
+    to it, and that raw text's newlines are counted. A reference link or image
+    has no tail here: its title comes from the definition and adds no line.
     """
     title = str(child.attrGet("title") or "")
     if "\n" not in title:
-        return 0
-    if title in raw or title not in reference_titles:
-        return title.count("\n")
+        return 0  # decoding never removes a source newline
+    for index, raw_title in enumerate(raw_titles):
+        if unescapeAll(raw_title) == title:
+            return raw_titles.pop(index).count("\n")
     return 0
 
 
-def _inline_items(token: Token, reference_titles: set[str]) -> list[tuple[int, Token]]:
+def _inline_items(token: Token) -> list[tuple[int, Token]]:
     """Return ``(line offset, child)`` for the children of an inline token.
 
     Soft and hard breaks start a new line. A code span or an inline HTML tag
@@ -155,20 +158,21 @@ def _inline_items(token: Token, reference_titles: set[str]) -> list[tuple[int, T
     moves the children after the link (the title follows the link text).
     """
     raw = token.content
+    raw_titles = _raw_titles(_HTML_COMMENT.sub(lambda m: _blank(m.group(0)), _mask_code_spans(raw)))
     cursor, offset = 0, 0
     pending_titles: list[int] = []
     items = []
     for child in token.children or []:
         items.append((offset, child))
         if child.type == "link_open":
-            pending_titles.append(_inline_title_newlines(raw, child, reference_titles))
+            pending_titles.append(_inline_title_newlines(child, raw_titles))
         elif child.type == "link_close" and pending_titles:
             offset += pending_titles.pop()
         elif child.type == "image":
             alt_breaks = sum(
                 1 for c in child.children or [] if c.type in ("softbreak", "hardbreak")
             )
-            offset += alt_breaks + _inline_title_newlines(raw, child, reference_titles)
+            offset += alt_breaks + _inline_title_newlines(child, raw_titles)
         elif child.type == "html_inline":
             start = raw.find(child.content, cursor)
             if start >= 0:
@@ -210,15 +214,15 @@ def _blank(text: str) -> str:
     return re.sub(r"[^\n]", " ", text)
 
 
-def _link_tail_end(raw: str, index: int) -> int:
-    """Return the index after the ``)`` of an inline link tail that starts at ``index``.
+def _link_tail(raw: str, index: int) -> tuple[int, str]:
+    """Return the index after the ``)`` of an inline link tail at ``index``, and its raw title.
 
     CommonMark: optional whitespace, a destination (``<...>``, or bare text with
     balanced parentheses and no whitespace, where a quote is an ordinary
     character), optional whitespace, an optional title (``"..."``, ``'...'`` or
     ``(...)``, which must follow whitespace), optional whitespace, then ``)``.
     Backslash escapes are honoured. A malformed tail (no closing ``)``, or text
-    after the title) is not a link: ``-1``.
+    after the title) is not a link: ``-1``. The title is ``""`` when there is none.
     """
     size = len(raw)
 
@@ -244,33 +248,50 @@ def _link_tail_end(raw: str, index: int) -> int:
                 depth += 1
             elif char == ")":
                 if depth == 0:
-                    return index + 1
+                    return index + 1, ""
                 depth -= 1
             index += 1
     before_title = index
     index = skip_space(index)
+    title = ""
     if index > before_title and index < size and raw[index] in "\"'(":
         closer = ")" if raw[index] == "(" else raw[index]
         index += 1
+        title_start = index
         while index < size and raw[index] != closer:
             index += 2 if raw[index] == "\\" else 1
+        title = raw[title_start:index]
         index += 1
         index = skip_space(index)
     if index < size and raw[index] == ")":
-        return index + 1
-    return -1
+        return index + 1, title
+    return -1, ""
+
+
+def _raw_titles(raw: str) -> list[str]:
+    """Return the raw titles of the inline link tails of ``raw``, in source order."""
+    titles = []
+    position = 0
+    while (opening := raw.find("](", position)) >= 0:
+        index, title = _link_tail(raw, opening + 2)
+        if index < 0:
+            position = opening + 2
+            continue
+        titles.append(title)
+        position = index
+    return titles
 
 
 def _mask_link_tails(raw: str) -> str:
     """Blank inline link destinations and titles: ``](dest "title")``.
 
-    The tail is scanned as CommonMark defines it (``_link_tail_end``), so an
+    The tail is scanned as CommonMark defines it (``_link_tail``), so an
     apostrophe inside a bare destination does not open a title.
     """
     out = list(raw)
     position = 0
     while (opening := raw.find("](", position)) >= 0:
-        index = _link_tail_end(raw, opening + 2)
+        index, _ = _link_tail(raw, opening + 2)
         if index < 0:  # not a link tail: leave it, and look past this "]("
             position = opening + 2
             continue
@@ -290,9 +311,10 @@ def _undefined_references(token: Token, defined: set[str]) -> list[Link]:
     if token.map is None:
         return []
     raw = _mask_code_spans(token.content)
-    # Link tails first: a <...> destination must keep its brackets to be scanned.
-    raw = _mask_link_tails(raw)
+    # Comments first, so a link tail is not scanned from inside one; then link
+    # tails, before tags: a <...> destination must keep its brackets to be scanned.
     raw = _HTML_COMMENT.sub(lambda m: _blank(m.group(0)), raw)
+    raw = _mask_link_tails(raw)
     raw = re.sub(r"<[^<>\n]*>", lambda m: _blank(m.group(0)), raw)
     found = []
     for match in _REFERENCE.finditer(raw):
@@ -361,9 +383,6 @@ def parse(path: Path) -> Parsed:
     references = env.get("references", {})
     references = references if isinstance(references, dict) else {}
     defined = {" ".join(str(label).split()).casefold() for label in references}
-    reference_titles = {
-        str(ref.get("title") or "") for ref in references.values() if isinstance(ref, dict)
-    }
     links: list[Link] = []
     code: list[tuple[int, str]] = []
     undefined: list[Link] = []
@@ -391,7 +410,7 @@ def parse(path: Path) -> Parsed:
             continue
         if token.type != "inline":
             continue
-        for offset, child in _inline_items(token, reference_titles):
+        for offset, child in _inline_items(token):
             if child.type == "link_open":
                 links.append(Link(line + offset, str(child.attrGet("href") or "")))
             elif child.type == "image":
@@ -427,12 +446,14 @@ def parse(path: Path) -> Parsed:
     )
 
 
-def _continues(text: str) -> bool:
-    """Return whether shell ``text`` ends with a line continuation.
+def _continues(text: str) -> str:
+    """Return how shell ``text`` continues on the next line.
 
-    Only an unescaped backslash as the very last character continues the line,
-    and not inside single quotes (where a backslash is literal). ``\\\\`` at the
-    end, or a backslash followed by spaces, does not.
+    ``"backslash"``: an unescaped backslash is the very last character, outside
+    single quotes (where a backslash is literal); ``\\\\`` at the end, or a
+    backslash followed by spaces, does not continue. ``"quote"``: a quote is
+    still open, so the newline is part of the quoted text. ``""``: the command
+    ends here. A backslash or a quote in a comment continues nothing.
     """
     quote = ""
     index = 0
@@ -442,35 +463,44 @@ def _continues(text: str) -> bool:
             quote = "" if char == "'" else quote
         elif char == "\\":
             if index == len(text) - 1:
-                return True
+                return "backslash"
             index += 1
         elif char in "'\"":
             quote = "" if quote == char else (quote or char)
-        elif char == "#" and not quote and (index == 0 or text[index - 1] in " \t;&|()<>"):
-            return False  # a comment: a backslash in it does not continue the line
+        elif char == "#" and not quote and (index == 0 or text[index - 1] in " \t;&|()<>\n"):
+            return ""  # a comment: a backslash in it does not continue the line
         index += 1
-    return False
+    return "quote" if quote else ""
 
 
 def _logical_lines(first: int, lines: list[str]) -> list[tuple[int, str]]:
-    """Join backslash-continued lines into one command, reported at its first line.
+    """Join continued lines into one command, reported at its first line.
 
     The shell removes the backslash-newline pair and nothing else, so the
     fragments are concatenated as they are: ``check-\\`` + ``all`` is ``check-all``.
+    A newline inside an open quote is quoted text, so it is kept and the quoted
+    lines (``echo 'a``, ``make x``, ``b'``) stay one command. A quote that the
+    block never closes is not shell (prose such as ``don't``): the command ends
+    at that line, and the lines after it are read again.
     """
     result: list[tuple[int, str]] = []
-    start, joined = first, None
-    for number, line in enumerate(lines, first):
-        if joined is None:
-            start, joined = number, ""
-        joined += line
-        if _continues(joined):
-            joined = joined[:-1]
-            continue
-        result.append((start, joined))
-        joined = None
-    if joined is not None:
-        result.append((start, joined))
+    position = 0
+    while position < len(lines):
+        start, joined, state, resume = position, "", "", 0
+        while position < len(lines):
+            joined += lines[position]
+            position += 1
+            state = _continues(joined)
+            if state == "backslash":
+                joined = joined[:-1]
+            elif state == "quote":
+                resume = resume or position
+                joined += "\n"
+            else:
+                break
+        if state == "quote":  # never closed: end the command there, rescan the rest
+            joined, position = joined.split("\n", 1)[0], resume
+        result.append((first + start, joined))
     return result
 
 
@@ -486,6 +516,7 @@ _OPERATOR_CHARS = frozenset(";&|()<>")
 # Shell operators, longest first: adjacent ones (``;>``) are separate tokens.
 _OPERATORS = (
     "<<<",
+    "&>>",
     "&&",
     "||",
     ";;",
