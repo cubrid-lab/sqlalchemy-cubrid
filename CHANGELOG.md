@@ -34,8 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   -4 (`ER_INTERRUPTED`, a `KILL QUERY`) as `Interrupted` with SQLSTATE `HY008`. The Driver
   Compatibility, Connection and Troubleshooting guides (English and Korean) and a dialect
   comment now say so, and note that earlier pycubrid releases reported it as a communication
-  error (`08S01`). The dialect's behavior is unchanged: -4 was never a disconnect. The Driver
-  Compatibility guide also cites the CUBRID source for why -671 (`ER_CSS_RECV_OR_SEND`) is not
+  error (`08S01`). The dialect's behavior is unchanged: -4 remains a non-disconnect, as it
+  has been since 1.9.0 (#572). The Driver Compatibility guide also cites the CUBRID source for why -671 (`ER_CSS_RECV_OR_SEND`) is not
   a disconnect code: the CAS resets only for the four session-lost server codes.
 
 - **A maintainer's review is the standalone-agent alternative to Copilot (#926)** —
