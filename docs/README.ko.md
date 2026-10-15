@@ -123,10 +123,8 @@ v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko
 
 아래의 짧은 예제는 `demodb`라는 실행 중인 데이터베이스와 비밀번호가 `password`인 `dba` 계정을
 가정합니다. URL을 여러분의 값으로 바꾸세요. [첫 연결 가이드](ko/QUICKSTART.md)는 대신 비밀번호가
-없는 로컬 실습 데이터베이스 `testdb`를 사용합니다. ORM 예제는 `email` 컬럼이 필수인 `users`
-테이블을 만듭니다. 비동기 삽입 예제는 그 컬럼이 없는 자체 `users` 테이블을 매핑하므로 ORM 예제가
-만든 테이블에서는 동작하지 않습니다. 이 예제는 자동 증가 `id`와 `name`만 있는 `users` 테이블이
-이미 있다고 가정하며, 이 테이블은 여기 있는 어떤 예제도 만들지 않습니다.
+없는 로컬 실습 데이터베이스 `testdb`를 사용합니다. ORM 예제는 `users` 테이블을 만들고,
+비동기 삽입 예제는 자체 테이블을 만들었다가 지웁니다.
 
 ### Core (연결 수준)
 
@@ -170,16 +168,112 @@ with Session(engine) as session:
 
 ### Async
 
+비동기 드라이버는 `cubrid+aiopycubrid://`입니다. 아래 두 예제는 완전한 프로그램입니다. 각각
+지정한 이름으로 저장하고 `python`으로 실행하세요. 코드는 `asyncio.run(main())`이 시작하는
+`async def main()` 안에서 실행됩니다. 일반 스크립트에서 함수 밖의 `await`나 `async with`는
+`SyntaxError`입니다. 각 예제는 실행 중인 이벤트 루프 안에서 엔진을 만들고 항상
+`engine.dispose()`를 await합니다.
+
+다음을 `async_first_query.py`로 저장하고 `python async_first_query.py`로 실행하세요.
+
 ```python
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+import asyncio
+
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
 
-async with AsyncSession(engine) as session:
-    result = await session.execute(text("SELECT 1"))
-    print(result.scalar())
+async def main() -> None:
+    # Create the engine inside the running event loop, and always dispose of it.
+    engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
+    try:
+        async with AsyncSession(engine) as session:
+            result = await session.execute(text("SELECT 1 + 1"))
+            print(result.scalar())
+    finally:
+        await engine.dispose()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
+데이터베이스가 계산한 값 `2`를 출력합니다.
+
+#### 비동기 삽입과 PK 조회
+
+CUBRID에는 `RETURNING` 절이 없습니다. ORM 삽입에서는 트랜잭션 블록 안에서
+`await session.flush()`를 호출하세요. INSERT를 보내고, 커밋 전에 객체의 자동 증가 PK를
+채웁니다.
+
+다음을 `async_insert_id.py`로 저장하고 `python async_insert_id.py`로 실행하세요. 이 예제는
+자체 테이블 `sqlalchemy_async_example_notes`를 만들고, 행 하나를 삽입하고, 새 세션으로 다시
+읽은 뒤 테이블을 지웁니다. 문장이 실패하거나 Ctrl+C로 중단해도 지웁니다. 같은 이름의 테이블이
+이미 있으면 첫 문장에서 `Class dba.sqlalchemy_async_example_notes already exists`로 멈추고 그
+테이블은 건드리지 않습니다.
+
+```python
+import asyncio
+
+from sqlalchemy import String, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+
+class Base(DeclarativeBase):
+    pass
+
+
+class Note(Base):
+    # A table that belongs to this example; the comment marks it as such.
+    __tablename__ = "sqlalchemy_async_example_notes"
+    __table_args__ = {"comment": "created by the sqlalchemy-cubrid async README example"}
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    note: Mapped[str] = mapped_column(String(100))
+
+
+async def main() -> None:
+    engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
+    try:
+        async with engine.begin() as conn:
+            # checkfirst=False: stop with an error instead of reusing an existing table.
+            await conn.run_sync(Base.metadata.create_all, checkfirst=False)
+        try:
+            async with AsyncSession(engine) as session:
+                async with session.begin():  # commits when the block ends
+                    note = Note(note="saved from asyncio")
+                    session.add(note)
+                    await session.flush()  # sends the INSERT and sets note.id, before the commit
+                    print(f"Inserted id={note.id}")
+                    note_id = note.id
+            async with AsyncSession(engine) as session:  # a new session sees the committed row
+                saved = await session.scalar(select(Note.note).where(Note.id == note_id))
+                print(f"Read back: {saved}")
+        finally:
+            # Drop only the table this run created.
+            async with engine.begin() as conn:
+                await conn.run_sync(Note.__table__.drop)
+    finally:
+        await engine.dispose()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+생성된 id(데이터베이스와 실행마다 다를 수 있음)와 새 세션이 읽은 행을 출력합니다.
+
+```text
+Inserted id=1
+Read back: saved from asyncio
+```
+
+테이블을 만든 뒤 지우기 전에 프로세스가 강제로 종료되면(예: `kill -9`) 테이블이 남고, 다음
+실행은 `already exists`에서 멈춥니다. 테이블 주석 `created by the sqlalchemy-cubrid async README example`로
+이 예제의 테이블임을 확인한 뒤 `DROP TABLE sqlalchemy_async_example_notes`로 지우세요.
+
+Core 삽입에서 자동 증가 PK가 필요하면 문장 실행 후 `SELECT LAST_INSERT_ID()`를 실행하세요
+([알려진 제한 사항](#알려진-제한-사항) 참고).
 
 ## 주요 기능
 

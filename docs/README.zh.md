@@ -134,14 +134,25 @@ with Session(engine) as session:
 ### Async
 
 ```python
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+import asyncio
+
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
 
-async with AsyncSession(engine) as session:
-    result = await session.execute(text("SELECT 1"))
-    print(result.scalar())
+async def main() -> None:
+    # Create the engine inside the running event loop, and always dispose of it.
+    engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
+    try:
+        async with AsyncSession(engine) as session:
+            result = await session.execute(text("SELECT 1 + 1"))
+            print(result.scalar())
+    finally:
+        await engine.dispose()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ## 功能特性

@@ -134,11 +134,8 @@ later; see [Driver Compatibility](docs/DRIVER_COMPAT.md#building-cubriddb-from-s
 These short examples assume a running database named `demodb` and a `dba`
 account whose password is `password`; replace the URL with your own values.
 The [first-connection guide](docs/QUICKSTART.md) instead uses a local lab
-database, `testdb`, with no password. The ORM example creates a `users` table
-whose `email` column is required. The async insert example maps its own `users`
-table without that column, so it does not run against the table the ORM example
-creates. It expects an existing `users` table with only an auto-increment `id`
-and a `name`, which none of these examples creates.
+database, `testdb`, with no password. The ORM example creates a `users` table;
+the async insert example creates and drops a table of its own.
 
 ### Core (Connection-Level)
 
@@ -182,44 +179,114 @@ with Session(engine) as session:
 
 ### Async
 
+The async driver is `cubrid+aiopycubrid://`. Both examples below are complete
+programs: save each under the name given and run it with `python`. Their code
+runs inside `async def main()`, started by `asyncio.run(main())`; in an ordinary
+script, `await` or `async with` outside a function is a `SyntaxError`. Each
+creates its engine inside the running event loop and always awaits
+`engine.dispose()`.
+
+Save this as `async_first_query.py` and run `python async_first_query.py`:
+
 ```python
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+import asyncio
+
 from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
 
-async with AsyncSession(engine) as session:
-    result = await session.execute(text("SELECT 1"))
-    print(result.scalar())
+async def main() -> None:
+    # Create the engine inside the running event loop, and always dispose of it.
+    engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
+    try:
+        async with AsyncSession(engine) as session:
+            result = await session.execute(text("SELECT 1 + 1"))
+            print(result.scalar())
+    finally:
+        await engine.dispose()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
+It prints `2`, the value the database computed.
 
 #### Async insert with PK retrieval
 
 CUBRID has no `RETURNING` clause. For ORM inserts, call `await session.flush()`
-inside the transaction block to populate the auto-increment PK on the object before commit:
+inside the transaction block: it sends the INSERT and populates the auto-increment
+PK on the object before the commit.
+
+Save this as `async_insert_id.py` and run `python async_insert_id.py`. It creates
+its own table, `sqlalchemy_async_example_notes`, inserts one row, reads it back
+through a new session and drops the table again, also when a statement fails or
+the run is interrupted with Ctrl+C. If a table of that name already exists, it
+stops at the first statement with `Class dba.sqlalchemy_async_example_notes already exists`
+and leaves that table alone.
 
 ```python
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy import String
+import asyncio
+
+from sqlalchemy import String, select
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
 
 class Base(DeclarativeBase):
     pass
 
-class User(Base):
-    __tablename__ = "users"
+
+class Note(Base):
+    # A table that belongs to this example; the comment marks it as such.
+    __tablename__ = "sqlalchemy_async_example_notes"
+    __table_args__ = {"comment": "created by the sqlalchemy-cubrid async README example"}
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(100))
+    note: Mapped[str] = mapped_column(String(100))
 
-engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
 
-async with AsyncSession(engine) as session:
-    async with session.begin():
-        user = User(name="Alice")
-        session.add(user)
-        await session.flush()  # populates user.id without committing
-        print(f"Inserted id={user.id}")
+async def main() -> None:
+    engine = create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")
+    try:
+        async with engine.begin() as conn:
+            # checkfirst=False: stop with an error instead of reusing an existing table.
+            await conn.run_sync(Base.metadata.create_all, checkfirst=False)
+        try:
+            async with AsyncSession(engine) as session:
+                async with session.begin():  # commits when the block ends
+                    note = Note(note="saved from asyncio")
+                    session.add(note)
+                    await session.flush()  # sends the INSERT and sets note.id, before the commit
+                    print(f"Inserted id={note.id}")
+                    note_id = note.id
+            async with AsyncSession(engine) as session:  # a new session sees the committed row
+                saved = await session.scalar(select(Note.note).where(Note.id == note_id))
+                print(f"Read back: {saved}")
+        finally:
+            # Drop only the table this run created.
+            async with engine.begin() as conn:
+                await conn.run_sync(Note.__table__.drop)
+    finally:
+        await engine.dispose()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
+It prints the generated id, which can differ between databases and runs, and the
+row the new session read:
+
+```text
+Inserted id=1
+Read back: saved from asyncio
+```
+
+If the process is killed outright between creating and dropping the table (for
+example with `kill -9`), the table stays behind and the next run stops at
+`already exists`. Its comment, `created by the sqlalchemy-cubrid async README example`,
+identifies it; drop it with `DROP TABLE sqlalchemy_async_example_notes` once you
+have checked that.
 
 For raw Core inserts where you need the auto-increment PK, run `SELECT LAST_INSERT_ID()`
 after the statement (see [Known Limitations](#known-limitations)).

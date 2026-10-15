@@ -30,6 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The README async examples are complete programs (#941)** — the `Async` and `Async insert
+  with PK retrieval` examples put `async with` and `await` at module level, a `SyntaxError`
+  in an ordinary script. Each is now a named script that runs `async def main()` through
+  `asyncio.run(main())`, creates its engine inside the event loop and always awaits
+  `engine.dispose()`. The query example prints `2`. The insert example creates its own
+  `sqlalchemy_async_example_notes` table instead of assuming a `users` table, refuses to
+  reuse an existing one, reads the flushed row back through a new session and drops the
+  table again, also after a failed statement or Ctrl+C. Both were run against CUBRID 11.4.
+  The Korean README carries the same programs, and the German, Hindi, Russian and Chinese
+  READMEs the corrected query example. A new offline test compiles every async README
+  example as a plain script and checks that the translations repeat the English programs.
+
 - **A first SQLAlchemy connection for CUBRID beginners (#940)** — the Quick Start guide
   (English and Korean) is now one recommended path: the roles of SQLAlchemy, the dialect,
   the pycubrid driver and the CUBRID server, the five connection values for an existing
