@@ -24,7 +24,7 @@ Key facts:
 
 ## Docs
 
-- [Quick Start](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/): Installation, URL formats, first Core and ORM example
+- [Your First SQLAlchemy Connection to CUBRID](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/): Start here: prepare a database (existing or disposable Docker lab), install `sqlalchemy-cubrid[pycubrid]`, first query, first saved row with rollback, cleanup and first-connection errors
 - [Connection Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/CONNECTION/): URL schemes and entry points, pycubrid URL query options (`?connect_timeout=`, `?charset=`, ...), async engine, connection options, autocommit, connection pool tuning
 - [Driver Compatibility](https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/): CUBRIDdb C-extension versions, exception hierarchy, known driver issues
 - [ORM Cookbook](https://cubrid-lab.github.io/sqlalchemy-cubrid/ORM_COOKBOOK/): Models, relationships, CRUD, collections, LOBs, CUBRID-specific gotchas

@@ -26,6 +26,16 @@
 
 > **상태: Production/Stable** — CUBRID 10.2–11.4 및 SQLAlchemy 2.0–2.1을 지원하는 유지보수 다이얼렉트입니다. 모든 PR에 대해 라이브 DB 통합 CI가 실행됩니다.
 
+## 여기서 시작하세요
+
+sqlalchemy-cubrid는 SQLAlchemy가 CUBRID 데이터베이스와 함께 동작하게 해 줍니다. CUBRID 자체는
+이미 실행 중이어야 하는 별도의 데이터베이스 서버이며, 이 패키지들을 설치해도 CUBRID가 설치되거나
+데이터베이스가 만들어지지는 않습니다. CUBRID나 SQLAlchemy가 처음이라면
+[SQLAlchemy로 CUBRID에 처음 연결하기](ko/QUICKSTART.md)를 따라 하세요. 이미 데이터베이스가 있을 때
+준비할 값, Docker로 일회용 로컬 데이터베이스를 띄우는 방법을 설명하고, 권장 경로인
+`sqlalchemy-cubrid[pycubrid]`로 첫 쿼리와 첫 행 저장까지 안내합니다. 이 페이지의 나머지는 첫
+연결이 성공한 뒤 참고할 내용입니다.
+
 ## 왜 sqlalchemy-cubrid인가?
 
 CUBRID는 고성능 오픈소스 관계형 데이터베이스로, 한국 공공기관 및 기업 환경에서
@@ -111,6 +121,11 @@ v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko
 
 ## 빠른 시작
 
+아래의 짧은 예제는 `demodb`라는 실행 중인 데이터베이스와 비밀번호가 `password`인 `dba` 계정을
+가정합니다. URL을 여러분의 값으로 바꾸세요. [첫 연결 가이드](ko/QUICKSTART.md)는 대신 비밀번호가
+없는 로컬 실습 데이터베이스 `testdb`를 사용합니다. ORM 예제는 `users` 테이블을 만들며, 비동기
+삽입 예제는 이 테이블이 있다고 가정합니다.
+
 ### Core (연결 수준)
 
 ```python
@@ -188,6 +203,7 @@ async with AsyncSession(engine) as session:
 
 | 가이드 | 설명 |
 |---|---|
+| [첫 연결](ko/QUICKSTART.md) | 여기서 시작: 데이터베이스 준비, 첫 쿼리, 첫 행 저장, 첫 연결 문제 |
 | [연결](CONNECTION.md) | 연결 문자열, URL 형식, 드라이버 설정, 풀 튜닝 |
 | [타입 매핑](TYPES.md) | 전체 타입 매핑, CUBRID 전용 타입, 컬렉션 타입 |
 | [DML 확장](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, 쿼리 추적 |

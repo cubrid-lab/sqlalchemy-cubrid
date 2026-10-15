@@ -37,7 +37,7 @@ theme:
 nav:
   - Home: index.md
   - Getting Started:
-      - Quick Start: QUICKSTART.md
+      - "Start Here: Your First Connection": QUICKSTART.md
       - Connection Guide: CONNECTION.md
       - Driver Compatibility: DRIVER_COMPAT.md
   - Usage:
@@ -69,7 +69,7 @@ nav:
   - 한국어:
       - 홈: ko/index.md
       - 시작하기:
-          - 빠른 시작: ko/QUICKSTART.md
+          - "여기서 시작: 첫 연결": ko/QUICKSTART.md
           - 연결과 드라이버 설정: ko/CONNECTION.md
           - 드라이버 호환성: ko/DRIVER_COMPAT.md
       - 사용:

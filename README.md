@@ -25,6 +25,17 @@
 > **Status: Production/Stable** — `sqlalchemy-cubrid` is a maintained SQLAlchemy dialect for CUBRID supporting SQLAlchemy 2.0–2.1 and CUBRID 10.2–11.4.
 > **Note:** Versions prior to 1.0.0 used inconsistent numbering (0.x, 2.x). The canonical version history starts at 1.0.0.
 
+## Start here
+
+sqlalchemy-cubrid lets SQLAlchemy work with a CUBRID database. CUBRID itself is
+a separate database server that must already be running; installing these
+packages does not install CUBRID or create a database. New to CUBRID or to
+SQLAlchemy? Follow [Your First SQLAlchemy Connection to CUBRID](docs/QUICKSTART.md):
+it shows what to prepare when you already have a database, how to start a
+disposable local one with Docker, and takes you on the recommended
+`sqlalchemy-cubrid[pycubrid]` path to a first query and a first saved row. The
+rest of this page is reference material for after that first connection works.
+
 ## Why sqlalchemy-cubrid?
 
 CUBRID is a high-performance open-source relational database, widely adopted in
@@ -119,6 +130,12 @@ later; see [Driver Compatibility](docs/DRIVER_COMPAT.md#building-cubriddb-from-s
 <img src="docs/demo.gif" alt="sqlalchemy-cubrid in action" width="100%"/>
 
 ## Quick Start
+
+These short examples assume a running database named `demodb` and a `dba`
+account whose password is `password`; replace the URL with your own values.
+The [first-connection guide](docs/QUICKSTART.md) instead uses a local lab
+database, `testdb`, with no password. The ORM example creates a `users` table,
+which the async insert example expects to exist.
 
 ### Core (Connection-Level)
 
@@ -231,6 +248,7 @@ after the statement (see [Known Limitations](#known-limitations)).
 
 | Guide | Description |
 |---|---|
+| [Your First Connection](docs/QUICKSTART.md) | Start here: prepare a database, first query, first saved row, first-connection problems |
 | [Connection](docs/CONNECTION.md) | Connection strings, URL format, driver setup, pool tuning |
 | [Type Mapping](docs/TYPES.md) | Full type mapping, CUBRID-specific types, collection types |
 | [DML Extensions](docs/DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, query trace |

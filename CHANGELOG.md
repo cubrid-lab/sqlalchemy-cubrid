@@ -30,6 +30,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **A first SQLAlchemy connection for CUBRID beginners (#940)** — the Quick Start guide
+  (English and Korean) is now one recommended path: the roles of SQLAlchemy, the dialect,
+  the pycubrid driver and the CUBRID server, the five connection values for an existing
+  database or a disposable local Docker lab, `sqlalchemy-cubrid[pycubrid]` in a virtual
+  environment, a first `SELECT 1 + 1`, and a first committed row read back by a separate
+  connection with a rollback demonstration, followed by an owner- and comment-checked cleanup
+  script and the real first-connection error messages. Every command was run as written
+  against CUBRID 11.4. Alternative drivers, URL forms, the ORM, async code and Alembic follow
+  as next steps. The README and the documentation home start with a link to it, the README
+  Quick Start states its `demodb` placeholder values, and the home page's minimal example
+  uses the recommended `cubrid+pycubrid://` URL. The CUBRIDdb C-extension driver built from
+  source stays supported; only the `[cubrid]` and `[cubriddb]` extras are deprecated.
+
 - **CAS error -4 is described as an interrupted statement (#873)** — pycubrid 1.13.0 reports
   -4 (`ER_INTERRUPTED`, a `KILL QUERY`) as `Interrupted` with SQLSTATE `HY008`. The Driver
   Compatibility, Connection and Troubleshooting guides (English and Korean) and a dialect

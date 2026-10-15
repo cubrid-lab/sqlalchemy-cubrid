@@ -6,40 +6,54 @@ CUBRID용 SQLAlchemy 2.0–2.1 방언으로, 프로덕션 수준의 Core 및 ORM
 
 > English: [documentation home](../index.md)
 
+## 여기서 시작하세요
+
+CUBRID나 SQLAlchemy가 처음이라면
+[SQLAlchemy로 CUBRID에 처음 연결하기](QUICKSTART.md)를 따라 하세요. 무엇이 필요한지(CUBRID는
+별도의 데이터베이스 서버이며, Python 패키지를 설치해도 설치되지 않습니다), Docker로 일회용 로컬
+데이터베이스를 띄우는 방법을 설명하고, 권장 경로인 `sqlalchemy-cubrid[pycubrid]`로 첫 쿼리와 첫
+행 저장까지 안내합니다.
+
 ## 주요 기능
 
 - 문장 캐싱을 갖춘 네이티브 SQLAlchemy 2.0–2.1 방언 지원
 - `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`를 포함한 CUBRID 전용 DML 지원
 - 완전한 타입 시스템 커버리지와 스키마 리플렉션 지원
 - CUBRID용 Alembic 마이그레이션 통합 내장
-- 이중 드라이버 지원: C 확장(`cubrid://`)과 순수 Python(`cubrid+pycubrid://`)
+- 드라이버 선택: 순수 Python(`cubrid+pycubrid://`, 권장, 동기와 비동기) 또는 CUBRIDdb C 확장(`cubrid://`)
 
 ## 빠른 설치
 
-```bash
-pip install sqlalchemy-cubrid
-```
-
-순수 Python 드라이버 옵션:
+권장 설치(순수 Python 드라이버 포함):
 
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
 
+방언만 설치(예: 소스에서 빌드한 CUBRIDdb C 확장과 함께 사용, [드라이버 호환성](DRIVER_COMPAT.md) 참고):
+
+```bash
+pip install sqlalchemy-cubrid
+```
+
 ## 최소 예제
+
+[빠른 시작의 로컬 실습 환경](QUICKSTART.md#방법-b-버려도-되는-로컬-데이터베이스가-필요합니다)(데이터베이스
+`testdb`, 비밀번호 없는 `dba` 사용자)을 사용합니다. 다른 데이터베이스에서는 URL에 그 값을 넣으세요.
 
 ```python
 from sqlalchemy import create_engine, text
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 with engine.connect() as conn:
-    result = conn.execute(text("SELECT 1"))
-    row = result.fetchone()
-    print(row[0])
+    print(conn.execute(text("SELECT 1 + 1")).scalar())  # 2
+engine.dispose()
 ```
 
 ## 문서 섹션
 
-- [시작하기](CONNECTION.md)
+- [여기서 시작: 첫 연결](QUICKSTART.md)
+- [연결 가이드](CONNECTION.md)
 - [사용자 가이드](TYPES.md)
 - [레퍼런스](FEATURE_SUPPORT.md)
 
