@@ -248,11 +248,14 @@ DatabaseError: (-224) A database has not been restarted.
 # CUBRIDdb
 DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
 
-# pycubrid
+# pycubrid 1.13.0 and later
+OperationalError: Has been interrupted. (errno=-4, description='Interrupted', sqlstate='HY008')
+
+# pycubrid before 1.13.0
 OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
 ```
 
-**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid's `str()` describes -4 as `Communication error`, which is a pycubrid label, not the meaning of the server code.
+**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid 1.13.0 and later describe it as `Interrupted` with SQLSTATE `HY008`. Earlier releases reported it as a communication error (`Communication error`, `08S01`), which was a pycubrid label, not the meaning of the server code.
 
 **Behavior:** The error is not a disconnect: SQLAlchemy keeps the connection (`exc.connection_invalidated` is `False`). Releases up to 1.8.0 treated -4 from CUBRIDdb as a disconnect and replaced the connection (#572).
 

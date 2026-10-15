@@ -158,8 +158,9 @@ pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in
 [Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror). pycubrid's
 `str()` also appends a description of `errno` (for example `Communication error`
-for -4 and -671), so the message patterns are matched against `args[0]`, the
-driver's own message, instead.
+for -671; pycubrid 1.13.0 describes -4 as `Interrupted` with SQLSTATE `HY008`, while
+earlier releases reported it as `Communication error` with `08S01`), so the message
+patterns are matched against `args[0]`, the driver's own message, instead.
 
 ---
 
@@ -189,6 +190,7 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
   crashes, a connection in a transaction gets -111 and then -224 on every statement
   until the transaction ends, even after the server is back (#565). -671
   (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
+  CUBRID's `src/broker/cas_error.c` sets the CAS's `reset_flag` for these four codes only, on release/11.4 (3ea1d8d) and release/10.2 (ed716d0); the other reset paths (a failed rollback when the session ends, the HA fail-back status after a commit or abort, the reconnect time) do not depend on -671 (#873).
   See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 - Numeric error code matching, on pycubrid's `errno` only, for CAS codes as pycubrid
   actually receives them: CUBRID's CAS legacy-renumbers `cas_error.h` codes (adds 9000)

@@ -139,7 +139,7 @@ except CUBRIDdb.DatabaseError as e:
 
 방언의 `_extract_error_code()`는 정수 `args[0]`만 읽습니다. 문자열 `args[0]`은 숫자로 시작하더라도(예: 애플리케이션 데이터를 인용한 `"-20004 rows rejected ..."`) 코드를 담지 않습니다. 1.8.0까지의 릴리스는 이런 앞쪽 숫자를 코드로 해석해 멀쩡한 연결을 무효화할 수 있었습니다(#608).
 
-pycubrid는 `args`에 메시지만 담고 서버 오류 코드는 `errno`(및 `code`)에 담습니다. `is_disconnect()`는 [알려진 문제 1](#1-연결-해제-감지에-operationalerror를-사용하지-않음)에 나열된 서버 코드에 대해 `errno`를 읽습니다. pycubrid의 `str()`은 `errno`의 설명(예: -4와 -671의 `Communication error`)도 덧붙이므로, 메시지 패턴은 드라이버 자체 메시지인 `args[0]`과 비교합니다.
+pycubrid는 `args`에 메시지만 담고 서버 오류 코드는 `errno`(및 `code`)에 담습니다. `is_disconnect()`는 [알려진 문제 1](#1-연결-해제-감지에-operationalerror를-사용하지-않음)에 나열된 서버 코드에 대해 `errno`를 읽습니다. pycubrid의 `str()`은 `errno`의 설명(예: -671의 `Communication error`. pycubrid 1.13.0은 -4를 `Interrupted`, SQLSTATE `HY008`로 설명하며, 이전 릴리스는 `Communication error`, `08S01`로 보고했습니다)도 덧붙이므로, 메시지 패턴은 드라이버 자체 메시지인 `args[0]`과 비교합니다.
 
 ---
 
@@ -150,7 +150,7 @@ pycubrid는 `args`에 메시지만 담고 서버 오류 코드는 `errno`(및 `c
 CUBRIDdb 11.3.0.51은 `OperationalError`를 정의하지만([예외 계층](#예외-계층) 참고), 방언의 `is_disconnect()`는 예외 클래스로 연결 해제를 분류하지 않습니다. 대신:
 - 알려진 연결 해제 메시지 17종(공통 14종, pycubrid 3종)에 대한 문자열 패턴 매칭
 - 끊겼거나 쓸 수 없는 연결의 CCI·CAS 코드에 대한 `args[0]`(CUBRIDdb 전용) 숫자 오류 코드 매칭: -20004(`CCI_ER_COMMUNICATION`), -10003(`CAS_ER_COMMUNICATION`, CCI는 두 코드를 통신 오류로 취급), -20002(`CCI_ER_CON_HANDLE`), -20016(`CCI_ER_CONNECT`), -10002(`CAS_ER_NO_MORE_MEMORY`; CAS가 이 코드를 보낸 뒤 연결을 닫음). 1.8.0까지의 릴리스는 대신 -4, -10005, -10007, -21003, -21005를 나열했습니다(#572). -4는 서버의 `ER_INTERRUPTED`(`KILL QUERY`로 중단된 쿼리)여서 CUBRIDdb는 멀쩡한 연결을 무효화했고, -10005와 -10007은 `CAS_ER_TRAN_TYPE`과 `CAS_ER_NUM_BIND`, -21003과 -21005는 어느 Python 드라이버도 내지 않는 CUBRID JDBC 코드입니다. CUBRIDdb가 트랜잭션 중 CAS가 죽었을 때 내는 -20004와 -10002는 빠져 있었습니다(#578).
-- CAS의 `cub_server` 세션이 사라져 브로커가 CAS를 리셋하는 서버 오류에 대한 숫자 오류 코드 매칭(두 드라이버 모두): -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). `cub_server`가 중지되거나 비정상 종료되면 트랜잭션 중인 연결은 -111을 받고, 이후 트랜잭션이 끝날 때까지 서버가 다시 올라와도 모든 문장에서 -224를 받습니다(#565). -671(`ER_CSS_RECV_OR_SEND`)은 브로커가 CAS를 리셋하지 않으므로 포함하지 않습니다. [문제 해결](TROUBLESHOOTING.md#cub_server-재시작-또는-장애-후-오류) 참고.
+- CAS의 `cub_server` 세션이 사라져 브로커가 CAS를 리셋하는 서버 오류에 대한 숫자 오류 코드 매칭(두 드라이버 모두): -111(`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`), -199(`ER_NET_SERVER_CRASHED`), -224(`ER_OBJ_NO_CONNECT`), -677(`ER_BO_CONNECT_FAILED`). `cub_server`가 중지되거나 비정상 종료되면 트랜잭션 중인 연결은 -111을 받고, 이후 트랜잭션이 끝날 때까지 서버가 다시 올라와도 모든 문장에서 -224를 받습니다(#565). -671(`ER_CSS_RECV_OR_SEND`)은 브로커가 CAS를 리셋하지 않으므로 포함하지 않습니다. CUBRID의 `src/broker/cas_error.c`는 release/11.4(3ea1d8d)와 release/10.2(ed716d0)에서 이 네 코드에만 CAS의 `reset_flag`를 설정하며, 다른 리셋 경로(세션 종료 시 롤백 실패, 커밋이나 중단 후 HA 페일백 상태, 재연결 시간)는 -671과 관계가 없습니다(#873). [문제 해결](TROUBLESHOOTING.md#cub_server-재시작-또는-장애-후-오류) 참고.
 - pycubrid의 `errno`에 대해서만 하는 숫자 오류 코드 매칭으로, pycubrid가 실제로 받는 형태의 CAS 코드를 검사: pycubrid처럼 갱신된 오류 코드 프로토콜을 이해한다고 알리지 않는 드라이버에게 CUBRID의 CAS는 `cas_error.h` 코드에 9000을 더해 레거시 번호로 보냅니다. -1002(레거시 `CAS_ER_NO_MORE_MEMORY`, 즉 -10002 + 9000)가 이렇게 매칭됩니다(#578).
 - 번호가 겹치는 코드의 출처 판별(#916): 레거시 CAS 코드는 -1000~-1200으로 도착하며, 일부 서버 오류와 번호가 같습니다(CUBRID 11.4.6 `ER_JSON_INVALID_PATH`는 -1200). pycubrid 1.13은 오류를 보낸 쪽을 `error_source`(`"cas"` 또는 `"server"`)로 알려 줍니다. `"server"`이면 서버의 코드로 취급합니다: 서버의 -1002는 `CAS_ER_NO_MORE_MEMORY`가 아니고, 서버 텍스트는 애플리케이션 데이터를 담을 수 있으므로 메시지 패턴은 서버 접속 실패 코드(-190, -191, -368)에만 적용합니다. `"cas"`, `None`, 또는 `error_source`가 없는 1.13 이전 pycubrid에서는 이 코드들을 이전과 같이 분류합니다.
 

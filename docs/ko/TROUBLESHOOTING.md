@@ -249,11 +249,14 @@ DatabaseError: (-224) A database has not been restarted.
 # CUBRIDdb
 DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
 
-# pycubrid
+# pycubrid 1.13.0 이상
+OperationalError: Has been interrupted. (errno=-4, description='Interrupted', sqlstate='HY008')
+
+# pycubrid 1.13.0 이전
 OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
 ```
 
-**원인:** 다른 세션이 이 문장에 `KILL QUERY <tran_index>`를 실행했습니다. -4는 서버의 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. pycubrid의 `str()`은 -4를 `Communication error`로 설명하지만, 이는 pycubrid의 라벨일 뿐 서버 코드의 의미가 아닙니다.
+**원인:** 다른 세션이 이 문장에 `KILL QUERY <tran_index>`를 실행했습니다. -4는 서버의 `ER_INTERRUPTED`이며 연결은 계속 쓸 수 있습니다. pycubrid 1.13.0 이상은 이를 `Interrupted`, SQLSTATE `HY008`로 설명합니다. 이전 릴리스는 통신 오류(`Communication error`, `08S01`)로 보고했는데, 이는 pycubrid의 라벨일 뿐 서버 코드의 의미가 아니었습니다.
 
 **동작:** 이 오류는 연결 끊김이 아닙니다. SQLAlchemy는 연결을 유지합니다(`exc.connection_invalidated`가 `False`). 1.8.0까지의 릴리스는 CUBRIDdb의 -4를 연결 끊김으로 취급해 연결을 교체했습니다(#572).
 

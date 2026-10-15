@@ -2223,9 +2223,9 @@ class CubridDialect(default.DefaultDialect):
         #    "connection lost during receive", or server errors such as -190 /
         #    -191 ("Failed to connect to database server") that are not in the
         #    code tables. Match the driver's own message: pycubrid's
-        #    ``str()`` appends a description looked up from ``errno`` (-4 and
-        #    -671 read "Communication error"), which must not decide the
-        #    outcome. For any exception that does not
+        #    ``str()`` appends a description looked up from ``errno`` (-671 reads
+        #    "Communication error", and so did -4 before pycubrid 1.13.0, which
+        #    reads "Interrupted"), which must not decide the outcome. For any exception that does not
         #    override ``__str__`` a single string arg *is* ``str(e)``, and
         #    CUBRIDdb's ``(code, message)`` errors keep matching ``str(e)``.
         server_code = self._server_error_code(e)

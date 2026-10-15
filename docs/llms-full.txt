@@ -760,7 +760,7 @@ The dialect implements `is_disconnect()` which detects connection failures using
 
 1. **Numeric error code matching (primary)** — checks the CCI and CAS codes that CUBRIDdb raises for a dead or unusable connection: `CCI_ER_COMMUNICATION` (-20004), `CAS_ER_COMMUNICATION` (-10003), `CCI_ER_CON_HANDLE` (-20002), `CCI_ER_CONNECT` (-20016) and `CAS_ER_NO_MORE_MEMORY` (-10002; the CAS closes the connection after sending it), plus the server codes for which the CUBRID broker resets the CAS because its session with `cub_server` is gone: `ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED` (-111), `ER_NET_SERVER_CRASHED` (-199), `ER_OBJ_NO_CONNECT` (-224) and `ER_BO_CONNECT_FAILED` (-677). CUBRIDdb carries the code in `args[0]`; pycubrid carries it in `errno`, matched against these four server codes plus -1002, the legacy renumbering of `CAS_ER_NO_MORE_MEMORY` that pycubrid actually receives (CUBRID's CAS adds 9000 to CAS codes for drivers, like pycubrid, that don't advertise understanding its renewed error-code protocol). Codes are read only from these structured fields, never from message text: a message that starts with a number, such as a server error quoting application data (`-20004 rows rejected ...`), carries no code (#608). Other server codes are not disconnects: -4 is `ER_INTERRUPTED`, a query interrupted by `KILL QUERY`, and the connection stays usable. See [Troubleshooting — Errors After a cub_server Restart or Crash](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 2. **Explicit `OSError` cause chain (wording-independent)** — if any `OSError` (e.g. a socket error) appears in the exception's explicit `__cause__` chain (a `raise ... from`), the connection is treated as dropped regardless of the message text. Implicit `__context__` is deliberately ignored so an unrelated in-flight `OSError` does not falsely invalidate a live connection.
-3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", "reconnecting failed" when pycubrid cannot replace a lost CAS session, or "malformed response from broker" when it drops a connection whose reply it cannot parse) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -4 (the server's `ER_INTERRUPTED`) and -671. The fallback is skipped for an error that carries a server error code (`args[0]` above -10000 on CUBRIDdb, `errno` on pycubrid outside -1000 .. -1200, where legacy CAS codes arrive), because server messages echo application data: `SELECT 1 FROM [connection refused]` fails with -493 and the phrase in its text. Only -190, -191 and -368, whose own text reports a failed connection to the database server, keep it (#624).
+3. **Message matching (fallback)** — checks error messages for known disconnect patterns (e.g., "connection is closed", "broker is not available", "connection reset") to cover the CUBRIDdb driver and pycubrid's client-side string-only errors (e.g. "connection lost during receive", "reconnecting failed" when pycubrid cannot replace a lost CAS session, or "malformed response from broker" when it drops a connection whose reply it cannot parse) that carry neither a code nor an `OSError` cause. Patterns are matched against the driver's own message (pycubrid's `args[0]`), not pycubrid's `str()`, which appends a description of `errno` such as `Communication error` for -671 (pycubrid 1.13.0 describes -4, the server's `ER_INTERRUPTED`, as `Interrupted`; earlier releases reported it as a communication error). The fallback is skipped for an error that carries a server error code (`args[0]` above -10000 on CUBRIDdb, `errno` on pycubrid outside -1000 .. -1200, where legacy CAS codes arrive), because server messages echo application data: `SELECT 1 FROM [connection refused]` fails with -493 and the phrase in its text. Only -190, -191 and -368, whose own text reports a failed connection to the database server, keep it (#624).
 
 Detection is deliberately conservative: a database error with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. an invalid-isolation-level error or a closed-cursor misuse) is **not** treated as a disconnect, avoiding false-positive pool invalidation.
 
@@ -5624,11 +5624,14 @@ DatabaseError: (-224) A database has not been restarted.
 # CUBRIDdb
 DatabaseError: (-4, 'ERROR: DBMS, -4, Has been interrupted.[CAS INFO-127.0.0.1:33000,1,44].')
 
-# pycubrid
+# pycubrid 1.13.0 and later
+OperationalError: Has been interrupted. (errno=-4, description='Interrupted', sqlstate='HY008')
+
+# pycubrid before 1.13.0
 OperationalError: Has been interrupted. (errno=-4, description='Communication error', sqlstate='08S01')
 ```
 
-**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid's `str()` describes -4 as `Communication error`, which is a pycubrid label, not the meaning of the server code.
+**Cause:** Another session ran `KILL QUERY <tran_index>` on it. -4 is the server's `ER_INTERRUPTED`; the connection is still usable. pycubrid 1.13.0 and later describe it as `Interrupted` with SQLSTATE `HY008`. Earlier releases reported it as a communication error (`Communication error`, `08S01`), which was a pycubrid label, not the meaning of the server code.
 
 **Behavior:** The error is not a disconnect: SQLAlchemy keeps the connection (`exc.connection_invalidated` is `False`). Releases up to 1.8.0 treated -4 from CUBRIDdb as a disconnect and replaced the connection (#572).
 
@@ -8539,8 +8542,9 @@ pycubrid keeps only the message in `args` and the server error code in `errno`
 (and `code`). `is_disconnect()` reads `errno` for the server codes listed in
 [Known Issue 1](#1-disconnect-detection-does-not-use-operationalerror). pycubrid's
 `str()` also appends a description of `errno` (for example `Communication error`
-for -4 and -671), so the message patterns are matched against `args[0]`, the
-driver's own message, instead.
+for -671; pycubrid 1.13.0 describes -4 as `Interrupted` with SQLSTATE `HY008`, while
+earlier releases reported it as `Communication error` with `08S01`), so the message
+patterns are matched against `args[0]`, the driver's own message, instead.
 
 ---
 
@@ -8570,6 +8574,7 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
   crashes, a connection in a transaction gets -111 and then -224 on every statement
   until the transaction ends, even after the server is back (#565). -671
   (`ER_CSS_RECV_OR_SEND`) is not included: the broker does not reset the CAS for it.
+  CUBRID's `src/broker/cas_error.c` sets the CAS's `reset_flag` for these four codes only, on release/11.4 (3ea1d8d) and release/10.2 (ed716d0); the other reset paths (a failed rollback when the session ends, the HA fail-back status after a commit or abort, the reconnect time) do not depend on -671 (#873).
   See [Troubleshooting](TROUBLESHOOTING.md#errors-after-a-cub_server-restart-or-crash).
 - Numeric error code matching, on pycubrid's `errno` only, for CAS codes as pycubrid
   actually receives them: CUBRID's CAS legacy-renumbers `cas_error.h` codes (adds 9000)
