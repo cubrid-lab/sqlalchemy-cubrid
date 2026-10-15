@@ -75,7 +75,12 @@ _ATTR_ID = re.compile(r"\s*\{[^}]*#([\w-]+)[^}]*\}\s*$")
 # ``1)``), and list content is dedented by 4 spaces per level; any other
 # indentation keeps the line text.
 _QUOTE_PREFIX = re.compile(r"(?: {0,3}>[ ]?)*( *)")
-_HASH_DIGIT = r"(?: {{0,3}}>[ ]?)*(?: {{4}}){indent}(?:[ \t]*(?:[-*+]|\d+\.)[ \t]+)?#\d"
+_QUOTE = r"(?: {0,3}>[ ]?)"
+_ITEM = r"(?:[ \t]*(?:[-*+]|\d+\.)[ \t]+)"
+# Containers nest in any order (``- > #1``, ``> - #1``, a quote in a later item
+# paragraph), so the first line takes any sequence of quote markers, list
+# markers and 4-space list indents before ``#<digit>``.
+_HASH_DIGIT_FIRST = re.compile(rf"(?:{_QUOTE}| {{4}}|{_ITEM})*#\d")
 _BACKTICKS = re.compile(r"`+")
 # A full or collapsed reference link whose brackets are not escaped; an opening
 # bracket after a word character (``rows[0][1]``) is an index, not a link.
@@ -249,12 +254,11 @@ def _hash_digit_lines(lines: list[str], start: int, end: int) -> list[int]:
         return []
     prefix = _QUOTE_PREFIX.match(lines[start])
     depth = len(prefix.group(1)) // 4 if prefix else 0
-    first = re.compile(_HASH_DIGIT.format(indent="*"))
-    rest = re.compile(_HASH_DIGIT.format(indent=f"{{0,{depth}}}"))
+    rest = re.compile(rf"{_QUOTE}*(?: {{4}}){{0,{depth}}}{_QUOTE}*{_ITEM}?#\d")
     return [
         number + 1
         for number in range(start, min(end, len(lines)))
-        if (first if number == start else rest).match(lines[number])
+        if (_HASH_DIGIT_FIRST if number == start else rest).match(lines[number])
     ]
 
 

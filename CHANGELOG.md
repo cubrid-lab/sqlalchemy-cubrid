@@ -53,6 +53,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **Issue-number lines in block quotes inside list items are reported (#925)** — the
+  `#<digit>` line check now accepts block quote markers after a list marker or after list
+  indentation (`- > #750`, a quote in a later paragraph of an item), where Python-Markdown also
+  renders a heading. Containers are matched in any order; the existing exclusions (an indented
+  continuation line, `1)`, two spaces after `>`) are unchanged.
+
 - **The documentation check takes link lines from the source and masks inline HTML (#923)** —
   markdown-it's link and image rules now record each link's source tail, so the lines after a
   link come from its own destination, title or reference label. A reference link no longer

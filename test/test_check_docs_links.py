@@ -389,6 +389,11 @@ def test_a_docs_line_starting_with_an_issue_number_is_reported(tmp_path: Path) -
         ("> a\n  > #669 indented marker on a continuation line\n", [2]),
         # The site renders this line as a heading and the comment delimiters as text.
         ("Text <!--\n#670 inside an inline comment\n--> tail\n", [2]),
+        # A block quote inside a list item (#925); two spaces after ">" stay text.
+        ("- > #750 issue\n\n1. > #751 numbered\n\n- >  #752 text\n", [1, 3]),
+        ("- a\n\n    > #753 later paragraph\n    > #754 next\n", [3, 4]),
+        ("> - > #755 nested both ways\n", [1]),
+        ("- a\n\n  > #756 quote after a two-space indent\n", [3]),
     ],
 )
 def test_issue_number_lines_are_reported_where_the_site_makes_headings(
