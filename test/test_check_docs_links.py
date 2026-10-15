@@ -401,6 +401,56 @@ def test_issue_number_lines_are_reported_where_the_site_makes_headings(
     assert check.run(_tree(tmp_path, page)) == [f"docs/PAGE.md:{n}: {message}" for n in lines]
 
 
+def test_a_quote_after_an_empty_destination_is_not_a_link(tmp_path: Path) -> None:
+    # CommonMark reads `"See` as a bare destination; no `)` follows, so this is
+    # not a link and `[foo][bar]` is literal text without a definition (#923).
+    page = '[site]( "See [foo][bar]")\n'
+    assert check.run(_tree(tmp_path, page)) == ["docs/PAGE.md:1: reference [bar] has no definition"]
+
+
+def test_an_escaped_space_keeps_a_hash_inside_the_word(tmp_path: Path) -> None:
+    page = "```bash\necho x\\ #note \\\nmake removed\nmake gone\n```\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:4: `make gone` is not a Makefile target"
+    ]
+
+
+@pytest.mark.parametrize("use", ["[r][ref]", "[ref]", "![r][ref]"])
+def test_a_reference_does_not_take_an_equal_inline_title(tmp_path: Path, use: str) -> None:
+    page = (
+        f'{use} [bad](GONE.md)\n[t](TARGET.md "a\nb")\n[bad2](GONE2.md)\n\n'
+        '[ref]: TARGET.md "a\nb"\n'
+    )
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:1: link target 'GONE.md' does not exist",
+        "docs/PAGE.md:4: link target 'GONE2.md' does not exist",
+    ]
+
+
+def test_a_reference_label_across_lines_counts_its_line(tmp_path: Path) -> None:
+    page = "[t][multi\nline] [bad](GONE.md)\n\n[multi line]: TARGET.md\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:2: link target 'GONE.md' does not exist"
+    ]
+
+
+@pytest.mark.parametrize("first", ['[t](TARGET.md "a `x`\nb")', '![i](TARGET.md "a `x`\nb")'])
+def test_backticks_in_a_title_keep_its_lines(tmp_path: Path, first: str) -> None:
+    page = f"{first}\n[bad](GONE.md)\n\n{first}\n[ok](GONE.md) <!-- docs-check: ignore -->\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:3: link target 'GONE.md' does not exist"
+    ]
+
+
+def test_a_link_like_fragment_in_an_html_attribute_does_not_hide_references(
+    tmp_path: Path,
+) -> None:
+    page = 'Inline <span title="[x](https://example.invalid/">[broken][missing])</span>\n'
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:1: reference [missing] has no definition"
+    ]
+
+
 def test_html_attributes_are_parsed_like_a_browser(tmp_path: Path) -> None:
     page = (
         '<img data-src="https://example.invalid/lazy.svg" src="GONE.svg">\n\n'

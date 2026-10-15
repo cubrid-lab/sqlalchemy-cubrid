@@ -53,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **The documentation check takes link lines from the source and masks inline HTML (#923)** —
+  markdown-it's link and image rules now record each link's source tail, so the lines after a
+  link come from its own destination, title or reference label. A reference link no longer
+  takes an equal inline title's newlines, backticks in a title no longer hide its line, and a
+  reference label that spans lines counts its line. Inline HTML tags are masked before link
+  tails, so a link-like fragment in an attribute no longer hides an undefined reference. In a
+  shell block, `#` starts a comment only at the start of a word, so `echo x\ #note \`
+  still continues the line. `[site]( "See [foo][bar]")` stays reported: CommonMark does not
+  parse it as a link.
+
 - **The documentation check reports lines that the site renders as headings (#920)** — a
   paragraph line under `docs/` that starts with `#` and a digit, such as a wrapped issue
   number, is plain text on GitHub but an `<h1>` on the MkDocs site, where Python-Markdown
