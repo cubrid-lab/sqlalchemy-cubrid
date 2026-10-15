@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **`agent-review` no longer counts empty reply-only Copilot records as review rounds
+  (#933)** — a Copilot record with no body and no thread-opening comment, such as a reply
+  to an existing thread, is now ignored like an error or quota notice instead of counting
+  as a summary-only round, which could put a PR past the two-round budget and reject valid
+  evidence. A record that opens a thread still counts. Ported unchanged from
+  cubrid-lab/cubrid-mcp-server#349, so the gate copies stay identical outside their
+  constants.
 - **Advisory `agent-review` check for review evidence (#905)** —
   `.github/workflows/agent-review.yml` runs `scripts/agent_review_gate.py` from the base
   branch with a read-only token on every pull request and review event, and reports
