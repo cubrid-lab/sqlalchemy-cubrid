@@ -41,6 +41,8 @@ _LINK = re.compile(r"\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:\"[^\"]*\"|'[^']*'|\(
 _REF_DEF = re.compile(r"^ {0,3}\[([^\]]+)\]:\s*<?(\S+?)>?(?:\s+.*)?$")
 # A full or collapsed reference link: [text][label] or [label][]
 _REF_USE = re.compile(r"\[([^\]]+)\]\[([^\]]*)\]")
+# A fence: up to three spaces, then three or more backticks or tildes.
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _CODE_SPAN = re.compile(r"`([^`]*)`")
 _MAKE = re.compile(r"(?:^|[\s;&|(])make\s+([a-z][a-z0-9_-]*)")
@@ -62,33 +64,51 @@ def _prose_and_code(text: str) -> tuple[list[tuple[int, str]], list[tuple[int, s
     """Split numbered lines into prose and fenced-code lines."""
     prose: list[tuple[int, str]] = []
     code: list[tuple[int, str]] = []
-    fence = False
+    fence = ""  # the opening fence run, while inside a fenced block
     for number, line in enumerate(text.splitlines(), 1):
-        if line.lstrip().startswith("```"):
-            fence = not fence
+        if not fence:
+            opening = _FENCE.match(line)
+            if opening:
+                fence = opening.group(1)
+                continue
+            prose.append((number, line))
             continue
-        (code if fence else prose).append((number, line))
+        # CommonMark: the same character, at least as long, nothing after it.
+        closing = _FENCE.match(line)
+        if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence):
+            if not closing.group(2).strip():
+                fence = ""
+                continue
+        code.append((number, line))
     return prose, code
+
+
+def reference_definitions(text: str) -> list[tuple[int, str, str]]:
+    """Return ``(line, label, target)`` of the reference definitions outside code."""
+    prose, _ = _prose_and_code(text)
+    result = []
+    for number, line in prose:
+        match = _REF_DEF.match(line)
+        if match:
+            result.append((number, match.group(1).strip().lower(), match.group(2)))
+    return result
 
 
 def navigable_links(text: str) -> list[tuple[int, str]]:
     """Return ``(line, target)`` of the links a reader can follow.
 
-    Inline links (titled or not) and reference-style links count; fenced code
-    and inline code spans are examples, not links. An undefined reference
-    label is returned with the target ``"[label]"`` so it can be reported.
+    Inline links (titled or not) and used reference-style links count; a
+    definition alone renders nothing, and fenced code and inline code spans
+    are examples, not links. An undefined reference label is returned with the
+    target ``"[label]"`` so it can be reported.
     """
     prose, _ = _prose_and_code(text)
     definitions: dict[str, str] = {}
-    for _, line in prose:
-        match = _REF_DEF.match(line)
-        if match:
-            definitions.setdefault(match.group(1).strip().lower(), match.group(2))
+    for _, label, target in reference_definitions(text):
+        definitions.setdefault(label, target)
     links: list[tuple[int, str]] = []
     for number, line in prose:
-        definition = _REF_DEF.match(line)
-        if definition:
-            links.append((number, definition.group(2)))
+        if _REF_DEF.match(line):
             continue
         bare = _CODE_SPAN.sub("", line)
         links += [(number, match.group(1)) for match in _LINK.finditer(bare)]
@@ -139,7 +159,11 @@ def check_links(root: Path, path: Path) -> list[str]:
     """Report relative links whose file, anchor or reference does not exist."""
     problems = []
     rel = path.relative_to(root).as_posix()
-    for number, target in navigable_links(path.read_text(encoding="utf-8")):
+    text = path.read_text(encoding="utf-8")
+    targets = navigable_links(text)
+    # Every definition target must resolve too, used or not.
+    targets += [(number, target) for number, _, target in reference_definitions(text)]
+    for number, target in sorted(targets):
         if target.startswith("["):
             problems.append(f"{rel}:{number}: reference {target} has no definition")
             continue

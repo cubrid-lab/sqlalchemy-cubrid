@@ -102,9 +102,50 @@ def test_reference_style_links_are_resolved(tmp_path: Path) -> None:
     assert check.run(_tree(tmp_path, valid)) == []
     broken = valid + "\nSee [the guide][gone] and [missing][].\n\n[gone]: docs/GONE.md\n"
     assert check.run(_tree(tmp_path / "broken", broken)) == [
-        "AGENTS.md:15: link target 'docs/GONE.md' does not exist",
         "AGENTS.md:15: reference [missing] has no definition",
+        "AGENTS.md:15: link target 'docs/GONE.md' does not exist",
         "AGENTS.md:17: link target 'docs/GONE.md' does not exist",
+    ]
+
+
+def test_definition_without_a_use_is_not_a_link(tmp_path: Path) -> None:
+    unused = (
+        ROOT_DOC.replace(
+            "[Dialect guide](docs/agents/dialect.md#cubrid-specific-knowledge)", "Dialect guide"
+        )
+        + "\n[dialect]: docs/agents/dialect.md\n"
+    )
+    assert check.run(_tree(tmp_path, unused)) == [
+        "docs/agents/dialect.md: not linked from AGENTS.md"
+    ]
+    guide = (
+        GUIDE.replace("see the [support matrix](../SUPPORT_MATRIX.md)", "see the support matrix")
+        + "\n[matrix]: ../SUPPORT_MATRIX.md\n"
+    )
+    (problem,) = check.run(_tree(tmp_path / "owner", guide=guide))
+    assert "names 'CUBRID 10.2' but links neither" in problem
+    broken = ROOT_DOC + "\n[unused]: docs/GONE.md\n"
+    assert check.run(_tree(tmp_path / "broken", broken)) == [
+        "AGENTS.md:13: link target 'docs/GONE.md' does not exist"
+    ]
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "~~~\n[x](docs/NOPE.md)\n~~~",
+        "````md\n```\n[x](docs/NOPE.md)\n```\n````",
+        "```\n```not-a-close\n[x](docs/NOPE.md)\n```",
+    ],
+)
+def test_tilde_and_nested_fences_hide_their_content(tmp_path: Path, block: str) -> None:
+    assert check.run(_tree(tmp_path, ROOT_DOC + "\n" + block + "\n")) == []
+
+
+def test_commands_in_tilde_fences_are_checked(tmp_path: Path) -> None:
+    root_doc = ROOT_DOC + "\n~~~bash\nmake tset\n~~~\n"
+    assert check.run(_tree(tmp_path, root_doc)) == [
+        "AGENTS.md:14: `make tset` is not a Makefile target"
     ]
 
 
@@ -122,15 +163,16 @@ def test_guide_not_linked_from_root_is_reported(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "reference",
+    ("cell", "after"),
     [
-        "`[Dialect guide](docs/agents/dialect.md)`",
-        "\n```\n[Dialect guide](docs/agents/dialect.md)\n```",
+        ("`[Dialect guide](docs/agents/dialect.md)`", ""),
+        ("Dialect guide", "\n```\n[Dialect guide](docs/agents/dialect.md)\n```\n"),
     ],
 )
-def test_guide_named_only_in_code_is_not_reachable(tmp_path: Path, reference: str) -> None:
-    root_doc = ROOT_DOC.replace(
-        "[Dialect guide](docs/agents/dialect.md#cubrid-specific-knowledge)", reference
+def test_guide_named_only_in_code_is_not_reachable(tmp_path: Path, cell: str, after: str) -> None:
+    root_doc = (
+        ROOT_DOC.replace("[Dialect guide](docs/agents/dialect.md#cubrid-specific-knowledge)", cell)
+        + after
     )
     assert check.run(_tree(tmp_path, root_doc)) == [
         "docs/agents/dialect.md: not linked from AGENTS.md"
