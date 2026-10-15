@@ -134,8 +134,11 @@ later; see [Driver Compatibility](docs/DRIVER_COMPAT.md#building-cubriddb-from-s
 These short examples assume a running database named `demodb` and a `dba`
 account whose password is `password`; replace the URL with your own values.
 The [first-connection guide](docs/QUICKSTART.md) instead uses a local lab
-database, `testdb`, with no password. The ORM example creates a `users` table,
-which the async insert example expects to exist.
+database, `testdb`, with no password. The ORM example creates a `users` table
+whose `email` column is required. The async insert example maps its own `users`
+table without that column, so it does not run against the table the ORM example
+creates. It expects an existing `users` table with only an auto-increment `id`
+and a `name`, which none of these examples creates.
 
 ### Core (Connection-Level)
 
