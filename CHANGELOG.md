@@ -118,6 +118,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Tests
 
+- **SHOW TRACE read failures release both result handles (#854)** — `test/test_trace.py` gains
+  the missing offline test for `trace_query()`'s read path: when reading the `SHOW TRACE` rows
+  raises, the traced statement result and the `SHOW TRACE` result must both be closed,
+  `SET TRACE OFF` must still be attempted, and the read error must reach the caller instead of
+  being replaced by the cleanup statement's own failure. The trace is mocked, so the test is
+  offline and does not replace integration coverage on a real server. No production code
+  changes: the described behaviour already holds, so no failure could be demonstrated.
+
 - **#872 garbage-collection tests no longer depend on the cycle collector** — the live
   async terminate test and the closed-event-loop test now commit before losing the
   connection, so the pool's cleanup runs when the last reference goes and terminates the

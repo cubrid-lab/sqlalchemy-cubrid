@@ -200,3 +200,43 @@ class TestTraceQuery:
         assert output[0] == "Trace line 1"
         assert output[1] == "Trace line 2"
         assert output[2] == "Trace line 3"
+
+    def test_trace_query_show_trace_read_failure_closes_both_results(self):
+        """A SHOW TRACE read failure must release both handles and keep the original error."""
+
+        from sqlalchemy_cubrid.trace import trace_query
+
+        class TraceReadError(RuntimeError):
+            pass
+
+        conn = MagicMock()
+        stmt_result = MagicMock()
+        trace_result = MagicMock()
+        trace_result.fetchall.side_effect = TraceReadError("SHOW TRACE read failed")
+
+        call_count = [0]
+        results = [None, stmt_result, trace_result]
+
+        def side_effect(*args, **kwargs):
+            idx = call_count[0]
+            call_count[0] += 1
+            if idx == 3:  # SET TRACE OFF during the cleanup block
+                raise OSError("SET TRACE OFF failed")
+            return results[idx] if idx < len(results) else None
+
+        conn.execute = MagicMock(side_effect=side_effect)
+
+        stmt = text("SELECT * FROM users")
+        with pytest.raises(TraceReadError, match="SHOW TRACE read failed"):
+            trace_query(conn, stmt)
+
+        # The traced statement result and the SHOW TRACE result are both released,
+        # even though reading the SHOW TRACE rows raised.
+        stmt_result.close.assert_called_once_with()
+        trace_result.close.assert_called_once_with()
+
+        # SET TRACE OFF is still attempted, and its own failure is swallowed so the
+        # TraceReadError above reaches the caller instead of being replaced.
+        last_arg = conn.execute.call_args_list[-1][0][0]
+        assert hasattr(last_arg, "text")
+        assert last_arg.text == "SET TRACE OFF"
