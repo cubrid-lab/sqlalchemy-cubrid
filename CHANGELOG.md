@@ -21,6 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Agent guidance split into task guides (#907)** — the root `AGENTS.md` (618 lines,
+  36,498 bytes) keeps the overview, commands, code conventions and every review, issue,
+  label, documentation, commit and release rule, and gains a task routing table for compiler
+  and DML, reflection and types, Alembic, drivers and async, tests and CI, documentation and
+  support claims, release and performance work. The architecture map, CUBRID-specific
+  dialect knowledge, test structure, CI/CD, documentation map and performance context moved
+  unchanged to `docs/agents/`. The root file is now 453 lines and 28,029 bytes.
+  `scripts/check_agents_docs.py` checks the links, anchors, guide reachability, `make`
+  targets, script paths and the `requires-python`/SQLAlchemy pins quoted in the root file
+  against `pyproject.toml`, and with `--retained-from REF` that no line of an earlier
+  `AGENTS.md` was dropped. No code, CI or release behavior changes.
+
 - **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
   SQLAlchemy 2.1 (2.1.0 to 2.1.4 checked) on CPython 3.15, the pool never cleans up a
   pooled connection that Python's cycle collector reclaims, such as one lost while its

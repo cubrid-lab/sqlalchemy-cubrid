@@ -70,6 +70,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_support_claims.py",
         "test_verify_dist.py",
         "test_bench_artifact.py",
+        "test_check_agents_docs.py",
     }
 )
 _missing_repo_modules = sorted(

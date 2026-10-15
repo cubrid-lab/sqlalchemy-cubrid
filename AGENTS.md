@@ -15,69 +15,26 @@ Alembic migration support, and PEP 561 typing.
 - **License**: MIT
 - **Version**: single-sourced from `sqlalchemy_cubrid/__init__.py` → `__version__` (Production/Stable); see [CHANGELOG.md](CHANGELOG.md) for the current release
 
-## Architecture
+## Task Routing
 
-```mermaid
-graph TD
-    root["sqlalchemy_cubrid/ (Main package + py.typed)"]
-    init["__init__.py - Public API exports types, insert(), merge(), replace(), trace_query(), __version__"]
-    compat["_compat.py - SQLAlchemy private API compatibility helpers"]
-    base["base.py - CubridExecutionContext, CubridIdentifierPreparer"]
-    compiler["compiler.py - CubridSQLCompiler, CubridDDLCompiler, CubridTypeCompiler"]
-    dialect["dialect.py - CubridDialect reflection, connection, isolation levels"]
-    pycubrid["pycubrid_dialect.py - PyCubridDialect pure Python driver variant"]
-    aio["aio_pycubrid_dialect.py - PyCubridAsyncDialect async driver variant"]
-    dml["dml.py - ON DUPLICATE KEY UPDATE (Insert), MERGE statement"]
-    trace["trace.py - Query tracing helper"]
-    types["types.py - CUBRID type system numeric, string, LOB, collection"]
-    req["requirements.py - SA 2.0 test requirement flags"]
-    alembic["alembic_impl.py - CubridImpl for Alembic migrations"]
-    typed["py.typed - PEP 561 marker"]
+Every section of this file applies to every change. Task-specific detail lives in the
+guides under `docs/agents/`, listed in the table below. Agent tools load this file but not
+the documents it links, so open the guide for your task before editing. The guides are
+English-only contributor guidance: `scripts/check_docs_translation.py` checks only the pages
+directly under `docs/`, and `scripts/check_agents_docs.py` checks their links and commands.
+`pyproject.toml` owns dependency bounds and [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md)
+owns supported versions and driver status.
 
-    root --> init
-    root --> compat
-    root --> base
-    root --> compiler
-    root --> dialect
-    root --> pycubrid
-    root --> aio
-    root --> dml
-    root --> trace
-    root --> types
-    root --> req
-    root --> alembic
-    root --> typed
-```
-
-### Module Responsibilities
-
-| Module | Role |
-|---|---|
-| `dialect.py` | Main dialect class. Handles `create_connect_args`, reflection (`get_columns`, `get_pk_constraint`, `get_foreign_keys`, `get_indexes`, `get_table_comment`, etc.), isolation levels, `import_dbapi()`. |
-| `pycubrid_dialect.py` | `PyCubridDialect` — subclasses `CubridDialect` for the pycubrid pure Python driver. Overrides `import_dbapi()`, `create_connect_args()`, `on_connect()`, `do_ping()`, `do_executemany()`, isolation re-apply, and the pycubrid part of disconnect detection (`errno`, client-side messages). |
-| `aio_pycubrid_dialect.py` | `PyCubridAsyncDialect` — async pycubrid variant for `create_async_engine()` / `AsyncSession`, registered as `cubrid.aiopycubrid`. Inherits all driver policy from `PyCubridDialect`; adds only the async adapter, pool class and `get_driver_connection()`. |
-| `compiler.py` | SQL compilation. `visit_cast`, `limit_clause`, `for_update_clause`, `update_limit_clause`, DDL (`get_column_specification`, `AUTO_INCREMENT`, `COMMENT`), type compilation for all CUBRID types. |
-| `dml.py` | Custom DML constructs: `insert()` with `.on_duplicate_key_update()`, `merge()` with `.using()`, `.on()`, `.when_matched_then_update()`, `.when_not_matched_then_insert()`. |
-| `types.py` | Type classes: `STRING`, `BIT`, `CLOB`, `SET`, `MULTISET`, `SEQUENCE`, `MONETARY`, `OBJECT`, plus standard type overrides. |
-| `base.py` | Execution context (`get_lastrowid`), identifier preparer (lowercase folding, 254-char max, reserved words). |
-| `trace.py` | `trace_query()` helper that enables CUBRID tracing around a statement and returns trace output. |
-| `requirements.py` | Test requirement flags — marks what CUBRID does/doesn't support for SA's test suite. |
-| `alembic_impl.py` | `CubridImpl(DefaultImpl)` with `transactional_ddl = True` (CUBRID DDL rolls back with the transaction); `emit_begin()` emits nothing because CUBRID has no `BEGIN`. Registered by the `alembic.plugins` entry point (`_sqlalchemy_cubrid_alembic.py`) on Alembic 1.18+, or by `dialect.py` importing it on Alembic 1.7.2-1.17 (#595). |
-| `_compat.py` | Internal compatibility helpers that wrap SQLAlchemy private APIs used by the dialect/compiler. |
-
-### Entry Points (pyproject.toml)
-
-```toml
-[project.entry-points."sqlalchemy.dialects"]
-cubrid = "sqlalchemy_cubrid.dialect:CubridDialect"
-"cubrid.cubrid" = "sqlalchemy_cubrid.dialect:CubridDialect"
-"cubrid.cubriddb" = "sqlalchemy_cubrid.dialect:CubridDialect"
-"cubrid.pycubrid" = "sqlalchemy_cubrid.pycubrid_dialect:PyCubridDialect"
-"cubrid.aiopycubrid" = "sqlalchemy_cubrid.aio_pycubrid_dialect:PyCubridAsyncDialect"
-
-[project.entry-points."alembic.plugins"]
-sqlalchemy_cubrid = "_sqlalchemy_cubrid_alembic"
-```
+| Task | Read before editing | Run before review |
+|---|---|---|
+| Compiler and DML (SQL compilation, `insert().on_duplicate_key_update()`, `merge()`, DDL) | [Dialect guide](docs/agents/dialect.md), [Architecture guide](docs/agents/architecture.md), [Code Conventions](#code-conventions), [docs/DML_EXTENSIONS.md](docs/DML_EXTENSIONS.md) | `make test`, `make check` |
+| Reflection and types | [Dialect guide](docs/agents/dialect.md), [Architecture guide](docs/agents/architecture.md), [docs/TYPES.md](docs/TYPES.md) | `make test`, `make check`, `make integration` |
+| Alembic migrations | [Dialect guide](docs/agents/dialect.md) (transactional DDL), [Architecture guide](docs/agents/architecture.md), [docs/ALEMBIC.md](docs/ALEMBIC.md) | `make test`, `make check`, `make integration` |
+| pycubrid drivers and async | [Architecture guide](docs/agents/architecture.md), [docs/CONNECTION.md](docs/CONNECTION.md), [docs/DRIVER_COMPAT.md](docs/DRIVER_COMPAT.md), [docs/SA_COMPAT.md](docs/SA_COMPAT.md) | `make test`, `make check`, `make integration` |
+| Tests and CI workflows | [Testing and CI guide](docs/agents/testing-ci.md), [docs/CI_POLICY.md](docs/CI_POLICY.md), [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | `make test-offline`, `make check-all` |
+| Documentation and support claims | [Documentation guide](docs/agents/documentation.md), [Documentation definition of done](#documentation-definition-of-done), [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) | `python scripts/check_support_claims.py`, `python scripts/generate_llms_full.py`, `python scripts/check_agents_docs.py` |
+| Release | [Release Process](#release-process), [GitHub Release Policy](#github-release-policy), [RELEASING.md](RELEASING.md) | `make release-check VERSION=x.y.z` (read-only; never release by hand) |
+| Performance and roadmap | [Performance guide](docs/agents/performance.md), [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | the measurement steps in docs/PERFORMANCE.md |
 
 ## Development
 
@@ -236,118 +193,6 @@ review/backlog requests do not authorize assigned or reserved good-first issues.
   required review still pending, failed required CI, or unresolved
   critical/security findings. Give nonblocking open threads an explicit
   maintainer disposition. Do not change branch protection or auto-merge here.
-
-## Test Structure
-
-Representative core test modules (not exhaustive; list `test/` for the current set,
-including repository-tooling, fuzz, differential and Alembic tests):
-
-```
-test/
-├── conftest.py              # Fixtures: mock dialect, engine, connection
-├── test_compiler.py         # SQL compilation (SELECT, JOIN, CAST, LIMIT, DML extensions)
-├── test_types.py            # Type system (all type compilations, reflection)
-├── test_dialect_offline.py  # Dialect (reflection stubs, connection, isolation)
-├── test_base.py             # ExecutionContext, IdentifierPreparer
-├── test_requirements.py     # SA requirement flags (parametrized)
-├── test_alembic.py          # Alembic CubridImpl import/registry
-├── test_dialects.py         # Edge cases
-├── test_pycubrid_dialect.py # PyCubridDialect (pure Python driver variant)
-├── test_integration.py      # Live DB tests (skipped offline)
-└── test_suite.py            # SA test suite runner (skipped offline)
-```
-
-### Test Stats
-
-- Large and growing offline and integration suites; exact counts shift with every PR, so see the `offline-tests` / `integration-tests` CI job output for current numbers rather than a hardcoded snapshot here
-- Coverage threshold: 95% (CI-enforced, `--cov-fail-under=95` in the `offline-tests` job)
-- A handful of defensive fallback branches are intentionally unreachable in normal operation (SA-version-specific compatibility shims, exhaustive-but-unreachable `else` arms); see `--cov=sqlalchemy_cubrid --cov-report=term-missing` output (or `make test`) for current line numbers instead of a pinned list
-
-### Running Tests
-
-Most tests are **offline** — they mock the CUBRID connection and test SQL compilation,
-type mapping, and reflection logic without a database. Tests that need a live CUBRID
-instance carry the `integration` marker (`test_integration.py`, `test_aio_integration.py`,
-`test_suite.py` and several contract, fuzz and regression modules); the offline lanes
-deselect them with `-m "not integration"`.
-
-## CUBRID-Specific Knowledge
-
-### Key Differences from MySQL/PostgreSQL
-
-- **No RETURNING** — `INSERT/UPDATE/DELETE ... RETURNING` not supported
-- **No native BOOLEAN** — mapped to `SMALLINT` (0/1)
-- **JSON support (10.2+)** — native JSON type is mapped in this dialect, including path/index helpers and reflection support
-- **No ARRAY** — uses `SET`, `MULTISET`, `SEQUENCE` collection types
-- **No Sequences** — uses `AUTO_INCREMENT`
-- **No multi-schema** — single-schema model
-- **No RELEASE SAVEPOINT** — `do_release_savepoint()` is a no-op
-- **DDL is transactional** — `ROLLBACK` undoes DDL and DDL never commits earlier DML; only client autocommit (turned off by the dialect) commits it early. `transactional_ddl = True`, so a whole Alembic upgrade is one transaction by default; recommend `transaction_per_migration=True` for long or large-table migrations (uncommitted DDL holds schema locks)
-- **3 MVCC isolation levels** — `READ COMMITTED` (default), `REPEATABLE READ`, `SERIALIZABLE`
-- **Identifier folding** — lowercase (not uppercase like SQL standard)
-- **Max identifier length** — 254 characters
-
-### Connection Format
-
-SQLAlchemy URL: `cubrid://user:password@host:port/dbname`
-CUBRID native:  `CUBRID:host:port:dbname:::`
-
-The dialect translates automatically in `create_connect_args()`.
-
-### CUBRID Versions Tested
-
-Supported and tested CUBRID versions are maintained in
-[docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md); CI lanes are defined in
-[docs/CI_POLICY.md](docs/CI_POLICY.md). Tests use Docker images `cubrid/cubrid:{version}`.
-
-## CI/CD
-
-### Workflows
-
-| File | Trigger | Purpose |
-|---|---|---|
-| `.github/workflows/ci.yml` | PR, main, weekly, manual | Full offline suite on PRs and representative integration; see docs/CI_POLICY.md |
-| `.github/workflows/integration-full.yml` | Manual dispatch, release workflow_call | Full supported compatibility matrix |
-| `.github/workflows/release-please.yml` | Push to main, manual dispatch | Prepare the release PR; compose generated and curated notes; never publish |
-| `.github/workflows/publish-pypi.yml` | Push to main; recovery dispatch (`resume` / `verify-only` / `dry-run`) | Detect a merged release, then matrix, build, tag + GitHub Release + PyPI, cookbook verification, summary |
-
-### CI Matrix
-
-Routine CI is tiered: pull requests run one representative cell, main and
-changed-weekly runs cover the oldest/newest supported Python and CUBRID endpoints,
-and the full integration matrix runs only on manual dispatch and every release
-(no automatic nightly full matrix). The exact cells, change classification and
-gate requirements live in [CI policy](docs/CI_POLICY.md); check it rather than
-copying versions here.
-
-## Documentation Map
-
-| File | Content |
-|---|---|
-| `README.md` | Concise landing page |
-| `docs/CONNECTION.md` | Connection strings, URL format, driver setup |
-| `docs/TYPES.md` | Full type mapping, CUBRID-specific types |
-| `docs/ISOLATION_LEVELS.md` | The three CUBRID MVCC isolation levels |
-| `docs/DML_EXTENSIONS.md` | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT, TRUNCATE |
-| `docs/ALEMBIC.md` | Alembic migration guide, limitations, workarounds |
-| `docs/FEATURE_SUPPORT.md` | Feature comparison with MySQL, PostgreSQL, SQLite |
-| `docs/DEVELOPMENT.md` | Dev setup, testing, Docker, coverage, CI/CD |
-| `docs/ORM_COOKBOOK.md` | Practical ORM usage examples with CUBRID |
-| `docs/PRD.md` | Product requirements document |
-| `CHANGELOG.md` | Release history (Keep a Changelog format) |
-| `RELEASING.md` | Release procedure (release-please + `publish-pypi.yml`), failure matrix, recovery |
-| `docs/ARCHITECTURE.md` | Dialect architecture and design objectives |
-| `docs/SA_COMPAT.md` | SQLAlchemy internal APIs used by the dialect and their verified range |
-| `docs/QUICKSTART.md` | Minimal working setup |
-| `benchmarks/` | Dated benchmark records with environment and exact commands |
-| `CONTRIBUTING.md` | Contribution guidelines |
-| `SECURITY.md` | Security vulnerability reporting |
-| `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
-| `docs/SUPPORT_MATRIX.md` | Supported Python, SQLAlchemy, CUBRID and driver versions |
-| `docs/CI_POLICY.md` | CI tiers, selected cells and gate requirements |
-| `docs/PERFORMANCE.md` | Performance measurements and benchmark pointers |
-| `ROADMAP.md` | Current roadmap (public) |
-| `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 
 ## Issue specification and ownership
 
@@ -606,13 +451,3 @@ These rules add to the release procedure above; the procedures and gates in
 - Never bulk-rewrite historical notes or regenerate them from current `main`. A
   selective fix needs a dry-run diff and maintainer approval. Never invent PR or commit
   references. Note formatting never changes tags, dates, artifacts or publish state.
-
-## Performance Context
-
-sqlalchemy-cubrid provides ORM-level validation that pycubrid driver improvements reach
-the application layer. Current benchmark results and methodology live in
-[docs/PERFORMANCE.md](docs/PERFORMANCE.md) and
-[cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark); current priorities live
-in [ROADMAP.md](ROADMAP.md) (public) and the
-[CUBRID Ecosystem Roadmap](https://github.com/orgs/cubrid-lab/projects/2) board (org
-members only), not here.
