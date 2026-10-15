@@ -57,8 +57,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   markdown-it's link and image rules now record each link's source tail, so the lines after a
   link come from its own destination, title or reference label. A reference link no longer
   takes an equal inline title's newlines, backticks in a title no longer hide its line, and a
-  reference label that spans lines counts its line. Inline HTML tags are masked before link
-  tails, so a link-like fragment in an attribute no longer hides an undefined reference. In a
+  reference label that spans lines counts its line. Before references are checked, only what
+  markdown-it parsed is masked, at its source positions: inline HTML (tags and comments),
+  autolinks and inline link tails. A link-like fragment in an attribute no longer hides an
+  undefined reference, a tag name in a destination no longer exposes the title, and text that
+  only looks like a link tail is checked. In a
   shell block, `#` starts a comment only at the start of a word, so `echo x\ #note \`
   still continues the line. `[site]( "See [foo][bar]")` stays reported: CommonMark does not
   parse it as a link.

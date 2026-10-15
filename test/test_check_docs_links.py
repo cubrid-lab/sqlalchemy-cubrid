@@ -451,6 +451,29 @@ def test_a_link_like_fragment_in_an_html_attribute_does_not_hide_references(
     ]
 
 
+@pytest.mark.parametrize(
+    ("page", "found"),
+    [
+        # The destination is the local file "span": only that is reported.
+        (
+            '[site](<span> "See [foo][bar]") <span>text</span>\n',
+            ["docs/PAGE.md:1: link target 'span' does not exist"],
+        ),
+        ("[t](https://example.invalid/<span>/[foo][bar]) <span>visible</span>\n", []),
+        ("[x](<b> [broken][missing])\n", ["docs/PAGE.md:1: reference [missing] has no definition"]),
+        (
+            "Text <!-- x\n[y](z -->\nb [c][gone]\n",
+            ["docs/PAGE.md:3: reference [gone] has no definition"],
+        ),
+        ("See <https://example.invalid/[a][b]> ok\n", []),
+    ],
+)
+def test_only_parsed_html_and_link_tails_are_masked(
+    tmp_path: Path, page: str, found: list[str]
+) -> None:
+    assert check.run(_tree(tmp_path, page)) == found
+
+
 def test_html_attributes_are_parsed_like_a_browser(tmp_path: Path) -> None:
     page = (
         '<img data-src="https://example.invalid/lazy.svg" src="GONE.svg">\n\n'

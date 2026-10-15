@@ -19,6 +19,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 
 from markdown_it import MarkdownIt
+from markdown_it.rules_inline import autolink as _autolink_rule
+from markdown_it.rules_inline import html_inline as _html_inline_rule
 from markdown_it.rules_inline import image as _image_rule
 from markdown_it.rules_inline import link as _link_rule
 from markdown_it.rules_inline.state_inline import StateInline
@@ -27,37 +29,46 @@ from markdown_it.token import Token
 _InlineRule = Callable[[StateInline, bool], bool]
 
 
-def _recording_tail(rule: _InlineRule) -> _InlineRule:
-    """Wrap markdown-it's link or image rule to record where each link's tail is.
+def _recording(rule: _InlineRule, kind: str) -> _InlineRule:
+    """Wrap a markdown-it inline rule to record the source span of what it parsed.
 
-    The tail is the source after the link text: ``(dest "title")`` of an inline
-    link, ``[label]`` or nothing of a reference one. Its span, relative to the
-    inline source, goes to ``meta["tail"]`` of the ``link_open`` or ``image``
-    token, so line numbers come from the source and not from the decoded title.
+    The first new token of type ``kind`` gets ``meta["span"]``, the span relative
+    to the inline source. A link or an image also gets ``meta["tail"]``: the
+    source after its text, ``(dest "title")`` of an inline link, ``[label]`` or
+    nothing of a reference one. Line numbers and masking use these positions, not
+    the decoded text, which can differ from the source or occur twice.
     """
 
     def recorded(state: StateInline, silent: bool) -> bool:
         start, count = state.pos, len(state.tokens)
         if not rule(state, silent):
             return False
-        if not silent:
-            is_link = state.src[start] == "["
-            bracket = start if is_link else start + 1
-            label_end = state.md.helpers.parseLinkLabel(state, bracket, is_link)
-            for token in state.tokens[count:]:
-                if token.type in ("link_open", "image"):
-                    token.meta["tail"] = (label_end + 1, state.pos)
-                    break
+        if silent:
+            return True
+        for token in state.tokens[count:]:
+            if token.type != kind:
+                continue
+            token.meta["span"] = (start, state.pos)
+            if rule in (_link_rule, _image_rule):
+                is_link = state.src[start] == "["
+                bracket = start if is_link else start + 1
+                label_end = state.md.helpers.parseLinkLabel(state, bracket, is_link)
+                token.meta["tail"] = (label_end + 1, state.pos)
+            break
         return True
 
     return recorded
 
 
 _PARSER = MarkdownIt("commonmark").enable("table")
-_PARSER.inline.ruler.at("link", _recording_tail(_link_rule))
-_PARSER.inline.ruler.at("image", _recording_tail(_image_rule))
+for _name, _rule, _kind in (
+    ("link", _link_rule, "link_open"),
+    ("image", _image_rule, "image"),
+    ("autolink", _autolink_rule, "link_open"),
+    ("html_inline", _html_inline_rule, "html_inline"),
+):
+    _PARSER.inline.ruler.at(_name, _recording(_rule, _kind))
 _ATTR_ID = re.compile(r"\s*\{[^}]*#([\w-]+)[^}]*\}\s*$")
-_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 # Python-Markdown reads ``#<digit>`` at the start of a block line as an ATX
 # heading. Its block quotes strip ``>`` (after up to 3 spaces) and one space,
 # list items start after their marker (``-``, ``*``, ``+``, ``1.``; not
@@ -269,107 +280,41 @@ def _blank(text: str) -> str:
     return re.sub(r"[^\n]", " ", text)
 
 
-def _link_tail_end(raw: str, index: int) -> int:
-    """Return the index after the ``)`` of an inline link tail that starts at ``index``.
+def _parsed_spans(token: Token) -> list[tuple[int, int]]:
+    """Return the source spans of the inline HTML, autolinks and inline link tails.
 
-    CommonMark: optional whitespace, a destination (``<...>``, or bare text with
-    balanced parentheses and no whitespace, where a quote is an ordinary
-    character), optional whitespace, an optional title (``"..."``, ``'...'`` or
-    ``(...)``, which must follow whitespace), optional whitespace, then ``)``.
-    Backslash escapes are honoured. A malformed tail (no closing ``)``, or text
-    after the title) is not a link: ``-1``.
+    Only what markdown-it parsed counts: a tag, a comment or an autolink, and the
+    ``(dest "title")`` tail of a link or an image that is a link. Top-level
+    children only: an image's alt text has its own positions.
     """
-    size = len(raw)
-
-    def skip_space(at: int) -> int:
-        while at < size and raw[at] in " \t\n":
-            at += 1
-        return at
-
-    index = skip_space(index)
-    if index < size and raw[index] == "<":
-        index += 1
-        while index < size and raw[index] not in ">\n":
-            index += 2 if raw[index] == "\\" else 1
-        index += 1
-    else:
-        depth = 0
-        while index < size and raw[index] not in " \t\n":
-            char = raw[index]
-            if char == "\\":
-                index += 2
-                continue
-            if char == "(":
-                depth += 1
-            elif char == ")":
-                if depth == 0:
-                    return index + 1
-                depth -= 1
-            index += 1
-    before_title = index
-    index = skip_space(index)
-    if index > before_title and index < size and raw[index] in "\"'(":
-        closer = ")" if raw[index] == "(" else raw[index]
-        index += 1
-        while index < size and raw[index] != closer:
-            index += 2 if raw[index] == "\\" else 1
-        index += 1
-        index = skip_space(index)
-    if index < size and raw[index] == ")":
-        return index + 1
-    return -1
-
-
-def _mask_link_tails(raw: str) -> str:
-    """Blank inline link destinations and titles: ``](dest "title")``.
-
-    The tail is scanned as CommonMark defines it (``_link_tail_end``), so an
-    apostrophe inside a bare destination does not open a title.
-    """
-    out = list(raw)
-    position = 0
-    while (opening := raw.find("](", position)) >= 0:
-        index = _link_tail_end(raw, opening + 2)
-        if index < 0:  # not a link tail: leave it, and look past this "]("
-            position = opening + 2
-            continue
-        for spot in range(opening + 1, index):
-            if out[spot] != "\n":
-                out[spot] = " "
-        position = index
-    return "".join(out)
-
-
-def _mask_html_inline(raw: str, token: Token) -> str:
-    """Blank the inline HTML tags of ``token``, found in order in its source."""
-    cursor = 0
+    spans = []
     for child in token.children or []:
-        if child.type != "html_inline":
+        if child.type == "html_inline" or child.markup == "autolink":
+            span = child.meta.get("span")
+        elif child.type in ("link_open", "image"):
+            span = child.meta.get("tail")
+            if span and token.content[span[0] : span[0] + 1] != "(":
+                span = None  # a reference link: its label is checked below
+        else:
             continue
-        start = raw.find(child.content, cursor)
-        if start < 0:
-            continue
-        cursor = start + len(child.content)
-        raw = raw[:start] + _blank(child.content) + raw[cursor:]
-    return raw
+        if span:
+            spans.append(span)
+    return spans
 
 
 def _undefined_references(token: Token, defined: set[str]) -> list[Link]:
     """Return unescaped ``[text][label]`` uses, outside code, whose label is undefined.
 
-    Code spans, HTML (tags, autolinks, comments) and inline link destinations
-    and titles are blanked first, so brackets in a URL or a title are not links.
+    Code spans, and the inline HTML (tags, comments), autolinks and inline link
+    destinations and titles that markdown-it parsed, are blanked first at their
+    source positions, so brackets in a URL, a title or a tag are not links. Text
+    that only looks like a link tail or a tag stays, and is checked.
     """
     if token.map is None:
         return []
     raw = _mask_code_spans(token.content)
-    # Comments and the inline HTML that markdown-it parsed first, so a link tail
-    # is not scanned from inside a tag or a comment; then link tails, before the
-    # remaining ``<...>`` (autolinks): a <...> destination must keep its brackets.
-    raw = _HTML_COMMENT.sub(lambda m: _blank(m.group(0)), raw)
-    raw = _mask_html_inline(raw, token)
-    raw = _mask_link_tails(raw)
-    raw = re.sub(r"<[^<>\n]*>", lambda m: _blank(m.group(0)), raw)
+    for start, end in _parsed_spans(token):
+        raw = raw[:start] + _blank(raw[start:end]) + raw[end:]
     found = []
     for match in _REFERENCE.finditer(raw):
         label = " ".join((match.group(2) or match.group(1)).split()).casefold()
