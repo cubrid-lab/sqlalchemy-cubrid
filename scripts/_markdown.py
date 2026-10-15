@@ -280,25 +280,28 @@ def _blank(text: str) -> str:
     return re.sub(r"[^\n]", " ", text)
 
 
-def _parsed_spans(token: Token) -> list[tuple[int, int]]:
+def _parsed_spans(children: list[Token], source: str, base: int = 0) -> list[tuple[int, int]]:
     """Return the source spans of the inline HTML, autolinks and inline link tails.
 
     Only what markdown-it parsed counts: a tag, a comment or an autolink, and the
-    ``(dest "title")`` tail of a link or an image that is a link. Top-level
-    children only: an image's alt text has its own positions.
+    ``(dest "title")`` tail of a link or an image that is a link. An image's alt
+    text is parsed on its own, from the image's label, so the spans of its
+    children are moved by the label's start (``base``) into ``source``.
     """
     spans = []
-    for child in token.children or []:
+    for child in children:
+        span = None
         if child.type == "html_inline" or child.markup == "autolink":
             span = child.meta.get("span")
         elif child.type in ("link_open", "image"):
             span = child.meta.get("tail")
-            if span and token.content[span[0] : span[0] + 1] != "(":
+            if span and source[base + span[0] : base + span[0] + 1] != "(":
                 span = None  # a reference link: its label is checked below
-        else:
-            continue
         if span:
-            spans.append(span)
+            spans.append((base + span[0], base + span[1]))
+        if child.type == "image" and child.children and "span" in child.meta:
+            label_start = base + child.meta["span"][0] + 2  # after "!["
+            spans += _parsed_spans(child.children, source, label_start)
     return spans
 
 
@@ -313,7 +316,7 @@ def _undefined_references(token: Token, defined: set[str]) -> list[Link]:
     if token.map is None:
         return []
     raw = _mask_code_spans(token.content)
-    for start, end in _parsed_spans(token):
+    for start, end in _parsed_spans(token.children or [], token.content):
         raw = raw[:start] + _blank(raw[start:end]) + raw[end:]
     found = []
     for match in _REFERENCE.finditer(raw):

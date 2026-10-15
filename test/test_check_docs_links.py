@@ -466,6 +466,14 @@ def test_a_link_like_fragment_in_an_html_attribute_does_not_hide_references(
             ["docs/PAGE.md:3: reference [gone] has no definition"],
         ),
         ("See <https://example.invalid/[a][b]> ok\n", []),
+        # An image's alt text is parsed on its own: its spans are moved into the source.
+        ("![<https://example.invalid/[a][b]>](TARGET.md)\n", []),
+        ('![alt [site](https://example.invalid/ "See [foo][bar]")](TARGET.md)\n', []),
+        (
+            "![a <span title='[x](y'> b](TARGET.md) [c][gone]\n",
+            ["docs/PAGE.md:1: reference [gone] has no definition"],
+        ),
+        ("![a ![b](https://example.invalid/[c][d])](TARGET.md)\n", []),
     ],
 )
 def test_only_parsed_html_and_link_tails_are_masked(
