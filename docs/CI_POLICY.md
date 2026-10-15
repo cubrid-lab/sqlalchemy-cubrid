@@ -412,7 +412,7 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   `tooling` filter (`scripts/**`, `Makefile`, ...), because a removed script or make
   target strands the documents that name it. It fails, printing `file:line` and a
   suggested fix when one is close, on:
-  - a relative Markdown or HTML (`<img src>`, `<a href>`) link target that is missing,
+  - a relative Markdown or HTML (`<img src>`, `<a href>`, `<source src>`) link target that is missing,
     absolute or outside the repository;
   - an `#anchor` that is not a heading (its GitHub or site slug, or `{#id}`) or an
     `<a id>`/`<a name>` of the target file;

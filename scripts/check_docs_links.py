@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail on deterministic defects in the repository's Markdown files (#908; shared with pycubrid #927).
+"""Fail on deterministic defects in the repository's Markdown files (#908, #921; shared with pycubrid).
 
 Checks every tracked ``*.md`` file, offline and without network access:
 
@@ -42,7 +42,20 @@ IGNORE = "<!-- docs-check: ignore -->"
 # Dated release notes describe commands and scripts of their time; never rewrite them.
 HISTORY = frozenset({"CHANGELOG.md", "RELEASE_CHANGELOG.md"})
 _SCRIPT = re.compile(r"(?<![\w/.-])scripts/[A-Za-z0-9_./-]+\.(?:py|cjs|sh)\b")
-_MAKE_TARGET = re.compile(r"^([a-zA-Z0-9_.-]+)\s*:(?!=)", re.M)
+# A rule line: one or more targets, then ``:`` or ``::``, but not an assignment
+# (``:=``, ``::=``): after the colons comes neither ``=`` nor another ``:``.
+# Recipe lines start with a tab and are not rules.
+_MAKE_RULE = re.compile(r"^([^\t#=:][^#=:]*?)\s*::?(?![=:])")
+
+
+def make_targets(text: str) -> set[str]:
+    """Return every target a Makefile declares, including grouped ``a b:`` rules."""
+    targets: set[str] = set()
+    for line in text.splitlines():
+        match = _MAKE_RULE.match(line)
+        if match:
+            targets.update(match.group(1).split())
+    return targets
 
 
 def markdown_files(root: Path) -> list[Path]:
@@ -77,9 +90,7 @@ class Checker:
         self._parsed: dict[Path, Parsed] = {}
         makefile = self.root / "Makefile"
         self.make_targets = (
-            set(_MAKE_TARGET.findall(makefile.read_text(encoding="utf-8")))
-            if makefile.is_file()
-            else set()
+            make_targets(makefile.read_text(encoding="utf-8")) if makefile.is_file() else set()
         )
 
     def parsed(self, path: Path) -> Parsed:

@@ -1,4 +1,4 @@
-"""Deterministic documentation checks: local links, anchors, fences, commands (#908)."""
+"""Deterministic documentation checks: local links, anchors, fences, commands (#908, #921)."""
 
 from __future__ import annotations
 
@@ -205,6 +205,123 @@ def test_html_link_and_image_targets_are_checked(tmp_path: Path) -> None:
     root = _tree(tmp_path, page, {"docs/demo.gif": ""})
     assert check.run(root) == [
         "docs/PAGE.md:3: link target 'dem0.gif' does not exist; did you mean 'demo.gif'?"
+    ]
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        'Inline <a\nhref="https://example.invalid">x</a>',
+        '[t](TARGET.md "a\nb") then',
+        '![i](TARGET.md "a\nb") then',
+    ],
+)
+def test_lines_after_multi_line_tags_and_titles_are_exact(tmp_path: Path, first: str) -> None:
+    page = f"{first}\n[bad](GONE.md)\n\n{first}\n[ok](GONE.md) <!-- docs-check: ignore -->\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:3: link target 'GONE.md' does not exist"
+    ]
+
+
+@pytest.mark.parametrize("use", ["[ok][r]", "![ok][r]"])
+def test_reference_titles_add_no_lines_at_the_use_site(tmp_path: Path, use: str) -> None:
+    page = (
+        f"{use}\n[bad](GONE.md)\n\n{use} [ok2](GONE.md) <!-- docs-check: ignore -->\n\n"
+        '[r]: TARGET.md "a\nb\nc"\n'
+    )
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:2: link target 'GONE.md' does not exist"
+    ]
+
+
+def test_a_malformed_link_tail_does_not_hide_later_references(tmp_path: Path) -> None:
+    page = "[example]( and [broken][missing]\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:1: reference [missing] has no definition"
+    ]
+
+
+def test_an_angle_bracket_destination_keeps_its_title_masked(tmp_path: Path) -> None:
+    page = '[site](<https://example.invalid/> "See ) [foo][bar]")\n'
+    assert check.run(_tree(tmp_path, page)) == []
+
+
+@pytest.mark.parametrize(
+    "block",
+    [
+        "echo \\\\\nmake removed",  # an escaped backslash: two commands
+        "echo x\\  \nmake removed",  # a backslash before spaces does not continue
+        "echo 'a\\\nb'\nmake removed",  # a backslash in single quotes is literal
+    ],
+)
+def test_only_a_real_continuation_joins_lines(tmp_path: Path, block: str) -> None:
+    page = f"```bash\n{block}\n```\n"
+    findings = check.run(_tree(tmp_path, page))
+    assert [p.split(": ", 1)[1] for p in findings] == ["`make removed` is not a Makefile target"]
+
+
+def test_grouped_and_double_colon_make_rules_declare_every_target(tmp_path: Path) -> None:
+    root = _tree(tmp_path, "Run `make check-docs`, `make alpha beta` and `make again`.\n")
+    (root / "Makefile").write_text(
+        "check-docs alpha: ## grouped\n\ttrue\nbeta again::\n\ttrue\n"
+        "var := x\nother ?= y\nlate ::= z\n\tnot-a-rule: z\n",
+        encoding="utf-8",
+    )
+    assert check.run(root) == []
+    (root / "docs/PAGE.md").write_text(
+        "Run `make var`, `make late` and `make not-a-rule`.\n", encoding="utf-8"
+    )
+    assert [p.split(": ", 1)[1] for p in check.run(root)] == [
+        "`make late` is not a Makefile target",
+        "`make not-a-rule` is not a Makefile target",
+        "`make var` is not a Makefile target",
+    ]
+
+
+def test_an_apostrophe_in_a_destination_does_not_open_a_title(tmp_path: Path) -> None:
+    page = "[site](https://example.invalid/it's) and [broken][missing]\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:1: reference [missing] has no definition"
+    ]
+
+
+def test_a_word_split_across_a_continuation_is_one_word(tmp_path: Path) -> None:
+    assert check.run(_tree(tmp_path, "```bash\nmake te\\\nst\n```\n")) == []
+    (tmp_path / "split").mkdir()
+    assert check.run(_tree(tmp_path / "split", "```bash\nmake te\\\n st\n```\n")) == [
+        "docs/PAGE.md:2: `make st` is not a Makefile target",
+        "docs/PAGE.md:2: `make te` is not a Makefile target",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("command", "goals"),
+    [
+        ("make test;>log make lint", ["test", "lint"]),
+        ("echo ok;>log make removed", ["removed"]),
+        ("make a&&make b", ["a", "b"]),
+        ("make test &>log", ["test"]),
+    ],
+)
+def test_adjacent_shell_operators_are_separate(command: str, goals: list[str]) -> None:
+    assert make_goals(command) == goals
+
+
+@pytest.mark.parametrize(
+    "first",
+    ['[t](TARGET.md "a &amp;\nb") then', '![i](TARGET.md "a \\" q\nb") then'],
+)
+def test_decoded_inline_titles_still_count_their_lines(tmp_path: Path, first: str) -> None:
+    page = f"{first}\n[bad](GONE.md)\n\n{first}\n[ok](GONE.md) <!-- docs-check: ignore -->\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:3: link target 'GONE.md' does not exist"
+    ]
+
+
+def test_a_backslash_in_a_comment_does_not_continue(tmp_path: Path) -> None:
+    page = "```bash\necho ok # note \\\nmake removed\necho 'a # b\\\nc'\n```\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:3: `make removed` is not a Makefile target"
     ]
 
 

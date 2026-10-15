@@ -1,4 +1,4 @@
-"""Shared CommonMark helpers for the repository documentation checks (#908; shared with pycubrid #927).
+"""Shared CommonMark helpers for the repository documentation checks (#908, #921; shared with pycubrid).
 
 ``markdown-it-py`` parses each file, so fenced code (backtick or tilde, any
 length, inside lists and block quotes), inline code spans of any backtick
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from pathlib import Path
 
@@ -23,6 +23,7 @@ from markdown_it.token import Token
 _PARSER = MarkdownIt("commonmark").enable("table")
 _ATTR_ID = re.compile(r"\s*\{[^}]*#([\w-]+)[^}]*\}\s*$")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_HASH_DIGIT = re.compile(r"\s*#\d")
 _BACKTICKS = re.compile(r"`+")
 # A full or collapsed reference link whose brackets are not escaped; an opening
 # bracket after a word character (``rows[0][1]``) is an index, not a link.
@@ -66,6 +67,9 @@ class Parsed:
     anchors: set[str]
     code: list[tuple[int, str]]
     unclosed_fences: list[int]
+    # Paragraph lines starting with ``#<digit>``: plain text for CommonMark and
+    # GitHub, but an ATX heading for Python-Markdown, which builds the site (#938).
+    hash_digit_lines: list[int] = field(default_factory=list)
 
 
 def github_slug(text: str) -> str:
@@ -126,18 +130,51 @@ def _mask_code_spans(raw: str) -> str:
         position = closing.end()
 
 
-def _inline_items(token: Token) -> list[tuple[int, Token]]:
+def _inline_title_newlines(raw: str, child: Token, reference_titles: set[str]) -> int:
+    """Return the newlines of a link or image title written in this inline source.
+
+    A reference link or image takes its title from the definition, elsewhere in
+    the file, so its title adds no line here. markdown-it decodes entities and
+    escapes in the title, which changes its text but not its newlines, so a
+    title that is not found verbatim still counts unless it is a definition's.
+    """
+    title = str(child.attrGet("title") or "")
+    if "\n" not in title:
+        return 0
+    if title in raw or title not in reference_titles:
+        return title.count("\n")
+    return 0
+
+
+def _inline_items(token: Token, reference_titles: set[str]) -> list[tuple[int, Token]]:
     """Return ``(line offset, child)`` for the children of an inline token.
 
-    Soft and hard breaks start a new line; a code span that spans lines moves
-    the following children down by its newlines, found in the raw source.
+    Soft and hard breaks start a new line. A code span or an inline HTML tag
+    that spans lines moves the following children down by its newlines (found
+    in the raw source for code spans), and a multi-line link or image title
+    moves the children after the link (the title follows the link text).
     """
     raw = token.content
     cursor, offset = 0, 0
+    pending_titles: list[int] = []
     items = []
     for child in token.children or []:
         items.append((offset, child))
-        if child.type in ("softbreak", "hardbreak"):
+        if child.type == "link_open":
+            pending_titles.append(_inline_title_newlines(raw, child, reference_titles))
+        elif child.type == "link_close" and pending_titles:
+            offset += pending_titles.pop()
+        elif child.type == "image":
+            alt_breaks = sum(
+                1 for c in child.children or [] if c.type in ("softbreak", "hardbreak")
+            )
+            offset += alt_breaks + _inline_title_newlines(raw, child, reference_titles)
+        elif child.type == "html_inline":
+            start = raw.find(child.content, cursor)
+            if start >= 0:
+                cursor = start + len(child.content)
+            offset += child.content.count("\n")
+        elif child.type in ("softbreak", "hardbreak"):
             newline = raw.find("\n", cursor)
             if newline >= 0:
                 cursor = newline + 1
@@ -173,30 +210,70 @@ def _blank(text: str) -> str:
     return re.sub(r"[^\n]", " ", text)
 
 
-def _mask_link_tails(raw: str) -> str:
-    """Blank inline link destinations and titles: ``](dest "title")``.
+def _link_tail_end(raw: str, index: int) -> int:
+    """Return the index after the ``)`` of an inline link tail that starts at ``index``.
 
-    The scan follows CommonMark: backslash escapes, quoted titles and balanced
-    parentheses inside the destination.
+    CommonMark: optional whitespace, a destination (``<...>``, or bare text with
+    balanced parentheses and no whitespace, where a quote is an ordinary
+    character), optional whitespace, an optional title (``"..."``, ``'...'`` or
+    ``(...)``, which must follow whitespace), optional whitespace, then ``)``.
+    Backslash escapes are honoured. A malformed tail (no closing ``)``, or text
+    after the title) is not a link: ``-1``.
     """
-    out = list(raw)
-    position = 0
-    while (opening := raw.find("](", position)) >= 0:
-        index, depth, quote = opening + 2, 1, ""
-        while index < len(raw) and depth:
+    size = len(raw)
+
+    def skip_space(at: int) -> int:
+        while at < size and raw[at] in " \t\n":
+            at += 1
+        return at
+
+    index = skip_space(index)
+    if index < size and raw[index] == "<":
+        index += 1
+        while index < size and raw[index] not in ">\n":
+            index += 2 if raw[index] == "\\" else 1
+        index += 1
+    else:
+        depth = 0
+        while index < size and raw[index] not in " \t\n":
             char = raw[index]
             if char == "\\":
                 index += 2
                 continue
-            if quote:
-                quote = "" if char == quote else quote
-            elif char in "\"'":
-                quote = char
-            elif char == "(":
+            if char == "(":
                 depth += 1
             elif char == ")":
+                if depth == 0:
+                    return index + 1
                 depth -= 1
             index += 1
+    before_title = index
+    index = skip_space(index)
+    if index > before_title and index < size and raw[index] in "\"'(":
+        closer = ")" if raw[index] == "(" else raw[index]
+        index += 1
+        while index < size and raw[index] != closer:
+            index += 2 if raw[index] == "\\" else 1
+        index += 1
+        index = skip_space(index)
+    if index < size and raw[index] == ")":
+        return index + 1
+    return -1
+
+
+def _mask_link_tails(raw: str) -> str:
+    """Blank inline link destinations and titles: ``](dest "title")``.
+
+    The tail is scanned as CommonMark defines it (``_link_tail_end``), so an
+    apostrophe inside a bare destination does not open a title.
+    """
+    out = list(raw)
+    position = 0
+    while (opening := raw.find("](", position)) >= 0:
+        index = _link_tail_end(raw, opening + 2)
+        if index < 0:  # not a link tail: leave it, and look past this "]("
+            position = opening + 2
+            continue
         for spot in range(opening + 1, index):
             if out[spot] != "\n":
                 out[spot] = " "
@@ -213,9 +290,10 @@ def _undefined_references(token: Token, defined: set[str]) -> list[Link]:
     if token.map is None:
         return []
     raw = _mask_code_spans(token.content)
+    # Link tails first: a <...> destination must keep its brackets to be scanned.
+    raw = _mask_link_tails(raw)
     raw = _HTML_COMMENT.sub(lambda m: _blank(m.group(0)), raw)
     raw = re.sub(r"<[^<>\n]*>", lambda m: _blank(m.group(0)), raw)
-    raw = _mask_link_tails(raw)
     found = []
     for match in _REFERENCE.finditer(raw):
         label = " ".join((match.group(2) or match.group(1)).split()).casefold()
@@ -283,6 +361,9 @@ def parse(path: Path) -> Parsed:
     references = env.get("references", {})
     references = references if isinstance(references, dict) else {}
     defined = {" ".join(str(label).split()).casefold() for label in references}
+    reference_titles = {
+        str(ref.get("title") or "") for ref in references.values() if isinstance(ref, dict)
+    }
     links: list[Link] = []
     code: list[tuple[int, str]] = []
     undefined: list[Link] = []
@@ -291,10 +372,17 @@ def parse(path: Path) -> Parsed:
     github_used: set[str] = set()
     site_used: set[str] = set()
     anchors = _html_anchors(tokens)
+    hash_digit_lines: list[int] = []
     for index, token in enumerate(tokens):
         if token.map is None:
             continue
         line = token.map[0] + 1
+        if token.type == "inline" and index and tokens[index - 1].type == "paragraph_open":
+            hash_digit_lines += [
+                number + 1
+                for number in range(token.map[0], token.map[1])
+                if number < len(lines) and _HASH_DIGIT.match(lines[number])
+            ]
         if token.type == "fence":
             code += _logical_lines(line + 1, token.content.splitlines())
             continue
@@ -303,7 +391,7 @@ def parse(path: Path) -> Parsed:
             continue
         if token.type != "inline":
             continue
-        for offset, child in _inline_items(token):
+        for offset, child in _inline_items(token, reference_titles):
             if child.type == "link_open":
                 links.append(Link(line + offset, str(child.attrGet("href") or "")))
             elif child.type == "image":
@@ -335,24 +423,54 @@ def parse(path: Path) -> Parsed:
         anchors=anchors,
         code=sorted(code),
         unclosed_fences=_unclosed_fences(tokens),
+        hash_digit_lines=hash_digit_lines,
     )
 
 
+def _continues(text: str) -> bool:
+    """Return whether shell ``text`` ends with a line continuation.
+
+    Only an unescaped backslash as the very last character continues the line,
+    and not inside single quotes (where a backslash is literal). ``\\\\`` at the
+    end, or a backslash followed by spaces, does not.
+    """
+    quote = ""
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if quote == "'":
+            quote = "" if char == "'" else quote
+        elif char == "\\":
+            if index == len(text) - 1:
+                return True
+            index += 1
+        elif char in "'\"":
+            quote = "" if quote == char else (quote or char)
+        elif char == "#" and not quote and (index == 0 or text[index - 1] in " \t;&|()<>"):
+            return False  # a comment: a backslash in it does not continue the line
+        index += 1
+    return False
+
+
 def _logical_lines(first: int, lines: list[str]) -> list[tuple[int, str]]:
-    """Join backslash-continued lines into one command, reported at its first line."""
+    """Join backslash-continued lines into one command, reported at its first line.
+
+    The shell removes the backslash-newline pair and nothing else, so the
+    fragments are concatenated as they are: ``check-\\`` + ``all`` is ``check-all``.
+    """
     result: list[tuple[int, str]] = []
-    start, parts = first, []
+    start, joined = first, None
     for number, line in enumerate(lines, first):
-        if not parts:
-            start = number
-        if line.rstrip().endswith("\\"):
-            parts.append(line.rstrip()[:-1])
+        if joined is None:
+            start, joined = number, ""
+        joined += line
+        if _continues(joined):
+            joined = joined[:-1]
             continue
-        parts.append(line)
-        result.append((start, " ".join(parts)))
-        parts = []
-    if parts:
-        result.append((start, " ".join(parts)))
+        result.append((start, joined))
+        joined = None
+    if joined is not None:
+        result.append((start, joined))
     return result
 
 
@@ -365,6 +483,27 @@ def _definition_line(lines: list[str], label: str) -> int:
 
 
 _OPERATOR_CHARS = frozenset(";&|()<>")
+# Shell operators, longest first: adjacent ones (``;>``) are separate tokens.
+_OPERATORS = (
+    "<<<",
+    "&&",
+    "||",
+    ";;",
+    "<<",
+    ">>",
+    "&>",
+    ">&",
+    "<&",
+    ">|",
+    "<>",
+    ";",
+    "&",
+    "|",
+    "(",
+    ")",
+    "<",
+    ">",
+)
 
 
 def _shell_tokens(command: str) -> list[tuple[str, bool]]:
@@ -409,11 +548,9 @@ def _shell_tokens(command: str) -> list[tuple[str, bool]]:
             index = end + 1
         elif char in _OPERATOR_CHARS:
             flush()
-            end = index
-            while end < size and command[end] in _OPERATOR_CHARS:
-                end += 1
-            tokens.append((command[index:end], True))
-            index = end
+            operator = next(op for op in _OPERATORS if command.startswith(op, index))
+            tokens.append((operator, True))
+            index += len(operator)
         else:
             word.append(char)
             in_word = True
