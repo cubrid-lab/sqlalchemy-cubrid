@@ -1,4 +1,4 @@
-"""Deterministic documentation checks: local links, anchors, fences, commands (#908, #921)."""
+"""Deterministic documentation checks: links, anchors, fences, commands (#908, #920, #921)."""
 
 from __future__ import annotations
 
@@ -359,6 +359,42 @@ def test_a_quote_never_closed_in_a_block_is_not_shell(tmp_path: Path) -> None:
     assert check.run(_tree(tmp_path, page)) == [
         "docs/PAGE.md:3: `make removed` is not a Makefile target"
     ]
+
+
+def test_a_docs_line_starting_with_an_issue_number_is_reported(tmp_path: Path) -> None:
+    page = (
+        "# Page\n\nWrapped text that ends here and\n#750 starts the next line.\n\n"
+        "Escaped:\n\\#751 is text.\n\n## 12 a numbered heading\n\n"
+        "```\n#752 in code\n```\n\n`#753` inline\n\nAlso\n#754 suppressed <!-- docs-check: ignore -->\n"
+    )
+    root = _tree(tmp_path, page, {"README.md": "Text and\n#755 outside docs/.\n"})
+    assert check.run(root) == [
+        "docs/PAGE.md:4: line starts with '#<digit>', which the MkDocs site renders as a "
+        + "heading; escape it as '\\#'"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("page", "lines"),
+    [
+        ("- #655 adapters\n- \\#656 escaped\n", [1]),
+        ("- a\n#657 lazy\n", [2]),
+        ("- a\n  #658 indented continuation is text\n", []),
+        ("- a\n\n    #659 later paragraph of the item\n", [3]),
+        ("- a\n    - #660 nested item\n", [2]),
+        ("1. #661 numbered\n\n1) #662 not a Python-Markdown list\n", [1]),
+        ("> quoted\n> #663 line\n\n>  #664 two spaces is text\n", [2]),
+        ("Text\n  #665 indented is text\n", []),
+    ],
+)
+def test_issue_number_lines_are_reported_where_the_site_makes_headings(
+    tmp_path: Path, page: str, lines: list[int]
+) -> None:
+    message = (
+        "line starts with '#<digit>', which the MkDocs site renders as a heading; "
+        "escape it as '\\#'"
+    )
+    assert check.run(_tree(tmp_path, page)) == [f"docs/PAGE.md:{n}: {message}" for n in lines]
 
 
 def test_html_attributes_are_parsed_like_a_browser(tmp_path: Path) -> None:

@@ -9,6 +9,8 @@ Checks every tracked ``*.md`` file, offline and without network access:
   ``<a id>``/``<a name>`` of the target Markdown file;
 * a full reference link ``[text][label]`` without a definition;
 * a fenced code block that is never closed;
+* a paragraph line under ``docs/`` that starts with ``#<digit>`` (an issue
+  number): the MkDocs site renders it as a heading (#920); escape it as ``\\#``;
 * a ``make`` goal, written as a command in inline code or a fenced block, that
   the Makefile does not define, and a ``scripts/...`` path that does not exist.
   Release history (``CHANGELOG.md``, ``RELEASE_CHANGELOG.md``) records commands
@@ -39,6 +41,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _markdown import Parsed, is_external, make_goals, parse  # noqa: E402
 
 IGNORE = "<!-- docs-check: ignore -->"
+# Pages that MkDocs (Python-Markdown) renders.
+SITE_DIR = "docs/"
 # Dated release notes describe commands and scripts of their time; never rewrite them.
 HISTORY = frozenset({"CHANGELOG.md", "RELEASE_CHANGELOG.md"})
 _SCRIPT = re.compile(r"(?<![\w/.-])scripts/[A-Za-z0-9_./-]+\.(?:py|cjs|sh)\b")
@@ -141,6 +145,15 @@ class Checker:
             found.append((ref.line, f"reference {ref.target} has no definition"))
         for line in parsed.unclosed_fences:
             found.append((line, "code fence is never closed"))
+        if self.rel(path).startswith(SITE_DIR):
+            for line in parsed.hash_digit_lines:
+                found.append(
+                    (
+                        line,
+                        "line starts with '#<digit>', which the MkDocs site renders as a "
+                        "heading; escape it as '\\#'",
+                    )
+                )
         historical = self.rel(path) in HISTORY
         for line, command in [] if historical else parsed.code:
             for goal in make_goals(command):

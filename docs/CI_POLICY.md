@@ -62,7 +62,7 @@ advisory SQLAlchemy canary runs on the weekly schedule and manual dispatches (#7
 
 ## Event tiers and cost evidence
 
-#737 gives each expensive workflow event one purpose: pull requests stay fast and
+\#737 gives each expensive workflow event one purpose: pull requests stay fast and
 representative, `main` pushes carry endpoint evidence; the weekly schedule also carries the canaries, and the release runs the full matrix and fails closed. Consolidation
 removed only lanes whose assertions another lane on the same SHA already makes,
 or advisory lanes that gate nothing.
@@ -417,6 +417,9 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   - an `#anchor` that is not a heading (its GitHub or site slug, or `{#id}`) or an
     `<a id>`/`<a name>` of the target file;
   - a reference link `[text][label]` without a definition, and an unclosed code fence;
+  - a paragraph line under `docs/` that starts with `#` and a digit, such as a wrapped issue
+    number, also as a list item or in a block quote: the MkDocs site renders it as a
+    heading (#920), so write `\#750`;
   - a `make` goal written in inline code or a fenced block that the Makefile does not
     define, and a `scripts/` path that does not exist. Release history (`CHANGELOG.md`,
     `RELEASE_CHANGELOG.md`) keeps the commands of its time, so only its links are checked.

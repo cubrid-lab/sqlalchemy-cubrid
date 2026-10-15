@@ -7750,7 +7750,7 @@ advisory SQLAlchemy canary runs on the weekly schedule and manual dispatches (#7
 
 ## Event tiers and cost evidence
 
-#737 gives each expensive workflow event one purpose: pull requests stay fast and
+\#737 gives each expensive workflow event one purpose: pull requests stay fast and
 representative, `main` pushes carry endpoint evidence; the weekly schedule also carries the canaries, and the release runs the full matrix and fails closed. Consolidation
 removed only lanes whose assertions another lane on the same SHA already makes,
 or advisory lanes that gate nothing.
@@ -8105,6 +8105,9 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   - an `#anchor` that is not a heading (its GitHub or site slug, or `{#id}`) or an
     `<a id>`/`<a name>` of the target file;
   - a reference link `[text][label]` without a definition, and an unclosed code fence;
+  - a paragraph line under `docs/` that starts with `#` and a digit, such as a wrapped issue
+    number, also as a list item or in a block quote: the MkDocs site renders it as a
+    heading (#920), so write `\#750`;
   - a `make` goal written in inline code or a fenced block that the Makefile does not
     define, and a `scripts/` path that does not exist. Release history (`CHANGELOG.md`,
     `RELEASE_CHANGELOG.md`) keeps the commands of its time, so only its links are checked.
@@ -8251,8 +8254,8 @@ cells.
 Recorded 2026-10-03 against main `7432169960f486040ac6ef23c3e355b9f4bea01e`
 and these exact reviewed implementation snapshots:
 
-- #655 adapters: `9952967b12a6b06270710fb4e05a6b91199f7499`.
-- #656 configuration/workflows: `8b4dee606d7b556af55dc54a1d93c93d1d5106c7`.
+- \#655 adapters: `9952967b12a6b06270710fb4e05a6b91199f7499`.
+- \#656 configuration/workflows: `8b4dee606d7b556af55dc54a1d93c93d1d5106c7`.
 
 The recorded checks below apply to those immutable revisions; PR numbers alone
 are not validation evidence. Reruns must record their new tested SHAs. The migration changes no
@@ -8679,7 +8682,7 @@ the rowcount, so they keep the driver's prepare-once `executemany`.
 
 The guard will be removed once a fixed `CUBRIDdb` release is the minimum
 supported version. An upstream report to CUBRID/cubrid-python is pending, and
-#502 tracks it.
+\#502 tracks it.
 
 ### 8. Unfinished results after `commit()` / `rollback()`
 

@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **The documentation check reports lines that the site renders as headings (#920)** — a
+  paragraph line under `docs/` that starts with `#` and a digit, such as a wrapped issue
+  number, is plain text on GitHub but an `<h1>` on the MkDocs site, where Python-Markdown
+  reads it as a heading. `scripts/check_docs_links.py` now reports such a line, as a list
+  item or in a block quote too, following Python-Markdown's list and quote rules, and asks
+  for `\#`. The 11 such lines on 7 pages (`docs/CI_POLICY.md`, `docs/DRIVER_COMPAT.md`,
+  `docs/RELEASE_PLEASE_VALIDATION.md` and four Korean pages) are escaped; they read the
+  same on GitHub.
+
 - **The documentation check closes its remaining parser gaps (#921)** — `scripts/_markdown.py`
   and `scripts/check_docs_links.py` now match pycubrid's reviewed parser
   (cubrid-lab/pycubrid#940), plus fixes for the three cases of cubrid-lab/pycubrid#941:

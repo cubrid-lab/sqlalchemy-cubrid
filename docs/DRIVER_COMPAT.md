@@ -301,7 +301,7 @@ the rowcount, so they keep the driver's prepare-once `executemany`.
 
 The guard will be removed once a fixed `CUBRIDdb` release is the minimum
 supported version. An upstream report to CUBRID/cubrid-python is pending, and
-#502 tracks it.
+\#502 tracks it.
 
 ### 8. Unfinished results after `commit()` / `rollback()`
 

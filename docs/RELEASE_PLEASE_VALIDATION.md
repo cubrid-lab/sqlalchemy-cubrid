@@ -3,8 +3,8 @@
 Recorded 2026-10-03 against main `7432169960f486040ac6ef23c3e355b9f4bea01e`
 and these exact reviewed implementation snapshots:
 
-- #655 adapters: `9952967b12a6b06270710fb4e05a6b91199f7499`.
-- #656 configuration/workflows: `8b4dee606d7b556af55dc54a1d93c93d1d5106c7`.
+- \#655 adapters: `9952967b12a6b06270710fb4e05a6b91199f7499`.
+- \#656 configuration/workflows: `8b4dee606d7b556af55dc54a1d93c93d1d5106c7`.
 
 The recorded checks below apply to those immutable revisions; PR numbers alone
 are not validation evidence. Reruns must record their new tested SHAs. The migration changes no

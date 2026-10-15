@@ -24,7 +24,12 @@ from markdown_it.token import Token
 _PARSER = MarkdownIt("commonmark").enable("table")
 _ATTR_ID = re.compile(r"\s*\{[^}]*#([\w-]+)[^}]*\}\s*$")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
-_HASH_DIGIT = re.compile(r"\s*#\d")
+# Python-Markdown reads ``#<digit>`` at the start of a block line as an ATX
+# heading. Its block quotes strip ``>`` and one space, list items start after
+# their marker (``-``, ``*``, ``+``, ``1.``; not ``1)``), and list content is
+# dedented by 4 spaces per level; any other indentation keeps the line text.
+_QUOTE_PREFIX = re.compile(r"(?:>[ ]?)*( *)")
+_HASH_DIGIT = r"(?:>[ ]?)*(?: {{4}}){indent}(?:[ \t]*(?:[-*+]|\d+\.)[ \t]+)?#\d"
 _BACKTICKS = re.compile(r"`+")
 # A full or collapsed reference link whose brackets are not escaped; an opening
 # bracket after a word character (``rows[0][1]``) is an index, not a link.
@@ -68,8 +73,9 @@ class Parsed:
     anchors: set[str]
     code: list[tuple[int, str]]
     unclosed_fences: list[int]
-    # Paragraph lines starting with ``#<digit>``: plain text for CommonMark and
-    # GitHub, but an ATX heading for Python-Markdown, which builds the site (#938).
+    # Paragraph lines starting with ``#<digit>``, in list items and block quotes
+    # too: plain text for CommonMark and GitHub, but an ATX heading for
+    # Python-Markdown, which builds the site (#920).
     hash_digit_lines: list[int] = field(default_factory=list)
 
 
@@ -190,6 +196,28 @@ def _inline_items(token: Token) -> list[tuple[int, Token]]:
                 offset += raw.count("\n", start, end)
                 cursor = end + len(child.markup)
     return items
+
+
+def _hash_digit_lines(lines: list[str], start: int, end: int) -> list[int]:
+    """Return the lines of a paragraph (0-based ``start``..``end``) that Python-Markdown
+    renders as a heading: ``#<digit>`` at the start of the line once block quote
+    markers, a list marker and the list indentation are removed.
+
+    The first line may sit at any list depth (4 spaces each). A continuation line
+    is dedented with its paragraph, so it may be indented by at most the first
+    line's depth: ``- a`` then ``  #1`` is text, but ``#1`` is a heading.
+    """
+    if start >= len(lines):
+        return []
+    prefix = _QUOTE_PREFIX.match(lines[start])
+    depth = len(prefix.group(1)) // 4 if prefix else 0
+    first = re.compile(_HASH_DIGIT.format(indent="*"))
+    rest = re.compile(_HASH_DIGIT.format(indent=f"{{0,{depth}}}"))
+    return [
+        number + 1
+        for number in range(start, min(end, len(lines)))
+        if (first if number == start else rest).match(lines[number])
+    ]
 
 
 def _unclosed_fences(tokens: list[Token]) -> list[int]:
@@ -397,11 +425,7 @@ def parse(path: Path) -> Parsed:
             continue
         line = token.map[0] + 1
         if token.type == "inline" and index and tokens[index - 1].type == "paragraph_open":
-            hash_digit_lines += [
-                number + 1
-                for number in range(token.map[0], token.map[1])
-                if number < len(lines) and _HASH_DIGIT.match(lines[number])
-            ]
+            hash_digit_lines += _hash_digit_lines(lines, token.map[0], token.map[1])
         if token.type == "fence":
             code += _logical_lines(line + 1, token.content.splitlines())
             continue

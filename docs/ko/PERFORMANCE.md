@@ -409,7 +409,7 @@ raw 배치 행은 0.84와 1.92 사이에서 움직였습니다. `batch.orm.updat
 `validate`는 이를 `/1`로 거부합니다: 벤치마크가 설치를 검증하지 않았고, 다이제스트, 호스트
 레이블, 그룹이 `export` 인자였습니다.
 
-#830 아카이브(`2026-10-12-dialect-baseline`, `2026-10-13-dialect-baseline-followup`)는
+\#830 아카이브(`2026-10-12-dialect-baseline`, `2026-10-13-dialect-baseline-followup`)는
 바뀌지 않은 과거 기록으로 남습니다. 그 보고서는 계약보다 먼저 만들어져 `status`,
 워크로드 식별자, 풀 필드가 없습니다. `export`가 이를 거부하므로 새 아티팩트와 비교할
 수 없습니다.
