@@ -247,6 +247,8 @@ For documentation changes, run `python scripts/generate_llms_full.py` (it regene
 `docs/llms-full.txt` and copies the canonical `docs/llms.txt` index to the root
 `llms.txt`; edit only `docs/llms.txt`) and, in a
 docs environment with `mkdocs-material` and `pymdown-extensions`, `mkdocs build --strict`.
+`python scripts/check_docs_links.py` reports broken local links, anchors, unclosed code
+fences and missing commands, as the required `docs-check` CI job does.
 Maintainers coordinate project-specific Oracle/Codex reviews, final integration,
 release classification, repository secrets and GitHub labels. No particular agent
 installation, repository-secret access or named coauthor is required to contribute.

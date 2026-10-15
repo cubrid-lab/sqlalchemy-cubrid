@@ -11,7 +11,8 @@ import yaml
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOWS = ROOT / ".github/workflows"
 DOCS_REQUIREMENTS = ".github/docs-requirements/requirements.txt"
-DOCS_TOOLS = {"mkdocs", "mkdocs-material", "pymdown-extensions"}
+# markdown-it-py runs the docs-check job's deterministic checks (#908).
+DOCS_TOOLS = {"mkdocs", "mkdocs-material", "pymdown-extensions", "markdown-it-py"}
 PIN = re.compile(r"^(?P<name>[A-Za-z0-9_.-]+)==(?P<version>\d+(?:\.\d+)*)$")
 
 

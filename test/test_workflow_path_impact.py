@@ -99,6 +99,9 @@ def test_workflow_impact_table(name: str) -> None:
         # The guards of the offline cell routing (#734) select the lanes that run them.
         ("test/test_ci_policy.py", {"code", "tooling"}),
         ("test/test_offline_lanes.py", {"code"}),
+        # The documentation checks' own tests run in the tooling lane (#908).
+        ("test/test_check_docs_links.py", {"code", "tooling"}),
+        ("test/test_check_agents_docs.py", {"code", "tooling"}),
     ],
 )
 def test_representative_paths_select_the_expected_tiers(path: str, expected: set[str]) -> None:

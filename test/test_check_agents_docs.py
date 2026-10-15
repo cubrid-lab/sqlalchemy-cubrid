@@ -74,7 +74,8 @@ def test_broken_relative_link_reports_file_and_line(tmp_path: Path) -> None:
 def test_missing_anchor_is_reported(tmp_path: Path) -> None:
     guide = GUIDE.replace("#release-process", "#release-processes")
     assert check.run(_tree(tmp_path, guide=guide)) == [
-        "docs/agents/dialect.md:3: anchor #release-processes is not a heading of AGENTS.md"
+        "docs/agents/dialect.md:3: anchor #release-processes is not a heading or anchor of "
+        + "AGENTS.md; did you mean 'release-process'?"
     ]
 
 
@@ -86,8 +87,8 @@ def test_titled_and_angle_bracket_links_are_checked(tmp_path: Path) -> None:
     assert check.run(_tree(tmp_path, titled)) == []
     broken = titled + "\nSee [gone](docs/GONE.md 'title') and [x](<docs/agents/dialect.md#no>).\n"
     assert check.run(_tree(tmp_path / "broken", broken)) == [
+        "AGENTS.md:13: anchor #no is not a heading or anchor of docs/agents/dialect.md",
         "AGENTS.md:13: link target 'docs/GONE.md' does not exist",
-        "AGENTS.md:13: anchor #no is not a heading of docs/agents/dialect.md",
     ]
 
 
@@ -102,8 +103,8 @@ def test_reference_style_links_are_resolved(tmp_path: Path) -> None:
     assert check.run(_tree(tmp_path, valid)) == []
     broken = valid + "\nSee [the guide][gone] and [missing][].\n\n[gone]: docs/GONE.md\n"
     assert check.run(_tree(tmp_path / "broken", broken)) == [
-        "AGENTS.md:15: reference [missing] has no definition",
         "AGENTS.md:15: link target 'docs/GONE.md' does not exist",
+        "AGENTS.md:15: reference [missing] has no definition",
         "AGENTS.md:17: link target 'docs/GONE.md' does not exist",
     ]
 
@@ -145,7 +146,7 @@ def test_tilde_and_nested_fences_hide_their_content(tmp_path: Path, block: str) 
 def test_commands_in_tilde_fences_are_checked(tmp_path: Path) -> None:
     root_doc = ROOT_DOC + "\n~~~bash\nmake tset\n~~~\n"
     assert check.run(_tree(tmp_path, root_doc)) == [
-        "AGENTS.md:14: `make tset` is not a Makefile target"
+        "AGENTS.md:14: `make tset` is not a Makefile target; did you mean 'test'?"
     ]
 
 
@@ -185,9 +186,9 @@ def test_invalid_commands_are_reported_but_prose_is_not(tmp_path: Path) -> None:
         "\n```bash\nmake tset\npython scripts/missing.py\n```\n\nRun `make lnit` first.\n"
     )
     assert check.run(_tree(tmp_path, ROOT_DOC + extra)) == [
-        "AGENTS.md:16: `make tset` is not a Makefile target",
-        "AGENTS.md:20: `make lnit` is not a Makefile target",
+        "AGENTS.md:16: `make tset` is not a Makefile target; did you mean 'test'?",
         "AGENTS.md:17: scripts/missing.py does not exist",
+        "AGENTS.md:20: `make lnit` is not a Makefile target",
     ]
 
 
@@ -201,13 +202,35 @@ def test_version_without_an_owning_document_link_is_reported(tmp_path: Path) -> 
     "owner",
     [
         "`[support matrix](../SUPPORT_MATRIX.md)`",
-        "\n```\n[support matrix](../SUPPORT_MATRIX.md)\n```",
+        "\n```\n[support matrix](../SUPPORT_MATRIX.md)\n```\n",
     ],
 )
 def test_version_owner_link_in_code_does_not_count(tmp_path: Path, owner: str) -> None:
-    guide = GUIDE.replace("[support matrix](../SUPPORT_MATRIX.md)", owner)
+    # The fence closes on its own line; "```." would leave it open (CommonMark).
+    guide = GUIDE.replace("; see the [support matrix](../SUPPORT_MATRIX.md).", owner)
     (problem,) = check.run(_tree(tmp_path, guide=guide))
     assert "names 'CUBRID 10.2' but links neither" in problem
+
+
+def test_multi_backtick_code_spans_are_code(tmp_path: Path) -> None:
+    root_doc = (
+        ROOT_DOC.replace(
+            "[Dialect guide](docs/agents/dialect.md#cubrid-specific-knowledge)",
+            "``[Dialect guide](docs/agents/dialect.md)``",
+        )
+        + "\nAn example: ``[x](docs/NOPE.md) with a ` backtick``.\n"
+    )
+    assert check.run(_tree(tmp_path, root_doc)) == [
+        "docs/agents/dialect.md: not linked from AGENTS.md"
+    ]
+
+
+def test_every_goal_of_a_make_command_is_checked(tmp_path: Path) -> None:
+    extra = "\nRun `make test tset`, `make -j2 lint` and `make -C . tset VAR=1`.\n"
+    assert check.run(_tree(tmp_path, ROOT_DOC + extra)) == [
+        "AGENTS.md:13: `make lint` is not a Makefile target",
+        "AGENTS.md:13: `make tset` is not a Makefile target; did you mean 'test'?",
+    ]
 
 
 def test_pins_must_match_pyproject(tmp_path: Path) -> None:
@@ -220,12 +243,13 @@ def test_pins_must_match_pyproject(tmp_path: Path) -> None:
     ]
 
 
-def test_duplicate_heading_anchors_follow_github(tmp_path: Path) -> None:
+def test_duplicate_heading_anchors_follow_github_and_the_site(tmp_path: Path) -> None:
     path = tmp_path / "x.md"
     path.write_text(
         "# A\n## Same\n## Same\n## Same-1\n```\n## Not a heading\n```\n", encoding="utf-8"
     )
-    assert check.anchors(path) == {"a", "same", "same-1", "same-1-1"}
+    # GitHub skips a suffix another heading took (same-1-1); the site uses _1.
+    assert check.anchors(path) == {"a", "same", "same-1", "same-1-1", "same_1"}
     assert check.slugify("Development Workflow (cubrid-lab org standard)") == (
         "development-workflow-cubrid-lab-org-standard"
     )

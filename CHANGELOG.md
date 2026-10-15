@@ -46,6 +46,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **Deterministic documentation defects block the merge (#908)** — a new `docs-check` job
+  in `ci.yml` runs `scripts/check_docs_links.py` and `scripts/check_agents_docs.py` on every
+  tracked Markdown file when Markdown, `scripts/` or the `Makefile` change, and
+  `matrix-result` requires it then. It fails with `file:line` and a suggested fix on:
+  - a missing, absolute or out-of-repository Markdown or HTML link target;
+  - an anchor that is not a heading or `<a id>` of its target;
+  - an undefined reference link, or an unclosed code fence;
+  - a `make` goal or `scripts/` path in a command that does not exist.
+
+  Release history keeps its old commands. Markdown is parsed as CommonMark with
+  `markdown-it-py`, pinned in `.github/docs-requirements/requirements.txt`, the same parser
+  as pycubrid's gate, including its review follow-ups (cubrid-lab/pycubrid#939).
+  `check_agents_docs.py` now uses it too, so multi-backtick code spans are code and every
+  goal of a `make` command is checked. External links are never fetched,
+  `scripts/check_support_claims.py` stays the authority for support wording, and the shared
+  `doc-lint` workflow stays advisory; its measured findings are in `docs/CI_POLICY.md`.
+  `<!-- docs-check: ignore -->` marks a reviewed false positive.
+
 - **Release preparation starts after the abandoned 1.11.1** — 1.11.1 has no tag, so
   release-please fell back to `bootstrap-sha` and proposed 1.12.0 with every commit since
   1.8.0. `release-please-config.json` now sets `last-release-sha` to the 1.11.1 merge, so the

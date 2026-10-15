@@ -252,6 +252,8 @@ pre-commit run --all-files
 `docs/llms-full.txt`를 다시 생성하고 표준 `docs/llms.txt` 인덱스를 루트
 `llms.txt`에 복사합니다. `docs/llms.txt`만 편집하세요). 그리고
 `mkdocs-material`과 `pymdown-extensions`가 있는 문서 환경에서 `mkdocs build --strict`를 실행하세요.
+`python scripts/check_docs_links.py`는 필수 `docs-check` CI 작업처럼 깨진 로컬 링크,
+앵커, 닫히지 않은 코드 펜스와 없는 명령을 보고합니다.
 메인테이너는 프로젝트별 Oracle/Codex 검토, 최종 통합, 릴리스 분류, 저장소
 시크릿과 GitHub 라벨을 조율합니다. 기여하는 데 특정 에이전트 설치, 저장소
 시크릿 접근 권한이나 지정된 공동 저자는 필요하지 않습니다.

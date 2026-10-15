@@ -3,15 +3,17 @@
 
 Deterministic checks only, no network:
 
-* every relative Markdown link (inline, titled or reference-style) resolves to a
-  file, and every ``#anchor`` to a heading of its target (GitHub heading slugs);
+* the documentation checks of ``scripts/check_docs_links.py`` on these files:
+  relative links and anchors, reference definitions, closed code fences,
+  ``make`` goals and ``scripts/`` paths (#908);
 * every guide under ``docs/agents/`` is linked from the root ``AGENTS.md``;
-* every ``make <target>`` written as a command (inline code or a fenced block)
-  names a Makefile target, and every ``scripts/<name>`` path exists;
 * a file that names a Python or CUBRID version links the support matrix or the
-  CI policy, which own version lists;
+  CI policy, which own version lists, instead of carrying its own;
 * a ``requires-python = "..."`` or ``sqlalchemy>=...`` pin quoted in the root
   file equals ``pyproject.toml``, which owns dependency bounds.
+
+Links are read with a CommonMark parser (``scripts/_markdown.py``): links in
+code are examples, and a reference definition counts only where it is used.
 
 ``--retained-from REF`` also checks that every non-blank line of ``AGENTS.md``
 at git ``REF`` still appears in the agent guidance, with relative link targets
@@ -31,26 +33,22 @@ import sys
 import tomllib
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from _markdown import Link, github_slug, is_external, parse  # noqa: E402
+from check_docs_links import Checker  # noqa: E402
+
 ROOT_DOC = "AGENTS.md"
 GUIDE_DIR = "docs/agents"
 VERSION_OWNERS = ("docs/SUPPORT_MATRIX.md", "docs/CI_POLICY.md")
 
-# An inline link or image target, with an optional "title", 'title' or (title).
+# Inline link targets, for the text comparison of --retained-from only.
 _LINK = re.compile(r"\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+(?:\"[^\"]*\"|'[^']*'|\([^)]*\)))?\s*\)")
-# A reference definition: [label]: target "optional title"
-_REF_DEF = re.compile(r"^ {0,3}\[([^\]]+)\]:\s*<?(\S+?)>?(?:\s+.*)?$")
-# A full or collapsed reference link: [text][label] or [label][]
-_REF_USE = re.compile(r"\[([^\]]+)\]\[([^\]]*)\]")
-# A fence: up to three spaces, then three or more backticks or tildes.
-_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})(.*)$")
-_HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
-_CODE_SPAN = re.compile(r"`([^`]*)`")
-_MAKE = re.compile(r"(?:^|[\s;&|(])make\s+([a-z][a-z0-9_-]*)")
-_SCRIPT = re.compile(r"\bscripts/[A-Za-z0-9_./-]+\.(?:py|cjs|sh)\b")
 _VERSION = re.compile(r"\b(?:Python\s+3\.\d+|CUBRID\s+1\d\.\d)")
-_MAKE_TARGET = re.compile(r"^([a-zA-Z0-9_-]+)\s*:(?!=)", re.M)
 _REQUIRES_PYTHON = re.compile(r"`requires-python\s*=\s*\"([^\"]+)\"`")
 _SQLALCHEMY_PIN = re.compile(r"`sqlalchemy([<>=!~][^`]*)`")
+
+slugify = github_slug
 
 
 def agent_files(root: Path) -> list[Path]:
@@ -60,126 +58,19 @@ def agent_files(root: Path) -> list[Path]:
     return [path for path in files if path.is_file()]
 
 
-def _prose_and_code(text: str) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
-    """Split numbered lines into prose and fenced-code lines."""
-    prose: list[tuple[int, str]] = []
-    code: list[tuple[int, str]] = []
-    fence = ""  # the opening fence run, while inside a fenced block
-    for number, line in enumerate(text.splitlines(), 1):
-        if not fence:
-            opening = _FENCE.match(line)
-            if opening:
-                fence = opening.group(1)
-                continue
-            prose.append((number, line))
-            continue
-        # CommonMark: the same character, at least as long, nothing after it.
-        closing = _FENCE.match(line)
-        if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence):
-            if not closing.group(2).strip():
-                fence = ""
-                continue
-        code.append((number, line))
-    return prose, code
-
-
-def reference_definitions(text: str) -> list[tuple[int, str, str]]:
-    """Return ``(line, label, target)`` of the reference definitions outside code."""
-    prose, _ = _prose_and_code(text)
-    result = []
-    for number, line in prose:
-        match = _REF_DEF.match(line)
-        if match:
-            result.append((number, match.group(1).strip().lower(), match.group(2)))
-    return result
-
-
-def navigable_links(text: str) -> list[tuple[int, str]]:
-    """Return ``(line, target)`` of the links a reader can follow.
-
-    Inline links (titled or not) and used reference-style links count; a
-    definition alone renders nothing, and fenced code and inline code spans
-    are examples, not links. An undefined reference label is returned with the
-    target ``"[label]"`` so it can be reported.
-    """
-    prose, _ = _prose_and_code(text)
-    definitions: dict[str, str] = {}
-    for _, label, target in reference_definitions(text):
-        definitions.setdefault(label, target)
-    links: list[tuple[int, str]] = []
-    for number, line in prose:
-        if _REF_DEF.match(line):
-            continue
-        bare = _CODE_SPAN.sub("", line)
-        links += [(number, match.group(1)) for match in _LINK.finditer(bare)]
-        for match in _REF_USE.finditer(_LINK.sub("", bare)):
-            label = (match.group(2) or match.group(1)).strip().lower()
-            if label in definitions:
-                links.append((number, definitions[label]))
-            else:
-                links.append((number, f"[{label}]"))
-    return links
-
-
-def slugify(heading: str) -> str:
-    """Return GitHub's base anchor for a Markdown heading text."""
-    text = _CODE_SPAN.sub(r"\1", heading)
-    text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text).strip().lower()
-    text = re.sub(r"[^\w\- ]", "", text)
-    return text.replace(" ", "-")
-
-
 def anchors(path: Path) -> set[str]:
-    """Return the heading anchors of a Markdown file, deduplicated as GitHub does.
-
-    A repeated slug gets the first free ``-1``, ``-2``, ... suffix, checked
-    against every anchor already allocated, so ``Same``, ``Same``, ``Same-1``
-    give ``same``, ``same-1`` and ``same-1-1``.
-    """
-    used: set[str] = set()
-    prose, _ = _prose_and_code(path.read_text(encoding="utf-8"))
-    for _, line in prose:
-        match = _HEADING.match(line)
-        if not match:
-            continue
-        base = slugify(match.group(2))
-        slug, count = base, 0
-        while slug in used:
-            count += 1
-            slug = f"{base}-{count}"
-        used.add(slug)
-    return used
+    """Return the anchors a link into ``path`` may use."""
+    return parse(path).anchors
 
 
-def _is_external(target: str) -> bool:
-    return bool(re.match(r"[a-zA-Z][a-zA-Z0-9+.-]*:", target))
-
-
-def check_links(root: Path, path: Path) -> list[str]:
-    """Report relative links whose file, anchor or reference does not exist."""
-    problems = []
-    rel = path.relative_to(root).as_posix()
-    text = path.read_text(encoding="utf-8")
-    targets = navigable_links(text)
-    # Every definition target must resolve too, used or not.
-    targets += [(number, target) for number, _, target in reference_definitions(text)]
-    for number, target in sorted(targets):
-        if target.startswith("["):
-            problems.append(f"{rel}:{number}: reference {target} has no definition")
-            continue
-        if _is_external(target):
-            continue
-        file_part, _, anchor = target.partition("#")
-        dest = path if not file_part else (path.parent / file_part).resolve()
-        if not dest.exists():
-            problems.append(f"{rel}:{number}: link target {target!r} does not exist")
-            continue
-        if anchor and dest.suffix == ".md" and anchor not in anchors(dest):
-            problems.append(
-                f"{rel}:{number}: anchor #{anchor} is not a heading of "
-                f"{dest.relative_to(root).as_posix()}"
-            )
-    return problems
+def _linked_files(path: Path) -> set[Path]:
+    """Return the local files that ``path`` links to with a followable link."""
+    files = set()
+    for link in parse(path).links:
+        file_part = link.target.partition("#")[0]
+        if file_part and not is_external(file_part):
+            files.add((path.parent / file_part).resolve())
+    return files
 
 
 def check_reachable(root: Path) -> list[str]:
@@ -187,45 +78,12 @@ def check_reachable(root: Path) -> list[str]:
     entry = root / ROOT_DOC
     if not entry.is_file():
         return [f"{ROOT_DOC}: missing"]
-    linked = set()
-    for _, target in navigable_links(entry.read_text(encoding="utf-8")):
-        file_part = target.partition("#")[0]
-        if file_part and not target.startswith("[") and not _is_external(file_part):
-            linked.add((root / file_part).resolve())
+    linked = _linked_files(entry)
     return [
         f"{guide.relative_to(root).as_posix()}: not linked from {ROOT_DOC}"
         for guide in sorted((root / GUIDE_DIR).glob("*.md"))
         if guide.resolve() not in linked
     ]
-
-
-def _command_text(text: str) -> list[tuple[int, str]]:
-    """Return the numbered command text: fenced lines and inline code spans."""
-    prose, code = _prose_and_code(text)
-    spans = [(n, span) for n, line in prose for span in _CODE_SPAN.findall(line)]
-    return sorted(code + spans)
-
-
-def check_commands(root: Path, path: Path) -> list[str]:
-    """Report ``make`` targets and ``scripts/`` paths that do not exist."""
-    makefile = root / "Makefile"
-    targets = (
-        set(_MAKE_TARGET.findall(makefile.read_text(encoding="utf-8")))
-        if makefile.exists()
-        else set()
-    )
-    problems = []
-    rel = path.relative_to(root).as_posix()
-    text = path.read_text(encoding="utf-8")
-    for number, command in _command_text(text):
-        for target in _MAKE.findall(command):
-            if target not in targets:
-                problems.append(f"{rel}:{number}: `make {target}` is not a Makefile target")
-    for number, line in enumerate(text.splitlines(), 1):
-        for script in _SCRIPT.findall(line):
-            if not (root / script).is_file():
-                problems.append(f"{rel}:{number}: {script} does not exist")
-    return problems
 
 
 def check_versions(root: Path, path: Path) -> list[str]:
@@ -235,11 +93,8 @@ def check_versions(root: Path, path: Path) -> list[str]:
     if not found:
         return []
     owners = {(root / owner).resolve() for owner in VERSION_OWNERS}
-    for _, target in navigable_links(text):
-        file_part = target.partition("#")[0]
-        if file_part and not target.startswith("[") and not _is_external(file_part):
-            if (path.parent / file_part).resolve() in owners:
-                return []
+    if _linked_files(path) & owners:
+        return []
     number = text[: found.start()].count("\n") + 1
     return [
         f"{path.relative_to(root).as_posix()}:{number}: names {found.group(0)!r} but links "
@@ -280,7 +135,7 @@ def _normalized(root: Path, path: Path, line: str) -> str:
 
     def resolve(match: re.Match[str]) -> str:
         target = match.group(1)
-        if _is_external(target) or target.startswith("#"):
+        if is_external(target) or target.startswith("#"):
             return match.group(0)
         file_part, sep, anchor = target.partition("#")
         base = path.parent.relative_to(root).as_posix()
@@ -312,10 +167,11 @@ def check_retained(root: Path, ref: str) -> list[str]:
 
 def run(root: Path, retained_from: str | None = None) -> list[str]:
     """Return every problem found under ``root``."""
+    root = root.resolve()
+    checker = Checker(root)
     problems = check_reachable(root) + check_pins(root)
     for path in agent_files(root):
-        problems += check_links(root, path)
-        problems += check_commands(root, path)
+        problems += checker.check_file(path)
         problems += check_versions(root, path)
     if retained_from:
         problems += check_retained(root, retained_from)
@@ -334,9 +190,21 @@ def main(argv: list[str] | None = None) -> int:
         for problem in problems:
             print(f"  {problem}")
         return 1
-    print(f"OK: {len(agent_files(root))} agent guidance files; links, guides and commands resolve")
+    files = agent_files(root)
+    print(f"OK: {len(files)} agent guidance files; links, guides and commands resolve")
     return 0
 
+
+__all__ = [
+    "Link",
+    "anchors",
+    "check_pins",
+    "check_reachable",
+    "check_versions",
+    "main",
+    "run",
+    "slugify",
+]
 
 if __name__ == "__main__":
     sys.exit(main())
