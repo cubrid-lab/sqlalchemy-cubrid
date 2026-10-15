@@ -239,7 +239,15 @@ pre-commit run --all-files
 
 ### 검토 절차
 
-- 모든 PR은 병합 전에 최소 한 번의 검토가 필요합니다.
+- 모든 PR은 병합 전에 [AGENTS.md](../AGENTS.md#development-workflow-cubrid-lab-org-standard)의
+  해당 리뷰 경로를 거쳐야 합니다. 중요한 OpenCode 작업은 기록된 Oracle 설계·구현 후 리뷰를
+  거치고, 사소한 OpenCode 수정은 이유를 기록하면 이 리뷰를 생략할 수 있습니다. Claude Code,
+  Codex, ChatGPT 등 독립 에이전트 도구는 PR에 제출된 실질적인 GitHub Copilot 리뷰나
+  메인테이너의 리뷰를 기다립니다(메인테이너 결정, 2026-10-15). 구현자가 실행한 리뷰어
+  에이전트는 인정되지 않습니다. 대기 중인 요청, 통과한 CI, AI의 "approval recommended"
+  요약만으로는 이 경로가 완료되지 않습니다. 메인테이너는 최종 지적 처리, 확인한 헤드와
+  해결되지 않은 스레드를 기록합니다. 사람의 기여는 일반 기여자 리뷰를 따르며, 내부 도구를
+  설치할 필요가 없습니다.
 - CI가 통과해야 합니다(린트, 오프라인 테스트, 통합 테스트).
 - 명시적으로 승인받지 않는 한 하위 호환성을 유지하세요.
 - `.github/CODEOWNERS`는 릴리스, CI, 보안 정책, 다이얼렉트, 컴파일러, 리플렉션, Alembic

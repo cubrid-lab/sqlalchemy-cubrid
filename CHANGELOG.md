@@ -21,6 +21,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **A maintainer's review is the standalone-agent alternative to Copilot (#926)** —
+  `AGENTS.md` and `CONTRIBUTING.md` now say that a standalone agent PR waits for a
+  substantive submitted GitHub Copilot review or a maintainer's review, recorded on the
+  PR, instead of "another person's" review (maintainer decision, 2026-10-15). A reviewer
+  agent run by the implementer does not count. The Korean contributor guide's review
+  process now states the same route instead of "at least one review".
+
 - **Agent guidance split into task guides (#907)** — the root `AGENTS.md` (618 lines,
   36,498 bytes) keeps the overview, commands, code conventions and every review, issue,
   label, documentation, commit and release rule, and gains a task routing table for compiler

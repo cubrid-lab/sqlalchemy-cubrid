@@ -230,7 +230,9 @@ pre-commit run --all-files
   Non-trivial OpenCode work uses recorded Oracle design/post reviews; trivial
   OpenCode edits may skip those reviews with a recorded reason. Standalone
   Claude Code, Codex, ChatGPT or other agent tools wait for a substantive submitted
-  GitHub Copilot review or another person's review. A pending request, green CI
+  GitHub Copilot review or a maintainer's review, recorded on the PR (maintainer
+  decision, 2026-10-15); a reviewer agent the implementer runs does not count.
+  A pending request, green CI
   or an AI "approval recommended" summary alone does not complete that route.
   Maintainers record final finding dispositions, verified head and unresolved
   threads. Human contributions follow ordinary contributor review; no

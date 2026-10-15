@@ -137,7 +137,9 @@ maintainer approval, and required CI still apply.
 
 **Standalone agents (Claude Code, Codex, ChatGPT, or other agent tools)** —
 implement, test, document and open a PR; **wait for a substantive submitted
-GitHub Copilot review or a review by another person** before merge.
+GitHub Copilot review or a maintainer's review**, recorded on the PR, before merge
+(maintainer decision, 2026-10-15). A reviewer agent that the implementer runs may
+be an extra check, but it does not satisfy this route.
 A submitted COMMENTED review containing a real code assessment counts as review
 evidence, but not as formal GitHub APPROVED. Review requests, bot summaries
 without substantive assessment, self-review and green CI do not satisfy the
