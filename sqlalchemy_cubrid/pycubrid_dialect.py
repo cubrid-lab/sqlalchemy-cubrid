@@ -409,6 +409,18 @@ class PyCubridDialect(CubridDialect):
         }
     )
 
+    @staticmethod
+    def _error_source(e: Exception) -> str | None:
+        """Return pycubrid's ``error_source`` (#916): ``"cas"``, ``"server"`` or ``None``.
+
+        pycubrid 1.13 sets it from the broker reply's indicator (cubrid-lab/pycubrid#903):
+        ``"cas"`` for an error the CAS generated, ``"server"`` for one from the
+        database server. Older pycubrid has no such attribute, and an error the
+        driver raises itself has ``None``; both keep the legacy classification.
+        """
+        source = getattr(e, "error_source", None)
+        return source if source in ("cas", "server") else None
+
     def _has_disconnect_code(self, e: Exception) -> bool:
         """Also match pycubrid's ``errno`` (its ``args`` hold only the message).
 
@@ -416,29 +428,42 @@ class PyCubridDialect(CubridDialect):
         (``_server_session_lost_codes``, #565) and the legacy-renumbered CAS
         codes pycubrid receives (``_pycubrid_legacy_cas_codes``, #578). An
         ``errno`` of -4 is the server's ER_INTERRUPTED (an interrupted query),
-        not a disconnect.
+        not a disconnect. A legacy CAS code reported with
+        ``error_source == "server"`` is the server's code of that number, not
+        the CAS's (#916): a server -1002 is not CAS_ER_NO_MORE_MEMORY.
         """
         if super()._has_disconnect_code(e):
             return True
         errno = getattr(e, "errno", None)
         if not isinstance(errno, int) or isinstance(errno, bool):
             return False
-        return errno in self._server_session_lost_codes or errno in self._pycubrid_legacy_cas_codes
+        if errno in self._server_session_lost_codes:
+            return True
+        return errno in self._pycubrid_legacy_cas_codes and self._error_source(e) != "server"
 
     # pycubrid receives CAS codes legacy-renumbered by +9000 (see above):
     # ``cas_error.h`` runs from CAS_ER_DBMS (-10000) to CAS_ER_IS (-10200), so
     # they arrive as -1000 .. -1200 and overlap server codes there (CUBRID
     # 11.4.6: ER_SM_ONLY_NORMAL_ATTRIBUTES is -1000, ER_JSON_INVALID_PATH
     # -1200). A code inside that block may be the CAS's; any other negative
-    # code above ``_server_code_floor`` is certainly the server's.
+    # code above ``_server_code_floor`` is certainly the server's. pycubrid 1.13
+    # says which it is (``error_source``, #916); without it the block stays
+    # ambiguous.
     _legacy_cas_code_block = range(-1200, -999)
 
     def _server_error_code(self, e: Exception) -> int | None:
-        """Read the code from pycubrid's ``errno`` (its ``args`` hold only text)."""
+        """Read the code from pycubrid's ``errno`` (its ``args`` hold only text).
+
+        A code in ``_legacy_cas_code_block`` counts as a server code only when
+        pycubrid reports ``error_source == "server"`` (#916). Then its text is
+        the server's and may echo application data, so the message fallback
+        applies only to the catalogued connect failures. A ``"cas"`` source or
+        none (pycubrid before 1.13) keeps the block ambiguous, as before.
+        """
         errno = getattr(e, "errno", None)
         if not isinstance(errno, int) or isinstance(errno, bool):
             return None
-        if errno in self._legacy_cas_code_block:
+        if errno in self._legacy_cas_code_block and self._error_source(e) != "server":
             return None
         return self._as_server_code(errno)
 

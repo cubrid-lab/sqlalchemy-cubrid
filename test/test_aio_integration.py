@@ -838,6 +838,25 @@ def _description(result: sa.CursorResult[Any]) -> list[tuple[Any, ...]]:
     return [tuple(d) for d in result.cursor.description]
 
 
+class TestAsyncServerErrorInTheCasCodeBlock:
+    async def test_server_error_in_the_cas_code_block_keeps_the_connection(
+        self, engine: AsyncEngine
+    ):
+        """A server error numbered like a legacy CAS code is not a disconnect (#916)."""
+        pytest.importorskip("pycubrid", minversion="1.13")
+        statement = 'CREATE TABLE t916 ("connection refused" INT NOT NULL DEFAULT NULL)'
+        async with engine.connect() as conn:
+            raw = await _dbapi_connection(conn)
+            with pytest.raises(sa.exc.DBAPIError) as excinfo:
+                _ = await conn.exec_driver_sql(statement)
+            assert excinfo.value.orig.errno == -1067
+            assert excinfo.value.orig.error_source == "server"
+            assert not excinfo.value.connection_invalidated
+            await conn.rollback()
+            assert (await conn.exec_driver_sql("SELECT 1")).scalar() == 1
+            assert await _dbapi_connection(conn) is raw
+
+
 class TestAsyncCursorDescriptionContract:
     @pytest_asyncio.fixture(autouse=True)
     async def _description_tables(self, engine: AsyncEngine) -> AsyncIterator[None]:

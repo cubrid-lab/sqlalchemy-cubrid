@@ -195,6 +195,14 @@ CUBRIDdb 11.3.0.51 defines `OperationalError` (see
   for a driver, like pycubrid, that never advertises understanding the renewed
   error-code protocol. -1002 (legacy `CAS_ER_NO_MORE_MEMORY`, i.e. -10002 + 9000) is
   matched this way (#578).
+- Origin of the overlapping codes (#916): legacy CAS codes arrive as -1000 to -1200,
+  the same numbers as some server errors (CUBRID 11.4.6 `ER_JSON_INVALID_PATH` is -1200).
+  pycubrid 1.13 reports who sent an error in `error_source` (`"cas"` or `"server"`).
+  With `"server"`, the code is the server's: a server -1002 is not
+  `CAS_ER_NO_MORE_MEMORY`, and the message patterns apply only to the server
+  connect-failure codes (-190, -191, -368), because server text can echo application
+  data. With `"cas"`, with `None`, or with pycubrid before 1.13 (which has no
+  `error_source`), these codes are classified as before.
 
 ### 2. CCI Library Dependency
 

@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Server errors that share a legacy CAS code no longer invalidate connections (#916)** —
+  legacy CAS codes reach pycubrid as -1000 to -1200, the same numbers as some server errors.
+  With pycubrid 1.13's `error_source == "server"`, `is_disconnect()` now reads such a code
+  as the server's, sync and async. A server -1002 is not `CAS_ER_NO_MORE_MEMORY`, and server
+  text such as `invalid json path naming [connection refused]` (-1200) no longer matches the
+  disconnect patterns, which apply only to the server connect-failure codes. CAS-origin
+  errors, errors without a source, and pycubrid before 1.13 are classified as before. The
+  supported pycubrid range is unchanged.
+
 - **`bool` JSON path indices are rejected (#914)** — `bool` is an `int` subclass, so
   `json_col[True]` and `json_col[("items", False)]` rendered the paths `$[True]` and
   `$."items"[False]`. CUBRID 10.2 and 11.4 reject these as invalid JSON paths (`-494`),

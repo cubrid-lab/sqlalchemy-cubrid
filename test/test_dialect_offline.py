@@ -2531,6 +2531,91 @@ class TestIsDisconnect:
         exc = getattr(pycubrid, exc_name)(message, code=errno, errno=errno)
         assert dialect.is_disconnect(exc, None, None) is False
 
+    @staticmethod
+    def _sourced_pycubrid_error(errno: int, message: str, indicator: int | None):
+        """Raise a real pycubrid error from a broker error reply (#916).
+
+        pycubrid sets ``error_source`` from the reply indicator: ``-1`` is the
+        CAS (``"cas"``), ``-2`` the database server (``"server"``), none ``None``.
+        """
+        pytest.importorskip("pycubrid", minversion="1.13")
+        from pycubrid import protocol
+        from pycubrid.packet import PacketReader
+
+        reply = struct.pack(">i", errno) + message.encode() + b"\x00"
+        try:
+            protocol._raise_error(PacketReader(reply), len(reply), indicator)
+        except Exception as exc:  # noqa: BLE001 - the parser raises the DB-API error
+            return exc
+        raise AssertionError("pycubrid did not raise for an error reply")
+
+    @staticmethod
+    def _sourced_dialect(variant: str):
+        if variant == "sync":
+            from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect as dialect_cls
+        else:
+            from sqlalchemy_cubrid.aio_pycubrid_dialect import (
+                PyCubridAsyncDialect as dialect_cls,
+            )
+        dialect = dialect_cls()
+        dialect.dbapi = dialect_cls.import_dbapi()
+        return dialect
+
+    @pytest.mark.parametrize(
+        ("errno", "message"),
+        [
+            # Server codes inside the legacy CAS block (-1200 .. -1000) whose text
+            # echoes application data: CUBRID 11.4.6 ER_JSON_INVALID_PATH is -1200.
+            (-1200, "invalid json path naming [connection refused]"),
+            (-1003, "server text: Cannot communicate with the broker"),
+            # A server -1002 is not legacy CAS_ER_NO_MORE_MEMORY.
+            (-1002, "server text naming no more memory"),
+        ],
+    )
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_server_source_in_the_cas_block_is_not_a_disconnect(self, variant, errno, message):
+        exc = self._sourced_pycubrid_error(errno, message, -2)
+        assert exc.error_source == "server"
+        assert self._sourced_dialect(variant).is_disconnect(exc, None, None) is False
+
+    @pytest.mark.parametrize(
+        ("errno", "message"),
+        [
+            (-1002, "Memory allocation error"),  # legacy CAS_ER_NO_MORE_MEMORY
+            (-1003, "Cannot communicate with the broker"),
+            (-1200, "Cannot communicate with the broker"),
+        ],
+    )
+    @pytest.mark.parametrize("indicator", [-1, None])
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_cas_or_unknown_source_keeps_the_legacy_classification(
+        self, variant, indicator, errno, message
+    ):
+        exc = self._sourced_pycubrid_error(errno, message, indicator)
+        assert exc.error_source == ("cas" if indicator == -1 else None)
+        assert self._sourced_dialect(variant).is_disconnect(exc, None, None) is True
+
+    @pytest.mark.parametrize("errno", [-111, -199, -224, -677])
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_server_source_session_lost_codes_still_disconnect(self, variant, errno):
+        exc = self._sourced_pycubrid_error(errno, "opaque server message", -2)
+        assert self._sourced_dialect(variant).is_disconnect(exc, None, None) is True
+
+    @pytest.mark.parametrize("variant", ["sync", "async"])
+    def test_server_source_connect_failure_keeps_the_message_fallback(self, variant):
+        message = "Failed to connect to database server, 'testdb', on the following host(s): h"
+        exc = self._sourced_pycubrid_error(-190, message, -2)
+        assert self._sourced_dialect(variant).is_disconnect(exc, None, None) is True
+
+    def test_pycubrid_without_error_source_keeps_the_legacy_classification(self, pycubrid_dialect):
+        """pycubrid before 1.13 has no ``error_source``: the block stays ambiguous."""
+        dialect, dbapi = pycubrid_dialect
+        exc = self._pycubrid_error(dbapi, "naming [connection refused]", -1200)
+        exc.__dict__.pop("_error_source", None)
+        assert dialect._error_source(exc) is None
+        assert dialect.is_disconnect(exc, None, None) is True
+        assert dialect.is_disconnect(self._pycubrid_error(dbapi, "x", -1002), None, None) is True
+
     @pytest.mark.parametrize(
         ("errno", "message"),
         [

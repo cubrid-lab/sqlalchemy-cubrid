@@ -1573,6 +1573,28 @@ class TestIsDisconnect:
         exc = RuntimeError("some random error")
         assert dialect.is_disconnect(exc, None, None) is False
 
+    def test_server_error_in_the_cas_code_block_keeps_the_connection(self, engine):
+        """A server error numbered like a legacy CAS code is not a disconnect (#916).
+
+        -1067 lies in the -1200 .. -1000 block where legacy CAS codes arrive, and
+        its text quotes a column name, here one that reads like a disconnect.
+        pycubrid 1.13 reports ``error_source == "server"`` for it.
+        """
+        if engine.dialect.driver != "pycubrid":
+            pytest.skip("error_source is a pycubrid attribute")
+        pytest.importorskip("pycubrid", minversion="1.13")
+        statement = 'CREATE TABLE t916 ("connection refused" INT NOT NULL DEFAULT NULL)'
+        with engine.connect() as conn:
+            dbapi_conn = conn.connection.dbapi_connection
+            with pytest.raises(sa.exc.DBAPIError) as info:
+                conn.exec_driver_sql(statement)
+            assert info.value.orig.errno == -1067
+            assert info.value.orig.error_source == "server"
+            assert info.value.connection_invalidated is False
+            conn.rollback()
+            assert conn.exec_driver_sql("SELECT 1").scalar() == 1
+            assert conn.connection.dbapi_connection is dbapi_conn
+
 
 @pytest.mark.usefixtures("_clean_tables")
 class TestPostfetchLastRowId:
