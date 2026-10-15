@@ -25,11 +25,12 @@ _PARSER = MarkdownIt("commonmark").enable("table")
 _ATTR_ID = re.compile(r"\s*\{[^}]*#([\w-]+)[^}]*\}\s*$")
 _HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 # Python-Markdown reads ``#<digit>`` at the start of a block line as an ATX
-# heading. Its block quotes strip ``>`` and one space, list items start after
-# their marker (``-``, ``*``, ``+``, ``1.``; not ``1)``), and list content is
-# dedented by 4 spaces per level; any other indentation keeps the line text.
-_QUOTE_PREFIX = re.compile(r"(?:>[ ]?)*( *)")
-_HASH_DIGIT = r"(?:>[ ]?)*(?: {{4}}){indent}(?:[ \t]*(?:[-*+]|\d+\.)[ \t]+)?#\d"
+# heading. Its block quotes strip ``>`` (after up to 3 spaces) and one space,
+# list items start after their marker (``-``, ``*``, ``+``, ``1.``; not
+# ``1)``), and list content is dedented by 4 spaces per level; any other
+# indentation keeps the line text.
+_QUOTE_PREFIX = re.compile(r"(?: {0,3}>[ ]?)*( *)")
+_HASH_DIGIT = r"(?: {{0,3}}>[ ]?)*(?: {{4}}){indent}(?:[ \t]*(?:[-*+]|\d+\.)[ \t]+)?#\d"
 _BACKTICKS = re.compile(r"`+")
 # A full or collapsed reference link whose brackets are not escaped; an opening
 # bracket after a word character (``rows[0][1]``) is an index, not a link.
