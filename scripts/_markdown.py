@@ -580,28 +580,70 @@ _OPERATORS = (
 )
 
 
+def _keyword_at(command: str, index: int, word: str) -> bool:
+    """Return whether the shell word ``word`` starts at ``index`` of ``command``."""
+    end = index + len(word)
+    return (
+        command.startswith(word, index)
+        and (index == 0 or command[index - 1] in " \t\n;&|(")
+        and (end == len(command) or command[end] in " \t\n;&|)")
+    )
+
+
+def _quoted_end(command: str, index: int, substitutions: list[str] | None = None) -> int:
+    """Return the index after the quote that closes the one at ``index``, or ``-1``.
+
+    Single quotes are literal. In double quotes a backslash escapes the next
+    character, and a ``$(...)`` substitution is scanned as a whole (its body
+    goes to ``substitutions``, if given, since the shell runs it; nested ones
+    stay in that body).
+    """
+    quote, index, size = command[index], index + 1, len(command)
+    while index < size and command[index] != quote:
+        if quote == '"' and command[index] == "\\":
+            index += 2
+        elif quote == '"' and command.startswith("$(", index):
+            end = _substitution_end(command, index + 1)
+            if end < 0:
+                return -1
+            if substitutions is not None:
+                substitutions.append(command[index + 2 : end - 1])
+            index = end
+        else:
+            index += 1
+    return index + 1 if index < size else -1
+
+
 def _substitution_end(command: str, index: int) -> int:
     """Return the index after the ``)`` that closes the ``(`` at ``index``, or ``-1``.
 
-    Nested parentheses, quotes and backslash escapes inside are honoured.
+    Nested parentheses, quotes and backslash escapes inside are honoured, and
+    the ``)`` after a ``case`` pattern (``case x in x) ...;; esac``) does not
+    close the substitution. Nested substitutions stay in the body, which the
+    caller checks as a command of its own.
     """
     depth, size = 0, len(command)
+    cases: list[int] = []  # the depth at each open ``case``
     while index < size:
         char = command[index]
         if char == "\\":
             index += 2
             continue
         if char in "'\"":
-            end = index + 1
-            while end < size and command[end] != char:
-                end += 2 if char == '"' and command[end] == "\\" else 1
-            if end >= size:
+            index = _quoted_end(command, index)
+            if index < 0:
                 return -1
-            index = end + 1
             continue
+        if _keyword_at(command, index, "case"):
+            cases.append(depth)
+        elif cases and _keyword_at(command, index, "esac"):
+            cases.pop()
         if char == "(":
             depth += 1
         elif char == ")":
+            if cases and cases[-1] == depth:
+                index += 1  # a case pattern's terminator
+                continue
             depth -= 1
             if depth == 0:
                 return index + 1
@@ -643,11 +685,10 @@ def _shell_tokens(command: str, substitutions: list[str] | None = None) -> list[
             in_word = True
             index += 2
         elif char in "'\"":
-            end = index + 1
-            while end < size and command[end] != char:
-                end += 2 if char == '"' and command[end] == "\\" else 1
-            if end >= size:
+            end = _quoted_end(command, index, substitutions)
+            if end < 0:
                 return []
+            end -= 1  # the closing quote
             text = command[index + 1 : end]
             word.append(re.sub(r'\\(["\\$`])', r"\1", text) if char == '"' else text)
             in_word = True
@@ -686,6 +727,8 @@ def make_goals(command: str) -> list[str]:
     goals = []
     substitutions: list[str] = []
     tokens = _shell_tokens(command, substitutions)
+    if not tokens:
+        return []  # not a shell command: substitution bodies seen so far don't count
     # ``make`` counts only as the command word of a simple command, after any
     # ``VAR=value`` prefixes: ``echo make test`` names no goal.
     index, in_make, at_start = 0, False, True
