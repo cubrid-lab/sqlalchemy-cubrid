@@ -75,12 +75,8 @@ _ATTR_ID = re.compile(r"\s*\{[^}]*#([\w-]+)[^}]*\}\s*$")
 # ``1)``), and list content is dedented by 4 spaces per level; any other
 # indentation keeps the line text.
 _QUOTE_PREFIX = re.compile(r"(?: {0,3}>[ ]?)*( *)")
-_QUOTE = r"(?: {0,3}>[ ]?)"
-_ITEM = r"(?:[ \t]*(?:[-*+]|\d+\.)[ \t]+)"
-# Containers nest in any order (``- > #1``, ``> - #1``, a quote in a later item
-# paragraph), so the first line takes any sequence of quote markers, list
-# markers and 4-space list indents before ``#<digit>``.
-_HASH_DIGIT_FIRST = re.compile(rf"(?:{_QUOTE}| {{4}}|{_ITEM})*#\d")
+_QUOTE_MARKER = re.compile(r" {0,3}>[ ]?")
+_LIST_MARKER = re.compile(r"[ \t]*(?:[-*+]|\d+\.)[ \t]+")
 _BACKTICKS = re.compile(r"`+")
 # A full or collapsed reference link whose brackets are not escaped; an opening
 # bracket after a word character (``rows[0][1]``) is an index, not a link.
@@ -241,10 +237,35 @@ def _inline_items(token: Token) -> list[tuple[int, Token]]:
     return items
 
 
+def _starts_with_hash_digit(line: str, max_indents: int | None) -> bool:
+    """Return whether ``line`` is ``#<digit>`` once its container prefixes are removed.
+
+    Block quote markers, list markers and 4-space list indents are consumed one
+    at a time, in any order (``- > #1``, ``> - #1``), at most ``max_indents``
+    indents (``None``: any). Each step consumes a fixed prefix and never
+    backtracks, so a long run of markers costs linear time.
+    """
+    position, indents = 0, 0
+    while True:
+        quote = _QUOTE_MARKER.match(line, position)
+        if quote:
+            position = quote.end()
+            continue
+        if (max_indents is None or indents < max_indents) and line.startswith("    ", position):
+            position, indents = position + 4, indents + 1
+            continue
+        item = _LIST_MARKER.match(line, position)
+        if item:
+            position = item.end()
+            continue
+        break
+    return line[position : position + 1] == "#" and line[position + 1 : position + 2].isdigit()
+
+
 def _hash_digit_lines(lines: list[str], start: int, end: int) -> list[int]:
     """Return the lines of a paragraph (0-based ``start``..``end``) that Python-Markdown
     renders as a heading: ``#<digit>`` at the start of the line once block quote
-    markers, a list marker and the list indentation are removed.
+    markers, list markers and the list indentation are removed.
 
     The first line may sit at any list depth (4 spaces each). A continuation line
     is dedented with its paragraph, so it may be indented by at most the first
@@ -254,11 +275,10 @@ def _hash_digit_lines(lines: list[str], start: int, end: int) -> list[int]:
         return []
     prefix = _QUOTE_PREFIX.match(lines[start])
     depth = len(prefix.group(1)) // 4 if prefix else 0
-    rest = re.compile(rf"{_QUOTE}*(?: {{4}}){{0,{depth}}}{_QUOTE}*{_ITEM}?#\d")
     return [
         number + 1
         for number in range(start, min(end, len(lines)))
-        if (_HASH_DIGIT_FIRST if number == start else rest).match(lines[number])
+        if _starts_with_hash_digit(lines[number], None if number == start else depth)
     ]
 
 

@@ -6,6 +6,7 @@ import importlib.util
 import socket
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -485,6 +486,16 @@ def test_only_parsed_html_and_link_tails_are_masked(
     tmp_path: Path, page: str, found: list[str]
 ) -> None:
     assert check.run(_tree(tmp_path, page)) == found
+
+
+@pytest.mark.parametrize(
+    "line", ["-  " * 28 + "ordinary text", "1234567890.  " * 28 + "text", "> " * 200 + "text"]
+)
+def test_long_container_prefixes_are_scanned_in_linear_time(tmp_path: Path, line: str) -> None:
+    # A backtracking pattern took seconds on these lines (#925 review).
+    started = time.perf_counter()
+    assert check.run(_tree(tmp_path, f"{line}\n{line}\n")) == []
+    assert time.perf_counter() - started < 1.0
 
 
 def test_html_attributes_are_parsed_like_a_browser(tmp_path: Path) -> None:
