@@ -144,6 +144,13 @@ class TestJSONBooleanPathIndex:
         assert isinstance(raised.value.__cause__, TypeError)
         assert self.BOOL_ERROR in str(raised.value.__cause__)
 
+    def test_path_from_a_one_shot_iterable_is_read_once(self):
+        process = JSONPathType().bind_processor(CubridDialect())
+        rendered = process(iter(("items", 0)))
+        assert rendered == '$."items"[0]'
+        with pytest.raises(TypeError, match=self.BOOL_ERROR):
+            process(iter(("items", True)))
+
     def test_bind_processor_keeps_int_and_nested_paths(self):
         for index, expected in ((0, "$[0]"), (("items", 1), '$."items"[1]')):
             compiled = select(json_table.c.data[index]).compile(dialect=CubridDialect())

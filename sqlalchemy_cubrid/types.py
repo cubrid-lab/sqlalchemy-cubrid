@@ -632,6 +632,7 @@ class JSONPathType(_FormatTypeMixin, sqltypes.JSON.JSONPathType):
     """
 
     def _format_value(self, value: Any) -> str:
+        value = tuple(value)  # Read a one-shot iterable once, then validate it.
         for elem in value:
             _reject_bool_path_index(elem)
         return "$%s" % (
