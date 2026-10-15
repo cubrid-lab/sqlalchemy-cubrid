@@ -253,6 +253,16 @@ pre-commit run --all-files
 - `.github/CODEOWNERS`는 릴리스, CI, 보안 정책, 다이얼렉트, 컴파일러, 리플렉션, Alembic
   경로의 변경에 메인테이너 리뷰를 자동으로 요청합니다. 리뷰 라우팅만 담당하며 보안 경계가
   아니고, 그 밖의 변경은 코드 오너를 기다리지 않습니다.
+- `.github/workflows/agent-review.yml`의 `agent-review` 체크는 GitHub에 기록된 리뷰만 읽어 위
+  리뷰 경로가 충족됐는지 알려 주는 **참고용(advisory)** 체크입니다. 최종 head에 대해 두 차례 AI
+  리뷰 예산 안에서 제출된 실질적인 Copilot 리뷰, 또는 메인테이너의 `APPROVED` 리뷰나 인라인
+  스레드를 연 `COMMENTED` 리뷰만 인정하며, PR 본문 체크박스, 대기 중인 리뷰 요청, 자체 리뷰,
+  다른 사람이나 다른 AI 에이전트의 리뷰, 이전 커밋에 대한 리뷰는 인정하지 않습니다. 컴파일러의
+  리터럴 렌더링, 식별자 인용, 다이얼렉트 연결과 `is_disconnect`, Alembic 구현, 모든 워크플로,
+  릴리스 및 레인 점검 스크립트와 이 게이트 자체를 바꾸는 PR에는 메인테이너의 `APPROVED` 리뷰가
+  필요합니다. PR이 같은 이름의 체크를 게시할 수 있으므로, PR이 흉내 낼 수 없는 주체(GitHub App
+  등)가 결과를 게시할 때까지(#929) 필수 체크로 지정하지 않습니다. 자세한 규칙은
+  [CONTRIBUTING.md](../CONTRIBUTING.md#agent-review-evidence-gate)에 있습니다.
 
 기여자는 `dev` 의존성 그룹을 설치하고, 공유 검사를 실행하고, 관련 문서를 갱신한 뒤
 동기, 명령·결과와 실행하지 않은 검사의 이유를 담아 PR을 엽니다.

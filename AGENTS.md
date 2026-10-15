@@ -146,6 +146,22 @@ without substantive assessment, self-review and green CI do not satisfy the
 review requirement. Check accepted fixes at the final relevant head; if no
 qualifying review arrives, leave the PR unmerged.
 
+**`agent-review` check (advisory only):** `.github/workflows/agent-review.yml`
+reports from GitHub's own review records whether this route is met (rules in
+[CONTRIBUTING.md](CONTRIBUTING.md#agent-review-evidence-gate); a copy of the
+cubrid-mcp-server gate with only its constants changed). It counts a substantive
+Copilot review of the head within the two-round budget, or a maintainer's
+`APPROVED` review, or `COMMENTED` review that opens an inline thread; never
+PR-body checkboxes, pending requests, self-review, other people's or other AI
+agents' reviews, summary-only bot text or a review of an older commit (unless the
+PR's change against `main` is identical at both commits). Protected paths (the
+compiler's literal rendering, identifier quoting, dialect connect and
+`is_disconnect`, the Alembic implementation, every workflow, the release and
+lane-audit scripts, and the gate itself) need a maintainer's `APPROVED` review.
+A PR can publish a check with the same name, so the check is a reading aid and
+must not be made a required status check until it is posted from an identity a
+PR cannot impersonate (#929).
+
 **Human contributions** — follow the normal contributor/review process.
 This route is not a fallback for unnamed standalone agent tools, which use
 the route above. Maintainers coordinate internal tools, integration, evidence

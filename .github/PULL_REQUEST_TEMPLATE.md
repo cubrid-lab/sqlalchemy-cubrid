@@ -47,7 +47,12 @@ See CONTRIBUTING.md#pull-request-and-commit-titles.
 - Finding dispositions: fixed commit + verification / rejected with reason / deferred issue.
 - Unresolved review threads and reason, or "none" after verification.
 - Maintainer merge decision: **pending**; complete only after checking the applicable review, final code, required CI and thread dispositions.
-<!-- Requested reviews, green CI, and automated "approval recommended" text alone do not complete the review route. -->
+<!-- Requested reviews, green CI, and automated "approval recommended" text alone do not complete the review route.
+     The advisory `agent-review` check reads only GitHub's submitted reviews of the head commit;
+     this section and its checkboxes are records for maintainers, never evidence. Protected paths
+     (compiler literal rendering, identifier quoting, dialect connect/is_disconnect, the Alembic
+     implementation, every workflow, the release and lane-audit scripts, the gate) need a
+     maintainer's APPROVED review. See CONTRIBUTING.md#agent-review-evidence-gate. -->
 
 ## Validation
 

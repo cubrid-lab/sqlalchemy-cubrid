@@ -104,6 +104,7 @@ jobs:
               - 'setup.cfg'
               - 'test/test_*workflow*.py'
               - 'test/test_ci_policy.py'
+              - 'test/test_agent_review_gate.py'
               # The documentation checks' own tests (#908).
               - 'test/test_check_docs_links.py'
               - 'test/test_check_agents_docs.py'
