@@ -53,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **The documentation check handles shell substitutions as pycubrid does (#934)** —
+  `scripts/_markdown.py` takes the three shell fixes from cubrid-lab/pycubrid#947:
+  - a command or process substitution (`$(...)`, `<(...)`, `>(...)`) is part of its word, so
+    `make test ENV_FILE=<(true)` names only `test`, `make VAR=$(pwd) test` keeps the goal `test`,
+    and its body is checked as a command of its own;
+  - a `#` right after a substitution is not a comment;
+  - a quote the block never closes is prose, also before a final backslash.
+
+  The parser and its tests match pycubrid's again, apart from headers and issue references.
+
 - **`agent-review` no longer counts empty reply-only Copilot records as review rounds
   (#933)** — a Copilot record with no body and no thread-opening comment, such as a reply
   to an existing thread, is now ignored like an error or quota notice instead of counting
@@ -60,6 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evidence. A record that opens a thread still counts. Ported unchanged from
   cubrid-lab/cubrid-mcp-server#349, so the gate copies stay identical outside their
   constants.
+
 - **Advisory `agent-review` check for review evidence (#905)** —
   `.github/workflows/agent-review.yml` runs `scripts/agent_review_gate.py` from the base
   branch with a read-only token on every pull request and review event, and reports

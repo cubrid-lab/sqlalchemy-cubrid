@@ -303,6 +303,13 @@ def test_a_word_split_across_a_continuation_is_one_word(tmp_path: Path) -> None:
         ("make a&&make b", ["a", "b"]),
         ("make test &>log", ["test"]),
         ("make test &>>build.log", ["test"]),
+        # Substitutions are part of their word; their bodies are commands of their own.
+        ("make test ENV_FILE=<(true)", ["test"]),
+        ("make test >(tee log)", ["test"]),
+        ("make VAR=$(pwd) test", ["test"]),
+        ("diff <(make -n removed) b", ["removed"]),
+        ("make A=\"$(printf ')')\" test", ["test"]),
+        ("make $(echo unbalanced", []),
     ],
 )
 def test_adjacent_shell_operators_are_separate(command: str, goals: list[str]) -> None:
@@ -496,6 +503,21 @@ def test_long_container_prefixes_are_scanned_in_linear_time(tmp_path: Path, line
     started = time.perf_counter()
     assert check.run(_tree(tmp_path, f"{line}\n{line}\n")) == []
     assert time.perf_counter() - started < 1.0
+
+
+def test_a_quote_never_closed_before_a_final_backslash_is_not_shell(tmp_path: Path) -> None:
+    page = '```text\nA literal double quote: "\nmake removed \\\n```\n'
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:3: `make removed` is not a Makefile target"
+    ]
+
+
+@pytest.mark.parametrize("first", ["echo $(printf x)#note \\", "cat <(true)#note \\"])
+def test_a_hash_after_a_substitution_stays_in_the_word(tmp_path: Path, first: str) -> None:
+    page = f"```bash\n{first}\nmake removed\nmake gone\n```\n"
+    assert check.run(_tree(tmp_path, page)) == [
+        "docs/PAGE.md:4: `make gone` is not a Makefile target"
+    ]
 
 
 def test_html_attributes_are_parsed_like_a_browser(tmp_path: Path) -> None:
