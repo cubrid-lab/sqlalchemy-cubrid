@@ -64,7 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   This change's review adds three more shell fixes, which pycubrid receives next: a `case`
   pattern's `)` does not close a substitution; a substitution inside double quotes is checked
   (`echo "$(make removed)"`), but not one inside single quotes; and text that is not shell
-  names no goal, even from substitutions read before the error.
+  names no goal, even from substitutions read before the error. Arithmetic expansion
+  (`$((make - removed))`) runs no command except the substitutions nested in it, `case` and
+  `esac` are keywords only at the start of a command, and an unquoted newline in a substitution
+  body separates commands.
 
 - **`agent-review` no longer counts empty reply-only Copilot records as review rounds
   (#933)** — a Copilot record with no body and no thread-opening comment, such as a reply

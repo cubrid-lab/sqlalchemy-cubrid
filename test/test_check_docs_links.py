@@ -321,6 +321,15 @@ def test_a_word_split_across_a_continuation_is_one_word(tmp_path: Path) -> None:
         # Text that is not shell names no goal, not even from its substitutions.
         ('echo $(make removed) "unclosed', []),
         ("echo $(make removed) $(unclosed", []),
+        # Arithmetic expansion runs no command, only the substitutions nested in it.
+        ('make=4; removed=1; echo "$((make - removed))"', []),
+        ("echo $(( $(make removed) + 1 ))", ["removed"]),
+        # case and esac are keywords only at the start of a command.
+        ("make removed VAR=$(printf case)", ["removed"]),
+        ("make test VAR=$(case x in x) printf esac;; y) printf y;; esac)", ["test"]),
+        # An unquoted newline in a substitution body separates commands.
+        ('echo "$(\nmake test\nmake lint\n)"', ["test", "lint"]),
+        ("echo $(\n# a comment\nmake x\n)", ["x"]),
     ],
 )
 def test_adjacent_shell_operators_are_separate(command: str, goals: list[str]) -> None:
