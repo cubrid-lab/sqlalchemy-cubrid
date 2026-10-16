@@ -73,6 +73,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_check_agents_docs.py",
         "test_check_docs_links.py",
         "test_agent_review_gate.py",
+        "test_docs_provenance_hook.py",
     }
 )
 _missing_repo_modules = sorted(

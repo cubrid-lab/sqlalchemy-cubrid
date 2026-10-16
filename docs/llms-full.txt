@@ -25,8 +25,10 @@ candidate, or a version that was abandoned and never published (1.11.1 is one).
 - **Published releases** are listed on
   [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)
   and [PyPI](https://pypi.org/project/sqlalchemy-cubrid/#history); `pip install
-  sqlalchemy-cubrid` installs the newest one. A release appears in both only after
-  its publication was verified.
+  sqlalchemy-cubrid` installs the newest one. A release is listed in both as soon
+  as it is uploaded, before the post-publication cookbook check runs. Only the
+  publisher's `published and verified` result shows that this check passed too;
+  reconciliation then marks the release PR `autorelease: tagged`.
 - **Documentation of a published release** is the `docs/` folder at its tag:
   open the release on
   [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)

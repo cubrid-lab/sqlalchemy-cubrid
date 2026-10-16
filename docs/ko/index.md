@@ -24,8 +24,10 @@ CUBRID나 SQLAlchemy가 처음이라면
 
 - **공개 릴리스**는 [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)와
   [PyPI](https://pypi.org/project/sqlalchemy-cubrid/#history)에 있으며, `pip install
-  sqlalchemy-cubrid`는 그중 가장 새로운 릴리스를 설치합니다. 릴리스는 공개가 검증된 뒤에만 두 곳에
-  나타납니다.
+  sqlalchemy-cubrid`는 그중 가장 새로운 릴리스를 설치합니다. 릴리스는 업로드되는 즉시, 공개 후
+  쿡북 검사가 실행되기 전에 두 곳에 나타납니다. 이 검사까지 통과했다는 것은 퍼블리셔의
+  `published and verified` 결과만 보여 주며, 그 뒤 조정 단계가 릴리스 PR을 `autorelease: tagged`로
+  표시합니다.
 - **공개 릴리스의 문서**는 그 태그의 `docs/` 폴더입니다.
   [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)에서 릴리스를 열고
   태그의 파일을 살펴보세요. 예:
