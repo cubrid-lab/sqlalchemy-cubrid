@@ -40,7 +40,9 @@ def test_not_null_goes_through_modify_or_change():
 def test_nullable_from_not_null_is_stated():
     text = _sql(nullable=True, existing_type=sa.Integer(), existing_nullable=False)
     assert re.search(r"\b(MODIFY|CHANGE)\b", text)
-    assert re.search(r"(?<!NOT )\bNULL\b", text) and "NOT NULL" not in text
+    # The NULL of a DEFAULT NULL clause is not a nullability clause.
+    nullability = text.replace("DEFAULT NULL", "")
+    assert re.search(r"(?<!NOT )\bNULL\b", nullability) and "NOT NULL" not in text
 
 
 def test_nullability_change_needs_the_column_type():
@@ -51,6 +53,24 @@ def test_nullability_change_needs_the_column_type():
 def test_dropped_default_is_set_to_null():
     text = _sql(server_default=None, existing_type=sa.Integer())
     assert "DEFAULT NULL" in text
+
+
+def test_dropped_default_of_a_not_null_column_keeps_it_not_null():
+    # SET DEFAULT NULL is rejected for a NOT NULL column: the change must make the
+    # column nullable, drop the default, then restore NOT NULL, keeping the comment.
+    text = _sql(
+        server_default=None,
+        existing_type=sa.Integer(),
+        existing_nullable=False,
+        existing_comment="c",
+    )
+    statements = [s.strip() for s in text.split(";") if s.strip()]
+    assert "SET DEFAULT NULL" not in text
+    assert len(statements) >= 2
+    first, last = statements[0], statements[-1]
+    assert "DEFAULT NULL" in first and "NOT NULL" not in first
+    assert "NOT NULL" in last and "DEFAULT" not in last
+    assert all("COMMENT 'c'" in s for s in statements)
 
 
 def test_comment_change_and_removal_go_through_modify():

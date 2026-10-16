@@ -16,13 +16,16 @@ COLUMNS = [
     ("nn", "VARCHAR(20)", "YES", "", None, ""),
     ("d", "DATE", "YES", "", "01/02/2020", ""),
     ("w", "VARCHAR(20)", "YES", "", "CURRENT_USER", ""),
+    # SHOW COLUMNS prints the string 'CURRENT_USER' and the function alike.
+    ("w2", "VARCHAR(20)", "YES", "", "CURRENT_USER", ""),
     ("neg", "INTEGER", "YES", "", "-3", ""),
 ]
 DDL = (
     "CREATE TABLE [d865] ([q] CHARACTER VARYING(20) DEFAULT 'it''s', "
     "[em] CHARACTER VARYING(20) DEFAULT '', [nl] CHARACTER VARYING(20) DEFAULT 'NULL', "
     "[nn] CHARACTER VARYING(20), [d] DATE DEFAULT date '01/02/2020', "
-    "[w] CHARACTER VARYING(20) DEFAULT 'CURRENT_USER', [neg] INTEGER DEFAULT -3) "
+    "[w] CHARACTER VARYING(20) DEFAULT 'CURRENT_USER', "
+    "[w2] CHARACTER VARYING(20) DEFAULT CURRENT_USER, [neg] INTEGER DEFAULT -3) "
     "REUSE_OID, COLLATE iso88591_bin"
 )
 
@@ -81,6 +84,11 @@ def test_string_and_date_defaults_reflect_as_sql_literals():
     assert defaults["nl"] == "'NULL'"
     assert defaults["d"] == "date '01/02/2020'"
     assert defaults["w"] == "'CURRENT_USER'"
+
+
+def test_a_function_default_stays_a_function():
+    # Same SHOW COLUMNS text as the string above; only the DDL tells them apart.
+    assert _defaults()["w2"].upper() in ("CURRENT_USER", "USER")
 
 
 def test_missing_and_numeric_defaults_are_unchanged():
