@@ -353,6 +353,8 @@ def override_api(
     replacement=None,
     replacement_contains=True,
     replacement_verified=True,
+    replacement_labels=(),
+    comment_page=1,
     broken=None,
 ):
     """Offline gh for override_status(); ``replacement`` is a later tag, e.g. "v1.11.2"."""
@@ -383,7 +385,23 @@ def override_api(
                 }
             ]
         if "/issues/838/comments" in endpoint:
-            return [{"body": comment, "user": {"type": commenter}}] if comment else []
+            page = int(endpoint.rsplit("page=", 1)[1])
+            if comment_page > 1 and page < comment_page:
+                return [{"body": "ci status", "user": {"type": "Bot"}}] * 100
+            if page == comment_page and comment:
+                return [{"body": comment, "user": {"type": commenter}}]
+            return []
+        if replacement and endpoint.endswith(f"/commits/{REPLACEMENT}/pulls"):
+            ref = "release-please--branches--main--components--sqlalchemy-cubrid"
+            return [
+                {
+                    "number": 900,
+                    "merge_commit_sha": REPLACEMENT,
+                    "merged_at": "2026-10-20T00:00:00Z",
+                    "head": {"ref": ref},
+                    "labels": [{"name": name} for name in replacement_labels],
+                }
+            ]
         if "/contents/" in endpoint:
             sha = endpoint.rsplit("ref=", 1)[1]
             version = manifest[sha]
@@ -393,9 +411,11 @@ def override_api(
                 return {"object": {"type": "commit", "sha": ABANDONED}}
             raise not_found(*args)
         if endpoint.endswith("/releases?per_page=100"):
-            releases = [{"tag_name": "v1.11.0", "draft": False}]
+            releases = [{"tag_name": "v1.11.0", "draft": False, "published_at": "2026-10-10"}]
             if replacement:
-                releases.insert(0, {"tag_name": replacement, "draft": False})
+                releases.insert(
+                    0, {"tag_name": replacement, "draft": False, "published_at": "2026-10-20"}
+                )
             return releases
         if replacement and endpoint.endswith(f"/git/ref/tags/{replacement}"):
             return {"object": {"type": "commit", "sha": REPLACEMENT}}
@@ -559,3 +579,30 @@ def test_strict_ready_treats_only_404_as_absent():
         MODULE.ready(REPO, REPLACEMENT, broken, strict=True)
     with pytest.raises(KeyError):
         MODULE.ready(REPO, REPLACEMENT, lambda *args: {}, strict=True)
+
+
+def test_abandonment_record_on_a_later_comment_page_is_found():
+    state, _message = status(override_api(comment_page=2))
+    assert state == "active"
+
+
+def test_replacement_recovered_at_another_sha_makes_the_override_obsolete():
+    # RELEASING.md: after a resume/verify-only dispatch at a newer main SHA the
+    # publisher run at the tag commit stays failed, and the maintainer labels
+    # the replacement PR autorelease: tagged after verifying the release.
+    api = override_api(
+        replacement="v1.11.2",
+        replacement_verified=False,
+        replacement_labels=["autorelease: tagged"],
+    )
+    state, message = status(api)
+    assert state == MODULE.BLOCKED and "is obsolete" in message
+
+
+def test_replacement_still_pending_stays_active():
+    api = override_api(
+        replacement="v1.11.2",
+        replacement_verified=False,
+        replacement_labels=["autorelease: pending"],
+    )
+    assert status(api)[0] == "active"

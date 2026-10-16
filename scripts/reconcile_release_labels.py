@@ -185,6 +185,47 @@ def _contains(repository: str, ancestor: str, head: str, api) -> bool:
     return status in ("ahead", "identical")
 
 
+COMMENT_PAGES = 10
+
+
+def _abandonment_recorded(repository: str, number: int, api) -> bool:
+    """A person's comment containing "abandon" on the release PR, on any page."""
+    for page in range(1, COMMENT_PAGES + 1):
+        comments = api(
+            "api", f"repos/{repository}/issues/{number}/comments?per_page=100&page={page}"
+        )
+        if any(
+            "abandon" in (comment.get("body") or "").lower()
+            and (comment.get("user") or {}).get("type") != "Bot"
+            for comment in comments
+        ):
+            return True
+        if len(comments) < 100:
+            return False
+    raise ValueError(f"release PR #{number} has more than {COMMENT_PAGES * 100} comments")
+
+
+def _recovered(repository: str, release: dict, sha: str, api) -> bool:
+    """A replacement published through a recovery dispatch at another SHA.
+
+    Its own publisher run then stays failed, so ready() cannot prove it; per
+    RELEASING.md the maintainer verifies the release and labels its release PR
+    ``autorelease: tagged``. Accept that label on the PR merged at the tag
+    commit, together with the published Release.
+    """
+    if release.get("draft") or not release.get("published_at"):
+        return False
+    for pull in api("api", f"repos/{repository}/commits/{sha}/pulls"):
+        if (
+            pull.get("merge_commit_sha") == sha
+            and pull.get("merged_at")
+            and pull["head"]["ref"].startswith(RELEASE_BRANCH_PREFIX)
+            and "autorelease: tagged" in {label["name"] for label in pull.get("labels", [])}
+        ):
+            return True
+    return False
+
+
 def override_status(repository: str, sha: object, head: str, api=gh) -> tuple[str, str]:
     """Classify a ``last-release-sha`` override: none, active, obsolete or blocked."""
     if sha is None:
@@ -217,12 +258,7 @@ def override_status(repository: str, sha: object, head: str, api=gh) -> tuple[st
                 f"{name}: release PR #{number} is still autorelease: pending; record the "
                 f"abandonment and remove that label first. {see}"
             )
-        comments = api("api", f"repos/{repository}/issues/{number}/comments?per_page=100")
-        if not any(
-            "abandon" in (comment.get("body") or "").lower()
-            and (comment.get("user") or {}).get("type") != "Bot"
-            for comment in comments
-        ):
+        if not _abandonment_recorded(repository, number, api):
             return BLOCKED, f"{name}: release PR #{number} has no recorded abandonment. {see}"
         version = _version_at(repository, sha, api)
         try:
@@ -243,7 +279,9 @@ def override_status(repository: str, sha: object, head: str, api=gh) -> tuple[st
             if ref["type"] != "commit" or not _contains(repository, sha, ref["sha"], api):
                 continue
             # Strict: an unreadable proof must not pass as "not published yet".
-            if ready(repository, ref["sha"], api, strict=True):
+            if ready(repository, ref["sha"], api, strict=True) or _recovered(
+                repository, release, ref["sha"], api
+            ):
                 return BLOCKED, (
                     f"{name} (abandoned v{version}, release PR #{number}) is obsolete: "
                     f"{release['tag_name']} contains it and is published and verified. Remove "
