@@ -628,12 +628,6 @@ _OPERATORS = (
 )
 
 
-def _keyword_at(command: str, index: int, word: str) -> bool:
-    """Return whether the whole word ``word`` starts at ``index`` of ``command``."""
-    end = index + len(word)
-    return command.startswith(word, index) and (end == len(command) or command[end] in " \t\n;&|)")
-
-
 def _add_substitution(command: str, start: int, end: int, substitutions: list[str]) -> None:
     """Record what the substitution ``command[start:end]`` runs.
 
@@ -698,46 +692,106 @@ def _substitution_end(command: str, index: int) -> int:
     Nested parentheses, quotes and backslash escapes inside are honoured, and
     the ``)`` after a ``case`` pattern (``case x in x) ...;; esac``) does not
     close the substitution. ``case`` and ``esac`` are keywords only at the
-    start of a command, so ``printf case`` is an argument. Nested
+    start of a command and never inside arithmetic (``$((case + 1))``), so
+    ``printf case`` is an argument. ``esac`` closes a ``case`` only where a
+    clause may start, so ``case x in esac`` is an empty ``case`` while
+    ``(esac)``, ``x|esac)`` and ``esac"x")`` are patterns; ``;;``, ``;&`` and
+    ``;;&`` end a clause, and a ``#`` comment changes nothing. Nested
     substitutions stay in the body, which the caller checks as a command of
     its own.
     """
     depth, size, at_start = 0, len(command), True
-    cases: list[int] = []  # the depth at each open ``case``
+    in_word = False  # inside a word, so ``#`` is literal (escapes and quotes count)
+    # Whether each open parenthesis holds arithmetic rather than commands.
+    arithmetic: list[bool] = []
+    # Each open ``case``: its depth and where its header or clause is:
+    # ``subject`` (the word to match), ``in``, ``pattern`` (a clause starts:
+    # a pattern or ``esac``), ``more`` (inside a pattern) or ``body``.
+    cases: list[list[int | str]] = []
+
+    def state() -> object:
+        return cases[-1][1] if cases and cases[-1][0] == depth else None
+
+    def fragment(word: str | None) -> bool:
+        """Advance the innermost ``case`` header or pattern; ``None`` is quoted text."""
+        current = state()
+        if current == "subject":
+            cases[-1][1] = "in"
+        elif current == "in":
+            if word == "in":
+                cases[-1][1] = "pattern"
+        elif current == "pattern":
+            if word == "esac":
+                cases.pop()
+            else:
+                cases[-1][1] = "more"
+        elif current != "more":
+            return False
+        return True
+
     while index < size:
         char = command[index]
         if char == "\\":
-            index, at_start = index + 2, False
+            fragment(None)
+            index, at_start, in_word = index + 2, False, True
             continue
         if char in "'\"":
-            index, at_start = _quoted_end(command, index), False
+            fragment(None)
+            index, at_start, in_word = _quoted_end(command, index), False, True
             if index < 0:
                 return -1
             continue
         if char in " \t":
-            index += 1
+            index, in_word = index + 1, False
+            continue
+        if char == ";" and command.startswith((";;", ";&"), index) and state() in ("body", "more"):
+            # ``;;``, ``;&`` and ``;;&`` end a case clause.
+            cases[-1][1], at_start, in_word = "pattern", True, False
+            index += 3 if command.startswith(";;&", index) else 2
             continue
         if char in "\n;&|":
-            index, at_start = index + 1, True
+            index, at_start, in_word = index + 1, True, False
+            continue
+        if char == "#" and not in_word:
+            # A comment runs to the end of the line and changes no state.
+            newline = command.find("\n", index)
+            index = size if newline < 0 else newline
+            continue
+        if char == "(" and state() == "pattern":
+            cases[-1][1] = "more"  # the optional ``(`` before a case pattern
+            index, in_word = index + 1, False
             continue
         if char == "(":
-            depth, at_start = depth + 1, True
+            after_dollar = index > 0 and command[index - 1] == "$"
+            if after_dollar:
+                arithmetic.append(command.startswith("(", index + 1))
+            else:
+                arithmetic.append(bool(arithmetic) and arithmetic[-1])
+            depth, at_start, in_word = depth + 1, True, False
         elif char == ")":
-            if cases and cases[-1] == depth:
-                index, at_start = index + 1, True  # a case pattern's terminator
+            if state() in ("pattern", "more"):
+                cases[-1][1], at_start, in_word = "body", True, False  # a pattern's terminator
+                index += 1
                 continue
-            depth, at_start = depth - 1, False
+            # ``)`` closes a substitution inside a word, so a ``#`` after it is literal.
+            depth, at_start, in_word = depth - 1, False, True
+            if arithmetic:
+                arithmetic.pop()
             if depth == 0:
                 return index + 1
         else:
-            if at_start and _keyword_at(command, index, "case"):
-                cases.append(depth)
-            elif at_start and cases and _keyword_at(command, index, "esac"):
-                cases.pop()
-            # skip the rest of the word: a keyword starts only a word
-            while index + 1 < size and command[index + 1] not in " \t\n;&|()'\"\\":
-                index += 1
-            at_start = False
+            end = index
+            while end + 1 < size and command[end + 1] not in " \t\n;&|()'\"\\":
+                end += 1
+            # A word continued by a quote or a backslash is never a keyword.
+            whole = end + 1 >= size or command[end + 1] not in "'\"\\"
+            word = command[index : end + 1] if whole else None
+            if not fragment(word) and at_start and not (arithmetic and arithmetic[-1]):
+                if word == "case":
+                    cases.append([depth, "subject"])
+                elif word == "esac" and state() == "body":
+                    cases.pop()
+            index, at_start, in_word = end, False, True
         index += 1
     return -1
 
