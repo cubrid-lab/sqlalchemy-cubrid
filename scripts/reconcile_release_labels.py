@@ -10,6 +10,17 @@ visible: while its publisher is still running (or has not started shortly
 after the merge) the run emits a notice and stays green; once the publisher
 failed, or never ran long after the merge, the run emits an error with the
 recovery and exits non-zero. Nothing is relabelled, rerun or dispatched.
+
+It also checks the lifecycle of a top-level ``last-release-sha`` override in
+``release-please-config.json`` (#945), the temporary baseline for an abandoned
+version (RELEASING.md, "A merged X.Y.Z is abandoned"). The override must be
+the merge of a release PR on main whose abandonment is recorded: no
+``autorelease: pending`` or ``autorelease: tagged`` label, an ``abandon``
+comment, and no tag for its version. It stays valid until a later version
+whose tag contains it is proven published, as for the pending transition;
+then it is obsolete and preparation stops until a normal PR removes it. An
+invalid override, and release facts that cannot be read, also stop
+preparation. Nothing is edited: no configuration, tag or label.
 """
 
 from __future__ import annotations
@@ -133,6 +144,111 @@ def classify(
     )
 
 
+RELEASE_BRANCH_PREFIX = "release-please--branches--main"
+VERSION_TAG = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)")
+
+
+def _absent(exc: subprocess.CalledProcessError) -> bool:
+    """A 404 proves absence; any other failure proves nothing."""
+    return "HTTP 404" in (exc.stderr or "")
+
+
+def _version_at(repository: str, sha: str, api) -> str:
+    blob = api("api", f"repos/{repository}/contents/.release-please-manifest.json?ref={sha}")
+    version = json.loads(base64.b64decode(blob["content"]))["."]
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+        raise ValueError(f"manifest at {sha} has no MAJOR.MINOR.PATCH version")
+    return version
+
+
+def _key(version: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in version.split("."))
+
+
+def _contains(repository: str, ancestor: str, head: str, api) -> bool:
+    try:
+        status = api("api", f"repos/{repository}/compare/{ancestor}...{head}")["status"]
+    except subprocess.CalledProcessError as exc:
+        if _absent(exc):  # not a commit of this repository
+            return False
+        raise
+    return status in ("ahead", "identical")
+
+
+def override_status(repository: str, sha: object, head: str, api=gh) -> tuple[str, str]:
+    """Classify a ``last-release-sha`` override: none, active, obsolete or blocked."""
+    if sha is None:
+        return "none", "No last-release-sha override is configured."
+    see = 'See RELEASING.md, "A merged X.Y.Z is abandoned".'
+    name = f"last-release-sha {sha}"
+    if not isinstance(sha, str) or not re.fullmatch(r"[0-9a-f]{40}", sha):
+        return BLOCKED, f"{name} is not a full 40-character commit SHA. {see}"
+    try:
+        if not _contains(repository, sha, head, api):
+            return BLOCKED, f"{name} is not in the history of main at {head}. {see}"
+        pulls = [
+            pull
+            for pull in api("api", f"repos/{repository}/commits/{sha}/pulls")
+            if pull.get("merge_commit_sha") == sha
+            and pull.get("merged_at")
+            and pull["head"]["ref"].startswith(RELEASE_BRANCH_PREFIX)
+        ]
+        if len(pulls) != 1:
+            return BLOCKED, f"{name} is not the merge commit of a release PR. {see}"
+        number = pulls[0]["number"]
+        labels = {label["name"] for label in pulls[0].get("labels", [])}
+        if "autorelease: tagged" in labels:
+            return (
+                BLOCKED,
+                f"{name}: release PR #{number} was published (autorelease: tagged). {see}",
+            )
+        if "autorelease: pending" in labels:
+            return BLOCKED, (
+                f"{name}: release PR #{number} is still autorelease: pending; record the "
+                f"abandonment and remove that label first. {see}"
+            )
+        comments = api("api", f"repos/{repository}/issues/{number}/comments?per_page=100")
+        if not any(
+            "abandon" in (comment.get("body") or "").lower()
+            and (comment.get("user") or {}).get("type") != "Bot"
+            for comment in comments
+        ):
+            return BLOCKED, f"{name}: release PR #{number} has no recorded abandonment. {see}"
+        version = _version_at(repository, sha, api)
+        try:
+            api("api", f"repos/{repository}/git/ref/tags/v{version}")
+        except subprocess.CalledProcessError as exc:
+            if not _absent(exc):
+                raise
+        else:
+            return BLOCKED, f"{name}: v{version} is tagged, so it was not abandoned. {see}"
+        replacement = None
+        for release in api("api", f"repos/{repository}/releases?per_page=100"):
+            match = VERSION_TAG.fullmatch(release.get("tag_name") or "")
+            if release.get("draft") or not match or _key(".".join(match.groups())) <= _key(version):
+                continue
+            ref = api("api", f"repos/{repository}/git/ref/tags/{release['tag_name']}")["object"]
+            if ref["type"] == "tag":
+                ref = api("api", f"repos/{repository}/git/tags/{ref['sha']}")["object"]
+            if ref["type"] != "commit" or not _contains(repository, sha, ref["sha"], api):
+                continue
+            if ready(repository, ref["sha"], api):
+                return BLOCKED, (
+                    f"{name} (abandoned v{version}, release PR #{number}) is obsolete: "
+                    f"{release['tag_name']} contains it and is published and verified. Remove "
+                    f"last-release-sha from release-please-config.json in a normal PR before "
+                    f"the next release is prepared. {see}"
+                )
+            replacement = release["tag_name"]
+    except (subprocess.CalledProcessError, KeyError, ValueError, TypeError) as exc:
+        return BLOCKED, f"{name}: release facts could not be read ({exc!r}); unresolved. {see}"
+    note = f"; {replacement} is not proven published yet" if replacement else ""
+    return "active", (
+        f"{name} is the baseline for abandoned v{version} (release PR #{number}){note}. "
+        f"Remove it once the next release is published and verified."
+    )
+
+
 def report(blocked: list[str], env=os.environ) -> int:
     """Make blocked publications visible in the log, the step summary and the exit code."""
     for message in blocked:
@@ -145,7 +261,12 @@ def report(blocked: list[str], env=os.environ) -> int:
     return 1 if blocked else 0
 
 
-def main(api=gh, now: datetime | None = None, env=os.environ) -> int:
+def main(
+    api=gh,
+    now: datetime | None = None,
+    env=os.environ,
+    config_path: str = "release-please-config.json",
+) -> int:
     now = now or datetime.now(UTC)
     repository = env["GITHUB_REPOSITORY"]
     pulls = api(
@@ -192,6 +313,13 @@ def main(api=gh, now: datetime | None = None, env=os.environ) -> int:
             "DELETE",
         )
         print(f"PR #{pull['number']} marked tagged after publication proof")
+    with open(config_path, encoding="utf-8") as handle:
+        override = json.load(handle).get("last-release-sha")
+    state, message = override_status(repository, override, env.get("GITHUB_SHA", "main"), api)
+    if state == BLOCKED:
+        blocked.append(message)
+    elif state == "active":
+        print(f"::notice::{message}")
     return report(blocked, env)
 
 

@@ -109,6 +109,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **Prepare release checks the `last-release-sha` baseline override (#945)** — the override set after abandoning 1.11.1 is meant to last only until the next release is published, but nothing enforced that, and a stale override makes a later recovery silently list commits that already shipped. The reconciliation step that runs before release-please now classifies the override: it is active only while it is the merge of a release PR on `main` with a recorded abandonment, no `autorelease: pending`/`tagged` label and no tag for its version; once a later release containing it passes the existing publication proof, it is obsolete and preparation stops with a request to remove it in a normal PR. A malformed, unrelated or unreadable override also stops preparation, and an API error is reported as unresolved rather than as absence. Nothing is edited automatically. `RELEASING.md` ("Baseline override lifecycle") and `AGENTS.md` describe the rule; the current 1.11.1 override is active.
+
 - **The documentation check handles shell substitutions as pycubrid does (#934)** —
   `scripts/_markdown.py` takes the three shell fixes from cubrid-lab/pycubrid#947:
   - a command or process substitution (`$(...)`, `<(...)`, `>(...)`) is part of its word, so

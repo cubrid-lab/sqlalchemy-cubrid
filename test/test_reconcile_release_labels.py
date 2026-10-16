@@ -122,10 +122,12 @@ def fake_api(pulls, runs, published=False, calls=None):
     return api
 
 
-def run_main(api, tmp_path):
+def run_main(api, tmp_path, config=None):
     summary = tmp_path / "summary.md"
     env = {"GITHUB_REPOSITORY": "cubrid-lab/sqlalchemy-cubrid", "GITHUB_STEP_SUMMARY": str(summary)}
-    code = MODULE.main(api=api, now=NOW, env=env)
+    config_path = tmp_path / "release-please-config.json"
+    config_path.write_text(json.dumps(config or {}))
+    code = MODULE.main(api=api, now=NOW, env=env, config_path=str(config_path))
     return code, summary.read_text() if summary.exists() else ""
 
 
@@ -325,3 +327,196 @@ def test_blocked_pr_is_never_relabelled_or_rerun(tmp_path, capsys):
 def test_no_pending_prs_is_silent(tmp_path, capsys):
     code, summary = run_main(fake_api([], []), tmp_path)
     assert code == 0 and summary == "" and capsys.readouterr().out == ""
+
+
+# --- last-release-sha override lifecycle (#945) ---
+
+REPO = "cubrid-lab/sqlalchemy-cubrid"
+ABANDONED = "37d0b0bd72cfee9d77a164e1a697721533e64acb"
+REPLACEMENT = "a" * 40
+OTHER = "b" * 40
+VERIFIED_JOBS = ("Tag, GitHub Release and PyPI", "Require a verified release")
+
+
+def not_found(*args):
+    return MODULE.subprocess.CalledProcessError(1, ["gh", *args], stderr="gh: Not Found (HTTP 404)")
+
+
+def override_api(
+    *,
+    on_main=True,
+    release_pr=True,
+    labels=(),
+    comment="**1.11.1 is abandoned and will not be published.**",
+    commenter="User",
+    abandoned_tagged=False,
+    replacement=None,
+    replacement_contains=True,
+    replacement_verified=True,
+    broken=None,
+):
+    """Offline gh for override_status(); ``replacement`` is a later tag, e.g. "v1.11.2"."""
+    manifest = {ABANDONED: "1.11.1", REPLACEMENT: (replacement or "v0.0.0")[1:]}
+
+    def api(*args):
+        endpoint = args[1]
+        if broken and broken in endpoint:
+            raise MODULE.subprocess.CalledProcessError(1, ["gh", *args], stderr="HTTP 502")
+        if "/compare/" in endpoint:
+            base, head = endpoint.rsplit("/", 1)[1].split("...")
+            if base not in (ABANDONED, OTHER):
+                raise not_found(*args)
+            if base == OTHER or (head == "main" and not on_main):
+                return {"status": "diverged"}
+            if head == REPLACEMENT and not replacement_contains:
+                return {"status": "behind"}
+            return {"status": "ahead"}
+        if endpoint.endswith(f"/commits/{ABANDONED}/pulls"):
+            ref = "release-please--branches--main--components--sqlalchemy-cubrid"
+            return [
+                {
+                    "number": 838,
+                    "merge_commit_sha": ABANDONED,
+                    "merged_at": "2026-10-13T00:00:00Z",
+                    "head": {"ref": ref if release_pr else "fix/something"},
+                    "labels": [{"name": name} for name in labels],
+                }
+            ]
+        if "/issues/838/comments" in endpoint:
+            return [{"body": comment, "user": {"type": commenter}}] if comment else []
+        if "/contents/" in endpoint:
+            sha = endpoint.rsplit("ref=", 1)[1]
+            version = manifest[sha]
+            return {"content": base64.b64encode(json.dumps({".": version}).encode()).decode()}
+        if endpoint.endswith("/git/ref/tags/v1.11.1"):
+            if abandoned_tagged:
+                return {"object": {"type": "commit", "sha": ABANDONED}}
+            raise not_found(*args)
+        if endpoint.endswith("/releases?per_page=100"):
+            releases = [{"tag_name": "v1.11.0", "draft": False}]
+            if replacement:
+                releases.insert(0, {"tag_name": replacement, "draft": False})
+            return releases
+        if replacement and endpoint.endswith(f"/git/ref/tags/{replacement}"):
+            return {"object": {"type": "commit", "sha": REPLACEMENT}}
+        if endpoint.endswith("/git/ref/tags/v1.11.0"):
+            return {"object": {"type": "commit", "sha": OTHER}}
+        if replacement and endpoint.endswith(f"/releases/tags/{replacement}"):
+            return {"draft": False, "published_at": "2026-10-20", "tag_name": replacement}
+        if "/workflows/" in endpoint:
+            conclusion = "success" if replacement_verified else "failure"
+            return {"workflow_runs": [{"head_sha": REPLACEMENT, "conclusion": conclusion, "id": 9}]}
+        if endpoint.endswith("/runs/9/jobs?per_page=100"):
+            return {"jobs": [{"name": name, "conclusion": "success"} for name in VERIFIED_JOBS]}
+        raise AssertionError(f"unexpected call {args}")
+
+    return api
+
+
+def status(api, sha=ABANDONED):
+    return MODULE.override_status(REPO, sha, "main", api)
+
+
+def test_no_override_is_not_checked():
+    def api(*args):
+        raise AssertionError("no API call expected")
+
+    assert status(api, sha=None)[0] == "none"
+
+
+def test_recorded_abandoned_release_merge_is_an_active_baseline():
+    state, message = status(override_api())
+    assert state == "active"
+    assert "abandoned v1.11.1" in message and "#838" in message
+
+
+@pytest.mark.parametrize(
+    "sha",
+    ["37d0b0b", ABANDONED.upper(), 42, ABANDONED + "0"],
+    ids=["short", "upper", "int", "long"],
+)
+def test_malformed_override_blocks(sha):
+    state, message = status(override_api(), sha=sha)
+    assert state == MODULE.BLOCKED and "full 40-character" in message
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "sha", "text"),
+    [
+        ({}, "c" * 40, "not in the history of main"),  # unknown to the repository
+        ({"on_main": False}, ABANDONED, "not in the history of main"),
+        ({}, OTHER, "not in the history of main"),
+        ({"release_pr": False}, ABANDONED, "not the merge commit of a release PR"),
+        ({"labels": ["autorelease: tagged"]}, ABANDONED, "was published"),
+        ({"labels": ["autorelease: pending"]}, ABANDONED, "still autorelease: pending"),
+        ({"comment": None}, ABANDONED, "no recorded abandonment"),
+        ({"commenter": "Bot"}, ABANDONED, "no recorded abandonment"),
+        ({"abandoned_tagged": True}, ABANDONED, "is tagged, so it was not abandoned"),
+    ],
+    ids=[
+        "unresolvable",
+        "off-main",
+        "unrelated",
+        "not-release-pr",
+        "published",
+        "still-pending",
+        "no-record",
+        "bot-record",
+        "tagged",
+    ],
+)
+def test_invalid_override_blocks(kwargs, sha, text):
+    state, message = status(override_api(**kwargs), sha=sha)
+    assert state == MODULE.BLOCKED and text in message
+
+
+def test_replacement_not_yet_published_keeps_the_override_active():
+    # The replacement is merged and its publication runs or failed partway:
+    # the override is still needed, and the pending check reports the publisher.
+    state, message = status(override_api(replacement="v1.11.2", replacement_verified=False))
+    assert state == "active" and "v1.11.2 is not proven published yet" in message
+
+
+def test_verified_replacement_makes_the_override_obsolete():
+    state, message = status(override_api(replacement="v1.11.2"))
+    assert state == MODULE.BLOCKED
+    assert "is obsolete" in message and "v1.11.2" in message
+    assert "Remove last-release-sha" in message
+
+
+def test_later_release_that_does_not_contain_the_override_is_ignored():
+    state, _message = status(override_api(replacement="v1.11.2", replacement_contains=False))
+    assert state == "active"
+
+
+@pytest.mark.parametrize("endpoint", ["/compare/", "/pulls", "/comments", "/releases?"])
+def test_unreadable_release_facts_are_unresolved_not_absent(endpoint):
+    state, message = status(override_api(replacement="v1.11.2", broken=endpoint))
+    assert state == MODULE.BLOCKED and "unresolved" in message
+
+
+def test_main_blocks_preparation_on_an_obsolete_override_without_mutations(tmp_path, capsys):
+    calls = []
+    inner = override_api(replacement="v1.11.2")
+
+    def api(*args):
+        calls.append(args)
+        if args[0] == "pr":
+            return []
+        return inner(*args)
+
+    code, summary = run_main(api, tmp_path, config={"last-release-sha": ABANDONED})
+    out = capsys.readouterr().out
+    assert code == 1 and "::error::" in out and "is obsolete" in summary
+    assert not [call for call in calls if "--method" in call]  # nothing relabelled
+
+
+def test_main_allows_preparation_with_an_active_override(tmp_path, capsys):
+    api = override_api()
+
+    def listing(*args):
+        return [] if args[0] == "pr" else api(*args)
+
+    code, summary = run_main(listing, tmp_path, config={"last-release-sha": ABANDONED})
+    out = capsys.readouterr().out
+    assert code == 0 and "::notice::" in out and summary == ""

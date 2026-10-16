@@ -422,7 +422,9 @@ main Unreleased notes are preserved during regeneration; branch-only edits
 require the freeze.
 Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
 tags or publish by hand; the only manual entry point is the narrow recovery
-dispatch of `publish-pypi.yml`. Procedure, failure matrix and recovery:
+dispatch of `publish-pypi.yml`. A `last-release-sha` override is temporary:
+Prepare release stops once a later release containing it is verified, and a
+normal PR must remove it (never edit it away inside a release PR). Procedure, failure matrix and recovery:
 [`RELEASING.md`](RELEASING.md).
 
 ## GitHub Release Policy
