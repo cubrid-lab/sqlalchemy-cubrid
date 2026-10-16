@@ -112,6 +112,20 @@ jobs:
               # The license inventory is checked against pyproject.toml (#727).
               - 'THIRD_PARTY_LICENSES.md'
               - 'test/test_third_party_licenses.py'
+              # Repository-tooling tests run only in repo-tests, never in the
+              # offline lanes (#594): each of their modules, and the agent
+              # evaluation tasks test_agent_eval.py grades, must select it (#964).
+              - 'agent-evals/**'
+              - 'test/test_agent_eval.py'
+              - 'test/test_bench_artifact.py'
+              - 'test/test_check_docs_translation.py'
+              - 'test/test_docs_provenance_hook.py'
+              - 'test/test_docs_reason.py'
+              - 'test/test_make_integration.py'
+              - 'test/test_release_detect.py'
+              - 'test/test_sqlalchemy_range.py'
+              - 'test/test_support_claims.py'
+              - 'test/test_verify_dist.py'
 
   doc-lint:
     needs: detect-changes

@@ -103,10 +103,30 @@ def test_workflow_impact_table(name: str) -> None:
         # The documentation checks' own tests run in the tooling lane (#908).
         ("test/test_check_docs_links.py", {"code", "tooling"}),
         ("test/test_check_agents_docs.py", {"code", "tooling"}),
+        # The agent evaluation tasks are graded only in the repo-tests lane (#964).
+        ("agent-evals/README.md", {"docs", "tooling"}),
+        ("agent-evals/tasks/json-bool-path-index/task.json", {"code", "tooling"}),
+        (
+            "agent-evals/tasks/json-bool-path-index/fixtures/reference/patch.diff",
+            {"code", "tooling"},
+        ),
+        ("test/test_agent_eval.py", {"code", "tooling"}),
     ],
 )
 def test_representative_paths_select_the_expected_tiers(path: str, expected: set[str]) -> None:
     assert _selected(path) == expected, path
+
+
+def test_every_repository_tooling_module_selects_the_tooling_lane() -> None:
+    """``repo``-marked modules run only in repo-tests, so each must select it (#964).
+
+    The offline lanes deselect them with ``-m "not repo"``: a module missing from
+    the ``tooling`` filter would run nowhere on a pull request that changes only it.
+    """
+    from test.conftest import REPO_TOOLING_MODULES
+
+    missing = sorted(m for m in REPO_TOOLING_MODULES if "tooling" not in _selected(f"test/{m}"))
+    assert not missing, f"add to the tooling filter in ci.yml: {missing}"
 
 
 WORKFLOW_REF = re.compile(r"\.github['\"]?\s*[/,]\s*['\"]?workflows")

@@ -25,7 +25,9 @@ Connection/protocol/cursor/async/compatibility or dialect/compiler/reflection,
 dependency, build and script changes and `ci.yml` itself select representative
 pre-merge integration; other workflow changes select the tooling lane and the
 offline suite instead (see
-[Workflow change impact](#workflow-change-impact)). Repository tooling tests run in one Linux lane when tooling changes.
+[Workflow change impact](#workflow-change-impact)). Repository tooling tests run in one Linux lane when tooling changes; tooling includes
+`agent-evals/**` and every repository-tooling test module, because the offline lanes
+never run those modules (#964).
 The static lint job continues on all events, including generated documentation checks
 and the README async example test (`test/test_readme_async_examples.py`), so a
 README-only change still runs it.
