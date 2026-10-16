@@ -95,6 +95,9 @@ python scripts/agent_eval.py validate     # validate the task manifests only
 python scripts/agent_eval.py run --task ID --patch patch.diff --output results.json [--live]
 python scripts/agent_eval.py grade --task ID --patch patch.diff --report report.json \
     [--results results.json]
+python scripts/agent_eval.py prompt --task ID      # the task statement for a manual run
+python scripts/agent_eval.py record ...            # one manual run's record (below)
+python scripts/agent_eval.py summarize RUN.json... # distribution of repeated runs
 ```
 
 `run` is the local dry run. It checks out the task's `base_sha` in a temporary
@@ -107,6 +110,63 @@ a candidate cannot pass by editing only the tests it was asked to update. It nee
 local clone (`git fetch --unshallow` in a shallow clone). `grade` prints sorted JSON
 without timestamps, so the same artifacts always produce the same bytes; it exits 0
 for `pass`, 1 for `incomplete` or `fail`, and 2 for malformed input.
+
+## Manual agent runs
+
+Running an agent is manual and opt-in. It never happens in CI, nothing here starts
+one, and a run never merges, pushes, tags or publishes anything.
+
+1. **Isolate the checkout.** Clone into a fresh directory, check out the task's base
+   SHA and remove every later commit and the push remote, so the agent can neither
+   read the original fix from the history nor publish:
+
+   ```bash
+   git clone https://github.com/cubrid-lab/sqlalchemy-cubrid.git eval-run
+   cd eval-run
+   git checkout --detach BASE_SHA
+   git remote remove origin
+   git for-each-ref --format='%(refname)' refs/heads refs/tags | xargs -r -n1 git update-ref -d
+   git reflog expire --expire=now --all && git gc --prune=now --quiet
+   ```
+
+   Run the agent in that directory with no publish credentials: no `GH_TOKEN` or
+   `GITHUB_TOKEN`, no PyPI token and no credential helper. The issue and the fix are
+   public, so record a run where the agent looked them up as contaminated (a review
+   finding) rather than as a result.
+2. **Give the agent the prompt.** `python scripts/agent_eval.py prompt --task ID >
+   prompt.md` prints the task statement without the grading key (the fix commit,
+   issue, allowed files, docs and CHANGELOG decision, evidence and expected result).
+   Use it unchanged; `record` stores its SHA-256.
+3. **Collect the artifacts.** `git diff BASE_SHA > patch.diff` and the agent's
+   `report.json`. Note the wall-clock time if you measured it.
+4. **Dry run and record** from this repository's checkout (the grader is never run
+   inside the agent's directory):
+
+   ```bash
+   python scripts/agent_eval.py run --task ID --patch patch.diff --output results.json
+   python scripts/agent_eval.py record --task ID --patch patch.diff --report report.json \
+       --results results.json --prompt-file prompt.md --agent "TOOL VERSION" \
+       --model "MODEL ID" --findings findings.json --wall-clock-seconds 1234 --output run.json
+   ```
+
+The run record (`run.json`) holds the agent and model identity, the task revision
+(SHA-256 of `task.json`) and prompt digest, the starting SHA, the patch digest and
+changed files, the commands the agent reported and those the dry run observed, the
+live checks reported as not run, metrics (only the ones you pass), review findings
+and the rubric result. `findings.json` is a list of
+`{"source": ..., "severity": "critical"|"major"|"minor"|"info", "summary": ...}`;
+leave it out when nobody reviewed the run.
+
+### Repeated runs
+
+Agents are not deterministic, so one run says little.
+`python scripts/agent_eval.py summarize run1.json run2.json ...` groups records by
+task revision and model and reports the number of runs, the verdict counts, how often
+each criterion did not pass, the wall-clock range, and a 95% Wilson interval for the
+pass rate. Report that distribution with the number of runs, never a bare pass
+percentage: three passes in three runs is an interval of about 0.44 to 1.0, not 100%.
+Runs of different task revisions or models are never pooled. No score is a gate
+until a baseline has been observed and the maintainers decide to use one.
 
 ## Scoring
 

@@ -27,6 +27,10 @@ Usage::
     python scripts/agent_eval.py run --task ID --patch P --output J [--live]
     python scripts/agent_eval.py grade --task ID --patch P --report R [--results J]
     python scripts/agent_eval.py check
+    python scripts/agent_eval.py prompt --task ID
+    python scripts/agent_eval.py record --task ID --patch P --report R [--results J] \\
+        --prompt-file F --agent A --model M [--findings F] [--wall-clock-seconds S] --output O
+    python scripts/agent_eval.py summarize RUN.json [RUN.json ...]
 
 ``run`` is the local dry run: it checks out the task's base SHA in a temporary
 ``git worktree``, applies the patch there and runs the task's offline commands
@@ -41,6 +45,7 @@ import ast
 import fnmatch
 import hashlib
 import json
+import math
 import re
 import shlex
 import subprocess
@@ -578,6 +583,170 @@ def pytest_outcome(exit_code: int, output: str) -> str:
     return "failed"
 
 
+SEVERITIES = ("critical", "major", "minor", "info")
+
+
+def task_revision(task_id: str, root: Path = EVALS) -> str:
+    """SHA-256 of the task manifest bytes: which revision of the task a run used."""
+    return hashlib.sha256((root / "tasks" / task_id / "task.json").read_bytes()).hexdigest()
+
+
+def prompt(task: dict[str, Any]) -> str:
+    """The task statement given to an agent in a manual run.
+
+    It leaves out the grading key (fix commit, issue, allowed files, docs and
+    CHANGELOG decision, evidence and expected result): an agent that reads the
+    original fix measures recall, not the change it would make.
+    """
+    lines = [
+        f"# {task['title']}",
+        "",
+        f"Repository: cubrid-lab/sqlalchemy-cubrid at {task['base_sha']}.",
+        "",
+        task["problem"],
+        "",
+        "Non-goals:",
+        *(f"- {goal}" for goal in task["non_goals"]),
+        "",
+        "Offline validation (no database needed):",
+        *(f"- `{command}`" for command in task["validation"]["offline"]),
+    ]
+    if task["validation"].get("live"):
+        lines += [
+            "",
+            "Live validation (needs a CUBRID server; report it as not run if you have none):",
+            *(f"- `{command}`" for command in task["validation"]["live"]),
+        ]
+    lines += [
+        "",
+        "Follow AGENTS.md. Deliver the change as `git diff` output against the base SHA and a",
+        "report.json in the format of agent-evals/README.md: every command you ran or skipped,",
+        "its evidence kind and result, and statements that say what was not verified.",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def record(
+    task: dict[str, Any],
+    revision: str,
+    prompt_text: str,
+    agent: dict[str, Any],
+    patch: str,
+    report: Any,
+    results: Any | None,
+    metrics: dict[str, Any],
+    findings: list[Any],
+) -> dict[str, Any]:
+    """One manual run's record: who ran what, what was skipped, and the rubric result."""
+    if not isinstance(agent.get("name"), str) or not isinstance(agent.get("model"), str):
+        raise EvalError("the agent needs a name and a model")
+    for finding in findings:
+        if (
+            not isinstance(finding, dict)
+            or finding.get("severity") not in SEVERITIES
+            or not isinstance(finding.get("summary"), str)
+            or not isinstance(finding.get("source"), str)
+        ):
+            raise EvalError(f"a review finding needs source, summary and severity in {SEVERITIES}")
+    for key, value in metrics.items():
+        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+            raise EvalError(f"metric {key!r} must be a non-negative number")
+    rubric = grade(task, patch, report, results)
+    live = set(task["validation"].get("live", []))
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "task": task["id"],
+        "task_revision": revision,
+        "prompt_sha256": hashlib.sha256(prompt_text.encode("utf-8")).hexdigest(),
+        "agent": agent,
+        "start_sha": task["base_sha"],
+        "patch_sha256": hashlib.sha256(patch.encode("utf-8")).hexdigest(),
+        "changed_files": rubric["changed_files"],
+        "reported_tests": report["tests"],
+        "observed_commands": [] if results is None else results.get("commands", []),
+        # Reported as not run, or run by the dry run but every test skipped.
+        "skipped_live_checks": sorted(
+            (
+                {t["command"] for t in report["tests"] if t["result"] == "not run"}
+                | {
+                    c["command"]
+                    for c in ([] if results is None else results["commands"])
+                    if c["outcome"] == "skipped"
+                }
+            )
+            & live
+        ),
+        "metrics": dict(sorted(metrics.items())),
+        "review_findings": findings,
+        "rubric": {"criteria": rubric["criteria"], "verdict": rubric["verdict"]},
+    }
+
+
+def wilson(passed: int, total: int, z: float = 1.96) -> list[float]:
+    """The 95% Wilson score interval for a pass rate (wide for few runs, never a bare rate)."""
+    if total == 0:
+        return [0.0, 1.0]
+    rate = passed / total
+    denominator = 1 + z * z / total
+    centre = (rate + z * z / (2 * total)) / denominator
+    half = z * math.sqrt(rate * (1 - rate) / total + z * z / (4 * total * total)) / denominator
+    return [round(max(0.0, centre - half), 3), round(min(1.0, centre + half), 3)]
+
+
+def summarize(records: list[Any]) -> dict[str, Any]:
+    """Distribution of repeated runs per task revision and model: counts and an interval."""
+    groups: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for entry in records:
+        if not isinstance(entry, dict) or entry.get("schema_version") != SCHEMA_VERSION:
+            raise EvalError("every run record must be a schema version 1 object")
+        try:
+            key = (entry["task"], entry["task_revision"], entry["agent"]["model"])
+            verdict = entry["rubric"]["verdict"]
+        except (KeyError, TypeError) as exc:
+            raise EvalError(f"run record without {exc}") from exc
+        if verdict not in ("pass", "incomplete", "fail"):
+            raise EvalError(f"run record with verdict {verdict!r}")
+        groups.setdefault(key, []).append(entry)
+    summary = []
+    for (task_id, revision, model), runs in sorted(groups.items()):
+        verdicts = {v: 0 for v in ("pass", "incomplete", "fail")}
+        failed: dict[str, int] = {}
+        for entry in runs:
+            verdicts[entry["rubric"]["verdict"]] += 1
+            for name, criterion in entry["rubric"]["criteria"].items():
+                if criterion["status"] != "pass":
+                    failed[name] = failed.get(name, 0) + 1
+        seconds = sorted(
+            e["metrics"]["wall_clock_seconds"]
+            for e in runs
+            if "wall_clock_seconds" in e.get("metrics", {})
+        )
+        summary.append(
+            {
+                "task": task_id,
+                "task_revision": revision,
+                "model": model,
+                "runs": len(runs),
+                "verdicts": verdicts,
+                "pass_interval_95": wilson(verdicts["pass"], len(runs)),
+                "criteria_not_passed": dict(sorted(failed.items())),
+                "wall_clock_seconds": (
+                    {"min": seconds[0], "median": _median(seconds), "max": seconds[-1]}
+                    if seconds
+                    else None
+                ),
+            }
+        )
+    return {"schema_version": SCHEMA_VERSION, "groups": summary}
+
+
+def _median(values: list[float]) -> float:
+    middle = len(values) // 2
+    if len(values) % 2:
+        return values[middle]
+    return (values[middle - 1] + values[middle]) / 2
+
+
 def load_task(task_id: str, root: Path = EVALS) -> dict[str, Any]:
     path = root / "tasks" / task_id / "task.json"
     task = load_json(path)
@@ -650,6 +819,21 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--patch", required=True, type=Path)
     g.add_argument("--report", required=True, type=Path)
     g.add_argument("--results", type=Path)
+    p = sub.add_parser("prompt", help="print the task statement for a manual agent run")
+    p.add_argument("--task", required=True)
+    rec = sub.add_parser("record", help="write one manual run's record (grades it too)")
+    rec.add_argument("--task", required=True)
+    rec.add_argument("--patch", required=True, type=Path)
+    rec.add_argument("--report", required=True, type=Path)
+    rec.add_argument("--results", type=Path)
+    rec.add_argument("--prompt-file", required=True, type=Path, help="the prompt the agent got")
+    rec.add_argument("--agent", required=True, help="agent tool and version")
+    rec.add_argument("--model", required=True, help="model identity as the tool reports it")
+    rec.add_argument("--findings", type=Path, help="JSON list of review findings")
+    rec.add_argument("--wall-clock-seconds", type=float)
+    rec.add_argument("--output", required=True, type=Path)
+    s = sub.add_parser("summarize", help="distribution of repeated run records")
+    s.add_argument("records", nargs="+", type=Path)
     args = parser.parse_args(argv)
     try:
         if args.command == "validate":
@@ -665,7 +849,34 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
             print("agent-evals: every fixture grades as expected")
             return 0
+        if args.command == "summarize":
+            sys.stdout.write(dump(summarize([load_json(path) for path in args.records])))
+            return 0
         task = load_task(args.task)
+        if args.command == "prompt":
+            sys.stdout.write(prompt(task))
+            return 0
+        if args.command == "record":
+            findings = load_json(args.findings) if args.findings else []
+            if not isinstance(findings, list):
+                raise EvalError("--findings must hold a JSON list")
+            metrics = {}
+            if args.wall_clock_seconds is not None:
+                metrics["wall_clock_seconds"] = args.wall_clock_seconds
+            entry = record(
+                task,
+                task_revision(args.task),
+                args.prompt_file.read_text(encoding="utf-8"),
+                {"name": args.agent, "model": args.model},
+                args.patch.read_text(encoding="utf-8"),
+                load_json(args.report),
+                load_json(args.results) if args.results else None,
+                metrics,
+                findings,
+            )
+            args.output.write_text(dump(entry), encoding="utf-8")
+            print(f"agent-eval: wrote {args.output} ({entry['rubric']['verdict']})")
+            return 0
         if args.command == "run":
             observed = run(task, args.patch.read_text(encoding="utf-8"), live=args.live)
             args.output.write_text(dump(observed), encoding="utf-8")

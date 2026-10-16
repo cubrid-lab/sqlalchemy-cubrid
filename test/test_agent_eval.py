@@ -456,3 +456,139 @@ def test_cli_runs_as_a_script() -> None:
         text=True,
     )
     assert done.returncode == 0, done.stderr
+
+
+@pytest.mark.parametrize("task_id", TASK_IDS)
+def test_prompt_leaves_out_the_grading_key(task_id: str) -> None:
+    task = ae.load_task(task_id)
+    text = ae.prompt(task)
+    assert text == ae.prompt(task)
+    assert task["base_sha"] in text and task["problem"] in text
+    for hidden in (task["fix_commit"], task["fix_commit"][:7], task["issue"], task["expected"]):
+        assert hidden not in text
+    assert "allowed" not in text.lower()
+
+
+def _record(**overrides: Any) -> dict[str, Any]:
+    patch, report, results = _fixture("reference")
+    args: dict[str, Any] = {
+        "task": _task(),
+        "revision": ae.task_revision(TASK_ID),
+        "prompt_text": ae.prompt(_task()),
+        "agent": {"name": "tool 1.0", "model": "model-a"},
+        "patch": patch,
+        "report": report,
+        "results": results,
+        "metrics": {"wall_clock_seconds": 60.0},
+        "findings": [{"source": "maintainer", "severity": "minor", "summary": "wording"}],
+    }
+    args.update(overrides)
+    return ae.record(**args)
+
+
+def test_record_holds_identity_skipped_live_checks_and_the_rubric() -> None:
+    entry = _record()
+    task = _task()
+    assert entry["agent"] == {"name": "tool 1.0", "model": "model-a"}
+    assert entry["start_sha"] == task["base_sha"]
+    assert (
+        entry["task_revision"]
+        == hashlib.sha256((ae.EVALS / "tasks" / TASK_ID / "task.json").read_bytes()).hexdigest()
+    )
+    assert entry["skipped_live_checks"] == task["validation"]["live"]
+    assert entry["changed_files"]
+    assert entry["observed_commands"][0]["exit_code"] == 0
+    assert entry["rubric"]["verdict"] == "pass"
+    assert entry["metrics"] == {"wall_clock_seconds": 60.0}
+    assert ae.dump(entry) == ae.dump(_record())
+    assert _record(results=None)["rubric"]["verdict"] == "incomplete"
+    patch, report, results = _fixture("live_run_all_skipped")
+    assert (
+        _record(patch=patch, report=report, results=results)["skipped_live_checks"]
+        == (task["validation"]["live"])
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"agent": {"name": "tool"}},
+        {"findings": [{"source": "x", "severity": "blocker", "summary": "y"}]},
+        {"findings": ["text"]},
+        {"metrics": {"wall_clock_seconds": -1}},
+        {"metrics": {"tokens": True}},
+    ],
+)
+def test_record_rejects_incomplete_identity_findings_and_metrics(overrides: Any) -> None:
+    with pytest.raises(ae.EvalError):
+        _record(**overrides)
+
+
+def test_wilson_interval_is_wide_for_few_runs() -> None:
+    assert ae.wilson(3, 3) == [0.438, 1.0]
+    assert ae.wilson(0, 3) == [0.0, 0.562]
+    assert ae.wilson(0, 0) == [0.0, 1.0]
+    low, high = ae.wilson(50, 100)
+    assert low < 0.5 < high and high - low < 0.2
+
+
+def test_summarize_groups_by_task_revision_and_model() -> None:
+    passing = _record()
+    failing = copy.deepcopy(passing)
+    failing["rubric"]["verdict"] = "fail"
+    failing["rubric"]["criteria"]["scope"]["status"] = "fail"
+    failing["metrics"] = {"wall_clock_seconds": 120.0}
+    other_model = copy.deepcopy(passing)
+    other_model["agent"]["model"] = "model-b"
+    no_metrics = copy.deepcopy(passing)
+    no_metrics["metrics"] = {}
+
+    summary = ae.summarize([passing, failing, other_model, no_metrics])
+    first, second = summary["groups"]
+    assert (first["model"], first["runs"], second["model"], second["runs"]) == (
+        "model-a",
+        3,
+        "model-b",
+        1,
+    )
+    assert first["verdicts"] == {"pass": 2, "incomplete": 0, "fail": 1}
+    assert first["criteria_not_passed"] == {"scope": 1}
+    assert first["pass_interval_95"] == ae.wilson(2, 3)
+    assert first["wall_clock_seconds"] == {"min": 60.0, "median": 90.0, "max": 120.0}
+    assert "rate" not in ae.dump(summary)
+
+    assert ae.summarize([no_metrics])["groups"][0]["wall_clock_seconds"] is None
+    with pytest.raises(ae.EvalError):
+        ae.summarize([{"schema_version": 1}])
+    with pytest.raises(ae.EvalError):
+        ae.summarize([[]])
+    bad = copy.deepcopy(passing)
+    bad["rubric"]["verdict"] = "maybe"
+    with pytest.raises(ae.EvalError):
+        ae.summarize([bad])
+
+
+def test_cli_prompt_record_and_summarize(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert ae.main(["prompt", "--task", TASK_ID]) == 0
+    prompt_file = tmp_path / "prompt.md"
+    prompt_file.write_text(capsys.readouterr().out, encoding="utf-8")
+    findings = tmp_path / "findings.json"
+    findings.write_text("[]", encoding="utf-8")
+    ref = FIXTURES / "reference"
+    out = tmp_path / "run.json"
+    args = ["record", "--task", TASK_ID, "--patch", str(ref / "patch.diff")]
+    args += ["--report", str(ref / "report.json"), "--results", str(ref / "results.json")]
+    args += ["--prompt-file", str(prompt_file), "--agent", "tool 1.0", "--model", "model-a"]
+    args += ["--findings", str(findings), "--wall-clock-seconds", "12.5", "--output", str(out)]
+    assert ae.main(args) == 0
+    entry = json.loads(out.read_text(encoding="utf-8"))
+    assert entry["prompt_sha256"] == hashlib.sha256(prompt_file.read_bytes()).hexdigest()
+    assert entry["metrics"] == {"wall_clock_seconds": 12.5}
+    capsys.readouterr()
+    assert ae.main(["summarize", str(out), str(out)]) == 0
+    assert json.loads(capsys.readouterr().out)["groups"][0]["runs"] == 2
+
+    findings.write_text("{}", encoding="utf-8")
+    assert ae.main(args) == 2

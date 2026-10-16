@@ -44,7 +44,8 @@ agents (#906): frozen historical fixes with their base SHA, allowed files, offli
 tests, documentation and CHANGELOG decision, and the live evidence they lack.
 `make agent-eval-check` validates the tasks and re-grades the recorded fixtures; it
 runs no model and needs no database, and its tests are in the `repo` lane. No agent
-score gates a pull request. A compiler, bind or offline reflection result is never
+score gates a pull request; running an agent is manual and follows the protocol in that
+README (isolated clone, no publish credentials). A compiler, bind or offline reflection result is never
 proof of live SQL, reflection or Alembic behavior: report live checks as not run and
 say what is not verified.
 
