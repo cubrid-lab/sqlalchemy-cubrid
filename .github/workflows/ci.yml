@@ -217,6 +217,10 @@ jobs:
         run: python scripts/lint_changelog.py
       - name: Korean documents keep the structure of their English source
         run: python scripts/check_docs_translation.py
+      # #941: the job runs for every change, so a README-only edit cannot bring
+      # back module-level await or let a translation drift from README.md.
+      - name: README async examples are complete scripts
+        run: python -m pytest -q -p no:cacheprovider test/test_readme_async_examples.py
       - name: Current support claims match package metadata and driver policy
         if: ${{ needs.detect-changes.outputs.docs == 'true' || needs.detect-changes.outputs.tooling == 'true' }}
         run: python scripts/check_support_claims.py
