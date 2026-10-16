@@ -578,6 +578,11 @@ def test_summarize_groups_by_task_revision_and_model() -> None:
         shaped["rubric"].update(broken)
         with pytest.raises(ae.EvalError):
             ae.summarize([shaped])
+    for field, value in (("task", 1), ("task_revision", ""), ("agent", {"model": []})):
+        renamed = copy.deepcopy(passing)
+        renamed[field] = value
+        with pytest.raises(ae.EvalError):
+            ae.summarize([renamed])
     for wall in (float("nan"), -1, "1"):
         timed = copy.deepcopy(passing)
         timed["metrics"] = {"wall_clock_seconds": wall}

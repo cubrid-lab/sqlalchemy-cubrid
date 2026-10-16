@@ -134,8 +134,10 @@ one, and a run never merges, pushes, tags or publishes anything.
    public, so a run where the agent looked them up is not a fair sample: record it
    with `--exclude "REASON"` (and a review finding), which keeps the record but
    leaves it out of every summary.
-2. **Give the agent the prompt.** `python scripts/agent_eval.py prompt --task ID >
-   prompt.md` prints the task statement without the grading key (the fix commit,
+2. **Give the agent the prompt.** In a separate shell, from this repository's own
+   checkout (the isolated clone predates the evaluator), run
+   `python scripts/agent_eval.py prompt --task ID > prompt.md`, then hand only
+   `prompt.md` to the agent. It prints the task statement without the grading key (the fix commit,
    allowed files, docs decision, evidence and expected result). It names the issue,
    which a contributor would have and the CHANGELOG entry cites, and spells out the
    `report.json` format with its evidence kinds and results, because the base SHA

@@ -728,6 +728,8 @@ def summarize(records: list[Any]) -> dict[str, Any]:
             verdict = entry["rubric"]["verdict"]
         except (KeyError, TypeError) as exc:
             raise EvalError(f"run record without {exc}") from exc
+        if not all(isinstance(part, str) and part for part in key):
+            raise EvalError("run record task, task_revision and agent.model must be strings")
         if verdict not in ("pass", "incomplete", "fail"):
             raise EvalError(f"run record with verdict {verdict!r}")
         criteria = entry["rubric"].get("criteria")
