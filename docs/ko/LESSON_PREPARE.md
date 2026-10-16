@@ -26,7 +26,7 @@
 
 3강은 작은 테이블 하나를 만들고 나중에 지웁니다. 연습용 데이터베이스나 그곳에서
 테이블을 만들 수 있는 계정을 사용하세요. 이 튜토리얼에 운영 데이터베이스나 그
-`dba` 계정을 사용하지 마세요. 2강과 3강에서 실습 환경 URL
+`dba` 계정을 사용하지 마세요. 2강부터 5강까지 실습 환경 URL
 `cubrid+pycubrid://dba@localhost:33000/testdb`를 여러분의 값으로 채운
 `cubrid+pycubrid://USER:PASSWORD@HOST:PORT/DATABASE`로 바꾼 뒤
 [sqlalchemy-cubrid 설치](#가상-환경에-sqlalchemy-cubrid-설치)로 진행하세요.

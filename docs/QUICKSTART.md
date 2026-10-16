@@ -16,121 +16,16 @@ result you can see:
 1. [Prepare CUBRID and Python](LESSON_PREPARE.md): a database you can reach and
    a virtual environment with the dialect and driver.
 2. [Run your first query](LESSON_FIRST_QUERY.md): `SELECT 1 + 1` prints `2`.
-3. [Save a row and read it back](#step-3-save-a-row-and-read-it-back), then
-   [clean up](#clean-up), on this page.
+3. [Save a row and read it back](LESSON_SAVE_ROW.md): a separate connection reads
+   your committed row.
+4. [Undo changes with a rollback](LESSON_TRANSACTIONS.md): a rolled-back row
+   never appears.
+5. [Clean up](LESSON_FINISH.md): remove only what the course created.
+
+If a lesson fails, [If the first connection fails](#if-the-first-connection-fails)
+below lists the real error messages and what to check.
 
 Other drivers, the ORM, async code and Alembic come [afterwards](#next-steps).
-
----
-
-## Step 3: Save a row and read it back
-
-This step needs the URL that worked in
-[Lesson 2](LESSON_FIRST_QUERY.md). Create `first_saved_row.py` with
-the same URL:
-
-```python
-from sqlalchemy import create_engine, text
-
-URL = "cubrid+pycubrid://dba@localhost:33000/testdb"
-engine = create_engine(URL)
-
-# 1. Create a table that belongs to this tutorial. The comment marks it, so the
-#    cleanup script only ever drops this tutorial's own table.
-with engine.begin() as conn:  # begin() commits when the block ends without an error
-    conn.execute(
-        text(
-            "CREATE TABLE sqlalchemy_quickstart_notes (id INT PRIMARY KEY, note VARCHAR(100))"
-            " COMMENT = 'created by the sqlalchemy-cubrid quickstart'"
-        )
-    )
-
-# 2. Insert one row. :id and :note are filled from the dictionary that follows.
-with engine.begin() as conn:
-    conn.execute(
-        text("INSERT INTO sqlalchemy_quickstart_notes (id, note) VALUES (:id, :note)"),
-        {"id": 1, "note": "my first saved row"},
-    )
-
-# 3. Insert a second row, then undo it with rollback.
-with engine.connect() as conn:
-    conn.execute(
-        text("INSERT INTO sqlalchemy_quickstart_notes (id, note) VALUES (:id, :note)"),
-        {"id": 2, "note": "this row is rolled back"},
-    )
-    conn.rollback()  # discard everything since the transaction began
-
-engine.dispose()
-
-# 4. Read the table through a brand-new engine, so through a different connection.
-check = create_engine(URL)
-with check.connect() as conn:
-    rows = conn.execute(text("SELECT id, note FROM sqlalchemy_quickstart_notes ORDER BY id")).all()
-    print("Rows seen by a new connection:", rows)
-check.dispose()
-```
-
-A **transaction** groups changes so that they become permanent together. With
-`engine.begin()`, the block commits when it finishes and rolls back if it
-raises an error; `rollback()` throws away everything since the transaction
-began. `:id` and `:note` are bound parameters: always pass values this way
-instead of pasting them into the SQL text yourself. Run the file:
-
-```bash
-python first_saved_row.py
-```
-
-The rolled-back row is gone, and a separate connection sees the saved row:
-
-```text
-Rows seen by a new connection: [(1, 'my first saved row')]
-```
-
-Running the file a second time, or again after it was interrupted, stops at
-the first statement with `Class dba.sqlalchemy_quickstart_notes already exists`
-(the owner name, here `dba`, is your user). The table from the earlier run is
-still there; run the cleanup below and then run `first_saved_row.py` again.
-
-### Clean up
-
-`cleanup_quickstart.py` removes the tutorial table, and only if the table of
-that name owned by your user carries the tutorial's comment. A table of the
-same name that you created yourself, or one that belongs to another user, is
-left alone:
-
-```python
-from sqlalchemy import create_engine, text
-
-MARK = "created by the sqlalchemy-cubrid quickstart"
-engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
-
-with engine.begin() as conn:
-    comment = conn.execute(
-        text(
-            "SELECT comment FROM db_class"
-            " WHERE class_name = :name AND owner_name = CURRENT_USER"
-        ),
-        {"name": "sqlalchemy_quickstart_notes"},
-    ).first()
-    if comment is None:
-        print("Nothing to clean up: sqlalchemy_quickstart_notes does not exist.")
-    elif comment[0] != MARK:
-        print("Not dropped: sqlalchemy_quickstart_notes was not created by this quickstart.")
-    else:
-        conn.execute(text("DROP TABLE sqlalchemy_quickstart_notes"))
-        print("Dropped sqlalchemy_quickstart_notes.")
-
-engine.dispose()
-```
-
-```bash
-python cleanup_quickstart.py
-```
-
-It prints `Dropped sqlalchemy_quickstart_notes.`, or
-`Nothing to clean up: sqlalchemy_quickstart_notes does not exist.` when there
-is nothing left to remove. If you used the Docker lab, you can also remove the
-whole lab with `docker rm -f -v sqlalchemy-cubrid-quickstart`.
 
 ---
 
@@ -197,3 +92,14 @@ Moved to [Lesson 1](LESSON_PREPARE.md#install-sqlalchemy-cubrid-in-a-virtual-env
 ## Step 2: Run your first query
 
 Moved to [Lesson 2: Run your first query](LESSON_FIRST_QUERY.md).
+
+---
+
+## Step 3: Save a row and read it back
+
+Moved to [Lesson 3: Save a row and read it back](LESSON_SAVE_ROW.md) and
+[Lesson 4: Undo changes with a rollback](LESSON_TRANSACTIONS.md).
+
+### Clean up
+
+Moved to [Lesson 5: Clean up](LESSON_FINISH.md).

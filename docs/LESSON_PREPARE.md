@@ -26,7 +26,7 @@ Ask its administrator (or look in your own setup) for these five values:
 
 Lesson 3 creates and later removes one small table. Use a practice database, or
 an account that is allowed to create tables there. Do not use a production
-database or its `dba` account for this tutorial. In Lessons 2 and 3, replace the
+database or its `dba` account for this tutorial. In Lessons 2 to 5, replace the
 lab URL `cubrid+pycubrid://dba@localhost:33000/testdb` with
 `cubrid+pycubrid://USER:PASSWORD@HOST:PORT/DATABASE` filled in with your
 values, then continue with

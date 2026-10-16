@@ -22,7 +22,7 @@
 | `docs/ARCHITECTURE.md` | Dialect architecture and design objectives |
 | `docs/SA_COMPAT.md` | SQLAlchemy internal APIs used by the dialect and their verified range |
 | `docs/QUICKSTART.md` | Start here: the first-connection course (one synchronous `cubrid+pycubrid://` path) |
-| `docs/LESSON_PREPARE.md`, `docs/LESSON_FIRST_QUERY.md` | Start here lessons 1 and 2: prepare CUBRID and Python, run the first query |
+| `docs/LESSON_*.md` | Start here lessons 1–5: prepare, first query, save a row, rollback, clean up |
 | `benchmarks/` | Dated benchmark records with environment and exact commands |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security vulnerability reporting |
@@ -44,7 +44,7 @@ README translations under `docs/` are not site navigation sources.
 
 | Section | Reader and question | Pages | Decision |
 | --- | --- | --- | --- |
-| Start here | New to CUBRID: "how do I get a first result?" | `QUICKSTART.md`, `LESSON_PREPARE.md`, `LESSON_FIRST_QUERY.md` | Keep the URL. One lesson per outcome: prepare and first SELECT are lesson pages; one saved row, transactions and safe finish are still sections of `QUICKSTART.md` until they are split the same way. `QUICKSTART.md` is the course landing and keeps its old anchors as short "moved to" sections at the end. |
+| Start here | New to CUBRID: "how do I get a first result?" | `QUICKSTART.md`, `LESSON_PREPARE.md`, `LESSON_FIRST_QUERY.md`, `LESSON_SAVE_ROW.md`, `LESSON_TRANSACTIONS.md`, `LESSON_FINISH.md` | One lesson page per outcome: prepare, first SELECT, one saved row, a rollback, safe finish. `QUICKSTART.md` keeps its URL as the course landing, with the four-pieces explanation, the first-connection error table and next steps, and keeps its old anchors as short "moved to" sections at the end. |
 | How-to guides | "How do I do X in my application?" | `CONNECTION.md`, `ORM_COOKBOOK.md`, `ALEMBIC.md`, `DML_EXTENSIONS.md`, `ISOLATION_LEVELS.md` | Navigation-only move. `CONNECTION.md`'s exhaustive URL-option and driver-install material stays reachable from the task text; ORM, async (#941 owns its two README programs) and Alembic are the purpose-labelled next paths after Start here. |
 | Reference | "What exactly does the dialect do or support?" | `TYPES.md`, `FEATURE_SUPPORT.md`, `SUPPORT_MATRIX.md`, `DRIVER_COMPAT.md` | Navigation-only move. `DRIVER_COMPAT.md` (including the supported CUBRIDdb C-extension driver built from source) leaves the beginner sequence. |
 | Help | "Something does not work." | `TROUBLESHOOTING.md`, GitHub Issues, `SECURITY.md` (private reports) | Own top-level entry. |

@@ -58,5 +58,4 @@ python first_query.py
 
 ## 다음
 
-[행을 저장하고 다시 읽기](QUICKSTART.md#3단계-행을-저장하고-다시-읽기)는 과정 페이지에서
-이어집니다.
+[3강: 행을 저장하고 다시 읽기](LESSON_SAVE_ROW.md).

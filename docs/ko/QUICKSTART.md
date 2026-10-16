@@ -17,117 +17,14 @@ Python 패키지를 설치해도 CUBRID가 설치되거나 데이터베이스가
 1. [CUBRID와 Python 준비](LESSON_PREPARE.md): 접속할 수 있는 데이터베이스와, 방언과 드라이버가
    설치된 가상 환경.
 2. [첫 쿼리 실행](LESSON_FIRST_QUERY.md): `SELECT 1 + 1`이 `2`를 출력합니다.
-3. 이 페이지의 [행을 저장하고 다시 읽기](#3단계-행을-저장하고-다시-읽기)와 [정리](#정리).
+3. [행을 저장하고 다시 읽기](LESSON_SAVE_ROW.md): 별도의 연결이 커밋한 행을 읽습니다.
+4. [롤백으로 변경 취소하기](LESSON_TRANSACTIONS.md): 롤백한 행은 나타나지 않습니다.
+5. [정리](LESSON_FINISH.md): 과정에서 만든 것만 지웁니다.
+
+강의가 실패하면 아래 [첫 연결이 실패하면](#첫-연결이-실패하면)에서 실제 오류 메시지와 확인할 것을
+찾으세요.
 
 다른 드라이버, ORM, 비동기 코드와 Alembic은 [그다음](#다음-단계)에 다룹니다.
-
----
-
-## 3단계: 행을 저장하고 다시 읽기
-
-이 단계에는 [2강](LESSON_FIRST_QUERY.md)에서 동작한 URL이 필요합니다. 같은 URL로 `first_saved_row.py`를
-만드세요.
-
-```python
-from sqlalchemy import create_engine, text
-
-URL = "cubrid+pycubrid://dba@localhost:33000/testdb"
-engine = create_engine(URL)
-
-# 1. Create a table that belongs to this tutorial. The comment marks it, so the
-#    cleanup script only ever drops this tutorial's own table.
-with engine.begin() as conn:  # begin() commits when the block ends without an error
-    conn.execute(
-        text(
-            "CREATE TABLE sqlalchemy_quickstart_notes (id INT PRIMARY KEY, note VARCHAR(100))"
-            " COMMENT = 'created by the sqlalchemy-cubrid quickstart'"
-        )
-    )
-
-# 2. Insert one row. :id and :note are filled from the dictionary that follows.
-with engine.begin() as conn:
-    conn.execute(
-        text("INSERT INTO sqlalchemy_quickstart_notes (id, note) VALUES (:id, :note)"),
-        {"id": 1, "note": "my first saved row"},
-    )
-
-# 3. Insert a second row, then undo it with rollback.
-with engine.connect() as conn:
-    conn.execute(
-        text("INSERT INTO sqlalchemy_quickstart_notes (id, note) VALUES (:id, :note)"),
-        {"id": 2, "note": "this row is rolled back"},
-    )
-    conn.rollback()  # discard everything since the transaction began
-
-engine.dispose()
-
-# 4. Read the table through a brand-new engine, so through a different connection.
-check = create_engine(URL)
-with check.connect() as conn:
-    rows = conn.execute(text("SELECT id, note FROM sqlalchemy_quickstart_notes ORDER BY id")).all()
-    print("Rows seen by a new connection:", rows)
-check.dispose()
-```
-
-**트랜잭션**은 변경 사항을 묶어 함께 영구 반영되게 합니다. `engine.begin()`을 쓰면 블록이
-끝날 때 커밋하고, 오류가 발생하면 롤백합니다. `rollback()`은 트랜잭션이 시작된 이후의 모든
-변경을 버립니다. `:id`와 `:note`는 바인딩 파라미터입니다. 값을 SQL 텍스트에 직접 붙여 넣지
-말고 항상 이렇게 전달하세요. 파일을 실행하세요.
-
-```bash
-python first_saved_row.py
-```
-
-롤백한 행은 사라지고, 별도의 연결은 저장된 행을 봅니다.
-
-```text
-Rows seen by a new connection: [(1, 'my first saved row')]
-```
-
-파일을 두 번째로 실행하거나 중단된 뒤 다시 실행하면 첫 문장에서
-`Class dba.sqlalchemy_quickstart_notes already exists`로 멈춥니다(소유자 이름, 여기서는
-`dba`는 여러분의 사용자입니다). 이전 실행의 테이블이 아직 남아 있으니 아래 정리를 실행한 뒤
-`first_saved_row.py`를 다시 실행하세요.
-
-### 정리
-
-`cleanup_quickstart.py`는 튜토리얼 테이블을 지우는데, 여러분의 사용자가 소유한 그 이름의
-테이블에 튜토리얼 주석이 있을 때만 지웁니다. 여러분이 직접 만든 같은 이름의 테이블이나 다른
-사용자의 테이블은 그대로 둡니다.
-
-```python
-from sqlalchemy import create_engine, text
-
-MARK = "created by the sqlalchemy-cubrid quickstart"
-engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
-
-with engine.begin() as conn:
-    comment = conn.execute(
-        text(
-            "SELECT comment FROM db_class"
-            " WHERE class_name = :name AND owner_name = CURRENT_USER"
-        ),
-        {"name": "sqlalchemy_quickstart_notes"},
-    ).first()
-    if comment is None:
-        print("Nothing to clean up: sqlalchemy_quickstart_notes does not exist.")
-    elif comment[0] != MARK:
-        print("Not dropped: sqlalchemy_quickstart_notes was not created by this quickstart.")
-    else:
-        conn.execute(text("DROP TABLE sqlalchemy_quickstart_notes"))
-        print("Dropped sqlalchemy_quickstart_notes.")
-
-engine.dispose()
-```
-
-```bash
-python cleanup_quickstart.py
-```
-
-`Dropped sqlalchemy_quickstart_notes.`를 출력하거나, 지울 것이 없으면
-`Nothing to clean up: sqlalchemy_quickstart_notes does not exist.`를 출력합니다. Docker
-실습 환경을 사용했다면 `docker rm -f -v sqlalchemy-cubrid-quickstart`로 실습 환경 전체도
-지울 수 있습니다.
 
 ---
 
@@ -192,3 +89,14 @@ SQLAlchemy의
 ## 2단계: 첫 쿼리 실행
 
 [2강: 첫 쿼리 실행](LESSON_FIRST_QUERY.md)으로 옮겨졌습니다.
+
+---
+
+## 3단계: 행을 저장하고 다시 읽기
+
+[3강: 행을 저장하고 다시 읽기](LESSON_SAVE_ROW.md)와 [4강: 롤백으로 변경 취소하기](LESSON_TRANSACTIONS.md)로
+옮겨졌습니다.
+
+### 정리
+
+[5강: 정리](LESSON_FINISH.md)로 옮겨졌습니다.

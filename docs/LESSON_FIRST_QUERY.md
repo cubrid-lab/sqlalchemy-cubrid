@@ -58,5 +58,4 @@ unknown database, user or password are in
 
 ## Next
 
-[Save a row and read it back](QUICKSTART.md#step-3-save-a-row-and-read-it-back)
-continues on the course page.
+[Lesson 3: Save a row and read it back](LESSON_SAVE_ROW.md).

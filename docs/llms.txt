@@ -27,6 +27,9 @@ Key facts:
 - [Your First SQLAlchemy Connection to CUBRID](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/): Start here: prepare a database (existing or disposable Docker lab), install `sqlalchemy-cubrid[pycubrid]`, first query, first saved row with rollback, cleanup and first-connection errors
 - [Lesson 1: Prepare CUBRID and Python](https://cubrid-lab.github.io/sqlalchemy-cubrid/LESSON_PREPARE/): an existing database's five connection values or a disposable CUBRID 11.4 Docker lab, and `sqlalchemy-cubrid[pycubrid]` in a virtual environment
 - [Lesson 2: Run your first query](https://cubrid-lab.github.io/sqlalchemy-cubrid/LESSON_FIRST_QUERY/): `create_engine`, `engine.connect()` and `text("SELECT 1 + 1")` printing `2`
+- [Lesson 3: Save a row and read it back](https://cubrid-lab.github.io/sqlalchemy-cubrid/LESSON_SAVE_ROW/): a tutorial-owned table, `engine.begin()` commit with bound parameters, read back through a separate connection
+- [Lesson 4: Undo changes with a rollback](https://cubrid-lab.github.io/sqlalchemy-cubrid/LESSON_TRANSACTIONS/): `engine.connect()` transaction, `rollback()`
+- [Lesson 5: Clean up](https://cubrid-lab.github.io/sqlalchemy-cubrid/LESSON_FINISH/): owner- and comment-checked table cleanup, `docker rm -f -v` for the lab
 - [Connection Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/CONNECTION/): URL schemes and entry points, pycubrid URL query options (`?connect_timeout=`, `?charset=`, ...), async engine, connection options, autocommit, connection pool tuning
 - [Driver Compatibility](https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/): CUBRIDdb C-extension versions, exception hierarchy, known driver issues
 - [ORM Cookbook](https://cubrid-lab.github.io/sqlalchemy-cubrid/ORM_COOKBOOK/): Models, relationships, CRUD, collections, LOBs, CUBRID-specific gotchas

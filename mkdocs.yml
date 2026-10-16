@@ -41,6 +41,9 @@ nav:
       - "Your First Connection": QUICKSTART.md
       - "1. Prepare CUBRID and Python": LESSON_PREPARE.md
       - "2. Run your first query": LESSON_FIRST_QUERY.md
+      - "3. Save a row and read it back": LESSON_SAVE_ROW.md
+      - "4. Undo changes with a rollback": LESSON_TRANSACTIONS.md
+      - "5. Clean up": LESSON_FINISH.md
   - How-to guides:
       - "Connect and configure the driver": CONNECTION.md
       - "Use the ORM (ORM Cookbook)": ORM_COOKBOOK.md
@@ -75,6 +78,9 @@ nav:
           - "첫 연결": ko/QUICKSTART.md
           - "1. CUBRID와 Python 준비": ko/LESSON_PREPARE.md
           - "2. 첫 쿼리 실행": ko/LESSON_FIRST_QUERY.md
+          - "3. 행을 저장하고 다시 읽기": ko/LESSON_SAVE_ROW.md
+          - "4. 롤백으로 변경 취소하기": ko/LESSON_TRANSACTIONS.md
+          - "5. 정리": ko/LESSON_FINISH.md
       - 작업 가이드:
           - "드라이버 연결과 설정": ko/CONNECTION.md
           - "ORM 사용하기 (ORM 쿡북)": ko/ORM_COOKBOOK.md
