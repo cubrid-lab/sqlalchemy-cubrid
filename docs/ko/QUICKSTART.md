@@ -54,12 +54,15 @@ ready=no; for i in $(seq 36); do if docker exec sqlalchemy-cubrid-quickstart csq
 않습니다) `CUBRID is ready`를 출력합니다. 대신 `CUBRID did not answer within 3 minutes`가
 출력되면 `docker logs sqlalchemy-cubrid-quickstart`로 원인을 확인하세요. 포트 33000이
 이미 사용 중인 경우처럼 `docker run` 자체가 실패했다면 먼저 그 문제를 해결하고
-`docker rm -f sqlalchemy-cubrid-quickstart`로 컨테이너를 지운 뒤 다시 시작하세요.
+`docker rm -f -v sqlalchemy-cubrid-quickstart`로 컨테이너를 지운 뒤 다시 시작하세요.
 실습 환경은 비밀번호가 비어 있는 `dba` 계정을 사용합니다. 이는 이 로컬 일회용
 컨테이너에서만 허용됩니다. 다른 사람이 접근할 수 있는 서버에서는 절대 빈 비밀번호를
 사용하지 마세요.
 
-튜토리얼을 모두 마치면 `docker rm -f sqlalchemy-cubrid-quickstart`로 실습 환경을 지우세요.
+튜토리얼을 모두 마치면 `docker rm -f -v sqlalchemy-cubrid-quickstart`로 실습 환경을 지우세요.
+이미지는 데이터베이스를 이 컨테이너에 속한 익명 Docker 볼륨에 보관합니다. `-v`가 그 볼륨도 지우므로
+`testdb`가 함께 지워집니다. `-v` 없이 지우면 컨테이너만 지워지고 볼륨은 남습니다(`docker volume ls`에
+보입니다).
 
 ---
 
@@ -224,7 +227,7 @@ python cleanup_quickstart.py
 
 `Dropped sqlalchemy_quickstart_notes.`를 출력하거나, 지울 것이 없으면
 `Nothing to clean up: sqlalchemy_quickstart_notes does not exist.`를 출력합니다. Docker
-실습 환경을 사용했다면 `docker rm -f sqlalchemy-cubrid-quickstart`로 실습 환경 전체도
+실습 환경을 사용했다면 `docker rm -f -v sqlalchemy-cubrid-quickstart`로 실습 환경 전체도
 지울 수 있습니다.
 
 ---

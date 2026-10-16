@@ -134,13 +134,16 @@ database to answer (it usually takes well under a minute) and prints
 `CUBRID is ready`. If it prints `CUBRID did not answer within 3 minutes`
 instead, `docker logs sqlalchemy-cubrid-quickstart` shows why; if `docker run`
 itself failed, for example because port 33000 is already in use, fix that
-first, remove the container with `docker rm -f sqlalchemy-cubrid-quickstart`
+first, remove the container with `docker rm -f -v sqlalchemy-cubrid-quickstart`
 and start again. The lab uses the `dba` account with an empty password. That
 is only acceptable for this local, disposable container: never use an empty
 password on a server other people can reach.
 
 When you are done with the whole tutorial, remove the lab with
-`docker rm -f sqlalchemy-cubrid-quickstart`.
+`docker rm -f -v sqlalchemy-cubrid-quickstart`. The image keeps its database in
+an anonymous Docker volume that belongs to this container; `-v` deletes that
+volume too, and with it `testdb`. Without `-v` the container goes but the volume
+stays behind (`docker volume ls` lists it).
 
 ---
 
@@ -311,7 +314,7 @@ python cleanup_quickstart.py
 It prints `Dropped sqlalchemy_quickstart_notes.`, or
 `Nothing to clean up: sqlalchemy_quickstart_notes does not exist.` when there
 is nothing left to remove. If you used the Docker lab, you can also remove the
-whole lab with `docker rm -f sqlalchemy-cubrid-quickstart`.
+whole lab with `docker rm -f -v sqlalchemy-cubrid-quickstart`.
 
 ---
 

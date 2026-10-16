@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The quickstart removes the lab's Docker volume too (#948)** — the `cubrid/cubrid` images keep their database in an anonymous volume (`/home/cubrid/CUBRID/databases` in 11.4), and `docker rm -f` without `-v` left that volume, with the tutorial's `testdb`, behind on every run. The Quick Start (English and Korean) now removes the lab with `docker rm -f -v sqlalchemy-cubrid-quickstart` and explains what `-v` deletes.
+
 - **The README async examples are complete programs (#941)** — the `Async` and `Async insert
   with PK retrieval` examples put `async with` and `await` at module level, a `SyntaxError`
   in an ordinary script. Each is now a named script that runs `async def main()` through
