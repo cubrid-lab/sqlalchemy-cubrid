@@ -63,7 +63,7 @@ pip install sqlalchemy-cubrid
 
 ## Minimal example
 
-This uses the [quickstart's local lab](QUICKSTART.md#option-b-i-need-a-disposable-local-database)
+This uses the [quickstart's local lab](LESSON_PREPARE.md#option-b-i-need-a-disposable-local-database)
 (database `testdb`, user `dba` with no password); put your own values in the URL
 for any other database.
 

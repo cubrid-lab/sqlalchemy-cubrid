@@ -10,124 +10,22 @@ SQLAlchemy로 CUBRID를 사용할 때는 네 가지 구성 요소가 함께 동�
 - **CUBRID 서버**는 데이터베이스 자체로, 어딘가에서 이미 실행 중이어야 하는 별도의 프로그램입니다.
 
 Python 패키지를 설치해도 CUBRID가 설치되거나 데이터베이스가 만들어지지는 않습니다.
-이 페이지는 권장 경로인 `sqlalchemy-cubrid[pycubrid]` 패키지와 동기
-`cubrid+pycubrid://` URL로, 빈 폴더에서 시작해 첫 쿼리와 첫 저장 행까지 안내합니다.
+이 과정은 권장 경로인 `sqlalchemy-cubrid[pycubrid]` 패키지와 동기 `cubrid+pycubrid://` URL로,
+빈 폴더에서 시작해 첫 쿼리와 첫 저장 행까지 안내합니다. 각 강의에는 목표가 하나 있고, 눈으로 확인할
+수 있는 결과로 끝납니다.
+
+1. [CUBRID와 Python 준비](LESSON_PREPARE.md): 접속할 수 있는 데이터베이스와, 방언과 드라이버가
+   설치된 가상 환경.
+2. [첫 쿼리 실행](LESSON_FIRST_QUERY.md): `SELECT 1 + 1`이 `2`를 출력합니다.
+3. 이 페이지의 [행을 저장하고 다시 읽기](#3단계-행을-저장하고-다시-읽기)와 [정리](#정리).
+
 다른 드라이버, ORM, 비동기 코드와 Alembic은 [그다음](#다음-단계)에 다룹니다.
-
----
-
-## 시작하기 전에
-
-Python 3.11 이상과 연결할 수 있는 CUBRID 데이터베이스가 필요합니다. 상황에 맞는
-방법을 고르세요.
-
-### 방법 A: 이미 CUBRID 데이터베이스가 있습니다
-
-관리자에게 묻거나 직접 구성한 환경에서 다음 다섯 값을 확인하세요.
-
-- **host**: CUBRID가 실행되는 머신, 예: `db.example.com` 또는 `localhost`
-- **port**: 연결을 받는 입구인 CUBRID 브로커 포트(기본값 `33000`)
-- **database**: 데이터베이스 이름, 예: `testdb`
-- **user**와 **password**: 그 데이터베이스의 계정
-
-3단계는 작은 테이블 하나를 만들고 나중에 지웁니다. 연습용 데이터베이스나 그곳에서
-테이블을 만들 수 있는 계정을 사용하세요. 이 튜토리얼에 운영 데이터베이스나 그
-`dba` 계정을 사용하지 마세요. 2단계와 3단계에서 실습 환경 URL
-`cubrid+pycubrid://dba@localhost:33000/testdb`를 여러분의 값으로 채운
-`cubrid+pycubrid://USER:PASSWORD@HOST:PORT/DATABASE`로 바꾼 뒤 1단계로 진행하세요.
-실제 비밀번호는 공유하거나 커밋하는 파일에 넣지 마세요.
-
-### 방법 B: 버려도 되는 로컬 데이터베이스가 필요합니다
-
-Docker에서 `testdb` 데이터베이스가 있는 일회용 CUBRID 11.4 서버를 시작합니다.
-[Docker](https://docs.docker.com/get-started/get-docker/)와 bash 같은 셸이 필요합니다.
-명령은 x86_64(amd64) Linux에서 검증했습니다. `cubrid/cubrid:11.4` 이미지는 amd64용으로만
-배포되므로 다른 아키텍처(예: Apple silicon)와 Windows는 검증하지 않았습니다.
-
-```bash
-docker run -d --name sqlalchemy-cubrid-quickstart -e CUBRID_DB=testdb -p 127.0.0.1:33000:33000 cubrid/cubrid:11.4
-ready=no; for i in $(seq 36); do if docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1" >/dev/null 2>&1; then ready=yes; break; fi; sleep 5; done; if [ "$ready" = yes ]; then echo "CUBRID is ready"; else echo "CUBRID did not answer within 3 minutes; see: docker logs sqlalchemy-cubrid-quickstart"; fi
-```
-
-`127.0.0.1:`은 이 컴퓨터에만 포트를 열어 다른 머신이 실습 환경에 연결할 수 없게 합니다.
-두 번째 명령은 데이터베이스가 응답할 때까지 최대 3분을 기다린 뒤(보통 1분이 채 걸리지
-않습니다) `CUBRID is ready`를 출력합니다. 대신 `CUBRID did not answer within 3 minutes`가
-출력되면 `docker logs sqlalchemy-cubrid-quickstart`로 원인을 확인하세요. 포트 33000이
-이미 사용 중인 경우처럼 `docker run` 자체가 실패했다면 먼저 그 문제를 해결하고
-`docker rm -f -v sqlalchemy-cubrid-quickstart`로 컨테이너를 지운 뒤 다시 시작하세요.
-실습 환경은 비밀번호가 비어 있는 `dba` 계정을 사용합니다. 이는 이 로컬 일회용
-컨테이너에서만 허용됩니다. 다른 사람이 접근할 수 있는 서버에서는 절대 빈 비밀번호를
-사용하지 마세요.
-
-튜토리얼을 모두 마치면 `docker rm -f -v sqlalchemy-cubrid-quickstart`로 실습 환경을 지우세요.
-이미지는 데이터베이스를 이 컨테이너에 속한 익명 Docker 볼륨에 보관합니다. `-v`가 그 볼륨도 지우므로
-`testdb`가 함께 지워집니다. `-v` 없이 지우면 컨테이너만 지워지고 볼륨은 남습니다(`docker volume ls`에
-보입니다).
-
----
-
-## 1단계: 가상 환경에 sqlalchemy-cubrid 설치
-
-가상 환경은 이 프로젝트의 패키지를 시스템의 나머지 부분과 분리합니다. 먼저
-`python3 --version`이 3.11 이상을 출력하는지 확인하세요. 더 오래된 버전이 나오면 첫 명령에서
-더 새로운 인터프리터를 이름으로 지정하세요(예: `python3.12`). pip은 사용하는 Python을
-지원하는 릴리스만 설치하므로, 오래된 인터프리터에는 오래된 패키지가 설치됩니다.
-그런 다음 빈 폴더에서 다음 명령을 실행하세요.
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install "sqlalchemy-cubrid[pycubrid]"
-python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
-```
-
-`[pycubrid]` 부분은 방언과 함께 권장 순수 Python 드라이버를 설치합니다. 마지막 명령은
-설치된 세 버전(SQLAlchemy, sqlalchemy-cubrid, pycubrid)을 출력합니다(예: `2.1.4 1.11.0 1.13.0`).
-이 가이드를 마지막으로 실행한 2026-10-15의 PyPI 공개 릴리스이며, 더 새로운 릴리스가 있으면 더 높은
-번호가 출력됩니다. 아래의 모든 `python` 명령은 가상 환경이 활성화된 이 터미널에서 실행하세요.
-
----
-
-## 2단계: 첫 쿼리 실행
-
-같은 폴더에 `first_query.py` 파일을 만드세요.
-
-```python
-from sqlalchemy import create_engine, text
-
-# The URL names the dialect and driver, then user[:password]@host:port/database.
-# These are the disposable local lab's values; the lab's dba has no password.
-engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
-
-with engine.connect() as conn:  # this is when SQLAlchemy actually connects
-    result = conn.execute(text("SELECT 1 + 1"))
-    print(result.scalar())  # scalar() reads the single value of the result
-
-engine.dispose()  # close the engine's pooled connections
-```
-
-**엔진(engine)**은 URL과 연결 풀을 가지고 있지만, 만들 때 서버에 접속하지는 않습니다.
-`engine.connect()`가 데이터베이스와의 세션인 **연결(connection)**을 열고, `execute`가
-그 연결로 SQL 문 하나를 보냅니다. `text()`는 문자열을 일반 SQL로 표시합니다. 파일을
-실행하세요.
-
-```bash
-python first_query.py
-```
-
-데이터베이스가 계산한 값을 출력하며, 쿼리가 실제로 서버에 도달했음을 보여 줍니다.
-
-```text
-2
-```
-
-대신 오류가 나오면 [첫 연결이 실패하면](#첫-연결이-실패하면)으로 가세요.
 
 ---
 
 ## 3단계: 행을 저장하고 다시 읽기
 
-이 단계에는 2단계에서 동작한 URL이 필요합니다. 같은 URL로 `first_saved_row.py`를
+이 단계에는 [2강](LESSON_FIRST_QUERY.md)에서 동작한 URL이 필요합니다. 같은 URL로 `first_saved_row.py`를
 만드세요.
 
 ```python
@@ -241,7 +139,7 @@ python cleanup_quickstart.py
 
 | 메시지 | 의미 | 확인할 것 |
 |---|---|---|
-| `ModuleNotFoundError: No module named 'pycubrid'` | 이 Python에 드라이버가 설치되지 않았습니다. | 1단계처럼 `[pycubrid]` extra로 설치하고, 가상 환경을 활성화한 뒤 시스템 `python3`이 아닌 `python`을 실행하세요. |
+| `ModuleNotFoundError: No module named 'pycubrid'` | 이 Python에 드라이버가 설치되지 않았습니다. | [1강](LESSON_PREPARE.md#가상-환경에-sqlalchemy-cubrid-설치)처럼 `[pycubrid]` extra로 설치하고, 가상 환경을 활성화한 뒤 시스템 `python3`이 아닌 `python`을 실행하세요. |
 | `NoSuchModuleError: Can't load plugin: sqlalchemy.dialects:cubrid.pycubird` | URL이 존재하지 않는 방언이나 드라이버를 가리킵니다(여기서는 오타). | URL이 정확히 `cubrid+pycubrid://`로 시작하는지 확인하세요. |
 | `OperationalError: (pycubrid.exceptions.OperationalError) failed to connect to CUBRID broker` | 그 호스트와 포트에서 아무것도 응답하지 않았습니다. | 서버가 실행 중인지(실습 환경이면 `docker ps`에 `sqlalchemy-cubrid-quickstart`가 보이는지), URL의 호스트와 포트가 맞는지, 방화벽이 포트를 막지 않는지 확인하세요. |
 | `DatabaseError: (pycubrid.exceptions.DatabaseError) Failed to connect to database server, 'nosuchdb', ...` | 브로커는 응답했지만 그 이름으로 실행 중인 데이터베이스가 없습니다. | URL 끝의 데이터베이스 이름을 확인하고, 그 데이터베이스가 시작되어 있는지 관리자에게 물어보세요. |
@@ -268,3 +166,29 @@ SQLAlchemy의
 - [연결 가이드](CONNECTION.md): 모든 URL 형식, 연결 옵션, 비동기 `cubrid+aiopycubrid://` 드라이버.
 - [드라이버 호환성](DRIVER_COMPAT.md): 소스에서 빌드하는 지원 CUBRIDdb C 확장 드라이버와 드라이버 간 차이.
 - [Alembic 마이그레이션](ALEMBIC.md), [타입 매핑](TYPES.md), [기능 지원](FEATURE_SUPPORT.md)(`RETURNING` 절 미지원 같은 CUBRID의 제약 포함).
+
+---
+
+## 시작하기 전에
+
+[1강: CUBRID와 Python 준비](LESSON_PREPARE.md)로 옮겨졌습니다.
+
+### 방법 A: 이미 CUBRID 데이터베이스가 있습니다
+
+[1강의 방법 A](LESSON_PREPARE.md#방법-a-이미-cubrid-데이터베이스가-있습니다)로 옮겨졌습니다.
+
+### 방법 B: 버려도 되는 로컬 데이터베이스가 필요합니다
+
+[1강의 방법 B](LESSON_PREPARE.md#방법-b-버려도-되는-로컬-데이터베이스가-필요합니다)로 옮겨졌습니다.
+
+---
+
+## 1단계: 가상 환경에 sqlalchemy-cubrid 설치
+
+[1강](LESSON_PREPARE.md#가상-환경에-sqlalchemy-cubrid-설치)으로 옮겨졌습니다.
+
+---
+
+## 2단계: 첫 쿼리 실행
+
+[2강: 첫 쿼리 실행](LESSON_FIRST_QUERY.md)으로 옮겨졌습니다.

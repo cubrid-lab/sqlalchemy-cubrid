@@ -8,133 +8,25 @@ Four pieces work together when you use SQLAlchemy with CUBRID:
 - the **CUBRID server** is the database itself, a separate program that must already be running somewhere.
 
 Installing the Python packages does not install CUBRID or create a database.
-This page takes you from an empty folder to a first query and a first saved
+This course takes you from an empty folder to a first query and a first saved
 row on the recommended path: the `sqlalchemy-cubrid[pycubrid]` package and the
-synchronous `cubrid+pycubrid://` URL. Other drivers, the ORM, async code and
-Alembic come [afterwards](#next-steps).
+synchronous `cubrid+pycubrid://` URL. Each lesson has one goal and ends with a
+result you can see:
 
----
+1. [Prepare CUBRID and Python](LESSON_PREPARE.md): a database you can reach and
+   a virtual environment with the dialect and driver.
+2. [Run your first query](LESSON_FIRST_QUERY.md): `SELECT 1 + 1` prints `2`.
+3. [Save a row and read it back](#step-3-save-a-row-and-read-it-back), then
+   [clean up](#clean-up), on this page.
 
-## Before you start
-
-You need Python 3.11 or later and a CUBRID database you can connect to. Pick
-the option that matches your situation.
-
-### Option A: I already have a CUBRID database
-
-Ask its administrator (or look in your own setup) for these five values:
-
-- **host**: the machine that runs CUBRID, for example `db.example.com` or `localhost`;
-- **port**: the CUBRID broker port, the entry point that accepts connections (the default is `33000`);
-- **database**: the database name, for example `testdb`;
-- **user** and **password**: an account for that database.
-
-Step 3 creates and later removes one small table. Use a practice database, or
-an account that is allowed to create tables there. Do not use a production
-database or its `dba` account for this tutorial. In Steps 2 and 3, replace the
-lab URL `cubrid+pycubrid://dba@localhost:33000/testdb` with
-`cubrid+pycubrid://USER:PASSWORD@HOST:PORT/DATABASE` filled in with your
-values, then continue with Step 1. Keep real passwords out of files you share
-or commit.
-
-### Option B: I need a disposable local database
-
-This starts a throwaway CUBRID 11.4 server with a database named `testdb` in
-Docker. It needs [Docker](https://docs.docker.com/get-started/get-docker/)
-and a shell such as bash. The commands were verified on Linux on x86_64
-(amd64); the `cubrid/cubrid:11.4` image is published for amd64 only, so other
-architectures (for example Apple silicon) and Windows are unverified.
-
-```bash
-docker run -d --name sqlalchemy-cubrid-quickstart -e CUBRID_DB=testdb -p 127.0.0.1:33000:33000 cubrid/cubrid:11.4
-ready=no; for i in $(seq 36); do if docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1" >/dev/null 2>&1; then ready=yes; break; fi; sleep 5; done; if [ "$ready" = yes ]; then echo "CUBRID is ready"; else echo "CUBRID did not answer within 3 minutes; see: docker logs sqlalchemy-cubrid-quickstart"; fi
-```
-
-`127.0.0.1:` publishes the port on this computer only, so no other machine can
-connect to the lab. The second command waits up to three minutes for the
-database to answer (it usually takes well under a minute) and prints
-`CUBRID is ready`. If it prints `CUBRID did not answer within 3 minutes`
-instead, `docker logs sqlalchemy-cubrid-quickstart` shows why; if `docker run`
-itself failed, for example because port 33000 is already in use, fix that
-first, remove the container with `docker rm -f -v sqlalchemy-cubrid-quickstart`
-and start again. The lab uses the `dba` account with an empty password. That
-is only acceptable for this local, disposable container: never use an empty
-password on a server other people can reach.
-
-When you are done with the whole tutorial, remove the lab with
-`docker rm -f -v sqlalchemy-cubrid-quickstart`. The image keeps its database in
-an anonymous Docker volume that belongs to this container; `-v` deletes that
-volume too, and with it `testdb`. Without `-v` the container goes but the volume
-stays behind (`docker volume ls` lists it).
-
----
-
-## Step 1: Install sqlalchemy-cubrid in a virtual environment
-
-A virtual environment keeps this project's packages separate from the rest of
-your system. First check that `python3 --version` prints 3.11 or later; if it
-prints an older version, use a newer interpreter by name (for example
-`python3.12`) in the first command. pip installs only the releases that
-support your Python, so an old interpreter gets old packages. Then run these
-commands in an empty folder:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install "sqlalchemy-cubrid[pycubrid]"
-python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
-```
-
-The `[pycubrid]` part installs the recommended pure-Python driver together with
-the dialect. The last command prints the three installed versions, for example
-`2.1.4 1.11.0 1.13.0`: SQLAlchemy, sqlalchemy-cubrid and pycubrid. Those are the
-published PyPI releases this guide was last run with, on 2026-10-15; a newer
-release prints higher numbers. Run every `python` command below in this same
-terminal, with the virtual environment active.
-
----
-
-## Step 2: Run your first query
-
-Create a file named `first_query.py` in the same folder:
-
-```python
-from sqlalchemy import create_engine, text
-
-# The URL names the dialect and driver, then user[:password]@host:port/database.
-# These are the disposable local lab's values; the lab's dba has no password.
-engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
-
-with engine.connect() as conn:  # this is when SQLAlchemy actually connects
-    result = conn.execute(text("SELECT 1 + 1"))
-    print(result.scalar())  # scalar() reads the single value of the result
-
-engine.dispose()  # close the engine's pooled connections
-```
-
-An **engine** holds the URL and a pool of connections, but creating it does not
-contact the server. `engine.connect()` opens a **connection**, your session with
-the database, and `execute` sends one SQL statement over it; `text()` marks a
-string as plain SQL. Run the file:
-
-```bash
-python first_query.py
-```
-
-It prints the value the database computed, which proves that a query really
-reached the server:
-
-```text
-2
-```
-
-If you see an error instead, go to [If the first connection fails](#if-the-first-connection-fails).
+Other drivers, the ORM, async code and Alembic come [afterwards](#next-steps).
 
 ---
 
 ## Step 3: Save a row and read it back
 
-This step needs the URL that worked in Step 2. Create `first_saved_row.py` with
+This step needs the URL that worked in
+[Lesson 2](LESSON_FIRST_QUERY.md). Create `first_saved_row.py` with
 the same URL:
 
 ```python
@@ -251,7 +143,7 @@ parentheses:
 
 | Message | What it means | What to check |
 |---|---|---|
-| `ModuleNotFoundError: No module named 'pycubrid'` | The driver is not installed in this Python. | Install with the `[pycubrid]` extra as in Step 1, activate the virtual environment and run `python`, not a system `python3`. |
+| `ModuleNotFoundError: No module named 'pycubrid'` | The driver is not installed in this Python. | Install with the `[pycubrid]` extra as in [Lesson 1](LESSON_PREPARE.md#install-sqlalchemy-cubrid-in-a-virtual-environment), activate the virtual environment and run `python`, not a system `python3`. |
 | `NoSuchModuleError: Can't load plugin: sqlalchemy.dialects:cubrid.pycubird` | The URL names a dialect or driver that does not exist (here a typo). | The URL starts with exactly `cubrid+pycubrid://`. |
 | `OperationalError: (pycubrid.exceptions.OperationalError) failed to connect to CUBRID broker` | Nothing answered at that host and port. | The server is running (for the lab: `docker ps` lists `sqlalchemy-cubrid-quickstart`), the host and port in the URL are right, and no firewall blocks the port. |
 | `DatabaseError: (pycubrid.exceptions.DatabaseError) Failed to connect to database server, 'nosuchdb', ...` | The broker answered, but there is no running database with that name. | The database name at the end of the URL; ask the administrator whether that database is started. |
@@ -279,3 +171,29 @@ with objects; it builds on the same engine and connection ideas.
 - [Connection Guide](CONNECTION.md): every URL form, connection options and the async `cubrid+aiopycubrid://` driver.
 - [Driver Compatibility](DRIVER_COMPAT.md): the supported CUBRIDdb C-extension driver, built from source, and what differs between drivers.
 - [Alembic Migrations](ALEMBIC.md), [Type Mapping](TYPES.md) and [Feature Support](FEATURE_SUPPORT.md), including CUBRID's limits such as no `RETURNING` clause.
+
+---
+
+## Before you start
+
+Moved to [Lesson 1: Prepare CUBRID and Python](LESSON_PREPARE.md).
+
+### Option A: I already have a CUBRID database
+
+Moved to [Lesson 1, Option A](LESSON_PREPARE.md#option-a-i-already-have-a-cubrid-database).
+
+### Option B: I need a disposable local database
+
+Moved to [Lesson 1, Option B](LESSON_PREPARE.md#option-b-i-need-a-disposable-local-database).
+
+---
+
+## Step 1: Install sqlalchemy-cubrid in a virtual environment
+
+Moved to [Lesson 1](LESSON_PREPARE.md#install-sqlalchemy-cubrid-in-a-virtual-environment).
+
+---
+
+## Step 2: Run your first query
+
+Moved to [Lesson 2: Run your first query](LESSON_FIRST_QUERY.md).
