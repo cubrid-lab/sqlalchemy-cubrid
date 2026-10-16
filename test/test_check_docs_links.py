@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import socket
 import subprocess
 import sys
@@ -23,6 +24,8 @@ _SPEC.loader.exec_module(check)
 # check_docs_links imports the shared parser; reuse that module.
 _markdown = sys.modules["_markdown"]
 github_slug, make_goals, parse = _markdown.github_slug, _markdown.make_goals, _markdown.parse
+# The site slugifier this repository's mkdocs.yml configures (cubrid-lab/cubrid-cookbook-python#388).
+REPO_SITE_SLUG = _markdown._site_slug
 
 TARGET = """# Target
 
@@ -712,3 +715,76 @@ def test_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (root / "docs/PAGE.md").write_text("# Page\n", encoding="utf-8")
     assert check.main(["--root", str(root), str(root / "docs/PAGE.md")]) == 0
     assert "OK: 1 Markdown files" in capsys.readouterr().out
+
+
+# ----- site slugifier (cubrid-lab/cubrid-cookbook-python#388) -----
+
+SLUG_HEADINGS = ["Résumé", "한글 제목", "Connection options", "C++ & Python!", "naïve  café"]
+
+
+@pytest.mark.parametrize(
+    ("heading", "default", "pymdownx"),
+    [
+        ("Résumé", "resume", "résumé"),
+        ("한글 제목", "", "한글-제목"),
+        ("Connection options", "connection-options", "connection-options"),
+    ],
+)
+def test_site_slugifiers(heading: str, default: str, pymdownx: str) -> None:
+    assert _markdown.default_site_slug(heading) == default
+    assert _markdown._site_slug(heading) == pymdownx
+
+
+def test_default_site_slug_matches_python_markdown() -> None:
+    toc = pytest.importorskip("markdown.extensions.toc")
+    for heading in SLUG_HEADINGS:
+        assert _markdown.default_site_slug(heading) == toc.slugify(heading, "-"), heading
+
+
+def test_site_slugifier_follows_mkdocs_yml(tmp_path: Path) -> None:
+    config = tmp_path / "mkdocs.yml"
+    assert _markdown.site_slugifier(config) is _markdown.default_site_slug  # no mkdocs.yml
+    config.write_text("markdown_extensions:\n  - toc:\n      permalink: true\n", encoding="utf-8")
+    assert _markdown.site_slugifier(config) is _markdown.default_site_slug
+    config.write_text(
+        "markdown_extensions:\n  - toc:\n"
+        "      slugify: !!python/object/apply:pymdownx.slugs.slugify\n",
+        encoding="utf-8",
+    )
+    assert _markdown.site_slugifier(config) is _markdown._site_slug
+    # This repository's own site.
+    assert _markdown.site_slugifier(ROOT / "mkdocs.yml") is REPO_SITE_SLUG
+
+
+@pytest.mark.parametrize(
+    ("headings", "github", "site"),
+    [
+        # An empty id is numbered, and a taken ``_N`` is incremented, not suffixed.
+        (["한글", "_1"], {"한글", "_1"}, {"_1", "_2"}),
+        (["same", "same", "same_1"], {"same", "same-1", "same_1"}, {"same", "same_1", "same_2"}),
+        (["a_1", "a_1"], {"a_1", "a_1-1"}, {"a_1", "a_2"}),
+    ],
+)
+def test_site_anchors_are_unique_as_toc_makes_them(
+    tmp_path: Path, headings: list[str], github: set[str], site: set[str]
+) -> None:
+    path = tmp_path / "t.md"
+    path.write_text("".join(f"## {h}\n\n" for h in headings), encoding="utf-8")
+    assert parse(path, _markdown.default_site_slug).anchors == github | site
+    markdown = pytest.importorskip("markdown")
+    html = markdown.markdown(path.read_text(encoding="utf-8"), extensions=["toc"])
+    assert set(re.findall(r'id="([^"]*)"', html)) == site
+
+
+@pytest.mark.parametrize(
+    ("slugifier", "site"),
+    [
+        ("default_site_slug", {"resume", "_1", "_2"}),
+        ("_site_slug", {"résumé", "한글-제목", "다른-제목"}),
+    ],
+)
+def test_parse_uses_the_site_slugifier(tmp_path: Path, slugifier: str, site: set[str]) -> None:
+    path = tmp_path / "t.md"
+    path.write_text("# Résumé\n\n## 한글 제목\n\n## 다른 제목\n", encoding="utf-8")
+    github = {"résumé", "한글-제목", "다른-제목"}
+    assert parse(path, getattr(_markdown, slugifier)).anchors == github | site

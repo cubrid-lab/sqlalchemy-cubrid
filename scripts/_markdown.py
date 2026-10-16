@@ -141,12 +141,44 @@ def github_slug(text: str) -> str:
 
 
 def _site_slug(text: str) -> str:
-    """Return the MkDocs site's base anchor: GitHub's, without combining marks.
+    """Return the ``pymdownx.slugs.slugify`` site anchor: GitHub's, without combining marks.
 
-    ``pymdownx.slugs.slugify`` (mkdocs.yml) drops marks such as Devanagari
-    vowel signs that GitHub keeps.
+    ``pymdownx.slugs.slugify`` drops marks such as Devanagari vowel signs that
+    GitHub keeps.
     """
     return "".join(c for c in github_slug(text) if unicodedata.category(c)[0] != "M")
+
+
+def default_site_slug(text: str) -> str:
+    """Return the anchor of Python-Markdown's default ``toc`` slugify.
+
+    MkDocs uses it when ``mkdocs.yml`` sets no ``slugify`` (cubrid-lab/cubrid-cookbook-python#388):
+    accents are dropped and every other non-ASCII character is removed, so
+    ``Résumé`` becomes ``resume`` and a Korean heading becomes empty (the site
+    then numbers it ``_1``).
+    """
+    value = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    value = re.sub(r"[^\w\s-]", "", value).strip().lower()
+    return re.sub(r"[-\s]+", "-", value)
+
+
+_CUSTOM_SLUGIFY = re.compile(r"\bpymdownx\.slugs\.\w+")
+
+
+def site_slugifier(mkdocs_yml: Path) -> Callable[[str], str]:
+    """Return the site anchor function that ``mkdocs_yml`` configures for ``toc``.
+
+    A ``pymdownx.slugs`` slugifier selects the GitHub-like slug; no ``slugify``
+    (or no ``mkdocs.yml``) selects Python-Markdown's default.
+    """
+    try:
+        config = mkdocs_yml.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return default_site_slug
+    return _site_slug if _CUSTOM_SLUGIFY.search(config) else default_site_slug
+
+
+_REPO_SITE_SLUG = site_slugifier(Path(__file__).resolve().parents[1] / "mkdocs.yml")
 
 
 def _allocate(base: str, used: set[str], separator: str) -> str:
@@ -155,6 +187,22 @@ def _allocate(base: str, used: set[str], separator: str) -> str:
     while slug in used:
         count += 1
         slug = f"{base}{separator}{count}"
+    used.add(slug)
+    return slug
+
+
+_ID_COUNT = re.compile(r"^(.*)_([0-9]+)$")
+
+
+def _site_unique(slug: str, used: set[str]) -> str:
+    """Return the site's id for ``slug``, as Python-Markdown's ``toc`` ``unique()`` does.
+
+    An empty or taken id gets ``_1``, and an id already ending in ``_N`` is
+    incremented instead, so ``_1`` is followed by ``_2``, not ``_1_1``.
+    """
+    while slug in used or not slug:
+        match = _ID_COUNT.match(slug)
+        slug = f"{match.group(1)}_{int(match.group(2)) + 1}" if match else f"{slug}_1"
     used.add(slug)
     return slug
 
@@ -400,7 +448,7 @@ def _html_anchors(tokens: list[Token]) -> set[str]:
     return found
 
 
-def parse(path: Path) -> Parsed:
+def parse(path: Path, site_slug: Callable[[str], str] | None = None) -> Parsed:
     """Parse one Markdown file."""
     text = path.read_text(encoding="utf-8")
     lines = text.splitlines()
@@ -450,7 +498,7 @@ def parse(path: Path) -> Parsed:
                 anchors.add(explicit.group(1))
                 site_used.add(explicit.group(1))
             else:
-                anchors.add(_allocate(_site_slug(heading), site_used, "_"))
+                anchors.add(_site_unique((site_slug or _REPO_SITE_SLUG)(heading), site_used))
     definitions = []
     for label, ref in references.items():
         if isinstance(ref, dict):
