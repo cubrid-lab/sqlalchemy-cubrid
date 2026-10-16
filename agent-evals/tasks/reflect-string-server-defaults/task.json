@@ -1,0 +1,54 @@
+{
+  "allowed_files": [
+    "sqlalchemy_cubrid/dialect.py",
+    "test/test_dialect_offline.py",
+    "test/test_integration.py",
+    "docs/FEATURE_SUPPORT.md",
+    "docs/ko/FEATURE_SUPPORT.md",
+    "docs/llms-full.txt",
+    "CHANGELOG.md"
+  ],
+  "base_sha": "45fe81a8321076a484e1800b53d2f682ab49e484",
+  "changelog": {
+    "section": "Fixed"
+  },
+  "docs": [
+    [
+      "docs/FEATURE_SUPPORT.md"
+    ],
+    [
+      "docs/ko/FEATURE_SUPPORT.md"
+    ]
+  ],
+  "evidence": {
+    "live": "absent",
+    "required_kinds": [
+      "reflected_offline"
+    ]
+  },
+  "expected": "Against recorded SHOW COLUMNS and SHOW CREATE TABLE rows, get_columns() returns 'it''s', '', 'NULL', date '01/02/2020' and the USER/CURRENT_USER function for the matching defaults, and numeric defaults as before. This is offline reflection evidence only; the live reflect-create-reflect round trip is a separate, live check.",
+  "fix_commit": "14eeafa79fe2bbcdbb85973626faedcf0e8a8481",
+  "hidden_tests": [
+    "test_hidden_reflected_defaults.py"
+  ],
+  "id": "reflect-string-server-defaults",
+  "issue": "#865",
+  "non_goals": [
+    "no change to numeric defaults of numeric columns or to view reflection",
+    "no claim that the round trip was verified on a live CUBRID server unless a live run is recorded"
+  ],
+  "problem": "get_columns() reads a column's server default from SHOW COLUMNS, which prints a string default without its quotes: DEFAULT 'it''s' reflects as it''s, '' as an empty string and the string 'NULL' as NULL, a date in display format, and the string 'CURRENT_USER' the same as the USER function. Reflecting and then emitting CreateTable produces invalid or different DDL, and Alembic's existing_server_default carries the bad value into MODIFY. Make reflected character and date defaults valid SQL literals that round-trip (SHOW CREATE TABLE prints each default as SQL), keep numeric defaults of numeric columns and views unchanged, and document the behavior.",
+  "required_tests": [
+    "test/test_dialect_offline.py"
+  ],
+  "schema_version": 1,
+  "title": "Reflect string and date server defaults as quoted SQL literals",
+  "validation": {
+    "live": [
+      "python -m pytest -q -p no:cacheprovider -m integration test/test_integration.py -k TestReflectedDefaultRoundTrip865"
+    ],
+    "offline": [
+      "python -m pytest -q -p no:cacheprovider test/test_dialect_offline.py"
+    ]
+  }
+}

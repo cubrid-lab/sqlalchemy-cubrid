@@ -40,12 +40,46 @@ def test_every_recorded_fixture_grades_as_expected() -> None:
     assert ae.check() == []
 
 
-def test_the_seed_task_cites_its_issue_fix_and_missing_live_evidence() -> None:
-    task = _task()
-    assert task["issue"] == "#914"
-    assert task["fix_commit"].startswith("7744dd6")
-    assert task["evidence"]["live"] == "absent"
+TASK_IDS = sorted(p.parent.name for p in (ae.EVALS / "tasks").glob("*/task.json"))
+
+
+def test_tasks_cover_compilation_reflection_and_alembic() -> None:
+    assert TASK_IDS == [
+        "alembic-alter-column-sql",
+        "json-bool-path-index",
+        "reflect-string-server-defaults",
+    ]
+
+
+@pytest.mark.parametrize("task_id", TASK_IDS)
+def test_each_task_cites_its_fix_and_its_reference_passes(task_id: str) -> None:
+    task = ae.load_task(task_id)
+    assert task["id"] == task_id
+    assert task["issue"].startswith("#")
     assert task["expected"]
+    folder = ae.EVALS / "tasks" / task_id / "fixtures" / "reference"
+    result = ae.grade(
+        task,
+        (folder / "patch.diff").read_text(encoding="utf-8"),
+        ae.load_json(folder / "report.json"),
+        ae.load_json(folder / "results.json"),
+    )
+    assert result["verdict"] == "pass", result
+
+
+def test_the_alembic_task_requires_a_not_verified_statement() -> None:
+    task = ae.load_task("alembic-alter-column-sql")
+    assert task["evidence"]["live"] == "absent"
+    assert task["validation"]["live"]
+    folder = ae.EVALS / "tasks" / task["id"] / "fixtures"
+    for name, status in (("reference", "pass"), ("missing_not_verified", "fail")):
+        result = ae.grade(
+            task,
+            (folder / name / "patch.diff").read_text(encoding="utf-8"),
+            ae.load_json(folder / name / "report.json"),
+            ae.load_json(folder / name / "results.json"),
+        )
+        assert _statuses(result)["claims"] == status
 
 
 def test_reference_fix_passes_every_criterion() -> None:

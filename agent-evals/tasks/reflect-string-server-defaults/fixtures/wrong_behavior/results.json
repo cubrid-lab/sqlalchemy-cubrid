@@ -1,0 +1,21 @@
+{
+  "applied": true,
+  "base_sha": "45fe81a8321076a484e1800b53d2f682ab49e484",
+  "commands": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_dialect_offline.py",
+      "exit_code": 1,
+      "kind": "offline",
+      "outcome": "failed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_hidden_reflected_defaults.py",
+      "exit_code": 1,
+      "kind": "hidden",
+      "outcome": "failed"
+    }
+  ],
+  "patch_sha256": "32ae0bd17337397e62524f55ae3ae423ab9e68756111d00568926c74a5a013b7",
+  "schema_version": 1,
+  "task": "reflect-string-server-defaults"
+}

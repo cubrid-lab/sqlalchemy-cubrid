@@ -1,0 +1,21 @@
+{
+  "applied": true,
+  "base_sha": "5a33ba8bb43feb6f749bd7d511d13504bed91329",
+  "commands": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_alembic.py",
+      "exit_code": 1,
+      "kind": "offline",
+      "outcome": "failed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_hidden_alter_column_sql.py",
+      "exit_code": 1,
+      "kind": "hidden",
+      "outcome": "failed"
+    }
+  ],
+  "patch_sha256": "0a69b0e94dcaeaa582e3fb9124f5479b5669bae0909fa834236cd6b90f5290ee",
+  "schema_version": 1,
+  "task": "alembic-alter-column-sql"
+}

@@ -1,0 +1,54 @@
+{
+  "allowed_files": [
+    "sqlalchemy_cubrid/alembic_impl.py",
+    "test/test_alembic.py",
+    "test/test_integration.py",
+    "docs/ALEMBIC.md",
+    "docs/ko/ALEMBIC.md",
+    "docs/llms-full.txt",
+    "CHANGELOG.md"
+  ],
+  "base_sha": "5a33ba8bb43feb6f749bd7d511d13504bed91329",
+  "changelog": {
+    "section": "Fixed"
+  },
+  "docs": [
+    [
+      "docs/ALEMBIC.md"
+    ],
+    [
+      "docs/ko/ALEMBIC.md"
+    ]
+  ],
+  "evidence": {
+    "live": "absent",
+    "required_kinds": [
+      "compiled"
+    ]
+  },
+  "expected": "Offline, alter_column compiles nullability and comment changes to MODIFY/CHANGE with the full column definition (NULL, DEFAULT NULL and COMMENT '' stated explicitly), a dropped default to ALTER COLUMN c SET DEFAULT NULL (two MODIFY statements for a NOT NULL column), and a nullability change without existing_type raises ValueError. That is compiled-SQL evidence: whether 10.2, 11.0 and 11.2+ servers accept and keep the attributes is not verified without a live run, and the report must say so.",
+  "fix_commit": "45fe81a8321076a484e1800b53d2f682ab49e484",
+  "hidden_tests": [
+    "test_hidden_alter_column_sql.py"
+  ],
+  "id": "alembic-alter-column-sql",
+  "issue": "#861",
+  "non_goals": [
+    "no new Alembic operations and no change to type-only alter_column SQL",
+    "no claim that the migrations run on any CUBRID version unless a live run is recorded"
+  ],
+  "problem": "Alembic alter_column sends nullability, dropped-default and comment changes to Alembic's generic SQL, which CUBRID rejects: nullable= emits ALTER COLUMN c SET/DROP NOT NULL, server_default=None emits DROP DEFAULT, and comment= raises \"can't render element of type ColumnComment\". Route these changes through CUBRID's MODIFY/CHANGE (requiring existing_type), emit a dropped default CUBRID accepts, and document what alter_column needs. Server versions differ in whether MODIFY keeps an attribute it omits, so the SQL must state each attribute explicitly; that version behavior can only be confirmed on live servers.",
+  "required_tests": [
+    "test/test_alembic.py"
+  ],
+  "schema_version": 1,
+  "title": "Emit CUBRID-compatible SQL for nullability, dropped defaults and comments in Alembic alter_column",
+  "validation": {
+    "live": [
+      "python -m pytest -q -p no:cacheprovider -m integration test/test_integration.py -k TestAlembicAlterColumnAttributes861"
+    ],
+    "offline": [
+      "python -m pytest -q -p no:cacheprovider test/test_alembic.py"
+    ]
+  }
+}

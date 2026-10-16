@@ -141,14 +141,25 @@ What is penalized is claiming more than was run:
 ## Fixtures
 
 Each task carries recorded candidates: the reference fix (with and without a dry-run
-result) and deliberate failures such as wrong dialect behavior, a missing regression
-test, scope creep, missing documentation, false live claims, a live check that is not
-reported, conflated evidence kinds, results recorded for another patch, and a claim
-that the supported CUBRIDdb driver is deprecated. `make agent-eval-check` fails when
-any of them grades differently from its `expected.json`.
+result) and deliberate failures. Except where a fixture deliberately tampers with it,
+each `results.json` is real `run` output for its patch. Across the tasks the fixtures
+cover wrong dialect behavior, a missing regression test, scope creep, missing
+documentation, false live claims, a live check that is not reported, conflated
+evidence kinds (offline results reported as live), results recorded for another
+patch, a missing *not verified* statement, and a claim that the supported CUBRIDdb
+driver is deprecated. `make agent-eval-check` fails when any of them grades
+differently from its `expected.json`.
 
 ## Tasks
 
 | Task | Original fix | Live evidence |
 |---|---|---|
 | [`json-bool-path-index`](tasks/json-bool-path-index/task.json) | #914, `7744dd6` (JSON path compilation and binding) | absent |
+| [`reflect-string-server-defaults`](tasks/reflect-string-server-defaults/task.json) | #865, `14eeafa` (server default reflection against recorded catalog rows) | absent |
+| [`alembic-alter-column-sql`](tasks/alembic-alter-column-sql/task.json) | #861, `45fe81a` (Alembic `alter_column` SQL) | absent; the report must say live migration behavior is not verified |
+
+The Alembic task is the deliberate missing-live-evidence case: its fix depends on how
+CUBRID 10.2, 11.0 and 11.2+ treat an attribute `MODIFY` omits, which only a live run
+shows. Compiled `MODIFY`/`CHANGE` SQL is the only evidence the offline tests give, so
+a candidate that says the migration works on any server, or that omits the
+*not verified* statement, fails `claims`.

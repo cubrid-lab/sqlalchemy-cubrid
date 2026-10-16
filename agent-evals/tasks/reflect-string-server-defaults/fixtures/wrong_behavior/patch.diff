@@ -1,0 +1,309 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f42b15b..13f4325 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ### Fixed
+ 
++- **String and date server defaults reflect as quoted SQL literals (#865)** —
++  `get_columns()` returned the `SHOW COLUMNS` default text, which drops a string's
++  quotes: `DEFAULT 'it''s'` reflected as `it''s`, `''` as an empty string and the
++  string `'NULL'` as `NULL`, a date as `01/02/2020`, and `'CURRENT_USER'` the same as
++  the `USER` function. Reflecting and then emitting `CreateTable` produced `DEFAULT
++  it''s` and `DEFAULT ,`, and Alembic's `existing_server_default` carried the bad value
++  into `MODIFY`. Non-numeric defaults are now read from `SHOW CREATE TABLE` (one extra
++  query per table that has one) and reflect as `'it''s'`, `''`, `'NULL'`, `date
++  '01/02/2020'` or the function itself (a string column's `'5'` as `'5'`); numeric
++  defaults of numeric columns are unchanged.
++
+ - **Alembic `alter_column` emits CUBRID-compatible SQL for nullability, dropped
+   defaults and comments (#861)** — these changes went to Alembic's generic SQL, which
+   CUBRID rejects: `nullable=` emitted `ALTER COLUMN c SET/DROP NOT NULL`,
+diff --git a/docs/FEATURE_SUPPORT.md b/docs/FEATURE_SUPPORT.md
+index 3d5c172..08744d0 100644
+--- a/docs/FEATURE_SUPPORT.md
++++ b/docs/FEATURE_SUPPORT.md
+@@ -217,6 +217,7 @@ High-level overview by feature category.
+ - **Reflection source**: Reflection is split across multiple sources: `SHOW COLUMNS IN` + `db_attribute` for columns/comments, `db_index` + `db_index_key` for the primary key (name and every column in key order), `SHOW CREATE TABLE` parsing for foreign keys, `db_index` + `SHOW INDEXES IN` for unique constraints (with `SHOW CREATE TABLE` parsing as the fallback only when `db_index` lists no index of the table at all or, since CUBRID 11.2, when the name resolves to another owner's class that shows no unique index (if it shows one, `SHOW INDEXES IN` raises `NoSuchTableError` first; the fallback raises it too); any other table with a primary key, a foreign key or another index but no unique one is answered from the catalog, #610), `SHOW INDEXES IN` + `db_index` for indexes, `SHOW CREATE VIEW` for view definitions, and `db_class` for table/view names and table comments.
+ - **Foreign-key DDL grammar**: `get_foreign_keys()` relies on the `SHOW CREATE TABLE` output of the supported servers (10.2, 11.0, 11.2 and 11.4), recorded in `test/fixtures/show_create_table/` and checked against the live server by `test/test_show_create_table_server_output.py` (#611): every identifier is printed in brackets with spaces, commas and parentheses kept verbatim; each foreign key prints both actions, `ON DELETE` before `ON UPDATE`, with the default printed as `RESTRICT`; the actions are `CASCADE`, `SET NULL`, `NO ACTION` and `RESTRICT` (the servers reject `ON UPDATE CASCADE` and have no `SET DEFAULT`); the referenced table is owner-qualified (`[dba.parent]`) from 11.2 and unqualified on 10.2 and 11.0, and the owner is dropped from `referred_table`. A `UNIQUE` constraint and a `CREATE UNIQUE INDEX` index both print as `UNIQUE KEY`.
+ - **Table and view listings**: `get_table_names()`, `get_view_names()` and `has_table()` read `db_class`. Since CUBRID 11.2 that view lists the classes of every owner the user may read, while an unqualified name resolves only in the current user's schema, so these methods are limited to `owner_name = CURRENT_USER` (#864): another owner's table of the same name no longer makes `create_all()` skip the current user's table, `MetaData.reflect()` no longer aborts with `NoSuchTableError` on it, and two owners' same-named tables are listed once. A `schema=` argument other than the default schema still returns no names, as for every reflection method. CUBRID 10.2 and 11.0 class names are global, so their listings are unchanged.
++- **Reflected server defaults**: `get_columns()` reports each default as SQL that `CreateTable` and Alembic can emit again (#865). A numeric column's numeric default is kept as `SHOW COLUMNS` prints it (`5`, `-3`, `1.50`). Any other default, including a string column's `'5'` (which `SHOW COLUMNS` also prints as `5`), is read from `SHOW CREATE TABLE`, which `get_columns()` then runs once for the table: `SHOW COLUMNS` prints a string default without its quotes, so `'it''s'`, `''` and the string `'NULL'` used to reflect as `it''s`, an empty string and `NULL`, a date as `01/02/2020`, and both `'CURRENT_USER'` and `USER` as `CURRENT_USER`. They now reflect as `'it''s'`, `''`, `'NULL'`, `date '01/02/2020'`, `'CURRENT_USER'` and `CURRENT_USER`; functions such as `SYS_DATETIME` or `TO_CHAR(SYS_DATETIME, 'YYYY')`, charset-prefixed literals (`_utf8'q'`, `N'n'`) and bit strings (`X'a0'`) keep the server's spelling. A column without a default still reflects `None`. Views do not run `SHOW CREATE TABLE`; if its output cannot be parsed, the `SHOW COLUMNS` text is kept.
+ - **Reflection as a non-DBA user**: Reflection reads only the catalog views every user can read (`db_class`, `db_index`, `db_index_key`, `db_attribute`), never the DBA-only `_db_index`, `_db_index_key` or `_db_attribute` catalog tables, so a non-DBA user gets the same indexes, primary key, unique constraints, `has_index()` answer and column comments as DBA. The table name matches as given or folded to lower case, as in `SHOW COLUMNS IN <name>`. Since CUBRID 11.2 these views also list same-named classes of other owners, so the rows are limited to the owner of the reflected class (the current user's own class first, as for `db_class`). A failing catalog query raises instead of silently falling back to incomplete metadata.
+ - **`SHOW CREATE TABLE` failures**: `get_foreign_keys()` (and the `SHOW CREATE TABLE` fallback of `get_unique_constraints()`) returns an empty list only when `SHOW CREATE TABLE` succeeds and the DDL has no such constraint. `Unknown class`, or no row for a table that the catalog listed, raises `NoSuchTableError`; any other failure (a disconnect, an authorization error, a driver error) propagates instead of being logged and reported as "no constraints", which made Alembic autogenerate emit `add_fk` for foreign keys that already exist (#589). CUBRID lists in `db_class` only the tables a user holds `SELECT` on, and `SHOW CREATE TABLE` on such a table does not fail with an authorization error (checked as a non-DBA user on CUBRID 10.2 and 11.4), so no failure is tolerated for non-DBA users either. Since CUBRID 11.2 an unqualified name resolves in the current user's schema, so another owner's table, even one granted to the current user, raises `NoSuchTableError` from `get_columns()` as well as here; `get_unique_constraints()` therefore keeps reading `SHOW CREATE TABLE` for such a table when the catalog lists its indexes but no unique one; when the catalog lists a unique index of it, `SHOW INDEXES IN` raises `NoSuchTableError` before the DDL is read. For a table of the current user (any visible table before 11.2) whose catalog lists indexes but no unique one, `get_unique_constraints()` returns `[]` without running `SHOW CREATE TABLE` (#610).
+ 
+diff --git a/docs/ko/FEATURE_SUPPORT.md b/docs/ko/FEATURE_SUPPORT.md
+index 38e235b..fa59504 100644
+--- a/docs/ko/FEATURE_SUPPORT.md
++++ b/docs/ko/FEATURE_SUPPORT.md
+@@ -220,6 +220,7 @@
+ - **리플렉션 소스**: 리플렉션은 여러 소스에 분산되어 있습니다: 컬럼/코멘트는 `SHOW COLUMNS IN` + `db_attribute`, 기본 키(이름과 키 순서의 모든 컬럼)는 `db_index` + `db_index_key`, 외래 키는 `SHOW CREATE TABLE` 파싱, 유니크 제약은 `db_index` + `SHOW INDEXES IN`(`db_index`에 테이블의 인덱스가 하나도 없거나, CUBRID 11.2부터 이름이 유니크 인덱스가 보이지 않는 다른 소유자의 클래스로 해석될 때만 `SHOW CREATE TABLE` 파싱으로 대체하며(유니크 인덱스가 보이면 `SHOW INDEXES IN`이 먼저 `NoSuchTableError`를 발생시키고, 대체 경로도 같은 오류를 발생시킴), 그 밖에 기본 키, 외래 키 또는 다른 인덱스는 있지만 유니크 인덱스가 없는 테이블은 카탈로그만으로 판단, #610), 인덱스는 `SHOW INDEXES IN` + `db_index`, 뷰 정의는 `SHOW CREATE VIEW`, 테이블/뷰 이름과 테이블 코멘트는 `db_class`.
+ - **외래 키 DDL 문법**: `get_foreign_keys()`는 지원 서버(10.2, 11.0, 11.2, 11.4)의 `SHOW CREATE TABLE` 출력에 의존하며, 이 출력은 `test/fixtures/show_create_table/`에 기록되어 있고 `test/test_show_create_table_server_output.py`가 실제 서버와 비교합니다 (#611): 모든 식별자는 대괄호로 출력되고 공백, 쉼표, 괄호는 그대로 유지됩니다. 각 외래 키는 두 동작을 모두 `ON DELETE`, `ON UPDATE` 순서로 출력하며 기본값은 `RESTRICT`로 출력됩니다. 동작은 `CASCADE`, `SET NULL`, `NO ACTION`, `RESTRICT`입니다(서버는 `ON UPDATE CASCADE`를 거부하며 `SET DEFAULT`는 없습니다). 참조 테이블은 11.2부터 소유자가 붙어(`[dba.parent]`) 출력되고 10.2와 11.0에서는 붙지 않으며, `referred_table`에서는 소유자를 제거합니다. `UNIQUE` 제약과 `CREATE UNIQUE INDEX` 인덱스는 모두 `UNIQUE KEY`로 출력됩니다.
+ - **테이블과 뷰 목록**: `get_table_names()`, `get_view_names()`, `has_table()`은 `db_class`를 읽습니다. CUBRID 11.2부터 이 뷰에는 사용자가 읽을 수 있는 모든 소유자의 클래스가 나타나지만 소유자를 붙이지 않은 이름은 현재 사용자의 스키마에서만 찾으므로, 이 메서드들은 `owner_name = CURRENT_USER`로 제한됩니다 (#864). 따라서 같은 이름의 다른 소유자 테이블 때문에 `create_all()`이 현재 사용자의 테이블 생성을 건너뛰거나, `MetaData.reflect()`가 그 테이블에서 `NoSuchTableError`로 중단되거나, 두 소유자의 같은 이름 테이블이 중복으로 나열되지 않습니다. 기본 스키마가 아닌 `schema=` 인자는 다른 모든 리플렉션 메서드와 마찬가지로 이름을 반환하지 않습니다. CUBRID 10.2와 11.0의 클래스 이름은 전역이므로 목록 동작은 바뀌지 않습니다.
++- **리플렉트된 서버 기본값**: `get_columns()`는 각 기본값을 `CreateTable`과 Alembic이 다시 낼 수 있는 SQL로 보고합니다 (#865). 숫자 컬럼의 숫자 기본값은 `SHOW COLUMNS`가 출력한 그대로(`5`, `-3`, `1.50`) 유지합니다. 문자열 컬럼의 `'5'`(`SHOW COLUMNS`는 이것도 `5`로 출력)를 포함한 그 밖의 기본값은 `SHOW CREATE TABLE`에서 읽으며, 이때 `get_columns()`는 테이블당 한 번 이를 실행합니다. `SHOW COLUMNS`는 문자열 기본값을 따옴표 없이 출력하므로 `'it''s'`, `''`, 문자열 `'NULL'`이 각각 `it''s`, 빈 문자열, `NULL`로, 날짜가 `01/02/2020`으로, `'CURRENT_USER'`와 `USER`가 모두 `CURRENT_USER`로 리플렉트되었습니다. 이제는 `'it''s'`, `''`, `'NULL'`, `date '01/02/2020'`, `'CURRENT_USER'`, `CURRENT_USER`로 리플렉트됩니다. `SYS_DATETIME`이나 `TO_CHAR(SYS_DATETIME, 'YYYY')` 같은 함수, 문자셋 접두사가 붙은 리터럴(`_utf8'q'`, `N'n'`), 비트 문자열(`X'a0'`)은 서버 표기를 유지합니다. 기본값이 없는 컬럼은 여전히 `None`입니다. 뷰는 `SHOW CREATE TABLE`을 실행하지 않으며, 출력을 해석할 수 없으면 `SHOW COLUMNS` 텍스트를 유지합니다.
+ - **DBA가 아닌 사용자의 리플렉션**: 리플렉션은 모든 사용자가 읽을 수 있는 카탈로그 뷰(`db_class`, `db_index`, `db_index_key`, `db_attribute`)만 읽고, DBA만 읽을 수 있는 `_db_index`, `_db_index_key`, `_db_attribute` 카탈로그 테이블은 읽지 않습니다. 따라서 DBA가 아닌 사용자도 DBA와 같은 인덱스, 기본 키, 유니크 제약, `has_index()` 결과와 컬럼 코멘트를 얻습니다. 테이블 이름은 `SHOW COLUMNS IN <name>`과 같이 입력한 그대로 또는 소문자로 변환해 비교합니다. CUBRID 11.2부터 이 뷰에는 다른 소유자의 같은 이름 클래스도 나타나므로, 리플렉트하는 클래스의 소유자 행만 사용합니다(`db_class`와 마찬가지로 현재 사용자의 클래스가 우선). 카탈로그 조회가 실패하면 불완전한 메타데이터로 조용히 대체하지 않고 예외를 발생시킵니다.
+ - **`SHOW CREATE TABLE` 실패**: `get_foreign_keys()`(와 `get_unique_constraints()`의 `SHOW CREATE TABLE` 대체 경로)는 `SHOW CREATE TABLE`이 성공했고 DDL에 해당 제약이 없을 때만 빈 리스트를 반환합니다. `Unknown class`이거나 카탈로그에 있는 테이블에 대해 행이 반환되지 않으면 `NoSuchTableError`를 발생시키고, 그 밖의 실패(연결 끊김, 권한 오류, 드라이버 오류)는 로그를 남기고 "제약 없음"으로 보고하는 대신 그대로 전파합니다. 이전 동작 때문에 Alembic autogenerate가 이미 존재하는 외래 키에 대해 `add_fk`를 생성했습니다 (#589). CUBRID는 사용자가 `SELECT` 권한을 가진 테이블만 `db_class`에 보여 주고, 그런 테이블에 대한 `SHOW CREATE TABLE`은 권한 오류로 실패하지 않으므로(CUBRID 10.2와 11.4에서 DBA가 아닌 사용자로 확인) DBA가 아닌 사용자에게도 실패를 허용하지 않습니다. CUBRID 11.2부터 소유자를 붙이지 않은 이름은 현재 사용자의 스키마에서 찾으므로, 다른 소유자의 테이블은 현재 사용자에게 권한이 부여되어 있어도 `get_columns()`와 마찬가지로 `NoSuchTableError`를 발생시킵니다. 따라서 `get_unique_constraints()`는 카탈로그에 그런 테이블의 인덱스는 있지만 유니크 인덱스가 없으면 `SHOW CREATE TABLE`을 계속 읽고, 유니크 인덱스가 있으면 DDL을 읽기 전에 `SHOW INDEXES IN`이 `NoSuchTableError`를 발생시킵니다. 현재 사용자의 테이블(11.2 이전에는 보이는 모든 테이블)에 대해 카탈로그에 인덱스는 있지만 유니크 인덱스가 없으면 `get_unique_constraints()`는 `SHOW CREATE TABLE`을 실행하지 않고 `[]`를 반환합니다 (#610).
+ 
+diff --git a/docs/llms-full.txt b/docs/llms-full.txt
+index 2152501..54ed635 100644
+--- a/docs/llms-full.txt
++++ b/docs/llms-full.txt
+@@ -3904,6 +3904,7 @@ High-level overview by feature category.
+ - **Reflection source**: Reflection is split across multiple sources: `SHOW COLUMNS IN` + `db_attribute` for columns/comments, `db_index` + `db_index_key` for the primary key (name and every column in key order), `SHOW CREATE TABLE` parsing for foreign keys, `db_index` + `SHOW INDEXES IN` for unique constraints (with `SHOW CREATE TABLE` parsing as the fallback only when `db_index` lists no index of the table at all or, since CUBRID 11.2, when the name resolves to another owner's class that shows no unique index (if it shows one, `SHOW INDEXES IN` raises `NoSuchTableError` first; the fallback raises it too); any other table with a primary key, a foreign key or another index but no unique one is answered from the catalog, #610), `SHOW INDEXES IN` + `db_index` for indexes, `SHOW CREATE VIEW` for view definitions, and `db_class` for table/view names and table comments.
+ - **Foreign-key DDL grammar**: `get_foreign_keys()` relies on the `SHOW CREATE TABLE` output of the supported servers (10.2, 11.0, 11.2 and 11.4), recorded in `test/fixtures/show_create_table/` and checked against the live server by `test/test_show_create_table_server_output.py` (#611): every identifier is printed in brackets with spaces, commas and parentheses kept verbatim; each foreign key prints both actions, `ON DELETE` before `ON UPDATE`, with the default printed as `RESTRICT`; the actions are `CASCADE`, `SET NULL`, `NO ACTION` and `RESTRICT` (the servers reject `ON UPDATE CASCADE` and have no `SET DEFAULT`); the referenced table is owner-qualified (`[dba.parent]`) from 11.2 and unqualified on 10.2 and 11.0, and the owner is dropped from `referred_table`. A `UNIQUE` constraint and a `CREATE UNIQUE INDEX` index both print as `UNIQUE KEY`.
+ - **Table and view listings**: `get_table_names()`, `get_view_names()` and `has_table()` read `db_class`. Since CUBRID 11.2 that view lists the classes of every owner the user may read, while an unqualified name resolves only in the current user's schema, so these methods are limited to `owner_name = CURRENT_USER` (#864): another owner's table of the same name no longer makes `create_all()` skip the current user's table, `MetaData.reflect()` no longer aborts with `NoSuchTableError` on it, and two owners' same-named tables are listed once. A `schema=` argument other than the default schema still returns no names, as for every reflection method. CUBRID 10.2 and 11.0 class names are global, so their listings are unchanged.
++- **Reflected server defaults**: `get_columns()` reports each default as SQL that `CreateTable` and Alembic can emit again (#865). A numeric column's numeric default is kept as `SHOW COLUMNS` prints it (`5`, `-3`, `1.50`). Any other default, including a string column's `'5'` (which `SHOW COLUMNS` also prints as `5`), is read from `SHOW CREATE TABLE`, which `get_columns()` then runs once for the table: `SHOW COLUMNS` prints a string default without its quotes, so `'it''s'`, `''` and the string `'NULL'` used to reflect as `it''s`, an empty string and `NULL`, a date as `01/02/2020`, and both `'CURRENT_USER'` and `USER` as `CURRENT_USER`. They now reflect as `'it''s'`, `''`, `'NULL'`, `date '01/02/2020'`, `'CURRENT_USER'` and `CURRENT_USER`; functions such as `SYS_DATETIME` or `TO_CHAR(SYS_DATETIME, 'YYYY')`, charset-prefixed literals (`_utf8'q'`, `N'n'`) and bit strings (`X'a0'`) keep the server's spelling. A column without a default still reflects `None`. Views do not run `SHOW CREATE TABLE`; if its output cannot be parsed, the `SHOW COLUMNS` text is kept.
+ - **Reflection as a non-DBA user**: Reflection reads only the catalog views every user can read (`db_class`, `db_index`, `db_index_key`, `db_attribute`), never the DBA-only `_db_index`, `_db_index_key` or `_db_attribute` catalog tables, so a non-DBA user gets the same indexes, primary key, unique constraints, `has_index()` answer and column comments as DBA. The table name matches as given or folded to lower case, as in `SHOW COLUMNS IN <name>`. Since CUBRID 11.2 these views also list same-named classes of other owners, so the rows are limited to the owner of the reflected class (the current user's own class first, as for `db_class`). A failing catalog query raises instead of silently falling back to incomplete metadata.
+ - **`SHOW CREATE TABLE` failures**: `get_foreign_keys()` (and the `SHOW CREATE TABLE` fallback of `get_unique_constraints()`) returns an empty list only when `SHOW CREATE TABLE` succeeds and the DDL has no such constraint. `Unknown class`, or no row for a table that the catalog listed, raises `NoSuchTableError`; any other failure (a disconnect, an authorization error, a driver error) propagates instead of being logged and reported as "no constraints", which made Alembic autogenerate emit `add_fk` for foreign keys that already exist (#589). CUBRID lists in `db_class` only the tables a user holds `SELECT` on, and `SHOW CREATE TABLE` on such a table does not fail with an authorization error (checked as a non-DBA user on CUBRID 10.2 and 11.4), so no failure is tolerated for non-DBA users either. Since CUBRID 11.2 an unqualified name resolves in the current user's schema, so another owner's table, even one granted to the current user, raises `NoSuchTableError` from `get_columns()` as well as here; `get_unique_constraints()` therefore keeps reading `SHOW CREATE TABLE` for such a table when the catalog lists its indexes but no unique one; when the catalog lists a unique index of it, `SHOW INDEXES IN` raises `NoSuchTableError` before the DDL is read. For a table of the current user (any visible table before 11.2) whose catalog lists indexes but no unique one, `get_unique_constraints()` returns `[]` without running `SHOW CREATE TABLE` (#610).
+ 
+diff --git a/test/test_dialect_offline.py b/test/test_dialect_offline.py
+index d43aa52..a7fef77 100644
+--- a/test/test_dialect_offline.py
++++ b/test/test_dialect_offline.py
+@@ -771,7 +771,12 @@ class TestReflectionMethods:
+             ("int_col", "int comment"),
+             ("unknown_col", None),
+         ]
+-        connection.execute.side_effect = [rows, comment_rows]
++        ddl = MagicMock()
++        ddl.first.return_value = (
++            "sample_table",
++            "CREATE TABLE [sample_table] ([varchar_col] CHARACTER VARYING(100) DEFAULT 'v')",
++        )
++        connection.execute.side_effect = [rows, comment_rows, _class_type_result("CLASS"), ddl]
+ 
+         with patch("sqlalchemy.util.warn") as warn:
+             columns = _invoke_reflection(dialect, "get_columns", connection, "sample_table")
+@@ -783,7 +788,9 @@ class TestReflectionMethods:
+ 
+         assert columns[1]["type"].__class__.__name__ == "VARCHAR"
+         assert columns[1]["type"].length == 100
+-        assert columns[1]["default"] == "v"
++        # #865: a string default reflects as its SHOW CREATE TABLE literal.
++        assert columns[1]["default"] == "'v'"
++        assert columns[3]["default"] == "0"
+ 
+         assert columns[2]["type"].__class__.__name__ == "NCHAR"
+         assert columns[2]["type"].length == 10
+@@ -2907,3 +2914,147 @@ class TestSchemaNameNormalization:
+         assert TIMESTAMPLTZ().timezone is True
+         assert DATETIMETZ().timezone is True
+         assert DATETIMELTZ().timezone is True
++
++
++class TestReflectedDefaultsFromDdl865:
++    """#865: non-numeric defaults reflect as the SQL that SHOW CREATE TABLE prints."""
++
++    _DDL = (
++        "CREATE TABLE [d865] ([id] INTEGER AUTO_INCREMENT (1, 1) NOT NULL, "
++        "[q] CHARACTER VARYING(20) DEFAULT 'it''s', [em] CHARACTER VARYING(20) DEFAULT '', "
++        "[nl] CHARACTER VARYING(20) DEFAULT 'NULL', [nn] CHARACTER VARYING(20), "
++        "[a] CHARACTER VARYING(20) DEFAULT 'x, y' NOT NULL COMMENT 'c, ''m'' DEFAULT 1', "
++        "[s] CHARACTER VARYING(30) COLLATE utf8_bin DEFAULT _utf8'q', "
++        "[nc] NATIONAL CHARACTER VARYING(10) DEFAULT N'n', [bt] BIT(8) DEFAULT X'a0', "
++        "[d] DATE DEFAULT date '01/02/2020', "
++        "[ts] TIMESTAMP DEFAULT timestamp '03:04:05 AM 01/02/2020', "
++        "[u] DATETIME DEFAULT SYS_DATETIME ON UPDATE CURRENT_DATETIME, "
++        "[tc] CHARACTER VARYING(30) DEFAULT TO_CHAR(SYS_DATETIME, 'YYYY'), "
++        "[w] CHARACTER VARYING(20) DEFAULT 'CURRENT_USER', "
++        "[w2] CHARACTER VARYING(20) DEFAULT CURRENT_USER, [neg] INTEGER DEFAULT -3, "
++        "[sp ace] INTEGER DEFAULT 1, [e] ENUM('a', 'b') DEFAULT 'b',  "
++        "CONSTRAINT [pk_d865_id] PRIMARY KEY  ([id])) REUSE_OID, COLLATE iso88591_bin, "
++        "COMMENT='t) DEFAULT 2'"
++    )
++
++    def test_parser_reads_each_default_form(self):
++        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
++
++        assert _column_defaults_from_ddl(self._DDL) == {
++            "q": "'it''s'",
++            "em": "''",
++            "nl": "'NULL'",
++            "a": "'x, y'",
++            "s": "_utf8'q'",
++            "nc": "N'n'",
++            "bt": "X'a0'",
++            "d": "date '01/02/2020'",
++            "ts": "timestamp '03:04:05 AM 01/02/2020'",
++            "u": "SYS_DATETIME",
++            "tc": "TO_CHAR(SYS_DATETIME, 'YYYY')",
++            "w": "'CURRENT_USER'",
++            "w2": "CURRENT_USER",
++            "neg": "-3",
++            "sp ace": "1",
++            "e": "'b'",
++        }
++
++    @pytest.mark.parametrize(
++        "ddl",
++        ["no parenthesis", "CREATE TABLE [t] ([a] VARCHAR DEFAULT 'open", "CREATE TABLE [t] ("],
++    )
++    def test_parser_rejects_malformed_ddl(self, ddl):
++        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
++
++        with pytest.raises(ValueError):
++            _column_defaults_from_ddl(ddl)
++
++    @pytest.mark.parametrize("version", ["10.2", "11.0", "11.2", "11.4"])
++    @pytest.mark.parametrize("table", ["sct_types", "sct ref, (x)"])
++    def test_parser_reads_captured_server_ddl(self, version, table):
++        """The captured DDL prints ENUM labels undoubled (``ENUM('it's', ...)``)
++        and a table name may hold a parenthesis (``[sct ref, (x)]``)."""
++        import json
++        from pathlib import Path
++
++        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
++
++        fixture = (
++            Path(__file__).parent / "fixtures" / "show_create_table" / f"cubrid-{version}.json"
++        )
++        ddl = json.loads(fixture.read_text())["tables"][table]["show_create_table"]
++        ddl = ddl[1] if isinstance(ddl, list) else ddl
++        assert _column_defaults_from_ddl(ddl) == {}
++        head, sep, tail = ddl.partition(",  CONSTRAINT")
++        assert sep
++        with_default = head + ", [zz] CHARACTER VARYING(9) DEFAULT 'it''s (a, b)'" + sep + tail
++        assert _column_defaults_from_ddl(with_default) == {"zz": "'it''s (a, b)'"}
++
++    def test_parser_reads_enum_default_after_undoubled_labels(self):
++        from sqlalchemy_cubrid.dialect import _column_defaults_from_ddl
++
++        ddl = (
++            "CREATE TABLE [e865 (x)] ([id] INTEGER NOT NULL, "
++            "[e] ENUM('it's', 'a, b', 'c (d)') DEFAULT 'it''s', "
++            "[q] CHARACTER VARYING(9) DEFAULT 'q''q',  "
++            "CONSTRAINT [pk_e865 (x)_id] PRIMARY KEY  ([id])) COLLATE iso88591_bin"
++        )
++        assert _column_defaults_from_ddl(ddl) == {"e": "'it''s'", "q": "'q''q'"}
++
++    @staticmethod
++    def _reflect(rows, *extra):
++        dialect = CubridDialect()
++        connection = MagicMock()
++        connection.execute.side_effect = [rows, [], *extra]
++        return _invoke_reflection(dialect, "get_columns", connection, "d865"), connection
++
++    @staticmethod
++    def _ddl_result(ddl):
++        result = MagicMock()
++        result.first.return_value = ("d865", ddl)
++        return result
++
++    def test_get_columns_quotes_string_and_date_defaults(self):
++        rows = [
++            ("q", "VARCHAR(20)", "YES", "", "it''s", ""),
++            ("em", "VARCHAR(20)", "YES", "", "", ""),
++            ("nl", "VARCHAR(20)", "YES", "", "NULL", ""),
++            ("nn", "VARCHAR(20)", "YES", "", None, ""),
++            ("d", "DATE", "YES", "", "01/02/2020", ""),
++            ("neg", "INTEGER", "YES", "", "-3", ""),
++        ]
++        columns, _ = self._reflect(rows, _class_type_result("CLASS"), self._ddl_result(self._DDL))
++        assert [c["default"] for c in columns] == [
++            "'it''s'",
++            "''",
++            "'NULL'",
++            None,
++            "date '01/02/2020'",
++            "-3",
++        ]
++
++    def test_numeric_defaults_do_not_read_the_ddl(self):
++        rows = [("i", "INTEGER", "YES", "", "5", ""), ("n", "NUMERIC(10,2)", "YES", "", "1.50", "")]
++        columns, connection = self._reflect(rows)
++        assert [c["default"] for c in columns] == ["5", "1.50"]
++        assert connection.execute.call_count == 2
++
++    def test_numeric_looking_string_default_reads_the_ddl(self):
++        """A VARCHAR DEFAULT '5' is printed as 5 by SHOW COLUMNS too."""
++        rows = [("s", "VARCHAR(20)", "YES", "", "5", ""), ("i", "INTEGER", "YES", "", "5", "")]
++        ddl = "CREATE TABLE [d865] ([s] CHARACTER VARYING(20) DEFAULT '5', [i] INTEGER DEFAULT 5)"
++        columns, _ = self._reflect(rows, _class_type_result("CLASS"), self._ddl_result(ddl))
++        assert [c["default"] for c in columns] == ["'5'", "5"]
++
++    def test_view_columns_do_not_read_the_ddl(self):
++        rows = [("q", "VARCHAR(20)", "YES", "", "x", "")]
++        columns, connection = self._reflect(rows, _class_type_result("VCLASS"))
++        assert columns[0]["default"] == "x"
++        assert connection.execute.call_count == 3
++
++    def test_unparsable_ddl_keeps_the_show_columns_default(self):
++        rows = [("q", "VARCHAR(20)", "YES", "", "x", "")]
++        columns, _ = self._reflect(
++            rows, _class_type_result("CLASS"), self._ddl_result("CREATE TABLE [d865] ('open")
++        )
++        assert columns[0]["default"] == "x"
+diff --git a/test/test_integration.py b/test/test_integration.py
+index 18a47b4..adeeae6 100644
+--- a/test/test_integration.py
++++ b/test/test_integration.py
+@@ -3722,3 +3722,69 @@ class TestCurrentOwnerListings864:
+         assert "own864_v" not in reflected.tables
+         with engine.connect() as conn:
+             assert inspect(conn).get_table_names().count("own864") == 1
++
++
++class TestReflectedDefaultRoundTrip865:
++    """#865: reflected string and date defaults re-create the same table."""
++
++    SOURCE = "dflt865_src"
++    COPY = "dflt865_copy"
++    DDL = (
++        f"CREATE TABLE {SOURCE} (id INT PRIMARY KEY, "
++        "q VARCHAR(20) DEFAULT 'it''s', em VARCHAR(20) DEFAULT '', "
++        "nl VARCHAR(20) DEFAULT 'NULL', sp VARCHAR(20) DEFAULT ' a, b ', "
++        "w VARCHAR(20) DEFAULT 'CURRENT_USER', w2 VARCHAR(40) DEFAULT USER, "
++        "nc NCHAR VARYING(10) DEFAULT N'n', d DATE DEFAULT DATE '2020-01-02', "
++        "ts TIMESTAMP DEFAULT TIMESTAMP '2020-01-02 03:04:05', i INT DEFAULT -3, "
++        "e ENUM('it''s', 'a, b', 'c (d)') DEFAULT 'it''s', five VARCHAR(5) DEFAULT '5', "
++        "nn VARCHAR(20))"
++    )
++    DEFAULTED = ("q", "em", "nl", "sp", "w", "w2", "nc", "d", "ts", "i", "e", "five", "nn")
++
++    @pytest.fixture
++    def source(self, engine):
++        def drop():
++            with engine.begin() as conn:
++                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {self.COPY}")
++                conn.exec_driver_sql(f"DROP TABLE IF EXISTS {self.SOURCE}")
++
++        drop()
++        with engine.begin() as conn:
++            conn.exec_driver_sql(self.DDL)
++        try:
++            yield
++        finally:
++            drop()
++
++    def _defaults(self, engine, table):
++        with engine.connect() as conn:
++            return {c["name"]: c["default"] for c in inspect(conn).get_columns(table)}
++
++    def _inserted(self, engine, table):
++        with engine.begin() as conn:
++            conn.exec_driver_sql(f"INSERT INTO {table} (id) VALUES (1)")
++            cols = ", ".join(self.DEFAULTED)
++            return conn.exec_driver_sql(f"SELECT {cols} FROM {table}").one()
++
++    def test_reflect_create_reflect(self, engine, source):
++        reflected = self._defaults(engine, self.SOURCE)
++        assert reflected["q"] == "'it''s'"
++        assert reflected["em"] == "''"
++        assert reflected["nl"] == "'NULL'"
++        assert reflected["w"] == "'CURRENT_USER'"
++        assert reflected["w2"] == "CURRENT_USER"
++        assert reflected["five"] == "'5'"
++        assert reflected["i"] == "-3"
++        assert reflected["nn"] is None
++
++        meta = MetaData()
++        src = Table(self.SOURCE, meta, autoload_with=engine)
++        copy = src.to_metadata(MetaData(), name=self.COPY)
++        copy.create(engine)
++
++        assert self._defaults(engine, self.COPY) == reflected
++        source_row = self._inserted(engine, self.SOURCE)
++        copy_row = self._inserted(engine, self.COPY)
++        assert copy_row == source_row
++        assert source_row[:5] == ("it's", "", "NULL", " a, b ", "CURRENT_USER")
++        assert source_row[-1] is None

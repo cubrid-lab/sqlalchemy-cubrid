@@ -1,0 +1,22 @@
+{
+  "agent": {
+    "model": "n/a (historical commit 14eeafa)",
+    "name": "reference fix"
+  },
+  "statements": [
+    "Offline: get_columns() returns quoted literals for the recorded string, empty, 'NULL' and date defaults.",
+    "The live test was not run: no CUBRID server was available, so behavior on a live server is not verified."
+  ],
+  "tests": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_dialect_offline.py",
+      "evidence": "reflected_offline",
+      "result": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider -m integration test/test_integration.py -k TestReflectedDefaultRoundTrip865",
+      "evidence": "reflected_live",
+      "result": "not run"
+    }
+  ]
+}

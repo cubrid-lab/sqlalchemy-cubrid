@@ -1,0 +1,21 @@
+{
+  "agent": {
+    "model": "n/a (historical commit 45fe81a)",
+    "name": "reference fix"
+  },
+  "statements": [
+    "Offline: alter_column compiles nullability, dropped-default and comment changes to MODIFY/CHANGE SQL."
+  ],
+  "tests": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_alembic.py",
+      "evidence": "compiled",
+      "result": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider -m integration test/test_integration.py -k TestAlembicAlterColumnAttributes861",
+      "evidence": "executed_live",
+      "result": "not run"
+    }
+  ]
+}
