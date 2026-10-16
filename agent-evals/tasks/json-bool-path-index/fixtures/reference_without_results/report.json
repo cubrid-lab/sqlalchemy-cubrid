@@ -1,0 +1,27 @@
+{
+  "agent": {
+    "model": "n/a (historical commit 7744dd6)",
+    "name": "reference fix"
+  },
+  "statements": [
+    "Offline: bind and literal_binds rendering reject a bool path component.",
+    "The live JSON path test was not run: no CUBRID server was available, so behavior on a live server is not verified."
+  ],
+  "tests": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_json.py",
+      "evidence": "bound",
+      "result": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_json.py",
+      "evidence": "compiled",
+      "result": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider -m integration test/test_integration.py -k json",
+      "evidence": "executed_live",
+      "result": "not run"
+    }
+  ]
+}

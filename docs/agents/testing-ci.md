@@ -37,6 +37,17 @@ instance carry the `integration` marker (`test_integration.py`, `test_aio_integr
 `test_suite.py` and several contract, fuzz and regression modules); the offline lanes
 deselect them with `-m "not integration"`.
 
+### Agent evaluations
+
+[`agent-evals/`](../../agent-evals/README.md) holds opt-in benchmark tasks for coding
+agents (#906): frozen historical fixes with their base SHA, allowed files, offline
+tests, documentation and CHANGELOG decision, and the live evidence they lack.
+`make agent-eval-check` validates the tasks and re-grades the recorded fixtures; it
+runs no model and needs no database, and its tests are in the `repo` lane. No agent
+score gates a pull request. A compiler, bind or offline reflection result is never
+proof of live SQL, reflection or Alembic behavior: report live checks as not run and
+say what is not verified.
+
 ## CI/CD
 
 ### Workflows

@@ -1,0 +1,6 @@
+{
+  "criteria": {
+    "regression_test": "fail"
+  },
+  "verdict": "fail"
+}

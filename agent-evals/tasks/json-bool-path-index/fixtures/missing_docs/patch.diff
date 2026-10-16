@@ -1,0 +1,203 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f5b1f85..a690c7a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ## [Unreleased]
+ 
++### Fixed
++
++- **`bool` JSON path indices are rejected (#914)** — `bool` is an `int` subclass, so
++  `json_col[True]` and `json_col[("items", False)]` rendered the paths `$[True]` and
++  `$."items"[False]`. CUBRID 10.2 and 11.4 reject these as invalid JSON paths (`-494`),
++  but the statement had already been sent. `JSONIndexType` and `JSONPathType` now raise
++  `TypeError` for a `bool` component. Execution reports it as
++  `sqlalchemy.exc.StatementError` before any SQL is sent, and `literal_binds` rendering as
++  `sqlalchemy.exc.CompileError`. Integer (including `0`, `1` and negative) and string
++  components render byte for byte as before, on SQLAlchemy 2.0 and 2.1. The Types guide
++  lists the supported path component types.
++
+ ### Documentation
+ 
+ - **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
+diff --git a/docs/llms-full.txt b/docs/llms-full.txt
+index 53c764a..ac207e0 100644
+--- a/docs/llms-full.txt
++++ b/docs/llms-full.txt
+@@ -2424,6 +2424,14 @@ stmt = select(events).where(
+ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
+ ```
+ 
++**Path components** are `int` array positions (`col[0]` reads `$[0]`, negative values
++render as given) or `str` keys. `bool` is rejected even though it is an `int` subclass
++(#914): `col[True]` or `col[("items", False)]` would render `$[True]`, which CUBRID 10.2
++and 11.4 reject as an invalid JSON path (`-494`). Execution raises
++`sqlalchemy.exc.StatementError` wrapping `TypeError`, before any SQL is sent, and
++`literal_binds` rendering raises `sqlalchemy.exc.CompileError`. Use `0`/`1` for an array
++position, or `"True"` for a key.
++
+ > **Note**: Generic `sa.JSON` is automatically adapted to CUBRID's `JSON` type via `colspecs`. JSON columns are reflected correctly from existing tables.
+ 
+ ---
+diff --git a/sqlalchemy_cubrid/types.py b/sqlalchemy_cubrid/types.py
+index 4801309..4bd97af 100644
+--- a/sqlalchemy_cubrid/types.py
++++ b/sqlalchemy_cubrid/types.py
+@@ -595,6 +595,19 @@ def _json_path_key(key: Any) -> str:
+     return json.dumps(str(key))
+ 
+ 
++def _reject_bool_path_index(value: Any) -> None:
++    """Refuse ``bool`` path components, which ``isinstance(value, int)`` accepts (#914).
++
++    ``True``/``False`` would render as ``[True]``/``[False]``, which is not a
++    JSON array index.
++    """
++    if isinstance(value, bool):
++        raise TypeError(
++            "JSON path index must be an int or a str, not bool; "
++            "use 0 or 1 for an array position or a string key"
++        )
++
++
+ class JSONIndexType(_FormatTypeMixin, sqltypes.JSON.JSONIndexType):
+     """CUBRID JSON index type for single-key access.
+ 
+@@ -604,6 +617,7 @@ class JSONIndexType(_FormatTypeMixin, sqltypes.JSON.JSONIndexType):
+     """
+ 
+     def _format_value(self, value: Any) -> str:
++        _reject_bool_path_index(value)
+         if isinstance(value, int):
+             return "$[%s]" % value
+         else:
+@@ -618,6 +632,9 @@ class JSONPathType(_FormatTypeMixin, sqltypes.JSON.JSONPathType):
+     """
+ 
+     def _format_value(self, value: Any) -> str:
++        value = tuple(value)  # Read a one-shot iterable once, then validate it.
++        for elem in value:
++            _reject_bool_path_index(elem)
+         return "$%s" % (
+             "".join(
+                 "[%s]" % elem if isinstance(elem, int) else "." + _json_path_key(elem)
+diff --git a/test/test_integration.py b/test/test_integration.py
+index c0959e7..8977547 100644
+--- a/test/test_integration.py
++++ b/test/test_integration.py
+@@ -3829,6 +3829,50 @@ class TestJSONPathKeyEscaping866:
+             assert conn.execute(stmt).scalar() == 12
+ 
+ 
++class TestJSONBooleanPathIndexLive914:
++    """#914: a bool JSON path index fails before any SQL reaches the server."""
++
++    @pytest.fixture
++    def json_table(self, engine):
++        meta = MetaData()
++        tbl = Table(
++            f"integration_json914_{_TABLE_SUFFIX}",
++            meta,
++            Column("id", Integer, primary_key=True),
++            Column("doc", sa.JSON),
++        )
++        meta.drop_all(engine)
++        meta.create_all(engine)
++        with engine.begin() as conn:
++            conn.execute(tbl.insert().values(id=1, doc={"items": [10, 20]}))
++        try:
++            yield tbl
++        finally:
++            meta.drop_all(engine)
++
++    @pytest.mark.parametrize("index", [True, ("items", False)])
++    def test_bool_index_is_rejected_before_execution(self, engine, json_table, index):
++        stmt = sa.select(json_table.c.doc[index])
++        with engine.connect() as conn:
++            with pytest.raises(sa.exc.StatementError) as raised:
++                conn.execute(stmt)
++            assert isinstance(raised.value.orig, TypeError)
++            assert not isinstance(raised.value, sa.exc.DBAPIError)
++            # The connection is still usable: nothing was sent.
++            value = conn.execute(sa.select(json_table.c.doc[("items", 1)].as_integer())).scalar()
++            assert value == 20
++        with pytest.raises(sa.exc.CompileError):
++            stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
++
++    def test_int_indices_are_unchanged(self, engine, json_table):
++        stmt = sa.select(json_table.c.doc[("items", 0)].as_integer())
++        inline = stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
++        with engine.connect() as conn:
++            bound = conn.execute(stmt).scalar()
++            rendered = conn.exec_driver_sql(str(inline)).scalar()
++        assert (bound, rendered) == (10, 10)
++
++
+ class TestFetchAsLimitLive867:
+     """#867: Select.fetch() runs on the live server as LIMIT."""
+ 
+diff --git a/test/test_json.py b/test/test_json.py
+index 45a5e3d..84f1f45 100644
+--- a/test/test_json.py
++++ b/test/test_json.py
+@@ -107,6 +107,59 @@ class TestJSONPathType:
+         assert pth._format_value((0, 1, 2)) == "$[0][1][2]"
+ 
+ 
++class TestJSONBooleanPathIndex:
++    """``bool`` is an ``int`` subclass but not a JSON array index (#914)."""
++
++    BOOL_ERROR = "JSON path index must be an int or a str, not bool"
++
++    @pytest.mark.parametrize("value", [True, False])
++    def test_index_formatter_rejects_bool(self, value):
++        with pytest.raises(TypeError, match=self.BOOL_ERROR):
++            JSONIndexType()._format_value(value)
++
++    @pytest.mark.parametrize("path", [("items", False), (True,), ("a", 0, True), (False, "b")])
++    def test_path_formatter_rejects_bool_component(self, path):
++        with pytest.raises(TypeError, match=self.BOOL_ERROR):
++            JSONPathType()._format_value(path)
++
++    def test_int_and_string_components_are_unchanged(self):
++        assert JSONIndexType()._format_value(0) == "$[0]"
++        assert JSONIndexType()._format_value(1) == "$[1]"
++        assert JSONIndexType()._format_value(-1) == "$[-1]"
++        assert JSONIndexType()._format_value("True") == '$."True"'
++        assert JSONPathType()._format_value(("items", 0, "a", 1)) == '$."items"[0]."a"[1]'
++
++    @pytest.mark.parametrize("index", [True, ("items", False)])
++    def test_bind_processor_rejects_bool(self, index):
++        compiled = select(json_table.c.data[index]).compile(dialect=CubridDialect())
++        (name,) = compiled._bind_processors
++        params = compiled.construct_params()
++        with pytest.raises(TypeError, match=self.BOOL_ERROR):
++            compiled._bind_processors[name](params[name])
++
++    @pytest.mark.parametrize("index", [True, ("items", False)])
++    def test_literal_rendering_rejects_bool(self, index):
++        with pytest.raises(sa.exc.CompileError) as raised:
++            _compile(select(json_table.c.data[index]))
++        assert isinstance(raised.value.__cause__, TypeError)
++        assert self.BOOL_ERROR in str(raised.value.__cause__)
++
++    def test_path_from_a_one_shot_iterable_is_read_once(self):
++        process = JSONPathType().bind_processor(CubridDialect())
++        rendered = process(iter(("items", 0)))
++        assert rendered == '$."items"[0]'
++        with pytest.raises(TypeError, match=self.BOOL_ERROR):
++            process(iter(("items", True)))
++
++    def test_bind_processor_keeps_int_and_nested_paths(self):
++        for index, expected in ((0, "$[0]"), (("items", 1), '$."items"[1]')):
++            compiled = select(json_table.c.data[index]).compile(dialect=CubridDialect())
++            (name,) = compiled._bind_processors
++            params = compiled.construct_params()
++            sent = compiled._bind_processors[name](params[name])
++            assert sent == expected
++
++
+ class TestJSONPathExpressionCompilation:
+     def test_json_getitem_string_key(self):
+         stmt = select(json_table.c.data["name"])

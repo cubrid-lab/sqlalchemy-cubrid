@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "id": "json-bool-path-index",
+  "title": "Reject bool JSON path indices instead of rendering invalid array paths",
+  "issue": "#914",
+  "fix_commit": "7744dd62e2477b25d2a904f115f3a8cce75f5f18",
+  "base_sha": "7a2512f4694ee5129081ad87a449cae8bb3d4a88",
+  "problem": "JSONIndexType._format_value and JSONPathType._format_value test array indices with isinstance(value, int). bool is an int subclass, so json_col[True] renders the path $[True] and (\"items\", False) renders $.\"items\"[False], which are not JSON array indices. Decide a bool contract (reject with an actionable error), apply it to the single and the nested path formatter for both bind and literal rendering, keep int (0, 1, negative) and string-key output byte for byte, and document the supported path component types.",
+  "allowed_files": [
+    "sqlalchemy_cubrid/types.py",
+    "test/test_json.py",
+    "test/test_integration.py",
+    "docs/TYPES.md",
+    "docs/ko/TYPES.md",
+    "docs/llms-full.txt",
+    "CHANGELOG.md"
+  ],
+  "required_tests": ["test/test_json.py"],
+  "non_goals": [
+    "no change to other JSON operators, string-key escaping or integer index output",
+    "no claim that a live CUBRID server was exercised unless a live run is recorded"
+  ],
+  "validation": {
+    "offline": ["python -m pytest -q -p no:cacheprovider test/test_json.py"],
+    "live": ["python -m pytest -q -p no:cacheprovider -m integration test/test_integration.py -k json"]
+  },
+  "docs": [["docs/TYPES.md"], ["docs/ko/TYPES.md"]],
+  "changelog": {"section": "Fixed"},
+  "evidence": {"live": "absent", "required_kinds": ["bound", "compiled"]},
+  "expected": "A bool path component raises TypeError: execution reports it as sqlalchemy.exc.StatementError before any SQL is sent (bound), and literal_binds rendering as sqlalchemy.exc.CompileError (compiled). Integer and string components render exactly as before."
+}

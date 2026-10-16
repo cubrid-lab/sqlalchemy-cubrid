@@ -1,0 +1,14 @@
+{
+  "applied": true,
+  "base_sha": "7a2512f4694ee5129081ad87a449cae8bb3d4a88",
+  "commands": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_json.py",
+      "exit_code": 0,
+      "kind": "offline"
+    }
+  ],
+  "patch_sha256": "8d0b4235156f10a87b391f4b81d397e7be69179ad6e7ae48b8768acbf6d60d0f",
+  "schema_version": 1,
+  "task": "json-bool-path-index"
+}

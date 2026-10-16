@@ -1,4 +1,4 @@
-.PHONY: help install lint format check-tool-versions check-docs-reason typecheck security check check-all test test-repo test-offline test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release-check
+.PHONY: help install lint format check-tool-versions check-docs-reason agent-eval-check typecheck security check check-all test test-repo test-offline test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release-check
 
 PYTEST = python3 -m pytest
 PYTHON = python3
@@ -72,6 +72,10 @@ check: lint typecheck ## Run lint + typecheck
 check-docs-reason: ## Check docs reasons and real event/workflow regressions
 	$(PYTHON) -m doctest scripts/check_docs_reason.py -v
 	$(PYTHON) -m unittest discover -s test -p 'test_docs_reason.py' -v
+
+agent-eval-check: ## Validate the agent-evals tasks and re-grade their fixtures (offline; no model, no DB)
+	$(PYTHON) scripts/agent_eval.py validate
+	$(PYTHON) scripts/agent_eval.py check
 
 check-all: check security check-docs-reason ## Run lint + typecheck + security + docs gate tests
 
