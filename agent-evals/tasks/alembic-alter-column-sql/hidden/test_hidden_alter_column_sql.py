@@ -69,6 +69,9 @@ def test_dropped_default_of_a_not_null_column_keeps_it_not_null():
     assert len(statements) >= 2
     first, last = statements[0], statements[-1]
     assert "DEFAULT NULL" in first and "NOT NULL" not in first
+    # The first statement must also state NULL itself: from 11.2 MODIFY keeps NOT
+    # NULL unless told otherwise, and then rejects DEFAULT NULL.
+    assert re.search(r"(?<!NOT )\bNULL\b", first.replace("DEFAULT NULL", "")), first
     assert "NOT NULL" in last and "DEFAULT" not in last
     assert all("COMMENT 'c'" in s for s in statements)
 
