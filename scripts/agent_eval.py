@@ -37,6 +37,7 @@ the base SHA in the local clone (``git fetch --unshallow`` in a shallow one).
 from __future__ import annotations
 
 import argparse
+import ast
 import fnmatch
 import hashlib
 import json
@@ -75,7 +76,12 @@ TASK_KEYS = {
     "changelog",
     "evidence",
     "expected",
+    "hidden_tests",
 }
+# Every validation command is a pytest run: its summary tells passed from skipped.
+PYTEST = "python -m pytest "
+COMMAND_KINDS = ("offline", "hidden", "live")
+OUTCOMES = ("passed", "skipped", "failed")
 
 # A statement that claims live verification. Matched case-insensitively in the
 # report's statements and in lines the patch adds to Markdown files.
@@ -129,10 +135,27 @@ def validate_task(task: Any, where: str = "task") -> list[str]:
         if not isinstance(value, list) or not value or not all(isinstance(v, str) for v in value):
             errors.append(f"{where}: {key} must be a non-empty list of strings")
     validation = task.get("validation")
-    if not isinstance(validation, dict) or not validation.get("offline"):
-        errors.append(f"{where}: validation.offline must list at least one command")
-    elif not isinstance(validation.get("live", []), list):
-        errors.append(f"{where}: validation.live must be a list")
+    if not isinstance(validation, dict):
+        errors.append(f"{where}: validation must be an object")
+    else:
+        for key, minimum in (("offline", 1), ("live", 0)):
+            commands = validation.get(key, [])
+            if (
+                not isinstance(commands, list)
+                or len(commands) < minimum
+                or not all(isinstance(c, str) and c.startswith(PYTEST) for c in commands)
+            ):
+                errors.append(
+                    f"{where}: validation.{key} must be a list of at least {minimum}"
+                    f" {PYTEST.strip()!r} commands"
+                )
+    hidden = task.get("hidden_tests")
+    if (
+        not isinstance(hidden, list)
+        or not hidden
+        or not all(isinstance(name, str) and re.fullmatch(r"test_\w+\.py", name) for name in hidden)
+    ):
+        errors.append(f"{where}: hidden_tests must be a non-empty list of test_*.py file names")
     docs = task.get("docs")
     if not isinstance(docs, list) or not all(isinstance(group, list) and group for group in docs):
         errors.append(f"{where}: docs must be a list of non-empty file-glob groups")
@@ -163,24 +186,71 @@ def parse_patch(text: str) -> dict[str, list[str]]:
 
 
 def _hunks(text: str) -> dict[str, list[tuple[str, str]]]:
-    """Map each file to its added (``+``) and context (`` ``) lines, in diff order."""
+    """Map each file to its added (``+``) and context (`` ``) lines, in diff order.
+
+    The file name comes from the ``+++``/``---``/``rename to`` header lines (or
+    the ``diff --git`` line when it names one path twice). A header that names no
+    file raises EvalError rather than dropping the file from the scope check.
+    """
     files: dict[str, list[tuple[str, str]]] = {}
-    current: str | None = None
+    lines: list[tuple[str, str]] = []
+    paths: dict[str, str] = {}
+    started = False
     header = False  # between ``diff --git`` and the file's first ``@@`` hunk
+
+    def finish() -> None:
+        if not started:
+            return
+        path = paths.get("+++") or paths.get("rename") or paths.get("---") or paths.get("git")
+        if path is None:
+            raise EvalError(f"cannot tell which file a diff section changes: {paths}")
+        files.setdefault(path, []).extend(lines)
+
     for line in text.splitlines():
-        match = re.match(r"diff --git a/(\S+) b/(\S+)$", line)
-        if match:
-            current, header = match.group(2), True
-            files.setdefault(current, [])
+        if line.startswith("diff --git "):
+            finish()
+            started, header, lines, paths = True, True, [], {}
+            rest = line[len("diff --git ") :]
+            half = (len(rest) - 1) // 2
+            if '"' not in rest and rest[:2] == "a/" and rest == f"{rest[:half]} b/{rest[2:half]}":
+                paths["git"] = rest[2:half]
             continue
-        if current is None:
+        if not started:
+            continue
+        if header:
+            if line.startswith(("+++ ", "--- ")):
+                name = _diff_path(line[4:])
+                if name is not None:
+                    paths[line[:3]] = name
+            elif line.startswith(("rename to ", "copy to ")):
+                paths["rename"] = _diff_path(line.split(" to ", 1)[1], prefixed=False) or ""
+            elif line.startswith("@@"):
+                header = False
+                lines.append(("@", line))
             continue
         if line.startswith("@@"):
-            header = False
-            files[current].append(("@", line))
-        elif not header and line[:1] in ("+", " "):
-            files[current].append((line[:1], line[1:]))
+            lines.append(("@", line))
+        elif line[:1] in ("+", " "):
+            lines.append((line[:1], line[1:]))
+    finish()
     return files
+
+
+def _diff_path(name: str, prefixed: bool = True) -> str | None:
+    """A path from a diff header line; ``None`` for ``/dev/null``."""
+    name = name.rstrip("\t")
+    if name.startswith('"'):
+        try:
+            name = ast.literal_eval("b" + name).decode("utf-8")
+        except (SyntaxError, ValueError, UnicodeDecodeError) as exc:
+            raise EvalError(f"unreadable quoted path in the diff: {name}") from exc
+    if name == "/dev/null":
+        return None
+    if prefixed:
+        if name[:2] not in ("a/", "b/"):
+            raise EvalError(f"diff path without an a/ or b/ prefix: {name}")
+        name = name[2:]
+    return name
 
 
 def _matches(path: str, globs: list[str]) -> bool:
@@ -193,31 +263,38 @@ def _criterion(status: str, detail: str) -> dict[str, str]:
 
 def grade(task: dict[str, Any], patch: str, report: Any, results: Any | None) -> dict[str, Any]:
     """Score one candidate. Raises EvalError for a malformed report or results file."""
-    if not isinstance(report, dict) or not isinstance(report.get("tests"), list):
-        raise EvalError("report.json must be an object with a 'tests' list")
-    if not isinstance(report.get("statements", []), list):
-        raise EvalError("report.json 'statements' must be a list of strings")
+    _check_report(report)
+    if results is not None:
+        _check_results(results)
     files = parse_patch(patch)
     changed = sorted(files)
     criteria: dict[str, dict[str, str]] = {}
-    live_backed = _live_backing(results) and (
-        results.get("patch_sha256") == hashlib.sha256(patch.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(patch.encode("utf-8")).hexdigest()
+    same_patch = results is not None and (
+        results["task"],
+        results["base_sha"],
+        results["patch_sha256"],
+    ) == (task["id"], task["base_sha"], digest)
+    # Live commands the runner saw pass for this exact patch (a skipped run is not one).
+    live_passed = (
+        {
+            c["command"]
+            for c in results["commands"]
+            if c["kind"] == "live" and c["outcome"] == "passed"
+        }
+        if same_patch
+        else set()
     )
 
-    # Behavior: the task's offline commands, run by ``run`` at the base SHA.
+    # Behavior: the task's offline and evaluator-owned commands, run by ``run``.
     if results is None:
         criteria["behavior"] = _criterion("not_run", "no results.json: offline tests not run")
     else:
-        observed = {c.get("command"): c.get("exit_code") for c in results.get("commands", [])}
-        wanted = task["validation"]["offline"]
+        observed = {c["command"]: c["outcome"] for c in results["commands"]}
+        wanted = task["validation"]["offline"] + hidden_commands(task)
         missing = [c for c in wanted if c not in observed]
-        failed = [c for c in wanted if c in observed and observed[c] != 0]
-        digest = hashlib.sha256(patch.encode("utf-8")).hexdigest()
-        if (results.get("task"), results.get("base_sha"), results.get("patch_sha256")) != (
-            task["id"],
-            task["base_sha"],
-            digest,
-        ):
+        failed = [c for c in wanted if c in observed and observed[c] != "passed"]
+        if not same_patch:
             criteria["behavior"] = _criterion(
                 "fail", "results.json was recorded for another task, base SHA or patch"
             )
@@ -226,9 +303,9 @@ def grade(task: dict[str, Any], patch: str, report: Any, results: Any | None) ->
         elif missing:
             criteria["behavior"] = _criterion("not_run", f"not run: {missing}")
         elif failed:
-            criteria["behavior"] = _criterion("fail", f"failed: {failed}")
+            criteria["behavior"] = _criterion("fail", f"failed or skipped: {failed}")
         else:
-            criteria["behavior"] = _criterion("pass", "every offline validation command passed")
+            criteria["behavior"] = _criterion("pass", "every offline and hidden command passed")
 
     tests = [path for path in changed if _matches(path, task["required_tests"])]
     criteria["regression_test"] = (
@@ -252,8 +329,8 @@ def grade(task: dict[str, Any], patch: str, report: Any, results: Any | None) ->
     )
 
     criteria["changelog"] = _changelog(task, patch)
-    criteria["claims"] = _claims(task, files, report, live_backed)
-    criteria["evidence"] = _evidence(task, report, live_backed)
+    criteria["claims"] = _claims(task, files, report, live_passed)
+    criteria["evidence"] = _evidence(task, report, live_passed)
 
     statuses = {c["status"] for c in criteria.values()}
     verdict = "fail" if "fail" in statuses else "incomplete" if "not_run" in statuses else "pass"
@@ -266,13 +343,52 @@ def grade(task: dict[str, Any], patch: str, report: Any, results: Any | None) ->
     }
 
 
-def _live_backing(results: Any | None) -> bool:
-    """Whether the runner recorded a passing live command (only then may live claims stand)."""
-    if not isinstance(results, dict):
-        return False
-    return any(
-        c.get("kind") == "live" and c.get("exit_code") == 0 for c in results.get("commands", [])
-    )
+def _check_report(report: Any) -> None:
+    if not isinstance(report, dict) or not isinstance(report.get("tests"), list):
+        raise EvalError("report.json must be an object with a 'tests' list")
+    statements = report.get("statements", [])
+    if not isinstance(statements, list) or not all(isinstance(t, str) for t in statements):
+        raise EvalError("report.json 'statements' must be a list of strings")
+    for entry in report["tests"]:
+        if not isinstance(entry, dict) or not all(
+            isinstance(entry.get(key), str) for key in ("command", "evidence", "result")
+        ):
+            raise EvalError(
+                f"report.json test entries need string command/evidence/result: {entry!r}"
+            )
+
+
+def _check_results(results: Any) -> None:
+    if not isinstance(results, dict) or not isinstance(results.get("commands"), list):
+        raise EvalError("results.json must be an object with a 'commands' list")
+    for key in ("task", "base_sha", "patch_sha256"):
+        if not isinstance(results.get(key), str):
+            raise EvalError(f"results.json needs a string {key!r}")
+    if not isinstance(results.get("applied"), bool):
+        raise EvalError("results.json needs a boolean 'applied'")
+    for entry in results["commands"]:
+        if (
+            not isinstance(entry, dict)
+            or not isinstance(entry.get("command"), str)
+            or entry.get("kind") not in COMMAND_KINDS
+            or entry.get("outcome") not in OUTCOMES
+            or not isinstance(entry.get("exit_code"), int)
+        ):
+            raise EvalError(f"results.json command entries are malformed: {entry!r}")
+
+
+def hidden_commands(task: dict[str, Any]) -> list[str]:
+    """The commands that run the task's evaluator-owned tests inside the worktree."""
+    return [f"{PYTEST}-q -p no:cacheprovider test/{name}" for name in task["hidden_tests"]]
+
+
+def _clauses(text: str) -> list[str]:
+    """Split a statement into clauses, so one disclaimer cannot excuse another claim."""
+    return [
+        c
+        for c in re.split(r"[.;:!?](?:\s+|$)|,\s+|\s+(?:but|while|although|whereas)\s+", text)
+        if c
+    ]
 
 
 def _changelog(task: dict[str, Any], patch: str) -> dict[str, str]:
@@ -301,41 +417,51 @@ def _changelog(task: dict[str, Any], patch: str) -> dict[str, str]:
 
 
 def _claims(
-    task: dict[str, Any], files: dict[str, list[str]], report: dict[str, Any], live_backed: bool
+    task: dict[str, Any], files: dict[str, list[str]], report: dict[str, Any], live_passed: set[str]
 ) -> dict[str, str]:
-    statements = [s for s in report.get("statements", []) if isinstance(s, str)]
+    statements = report.get("statements", [])
     doc_lines = [line for path, lines in files.items() if path.endswith(".md") for line in lines]
     problems = []
     for text in statements + doc_lines:
         if DEPRECATED_DRIVER.search(text):
             problems.append(f"calls the supported CUBRIDdb driver deprecated: {text.strip()!r}")
-    if not live_backed:
+    if not live_passed:
+        # Each clause on its own: "Verified on CUBRID 11.4. Reflection was not verified."
+        # still claims a live run in its first sentence.
         for text in statements + doc_lines:
-            if LIVE_CLAIM.search(text) and not NOT_VERIFIED.search(text):
-                problems.append(f"live claim without live evidence: {text.strip()!r}")
-        for command in task["validation"].get("live", []):
-            entry = next((t for t in report["tests"] if t.get("command") == command), None)
-            if entry is None or entry.get("result") != "not run":
-                problems.append(f"live check {command!r} is not reported as 'not run'")
-        if task["validation"].get("live") and not any(NOT_VERIFIED.search(s) for s in statements):
-            problems.append("the report does not say what was not verified")
+            for clause in _clauses(text):
+                if LIVE_CLAIM.search(clause) and not NOT_VERIFIED.search(clause):
+                    problems.append(f"live claim without live evidence: {clause.strip()!r}")
+    unbacked = [c for c in task["validation"].get("live", []) if c not in live_passed]
+    for command in unbacked:
+        entry = next((t for t in report["tests"] if t["command"] == command), None)
+        if entry is None or entry["result"] not in ("not run", "failed"):
+            problems.append(f"live check {command!r} is not reported as 'not run' or 'failed'")
+    if unbacked and not any(NOT_VERIFIED.search(s) for s in statements):
+        problems.append("the report does not say what was not verified")
     if problems:
         return _criterion("fail", "; ".join(sorted(set(problems))))
     return _criterion("pass", "claims match the recorded evidence")
 
 
-def _evidence(task: dict[str, Any], report: dict[str, Any], live_backed: bool) -> dict[str, str]:
+def _evidence(
+    task: dict[str, Any], report: dict[str, Any], live_passed: set[str]
+) -> dict[str, str]:
     problems = []
     kinds = set()
     for entry in report["tests"]:
-        kind, result = entry.get("evidence"), entry.get("result")
+        kind, result = entry["evidence"], entry["result"]
         if kind not in EVIDENCE_KINDS or result not in RESULTS:
             problems.append(f"bad report entry {entry!r}")
             continue
         if result == "passed":
             kinds.add(kind)
-            if kind in LIVE_KINDS and not live_backed:
-                problems.append(f"{kind} reported as passed without a recorded live run")
+            # Live evidence counts only for a live command the runner saw pass.
+            if kind in LIVE_KINDS and entry["command"] not in live_passed:
+                problems.append(
+                    f"{kind} reported as passed for {entry['command']!r}"
+                    " without a passing recorded live run of that command"
+                )
     for kind in task["evidence"].get("required_kinds", []):
         if kind not in kinds:
             problems.append(f"no passed {kind} evidence")
@@ -347,6 +473,7 @@ def _evidence(task: dict[str, Any], report: dict[str, Any], live_backed: bool) -
 def run(task: dict[str, Any], patch: str, live: bool = False, repo: Path = ROOT) -> dict[str, Any]:
     """Apply the patch at the base SHA in a throwaway worktree and run the task's commands."""
     commands = [(c, "offline") for c in task["validation"]["offline"]]
+    commands += [(c, "hidden") for c in hidden_commands(task)]
     if live:
         commands += [(c, "live") for c in task["validation"].get("live", [])]
     result: dict[str, Any] = {
@@ -382,13 +509,21 @@ def run(task: dict[str, Any], patch: str, live: bool = False, repo: Path = ROOT)
             )
             result["applied"] = applied.returncode == 0
             if result["applied"]:
+                for name in task["hidden_tests"]:
+                    source = EVALS / "tasks" / task["id"] / "hidden" / name
+                    (worktree / "test" / name).write_bytes(source.read_bytes())
                 for command, kind in commands:
                     argv = shlex.split(command)
                     if argv[:1] == ["python"]:  # the interpreter running this script
                         argv[0] = sys.executable
-                    done = subprocess.run(argv, cwd=worktree, capture_output=True)
+                    done = subprocess.run(argv, cwd=worktree, capture_output=True, text=True)
                     result["commands"].append(
-                        {"command": command, "kind": kind, "exit_code": done.returncode}
+                        {
+                            "command": command,
+                            "kind": kind,
+                            "exit_code": done.returncode,
+                            "outcome": pytest_outcome(done.returncode, done.stdout),
+                        }
                     )
         finally:
             subprocess.run(
@@ -398,10 +533,31 @@ def run(task: dict[str, Any], patch: str, live: bool = False, repo: Path = ROOT)
     return result
 
 
+def pytest_outcome(exit_code: int, output: str) -> str:
+    """``passed`` only when pytest ran at least one test and none failed.
+
+    An all-skipped run (an integration test without a configured server) exits 0
+    and a run that collected nothing exits 5; both are ``skipped``, never proof.
+    """
+    tail = output.strip().splitlines()[-1:] or [""]
+    passed = re.search(r"\b(\d+) passed\b", tail[0])
+    if exit_code == 0 and passed and int(passed.group(1)) > 0:
+        return "passed"
+    if exit_code in (0, 5):
+        return "skipped"
+    return "failed"
+
+
 def load_task(task_id: str, root: Path = EVALS) -> dict[str, Any]:
     path = root / "tasks" / task_id / "task.json"
     task = load_json(path)
     errors = validate_task(task, str(path.relative_to(root.parent)))
+    if not errors:
+        errors = [
+            f"{path.parent.name}: hidden test {name} is missing"
+            for name in task["hidden_tests"]
+            if not (path.parent / "hidden" / name).is_file()
+        ]
     if errors:
         raise EvalError("; ".join(errors))
     return task

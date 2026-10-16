@@ -1,0 +1,8 @@
+{
+  "criteria": {
+    "behavior": "fail",
+    "docs": "pass",
+    "regression_test": "pass"
+  },
+  "verdict": "fail"
+}

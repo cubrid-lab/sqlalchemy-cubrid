@@ -5,7 +5,14 @@
     {
       "command": "python -m pytest -q -p no:cacheprovider test/test_json.py",
       "exit_code": 0,
-      "kind": "offline"
+      "kind": "offline",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_hidden_json_bool_path.py",
+      "exit_code": 0,
+      "kind": "hidden",
+      "outcome": "passed"
     }
   ],
   "patch_sha256": "aecdbcb722ecf99aadc34dbfacacc29fc1fb4a4fda69aa092d06f5d6ad8e084d",

@@ -16,6 +16,7 @@ the repository-tooling tests); it never runs an agent.
 agent-evals/
 └── tasks/<id>/
     ├── task.json                # the frozen task (schema below)
+    ├── hidden/test_*.py         # evaluator-owned tests, never shown to the agent
     └── fixtures/<name>/         # recorded candidates the grader must score as expected
         ├── patch.diff           # git diff against the task's base SHA
         ├── report.json          # what the candidate says it ran and claims
@@ -39,8 +40,9 @@ never from invented reproductions.
 | `allowed_files` | glob patterns a correct change may touch; anything else is scope creep |
 | `required_tests` | glob patterns of which at least one changed file must match (the regression test) |
 | `non_goals` | what the change must not do |
-| `validation.offline` | commands that prove the behavior without a database |
-| `validation.live` | commands that need a live CUBRID server (may be empty) |
+| `validation.offline` | `python -m pytest` commands that prove the behavior without a database |
+| `validation.live` | `python -m pytest` commands that need a live CUBRID server (may be empty) |
+| `hidden_tests` | file names under `hidden/`: evaluator-owned tests of the task's contract |
 | `docs` | groups of globs; each group needs at least one changed file (affected documentation) |
 | `changelog` | `{"section": "Fixed"}` (the `###` section the entry must sit under, citing the issue) or `null` (no entry) |
 | `evidence.live` | `absent` when the task has no recorded live run, `present` otherwise |
@@ -78,7 +80,12 @@ Compiled SQL, bound parameters and offline reflection are three different things
 none of them is evidence about a live server. `result` is `passed`, `failed` or
 `not run`.
 
-`results.json` is written by the dry run below; the agent does not write it.
+`results.json` is written by the dry run below; the agent does not write it. Each
+command has its `kind` (`offline`, `hidden` or `live`), `exit_code` and `outcome`:
+`passed` only when pytest ran at least one test and none failed, `skipped` when it ran
+none (every test skipped, or nothing collected), `failed` otherwise. An integration
+test without a configured server is skipped and exits 0, so an exit code alone is
+never live evidence.
 
 ## Commands
 
@@ -91,9 +98,12 @@ python scripts/agent_eval.py grade --task ID --patch patch.diff --report report.
 ```
 
 `run` is the local dry run. It checks out the task's `base_sha` in a temporary
-`git worktree`, applies the patch, runs `validation.offline` (and `validation.live`
-only with `--live`, which needs a server you configured yourself), records each exit
-code and the patch's SHA-256, and removes the worktree. It needs the base SHA in the
+`git worktree`, applies the patch, copies the task's hidden tests into its `test/`
+directory, runs `validation.offline`, the hidden tests (and `validation.live` only with
+`--live`, which needs a server you configured yourself), records each outcome and the
+patch's SHA-256, and removes the worktree. The hidden tests check the contract in
+`expected` (exception types, unchanged output), not one implementation's messages, so
+a candidate cannot pass by editing only the tests it was asked to update. It needs the base SHA in the
 local clone (`git fetch --unshallow` in a shallow clone). `grade` prints sorted JSON
 without timestamps, so the same artifacts always produce the same bytes; it exits 0
 for `pass`, 1 for `incomplete` or `fail`, and 2 for malformed input.
@@ -105,13 +115,13 @@ fails, `incomplete` if any was not run, and `pass` otherwise.
 
 | Criterion | Passes when |
 |---|---|
-| `behavior` | `results.json` matches this task, base SHA and patch digest, the patch applied, and every offline command exited 0. Without `results.json` it is `not_run`. |
+| `behavior` | `results.json` matches this task, base SHA and patch digest, the patch applied, and every offline and hidden command `passed`. Without `results.json` it is `not_run`. |
 | `regression_test` | a file matching `required_tests` changed |
 | `scope` | every changed file matches `allowed_files` |
 | `docs` | every `docs` group has a changed file |
 | `changelog` | the entry citing the issue sits under the expected `###` section (or there is none when the task expects none) |
-| `claims` | no statement or added Markdown line claims a live result without a recorded live run, every `validation.live` command is reported `not run` in that case, the report says what was not verified, and nothing calls the supported CUBRIDdb driver deprecated |
-| `evidence` | every `required_kinds` kind passed, and no live kind is reported passed without a recorded live run |
+| `claims` | without a passing recorded live run, no clause of a statement or added Markdown line claims a live result (each sentence or clause is checked on its own, so a disclaimer elsewhere does not excuse it); every `validation.live` command without a passing run is reported `not run` or `failed`, and the report says what was not verified; nothing calls the supported CUBRIDdb driver deprecated |
+| `evidence` | every `required_kinds` kind passed, and a live kind counts only for the very live command the dry run saw pass for this patch |
 
 ### When tests cannot reach a database
 
@@ -122,8 +132,9 @@ What is penalized is claiming more than was run:
 
 - a compiler, bind or offline reflection result is never proof of live SQL, live
   reflection or Alembic support on a server, whatever the wording;
-- a live evidence kind counts only when `results.json` records a passing live command
-  for the same patch;
+- a live evidence kind counts only when `results.json` records that same live command
+  as `passed` for the same patch; a skipped live run, or a passing live run cited for
+  an offline command, is not live evidence;
 - a task whose `evidence.live` is `absent` requires the explicit *not verified*
   statement.
 

@@ -1,0 +1,21 @@
+{
+  "applied": true,
+  "base_sha": "7a2512f4694ee5129081ad87a449cae8bb3d4a88",
+  "commands": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_json.py",
+      "exit_code": 0,
+      "kind": "offline",
+      "outcome": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_hidden_json_bool_path.py",
+      "exit_code": 1,
+      "kind": "hidden",
+      "outcome": "failed"
+    }
+  ],
+  "patch_sha256": "27c049925aa7d68ba7b1ff1364151f20cba0b8a249766419c634a0d9b94d3abc",
+  "schema_version": 1,
+  "task": "json-bool-path-index"
+}

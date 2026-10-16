@@ -16,6 +16,7 @@
     "CHANGELOG.md"
   ],
   "required_tests": ["test/test_json.py"],
+  "hidden_tests": ["test_hidden_json_bool_path.py"],
   "non_goals": [
     "no change to other JSON operators, string-key escaping or integer index output",
     "no claim that a live CUBRID server was exercised unless a live run is recorded"

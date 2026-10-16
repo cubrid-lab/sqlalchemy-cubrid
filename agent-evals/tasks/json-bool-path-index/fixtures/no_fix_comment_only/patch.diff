@@ -1,0 +1,145 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index f5b1f85..a690c7a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
+ 
+ ## [Unreleased]
+ 
++### Fixed
++
++- **`bool` JSON path indices are rejected (#914)** — `bool` is an `int` subclass, so
++  `json_col[True]` and `json_col[("items", False)]` rendered the paths `$[True]` and
++  `$."items"[False]`. CUBRID 10.2 and 11.4 reject these as invalid JSON paths (`-494`),
++  but the statement had already been sent. `JSONIndexType` and `JSONPathType` now raise
++  `TypeError` for a `bool` component. Execution reports it as
++  `sqlalchemy.exc.StatementError` before any SQL is sent, and `literal_binds` rendering as
++  `sqlalchemy.exc.CompileError`. Integer (including `0`, `1` and negative) and string
++  components render byte for byte as before, on SQLAlchemy 2.0 and 2.1. The Types guide
++  lists the supported path component types.
++
+ ### Documentation
+ 
+ - **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
+diff --git a/docs/TYPES.md b/docs/TYPES.md
+index a3f002c..1a4eb62 100644
+--- a/docs/TYPES.md
++++ b/docs/TYPES.md
+@@ -320,6 +320,14 @@ stmt = select(events).where(
+ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
+ ```
+ 
++**Path components** are `int` array positions (`col[0]` reads `$[0]`, negative values
++render as given) or `str` keys. `bool` is rejected even though it is an `int` subclass
++(#914): `col[True]` or `col[("items", False)]` would render `$[True]`, which CUBRID 10.2
++and 11.4 reject as an invalid JSON path (`-494`). Execution raises
++`sqlalchemy.exc.StatementError` wrapping `TypeError`, before any SQL is sent, and
++`literal_binds` rendering raises `sqlalchemy.exc.CompileError`. Use `0`/`1` for an array
++position, or `"True"` for a key.
++
+ > **Note**: Generic `sa.JSON` is automatically adapted to CUBRID's `JSON` type via `colspecs`. JSON columns are reflected correctly from existing tables.
+ 
+ ---
+diff --git a/docs/ko/TYPES.md b/docs/ko/TYPES.md
+index af1c19d..8fcb628 100644
+--- a/docs/ko/TYPES.md
++++ b/docs/ko/TYPES.md
+@@ -290,6 +290,14 @@ stmt = select(events).where(
+ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
+ ```
+ 
++**경로 구성 요소**는 `int` 배열 위치(`col[0]`은 `$[0]`을 읽고, 음수는 주어진 그대로
++렌더링됨) 또는 `str` 키입니다. `bool`은 `int`의 하위 클래스지만 거부됩니다(#914):
++`col[True]`나 `col[("items", False)]`는 `$[True]`로 렌더링되며, CUBRID 10.2와 11.4는 이를
++잘못된 JSON 경로(`-494`)로 거부합니다. 실행 시 SQL을 보내기 전에 `TypeError`를 감싼
++`sqlalchemy.exc.StatementError`가 발생하고, `literal_binds` 렌더링은
++`sqlalchemy.exc.CompileError`를 발생시킵니다. 배열 위치에는 `0`/`1`을, 키에는 `"True"`를
++사용하십시오.
++
+ > **참고**: 일반 `sa.JSON`은 `colspecs`를 통해 CUBRID의 `JSON` 타입으로 자동 적용됩니다. JSON 컬럼은 기존 테이블에서 올바르게 리플렉트됩니다.
+ 
+ ---
+diff --git a/docs/llms-full.txt b/docs/llms-full.txt
+index 53c764a..ac207e0 100644
+--- a/docs/llms-full.txt
++++ b/docs/llms-full.txt
+@@ -2424,6 +2424,14 @@ stmt = select(events).where(
+ stmt = select(func.JSON_EXTRACT(events.c.payload, "$.type"))
+ ```
+ 
++**Path components** are `int` array positions (`col[0]` reads `$[0]`, negative values
++render as given) or `str` keys. `bool` is rejected even though it is an `int` subclass
++(#914): `col[True]` or `col[("items", False)]` would render `$[True]`, which CUBRID 10.2
++and 11.4 reject as an invalid JSON path (`-494`). Execution raises
++`sqlalchemy.exc.StatementError` wrapping `TypeError`, before any SQL is sent, and
++`literal_binds` rendering raises `sqlalchemy.exc.CompileError`. Use `0`/`1` for an array
++position, or `"True"` for a key.
++
+ > **Note**: Generic `sa.JSON` is automatically adapted to CUBRID's `JSON` type via `colspecs`. JSON columns are reflected correctly from existing tables.
+ 
+ ---
+diff --git a/test/test_integration.py b/test/test_integration.py
+index c0959e7..8977547 100644
+--- a/test/test_integration.py
++++ b/test/test_integration.py
+@@ -3829,6 +3829,50 @@ class TestJSONPathKeyEscaping866:
+             assert conn.execute(stmt).scalar() == 12
+ 
+ 
++class TestJSONBooleanPathIndexLive914:
++    """#914: a bool JSON path index fails before any SQL reaches the server."""
++
++    @pytest.fixture
++    def json_table(self, engine):
++        meta = MetaData()
++        tbl = Table(
++            f"integration_json914_{_TABLE_SUFFIX}",
++            meta,
++            Column("id", Integer, primary_key=True),
++            Column("doc", sa.JSON),
++        )
++        meta.drop_all(engine)
++        meta.create_all(engine)
++        with engine.begin() as conn:
++            conn.execute(tbl.insert().values(id=1, doc={"items": [10, 20]}))
++        try:
++            yield tbl
++        finally:
++            meta.drop_all(engine)
++
++    @pytest.mark.parametrize("index", [True, ("items", False)])
++    def test_bool_index_is_rejected_before_execution(self, engine, json_table, index):
++        stmt = sa.select(json_table.c.doc[index])
++        with engine.connect() as conn:
++            with pytest.raises(sa.exc.StatementError) as raised:
++                conn.execute(stmt)
++            assert isinstance(raised.value.orig, TypeError)
++            assert not isinstance(raised.value, sa.exc.DBAPIError)
++            # The connection is still usable: nothing was sent.
++            value = conn.execute(sa.select(json_table.c.doc[("items", 1)].as_integer())).scalar()
++            assert value == 20
++        with pytest.raises(sa.exc.CompileError):
++            stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
++
++    def test_int_indices_are_unchanged(self, engine, json_table):
++        stmt = sa.select(json_table.c.doc[("items", 0)].as_integer())
++        inline = stmt.compile(dialect=engine.dialect, compile_kwargs={"literal_binds": True})
++        with engine.connect() as conn:
++            bound = conn.execute(stmt).scalar()
++            rendered = conn.exec_driver_sql(str(inline)).scalar()
++        assert (bound, rendered) == (10, 10)
++
++
+ class TestFetchAsLimitLive867:
+     """#867: Select.fetch() runs on the live server as LIMIT."""
+ 
+diff --git a/test/test_json.py b/test/test_json.py
+index 45a5e3d..d7bdd01 100644
+--- a/test/test_json.py
++++ b/test/test_json.py
+@@ -1,4 +1,5 @@
+ # test/test_json.py
++# Bool path components are covered by the JSON path tests (#914).
+ from __future__ import annotations
+ 
+ 

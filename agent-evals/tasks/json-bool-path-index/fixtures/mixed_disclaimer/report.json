@@ -1,0 +1,26 @@
+{
+  "agent": {
+    "model": "n/a (historical commit 7744dd6)",
+    "name": "reference fix"
+  },
+  "statements": [
+    "Verified against CUBRID 11.4. Live reflection was not verified."
+  ],
+  "tests": [
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_json.py",
+      "evidence": "bound",
+      "result": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider test/test_json.py",
+      "evidence": "compiled",
+      "result": "passed"
+    },
+    {
+      "command": "python -m pytest -q -p no:cacheprovider -m integration test/test_integration.py -k json",
+      "evidence": "executed_live",
+      "result": "not run"
+    }
+  ]
+}
