@@ -18,6 +18,24 @@ Key invariants:
   notes use the standard `###` sections. Both rules, and the handling of stale
   drafts, are in the "GitHub Release Policy" section of [`AGENTS.md`](AGENTS.md).
 
+## Which state a version is in
+
+A version number alone says nothing about publication: `main`'s `__version__`
+and the manifest name the last **merged** release PR, the docs site is built
+from `main` (development documentation), and a release PR proposes a version
+without approving it. Decide the state of `X.Y.Z` from these facts, never from a
+version comparison or a bot PR body:
+
+| State | Facts | Example |
+| --- | --- | --- |
+| Candidate | An open release PR proposes `X.Y.Z`; no tag, no Release. | #910 proposes 1.11.2. |
+| Merged, publication in progress or partial | The merged release PR is `autorelease: pending`; the `publish-pypi.yml` run at its merge SHA is running, failed or not proven (see [When preparation is blocked](#when-preparation-is-blocked)). PyPI may already serve some files. | — |
+| Abandoned | The merged release PR has a recorded abandonment, no `autorelease: pending`/`tagged` label and no `vX.Y.Z` tag; `last-release-sha` names its merge (see [Baseline override lifecycle](#baseline-override-lifecycle)). `main` can still carry `X.Y.Z` as `__version__` until the replacement merges. | 1.11.1 (#838): `main` read 1.11.1 while the newest published release was 1.11.0. |
+| Published and verified | Tag `vX.Y.Z` at the merge commit, a published non-draft GitHub Release, and a `publish-pypi.yml` run with `published and verified`; the PR is `autorelease: tagged`. | 1.11.0. |
+
+When PyPI or the GitHub API cannot be read, the state is **unknown**, not
+"absent" and not "the newest release": record it as unknown and check again.
+
 ## Normal flow
 
 `release-please.yml` → reviewed release PR → squash merge → `publish-pypi.yml`.
@@ -98,11 +116,26 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
   regeneration. Edits made only on the candidate branch require the freeze
   label. Removing that label permits upstream regeneration and may overwrite
   those branch-only edits; first move essential text to main if needed.
-- The workflow uses `GITHUB_TOKEN`; bot-created or updated PRs do **not**
-  automatically start normal PR CI. After preparation completes, a maintainer
-  closes/reopens the PR or pushes a commit, then verifies checks cover the
-  final composed head. No new PAT or contributor secret is required. With the
-  `gh` CLI the close/reopen is:
+- The workflow uses `GITHUB_TOKEN`. When it creates or updates the release PR,
+  GitHub does create `pull_request` runs for the new head, but as
+  `github-actions[bot]` they start no jobs: they wait with conclusion
+  `action_required` (approval required) or end `failure` with zero jobs
+  (observed on #910's heads on 2026-10-14). Neither is CI of that head. After
+  preparation completes, a maintainer starts real CI by approving the waiting
+  runs in the Actions tab, by closing and reopening the PR, or by pushing a
+  commit, and then verifies that the checks ran on the **final composed head**.
+  No new PAT or contributor secret is required. Read the checks of the head
+  before merging:
+
+  | What the head shows | Meaning |
+  | --- | --- |
+  | No run for the head SHA | Missing: CI was never started for this head. |
+  | `action_required`, or `failure` with zero jobs | Approval required / not run: not evidence. |
+  | `queued` or `in_progress` | Running: wait. |
+  | `failure`, `cancelled` or `timed_out` with jobs | Failed: fix or re-run. |
+  | `success` on the current head SHA | Passed. A success on an older head (before the last regeneration or edit) is stale and does not count. |
+
+  With the `gh` CLI the close/reopen is:
 
   ```bash
   gh api -X PATCH repos/cubrid-lab/sqlalchemy-cubrid/pulls/<N> -f state=closed
@@ -151,6 +184,20 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
 
 Merge only the reviewed, fully validated release PR. Version selection is
 release-please's proposal; maintainer approval remains the publication decision.
+Before merging, the release maintainer records on the PR:
+
+- the change classification and user impact (Upgrade notes for anything that
+  changes behavior), checked against the composed `CHANGELOG.md` section, which
+  is the publication source; not the generated PR body alone;
+- the exact final head SHA that was reviewed, and that every required check
+  passed **on that SHA** (see the table above);
+- the completed review for release-sensitive paths.
+
+A candidate that holds only documentation changes may wait for a useful
+release; a documentation-only release is fine when it is justified (for
+example a corrected install instruction). Never relabel or reword commits to
+change the computed version, and keep the supported driver distinctions and
+dependency bounds as the composed notes state them.
 
 ### 4. Automatic release (`publish-pypi.yml`)
 
@@ -282,6 +329,26 @@ the `# main` comment.
 | `published and verified` | Done. |
 | `published; post-release verification failed` | On PyPI, but the called cookbook workflow failed or was cancelled, or its outputs do not report `status == success` with `installed_version == X.Y.Z`. |
 | `dry run …` / `verification only …` | Recovery dispatch results (below). |
+
+### 5. After publication
+
+When the summary reports `published and verified` and reconciliation has moved
+the PR to `autorelease: tagged`, the release maintainer:
+
+1. Records completion on the release PR from existing evidence: the tag and
+   its commit, the GitHub Release, the publisher run URL and its final state,
+   and the cookbook verification report. No new run is needed to record it.
+2. Reviews the support and installation statements the release changed
+   (README Requirements and Installation, `docs/SUPPORT_MATRIX.md`, the tested
+   versions stated in the Quick Start), and updates them through a normal PR
+   only where the release changed them. Keep each statement's date and
+   evidence; an older dated record stays as it is rather than being rewritten
+   with untested numbers. A PyPI or API lookup that fails is "unknown", never
+   proof that a version is missing or newest. Ordinary documentation builds
+   never contact PyPI.
+3. If a `last-release-sha` override is configured, follows
+   [Baseline override lifecycle](#baseline-override-lifecycle): the next
+   **Prepare release** run reports it obsolete and stops until it is removed.
 
 ## Failure and recovery
 

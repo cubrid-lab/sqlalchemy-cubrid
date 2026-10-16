@@ -117,6 +117,10 @@ markdown_extensions:
 plugins:
   - search
 
+# Links each built page that carries the marker to its source commit (#946).
+hooks:
+  - scripts/docs_provenance_hook.py
+
 validation:
   nav:
     omitted_files: ignore

@@ -13,6 +13,29 @@ does not install it), how to start a disposable local database with Docker, and
 takes you to a first query and a first saved row on the recommended
 `sqlalchemy-cubrid[pycubrid]` path.
 
+## About this documentation
+
+This site is the **development documentation**: it is rebuilt from the `main`
+branch on every change, independently of package releases, so it can describe
+changes that no published release contains yet. The version number in the
+source (`__version__`) is not a release either: it can name a release
+candidate, or a version that was abandoned and never published (1.11.1 is one).
+<!-- docs-source-revision -->
+
+- **Published releases** are listed on
+  [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)
+  and [PyPI](https://pypi.org/project/sqlalchemy-cubrid/#history); `pip install
+  sqlalchemy-cubrid` installs the newest one. A release appears in both only after
+  its publication was verified.
+- **Documentation of a published release** is the `docs/` folder at its tag:
+  open the release on
+  [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)
+  and browse its tag's files, for example
+  [`v1.11.0`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/v1.11.0/docs).
+- **Tested versions** are stated by each guide next to its commands, with the
+  date and whether a published package or a source build was used. The
+  [Quick Start](QUICKSTART.md) was run with published releases from PyPI.
+
 ## Key features
 
 - Native SQLAlchemy 2.0–2.1 dialect support with statement caching

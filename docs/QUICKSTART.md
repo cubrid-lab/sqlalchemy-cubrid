@@ -87,8 +87,10 @@ python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__ve
 
 The `[pycubrid]` part installs the recommended pure-Python driver together with
 the dialect. The last command prints the three installed versions, for example
-`2.1.4 1.11.0 1.13.0`. Run every `python` command below in this same terminal,
-with the virtual environment active.
+`2.1.4 1.11.0 1.13.0`: SQLAlchemy, sqlalchemy-cubrid and pycubrid. Those are the
+published PyPI releases this guide was last run with, on 2026-10-15; a newer
+release prints higher numbers. Run every `python` command below in this same
+terminal, with the virtual environment active.
 
 ---
 

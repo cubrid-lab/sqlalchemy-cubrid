@@ -14,6 +14,25 @@ CUBRID나 SQLAlchemy가 처음이라면
 데이터베이스를 띄우는 방법을 설명하고, 권장 경로인 `sqlalchemy-cubrid[pycubrid]`로 첫 쿼리와 첫
 행 저장까지 안내합니다.
 
+## 이 문서에 대하여
+
+이 사이트는 **개발 문서**입니다. 패키지 릴리스와 관계없이 `main` 브랜치가 바뀔 때마다 다시
+빌드되므로, 아직 어떤 공개 릴리스에도 들어 있지 않은 변경을 설명할 수 있습니다. 소스의 버전
+번호(`__version__`)도 릴리스가 아닙니다. 릴리스 후보이거나, 포기되어 공개되지 않은 버전(예:
+1.11.1)일 수 있습니다.
+<!-- docs-source-revision -->
+
+- **공개 릴리스**는 [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)와
+  [PyPI](https://pypi.org/project/sqlalchemy-cubrid/#history)에 있으며, `pip install
+  sqlalchemy-cubrid`는 그중 가장 새로운 릴리스를 설치합니다. 릴리스는 공개가 검증된 뒤에만 두 곳에
+  나타납니다.
+- **공개 릴리스의 문서**는 그 태그의 `docs/` 폴더입니다.
+  [GitHub Releases](https://github.com/cubrid-lab/sqlalchemy-cubrid/releases)에서 릴리스를 열고
+  태그의 파일을 살펴보세요. 예:
+  [`v1.11.0`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/v1.11.0/docs).
+- **테스트한 버전**은 각 가이드가 명령 옆에 날짜와 함께, 공개 패키지를 썼는지 소스 빌드를 썼는지와
+  함께 밝힙니다. [빠른 시작](QUICKSTART.md)은 PyPI의 공개 릴리스로 실행했습니다.
+
 ## 주요 기능
 
 - 문장 캐싱을 갖춘 네이티브 SQLAlchemy 2.0–2.1 방언 지원

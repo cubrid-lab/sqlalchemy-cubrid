@@ -82,8 +82,9 @@ python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__ve
 ```
 
 `[pycubrid]` 부분은 방언과 함께 권장 순수 Python 드라이버를 설치합니다. 마지막 명령은
-설치된 세 버전을 출력합니다(예: `2.1.4 1.11.0 1.13.0`). 아래의 모든 `python` 명령은
-가상 환경이 활성화된 이 터미널에서 실행하세요.
+설치된 세 버전(SQLAlchemy, sqlalchemy-cubrid, pycubrid)을 출력합니다(예: `2.1.4 1.11.0 1.13.0`).
+이 가이드를 마지막으로 실행한 2026-10-15의 PyPI 공개 릴리스이며, 더 새로운 릴리스가 있으면 더 높은
+번호가 출력됩니다. 아래의 모든 `python` 명령은 가상 환경이 활성화된 이 터미널에서 실행하세요.
 
 ---
 
