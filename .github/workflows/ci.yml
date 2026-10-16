@@ -116,6 +116,9 @@ jobs:
               # offline lanes (#594): each of their modules, and the agent
               # evaluation tasks test_agent_eval.py grades, must select it (#964).
               - 'agent-evals/**'
+              # REPO_TOOLING_MODULES lives here: registering a module runs the
+              # guard that the module is in this filter.
+              - 'test/conftest.py'
               - 'test/test_agent_eval.py'
               - 'test/test_bench_artifact.py'
               - 'test/test_check_docs_translation.py'

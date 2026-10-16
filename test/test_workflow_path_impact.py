@@ -111,6 +111,8 @@ def test_workflow_impact_table(name: str) -> None:
             {"code", "tooling"},
         ),
         ("test/test_agent_eval.py", {"code", "tooling"}),
+        # Registering a module in REPO_TOOLING_MODULES runs the filter guard below.
+        ("test/conftest.py", {"code", "tooling"}),
     ],
 )
 def test_representative_paths_select_the_expected_tiers(path: str, expected: set[str]) -> None:
