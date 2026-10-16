@@ -464,9 +464,13 @@ def test_prompt_leaves_out_the_grading_key(task_id: str) -> None:
     text = ae.prompt(task)
     assert text == ae.prompt(task)
     assert task["base_sha"] in text and task["problem"] in text
-    for hidden in (task["fix_commit"], task["fix_commit"][:7], task["issue"], task["expected"]):
+    for hidden in (task["fix_commit"], task["fix_commit"][:7], task["expected"]):
         assert hidden not in text
     assert "allowed" not in text.lower()
+    # The issue a CHANGELOG entry must cite, and the report format the base SHA lacks.
+    assert task["issue"] in text
+    for word in (*ae.EVIDENCE_KINDS, *ae.RESULTS, '"statements"'):
+        assert word in text
 
 
 def _record(**overrides: Any) -> dict[str, Any]:
@@ -517,6 +521,9 @@ def test_record_holds_identity_skipped_live_checks_and_the_rubric() -> None:
         {"findings": ["text"]},
         {"metrics": {"wall_clock_seconds": -1}},
         {"metrics": {"tokens": True}},
+        {"metrics": {"wall_clock_seconds": float("nan")}},
+        {"metrics": {"wall_clock_seconds": float("inf")}},
+        {"exclude": " "},
     ],
 )
 def test_record_rejects_incomplete_identity_findings_and_metrics(overrides: Any) -> None:
@@ -566,6 +573,25 @@ def test_summarize_groups_by_task_revision_and_model() -> None:
     bad["rubric"]["verdict"] = "maybe"
     with pytest.raises(ae.EvalError):
         ae.summarize([bad])
+    for broken in ({"criteria": []}, {"criteria": {"scope": {"status": "ok"}}}):
+        shaped = copy.deepcopy(passing)
+        shaped["rubric"].update(broken)
+        with pytest.raises(ae.EvalError):
+            ae.summarize([shaped])
+    for wall in (float("nan"), -1, "1"):
+        timed = copy.deepcopy(passing)
+        timed["metrics"] = {"wall_clock_seconds": wall}
+        with pytest.raises(ae.EvalError):
+            ae.summarize([timed])
+
+
+def test_excluded_runs_are_kept_but_not_counted() -> None:
+    contaminated = _record(exclude="the agent read the public fix")
+    assert contaminated["excluded"] == "the agent read the public fix"
+    assert _record()["excluded"] is None
+    (group,) = ae.summarize([_record(), contaminated, contaminated])["groups"]
+    assert (group["runs"], group["excluded"]) == (1, 2)
+    assert group["verdicts"]["pass"] == 1 and group["pass_interval_95"] == ae.wilson(1, 1)
 
 
 def test_cli_prompt_record_and_summarize(
@@ -586,6 +612,9 @@ def test_cli_prompt_record_and_summarize(
     entry = json.loads(out.read_text(encoding="utf-8"))
     assert entry["prompt_sha256"] == hashlib.sha256(prompt_file.read_bytes()).hexdigest()
     assert entry["metrics"] == {"wall_clock_seconds": 12.5}
+    excluded = tmp_path / "excluded.json"
+    assert ae.main([*args[:-1], str(excluded), "--exclude", "contaminated"]) == 0
+    assert json.loads(excluded.read_text(encoding="utf-8"))["excluded"] == "contaminated"
     capsys.readouterr()
     assert ae.main(["summarize", str(out), str(out)]) == 0
     assert json.loads(capsys.readouterr().out)["groups"][0]["runs"] == 2

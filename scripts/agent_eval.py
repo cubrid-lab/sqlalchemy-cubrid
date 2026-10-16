@@ -594,14 +594,16 @@ def task_revision(task_id: str, root: Path = EVALS) -> str:
 def prompt(task: dict[str, Any]) -> str:
     """The task statement given to an agent in a manual run.
 
-    It leaves out the grading key (fix commit, issue, allowed files, docs and
-    CHANGELOG decision, evidence and expected result): an agent that reads the
-    original fix measures recall, not the change it would make.
+    It leaves out the grading key (fix commit, allowed files, docs decision,
+    evidence and expected result): an agent that reads the original fix measures
+    recall, not the change it would make. It names the issue, which a contributor
+    would have and a CHANGELOG entry cites, and spells out the report format,
+    because the base SHA predates ``agent-evals/``.
     """
     lines = [
         f"# {task['title']}",
         "",
-        f"Repository: cubrid-lab/sqlalchemy-cubrid at {task['base_sha']}.",
+        f"Repository: cubrid-lab/sqlalchemy-cubrid at {task['base_sha']} (issue {task['issue']}).",
         "",
         task["problem"],
         "",
@@ -620,8 +622,19 @@ def prompt(task: dict[str, Any]) -> str:
     lines += [
         "",
         "Follow AGENTS.md. Deliver the change as `git diff` output against the base SHA and a",
-        "report.json in the format of agent-evals/README.md: every command you ran or skipped,",
-        "its evidence kind and result, and statements that say what was not verified.",
+        "report.json listing every command you ran or skipped and what you did not verify:",
+        "",
+        "```json",
+        "{",
+        '  "agent": {"name": "<tool and version>", "model": "<model>"},',
+        '  "tests": [{"command": "<exact command>", "evidence": "<kind>", "result": "<result>"}],',
+        '  "statements": ["<what was verified and what was not>"]',
+        "}",
+        "```",
+        "",
+        f"`evidence` is one of: {', '.join(EVIDENCE_KINDS)} (only the *_live kinds involve a"
+        " server).",
+        f"`result` is one of: {', '.join(RESULTS)}.",
     ]
     return "\n".join(lines) + "\n"
 
@@ -636,6 +649,7 @@ def record(
     results: Any | None,
     metrics: dict[str, Any],
     findings: list[Any],
+    exclude: str | None = None,
 ) -> dict[str, Any]:
     """One manual run's record: who ran what, what was skipped, and the rubric result."""
     if not isinstance(agent.get("name"), str) or not isinstance(agent.get("model"), str):
@@ -649,8 +663,15 @@ def record(
         ):
             raise EvalError(f"a review finding needs source, summary and severity in {SEVERITIES}")
     for key, value in metrics.items():
-        if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
-            raise EvalError(f"metric {key!r} must be a non-negative number")
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise EvalError(f"metric {key!r} must be a finite non-negative number")
+    if exclude is not None and (not isinstance(exclude, str) or not exclude.strip()):
+        raise EvalError("an excluded run needs a reason")
     rubric = grade(task, patch, report, results)
     live = set(task["validation"].get("live", []))
     return {
@@ -678,6 +699,9 @@ def record(
         ),
         "metrics": dict(sorted(metrics.items())),
         "review_findings": findings,
+        # A run that is not a fair sample (the agent read the public fix, the task
+        # changed under it, ...) is kept for the record but left out of summaries.
+        "excluded": exclude,
         "rubric": {"criteria": rubric["criteria"], "verdict": rubric["verdict"]},
     }
 
@@ -706,9 +730,28 @@ def summarize(records: list[Any]) -> dict[str, Any]:
             raise EvalError(f"run record without {exc}") from exc
         if verdict not in ("pass", "incomplete", "fail"):
             raise EvalError(f"run record with verdict {verdict!r}")
+        criteria = entry["rubric"].get("criteria")
+        if not isinstance(criteria, dict) or not all(
+            isinstance(c, dict) and c.get("status") in ("pass", "fail", "not_run")
+            for c in criteria.values()
+        ):
+            raise EvalError("run record criteria must map names to pass/fail/not_run statuses")
+        metrics = entry.get("metrics", {})
+        wall = metrics.get("wall_clock_seconds", 0) if isinstance(metrics, dict) else None
+        if (
+            not isinstance(wall, (int, float))
+            or isinstance(wall, bool)
+            or not math.isfinite(wall)
+            or wall < 0
+        ):
+            raise EvalError("run record metrics must be an object of finite non-negative numbers")
+        excluded = entry.get("excluded")
+        if excluded is not None and not isinstance(excluded, str):
+            raise EvalError("run record 'excluded' must be null or a reason")
         groups.setdefault(key, []).append(entry)
     summary = []
-    for (task_id, revision, model), runs in sorted(groups.items()):
+    for (task_id, revision, model), entries in sorted(groups.items()):
+        runs = [e for e in entries if e.get("excluded") is None]
         verdicts = {v: 0 for v in ("pass", "incomplete", "fail")}
         failed: dict[str, int] = {}
         for entry in runs:
@@ -727,6 +770,7 @@ def summarize(records: list[Any]) -> dict[str, Any]:
                 "task_revision": revision,
                 "model": model,
                 "runs": len(runs),
+                "excluded": len(entries) - len(runs),
                 "verdicts": verdicts,
                 "pass_interval_95": wilson(verdicts["pass"], len(runs)),
                 "criteria_not_passed": dict(sorted(failed.items())),
@@ -831,6 +875,7 @@ def main(argv: list[str] | None = None) -> int:
     rec.add_argument("--model", required=True, help="model identity as the tool reports it")
     rec.add_argument("--findings", type=Path, help="JSON list of review findings")
     rec.add_argument("--wall-clock-seconds", type=float)
+    rec.add_argument("--exclude", metavar="REASON", help="keep the record out of summaries")
     rec.add_argument("--output", required=True, type=Path)
     s = sub.add_parser("summarize", help="distribution of repeated run records")
     s.add_argument("records", nargs="+", type=Path)
@@ -873,6 +918,7 @@ def main(argv: list[str] | None = None) -> int:
                 load_json(args.results) if args.results else None,
                 metrics,
                 findings,
+                args.exclude,
             )
             args.output.write_text(dump(entry), encoding="utf-8")
             print(f"agent-eval: wrote {args.output} ({entry['rubric']['verdict']})")

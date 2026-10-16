@@ -131,12 +131,15 @@ one, and a run never merges, pushes, tags or publishes anything.
 
    Run the agent in that directory with no publish credentials: no `GH_TOKEN` or
    `GITHUB_TOKEN`, no PyPI token and no credential helper. The issue and the fix are
-   public, so record a run where the agent looked them up as contaminated (a review
-   finding) rather than as a result.
+   public, so a run where the agent looked them up is not a fair sample: record it
+   with `--exclude "REASON"` (and a review finding), which keeps the record but
+   leaves it out of every summary.
 2. **Give the agent the prompt.** `python scripts/agent_eval.py prompt --task ID >
    prompt.md` prints the task statement without the grading key (the fix commit,
-   issue, allowed files, docs and CHANGELOG decision, evidence and expected result).
-   Use it unchanged; `record` stores its SHA-256.
+   allowed files, docs decision, evidence and expected result). It names the issue,
+   which a contributor would have and the CHANGELOG entry cites, and spells out the
+   `report.json` format with its evidence kinds and results, because the base SHA
+   predates `agent-evals/`. Use it unchanged; `record` stores its SHA-256.
 3. **Collect the artifacts.** `git diff BASE_SHA > patch.diff` and the agent's
    `report.json`. Note the wall-clock time if you measured it.
 4. **Dry run and record** from this repository's checkout (the grader is never run
@@ -152,8 +155,9 @@ one, and a run never merges, pushes, tags or publishes anything.
 The run record (`run.json`) holds the agent and model identity, the task revision
 (SHA-256 of `task.json`) and prompt digest, the starting SHA, the patch digest and
 changed files, the commands the agent reported and those the dry run observed, the
-live checks reported as not run, metrics (only the ones you pass), review findings
-and the rubric result. `findings.json` is a list of
+live checks reported as not run, metrics (only the ones you pass, finite and
+non-negative), review findings, the exclusion reason (`null` unless `--exclude` was
+given) and the rubric result. `findings.json` is a list of
 `{"source": ..., "severity": "critical"|"major"|"minor"|"info", "summary": ...}`;
 leave it out when nobody reviewed the run.
 
@@ -165,7 +169,8 @@ task revision and model and reports the number of runs, the verdict counts, how 
 each criterion did not pass, the wall-clock range, and a 95% Wilson interval for the
 pass rate. Report that distribution with the number of runs, never a bare pass
 percentage: three passes in three runs is an interval of about 0.44 to 1.0, not 100%.
-Runs of different task revisions or models are never pooled. No score is a gate
+Runs of different task revisions or models are never pooled, and excluded runs are
+counted separately (`excluded`) instead of in the verdicts or the interval. No score is a gate
 until a baseline has been observed and the maintainers decide to use one.
 
 ## Scoring
