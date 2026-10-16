@@ -8902,7 +8902,9 @@ to READ COMMITTED without the re-apply). If the re-apply itself fails, the
 commit or rollback still reports success (or the rollback's original exception
 still propagates): the failure is logged as a warning and retried at the start
 of the next transaction, where a second failure raises before any statement
-runs.
+runs. The connection stays marked until a re-apply succeeds (or a new level is
+set on it), so every later transaction start retries and raises again rather
+than running at an unconfirmed level (#937); the prior commit is never replayed.
 
 **Idle connections with a configured level.** The re-apply's SQL `COMMIT`
 leaves the CAS marked as in transaction, so the broker keeps that CAS bound to

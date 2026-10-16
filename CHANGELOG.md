@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A failed isolation re-apply at transaction start stays pending (#937)** — when re-applying
+  the isolation level after a successful commit or rollback failed, `do_begin()` retried it
+  but removed the connection's pending mark before the retry ran. If the retry failed too, a
+  later begin on the same connection called directly through the dialect admitted work without
+  restoring the level. The mark now stays until a re-apply succeeds, so every begin retries
+  and raises until then, and setting a new level on the connection settles it. SQLAlchemy's
+  `Connection` masked the gap, because its rollback after the failed begin re-marked the
+  connection; the dialect hook no longer relies on that. The prior commit or rollback still
+  reports success and nothing is replayed. Applies to `cubrid+pycubrid://` and
+  `cubrid+aiopycubrid://`.
+
 - **Server errors that share a legacy CAS code no longer invalidate connections (#916)** —
   legacy CAS codes reach pycubrid as -1000 to -1200, the same numbers as some server errors.
   With pycubrid 1.13's `error_source == "server"`, `is_disconnect()` now reads such a code

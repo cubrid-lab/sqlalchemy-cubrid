@@ -1237,6 +1237,31 @@ class TestIsolationLevelAcrossTransactionBoundaries:
             conn.execute(text("SELECT 1"))  # next transaction start retries the re-apply
             assert conn.get_isolation_level() == "SERIALIZABLE"
 
+    def test_failed_retry_at_begin_stays_pending_until_the_level_is_restored(
+        self, serializable_engine, fail_next_reapply
+    ):
+        """Repeated failed retries keep the mark; no begin passes unrestored (#937)."""
+        dialect = serializable_engine.dialect
+        with serializable_engine.connect() as conn:
+            conn.execute(text("INSERT INTO iso505_reapply VALUES (1)"))
+            fail_next_reapply["armed"] = True
+            conn.commit()
+            raw = conn.connection.dbapi_connection
+            assert raw in dialect._isolation_reapply_pending
+
+            for attempt in (2, 3):
+                fail_next_reapply["armed"] = True
+                with pytest.raises(RuntimeError, match="simulated re-apply failure"):
+                    dialect.do_begin(raw)
+                assert fail_next_reapply["failed"] == attempt
+                assert raw in dialect._isolation_reapply_pending
+
+            # The next begin restores the level before the application statement.
+            assert conn.execute(text("SELECT 1")).scalar() == 1
+            assert raw not in dialect._isolation_reapply_pending
+            assert conn.get_isolation_level() == "SERIALIZABLE"
+            assert self._committed_ids() == [1]
+
     def test_failed_reapply_after_rollback_keeps_the_original_error(
         self, serializable_engine, fail_next_reapply
     ):

@@ -6,8 +6,10 @@ from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+import sqlalchemy as sa
 from sqlalchemy.engine import url
 
+from sqlalchemy_cubrid.aio_pycubrid_dialect import PyCubridAsyncDialect
 from sqlalchemy_cubrid.pycubrid_dialect import (
     PyCubridDialect,
     PyCubridExecutionContext,
@@ -390,6 +392,117 @@ class TestPyCubridIsolationLevelReapply:
 
         with pytest.raises(RuntimeError, match="broker gone"):
             dialect.do_begin(dbapi_conn)
+
+    @pytest.mark.parametrize("wrap", [False, True], ids=["raw", "pool_proxy"])
+    @pytest.mark.parametrize("dialect_cls", [PyCubridDialect, PyCubridAsyncDialect])
+    def test_failed_retry_at_begin_keeps_the_reapply_pending(self, dialect_cls, wrap):
+        """A begin whose re-apply fails must not let the next begin skip it (#937).
+
+        The async dialect inherits this transaction policy unchanged.
+        """
+        dialect = dialect_cls()
+        dbapi_conn = self._dbapi_conn()
+        dialect.set_isolation_level(dbapi_conn, "SERIALIZABLE")
+        dbapi_conn.cursor.return_value = self._failing_cursor()
+        dialect.do_commit(dbapi_conn)
+        dbapi_conn.commit.assert_called_once_with()
+        assert dbapi_conn in dialect._isolation_reapply_pending
+        target = types.SimpleNamespace(dbapi_connection=dbapi_conn) if wrap else dbapi_conn
+
+        for _ in range(2):
+            with pytest.raises(RuntimeError, match="broker gone"):
+                dialect.do_begin(target)
+            assert dbapi_conn in dialect._isolation_reapply_pending
+
+        cursor = MagicMock()
+        dbapi_conn.cursor.return_value = cursor
+        dialect.do_begin(target)
+
+        assert [c.args for c in cursor.execute.call_args_list] == [
+            ("SET TRANSACTION ISOLATION LEVEL 6",),
+            ("COMMIT",),
+        ]
+        assert dbapi_conn not in dialect._isolation_reapply_pending
+        dbapi_conn.cursor.reset_mock()
+        dialect.do_begin(target)
+        dbapi_conn.cursor.assert_not_called()
+        dbapi_conn.commit.assert_called_once_with()
+
+    @pytest.mark.parametrize("level", ["REPEATABLE READ", "AUTOCOMMIT"])
+    def test_explicit_level_change_settles_a_pending_reapply(self, level):
+        """Setting a level applies it now, so the old pending re-apply is moot (#937)."""
+        dialect = PyCubridDialect()
+        dbapi_conn = self._dbapi_conn()
+        dialect.set_isolation_level(dbapi_conn, "SERIALIZABLE")
+        dbapi_conn.cursor.return_value = self._failing_cursor()
+        dialect.do_commit(dbapi_conn)
+        assert dbapi_conn in dialect._isolation_reapply_pending
+
+        dbapi_conn.cursor.return_value = MagicMock()
+        dialect.set_isolation_level(dbapi_conn, level)
+
+        assert dbapi_conn not in dialect._isolation_reapply_pending
+        dbapi_conn.cursor.reset_mock()
+        dialect.do_begin(dbapi_conn)
+        dbapi_conn.cursor.assert_not_called()
+
+    def test_failed_explicit_level_change_keeps_the_reapply_pending(self):
+        dialect = PyCubridDialect()
+        dbapi_conn = self._dbapi_conn()
+        dialect.set_isolation_level(dbapi_conn, "SERIALIZABLE")
+        dbapi_conn.cursor.return_value = self._failing_cursor()
+        dialect.do_commit(dbapi_conn)
+
+        with pytest.raises(RuntimeError, match="broker gone"):
+            dialect.set_isolation_level(dbapi_conn, "REPEATABLE READ")
+
+        assert dbapi_conn in dialect._isolation_reapply_pending
+
+    def test_engine_autobegin_runs_no_sql_until_the_reapply_succeeds(self):
+        """Through a real Engine: the failed re-apply blocks every autobegin (#937)."""
+        executed: list[str] = []
+        state = {"restore_fails": False}
+
+        def execute(statement, *args):
+            if statement.startswith("SET TRANSACTION") and state["restore_fails"]:
+                raise RuntimeError("broker gone")
+            executed.append(statement)
+
+        cursor = MagicMock()
+        cursor.execute.side_effect = execute
+        cursor.description = None
+        raw_conn = MagicMock(spec=["cursor", "commit", "rollback", "autocommit", "close"])
+        raw_conn.cursor.return_value = cursor
+        fake = types.SimpleNamespace(
+            paramstyle="qmark",
+            Error=type("Error", (Exception,), {}),
+            connect=MagicMock(return_value=raw_conn),
+        )
+        engine = sa.create_engine(
+            "cubrid+pycubrid://dba@localhost:33000/testdb", module=fake, poolclass=sa.pool.NullPool
+        )
+        engine.dialect.initialize = lambda connection: None  # type: ignore[method-assign]
+        # initialize() normally sets this; checkin resets the per-connection level to it.
+        engine.dialect.default_isolation_level = "READ COMMITTED"
+
+        with engine.connect() as conn:
+            conn = conn.execution_options(isolation_level="SERIALIZABLE")
+            conn.execute(sa.text("UPDATE t SET a = 1"))
+            state["restore_fails"] = True
+            conn.commit()  # the commit itself succeeds; only the re-apply fails
+            raw_conn.commit.assert_called_once_with()
+            executed.clear()
+
+            for _ in range(2):
+                with pytest.raises(RuntimeError, match="broker gone"):
+                    conn.execute(sa.text("UPDATE t SET a = 2"))
+                assert executed == []
+
+            state["restore_fails"] = False
+            conn.execute(sa.text("UPDATE t SET a = 3"))
+            assert executed == ["SET TRANSACTION ISOLATION LEVEL 6", "COMMIT", "UPDATE t SET a = 3"]
+            conn.rollback()
+        engine.dispose()
 
     def test_begin_without_pending_reapply_runs_no_sql(self):
         dialect = PyCubridDialect()

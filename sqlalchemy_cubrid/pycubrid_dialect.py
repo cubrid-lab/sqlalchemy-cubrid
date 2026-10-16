@@ -267,6 +267,9 @@ class PyCubridDialect(CubridDialect):
     def set_isolation_level(self, dbapi_connection: DBAPIConnection, level: str) -> None:
         """Set the isolation level and remember it for :meth:`do_commit` / :meth:`do_rollback`."""
         super().set_isolation_level(dbapi_connection, level)
+        # The level was just applied, so a re-apply still pending from an
+        # earlier commit/rollback is settled (#937).
+        self._isolation_reapply_pending.discard(_unwrap(dbapi_connection))
         if level.upper() == "AUTOCOMMIT":
             # pycubrid restores autocommit itself after its reconnect.
             self._connection_isolation_levels.pop(_unwrap(dbapi_connection), None)
@@ -290,13 +293,15 @@ class PyCubridDialect(CubridDialect):
         """Retry a re-apply that failed at the previous commit/rollback (#505).
 
         Runs before any statement of the new transaction; if it fails again the
-        error surfaces here, before the transaction does any work.
+        error surfaces here, before the transaction does any work. The
+        connection stays pending until a re-apply succeeds, so every later
+        begin on it retries instead of running at an unconfirmed level (#937).
         """
         super().do_begin(dbapi_connection)  # type: ignore[no-untyped-call]  # unannotated in SQLAlchemy
         raw_connection = _unwrap(dbapi_connection)
         if raw_connection in self._isolation_reapply_pending:
-            self._isolation_reapply_pending.discard(raw_connection)
             self._restore_isolation_level(raw_connection)
+            self._isolation_reapply_pending.discard(raw_connection)
 
     def do_commit(self, dbapi_connection: DBAPIConnection) -> None:
         """Commit, then re-apply the connection's isolation level (#505)."""
