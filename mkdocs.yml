@@ -36,25 +36,25 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - "Start Here: Your First Connection": QUICKSTART.md
-      - Connection Guide: CONNECTION.md
-      - Driver Compatibility: DRIVER_COMPAT.md
-  - Usage:
-      - ORM Cookbook: ORM_COOKBOOK.md
-      - DML Extensions: DML_EXTENSIONS.md
-      - Type Mapping: TYPES.md
-      - Isolation Levels: ISOLATION_LEVELS.md
-      - Alembic Migrations: ALEMBIC.md
+  - Start here:
+      - "Your First Connection": QUICKSTART.md
+  - How-to guides:
+      - "Connect and configure the driver": CONNECTION.md
+      - "Use the ORM (ORM Cookbook)": ORM_COOKBOOK.md
+      - "Run migrations (Alembic)": ALEMBIC.md
+      - "Use CUBRID-specific DML": DML_EXTENSIONS.md
+      - "Choose an isolation level": ISOLATION_LEVELS.md
   - Reference:
+      - Type Mapping: TYPES.md
       - Feature Support: FEATURE_SUPPORT.md
       - Support Matrix: SUPPORT_MATRIX.md
+      - Driver Compatibility: DRIVER_COMPAT.md
+  - Help:
+      - Troubleshooting: TROUBLESHOOTING.md
+  - Project and internals:
       - Architecture: ARCHITECTURE.md
       - SQLAlchemy Internal API Compatibility: SA_COMPAT.md
-  - Operations:
       - Performance: PERFORMANCE.md
-      - Troubleshooting: TROUBLESHOOTING.md
-  - Project:
       - Development: DEVELOPMENT.md
       - CI Execution Policy: CI_POLICY.md
       - Product Requirements: PRD.md
@@ -68,25 +68,25 @@ nav:
       - Contributing: https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md
   - 한국어:
       - 홈: ko/index.md
-      - 시작하기:
-          - "여기서 시작: 첫 연결": ko/QUICKSTART.md
-          - 연결과 드라이버 설정: ko/CONNECTION.md
-          - 드라이버 호환성: ko/DRIVER_COMPAT.md
-      - 사용:
-          - ORM 쿡북: ko/ORM_COOKBOOK.md
-          - DML 확장: ko/DML_EXTENSIONS.md
+      - 여기서 시작:
+          - "첫 연결": ko/QUICKSTART.md
+      - 작업 가이드:
+          - "드라이버 연결과 설정": ko/CONNECTION.md
+          - "ORM 사용하기 (ORM 쿡북)": ko/ORM_COOKBOOK.md
+          - "마이그레이션 실행 (Alembic)": ko/ALEMBIC.md
+          - "CUBRID 전용 DML 사용하기": ko/DML_EXTENSIONS.md
+          - "격리 수준 고르기": ko/ISOLATION_LEVELS.md
+      - 레퍼런스:
           - 타입 매핑: ko/TYPES.md
-          - 격리 수준: ko/ISOLATION_LEVELS.md
-          - Alembic 마이그레이션: ko/ALEMBIC.md
-      - 참고:
           - 기능 지원 비교: ko/FEATURE_SUPPORT.md
           - 지원 매트릭스: ko/SUPPORT_MATRIX.md
+          - 드라이버 호환성: ko/DRIVER_COMPAT.md
+      - 도움말:
+          - 문제 해결: ko/TROUBLESHOOTING.md
+      - 프로젝트와 내부 구조:
           - 아키텍처: ko/ARCHITECTURE.md
           - SQLAlchemy 내부 API 호환성: ko/SA_COMPAT.md
-      - 운영:
           - 성능 가이드: ko/PERFORMANCE.md
-          - 문제 해결: ko/TROUBLESHOOTING.md
-      - 프로젝트:
           - 개발 가이드: ko/DEVELOPMENT.md
           - CI 실행 정책: ko/CI_POLICY.md
           - 기여 가이드: CONTRIBUTING.ko.md

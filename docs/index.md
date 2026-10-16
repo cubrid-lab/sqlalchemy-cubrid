@@ -78,10 +78,23 @@ engine.dispose()
 
 ## Documentation sections
 
-- [Start here: your first connection](QUICKSTART.md)
-- [Connection Guide](CONNECTION.md)
-- [User Guide](TYPES.md)
-- [Reference](FEATURE_SUPPORT.md)
+- **Start here:** [Your First Connection](QUICKSTART.md), one synchronous
+  `cubrid+pycubrid://` path from an empty folder to a first saved row.
+- **How-to guides:** [connect and configure the driver](CONNECTION.md),
+  [use the ORM](ORM_COOKBOOK.md), [run migrations with Alembic](ALEMBIC.md),
+  [use CUBRID-specific DML](DML_EXTENSIONS.md) and
+  [choose an isolation level](ISOLATION_LEVELS.md).
+- **Reference:** [type mapping](TYPES.md), [feature support](FEATURE_SUPPORT.md),
+  [support matrix](SUPPORT_MATRIX.md) and [driver compatibility](DRIVER_COMPAT.md),
+  including the supported CUBRIDdb C-extension driver.
+- **Help:** [troubleshooting](TROUBLESHOOTING.md); report bugs and ask questions on
+  [GitHub Issues](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues), and
+  security problems privately as described in
+  [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md).
+- **Project and internals:** [architecture](ARCHITECTURE.md),
+  [SQLAlchemy internal API compatibility](SA_COMPAT.md),
+  [performance](PERFORMANCE.md), [development](DEVELOPMENT.md) and the
+  [CI execution policy](CI_POLICY.md), for contributors.
 
 ## Project links
 

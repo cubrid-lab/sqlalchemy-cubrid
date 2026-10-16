@@ -168,6 +168,7 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
 For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
+
 ---
 
 ## Async Connection

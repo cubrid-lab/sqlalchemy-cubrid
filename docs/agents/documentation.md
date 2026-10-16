@@ -21,7 +21,7 @@
 | `RELEASING.md` | Release procedure (release-please + `publish-pypi.yml`), failure matrix, recovery |
 | `docs/ARCHITECTURE.md` | Dialect architecture and design objectives |
 | `docs/SA_COMPAT.md` | SQLAlchemy internal APIs used by the dialect and their verified range |
-| `docs/QUICKSTART.md` | Minimal working setup |
+| `docs/QUICKSTART.md` | Start here: the first-connection course (one synchronous `cubrid+pycubrid://` path) |
 | `benchmarks/` | Dated benchmark records with environment and exact commands |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security vulnerability reporting |
@@ -31,3 +31,42 @@
 | `docs/PERFORMANCE.md` | Performance measurements and benchmark pointers |
 | `ROADMAP.md` | Current roadmap (public) |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
+
+## Reader paths and page map (#943)
+
+The site and its Korean copy are organized by reader question, not by file
+type. Every page keeps its URL; a page that is split later keeps a landing
+section at the old anchors. `docs/llms.txt` is the hand-written index and
+`docs/llms-full.txt` is generated from `docs/` by `scripts/generate_llms_full.py`;
+README translations under `docs/` are not site navigation sources.
+
+| Section | Reader and question | Pages | Decision |
+| --- | --- | --- | --- |
+| Start here | New to CUBRID: "how do I get a first result?" | `QUICKSTART.md` | Keep the URL. Split into one lesson per outcome (prepare, first SELECT, one saved row, transactions, safe finish) in later PRs; `QUICKSTART.md` stays the course landing with its current anchors. |
+| How-to guides | "How do I do X in my application?" | `CONNECTION.md`, `ORM_COOKBOOK.md`, `ALEMBIC.md`, `DML_EXTENSIONS.md`, `ISOLATION_LEVELS.md` | Navigation-only move. `CONNECTION.md`'s exhaustive URL-option and driver-install material stays reachable from the task text; ORM, async (#941 owns its two README programs) and Alembic are the purpose-labelled next paths after Start here. |
+| Reference | "What exactly does the dialect do or support?" | `TYPES.md`, `FEATURE_SUPPORT.md`, `SUPPORT_MATRIX.md`, `DRIVER_COMPAT.md` | Navigation-only move. `DRIVER_COMPAT.md` (including the supported CUBRIDdb C-extension driver built from source) leaves the beginner sequence. |
+| Help | "Something does not work." | `TROUBLESHOOTING.md`, GitHub Issues, `SECURITY.md` (private reports) | Own top-level entry. |
+| Project and internals | Contributors and maintainers | `ARCHITECTURE.md`, `SA_COMPAT.md`, `PERFORMANCE.md`, `DEVELOPMENT.md`, `CI_POLICY.md`, `PRD.md`, `RELEASE_PLEASE_VALIDATION.md`, translations, changelog, contributing | Navigation-only move; not application-user reference. |
+
+`README.md` and `docs/index.md` (with their Korean copies) are the entry points
+and link Start here first; `docs/index.md` lists the five sections.
+
+## Lesson pattern
+
+A lesson page in Start here teaches one operation and shows one observable
+result. In order:
+
+1. **Goal**: one sentence, the result the reader will see.
+2. **Prerequisites**: the earlier lesson or lab it needs, linked.
+3. **File and command**: a complete, named file and the exact command to run
+   it, using the course's single dataset and lab values.
+4. **Output**: the real output of that command, recorded from a run on a
+   disposable supported CUBRID instance (record the versions and date where the
+   run is reported).
+5. **Explanation**: only the concepts this step needs, linking upstream
+   SQLAlchemy documentation instead of repeating it.
+6. **Next**: a link to the next lesson, and where to go when it fails.
+
+Keep cleanup visible and ownership-checked, never hide credentials or TLS
+shortcuts, and keep the English and Korean lessons structurally identical.
+

@@ -73,10 +73,21 @@ engine.dispose()
 
 ## 문서 섹션
 
-- [여기서 시작: 첫 연결](QUICKSTART.md)
-- [연결 가이드](CONNECTION.md)
-- [사용자 가이드](TYPES.md)
-- [레퍼런스](FEATURE_SUPPORT.md)
+- **여기서 시작:** [첫 연결](QUICKSTART.md). 빈 폴더에서 첫 행 저장까지 이어지는 동기
+  `cubrid+pycubrid://` 경로 하나입니다.
+- **작업 가이드:** [드라이버 연결과 설정](CONNECTION.md), [ORM 사용하기](ORM_COOKBOOK.md),
+  [Alembic으로 마이그레이션 실행](ALEMBIC.md), [CUBRID 전용 DML 사용하기](DML_EXTENSIONS.md),
+  [격리 수준 고르기](ISOLATION_LEVELS.md).
+- **레퍼런스:** [타입 매핑](TYPES.md), [기능 지원](FEATURE_SUPPORT.md),
+  [지원 매트릭스](SUPPORT_MATRIX.md), 지원 CUBRIDdb C 확장 드라이버를 포함한
+  [드라이버 호환성](DRIVER_COMPAT.md).
+- **도움말:** [문제 해결](TROUBLESHOOTING.md). 버그와 질문은
+  [GitHub Issues](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues)에, 보안 문제는
+  [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md)에 따라 비공개로
+  제보하세요.
+- **프로젝트와 내부 구조:** 기여자를 위한 [아키텍처](ARCHITECTURE.md),
+  [SQLAlchemy 내부 API 호환성](SA_COMPAT.md), [성능](PERFORMANCE.md), [개발](DEVELOPMENT.md),
+  [CI 실행 정책](CI_POLICY.md).
 
 ## 프로젝트 링크
 

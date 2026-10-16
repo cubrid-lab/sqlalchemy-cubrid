@@ -425,6 +425,7 @@ with engine.connect() as conn:
 ```
 
 `trace_query()` handles the full lifecycle: enables tracing, executes your statement, collects trace output, and disables tracing — all within a safe `try/finally` block.
+
 ---
 
 ## Index Hints
