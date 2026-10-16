@@ -111,6 +111,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **The site build runs when the MkDocs provenance hook changes (#952)** — `scripts/docs_provenance_hook.py`, which `mkdocs.yml` loads since #951, was not in `ci.yml`'s `site` path filter, so a pull request changing only the hook skipped `mkdocs build --strict` and a broken hook would first fail on `main`. It is now a site input; `docs/CI_POLICY.md` (English and Korean) lists it.
+
 - **Prepare release checks the `last-release-sha` baseline override (#945)** — the override set after abandoning 1.11.1 is meant to last only until the next release is published, but nothing enforced that, and a stale override makes a later recovery silently list commits that already shipped. The reconciliation step that runs before release-please now classifies the override: it is active only while it is the merge of a release PR on `main` with a recorded abandonment, no `autorelease: pending`/`tagged` label and no tag for its version; once a later release containing it passes the existing publication proof, it is obsolete and preparation stops with a request to remove it in a normal PR. A malformed, unrelated or unreadable override also stops preparation, and an API error is reported as unresolved rather than as absence. Nothing is edited automatically. `RELEASING.md` ("Baseline override lifecycle") and `AGENTS.md` describe the rule; the current 1.11.1 override is active.
 
 - **The documentation check handles shell substitutions as pycubrid does (#934)** —

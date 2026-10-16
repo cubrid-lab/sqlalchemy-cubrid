@@ -375,7 +375,7 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
   `mkdocs build --strict`를 깨뜨리는 문서 수정이나 문서 도구 버전 갱신은 나중에 `main`이
   아니라 풀 리퀘스트에서 실패합니다. `docs-build` 작업은 `site` 경로 필터로 선택됩니다:
   `docs/**`(콘텐츠, 번역, 자산), `mkdocs.yml`, `scripts/generate_llms_full.py`,
-  `.github/docs-requirements/**`, `.github/workflows/docs.yml`,
+  MkDocs 훅 `scripts/docs_provenance_hook.py`, `.github/docs-requirements/**`, `.github/workflows/docs.yml`,
   `.github/workflows/ci.yml`. 루트 `*.md` 파일은 사이트 입력이 아니므로 이 작업을
   선택하지 않으며, `workflow_dispatch`는 다른 레인처럼 이 작업을 강제로 선택합니다.
   이 작업은 `docs.yml`의 빌드 단계(고정된 uv로 `.github/docs-requirements/requirements.txt`

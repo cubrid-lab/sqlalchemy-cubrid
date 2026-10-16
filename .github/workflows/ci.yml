@@ -68,6 +68,7 @@ jobs:
               - 'docs/**'
               - 'mkdocs.yml'
               - 'scripts/generate_llms_full.py'
+              - 'scripts/docs_provenance_hook.py'
               - '.github/docs-requirements/**'
               - '.github/workflows/docs.yml'
               - '.github/workflows/ci.yml'

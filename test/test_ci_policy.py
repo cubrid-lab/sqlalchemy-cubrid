@@ -611,6 +611,7 @@ def test_docs_site_selection_covers_every_site_input() -> None:
         "docs/**",  # content, nav assets and translations
         "mkdocs.yml",
         "scripts/generate_llms_full.py",
+        "scripts/docs_provenance_hook.py",  # the MkDocs hook mkdocs.yml loads (#952)
         ".github/docs-requirements/**",
         ".github/workflows/docs.yml",
         ".github/workflows/ci.yml",

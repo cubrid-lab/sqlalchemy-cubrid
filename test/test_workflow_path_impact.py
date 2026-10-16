@@ -92,6 +92,7 @@ def test_workflow_impact_table(name: str) -> None:
         (".github/docs-requirements/requirements.txt", {"code", "tooling", "site"}),
         ("mkdocs.yml", {"code", "site"}),
         ("scripts/generate_llms_full.py", {"code", "risk", "tooling", "site"}),
+        ("scripts/docs_provenance_hook.py", {"code", "risk", "tooling", "site"}),
         ("CHANGELOG.md", {"docs"}),
         ("README.md", {"docs"}),
         ("THIRD_PARTY_LICENSES.md", {"docs", "tooling"}),
