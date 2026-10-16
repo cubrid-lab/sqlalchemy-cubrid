@@ -14,6 +14,8 @@ import pathlib
 DOC_FILES: list[str] = [
     "index.md",
     "QUICKSTART.md",
+    "LESSON_PREPARE.md",
+    "LESSON_FIRST_QUERY.md",
     "CONNECTION.md",
     "ORM_COOKBOOK.md",
     "DML_EXTENSIONS.md",
