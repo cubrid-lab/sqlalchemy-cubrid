@@ -66,11 +66,17 @@ Rows seen by a new connection: [(1, 'my first saved row')]
 
 ## Running it again
 
-Running the file a second time, or again after it was interrupted, stops at the
-first statement with `Class dba.sqlalchemy_quickstart_notes already exists`
-(the owner name, here `dba`, is your user). The table from the earlier run is
-still there, with its rows. Lesson 4 uses it as it is; to start over, run the
-cleanup in [Lesson 5](LESSON_FINISH.md) and then `save_row.py` again.
+Running the file again stops at the first statement with
+`Class dba.sqlalchemy_quickstart_notes already exists` (the owner name, here
+`dba`, is your user), because the table from the earlier run is still there:
+
+- **The earlier run printed the row.** The table and its row are complete:
+  continue with Lesson 4 as it is.
+- **The earlier run was interrupted before it printed the row.** The table can
+  exist without its row, and Lesson 4 would then print `1` and `[]`. Run
+  [the table cleanup from Lesson 5](LESSON_FINISH.md#remove-the-tutorial-table),
+  which removes only this tutorial's table, then run `save_row.py` again until it
+  prints the row.
 
 ---
 
