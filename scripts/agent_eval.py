@@ -189,7 +189,8 @@ def _hunks(text: str) -> dict[str, list[tuple[str, str]]]:
     """Map each file to its added (``+``) and context (`` ``) lines, in diff order.
 
     The file name comes from the ``+++``/``---``/``rename to`` header lines (or
-    the ``diff --git`` line when it names one path twice). A header that names no
+    the ``diff --git`` line when it names one path twice); a rename lists its
+    source as well, with no lines, while a copy's unchanged source is not listed. A header that names no
     file raises EvalError rather than dropping the file from the scope check.
     """
     files: dict[str, list[tuple[str, str]]] = {}
@@ -205,6 +206,9 @@ def _hunks(text: str) -> dict[str, list[tuple[str, str]]]:
         if path is None:
             raise EvalError(f"cannot tell which file a diff section changes: {paths}")
         files.setdefault(path, []).extend(lines)
+        # A rename also removes its source, which the scope check must see too.
+        if paths.get("from"):
+            files.setdefault(paths["from"], [])
 
     for line in text.splitlines():
         if line.startswith("diff --git "):
@@ -222,6 +226,8 @@ def _hunks(text: str) -> dict[str, list[tuple[str, str]]]:
                 name = _diff_path(line[4:])
                 if name is not None:
                     paths[line[:3]] = name
+            elif line.startswith("rename from "):
+                paths["from"] = _diff_path(line[len("rename from ") :], prefixed=False) or ""
             elif line.startswith(("rename to ", "copy to ")):
                 paths["rename"] = _diff_path(line.split(" to ", 1)[1], prefixed=False) or ""
             elif line.startswith("@@"):
@@ -329,7 +335,7 @@ def grade(task: dict[str, Any], patch: str, report: Any, results: Any | None) ->
     )
 
     criteria["changelog"] = _changelog(task, patch)
-    criteria["claims"] = _claims(task, files, report, live_passed)
+    criteria["claims"] = _claims(task, _hunks(patch), report, live_passed)
     criteria["evidence"] = _evidence(task, report, live_passed)
 
     statuses = {c["status"] for c in criteria.values()}
@@ -416,11 +422,35 @@ def _changelog(task: dict[str, Any], patch: str) -> dict[str, str]:
     return _criterion("pass", f"CHANGELOG entry under {header} cites {issue}")
 
 
+def _added_paragraphs(hunks: dict[str, list[tuple[str, str]]]) -> list[str]:
+    """Added Markdown text, one entry per paragraph, so a wrapped claim reads as one.
+
+    A blank line, a kept (context) line, a new hunk and a new file each end a
+    paragraph, so text from different places is never joined.
+    """
+    paragraphs = []
+    for path, lines in sorted(hunks.items()):
+        if not path.endswith(".md"):
+            continue
+        current: list[str] = []
+        for kind, text in [*lines, ("@", "")]:
+            if kind == "+" and text.strip():
+                current.append(text.strip())
+                continue
+            if current:
+                paragraphs.append(" ".join(current))
+                current = []
+    return paragraphs
+
+
 def _claims(
-    task: dict[str, Any], files: dict[str, list[str]], report: dict[str, Any], live_passed: set[str]
+    task: dict[str, Any],
+    files: dict[str, list[tuple[str, str]]],
+    report: dict[str, Any],
+    live_passed: set[str],
 ) -> dict[str, str]:
     statements = report.get("statements", [])
-    doc_lines = [line for path, lines in files.items() if path.endswith(".md") for line in lines]
+    doc_lines = _added_paragraphs(files)
     problems = []
     for text in statements + doc_lines:
         if DEPRECATED_DRIVER.search(text):

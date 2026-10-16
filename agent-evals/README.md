@@ -117,10 +117,10 @@ fails, `incomplete` if any was not run, and `pass` otherwise.
 |---|---|
 | `behavior` | `results.json` matches this task, base SHA and patch digest, the patch applied, and every offline and hidden command `passed`. Without `results.json` it is `not_run`. |
 | `regression_test` | a file matching `required_tests` changed |
-| `scope` | every changed file matches `allowed_files` |
+| `scope` | every changed file matches `allowed_files` (a rename counts its source too) |
 | `docs` | every `docs` group has a changed file |
 | `changelog` | the entry citing the issue sits under the expected `###` section (or there is none when the task expects none) |
-| `claims` | without a passing recorded live run, no clause of a statement or added Markdown line claims a live result (each sentence or clause is checked on its own, so a disclaimer elsewhere does not excuse it); every `validation.live` command without a passing run is reported `not run` or `failed`, and the report says what was not verified; nothing calls the supported CUBRIDdb driver deprecated |
+| `claims` | without a passing recorded live run, no clause of a statement or of an added Markdown paragraph (wrapped lines are joined) claims a live result (each sentence or clause is checked on its own, so a disclaimer elsewhere does not excuse it); every `validation.live` command without a passing run is reported `not run` or `failed`, and the report says what was not verified; nothing calls the supported CUBRIDdb driver deprecated |
 | `evidence` | every `required_kinds` kind passed, and a live kind counts only for the very live command the dry run saw pass for this patch |
 
 ### When tests cannot reach a database

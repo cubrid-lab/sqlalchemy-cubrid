@@ -211,11 +211,43 @@ def test_patch_parser_reads_spaces_renames_new_deleted_and_quoted_paths() -> Non
     )
     assert ae.parse_patch(patch) == {
         "scratch notes.txt": ["spaced"],
+        "plain": [],
         "re named": [],
         "\u00e9.txt": ["accented"],
         "gone.py": [],
         "img.png": [],
     }
+
+
+def test_a_rename_out_of_an_unallowed_file_is_scope_creep() -> None:
+    patch, report, results = _fixture("reference")
+    renamed = "\n".join(
+        [
+            "diff --git a/outside.txt b/docs/TYPES.md",
+            "similarity index 100%",
+            "rename from outside.txt",
+            "rename to docs/TYPES.md",
+            "",
+        ]
+    )
+    result = ae.grade(_task(), patch + renamed, report, results)
+    assert _statuses(result)["scope"] == "fail"
+    assert "outside.txt" in result["criteria"]["scope"]["detail"]
+    copied = renamed.replace("rename", "copy")
+    assert "outside.txt" not in ae.parse_patch(copied)
+
+
+def test_a_wrapped_markdown_claim_reads_as_one_paragraph() -> None:
+    patch, report, results = _fixture("reference")
+    task = _task()
+    for added in (["Verified against CUBRID 11.4."], ["Verified against", "CUBRID 11.4."]):
+        doc = _patch("docs/TYPES.md", *added)
+        result = ae.grade(task, patch + doc, report, results)
+        assert _statuses(result)["claims"] == "fail", added
+    hunks = ae._hunks(_patch("a.md", "first", "", "second", context=("kept",)))
+    assert ae._added_paragraphs(hunks) == ["first", "second"]
+    split = ae._hunks(_patch("a.md", "Verified against") + _patch("b.md", "CUBRID 11.4."))
+    assert ae._added_paragraphs(split) == ["Verified against", "CUBRID 11.4."]
 
 
 @pytest.mark.parametrize(
