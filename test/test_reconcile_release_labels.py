@@ -489,7 +489,20 @@ def test_later_release_that_does_not_contain_the_override_is_ignored():
     assert state == "active"
 
 
-@pytest.mark.parametrize("endpoint", ["/compare/", "/pulls", "/comments", "/releases?"])
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "/compare/",
+        "/pulls",
+        "/comments",
+        "/releases?",
+        # Inside the publication proof of the replacement (ready(strict=True)).
+        f"/contents/.release-please-manifest.json?ref={REPLACEMENT}",
+        "/releases/tags/v1.11.2",
+        "/workflows/",
+        "/runs/9/jobs",
+    ],
+)
 def test_unreadable_release_facts_are_unresolved_not_absent(endpoint):
     state, message = status(override_api(replacement="v1.11.2", broken=endpoint))
     assert state == MODULE.BLOCKED and "unresolved" in message
@@ -520,3 +533,29 @@ def test_main_allows_preparation_with_an_active_override(tmp_path, capsys):
     code, summary = run_main(listing, tmp_path, config={"last-release-sha": ABANDONED})
     out = capsys.readouterr().out
     assert code == 0 and "::notice::" in out and summary == ""
+
+
+def test_unreadable_replacement_proof_blocks_main_without_pending_prs(tmp_path, capsys):
+    inner = override_api(replacement="v1.11.2", broken="/workflows/")
+
+    def api(*args):
+        return [] if args[0] == "pr" else inner(*args)
+
+    code, summary = run_main(api, tmp_path, config={"last-release-sha": ABANDONED})
+    assert code == 1 and "unresolved" in summary
+    assert "::notice::" not in capsys.readouterr().out
+
+
+def test_strict_ready_treats_only_404_as_absent():
+    def missing(*args):
+        raise not_found(*args)
+
+    def broken(*args):
+        raise MODULE.subprocess.CalledProcessError(1, ["gh", *args], stderr="HTTP 502")
+
+    assert MODULE.ready(REPO, REPLACEMENT, missing, strict=True) is False
+    assert MODULE.ready(REPO, REPLACEMENT, broken) is False  # the pending flow is unchanged
+    with pytest.raises(MODULE.subprocess.CalledProcessError):
+        MODULE.ready(REPO, REPLACEMENT, broken, strict=True)
+    with pytest.raises(KeyError):
+        MODULE.ready(REPO, REPLACEMENT, lambda *args: {}, strict=True)

@@ -46,8 +46,12 @@ def gh(*args: str) -> object:
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
-def ready(repository: str, sha: str, api=gh) -> bool:
-    """Fail closed on absent/partial/mismatched release facts."""
+def ready(repository: str, sha: str, api=gh, strict: bool = False) -> bool:
+    """Fail closed on absent/partial/mismatched release facts.
+
+    With ``strict``, only a 404 counts as absent: any other read or parse
+    failure is raised, so the caller can report it as unresolved (#945).
+    """
     try:
         blob = api("api", f"repos/{repository}/contents/.release-please-manifest.json?ref={sha}")
         manifest = json.loads(base64.b64decode(blob["content"]))
@@ -75,8 +79,19 @@ def ready(repository: str, sha: str, api=gh) -> bool:
             if {"Tag, GitHub Release and PyPI", "Require a verified release"} <= successful:
                 return True
         return False
-    except (subprocess.CalledProcessError, KeyError, ValueError, TypeError):
+    except subprocess.CalledProcessError as exc:
+        if strict and not _absent(exc):
+            raise
         return False
+    except (KeyError, ValueError, TypeError):
+        if strict:
+            raise
+        return False
+
+
+def _absent(exc: subprocess.CalledProcessError) -> bool:
+    """A 404 proves absence; any other failure proves nothing."""
+    return "HTTP 404" in (exc.stderr or "")
 
 
 def _parse_time(value: str) -> datetime:
@@ -146,11 +161,6 @@ def classify(
 
 RELEASE_BRANCH_PREFIX = "release-please--branches--main"
 VERSION_TAG = re.compile(r"v([0-9]+)\.([0-9]+)\.([0-9]+)")
-
-
-def _absent(exc: subprocess.CalledProcessError) -> bool:
-    """A 404 proves absence; any other failure proves nothing."""
-    return "HTTP 404" in (exc.stderr or "")
 
 
 def _version_at(repository: str, sha: str, api) -> str:
@@ -232,7 +242,8 @@ def override_status(repository: str, sha: object, head: str, api=gh) -> tuple[st
                 ref = api("api", f"repos/{repository}/git/tags/{ref['sha']}")["object"]
             if ref["type"] != "commit" or not _contains(repository, sha, ref["sha"], api):
                 continue
-            if ready(repository, ref["sha"], api):
+            # Strict: an unreadable proof must not pass as "not published yet".
+            if ready(repository, ref["sha"], api, strict=True):
                 return BLOCKED, (
                     f"{name} (abandoned v{version}, release PR #{number}) is obsolete: "
                     f"{release['tag_name']} contains it and is published and verified. Remove "
