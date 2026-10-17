@@ -316,8 +316,24 @@ class TestBooleanSelectColumns:
                 sa.cast(_and, Integer),
                 "ORDER BY CAST((users.name = 'a' AND users.id = 1) AS INTEGER)",
             ),
+            (
+                sa.cast(_and, Integer).label("k"),
+                "ORDER BY CAST((users.name = 'a' AND users.id = 1) AS INTEGER)",
+            ),
+            (
+                sa.func.coalesce(_exists, 0).label("k").desc(),
+                "ORDER BY coalesce((EXISTS (SELECT * FROM users WHERE users.name = 'a')), 0) DESC",
+            ),
         ],
-        ids=["and", "exists", "not-exists", "exists-desc-nulls-last", "cast-and"],
+        ids=[
+            "and",
+            "exists",
+            "not-exists",
+            "exists-desc-nulls-last",
+            "cast-and",
+            "unselected-label-cast",
+            "unselected-label-function-desc",
+        ],
     )
     def test_order_by_item_is_grouped(self, order_by, expected):
         sql = _norm(_compile(select(users.c.id).order_by(order_by, users.c.name)))

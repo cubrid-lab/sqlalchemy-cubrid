@@ -128,6 +128,7 @@ def test_boolean_order_by(engine: sa.Engine) -> None:
             (sa.or_(_items.c.name == "b", _items.c.id == 9).desc(), [2, 1]),
             (later, [2, 1]),
             (~later, [1, 2]),
+            (sa.cast(first, Integer).label("unselected"), [2, 1]),
         ):
             stmt = sa.select(_items.c.id).order_by(order_by, _items.c.id)
             assert conn.execute(stmt).scalars().all() == ids

@@ -69,7 +69,8 @@ class _BaseSelectCompiler(Protocol):
 
     def _label_select_column(self, select: Any, column: Any, *args: Any, **kw: Any) -> Any: ...
 
-    def order_by_clause(self, select: Any, **kw: Any) -> str: ...
+    def order_by_clause(self, select: Any, **kw: Any) -> str:
+        """Render the ORDER BY clause (SQLAlchemy dialect hook, used for #968)."""
 
     def visit_unary(
         self,
@@ -184,7 +185,9 @@ class CubridCompiler(compiler.SQLCompiler):
     @classmethod
     def _cubrid_group_targets(cls, expression: Any) -> Iterator[Any]:
         while True:
-            if isinstance(expression, elements.Label):
+            # An ORDER BY label arrives wrapped in a _label_reference; when the
+            # label is not selected, its whole expression renders there.
+            if isinstance(expression, (elements.Label, elements._label_reference)):
                 expression = expression.element
             elif isinstance(expression, elements.TypeCoerce):
                 expression = expression.clause
