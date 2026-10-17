@@ -385,6 +385,26 @@ class TestBooleanSelectColumns:
         """Only SELECT columns and ORDER BY items are grouped through wrappers (#968)."""
         assert expected in _norm(_compile(stmt))
 
+    def test_reused_expression_is_grouped_only_on_its_path(self):
+        """The same object in a window ORDER BY stays bare next to a grouped use (#968)."""
+        exists = sa.exists().where(users.c.name == "a")
+        bare = "EXISTS (SELECT * FROM users WHERE users.name = 'a')"
+        window = sa.func.row_number().over(order_by=exists)
+        sql = _norm(_compile(select(users.c.id).order_by(sa.func.coalesce(exists, 0), window)))
+        assert sql.endswith(f"ORDER BY coalesce(({bare}), 0), row_number() OVER (ORDER BY {bare})")
+        sql = _norm(_compile(select(users.c.id).order_by(exists, window)))
+        assert sql.endswith(f"ORDER BY ({bare}), row_number() OVER (ORDER BY {bare})")
+        sql = _norm(_compile(select(sa.func.coalesce(exists, window).label("x"), window)))
+        assert sql.startswith(
+            f"SELECT coalesce(({bare}), row_number() OVER (ORDER BY {bare})) AS x, "
+            f"row_number() OVER (ORDER BY {bare}) AS anon_1"
+        )
+        cast_ = sa.cast(exists, Integer)
+        sql = _norm(_compile(select(users.c.id).order_by(cast_, sa.func.max(cast_).over())))
+        assert sql.endswith(
+            f"ORDER BY CAST(({bare}) AS INTEGER), max(CAST({bare} AS INTEGER)) OVER ()"
+        )
+
 
 class TestInsertCompilation:
     """Test INSERT statement compilation."""
