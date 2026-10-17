@@ -257,6 +257,118 @@ class TestBooleanSelectColumns:
     def test_other_positions_are_unchanged(self, stmt, expected):
         assert expected in _norm(_compile(stmt))
 
+    _and = sa.and_(users.c.name == "a", users.c.id == 1)
+    _exists = sa.exists().where(users.c.name == "a")
+
+    @pytest.mark.parametrize(
+        ("column", "expected"),
+        [
+            (
+                sa.type_coerce(sa.exists().where(users.c.name == "a"), sa.Boolean),
+                "SELECT (EXISTS (SELECT * FROM users WHERE users.name = 'a')) AS anon_1",
+            ),
+            (
+                sa.cast(sa.and_(users.c.name == "a", users.c.id == 1), Integer),
+                "SELECT CAST((users.name = 'a' AND users.id = 1) AS INTEGER) AS anon_1",
+            ),
+            (
+                sa.func.coalesce(sa.exists().where(users.c.name == "a"), False),
+                "SELECT coalesce((EXISTS (SELECT * FROM users WHERE users.name = 'a')), 0)",
+            ),
+            (
+                sa.func.coalesce(sa.or_(users.c.name == "a", users.c.id == 1), 0).label("x"),
+                "SELECT coalesce((users.name = 'a' OR users.id = 1), 0) AS x",
+            ),
+            (
+                sa.cast(sa.func.coalesce(~sa.exists().where(users.c.name == "a"), 0), Integer),
+                "SELECT CAST(coalesce((NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a')))"
+                ", 0) AS INTEGER)",
+            ),
+        ],
+        ids=["type-coerce-exists", "cast-and", "coalesce-exists", "coalesce-or", "cast-coalesce"],
+    )
+    def test_wrapped_column_is_grouped(self, column, expected):
+        """A boolean column wrapped in a type coercion, CAST or function (#968)."""
+        assert _norm(_compile(select(column))).startswith(expected)
+
+    def test_type_decorator_column_expression_is_grouped(self):
+        class Flag(sa.TypeDecorator):
+            impl = Integer
+            cache_ok = True
+
+            def column_expression(self, col):
+                return sa.func.coalesce(col, 0)
+
+        sql = _norm(_compile(select(sa.type_coerce(self._and, Flag()))))
+        assert sql.startswith("SELECT coalesce((users.name = 'a' AND users.id = 1), 0) AS anon_1")
+
+    @pytest.mark.parametrize(
+        ("order_by", "expected"),
+        [
+            (_and, "ORDER BY (users.name = 'a' AND users.id = 1)"),
+            (_exists, "ORDER BY (EXISTS (SELECT * FROM users WHERE users.name = 'a'))"),
+            (~_exists, "ORDER BY (NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a')))"),
+            (
+                _exists.desc().nulls_last(),
+                "ORDER BY (EXISTS (SELECT * FROM users WHERE users.name = 'a')) DESC NULLS LAST",
+            ),
+            (
+                sa.cast(_and, Integer),
+                "ORDER BY CAST((users.name = 'a' AND users.id = 1) AS INTEGER)",
+            ),
+        ],
+        ids=["and", "exists", "not-exists", "exists-desc-nulls-last", "cast-and"],
+    )
+    def test_order_by_item_is_grouped(self, order_by, expected):
+        sql = _norm(_compile(select(users.c.id).order_by(order_by, users.c.name)))
+        assert sql.endswith(expected + ", users.name")
+
+    @pytest.mark.parametrize(
+        ("stmt", "expected"),
+        [
+            (
+                select(users.c.id).where(sa.func.coalesce(_and, 0) == 1),
+                "WHERE coalesce(users.name = 'a' AND users.id = 1, 0) = 1",
+            ),
+            (
+                select(sa.func.count()).select_from(users).having(sa.cast(_and, Integer) == 1),
+                "HAVING CAST(users.name = 'a' AND users.id = 1 AS INTEGER) = 1",
+            ),
+            (
+                select(sa.func.count()).select_from(users).group_by(_and),
+                "GROUP BY users.name = 'a' AND users.id = 1",
+            ),
+            (
+                select(sa.func.count()).select_from(users).group_by(sa.func.coalesce(_exists, 0)),
+                "GROUP BY coalesce(EXISTS (SELECT * FROM users WHERE users.name = 'a'), 0)",
+            ),
+            (
+                select(users.c.id).order_by(sa.case((_and, 1), else_=0)),
+                "ORDER BY CASE WHEN (users.name = 'a' AND users.id = 1) THEN 1 ELSE 0 END",
+            ),
+            (
+                select(sa.func.coalesce(users.c.name == "a", False)),
+                "SELECT coalesce(users.name = 'a', 0)",
+            ),
+            (
+                select(users.c.id).order_by(sa.func.row_number().over(order_by=_exists)),
+                "OVER (ORDER BY EXISTS (SELECT * FROM users WHERE users.name = 'a'))",
+            ),
+        ],
+        ids=[
+            "where-function",
+            "having-cast",
+            "group-by",
+            "group-by-function",
+            "order-by-case",
+            "comparison-argument",
+            "window-order-by",
+        ],
+    )
+    def test_wrapped_other_positions_are_unchanged(self, stmt, expected):
+        """Only SELECT columns and ORDER BY items are grouped through wrappers (#968)."""
+        assert expected in _norm(_compile(stmt))
+
 
 class TestInsertCompilation:
     """Test INSERT statement compilation."""

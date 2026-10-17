@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **EXISTS and AND/OR inside a CAST, a function or ORDER BY no longer fail (#968)** — CUBRID
+  also rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a CAST or
+  function argument and as an ORDER BY item (-493). The compiler now groups such an expression
+  when the CAST or function is itself a SELECT column or ORDER BY item, also through
+  `type_coerce()`, labels and sort modifiers. `select(type_coerce(exists(), Boolean))`,
+  `select(cast(and_(...), Integer))`, `select(func.coalesce(exists(), False))`, a Boolean
+  `TypeDecorator` whose `column_expression()` wraps the column, `order_by(and_(...))` and
+  `order_by(exists())` now run. `WHERE`, `HAVING`, `ON`, `GROUP BY`, `CASE` conditions and
+  window `ORDER BY` render as before. A boolean `GROUP BY` item stays unsupported: CUBRID
+  rejects a search condition there even inside parentheses. Group by a SELECT-list label
+  instead (documented in `docs/FEATURE_SUPPORT.md`).
+
 - **EXISTS and AND/OR as a SELECT-list item no longer fail (#966)** — CUBRID rejects a bare
   `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a SELECT-list item with a syntax
   error (-493) but accepts each inside parentheses, so `select(exists().where(...))`,

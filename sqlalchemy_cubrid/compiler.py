@@ -14,7 +14,7 @@ from typing import Any, Iterable, Iterator, Protocol, cast
 
 from sqlalchemy.exc import CompileError
 from sqlalchemy.schema import CreateIndex
-from sqlalchemy.sql import compiler, dml, elements, operators, schema, selectable
+from sqlalchemy.sql import compiler, dml, elements, functions, operators, schema, selectable
 from sqlalchemy.sql.expression import text as text_clause
 from sqlalchemy.sql import sqltypes
 
@@ -65,9 +65,11 @@ class _BaseDMLCompiler(Protocol):
 
 
 class _BaseSelectCompiler(Protocol):
-    """Typed boundaries for the SELECT-list hooks used for #966."""
+    """Typed boundaries for the SELECT-list and ORDER BY hooks used for #966 and #968."""
 
     def _label_select_column(self, select: Any, column: Any, *args: Any, **kw: Any) -> Any: ...
+
+    def order_by_clause(self, select: Any, **kw: Any) -> str: ...
 
     def visit_unary(
         self,
@@ -166,25 +168,66 @@ class CubridCompiler(compiler.SQLCompiler):
         return self.visit_is_distinct_from_binary(binary, operator, **kw)
 
     # CUBRID rejects ``EXISTS (...)``, ``NOT (...)`` and ``a AND b`` / ``a OR b``
-    # as a bare SELECT-list item ("SELECT EXISTS (SELECT 1)" is a syntax error)
-    # but accepts each inside parentheses, so ``query(q.exists()).scalar()``
-    # failed (#966). Group only the expression that is itself the column (or
-    # the element of its label); the same expression anywhere else, such as a
-    # WHERE clause or a CASE condition, renders as before.
+    # as a bare SELECT-list item ("SELECT EXISTS (SELECT 1)" is a syntax error),
+    # as a CAST or function argument and as an ORDER BY item, but accepts each
+    # inside parentheses, so ``query(q.exists()).scalar()`` failed (#966), as
+    # did ``cast(and_(...), Integer)``, ``func.coalesce(exists(), False)`` and
+    # ``order_by(a & b)`` (#968). Group only such an expression when it is the
+    # SELECT column or ORDER BY item itself, or reached from it through labels,
+    # type coercions, sort modifiers, CASTs and function arguments; the same
+    # expression in a WHERE, HAVING, ON or GROUP BY clause, a CASE condition or
+    # any other operand renders as before. CUBRID rejects a search condition as
+    # a GROUP BY item even inside parentheses, so GROUP BY stays unchanged.
 
-    _cubrid_select_column: Any = None
+    _cubrid_grouped: frozenset[int] = frozenset()
+
+    @classmethod
+    def _cubrid_group_targets(cls, expression: Any) -> Iterator[Any]:
+        while True:
+            if isinstance(expression, elements.Label):
+                expression = expression.element
+            elif isinstance(expression, elements.TypeCoerce):
+                expression = expression.clause
+            elif isinstance(expression, elements.UnaryExpression) and expression.modifier in (
+                operators.asc_op,
+                operators.desc_op,
+                operators.nulls_first_op,
+                operators.nulls_last_op,
+            ):
+                expression = expression.element
+            else:
+                break
+        yield expression
+        if isinstance(expression, elements.Cast):
+            yield from cls._cubrid_group_targets(expression.clause)
+        elif isinstance(expression, functions.FunctionElement):
+            for argument in expression.clauses:
+                yield from cls._cubrid_group_targets(argument)
+
+    def _cubrid_grouping(self, expressions: Iterable[Any]) -> frozenset[int]:
+        previous = self._cubrid_grouped
+        self._cubrid_grouped = frozenset(
+            id(target)
+            for expression in expressions
+            for target in self._cubrid_group_targets(expression)
+        )
+        return previous
 
     def _label_select_column(self, select: Any, column: Any, *args: Any, **kw: Any) -> Any:
-        previous = self._cubrid_select_column
-        self._cubrid_select_column = (
-            column.element if isinstance(column, elements.Label) else column
-        )
+        previous = self._cubrid_grouping((column,))
         try:
             return cast(_BaseSelectCompiler, super())._label_select_column(
                 select, column, *args, **kw
             )
         finally:
-            self._cubrid_select_column = previous
+            self._cubrid_grouped = previous
+
+    def order_by_clause(self, select: Any, **kw: Any) -> str:
+        previous = self._cubrid_grouping(select._order_by_clauses)
+        try:
+            return cast(_BaseSelectCompiler, super()).order_by_clause(select, **kw)
+        finally:
+            self._cubrid_grouped = previous
 
     def visit_unary(
         self,
@@ -196,7 +239,7 @@ class CubridCompiler(compiler.SQLCompiler):
         text = cast(_BaseSelectCompiler, super()).visit_unary(
             unary, add_to_result_map, result_map_targets, **kw
         )
-        if unary is self._cubrid_select_column and (
+        if id(unary) in self._cubrid_grouped and (
             unary.operator is operators.exists or unary.operator is operators.inv
         ):
             return "(%s)" % text
@@ -204,7 +247,7 @@ class CubridCompiler(compiler.SQLCompiler):
 
     def visit_expression_clauselist(self, clauselist: Any, **kw: Any) -> str:
         text = cast(_BaseSelectCompiler, super()).visit_expression_clauselist(clauselist, **kw)
-        if clauselist is self._cubrid_select_column and clauselist.operator in (
+        if id(clauselist) in self._cubrid_grouped and clauselist.operator in (
             operators.and_,
             operators.or_,
         ):
