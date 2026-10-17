@@ -62,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Boolean expressions that still fail on CUBRID (#968)** — `docs/FEATURE_SUPPORT.md` now
+  states that `EXISTS (...)` and `a AND b` as a CAST or function argument in `WHERE`/`HAVING`
+  (`WHERE coalesce(a AND b, 0) = 1`, `WHERE CAST(a AND b AS INTEGER) = 1`) and as a window
+  `OVER (ORDER BY EXISTS (...))` item still fail with -493 on CUBRID 11.4. It gives a `case()`
+  workaround; grouping them is tracked in #970.
+
 - **The first-connection course has one page per lesson (#943)** — the rest of the course moves out of the Quick Start page into Lesson 3 (save a row and read it back through a separate connection, `save_row.py`), Lesson 4 (a transaction undone with `rollback()`, `rollback_row.py`, which shows the row count inside the transaction and can be rerun) and Lesson 5 (the owner- and comment-checked cleanup and removing the lab with `docker rm -f -v`), in English and Korean. The former single `first_saved_row.py` is split between Lessons 3 and 4; the table, its marker comment and the cleanup script are unchanged. The Quick Start page lists all five lessons, keeps the first-connection error table and next steps, and keeps its former "Step 3" and "Clean up" anchors as short "moved to" sections. Every command was rerun against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0, including reruns and the rollback before Lesson 3.
 
 - **The first-connection course starts with two lesson pages (#943)** — preparing CUBRID and Python (`docs/LESSON_PREPARE.md`: an existing database's values or the disposable Docker lab, and the virtual environment) and running the first query (`docs/LESSON_FIRST_QUERY.md`) are now separate pages, each with a goal, prerequisites, the commands, the real output and a next step, in English and Korean, listed under Start here. The Quick Start page is the course landing: it lists the lessons, keeps the save-a-row, cleanup and first-connection-errors sections, and keeps its former anchors as short "moved to" sections. The lab's readiness loop and the first script are wrapped to fit narrow screens, the site shows previous/next links at the bottom of each page, and the documentation home links the lab in Lesson 1. Every command was rerun as written against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0.
@@ -268,6 +274,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery documents setting that override and removing it after the next release is tagged.
 
 ### Tests
+
+- **ORDER BY output matches SQLAlchemy's for plain items (#968)** — the dialect renders ORDER BY
+  one item at a time, so a guard test compares its output with SQLAlchemy's own
+  `order_by_clause` for ORDER BY items that need no grouping.
 
 - **SHOW TRACE read failures release both result handles (#854)** — `test/test_trace.py` gains
   the missing offline test for `trace_query()`'s read path: when reading the `SHOW TRACE` rows

@@ -366,6 +366,9 @@ class TestBooleanSelectColumns:
                 select(sa.func.coalesce(users.c.name == "a", False)),
                 "SELECT coalesce(users.name = 'a', 0)",
             ),
+            # Kept bare on purpose: a window ORDER BY is outside the #968 contract.
+            # CUBRID rejects this form (-493); it is documented as unsupported,
+            # with a case() workaround, and tracked in #970.
             (
                 select(users.c.id).order_by(sa.func.row_number().over(order_by=_exists)),
                 "OVER (ORDER BY EXISTS (SELECT * FROM users WHERE users.name = 'a'))",
@@ -386,7 +389,12 @@ class TestBooleanSelectColumns:
         assert expected in _norm(_compile(stmt))
 
     def test_reused_expression_is_grouped_only_on_its_path(self):
-        """The same object in a window ORDER BY stays bare next to a grouped use (#968)."""
+        """The same object in a window ORDER BY stays bare next to a grouped use (#968).
+
+        The bare window form is kept on purpose and is unsupported on CUBRID
+        (-493; documented with a case() workaround, tracked in #970). This test
+        pins that grouping one use does not leak into another.
+        """
         exists = sa.exists().where(users.c.name == "a")
         bare = "EXISTS (SELECT * FROM users WHERE users.name = 'a')"
         window = sa.func.row_number().over(order_by=exists)
@@ -403,6 +411,55 @@ class TestBooleanSelectColumns:
         sql = _norm(_compile(select(users.c.id).order_by(cast_, sa.func.max(cast_).over())))
         assert sql.endswith(
             f"ORDER BY CAST(({bare}) AS INTEGER), max(CAST({bare} AS INTEGER)) OVER ()"
+        )
+
+
+class TestOrderByClauseMatchesSQLAlchemy:
+    """CubridCompiler.order_by_clause renders one item at a time (#968).
+
+    For ORDER BY items that need no grouping, its output must equal
+    SQLAlchemy's own order_by_clause, which it replaces.
+    """
+
+    class _BaseOrderByCompiler(CubridDialect.statement_compiler):
+        order_by_clause = sa.sql.compiler.SQLCompiler.order_by_clause
+
+    class _BaseOrderByDialect(CubridDialect):
+        pass
+
+    _BaseOrderByDialect.statement_compiler = _BaseOrderByCompiler
+
+    @staticmethod
+    def _statements() -> list[Any]:
+        name = users.c.name
+        upper = sa.func.upper(name).label("upper_name")
+        sub = select(users.c.id).order_by(users.c.id.desc()).limit(2).subquery()
+        return [
+            select(users.c.id),
+            select(users.c.id).order_by(users.c.id),
+            select(users.c.id).order_by(users.c.id.desc(), name.asc().nulls_last()),
+            select(upper).order_by(upper),
+            select(users.c.id).order_by(upper.desc()),
+            select(users.c.id).order_by(sa.text("id DESC"), sa.literal_column("2")),
+            select(users.c.id).order_by(sa.func.coalesce(name, "x"), name == "a"),
+            select(users.c.id).order_by(sa.case((name == "a", 1), else_=0)),
+            select(users.c.id, name).order_by("name"),
+            select(sub.c.id).order_by(sub.c.id),
+            sa.union(select(users.c.id), select(users.c.id)).order_by("id"),
+            select(users.c.id).order_by(users.c.id).limit(5).offset(10),
+            select(users.c.id).order_by(None),
+        ]
+
+    @pytest.mark.parametrize("index", range(13))
+    def test_plain_items_match_base_order_by_clause(self, index):
+        stmt = self._statements()[index]
+        assert _compile(stmt) == _compile(stmt, self._BaseOrderByDialect())
+
+    def test_base_dialect_differs_only_where_grouping_applies(self):
+        stmt = select(users.c.id).order_by(sa.and_(users.c.name == "a", users.c.id == 1))
+        assert _norm(_compile(stmt)).endswith("ORDER BY (users.name = 'a' AND users.id = 1)")
+        assert _norm(_compile(stmt, self._BaseOrderByDialect())).endswith(
+            "ORDER BY users.name = 'a' AND users.id = 1"
         )
 
 
