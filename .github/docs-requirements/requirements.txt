@@ -2,6 +2,6 @@
 # Installed by .github/workflows/docs.yml; Dependabot updates these pins.
 mkdocs==1.6.1
 mkdocs-material==9.7.7
-pymdown-extensions==12.2
+pymdown-extensions==12.3
 # The deterministic documentation checks in ci.yml's docs-check job (#908).
 markdown-it-py==4.2.0
