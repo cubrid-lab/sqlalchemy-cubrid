@@ -74,7 +74,7 @@ test = [
     "markdown-it-py>=4",
 ]
 lint = [
-    "ruff==0.17.0",
+    "ruff==0.17.1",
 ]
 typecheck = [
     "mypy==2.4.0",
