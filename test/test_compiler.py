@@ -2494,11 +2494,30 @@ class TestAggregateOrderByCompilation:
                 "GROUP_CONCAT((NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a'))) "
                 "ORDER BY users.id)",
             ),
+            (
+                lambda: sa.func.GROUP_CONCAT(users.c.name).aggregate_order_by(users.c.name),
+                "GROUP_CONCAT(users.name ORDER BY users.name)",
+            ),
+            (
+                lambda: sa.func.group_concat(users.c.name).aggregate_order_by(
+                    sa.literal_column("1").desc()
+                ),
+                "GROUP_CONCAT(users.name ORDER BY 1 DESC)",
+            ),
         ],
-        ids=["column-desc", "distinct", "nulls-last", "and", "exists", "not-exists"],
+        ids=[
+            "column-desc",
+            "distinct",
+            "nulls-last",
+            "and",
+            "exists",
+            "not-exists",
+            "upper-case-name",
+            "position",
+        ],
     )
     def test_group_concat_order_by(self, concat, expected):
-        assert f"SELECT {expected} AS group_concat_1" in _norm(_compile(select(concat())))
+        assert _norm(_compile(select(concat()))).startswith(f"SELECT {expected} AS ")
         stmt = select(users.c.id).group_by(users.c.id).having(concat() != "")
         assert f"HAVING {expected} != ''" in _norm(_compile(stmt))
 

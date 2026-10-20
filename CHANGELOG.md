@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GROUP_CONCAT((a = 1 AND b = 2))`. Values are unchanged; the change is otherwise
   compatible. `FEATURE_SUPPORT` now shows the supported forms and lists the unsupported ones:
   a separate `SEPARATOR` argument, more than one argument, and SQLAlchemy 2.1's
-  `aggregate_order_by()` and `aggregate_strings()`. Verified on CUBRID 11.4; not verified on
+  `aggregate_strings()` (`aggregate_order_by()` is fixed by #991). Verified on CUBRID 11.4; not verified on
   10.2, 11.0 or 11.2.
 
 - **EXISTS and AND/OR as a simple CASE value no longer fail (#987)** — CUBRID rejects a bare

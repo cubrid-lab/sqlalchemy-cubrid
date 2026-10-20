@@ -141,8 +141,9 @@ class CubridCompiler(compiler.SQLCompiler):
         """Render GROUP_CONCAT aggregate function.
 
         CUBRID supports GROUP_CONCAT([DISTINCT] expr [ORDER BY ...] [SEPARATOR '...']).
-        Write ``DISTINCT`` with ``col.distinct()``. Put ``ORDER BY`` and ``SEPARATOR``
-        in a single ``literal_column()`` argument, for example
+        Write ``DISTINCT`` with ``col.distinct()``. On SQLAlchemy 2.1, write ``ORDER BY``
+        with ``.aggregate_order_by(col)`` (#991). Otherwise, and for ``SEPARATOR``, put
+        the modifiers in a single ``literal_column()`` argument, for example
         ``func.group_concat(literal_column("name ORDER BY name SEPARATOR ';'"))``;
         a separate ``SEPARATOR`` argument renders ``expr, SEPARATOR '...'``, which
         CUBRID rejects.

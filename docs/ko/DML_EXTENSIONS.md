@@ -344,7 +344,7 @@ stmt = (
 #   FROM users GROUP BY users.department
 ```
 
-CUBRID의 `GROUP_CONCAT`은 `DISTINCT`, `ORDER BY`, `SEPARATOR`도 지원합니다. `DISTINCT`에는 `sa.func.group_concat(users.c.name.distinct())`를, `ORDER BY` / `SEPARATOR`에는 `literal_column()` 인자를 사용하세요. 검증된 형식과 지원하지 않는 형식은 [기능 지원 — GROUP_CONCAT](FEATURE_SUPPORT.md#group_concat)을 참고하세요.
+CUBRID의 `GROUP_CONCAT`은 `DISTINCT`, `ORDER BY`, `SEPARATOR`도 지원합니다. `DISTINCT`에는 `sa.func.group_concat(users.c.name.distinct())`를, SQLAlchemy 2.1에서 `ORDER BY`에는 `.aggregate_order_by(users.c.name)`를, `SEPARATOR`(SQLAlchemy 2.0에서는 `ORDER BY`도)에는 `literal_column()` 인자를 사용하세요. 검증된 형식과 지원하지 않는 형식은 [기능 지원 — GROUP_CONCAT](FEATURE_SUPPORT.md#group_concat)을 참고하세요.
 
 ---
 
