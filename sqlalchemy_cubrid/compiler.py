@@ -137,7 +137,12 @@ class CubridCompiler(compiler.SQLCompiler):
     def visit_group_concat_func(self, fn: Any, **kw: Any) -> str:
         """Render GROUP_CONCAT aggregate function.
 
-        CUBRID supports GROUP_CONCAT([DISTINCT] expr [ORDER BY ...] [SEPARATOR '...'])
+        CUBRID supports GROUP_CONCAT([DISTINCT] expr [ORDER BY ...] [SEPARATOR '...']).
+        Write ``DISTINCT`` with ``col.distinct()``. Put ``ORDER BY`` and ``SEPARATOR``
+        in a single ``literal_column()`` argument, for example
+        ``func.group_concat(literal_column("name ORDER BY name SEPARATOR ';'"))``;
+        a separate ``SEPARATOR`` argument renders ``expr, SEPARATOR '...'``, which
+        CUBRID rejects.
         """
         # function_argspec() already supplies the argument-list parentheses;
         # another pair breaks DISTINCT, ORDER BY and SEPARATOR (#990).

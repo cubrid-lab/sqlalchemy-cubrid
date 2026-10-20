@@ -59,6 +59,10 @@ users = Table(
     Column("email", String(200)),
 )
 
+# Boolean expressions that need parentheses when used as operands or arguments.
+_and = sa.and_(users.c.name == "a", users.c.id == 1)
+_exists = sa.exists().where(users.c.name == "a")
+
 
 class TestSelectCompilation:
     """Test SELECT statement compilation."""
@@ -257,9 +261,6 @@ class TestBooleanSelectColumns:
     def test_other_positions_are_unchanged(self, stmt, expected):
         assert expected in _norm(_compile(stmt))
 
-    _and = sa.and_(users.c.name == "a", users.c.id == 1)
-    _exists = sa.exists().where(users.c.name == "a")
-
     @pytest.mark.parametrize(
         ("column", "expected"),
         [
@@ -299,7 +300,7 @@ class TestBooleanSelectColumns:
             def column_expression(self, col):
                 return sa.func.coalesce(col, 0)
 
-        sql = _norm(_compile(select(sa.type_coerce(self._and, Flag()))))
+        sql = _norm(_compile(select(sa.type_coerce(_and, Flag()))))
         assert sql.startswith("SELECT coalesce((users.name = 'a' AND users.id = 1), 0) AS anon_1")
 
     @pytest.mark.parametrize(
@@ -581,15 +582,15 @@ class TestBooleanSelectColumns:
 
     def test_simple_case_value_reused_elsewhere(self):
         """The same object as a simple-case value and elsewhere is grouped only as the value."""
-        case = sa.case({True: 10}, value=self._and, else_=20)
+        case = sa.case({True: 10}, value=_and, else_=20)
         bare = "users.name = 'a' AND users.id = 1"
-        sql = _norm(_compile(select(case, self._and).where(self._and)))
+        sql = _norm(_compile(select(case, _and).where(_and)))
         assert sql == (
             f"SELECT CASE ({bare}) WHEN 1 THEN 10 ELSE 20 END AS anon_1, ({bare}) AS anon_2 "
             f"FROM users WHERE {bare}"
         )
-        case = sa.case({True: self._and}, value=self._and, else_=sa.literal(False))
-        sql = _norm(_compile(select(case).where(self._and)))
+        case = sa.case({True: _and}, value=_and, else_=sa.literal(False))
+        sql = _norm(_compile(select(case).where(_and)))
         assert sql == (
             f"SELECT CASE ({bare}) WHEN 1 THEN ({bare}) ELSE 0 END AS anon_1 "
             f"FROM users WHERE {bare}"
@@ -2383,15 +2384,6 @@ class TestGroupConcatCompilation:
         assert _norm(_compile(stmt)) == (
             "SELECT GROUP_CONCAT(users.name) AS group_concat_1 FROM users"
         )
-
-    def test_group_concat_with_separator(self):
-        """GROUP_CONCAT with separator literal."""
-        stmt = select(sa.func.group_concat(users.c.name, sa.literal_column("SEPARATOR ','")))
-        sql = _compile(stmt)
-        assert "GROUP_CONCAT" in sql
-
-    _and = sa.and_(users.c.name == "a", users.c.id == 1)
-    _exists = sa.exists().where(users.c.name == "a")
 
     @pytest.mark.parametrize(
         ("arguments", "expected"),
