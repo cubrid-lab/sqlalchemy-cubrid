@@ -4554,6 +4554,8 @@ Verified on CUBRID 11.4; not verified on 10.2, 11.0 or 11.2. Not supported:
 - `aggregate_order_by()` on any function other than `GROUP_CONCAT`, including
   `func.aggregate_strings()`: no other CUBRID aggregate takes an `ORDER BY`, so it raises
   `CompileError` instead of dropping the `ORDER BY`.
+- `aggregate_order_by()` on a `.filter(...)`ed function, `GROUP_CONCAT` included: CUBRID has no
+  `FILTER (WHERE ...)` clause, so it raises `CompileError`.
 
 ### REPLACE INTO
 

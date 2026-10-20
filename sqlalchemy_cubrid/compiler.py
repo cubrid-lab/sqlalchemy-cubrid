@@ -340,6 +340,12 @@ class CubridCompiler(compiler.SQLCompiler):
     def visit_aggregateorderby(self, aggregateorderby: Any, **kw: Any) -> str:
         # SQLAlchemy 2.1 aggregate_order_by(). Of CUBRID's aggregates only
         # GROUP_CONCAT takes an ORDER BY in its argument list (#991).
+        if getattr(aggregateorderby.element, "func", None) is not None:
+            # A FunctionFilter (func.f(x).filter(c)): CUBRID has no FILTER clause (#995).
+            raise CompileError(
+                "CUBRID does not support FILTER with aggregate_order_by(); "
+                "it has no FILTER (WHERE ...) clause"
+            )
         if getattr(aggregateorderby.element, "name", "").lower() != "group_concat":
             raise CompileError(
                 "CUBRID supports aggregate_order_by() only for GROUP_CONCAT; "

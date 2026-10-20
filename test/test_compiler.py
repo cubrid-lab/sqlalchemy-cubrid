@@ -2536,6 +2536,16 @@ class TestAggregateOrderByCompilation:
         with pytest.raises(CompileError, match="only for GROUP_CONCAT"):
             _compile(stmt)
 
+    def test_filtered_group_concat_names_filter(self):
+        concat = sa.func.group_concat(users.c.name).filter(users.c.id > 1)
+        with pytest.raises(CompileError, match="does not support FILTER with aggregate_order_by"):
+            _compile(select(sa.aggregate_order_by(concat, users.c.name)))
+
+    def test_filtered_other_function_raises(self):
+        concat = sa.func.count(users.c.name).filter(users.c.id > 1)
+        with pytest.raises(CompileError, match="does not support FILTER with aggregate_order_by"):
+            _compile(select(sa.aggregate_order_by(concat, users.c.name)))
+
 
 class TestRecursiveCTECompilation:
     """Test recursive CTE (WITH RECURSIVE) compilation."""

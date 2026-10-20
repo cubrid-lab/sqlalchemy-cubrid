@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **aggregate_order_by() on a filtered GROUP_CONCAT names FILTER in its error (#995)** — on
+  SQLAlchemy 2.1, `aggregate_order_by(func.group_concat(col).filter(cond), col)` raised a
+  `CompileError` saying `aggregate_order_by()` works only for `GROUP_CONCAT`, although the call
+  already was one. The error now says that CUBRID has no `FILTER (WHERE ...)` clause. It still
+  raises, and the rendered SQL of every other form is unchanged.
+
 - **aggregate_order_by() no longer drops its ORDER BY (#991)** — on SQLAlchemy 2.1,
   `func.group_concat(col).aggregate_order_by(col.desc())` rendered `GROUP_CONCAT(col)` and
   returned the values in an unspecified order without an error. It now renders

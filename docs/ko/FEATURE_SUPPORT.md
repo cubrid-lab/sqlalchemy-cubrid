@@ -435,6 +435,8 @@ NULL 값은 건너뛰며, NULL만 있는 그룹은 `NULL`을 반환합니다. `O
 - `GROUP_CONCAT` 이외의 함수(`func.aggregate_strings()` 포함)에 쓴 `aggregate_order_by()`:
   CUBRID의 다른 집계 함수는 `ORDER BY`를 받지 않으므로, `ORDER BY`를 버리지 않고
   `CompileError`를 발생시킵니다.
+- `.filter(...)`를 붙인 함수(`GROUP_CONCAT` 포함)에 쓴 `aggregate_order_by()`: CUBRID에는
+  `FILTER (WHERE ...)` 절이 없으므로 `CompileError`를 발생시킵니다.
 
 ### REPLACE INTO
 
