@@ -15,8 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `THEN` or `ELSE` value (#982), so `case({True: 10}, value=and_(...), else_=20)` and
   `case({True: 10}, value=exists(), else_=20)` run. A column, bind parameter, comparison or
   other non-boolean value and every other rendering are unchanged. The documentation now also
-  states that CUBRID rejects a `CASE` whose results are boolean without a non-NULL `ELSE`
-  ("semantic error", -495), with or without grouping; pass `else_=`. Verified on CUBRID 11.4;
+  states that CUBRID can reject a `CASE` whose results are boolean without a non-NULL `ELSE`
+  (for example one with a single `WHEN`; "semantic error", -495), with or without grouping, so
+  pass `else_=`; that CUBRID 11.4 evaluates any `CASE` used as a window `ORDER BY` or
+  `PARTITION BY` item as a constant, without an error; and that a `CASE` with a boolean value
+  fails as a `GROUP BY` item (-493). Verified on CUBRID 11.4;
   not verified on 10.2, 11.0 or 11.2.
 
 - **EXISTS and AND/OR as a CASE THEN or ELSE value no longer fail (#982)** — CUBRID rejects a

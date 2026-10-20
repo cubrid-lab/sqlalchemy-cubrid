@@ -7,7 +7,8 @@ anywhere in a statement, an ORDER BY / PARTITION BY item of a window or
 WITHIN GROUP (#970), a CASE THEN or ELSE value (#982) and a simple-case value
 (#987). Sync, including the ORM ``query(...).exists()`` idiom, and async. CUBRID
 rejects a search condition as a GROUP BY item even in parentheses; grouping by
-the column's label works. It also rejects a boolean CASE without a non-NULL ELSE.
+the column's label works. It can also reject a boolean CASE without a non-NULL
+ELSE, for example one with a single WHEN.
 """
 
 from __future__ import annotations
@@ -264,8 +265,8 @@ def test_boolean_simple_case_value(engine: sa.Engine) -> None:
                 (2, False),
                 (3, None),
             ]
-        # CUBRID rejects a CASE whose results are boolean without a non-NULL ELSE,
-        # with or without the grouping.
+        # CUBRID rejects these single-WHEN CASEs whose results are boolean and that
+        # have no non-NULL ELSE, with or without the grouping.
         for case in (
             sa.case((pairs.c.id > 0, both)),
             sa.case((pairs.c.id > 0, pairs.c.a == 1)),
