@@ -129,7 +129,7 @@ High-level overview by feature category.
 - **Recursive CTEs**: CUBRID supports `WITH RECURSIVE` for recursive queries, verified live on 10.2, 11.0, 11.2 and 11.4 (#849). SQLAlchemy's base compiler generates correct syntax — no dialect-specific compilation needed.
 - **Window functions**: CUBRID supports `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()`, and other window functions with `OVER(PARTITION BY … ORDER BY …)`. The SA base compiler handles these natively.
 - **NULLS FIRST / NULLS LAST**: CUBRID supports `ORDER BY col ASC NULLS FIRST` and `ORDER BY col DESC NULLS LAST`. The SA base compiler handles these natively.
-- **GROUP_CONCAT**: CUBRID supports `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`. Use `sa.func.group_concat(column)`.
+- **GROUP_CONCAT**: CUBRID supports `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`. Use `sa.func.group_concat(column)`, `sa.func.group_concat(column.distinct())`, or a `literal_column()` argument for `ORDER BY` / `SEPARATOR`; see [GROUP_CONCAT](#group_concat).
 - **LIMIT / OFFSET**: CUBRID uses MySQL-style `LIMIT [offset,] count` syntax. When only an offset is given, the dialect emits `LIMIT offset, 4611686018427387904` (2^62) as the "all remaining rows" sentinel — effectively unbounded, and small enough that CUBRID's internal `offset + count` addition never overflows the signed BIGINT range. CUBRID has no `FETCH FIRST n ROWS ONLY`, so `Select.fetch(n)` also renders as `LIMIT n` (`LIMIT offset, n` with `.offset()`, #867); `fetch(..., percent=True)` and `fetch(..., with_ties=True)` have no `LIMIT` equivalent and raise `CompileError`.
 - **Boolean SELECT-list items**: CUBRID rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a SELECT-list item (`SELECT EXISTS (SELECT 1)` is a syntax error) but accepts it inside parentheses. The dialect groups such a column, so `select(exists().where(...))`, `select(~exists()...)`, `select(and_(...))` and the ORM `session.query(q.exists()).scalar()` work (#966). CUBRID also rejects these expressions as a bare CAST or function argument and as an ORDER BY item, so the dialect groups them there too (also inside `type_coerce()`, labels and sort modifiers). `select(type_coerce(exists(), Boolean))`, `select(cast(and_(...), Integer))`, `select(func.coalesce(exists(), False))`, a Boolean `TypeDecorator` whose `column_expression()` wraps the column, `order_by(and_(...))` and `order_by(exists())` work (#968). A CAST or function groups such an argument wherever it appears, not only in the SELECT list, for example in `WHERE`, `HAVING`, `ON` or `UPDATE ... SET`, so `where(func.coalesce(and_(...), 0) == 1)` and `where(cast(and_(...), Integer) == 1)` work. An `EXISTS (...)` or `NOT (...)` item of a window or `WITHIN GROUP` `ORDER BY` or `PARTITION BY` is grouped too, so `over(order_by=exists())`, `over(partition_by=exists())` and `within_group(~exists())` work. A single `and_()` or `or_()` passed as a window `order_by` or `partition_by` is split by SQLAlchemy itself into separate items, on every dialect (for `or_()` that changes the meaning), so pass it inside a list, `over(order_by=[and_(...)])`, or call `.self_group()`; inside a list and in `WITHIN GROUP` it is grouped (#970). A `CASE` `THEN` or `ELSE` value is grouped too, in a searched and a simple (`value=`) `case()`, so `case((x > 0, and_(...)), else_=literal(False))` and `case((x > 0, exists()), else_=literal(False))` work (#982). A boolean simple-case value operand is grouped too, so `case({True: 10}, value=and_(...), else_=20)` and `case({True: 10}, value=exists(), else_=20)` work (#987). CUBRID can reject a `CASE` whose results are boolean and that has no `ELSE` or only `ELSE NULL`, for example one with a single `WHEN` ("semantic error", -495), with or without the grouping; this is a server limitation, so pass a non-NULL `else_=`, for example `else_=literal(False)`. CUBRID 11.4 also ignores any `CASE` used as a window `ORDER BY` or `PARTITION BY` item: it is evaluated as a constant, without an error, so the window is numbered as if the item were absent. Do not use a `CASE` there. A `CASE` with a boolean value as a `GROUP BY` item fails ("search condition is not allowed as group by spec", -493); group by its label instead. The same expressions as a bare `WHERE`, `HAVING` or `ON` condition, a `GROUP BY` item, a `CASE` `WHEN` condition or any other operand render as before. **Not supported:** a boolean expression as a `GROUP BY` item. CUBRID rejects any search condition there, even inside parentheses ("search condition is not allowed as group by spec", -493), so `group_by(a | b)` and `group_by(exists())` fail. Label the expression in the SELECT list and group by the label instead, for example `select(and_(...).label("k"), func.count()).group_by("k")`. The same applies to a CAST or function in `GROUP BY`: `group_by(func.coalesce(exists(), 0))` fails, with or without the grouping. Verified on CUBRID 11.4; not verified on 10.2, 11.0 or 11.2.
 - **Join variants**: INNER JOIN and LEFT OUTER JOIN compile normally. FULL OUTER JOIN and `LATERAL` are rejected during compilation because CUBRID does not support them.
@@ -397,7 +397,32 @@ import sqlalchemy as sa
 
 stmt = sa.select(sa.func.group_concat(users.c.name))
 # SELECT GROUP_CONCAT(users.name) FROM users
+
+stmt = sa.select(sa.func.group_concat(users.c.name.distinct()))
+# SELECT GROUP_CONCAT(DISTINCT users.name) FROM users
+
+# ORDER BY and SEPARATOR have no SQLAlchemy construct here; write them as text
+stmt = sa.select(
+    sa.func.group_concat(sa.literal_column("name ORDER BY name DESC SEPARATOR ';'"))
+).select_from(users)
+# SELECT GROUP_CONCAT(name ORDER BY name DESC SEPARATOR ';') FROM users
+
+stmt = sa.select(sa.func.group_concat(sa.and_(users.c.id > 1, users.c.name != "")))
+# SELECT GROUP_CONCAT((users.id > ? AND users.name != ?)) FROM users
 ```
+
+NULL values are skipped, and a group with only NULLs returns `NULL`. Without `ORDER BY`
+the order of the concatenated values is unspecified. A boolean `EXISTS`, `NOT`, `AND` or
+`OR` argument is grouped like any function argument. Verified on CUBRID 11.4; not verified
+on 10.2, 11.0 or 11.2. Not supported:
+
+- `sa.func.group_concat(column, sa.literal_column("SEPARATOR ','"))` renders
+  `GROUP_CONCAT(users.name, SEPARATOR ',')`, which CUBRID rejects (-493). Put `SEPARATOR`
+  in the same `literal_column()` text as the expression.
+- More than one argument: CUBRID takes a single expression ("invalid use of group_concat").
+- SQLAlchemy 2.1's `aggregate_order_by()` / `FunctionElement.aggregate_order_by()` and
+  `func.aggregate_strings()`: the ORDER BY is not rendered (#991), and `aggregate_strings()`
+  raises `CompileError`.
 
 ### REPLACE INTO
 

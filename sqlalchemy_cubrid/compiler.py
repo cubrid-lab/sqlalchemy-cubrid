@@ -139,14 +139,9 @@ class CubridCompiler(compiler.SQLCompiler):
 
         CUBRID supports GROUP_CONCAT([DISTINCT] expr [ORDER BY ...] [SEPARATOR '...'])
         """
-        clauses = fn.clauses.clauses
-        if len(clauses) == 1:
-            # The parentheses of the argument list already group a single
-            # argument, so render it without _cubrid_operand's own grouping (#984).
-            text = clauses[0]._compiler_dispatch(self, **kw)
-            if text:
-                return "GROUP_CONCAT((%s))" % text
-        return "GROUP_CONCAT(%s)" % self.function_argspec(fn, **kw)
+        # function_argspec() already supplies the argument-list parentheses;
+        # another pair breaks DISTINCT, ORDER BY and SEPARATOR (#990).
+        return "GROUP_CONCAT" + self.function_argspec(fn, **kw)
 
     def visit_is_distinct_from_binary(self, binary: Any, operator: Any, **kw: Any) -> str:
         # CUBRID has no SQL-standard IS [NOT] DISTINCT FROM syntax, but

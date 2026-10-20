@@ -132,7 +132,7 @@
 - **재귀 CTE**: CUBRID는 재귀 쿼리를 위한 `WITH RECURSIVE`를 지원하며, 10.2, 11.0, 11.2, 11.4에서 실제로 확인했습니다 (#849). SQLAlchemy 기본 컴파일러가 올바른 구문을 생성합니다 — 방언별 컴파일이 필요 없습니다.
 - **윈도우 함수**: CUBRID는 `OVER(PARTITION BY … ORDER BY …)`와 함께 `ROW_NUMBER()`, `RANK()`, `DENSE_RANK()` 등의 윈도우 함수를 지원합니다. SA 기본 컴파일러가 이를 네이티브로 처리합니다.
 - **NULLS FIRST / NULLS LAST**: CUBRID는 `ORDER BY col ASC NULLS FIRST`와 `ORDER BY col DESC NULLS LAST`를 지원합니다. SA 기본 컴파일러가 네이티브로 처리합니다.
-- **GROUP_CONCAT**: CUBRID는 `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`를 지원합니다. `sa.func.group_concat(column)`을 사용하세요.
+- **GROUP_CONCAT**: CUBRID는 `GROUP_CONCAT([DISTINCT] expr [ORDER BY …] [SEPARATOR '…'])`를 지원합니다. `sa.func.group_concat(column)`, `sa.func.group_concat(column.distinct())`, 또는 `ORDER BY` / `SEPARATOR`에는 `literal_column()` 인자를 사용하세요. [GROUP_CONCAT](#group_concat)을 참고하세요.
 - **LIMIT / OFFSET**: CUBRID는 MySQL 스타일 `LIMIT [offset,] count` 구문을 사용합니다. 오프셋만 주어지면 방언은 "남은 모든 행" 센티넬로 `LIMIT offset, 4611686018427387904`(2^62)를 냅니다 — 사실상 무제한이면서, CUBRID가 내부적으로 계산하는 `offset + count` 덧셈이 부호 있는 BIGINT 범위를 넘어 오버플로하지 않을 만큼 작습니다. CUBRID에는 `FETCH FIRST n ROWS ONLY`가 없으므로 `Select.fetch(n)`도 `LIMIT n`(`.offset()`과 함께면 `LIMIT offset, n`)으로 렌더링됩니다 (#867). `fetch(..., percent=True)`와 `fetch(..., with_ties=True)`는 `LIMIT`에 대응하는 형식이 없으므로 `CompileError`를 발생시킵니다.
 - **불리언 SELECT 목록 항목**: CUBRID는 괄호 없는 `EXISTS (...)`, `NOT (...)`, `a AND b` / `a OR b`를 SELECT 목록 항목으로 거부하지만(`SELECT EXISTS (SELECT 1)`은 구문 오류) 괄호 안에서는 허용합니다. 방언이 이런 컬럼을 괄호로 묶으므로 `select(exists().where(...))`, `select(~exists()...)`, `select(and_(...))`와 ORM의 `session.query(q.exists()).scalar()`가 동작합니다 (#966). CUBRID는 이 식들을 괄호 없는 CAST나 함수 인자, ORDER BY 항목으로도 거부하므로, 방언이 그 위치에서도(`type_coerce()`, 레이블, 정렬 수식자 안 포함) 괄호로 묶습니다. `select(type_coerce(exists(), Boolean))`, `select(cast(and_(...), Integer))`, `select(func.coalesce(exists(), False))`, `column_expression()`이 컬럼을 감싸는 Boolean `TypeDecorator`, `order_by(and_(...))`, `order_by(exists())`가 동작합니다 (#968). CAST나 함수는 SELECT 목록뿐 아니라 어디에 있든(예: `WHERE`, `HAVING`, `ON`, `UPDATE ... SET`) 이런 인자를 괄호로 묶으므로 `where(func.coalesce(and_(...), 0) == 1)`와 `where(cast(and_(...), Integer) == 1)`도 동작합니다. 윈도나 `WITHIN GROUP`의 `ORDER BY`·`PARTITION BY` 항목인 `EXISTS (...)`와 `NOT (...)`도 괄호로 묶으므로 `over(order_by=exists())`, `over(partition_by=exists())`, `within_group(~exists())`가 동작합니다. 윈도 `order_by`나 `partition_by`에 `and_()`나 `or_()` 하나만 넘기면 SQLAlchemy 자체가 모든 방언에서 항목 여러 개로 나누므로(`or_()`는 의미가 바뀜) 리스트 안에 넣거나(`over(order_by=[and_(...)])`) `.self_group()`을 호출하십시오. 리스트 안과 `WITHIN GROUP`에서는 괄호로 묶습니다 (#970). `CASE`의 `THEN`이나 `ELSE` 값도 검색형과 단순형(`value=`) `case()` 모두에서 괄호로 묶으므로 `case((x > 0, and_(...)), else_=literal(False))`와 `case((x > 0, exists()), else_=literal(False))`가 동작합니다 (#982). 불리언 단순형 `case()`의 값 피연산자도 괄호로 묶으므로 `case({True: 10}, value=and_(...), else_=20)`와 `case({True: 10}, value=exists(), else_=20)`가 동작합니다 (#987). CUBRID는 결과가 불리언이면서 `ELSE`가 없거나 `ELSE NULL`뿐인 `CASE`(예: `WHEN`이 하나뿐인 경우)를 괄호로 묶든 묶지 않든 거부할 수 있습니다("semantic error", -495). 서버 제한이므로 NULL이 아닌 `else_=`(예: `else_=literal(False)`)를 넘기십시오. CUBRID 11.4는 윈도 `ORDER BY`나 `PARTITION BY` 항목으로 쓴 `CASE`도 무시합니다. 오류 없이 상수로 평가되므로 그 항목이 없는 것처럼 번호가 매겨집니다. 그 위치에는 `CASE`를 쓰지 마십시오. 불리언 값을 쓰는 `CASE`를 `GROUP BY` 항목으로 쓰면 실패하므로("search condition is not allowed as group by spec", -493) 레이블로 그룹화하십시오. 괄호 없는 `WHERE`·`HAVING`·`ON` 조건, `GROUP BY` 항목, `CASE`의 `WHEN` 조건이나 그 밖의 피연산자인 같은 식은 이전과 같이 렌더링됩니다. **지원하지 않음:** 불리언 식을 `GROUP BY` 항목으로 쓰는 것. CUBRID는 괄호 안이라도 검색 조건을 그 위치에서 거부하므로("search condition is not allowed as group by spec", -493) `group_by(a | b)`와 `group_by(exists())`는 실패합니다. 대신 SELECT 목록에서 식에 레이블을 붙이고 그 레이블로 그룹화하십시오. 예: `select(and_(...).label("k"), func.count()).group_by("k")`. `GROUP BY` 안의 CAST나 함수도 마찬가지여서 `group_by(func.coalesce(exists(), 0))`는 괄호로 묶든 묶지 않든 실패합니다. CUBRID 11.4에서 검증했으며 10.2, 11.0, 11.2에서는 검증하지 않았습니다.
 - **조인 변형**: INNER JOIN과 LEFT OUTER JOIN은 정상 컴파일됩니다. FULL OUTER JOIN과 `LATERAL`은 CUBRID가 지원하지 않아 컴파일 중 거부됩니다.
@@ -400,7 +400,32 @@ import sqlalchemy as sa
 
 stmt = sa.select(sa.func.group_concat(users.c.name))
 # SELECT GROUP_CONCAT(users.name) FROM users
+
+stmt = sa.select(sa.func.group_concat(users.c.name.distinct()))
+# SELECT GROUP_CONCAT(DISTINCT users.name) FROM users
+
+# ORDER BY와 SEPARATOR에는 SQLAlchemy 구성 요소가 없으므로 텍스트로 작성합니다
+stmt = sa.select(
+    sa.func.group_concat(sa.literal_column("name ORDER BY name DESC SEPARATOR ';'"))
+).select_from(users)
+# SELECT GROUP_CONCAT(name ORDER BY name DESC SEPARATOR ';') FROM users
+
+stmt = sa.select(sa.func.group_concat(sa.and_(users.c.id > 1, users.c.name != "")))
+# SELECT GROUP_CONCAT((users.id > ? AND users.name != ?)) FROM users
 ```
+
+NULL 값은 건너뛰며, NULL만 있는 그룹은 `NULL`을 반환합니다. `ORDER BY`가 없으면 연결되는
+값의 순서는 정해져 있지 않습니다. 불리언 `EXISTS`, `NOT`, `AND`, `OR` 인자는 다른 함수
+인자처럼 괄호로 묶입니다. CUBRID 11.4에서 검증했으며 10.2, 11.0, 11.2에서는 검증하지
+않았습니다. 지원하지 않는 형식:
+
+- `sa.func.group_concat(column, sa.literal_column("SEPARATOR ','"))`는
+  `GROUP_CONCAT(users.name, SEPARATOR ',')`로 렌더링되며 CUBRID가 거부합니다(-493).
+  `SEPARATOR`는 식과 같은 `literal_column()` 텍스트에 넣으세요.
+- 두 개 이상의 인자: CUBRID는 하나의 식만 받습니다("invalid use of group_concat").
+- SQLAlchemy 2.1의 `aggregate_order_by()` / `FunctionElement.aggregate_order_by()`와
+  `func.aggregate_strings()`: ORDER BY가 렌더링되지 않으며(#991), `aggregate_strings()`는
+  `CompileError`를 발생시킵니다.
 
 ### REPLACE INTO
 

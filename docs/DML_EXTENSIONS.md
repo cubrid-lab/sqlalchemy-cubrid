@@ -343,7 +343,7 @@ stmt = (
 #   FROM users GROUP BY users.department
 ```
 
-CUBRID's `GROUP_CONCAT` supports `DISTINCT`, `ORDER BY`, and `SEPARATOR` modifiers at the SQL level, though the standard `sa.func.group_concat()` API provides access to basic usage.
+CUBRID's `GROUP_CONCAT` also supports `DISTINCT`, `ORDER BY`, and `SEPARATOR`: use `sa.func.group_concat(users.c.name.distinct())` for `DISTINCT` and a `literal_column()` argument for `ORDER BY` / `SEPARATOR`. See [Feature Support — GROUP_CONCAT](FEATURE_SUPPORT.md#group_concat) for the verified forms and the unsupported ones.
 
 ---
 

@@ -2381,7 +2381,7 @@ class TestGroupConcatCompilation:
     def test_group_concat_basic_exact(self):
         stmt = select(sa.func.group_concat(users.c.name))
         assert _norm(_compile(stmt)) == (
-            "SELECT GROUP_CONCAT((users.name)) AS group_concat_1 FROM users"
+            "SELECT GROUP_CONCAT(users.name) AS group_concat_1 FROM users"
         )
 
     def test_group_concat_with_separator(self):
@@ -2394,66 +2394,67 @@ class TestGroupConcatCompilation:
     _exists = sa.exists().where(users.c.name == "a")
 
     @pytest.mark.parametrize(
-        ("argument", "expected"),
-        [
-            (_and, "(users.name = 'a' AND users.id = 1)"),
-            (sa.or_(users.c.name == "a", users.c.id == 2), "(users.name = 'a' OR users.id = 2)"),
-            (_exists, "(EXISTS (SELECT * FROM users WHERE users.name = 'a'))"),
-            (~_exists, "(NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a')))"),
-        ],
-        ids=["and", "or", "exists", "not-exists"],
-    )
-    def test_group_concat_boolean_argument_grouped_once(self, argument, expected):
-        """A boolean argument is grouped once, by the argument list's parentheses (#984)."""
-        concat = sa.func.group_concat(argument)
-        assert f"SELECT GROUP_CONCAT({expected}) AS group_concat_1" in _norm(
-            _compile(select(concat))
-        )
-        sql = _norm(_compile(select(users.c.id).group_by(users.c.id).having(concat != "")))
-        assert f"HAVING GROUP_CONCAT({expected}) != ''" in sql
-
-    @pytest.mark.parametrize(
         ("arguments", "expected"),
         [
-            ((users.c.name,), "GROUP_CONCAT((users.name))"),
-            ((users.c.name.distinct(),), "GROUP_CONCAT((DISTINCT users.name))"),
-            ((users.c.id == 1,), "GROUP_CONCAT((users.id = 1))"),
-            ((users.c.id + 1,), "GROUP_CONCAT((users.id + 1))"),
+            ((users.c.name,), "GROUP_CONCAT(users.name)"),
+            ((users.c.name.distinct(),), "GROUP_CONCAT(DISTINCT users.name)"),
             (
-                (sa.literal_column("name ORDER BY name DESC SEPARATOR ';'"),),
-                "GROUP_CONCAT((name ORDER BY name DESC SEPARATOR ';'))",
+                (sa.literal_column("users.name ORDER BY users.name DESC SEPARATOR ';'"),),
+                "GROUP_CONCAT(users.name ORDER BY users.name DESC SEPARATOR ';')",
             ),
             (
-                (users.c.name, sa.literal_column("SEPARATOR ','")),
-                "GROUP_CONCAT((users.name, SEPARATOR ','))",
+                (sa.literal_column("DISTINCT users.name ORDER BY users.name SEPARATOR '|'"),),
+                "GROUP_CONCAT(DISTINCT users.name ORDER BY users.name SEPARATOR '|')",
             ),
+            ((users.c.id == 1,), "GROUP_CONCAT(users.id = 1)"),
+            ((users.c.id + 1,), "GROUP_CONCAT(users.id + 1)"),
+            ((_and,), "GROUP_CONCAT((users.name = 'a' AND users.id = 1))"),
             (
-                (_and, users.c.name),
-                "GROUP_CONCAT(((users.name = 'a' AND users.id = 1), users.name))",
+                (sa.or_(users.c.name == "a", users.c.id == 2),),
+                "GROUP_CONCAT((users.name = 'a' OR users.id = 2))",
+            ),
+            ((_exists,), "GROUP_CONCAT((EXISTS (SELECT * FROM users WHERE users.name = 'a')))"),
+            (
+                (~_exists,),
+                "GROUP_CONCAT((NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a'))))",
             ),
             (
                 (sa.func.coalesce(_and, 0),),
-                "GROUP_CONCAT((coalesce((users.name = 'a' AND users.id = 1), 0)))",
+                "GROUP_CONCAT(coalesce((users.name = 'a' AND users.id = 1), 0))",
             ),
-            ((), "GROUP_CONCAT(())"),
+            (
+                (users.c.name, sa.literal_column("SEPARATOR ','")),
+                "GROUP_CONCAT(users.name, SEPARATOR ',')",
+            ),
+            ((), "GROUP_CONCAT()"),
         ],
         ids=[
             "column",
             "distinct",
+            "order-by-separator",
+            "distinct-order-by-separator",
             "comparison",
             "expression",
-            "order-by-separator-text",
-            "separator-argument",
-            "boolean-of-two-arguments",
+            "and",
+            "or",
+            "exists",
+            "not-exists",
             "nested-function",
+            "separator-argument",
             "no-argument",
         ],
     )
-    def test_group_concat_other_forms_unchanged(self, arguments, expected):
-        """Every other GROUP_CONCAT form renders as before #984."""
-        assert f"SELECT {expected} AS group_concat_1" in _norm(
-            _compile(select(sa.func.group_concat(*arguments)))
-        )
+    def test_group_concat_argument_list_parentheses_only(self, arguments, expected):
+        """GROUP_CONCAT renders only the argument-list parentheses (#990).
+
+        A boolean argument keeps the grouping every function argument gets (#970),
+        once (#984), as in ``coalesce((a AND b), 0)``.
+        """
+        concat = sa.func.group_concat(*arguments)
+        assert f"SELECT {expected} AS group_concat_1" in _norm(_compile(select(concat)))
+        if arguments:
+            sql = _norm(_compile(select(users.c.id).group_by(users.c.id).having(concat != "")))
+            assert f"HAVING {expected} != ''" in sql
 
 
 class TestRecursiveCTECompilation:
