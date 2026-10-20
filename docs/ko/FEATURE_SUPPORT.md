@@ -404,7 +404,11 @@ stmt = sa.select(sa.func.group_concat(users.c.name))
 stmt = sa.select(sa.func.group_concat(users.c.name.distinct()))
 # SELECT GROUP_CONCAT(DISTINCT users.name) FROM users
 
-# ORDER BY와 SEPARATOR에는 SQLAlchemy 구성 요소가 없으므로 텍스트로 작성합니다
+# SQLAlchemy 2.1: aggregate_order_by()로 ORDER BY 지정
+stmt = sa.select(sa.func.group_concat(users.c.name).aggregate_order_by(users.c.name.desc()))
+# SELECT GROUP_CONCAT(users.name ORDER BY users.name DESC) FROM users
+
+# SEPARATOR(SQLAlchemy 2.0에서는 ORDER BY도)에는 SQLAlchemy 구성 요소가 없으므로 텍스트로 작성합니다
 stmt = sa.select(
     sa.func.group_concat(sa.literal_column("name ORDER BY name DESC SEPARATOR ';'"))
 ).select_from(users)
@@ -415,16 +419,21 @@ stmt = sa.select(sa.func.group_concat(sa.and_(users.c.id > 1, users.c.name != ""
 ```
 
 NULL 값은 건너뛰며, NULL만 있는 그룹은 `NULL`을 반환합니다. `ORDER BY`가 없으면 연결되는
-값의 순서는 정해져 있지 않습니다. 불리언 `EXISTS`, `NOT`, `AND`, `OR` 인자는 다른 함수
-인자처럼 괄호로 묶입니다. CUBRID 11.4에서 검증했으며 10.2, 11.0, 11.2에서는 검증하지
-않았습니다. 지원하지 않는 형식:
+값의 순서는 정해져 있지 않습니다. 불리언 `EXISTS`, `NOT`, `AND`, `OR` 인자나
+`aggregate_order_by()` 항목은 다른 함수 인자처럼 괄호로 묶입니다. CUBRID는 `ORDER BY` 항목을
+하나만 받으며, 그 항목은 `GROUP_CONCAT` 인자 자체이거나 `literal_column("1")` 같은 위치
+번호여야 합니다. 다른 식은 서버에서 실패합니다(-494). CUBRID 11.4에서 검증했으며 10.2, 11.0,
+11.2에서는 검증하지 않았습니다. 지원하지 않는 형식:
 
 - `sa.func.group_concat(column, sa.literal_column("SEPARATOR ','"))`는
   `GROUP_CONCAT(users.name, SEPARATOR ',')`로 렌더링되며 CUBRID가 거부합니다(-493).
   `SEPARATOR`는 식과 같은 `literal_column()` 텍스트에 넣으세요.
 - 두 개 이상의 인자: CUBRID는 하나의 식만 받습니다("invalid use of group_concat").
-- SQLAlchemy 2.1의 `aggregate_order_by()` / `FunctionElement.aggregate_order_by()`와
-  `func.aggregate_strings()`: ORDER BY가 렌더링되지 않으며(#991), `aggregate_strings()`는
+- 두 개 이상의 `aggregate_order_by()` 항목(-493), 또는 `SEPARATOR`가 들어 있는
+  `literal_column()` 인자와 함께 쓴 `aggregate_order_by()`(`ORDER BY`가 그 뒤에 붙습니다,
+  -493). 이 경우 `ORDER BY ... SEPARATOR` 전체를 텍스트로 작성하세요.
+- `GROUP_CONCAT` 이외의 함수(`func.aggregate_strings()` 포함)에 쓴 `aggregate_order_by()`:
+  CUBRID의 다른 집계 함수는 `ORDER BY`를 받지 않으므로, `ORDER BY`를 버리지 않고
   `CompileError`를 발생시킵니다.
 
 ### REPLACE INTO

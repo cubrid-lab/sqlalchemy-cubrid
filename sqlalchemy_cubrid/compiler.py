@@ -91,6 +91,9 @@ class _BaseSelectCompiler(Protocol):
     def visit_clauselist(self, clauselist: Any, **kw: Any) -> str:
         """Render a delimited list (SQLAlchemy compiler hook, used for #970)."""
 
+    def visit_aggregateorderby(self, aggregateorderby: Any, **kw: Any) -> str:
+        """Render aggregate_order_by() (SQLAlchemy 2.1 compiler hook, used for #991)."""
+
 
 class _BaseDDLCompiler(Protocol):
     def visit_create_index(
@@ -333,10 +336,26 @@ class CubridCompiler(compiler.SQLCompiler):
             return "(%s)" % text
         return text
 
+    def visit_aggregateorderby(self, aggregateorderby: Any, **kw: Any) -> str:
+        # SQLAlchemy 2.1 aggregate_order_by(). Of CUBRID's aggregates only
+        # GROUP_CONCAT takes an ORDER BY in its argument list (#991).
+        if getattr(aggregateorderby.element, "name", "").lower() != "group_concat":
+            raise CompileError(
+                "CUBRID supports aggregate_order_by() only for GROUP_CONCAT; "
+                "no other CUBRID aggregate function takes an ORDER BY"
+            )
+        return cast(_BaseSelectCompiler, super()).visit_aggregateorderby(aggregateorderby, **kw)
+
     def function_argspec(self, func: Any, **kw: Any) -> str:
         # SQLAlchemy renders the arguments as a parenthesized, comma-separated list.
         arguments = (self._cubrid_operand(argument, **kw) for argument in func.clauses)
-        return "(%s)" % ", ".join(text for text in arguments if text)
+        text = ", ".join(text for text in arguments if text)
+        # SQLAlchemy 2.1 wraps an aggregate_order_by() function's arguments in an
+        # element whose iteration yields only the arguments (#991).
+        order_by = getattr(func.clauses, "aggregate_order_by", None)
+        if order_by is not None:
+            text += " ORDER BY " + self._cubrid_items(order_by.clauses, ", ", **kw)
+        return "(%s)" % text
 
     def visit_cast(self, cast: Any, **kw: Any) -> str:
         # https://www.cubrid.org/manual/en/11.0/sql/function/typecast_fn.html#cast

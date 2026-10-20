@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **aggregate_order_by() no longer drops its ORDER BY (#991)** — on SQLAlchemy 2.1,
+  `func.group_concat(col).aggregate_order_by(col.desc())` rendered `GROUP_CONCAT(col)` and
+  returned the values in an unspecified order without an error. It now renders
+  `GROUP_CONCAT(col ORDER BY col DESC)`, also with `DISTINCT` and in `HAVING`; a boolean
+  argument or `ORDER BY` item is grouped like any function argument (#970). Any other function
+  with `aggregate_order_by()`, including `aggregate_strings()`, raises `CompileError`, because
+  no other CUBRID aggregate takes an `ORDER BY` (verified for `JSON_ARRAYAGG`, `COUNT`, `MAX`,
+  `SUM` and `MEDIAN`). `within_group()` and SQLAlchemy 2.0 are unchanged. Verified on
+  CUBRID 11.4; not verified on 10.2, 11.0 or 11.2.
+
 - **GROUP_CONCAT DISTINCT, ORDER BY and SEPARATOR no longer fail (#990, #984)** — the
   `GROUP_CONCAT` visitor wrapped its arguments in a second pair of parentheses, which CUBRID
   rejects around its modifiers (-493). `func.group_concat(col.distinct())` and a

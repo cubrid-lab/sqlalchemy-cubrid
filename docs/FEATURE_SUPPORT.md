@@ -401,7 +401,11 @@ stmt = sa.select(sa.func.group_concat(users.c.name))
 stmt = sa.select(sa.func.group_concat(users.c.name.distinct()))
 # SELECT GROUP_CONCAT(DISTINCT users.name) FROM users
 
-# ORDER BY and SEPARATOR have no SQLAlchemy construct here; write them as text
+# SQLAlchemy 2.1: ORDER BY with aggregate_order_by()
+stmt = sa.select(sa.func.group_concat(users.c.name).aggregate_order_by(users.c.name.desc()))
+# SELECT GROUP_CONCAT(users.name ORDER BY users.name DESC) FROM users
+
+# SEPARATOR (and ORDER BY on SQLAlchemy 2.0) has no SQLAlchemy construct; write it as text
 stmt = sa.select(
     sa.func.group_concat(sa.literal_column("name ORDER BY name DESC SEPARATOR ';'"))
 ).select_from(users)
@@ -413,16 +417,21 @@ stmt = sa.select(sa.func.group_concat(sa.and_(users.c.id > 1, users.c.name != ""
 
 NULL values are skipped, and a group with only NULLs returns `NULL`. Without `ORDER BY`
 the order of the concatenated values is unspecified. A boolean `EXISTS`, `NOT`, `AND` or
-`OR` argument is grouped like any function argument. Verified on CUBRID 11.4; not verified
-on 10.2, 11.0 or 11.2. Not supported:
+`OR` argument, or `aggregate_order_by()` item, is grouped like any function argument.
+CUBRID takes one `ORDER BY` item, and it must be the `GROUP_CONCAT` argument itself or a
+position such as `literal_column("1")`; another expression fails on the server (-494).
+Verified on CUBRID 11.4; not verified on 10.2, 11.0 or 11.2. Not supported:
 
 - `sa.func.group_concat(column, sa.literal_column("SEPARATOR ','"))` renders
   `GROUP_CONCAT(users.name, SEPARATOR ',')`, which CUBRID rejects (-493). Put `SEPARATOR`
   in the same `literal_column()` text as the expression.
 - More than one argument: CUBRID takes a single expression ("invalid use of group_concat").
-- SQLAlchemy 2.1's `aggregate_order_by()` / `FunctionElement.aggregate_order_by()` and
-  `func.aggregate_strings()`: the ORDER BY is not rendered (#991), and `aggregate_strings()`
-  raises `CompileError`.
+- More than one `aggregate_order_by()` item (-493), or `aggregate_order_by()` with a
+  `literal_column()` argument that contains `SEPARATOR` (the `ORDER BY` would follow it,
+  -493). Write the whole `ORDER BY ... SEPARATOR` text instead.
+- `aggregate_order_by()` on any function other than `GROUP_CONCAT`, including
+  `func.aggregate_strings()`: no other CUBRID aggregate takes an `ORDER BY`, so it raises
+  `CompileError` instead of dropping the `ORDER BY`.
 
 ### REPLACE INTO
 

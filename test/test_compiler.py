@@ -2449,6 +2449,75 @@ class TestGroupConcatCompilation:
             assert f"HAVING {expected} != ''" in sql
 
 
+_HAS_AGGREGATE_ORDER_BY = hasattr(sa.sql.functions.FunctionElement, "aggregate_order_by")
+
+
+@pytest.mark.skipif(not _HAS_AGGREGATE_ORDER_BY, reason="aggregate_order_by() is SQLAlchemy 2.1+")
+class TestAggregateOrderByCompilation:
+    """SQLAlchemy 2.1 aggregate_order_by() keeps its ORDER BY (#991).
+
+    CUBRID takes an ORDER BY only inside GROUP_CONCAT's argument list; every
+    other function raises instead of losing the ORDER BY.
+    """
+
+    @pytest.mark.parametrize(
+        ("concat", "expected"),
+        [
+            (
+                lambda: sa.func.group_concat(users.c.name).aggregate_order_by(users.c.name.desc()),
+                "GROUP_CONCAT(users.name ORDER BY users.name DESC)",
+            ),
+            (
+                lambda: sa.func.group_concat(users.c.name.distinct()).aggregate_order_by(
+                    users.c.name
+                ),
+                "GROUP_CONCAT(DISTINCT users.name ORDER BY users.name)",
+            ),
+            (
+                lambda: sa.aggregate_order_by(
+                    sa.func.group_concat(users.c.name), users.c.name.asc().nulls_last()
+                ),
+                "GROUP_CONCAT(users.name ORDER BY users.name ASC NULLS LAST)",
+            ),
+            (
+                lambda: sa.func.group_concat(_and).aggregate_order_by(_and.desc()),
+                "GROUP_CONCAT((users.name = 'a' AND users.id = 1) "
+                "ORDER BY (users.name = 'a' AND users.id = 1) DESC)",
+            ),
+            (
+                lambda: sa.func.group_concat(_exists).aggregate_order_by(_exists),
+                "GROUP_CONCAT((EXISTS (SELECT * FROM users WHERE users.name = 'a')) "
+                "ORDER BY (EXISTS (SELECT * FROM users WHERE users.name = 'a')))",
+            ),
+            (
+                lambda: sa.func.group_concat(~_exists).aggregate_order_by(users.c.id),
+                "GROUP_CONCAT((NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a'))) "
+                "ORDER BY users.id)",
+            ),
+        ],
+        ids=["column-desc", "distinct", "nulls-last", "and", "exists", "not-exists"],
+    )
+    def test_group_concat_order_by(self, concat, expected):
+        assert f"SELECT {expected} AS group_concat_1" in _norm(_compile(select(concat())))
+        stmt = select(users.c.id).group_by(users.c.id).having(concat() != "")
+        assert f"HAVING {expected} != ''" in _norm(_compile(stmt))
+
+    @pytest.mark.parametrize(
+        "function",
+        [
+            lambda: sa.func.foo(users.c.name),
+            lambda: sa.func.json_arrayagg(users.c.name),
+            lambda: sa.func.count(users.c.name),
+            lambda: sa.func.aggregate_strings(users.c.name, ","),
+        ],
+        ids=["generic", "json_arrayagg", "count", "aggregate_strings"],
+    )
+    def test_other_functions_raise(self, function):
+        stmt = select(function().aggregate_order_by(users.c.name))
+        with pytest.raises(CompileError, match="only for GROUP_CONCAT"):
+            _compile(stmt)
+
+
 class TestRecursiveCTECompilation:
     """Test recursive CTE (WITH RECURSIVE) compilation."""
 
