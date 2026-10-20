@@ -492,9 +492,27 @@ class TestBooleanSelectColumns:
                 "(users.name = 'a' AND users.id = 1) ELSE users.name = 'a' END",
             ),
             (
-                sa.case((users.c.id > 0, sa.case((users.c.id > 1, _and)))),
+                sa.case(
+                    (users.c.id > 0, sa.case((users.c.id > 1, _and), else_=sa.literal(False))),
+                    else_=sa.literal(False),
+                ),
                 "CASE WHEN (users.id > 0) THEN CASE WHEN (users.id > 1) THEN "
-                "(users.name = 'a' AND users.id = 1) END END",
+                "(users.name = 'a' AND users.id = 1) ELSE 0 END ELSE 0 END",
+            ),
+            (
+                sa.case(
+                    (users.c.id > 0, sa.type_coerce(_and, sa.Boolean)), else_=sa.literal(False)
+                ),
+                "CASE WHEN (users.id > 0) THEN (users.name = 'a' AND users.id = 1) ELSE 0 END",
+            ),
+            (
+                sa.case((users.c.id > 0, _exists.label("k")), else_=sa.literal(False)),
+                "CASE WHEN (users.id > 0) THEN (EXISTS (SELECT * FROM users "
+                "WHERE users.name = 'a')) ELSE 0 END",
+            ),
+            (
+                sa.case((users.c.id > 0, users.c.id == 1), else_=sa.literal(False)),
+                "CASE WHEN (users.id > 0) THEN users.id = 1 ELSE 0 END",
             ),
         ],
         ids=[
@@ -504,6 +522,9 @@ class TestBooleanSelectColumns:
             "simple-case-or-and-not-exists",
             "already-grouped-and-comparison",
             "nested-case",
+            "then-type-coerce-and",
+            "then-label-exists",
+            "then-comparison",
         ],
     )
     def test_case_value_is_grouped(self, case, expected):
@@ -511,6 +532,68 @@ class TestBooleanSelectColumns:
         assert f"SELECT {expected} AS anon_1" in _norm(_compile(select(case)))
         sql = _norm(_compile(select(users.c.id).where(case == sa.literal(True))))
         assert f"WHERE {expected} = 1" in sql
+
+    @pytest.mark.parametrize(
+        ("value", "expected"),
+        [
+            (_and, "(users.name = 'a' AND users.id = 1)"),
+            (sa.or_(users.c.name == "a", users.c.id == 2), "(users.name = 'a' OR users.id = 2)"),
+            (_exists, "(EXISTS (SELECT * FROM users WHERE users.name = 'a'))"),
+            (~_exists, "(NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a')))"),
+            (_and.self_group(), "(users.name = 'a' AND users.id = 1)"),
+            (users.c.id == 1, "users.id = 1"),
+        ],
+        ids=["and", "or", "exists", "not-exists", "already-grouped-and", "comparison"],
+    )
+    def test_simple_case_value_is_grouped(self, value, expected):
+        """A boolean simple-case value operand is grouped (#987)."""
+        case = sa.case({True: 10}, value=value, else_=20)
+        expected = f"CASE {expected} WHEN 1 THEN 10 ELSE 20 END"
+        assert f"SELECT {expected} AS anon_1" in _norm(_compile(select(case)))
+        sql = _norm(_compile(select(users.c.id).where(case == 10)))
+        assert f"WHERE {expected} = 10" in sql
+
+    class _BaseCaseCompiler(CubridDialect.statement_compiler):
+        visit_case = sa.sql.compiler.SQLCompiler.visit_case
+
+    class _BaseCaseDialect(CubridDialect):
+        pass
+
+    _BaseCaseDialect.statement_compiler = _BaseCaseCompiler
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            users.c.id,
+            sa.bindparam("p", 1),
+            sa.func.coalesce(users.c.id, 0),
+            users.c.id == 1,
+            sa.type_coerce(users.c.id, Integer),
+        ],
+        ids=["column", "bindparam", "function", "comparison", "type-coerce-column"],
+    )
+    def test_simple_case_plain_value_is_unchanged(self, value):
+        """A non-boolean simple-case value renders as SQLAlchemy renders it (#987)."""
+        stmt = select(users.c.id, sa.case({1: 10}, value=value, else_=20))
+        assert _compile(stmt) == _compile(stmt, self._BaseCaseDialect())
+        params = stmt.compile(dialect=CubridDialect())
+        assert params.string == stmt.compile(dialect=self._BaseCaseDialect()).string
+
+    def test_simple_case_value_reused_elsewhere(self):
+        """The same object as a simple-case value and elsewhere is grouped only as the value."""
+        case = sa.case({True: 10}, value=self._and, else_=20)
+        bare = "users.name = 'a' AND users.id = 1"
+        sql = _norm(_compile(select(case, self._and).where(self._and)))
+        assert sql == (
+            f"SELECT CASE ({bare}) WHEN 1 THEN 10 ELSE 20 END AS anon_1, ({bare}) AS anon_2 "
+            f"FROM users WHERE {bare}"
+        )
+        case = sa.case({True: self._and}, value=self._and, else_=sa.literal(False))
+        sql = _norm(_compile(select(case).where(self._and)))
+        assert sql == (
+            f"SELECT CASE ({bare}) WHEN 1 THEN ({bare}) ELSE 0 END AS anon_1 "
+            f"FROM users WHERE {bare}"
+        )
 
     def test_reused_expression_is_grouped_once_per_use(self):
         """The same object is grouped once where it is an item or an argument (#968, #970)."""

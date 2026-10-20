@@ -4,9 +4,10 @@ CUBRID rejects ``SELECT EXISTS (...)`` and ``SELECT a AND b``; the dialect
 groups such a column (#966), also inside a type coercion, CAST or function
 argument and as an ORDER BY item (#968), and as a CAST or function argument
 anywhere in a statement, an ORDER BY / PARTITION BY item of a window or
-WITHIN GROUP (#970), and a CASE THEN or ELSE value (#982). Sync, including the
-ORM ``query(...).exists()`` idiom, and async. CUBRID rejects a search condition
-as a GROUP BY item even in parentheses; grouping by the column's label works.
+WITHIN GROUP (#970), a CASE THEN or ELSE value (#982) and a simple-case value
+(#987). Sync, including the ORM ``query(...).exists()`` idiom, and async. CUBRID
+rejects a search condition as a GROUP BY item even in parentheses; grouping by
+the column's label works. It also rejects a boolean CASE without a non-NULL ELSE.
 """
 
 from __future__ import annotations
@@ -219,6 +220,62 @@ def test_boolean_case_values(engine: sa.Engine) -> None:
         case = sa.case((_items.c.id > 1, first), else_=found)
         stmt = sa.select(_items.c.id).where(case == sa.literal(True)).order_by(_items.c.id)
         assert conn.execute(stmt).scalars().all() == [1]
+
+
+def test_boolean_simple_case_value(engine: sa.Engine) -> None:
+    pairs = Table(
+        f"bool_case_{uuid.uuid4().hex[:8]}",
+        MetaData(),
+        Column("id", Integer, primary_key=True),
+        Column("a", Integer),
+        Column("b", Integer),
+    )
+    pairs.create(engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(
+                pairs.insert(),
+                [
+                    {"id": 1, "a": 1, "b": 2},
+                    {"id": 2, "a": 1, "b": 0},
+                    {"id": 3, "a": None, "b": 2},
+                ],
+            )
+        both = sa.and_(pairs.c.a == 1, pairs.c.b == 2)
+        unset = sa.exists().where(pairs.c.a.is_(None))
+        with engine.connect() as conn:
+            # A NULL simple-case value matches no WHEN (not even False), so row 3
+            # takes the ELSE.
+            for case, rows in (
+                (sa.case({True: 10}, value=both, else_=20), [(1, 10), (2, 20), (3, 20)]),
+                (sa.case({True: 10}, value=unset, else_=20), [(1, 10), (2, 10), (3, 10)]),
+                (sa.case({True: 10}, value=~unset, else_=20), [(1, 20), (2, 20), (3, 20)]),
+                (
+                    sa.case({False: 10}, value=sa.or_(pairs.c.a == 2, pairs.c.b == 0), else_=20),
+                    [(1, 10), (2, 20), (3, 20)],
+                ),
+            ):
+                stmt = sa.select(pairs.c.id, case).order_by(pairs.c.id)
+                assert [tuple(row) for row in conn.execute(stmt)] == rows
+            stmt = sa.select(pairs.c.id, sa.case((pairs.c.id > 0, both), else_=sa.literal(False)))
+            rows = conn.execute(stmt.order_by(pairs.c.id)).all()
+            assert [(i, None if v is None else bool(v)) for i, v in rows] == [
+                (1, True),
+                (2, False),
+                (3, None),
+            ]
+        # CUBRID rejects a CASE whose results are boolean without a non-NULL ELSE,
+        # with or without the grouping.
+        for case in (
+            sa.case((pairs.c.id > 0, both)),
+            sa.case((pairs.c.id > 0, pairs.c.a == 1)),
+            sa.case((pairs.c.id > 0, both), else_=sa.null()),
+        ):
+            with pytest.raises(sa.exc.DatabaseError, match="semantic error"):
+                with engine.connect() as conn:
+                    conn.execute(sa.select(pairs.c.id, case))
+    finally:
+        pairs.drop(engine)
 
 
 @pytest_asyncio.fixture

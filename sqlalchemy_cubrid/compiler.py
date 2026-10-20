@@ -185,7 +185,7 @@ class CubridCompiler(compiler.SQLCompiler):
     # failed (#966), as did ``order_by(a & b)`` (#968) and
     # ``where(func.coalesce(and_(...), 0) == 1)`` (#970). A CAST or function
     # groups its own direct operands wherever it appears, and a CASE groups its
-    # THEN and ELSE values (#982). One SELECT column or
+    # THEN and ELSE values (#982) and a simple-case value (#987). One SELECT column or
     # BY item is tracked at a time: the item and its wrappers (labels, type
     # coercions, sort modifiers) are matched by identity, so the same expression
     # in WHERE, HAVING, ON, a CASE condition or as another operand renders as
@@ -230,7 +230,7 @@ class CubridCompiler(compiler.SQLCompiler):
         )
 
     def _cubrid_operand(self, operand: Any, **kw: Any) -> str:
-        """Render a direct operand of a CAST or function, or a CASE result value."""
+        """Render a direct operand of a CAST or function, or a CASE value or result."""
         text = str(operand._compiler_dispatch(self, **kw))
         end = self._cubrid_chain(operand)[-1]
         # The current item groups itself, e.g. a Boolean TypeDecorator column
@@ -339,11 +339,12 @@ class CubridCompiler(compiler.SQLCompiler):
         return f"CAST({self._cubrid_operand(cast.clause, **kw)} AS {type_})"
 
     def visit_case(self, clause: Any, **kw: Any) -> str:
-        # SQLAlchemy's visit_case, grouping a boolean THEN or ELSE value like a
-        # CAST or function argument (#982); WHEN conditions render as before.
+        # SQLAlchemy's visit_case, grouping a boolean simple-case value (#987)
+        # and THEN or ELSE value (#982) like a CAST or function argument; WHEN
+        # conditions render as before.
         text = "CASE "
         if clause.value is not None:
-            text += clause.value._compiler_dispatch(self, **kw) + " "
+            text += self._cubrid_operand(clause.value, **kw) + " "
         for condition, result in clause.whens:
             text += "WHEN %s THEN %s " % (
                 condition._compiler_dispatch(self, **kw),
