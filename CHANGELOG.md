@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **A boolean GROUP_CONCAT argument is no longer wrapped in redundant parentheses (#984)** —
+  Since #970, `func.group_concat(and_(...))`, `or_(...)`, `exists()` or `~exists()` rendered
+  its argument with three levels of parentheses, for example
+  `GROUP_CONCAT(((a = 1 AND b = 2)))`. The argument list's own parentheses already group a
+  single argument, so it now renders `GROUP_CONCAT((a = 1 AND b = 2))`, as before #970. This
+  changes the rendered SQL only; results are the same. Every other `GROUP_CONCAT` rendering,
+  including a column, `DISTINCT`, a comparison, an expression, a nested function and more than
+  one argument, is unchanged. Verified on CUBRID 11.4; not verified on 10.2, 11.0 or 11.2.
+
 ### Fixed
 
 - **EXISTS and AND/OR as a simple CASE value no longer fail (#987)** — CUBRID rejects a bare
