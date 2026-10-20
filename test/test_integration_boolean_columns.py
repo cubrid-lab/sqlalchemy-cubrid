@@ -3,10 +3,10 @@
 CUBRID rejects ``SELECT EXISTS (...)`` and ``SELECT a AND b``; the dialect
 groups such a column (#966), also inside a type coercion, CAST or function
 argument and as an ORDER BY item (#968), and as a CAST or function argument
-anywhere in a statement and an ORDER BY / PARTITION BY item of a window or
-WITHIN GROUP (#970). Sync, including the ORM ``query(...).exists()`` idiom,
-and async. CUBRID rejects a search condition as
-a GROUP BY item even in parentheses; grouping by the column's label works.
+anywhere in a statement, an ORDER BY / PARTITION BY item of a window or
+WITHIN GROUP (#970), and a CASE THEN or ELSE value (#982). Sync, including the
+ORM ``query(...).exists()`` idiom, and async. CUBRID rejects a search condition
+as a GROUP BY item even in parentheses; grouping by the column's label works.
 """
 
 from __future__ import annotations
@@ -199,6 +199,26 @@ def test_boolean_window_items(engine: sa.Engine) -> None:
             within = sa.func.percentile_disc(fraction).within_group(later)
             stmt = sa.select(within).select_from(_items)
             assert bool(conn.execute(stmt).scalar_one()) is expected
+
+
+def test_boolean_case_values(engine: sa.Engine) -> None:
+    found = sa.exists().where(_items.c.name == "a")
+    missing = sa.exists().where(_items.c.name == "z")
+    first = sa.and_(_items.c.name == "a", _items.c.id == 1)
+    false = sa.literal(False)
+    with engine.connect() as conn:
+        for case, rows in (
+            (sa.case((_items.c.id > 0, first), else_=false), [(1, 1), (2, 0)]),
+            (sa.case((_items.c.id < 0, false), else_=first), [(1, 1), (2, 0)]),
+            (sa.case((_items.c.id > 0, found), else_=false), [(1, 1), (2, 1)]),
+            (sa.case({1: first}, value=_items.c.id, else_=~missing), [(1, 1), (2, 1)]),
+            (sa.case((first, sa.or_(_items.c.id == 2, missing)), else_=~found), [(1, 0), (2, 0)]),
+        ):
+            stmt = sa.select(_items.c.id, case).order_by(_items.c.id)
+            assert [tuple(map(int, row)) for row in conn.execute(stmt)] == rows
+        case = sa.case((_items.c.id > 1, first), else_=found)
+        stmt = sa.select(_items.c.id).where(case == sa.literal(True)).order_by(_items.c.id)
+        assert conn.execute(stmt).scalars().all() == [1]
 
 
 @pytest_asyncio.fixture

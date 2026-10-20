@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **EXISTS and AND/OR as a CASE THEN or ELSE value no longer fail (#982)** — CUBRID rejects a
+  bare `a AND b`, `a OR b`, `NOT (...)` or `EXISTS (...)` as a `CASE` result value but accepts
+  it inside parentheses. A `THEN` or `ELSE` value of a searched or simple (`value=`) `case()` is
+  now grouped like a CAST or function argument, so
+  `case((t.c.id > 0, and_(...)), else_=literal(False))` and
+  `case((t.c.id > 0, exists()), else_=literal(False))` run. `CASE` `WHEN` conditions and
+  every other rendering are unchanged. Verified on CUBRID 11.4; not verified on 10.2, 11.0 or
+  11.2.
+
 - **EXISTS and AND/OR as a CAST or function argument anywhere, and as a window item, no longer
   fail (#970)** — CUBRID rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as
   a CAST or function argument in every position, not only in the SELECT list and ORDER BY

@@ -461,6 +461,57 @@ class TestBooleanSelectColumns:
         """GROUP BY items, CASE conditions and non-boolean operands are not grouped."""
         assert expected in _norm(_compile(stmt))
 
+    @pytest.mark.parametrize(
+        ("case", "expected"),
+        [
+            (
+                sa.case((users.c.id > 0, _and), else_=sa.literal(False)),
+                "CASE WHEN (users.id > 0) THEN (users.name = 'a' AND users.id = 1) ELSE 0 END",
+            ),
+            (
+                sa.case((users.c.id < 0, sa.literal(False)), else_=_and),
+                "CASE WHEN (users.id < 0) THEN 0 ELSE (users.name = 'a' AND users.id = 1) END",
+            ),
+            (
+                sa.case((users.c.id > 0, _exists), else_=sa.literal(False)),
+                "CASE WHEN (users.id > 0) THEN (EXISTS (SELECT * FROM users "
+                "WHERE users.name = 'a')) ELSE 0 END",
+            ),
+            (
+                sa.case(
+                    {1: sa.or_(users.c.name == "a", users.c.id == 2)},
+                    value=users.c.id,
+                    else_=~_exists,
+                ),
+                "CASE users.id WHEN 1 THEN (users.name = 'a' OR users.id = 2) "
+                "ELSE (NOT (EXISTS (SELECT * FROM users WHERE users.name = 'a'))) END",
+            ),
+            (
+                sa.case((_and, _and.self_group()), else_=users.c.name == "a"),
+                "CASE WHEN (users.name = 'a' AND users.id = 1) THEN "
+                "(users.name = 'a' AND users.id = 1) ELSE users.name = 'a' END",
+            ),
+            (
+                sa.case((users.c.id > 0, sa.case((users.c.id > 1, _and)))),
+                "CASE WHEN (users.id > 0) THEN CASE WHEN (users.id > 1) THEN "
+                "(users.name = 'a' AND users.id = 1) END END",
+            ),
+        ],
+        ids=[
+            "then-and",
+            "else-and",
+            "then-exists",
+            "simple-case-or-and-not-exists",
+            "already-grouped-and-comparison",
+            "nested-case",
+        ],
+    )
+    def test_case_value_is_grouped(self, case, expected):
+        """A CASE THEN or ELSE value is grouped; WHEN conditions render as before (#982)."""
+        assert f"SELECT {expected} AS anon_1" in _norm(_compile(select(case)))
+        sql = _norm(_compile(select(users.c.id).where(case == sa.literal(True))))
+        assert f"WHERE {expected} = 1" in sql
+
     def test_reused_expression_is_grouped_once_per_use(self):
         """The same object is grouped once where it is an item or an argument (#968, #970)."""
         exists = sa.exists().where(users.c.name == "a")
