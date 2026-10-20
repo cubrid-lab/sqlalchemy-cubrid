@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **The deprecated `display_width` and `values` type arguments are removed (#892).**
+  `SMALLINT` / `BIGINT` no longer accept `display_width` and `CHAR` / `VARCHAR` /
+  `NCHAR` / `NVARCHAR` / `STRING` no longer accept `values`; passing either now raises
+  `TypeError`. Neither argument ever changed the DDL or any behavior (they were only
+  accepted and ignored since #870), so removing the keyword from a type constructor
+  call is the only migration step.
+
+### Removed
+
+- **Unused `display_width` and `values` type arguments (#892)** — deprecated in #870,
+  the arguments are now gone: `SMALLINT` / `BIGINT` no longer accept `display_width`
+  and `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` / `STRING` no longer accept `values`
+  (passing either raises `TypeError`). The private `_warn_ignored_argument` helper is
+  gone with them.
+
 ### Fixed
 
 - **aggregate_order_by() on a filtered GROUP_CONCAT names FILTER in its error (#995)** — on

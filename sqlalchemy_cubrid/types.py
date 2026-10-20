@@ -14,10 +14,7 @@ from __future__ import annotations
 
 import inspect
 import json
-import sys
-import warnings
 from importlib import import_module
-from types import FrameType
 from typing import Any, Callable
 
 from sqlalchemy import exc
@@ -42,38 +39,14 @@ class _FloatType(_NumericType, sqltypes.Float[Any]):  # pyright: ignore[reportUn
         super().__init__(precision=precision, **kw)
 
 
-def _warn_ignored_argument(name: str, type_name: str) -> None:
-    # Point at the caller: skip every constructor frame of this module, whose
-    # depth differs between types (VARCHAR -> _StringType, SMALLINT -> _IntegerType).
-    # Level 1 is this helper; level 2 is its caller, the first frame examined.
-    stacklevel = 2
-    frame: FrameType | None = sys._getframe(1)
-    while frame is not None and frame.f_code.co_filename == __file__:
-        frame = frame.f_back
-        stacklevel += 1
-    warnings.warn(
-        f"The {name!r} argument of {type_name} has no effect and is deprecated; "
-        "it will be removed in a future major release (#870)",
-        DeprecationWarning,
-        stacklevel=stacklevel,
-    )
-
-
 class _IntegerType(_NumericType, sqltypes.Integer):
-    def __init__(self, display_width: int | None = None, **kw: Any) -> None:
-        # Accepted for compatibility only; CUBRID has no display width.
-        if display_width is not None:
-            _warn_ignored_argument("display_width", type(self).__name__)
-        super().__init__(**kw)
+    """Base for CUBRID integer types."""
 
 
 class _StringType(sqltypes.String):
     """Base for CUBRID string types."""
 
-    def __init__(self, national: bool = False, values: Any = None, **kw: Any) -> None:
-        # ``values`` is accepted for compatibility only and has no effect.
-        if values is not None:
-            _warn_ignored_argument("values", type(self).__name__)
+    def __init__(self, national: bool = False, **kw: Any) -> None:
         self.national = national
         super().__init__(**kw)
 

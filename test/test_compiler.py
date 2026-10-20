@@ -4241,23 +4241,31 @@ class TestDialectSmallCorrectness870:
 
         assert not hasattr(CubridTypeCompiler, "_get")
 
-    def test_ignored_type_arguments_are_deprecated(self):
-        with pytest.warns(DeprecationWarning, match="'display_width' argument of SMALLINT") as w1:
-            small = cubrid_types.SMALLINT(display_width=5)
-        with pytest.warns(DeprecationWarning, match="'values' argument of VARCHAR") as w2:
-            varchar = cubrid_types.VARCHAR(10, values=["a"])
-        with pytest.warns(DeprecationWarning, match="'values' argument of STRING") as w3:
-            cubrid_types.STRING(values=["a"])
-        # Each warning points at this caller, not at a constructor in types.py.
-        assert {w[0].filename for w in (w1, w2, w3)} == {__file__}
-        assert not hasattr(small, "display_width")
-        assert not hasattr(varchar, "values")
-        assert repr(small) == "SMALLINT()"
-        assert repr(varchar) == "VARCHAR(length=10)"
+    @pytest.mark.parametrize(
+        ("type_", "arg", "value"),
+        [
+            (cubrid_types.SMALLINT, "display_width", 5),
+            (cubrid_types.BIGINT, "display_width", 5),
+            (cubrid_types.CHAR, "values", ["a"]),
+            (cubrid_types.VARCHAR, "values", ["a"]),
+            (cubrid_types.NCHAR, "values", ["a"]),
+            (cubrid_types.NVARCHAR, "values", ["a"]),
+            (cubrid_types.STRING, "values", ["a"]),
+        ],
+    )
+    def test_removed_type_arguments_raise_type_error(self, type_, arg, value):
+        # display_width (#870) and values (#892) no longer exist; the
+        # constructors accept only the arguments SQLAlchemy understands.
+        with pytest.raises(TypeError):
+            type_(**{arg: value})
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             cubrid_types.BIGINT()
             cubrid_types.CHAR(3)
+            small = cubrid_types.SMALLINT()
+            varchar = cubrid_types.VARCHAR(10)
+        assert repr(small) == "SMALLINT()"
+        assert repr(varchar) == "VARCHAR(length=10)"
 
 
 # ---------------------------------------------------------------------------
