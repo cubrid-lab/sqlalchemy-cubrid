@@ -9,36 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.11.3] - 2026-10-21
 
-### Documentation
-
-- **Two CUBRIDdb result differences are documented (#1003)** — CUBRIDdb binds values on the
-  server, where pycubrid writes them into the SQL. With CUBRIDdb a `CASE` whose `THEN`/`ELSE`
-  values are all bound parameters returns a string (`'10'`, not `10`), and a `GROUP_CONCAT`
-  argument and `aggregate_order_by()` item that contain bound parameters fail with -494,
-  because the server does not treat the two copies as the same expression. The Driver
-  Compatibility guide describes both with their workarounds (`cast(..., Integer)`; an
-  argument position such as `aggregate_order_by(literal_column("1"))`), and the Feature
-  Support pages link to it. The dialect is unchanged.
-
-### CI
-
-* **release:** start release preparation after the abandoned 1.11.2 ([#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006)) ([b1a2dfe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b1a2dfe825c983a2114025b8cbaa82ff4da6c09d))
-
-### Tests
-
-- **The CASE value and GROUP_CONCAT ORDER BY live tests pass with CUBRIDdb (#1003)** — the
-  tests added for #987 and #991 asserted pycubrid's results, so the release matrix's
-  `make integration (cubriddb, …)` lanes failed on CUBRID 10.2 and 11.4 and 1.11.2 was not
-  published. They now pin the CUBRIDdb results above and keep the exact pycubrid
-  assertions.
-
-## [1.11.2] - 2026-10-21
-
 ### Upgrade notes
 
-- **1.11.1 was never published (#838).** Its release gate failed on Python 3.15, so no
-  1.11.1 tag, GitHub Release or PyPI version exists. 1.11.2 contains every 1.11.1 change
-  below; upgrade from 1.11.0 directly to 1.11.2.
+- **1.11.1 and 1.11.2 were never published (#838, #910).** Their release gates failed (1.11.1
+  on Python 3.15, 1.11.2 in the CUBRIDdb integration lanes, #1003), so neither has a tag,
+  GitHub Release or PyPI version. 1.11.3 contains every 1.11.1 and 1.11.2 change below;
+  upgrade from 1.11.0 directly to 1.11.3.
 
 - **A MERGE assignment key that is a column of another table now raises `CompileError`
   (#847)**, also when the target has a column of the same name. Such a key was silently
@@ -361,6 +337,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **Two CUBRIDdb result differences are documented (#1003)** — CUBRIDdb binds values on the
+  server, where pycubrid writes them into the SQL. With CUBRIDdb a `CASE` whose `THEN`/`ELSE`
+  values are all bound parameters returns a string (`'10'`, not `10`), and a `GROUP_CONCAT`
+  argument and `aggregate_order_by()` item that contain bound parameters fail with -494,
+  because the server does not treat the two copies as the same expression. The Driver
+  Compatibility guide describes both with their workarounds (`cast(..., Integer)`; an
+  argument position such as `aggregate_order_by(literal_column("1"))`), and the Feature
+  Support pages link to it. The dialect is unchanged.
+
 - **Boolean expressions that still failed on CUBRID (#968)** — superseded by the #970 fix
   above: those forms now run, and the `docs/FEATURE_SUPPORT.md` note that listed them, with its
   `case()` workaround, is replaced. Do not use that workaround inside a window: CUBRID 11.4
@@ -515,6 +500,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+* **release:** start release preparation after the abandoned 1.11.2 ([#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006)) ([b1a2dfe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b1a2dfe825c983a2114025b8cbaa82ff4da6c09d))
+
 - **The CUBRID 11.4 local Docker test database is kept in a named volume (#1000)** — `docker-compose.yml` mounted its named volume only at `/var/lib/cubrid`, where images up to 11.3 keep their databases; `cubrid/cubrid:11.4` keeps them in `/home/cubrid/CUBRID/databases`, so with `CUBRID_VERSION=11.4` the database lived in an anonymous volume, `docker compose down` lost it (`Unknown class "dba.keep_me"` after the next `up`) and left that volume dangling. A second named volume, `cubrid-databases`, now holds that path, `make docker-down` deletes both, and `make integration`'s ownership check also refuses a pre-existing `<project>_cubrid-databases`. Checked on CUBRID 10.2, 11.2 and 11.4: a table created before `down` is still there after `up`, and `make docker-down` leaves no volume behind. Opening a database created by another CUBRID version is not verified, so the guides say to reset before switching `CUBRID_VERSION`. The same fix landed in pycubrid (cubrid-lab/pycubrid#1004).
 
 - **The local Docker test database keeps working after its container is recreated (#997)** — the image registers the database in `databases.txt`, which images up to 11.3 keep on the `cubrid-data` volume (11.4: see #1000 above), for `CUBRID_DB_HOST`, or, when that is unset, for the creating container's hostname, its container ID. `docker-compose.yml` did not set it, and `docker compose down` keeps the volume, so after `make docker-up` or `docker compose up -d` recreated the container, every connection failed with -353 (`Failed to connect to database server, 'testdb', on the following host(s): <old container ID>`). `docker-compose.yml` now sets `CUBRID_DB_HOST: localhost`, which a recreated container resolves. A volume created before this change keeps the old ID: `make docker-fix-db-host` rewrites only `testdb`'s host field to `localhost`, keeps the data and saves the previous file as `databases.txt.before-fix-db-host` on its first run, and `make docker-down` (`docker compose down -v`) deletes the volume and its data. `make integration` was not affected (it uses a run-owned Compose project removed with `down -v`), though its fresh containers now also register `localhost`; CI (service containers) and the dialect are unchanged. The same fix landed in pycubrid (cubrid-lab/pycubrid#1001).
@@ -662,6 +649,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grouped Dependabot run.
 
 ### Tests
+
+- **The CASE value and GROUP_CONCAT ORDER BY live tests pass with CUBRIDdb (#1003)** — the
+  tests added for #987 and #991 asserted pycubrid's results, so the release matrix's
+  `make integration (cubriddb, …)` lanes failed on CUBRID 10.2 and 11.4 and 1.11.2 was not
+  published. They now pin the CUBRIDdb results above and keep the exact pycubrid
+  assertions.
 
 - **ORDER BY output matches SQLAlchemy's for plain items (#968)** — the dialect renders ORDER BY
   one item at a time, so a guard test compares its output with SQLAlchemy's own
