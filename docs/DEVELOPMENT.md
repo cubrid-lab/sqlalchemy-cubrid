@@ -440,12 +440,13 @@ answer, so a server that is not ready fails the run instead of skipping it.
 
 `make integration` runs in its own Compose project, named
 `sqlalchemy-cubrid-it-<timestamp>-<pid>` by default. Its container, network and
-`cubrid-data` volume are therefore separate from every other run and from a stack
+`cubrid-data` and `cubrid-databases` volumes are therefore separate from every other run and from a stack
 started with `docker compose up -d` or `make docker-up`, whose project Compose
 names after the checkout directory (or `COMPOSE_PROJECT_NAME`).
 
 Before starting, it checks that the project has no containers, volumes or
-networks and that no volume named exactly `<project>_cubrid-data` exists. If
+networks and that no volume named exactly `<project>_cubrid-data` or
+`<project>_cubrid-databases` exists. If
 anything is found, it refuses to run and neither starts nor removes anything. If
 the check itself fails (for example, the Docker daemon is unreachable), it prints
 `Ownership check ... failed; nothing was started` and stops. Only after the check

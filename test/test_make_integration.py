@@ -327,6 +327,19 @@ def test_integration_named_volume_probe_matches_exact_name(integration_runner):
     assert "Refusing to run" in result.stderr
 
 
+def test_integration_refuses_a_pre_existing_11_4_database_volume(integration_runner):
+    # The 11.4 database volume is the project's too (#1000): a kept one must survive.
+    others = f"{PROJECT}_cubrid-databases-old,x{PROJECT}_cubrid-databases"
+    result, commands = integration_runner(extra_env={"OTHER_VOLUMES": others})
+    assert result.returncode == 0, result.stderr
+    assert UP in commands
+    result, commands = integration_runner(
+        extra_env={"OTHER_VOLUMES": f"{others},{PROJECT}_cubrid-databases"}
+    )
+    assert result.returncode != 0
+    assert "Refusing to run" in result.stderr
+
+
 @pytest.mark.parametrize("project", ["Upper", "-dash", "_under", "dot.ted", "sp ace", "semi;colon"])
 def test_integration_rejects_invalid_project_name(integration_runner, project):
     # Validated before any Docker command, including the read-only probes.
@@ -636,6 +649,18 @@ def test_compose_registers_the_database_for_a_stable_host() -> None:
     environment = compose["services"]["cubrid"]["environment"]
     assert environment["CUBRID_DB"] == "testdb"
     assert environment["CUBRID_DB_HOST"] == "localhost"
+
+
+def test_compose_keeps_every_image_database_directory_in_a_named_volume() -> None:
+    """Images up to 11.3 keep databases in /var/lib/cubrid, 11.4 elsewhere (#1000)."""
+    root = Path(__file__).resolve().parents[1]
+    compose = yaml.safe_load((root / "docker-compose.yml").read_text())
+    mounts = dict(volume.split(":", 1)[::-1] for volume in compose["services"]["cubrid"]["volumes"])
+    assert mounts == {
+        "/var/lib/cubrid": "cubrid-data",
+        "/home/cubrid/CUBRID/databases": "cubrid-databases",
+    }
+    assert set(compose["volumes"]) == {"cubrid-data", "cubrid-databases"}
 
 
 def test_fix_db_host_rewrites_only_the_testdb_host(tmp_path: Path) -> None:

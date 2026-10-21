@@ -429,13 +429,13 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 통합 테스트를 error로 만들므로 준비되지 않은 서버는 실행을 건너뛰지 않고 실패시킵니다.
 
 `make integration`은 기본적으로 `sqlalchemy-cubrid-it-<timestamp>-<pid>`라는
-자체 Compose 프로젝트에서 실행됩니다. 따라서 컨테이너, 네트워크와 `cubrid-data`
-볼륨은 다른 모든 실행, 그리고 `docker compose up -d`나 `make docker-up`으로 시작한
+자체 Compose 프로젝트에서 실행됩니다. 따라서 컨테이너, 네트워크와 `cubrid-data`,
+`cubrid-databases` 볼륨은 다른 모든 실행, 그리고 `docker compose up -d`나 `make docker-up`으로 시작한
 스택과 분리됩니다. 후자의 프로젝트 이름은 Compose가 체크아웃 디렉터리 이름(또는
 `COMPOSE_PROJECT_NAME`)으로 정합니다.
 
 시작하기 전에 해당 프로젝트에 컨테이너, 볼륨 또는 네트워크가 없고 이름이 정확히
-`<project>_cubrid-data`인 볼륨도 없는지 확인합니다. 무엇이든 발견되면 실행을
+`<project>_cubrid-data` 또는 `<project>_cubrid-databases`인 볼륨도 없는지 확인합니다. 무엇이든 발견되면 실행을
 거부하며 아무것도 시작하거나 삭제하지 않습니다. 확인 자체가 실패하면(예: Docker
 데몬에 연결할 수 없음) `Ownership check ... failed; nothing was started`를 출력하고
 중단합니다. 확인을 통과한 뒤에야 정리를 등록하므로 `docker compose -p <project> down -v`는

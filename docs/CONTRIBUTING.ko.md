@@ -141,7 +141,7 @@ CUBRID_VERSION=11.4 docker compose up -d
 # 로그 보기
 docker compose logs -f cubrid
 
-# 중지 (데이터 볼륨 유지, 10.2와 11.2는 데이터베이스를 이 볼륨에 둠)
+# 중지 (데이터 볼륨 유지)
 docker compose down
 
 # 중지 및 데이터 볼륨 삭제 (테스트 데이터가 모두 삭제됨)
@@ -149,8 +149,10 @@ docker compose down -v
 ```
 
 `docker-compose.yml`은 `CUBRID_DB_HOST: localhost`를 설정하므로 같은 볼륨에서 컨테이너를
-다시 만들어도 데이터베이스가 계속 동작합니다. 이 볼륨에 데이터베이스가 있는 것은 10.2와
-11.2이며, 11.4는 다른 곳에 두므로 `down`이 11.4 데이터를 유지하지 않습니다. 이 설정 전에 만든 볼륨은 다시 만든 뒤 -353으로
+다시 만들어도 데이터베이스가 계속 동작합니다. 11.3까지의 이미지는 데이터베이스를
+`cubrid-data` 볼륨에, 11.4는 `cubrid-databases`에 두므로 지원하는 모든 버전에서 `down`이 데이터를 남깁니다.
+다른 CUBRID 버전이 만든 데이터베이스가 열린다는 보장은 없으므로 `CUBRID_VERSION`을 바꾸기 전에
+`make docker-down`(테스트 데이터 삭제)을 실행하세요. 이 설정 전에 만든 볼륨은 다시 만든 뒤 -353으로
 실패합니다. 데이터를 유지하는 `make docker-fix-db-host`로 복구하세요
 ([문제 해결](ko/TROUBLESHOOTING.md#컨테이너를-다시-만든-뒤-데이터베이스-서버-호스트를-찾을-수-없음)).
 

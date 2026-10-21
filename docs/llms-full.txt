@@ -5986,7 +5986,7 @@ Inside the container, `csql -u dba testdb -c "SELECT 1"` fails the same way, alt
 
 **Cause:** the image registers the database in `databases.txt`, for `CUBRID_DB_HOST`
 or, when that is unset, for the hostname of the container that created it, which is that
-container's ID. On 10.2 and 11.2 the file is on the `cubrid-data` volume. `down` keeps
+container's ID. The file is on the `cubrid-data` volume, or on `cubrid-databases` for 11.4. `down` keeps
 the volume, and a recreated container has a new ID, so nothing resolves the recorded
 host. `docker-compose.yml` sets `CUBRID_DB_HOST: localhost`, so a volume it creates keeps
 working; a volume created by an older copy still records the old ID. `make integration`
@@ -7674,12 +7674,13 @@ answer, so a server that is not ready fails the run instead of skipping it.
 
 `make integration` runs in its own Compose project, named
 `sqlalchemy-cubrid-it-<timestamp>-<pid>` by default. Its container, network and
-`cubrid-data` volume are therefore separate from every other run and from a stack
+`cubrid-data` and `cubrid-databases` volumes are therefore separate from every other run and from a stack
 started with `docker compose up -d` or `make docker-up`, whose project Compose
 names after the checkout directory (or `COMPOSE_PROJECT_NAME`).
 
 Before starting, it checks that the project has no containers, volumes or
-networks and that no volume named exactly `<project>_cubrid-data` exists. If
+networks and that no volume named exactly `<project>_cubrid-data` or
+`<project>_cubrid-databases` exists. If
 anything is found, it refuses to run and neither starts nor removes anything. If
 the check itself fails (for example, the Docker daemon is unreachable), it prints
 `Ownership check ... failed; nothing was started` and stops. Only after the check

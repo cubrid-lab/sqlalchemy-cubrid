@@ -135,7 +135,7 @@ integration: ## Run integration tests (INTEGRATION_DRIVER=pycubrid|cubriddb) in 
 	existing_volumes=$$(docker volume ls -q --filter "$$label") || probe_failed; \
 	existing_networks=$$(docker network ls -q --filter "$$label") || probe_failed; \
 	all_volumes=$$(docker volume ls -q) || probe_failed; \
-	existing_data_volume=$$(printf '%s\n' "$$all_volumes" | grep -Fx "$${project}_cubrid-data" || true); \
+	existing_data_volume=$$(printf '%s\n' "$$all_volumes" | grep -Fx -e "$${project}_cubrid-data" -e "$${project}_cubrid-databases" || true); \
 	if [ -n "$$existing_containers$$existing_volumes$$existing_networks$$existing_data_volume" ]; then \
 		echo "Refusing to run: Compose project '$$project' already has containers, volumes or networks." >&2; \
 		echo "make integration only starts and removes a project it creates; nothing was started or removed." >&2; \

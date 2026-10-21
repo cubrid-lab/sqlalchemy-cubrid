@@ -17,7 +17,13 @@ services:
       retries: 10
       start_period: 30s
     volumes:
+      # Named volumes keep the database across `docker compose down`; only
+      # `docker compose down -v` (make docker-down) deletes it. Images up to 11.3
+      # keep databases in /var/lib/cubrid, the 11.4 image in
+      # /home/cubrid/CUBRID/databases (#1000).
       - cubrid-data:/var/lib/cubrid
+      - cubrid-databases:/home/cubrid/CUBRID/databases
 
 volumes:
   cubrid-data:
+  cubrid-databases:
