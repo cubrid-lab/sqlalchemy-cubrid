@@ -119,6 +119,8 @@ jobs:
               # REPO_TOOLING_MODULES lives here: registering a module runs the
               # guard that the module is in this filter.
               - 'test/conftest.py'
+              # test_make_integration.py pins its CUBRID_DB_HOST (#997).
+              - 'docker-compose.yml'
               - 'test/test_agent_eval.py'
               - 'test/test_bench_artifact.py'
               - 'test/test_check_docs_translation.py'
