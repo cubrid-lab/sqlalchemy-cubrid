@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.3] - 2026-10-21
+
 ### Documentation
 
 - **Two CUBRIDdb result differences are documented (#1003)** — CUBRIDdb binds values on the
@@ -17,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Compatibility guide describes both with their workarounds (`cast(..., Integer)`; an
   argument position such as `aggregate_order_by(literal_column("1"))`), and the Feature
   Support pages link to it. The dialect is unchanged.
+
+### CI
+
+* **release:** start release preparation after the abandoned 1.11.2 ([#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006)) ([b1a2dfe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b1a2dfe825c983a2114025b8cbaa82ff4da6c09d))
 
 ### Tests
 
