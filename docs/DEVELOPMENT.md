@@ -251,9 +251,14 @@ pytest test/test_integration.py -v
 # Run async integration tests
 pytest test/test_aio_integration.py -v
 
-# Stop the container
+# Stop the container and delete its data volume (removes all test data)
 docker compose down -v
 ```
+
+`docker compose down` without `-v` keeps the volume. A volume created before
+`docker-compose.yml` set `CUBRID_DB_HOST` fails with -353 once its container is
+recreated; `make docker-fix-db-host` repairs it and keeps the data (see
+[Troubleshooting](TROUBLESHOOTING.md#database-server-host-not-found-after-recreating-the-container)).
 
 The regular tox profile requires an explicit `cubrid+pycubrid` URL. It rejects
 missing URLs and CUBRIDdb C-extension schemes, then probes both sync and derived

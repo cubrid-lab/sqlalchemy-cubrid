@@ -14,6 +14,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [C 확장 빌드 실패](#c-확장-빌드-실패)
 - [연결 문제](#연결-문제)
   - [포트 33000 연결 거부](#포트-33000-연결-거부)
+  - [컨테이너를 다시 만든 뒤 데이터베이스 서버 호스트를 찾을 수 없음](#컨테이너를-다시-만든-뒤-데이터베이스-서버-호스트를-찾을-수-없음)
   - [인증 실패](#인증-실패)
   - [끊어진 연결 / 연결 해제](#끊어진-연결--연결-해제)
   - [cub_server 재시작 또는 장애 후 오류](#cub_server-재시작-또는-장애-후-오류)
@@ -174,6 +175,42 @@ OperationalError: (CUBRIDdb.DatabaseError) Connection refused
 3. **잘못된 포트:** 실제 브로커 포트는 `cubrid_broker.conf`에서 확인.
 
 4. **방화벽:** 포트 33000이 차단되지 않았는지 확인.
+
+---
+
+### 컨테이너를 다시 만든 뒤 데이터베이스 서버 호스트를 찾을 수 없음
+
+**증상:** 이 저장소의 `docker-compose.yml`로 `docker compose down` 후 `up`을 하면 브로커는
+응답하지만 모든 연결이 실패하고, 예전 컨테이너 ID처럼 보이는 호스트를 가리킵니다:
+
+```
+OperationalError: ... Failed to connect to database server, 'testdb', on the following host(s): 43134de458f9
+```
+
+컨테이너 안에서 `csql -u dba testdb -c "SELECT 1"`도 같은 이유로 실패합니다.
+`cubrid server status`에는 `testdb`가 보여도 마찬가지입니다.
+
+**원인:** 이미지는 `databases.txt`에 데이터베이스를 `CUBRID_DB_HOST`로, 이 값이 없으면
+데이터베이스를 만든 컨테이너의 호스트 이름(그 컨테이너의 ID)으로 등록합니다. 10.2와 11.2에서는
+이 파일이 `cubrid-data` 볼륨에 있습니다. `down`은 볼륨을 남기고, 다시 만든 컨테이너는 새 ID를
+가지므로 기록된 호스트를 아무도 해석하지 못합니다. `docker-compose.yml`은
+`CUBRID_DB_HOST: localhost`를 설정하므로 이 파일로 만든 볼륨은 계속 동작합니다. 이전 파일로
+만든 볼륨에는 예전 ID가 남아 있습니다. `make integration`은 자체 Compose 프로젝트를 쓰고
+`down -v`로 지우므로 영향이 없습니다.
+
+**데이터를 유지하는 해결:** 컨테이너가 실행 중일 때 `testdb`의 호스트 필드만
+`localhost`로 바꿉니다:
+
+```bash
+make docker-up
+make docker-fix-db-host
+```
+
+이전 파일은 같은 위치에 `databases.txt.before-fix-db-host`로 저장됩니다.
+
+**데이터를 삭제하는 해결:** `make docker-down`은 `docker compose down -v`를 실행하며,
+**볼륨과 그 안의 모든 테이블을 삭제합니다**. 다음 `make docker-up`이 새 데이터베이스를
+만듭니다. 데이터가 필요 없는 볼륨에만 사용하세요.
 
 ---
 

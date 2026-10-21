@@ -4,6 +4,10 @@ services:
     image: cubrid/cubrid:${CUBRID_VERSION:-11.2}
     environment:
       CUBRID_DB: testdb
+      # The image registers the database for this host in databases.txt on the
+      # volume. Without it the host is the creating container's ID, which a
+      # recreated container no longer resolves (-353, #997).
+      CUBRID_DB_HOST: localhost
     ports:
       - "${CUBRID_PORT:-33000}:33000"
     healthcheck:

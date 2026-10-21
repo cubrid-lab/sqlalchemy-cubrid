@@ -1,4 +1,4 @@
-.PHONY: help install lint format check-tool-versions check-docs-reason agent-eval-check typecheck security check check-all test test-repo test-offline test-all integration integration-local docker-up docker-down changelog clean clean-all doctor release-check
+.PHONY: help install lint format check-tool-versions check-docs-reason agent-eval-check typecheck security check check-all test test-repo test-offline test-all integration integration-local docker-up docker-down docker-fix-db-host changelog clean clean-all doctor release-check
 
 PYTEST = python3 -m pytest
 PYTHON = python3
@@ -203,8 +203,22 @@ docker-up: ## Start CUBRID Docker container
 	docker compose up -d
 	@echo "CUBRID container starting... Use 'docker compose logs -f' to monitor."
 
-docker-down: ## Stop and remove CUBRID Docker container
+docker-down: ## Stop and remove CUBRID Docker container and its data volume (deletes the test data)
 	docker compose down -v
+
+# A volume created before docker-compose.yml set CUBRID_DB_HOST registers testdb
+# for the creating container's ID, which a recreated container cannot resolve
+# (-353, #997). Rewrite only that host field to localhost; the data is kept.
+# The file is rewritten in place to keep its owner and mode, after a copy is
+# saved next to it.
+docker-fix-db-host: ## Repair a running container's volume that registers testdb for a stale host (keeps the data)
+	docker compose exec -T -u root cubrid sh -c 'set -e; \
+		f="$$CUBRID_DATABASES/databases.txt"; t="$$(mktemp)"; \
+		cp -p "$$f" "$$f.before-fix-db-host"; \
+		awk '"'"'BEGIN { OFS = "\t" } $$1 == "testdb" { $$3 = "localhost" } { print }'"'"' "$$f" > "$$t"; \
+		cat "$$t" > "$$f"; rm -f "$$t"; \
+		echo "Saved the previous file as $$f.before-fix-db-host"; \
+		grep "^testdb[[:space:]]" "$$f"'
 
 changelog: ## Generate changelog with git-cliff
 	git-cliff --output CHANGELOG.md

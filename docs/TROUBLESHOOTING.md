@@ -12,6 +12,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [C Extension Build Failure](#c-extension-build-failure)
 - [Connection Issues](#connection-issues)
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
+  - [Database Server Host Not Found After Recreating the Container](#database-server-host-not-found-after-recreating-the-container)
   - [Authentication Failed](#authentication-failed)
   - [Stale Connections / Disconnections](#stale-connections--disconnections)
   - [Errors After a cub_server Restart or Crash](#errors-after-a-cub_server-restart-or-crash)
@@ -173,6 +174,43 @@ OperationalError: (CUBRIDdb.DatabaseError) Connection refused
 3. **Wrong port:** Check `cubrid_broker.conf` for the actual broker port.
 
 4. **Firewall:** Ensure port 33000 is not blocked.
+
+---
+
+### Database Server Host Not Found After Recreating the Container
+
+**Symptom:** after `docker compose down` and `up` with this repository's
+`docker-compose.yml`, the broker answers but every connection fails, naming a host that
+looks like an old container ID:
+
+```
+OperationalError: ... Failed to connect to database server, 'testdb', on the following host(s): 43134de458f9
+```
+
+Inside the container, `csql -u dba testdb -c "SELECT 1"` fails the same way, although
+`cubrid server status` lists `testdb`.
+
+**Cause:** the image registers the database in `databases.txt`, for `CUBRID_DB_HOST`
+or, when that is unset, for the hostname of the container that created it, which is that
+container's ID. On 10.2 and 11.2 the file is on the `cubrid-data` volume. `down` keeps
+the volume, and a recreated container has a new ID, so nothing resolves the recorded
+host. `docker-compose.yml` sets `CUBRID_DB_HOST: localhost`, so a volume it creates keeps
+working; a volume created by an older copy still records the old ID. `make integration`
+is not affected: it uses its own Compose project and removes it with `down -v`.
+
+**Fix, keeping the data:** with the container running, rewrite only the host field of
+`testdb` to `localhost`:
+
+```bash
+make docker-up
+make docker-fix-db-host
+```
+
+The previous file is saved next to it as `databases.txt.before-fix-db-host`.
+
+**Fix, deleting the data:** `make docker-down` runs `docker compose down -v`, which
+**removes the volume and every table in it**; the next `make docker-up` creates a fresh
+database. Use it only for a volume whose data you do not need.
 
 ---
 
