@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **Two CUBRIDdb result differences are documented (#1003)** — CUBRIDdb binds values on the
+  server, where pycubrid writes them into the SQL. With CUBRIDdb a `CASE` whose `THEN`/`ELSE`
+  values are all bound parameters returns a string (`'10'`, not `10`), and a `GROUP_CONCAT`
+  argument and `aggregate_order_by()` item that contain bound parameters fail with -494,
+  because the server does not treat the two copies as the same expression. The Driver
+  Compatibility guide describes both with their workarounds (`cast(..., Integer)`; an
+  argument position such as `aggregate_order_by(literal_column("1"))`), and the Feature
+  Support pages link to it. The dialect is unchanged.
+
+### Tests
+
+- **The CASE value and GROUP_CONCAT ORDER BY live tests pass with CUBRIDdb (#1003)** — the
+  tests added for #987 and #991 asserted pycubrid's results, so the release matrix's
+  `make integration (cubriddb, …)` lanes failed on CUBRID 10.2 and 11.4 and 1.11.2 was not
+  published. They now pin the CUBRIDdb results above and keep the exact pycubrid
+  assertions.
+
 ## [1.11.2] - 2026-10-21
 
 ### Upgrade notes

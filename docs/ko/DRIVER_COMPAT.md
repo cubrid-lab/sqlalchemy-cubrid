@@ -271,6 +271,15 @@ CUBRID 10.2 및 11.4에서 실제로 검증했습니다(#480). SQLAlchemy는 전
 
 pycubrid 1.8.0(지원 최저 버전)은 `pycubrid.compat.native` 아래에 추가적이고 선택적인 동기 prepared/typed 스칼라 바인딩 커서를 추가했습니다(INT32, UTF-8 `CHAR`, SQL `NULL`만 지원; cubrid-lab/pycubrid#439). `cubrid+pycubrid://`도 `cubrid+aiopycubrid://`도 이를 import하거나 호출하지 않습니다: SQLAlchemy는 모든 스칼라 바인딩(정수, UTF-8/CJK 문자열, `NULL`, 반복 실행, `executemany`, Core와 ORM)에 대해 테스트한 모든 드라이버에서 계속 일반 PEP 249 `execute()` / `executemany()` 경로(FC41)를 사용하며, 동작 차이나 방언 변경이 없습니다(#483; `test/test_scalar_execution_contract.py`는 방언 소스가 `pycubrid.compat`를 참조하지 않는지, 그리고 일반적인 사용에서 `pycubrid.compat.native.connect()`가 절대 호출되지 않는지도 검증합니다). typed prepared 실행을 사용하는 SQLAlchemy/DB-API 통합은 설치된 드라이버에 `compat.native`가 존재한다고 해서 자동으로 생기는 것이 아니라, 별도로 설계되고 릴리스되어야 하는 기능입니다.
 
+### 13. CUBRIDdb는 값을 서버에서 바인딩
+
+pycubrid는 바인딩한 값을 SQL 문자열에 써 넣은 뒤 보내고, CUBRIDdb는 `?` 표식이 있는 문장을 보낸 뒤 서버에서 값을 바인딩합니다. 그래서 다음 두 결과가 다릅니다(#1003, CUBRID 10.2와 11.4에서 CUBRIDdb 11.3.0.51과 pycubrid 1.13.1로 검증).
+
+- **`THEN`/`ELSE` 값이 모두 바인드 파라미터인 `CASE`는 CUBRIDdb에서 문자열을 반환합니다.** `select(case({True: 10}, value=..., else_=20))`와 검색형 `case((cond, 10), else_=20)`는 `'10'`, `'20'`을 반환하고, pycubrid에서는 `10`, `20`을 반환합니다. 서버가 이런 `CASE`의 타입을 문자열로 정하기 때문입니다. `cast(..., Integer)`로 감싸거나(`CAST(CASE ... END AS INTEGER)`는 두 드라이버 모두에서 `10`을 반환) 값에 `literal_column("10")`을 쓰십시오.
+- **바인드 파라미터가 들어 있는 `GROUP_CONCAT` 인자와 `aggregate_order_by()` 항목은 CUBRIDdb에서 실패합니다(-494).** CUBRID는 `ORDER BY` 항목이 인자와 같은 식이어야 하는데, CUBRIDdb는 `func.group_concat(and_(t.c.a == 1, t.c.b == 2)).aggregate_order_by(...)`의 두 사본을 각자의 표식으로 보내므로 서버가 같은 식으로 보지 않습니다. pycubrid는 같은 리터럴 SQL을 두 번 보내므로 성공합니다. CUBRIDdb에서는 인자 위치로 정렬하거나(`aggregate_order_by(literal_column("1"))`) 상수를 `literal_column()`으로 쓰십시오. 컬럼처럼 바인드 파라미터가 없는 인자는 두 드라이버 모두에서 동작합니다.
+
+방언은 두 결과 모두 바꾸지 않습니다.
+
 ---
 
 ## 설치 참고

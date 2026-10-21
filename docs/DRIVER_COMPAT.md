@@ -452,6 +452,31 @@ never called by ordinary use). A SQLAlchemy/DB-API integration that uses typed
 prepared execution would be a separate, explicitly designed and released feature,
 not an automatic consequence of `compat.native` existing in the installed driver.
 
+### 13. CUBRIDdb binds values on the server
+
+pycubrid writes each bound value into the SQL text before sending it; CUBRIDdb
+sends the statement with `?` markers and binds the values on the server. Two
+results differ because of it (#1003; verified on CUBRID 10.2 and 11.4 with
+CUBRIDdb 11.3.0.51 and pycubrid 1.13.1):
+
+- **A `CASE` whose `THEN`/`ELSE` values are all bound parameters returns a
+  string on CUBRIDdb.** `select(case({True: 10}, value=..., else_=20))` and the
+  searched form `case((cond, 10), else_=20)` return `'10'` and `'20'`; on
+  pycubrid they return `10` and `20`. The server types such a `CASE` as a string.
+  Wrap it in `cast(..., Integer)` (`CAST(CASE ... END AS INTEGER)` returns `10`
+  on both drivers), or use `literal_column("10")` for the values.
+- **A `GROUP_CONCAT` argument and `aggregate_order_by()` item that contain bound
+  parameters fail on CUBRIDdb (-494).** CUBRID requires the `ORDER BY` item to be
+  the same expression as the argument, and with CUBRIDdb
+  `func.group_concat(and_(t.c.a == 1, t.c.b == 2)).aggregate_order_by(...)` sends
+  the two copies with their own markers, which the server does not treat as the
+  same expression. pycubrid sends the same literal SQL twice and succeeds. On
+  CUBRIDdb, order by the argument position, `aggregate_order_by(literal_column("1"))`,
+  or write the constants with `literal_column()`. An argument without bound
+  parameters, such as a column, works on both drivers.
+
+The dialect does not change either result.
+
 ---
 
 ## Installation Notes
