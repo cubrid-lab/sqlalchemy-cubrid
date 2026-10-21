@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.11.2](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.1...v1.11.2) (2026-10-21)
+
+
+### Fixed
+
+* **agent-review:** do not count empty reply-only Copilot records as review rounds ([#936](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/936)) ([adb141e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/adb141ee26d27e0466b1772496ccbbdff06556ff)), closes [#933](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/933)
+* **compiler:** group a boolean expression used as a CASE THEN or ELSE value ([#985](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/985)) ([ffaf797](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ffaf797b0a6231190619fbd25ddb9c435c263c39)), closes [#982](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/982)
+* **compiler:** group a boolean simple-case value operand ([#988](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/988)) ([1c738f7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1c738f745ce54e2d331344d4fc33496fdbf6205f))
+* **compiler:** group boolean CAST and function arguments anywhere, and window items ([#972](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/972)) ([4042813](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/404281336d23086919d358dde3821e34fcef3483))
+* **compiler:** group boolean expressions inside a CAST, a function or ORDER BY ([#969](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/969)) ([d6f22da](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d6f22da698fa0e1f02bd52088dc43cb311985e05))
+* **compiler:** group EXISTS and AND/OR used as a SELECT-list item ([#967](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/967)) ([07f9de7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/07f9de7fd7a71f2695f41df97ab946c55f767a78)), closes [#966](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/966)
+* **compiler:** keep the ORDER BY of aggregate_order_by() ([#994](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/994)) ([a95cd80](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a95cd80e91c927baf7f4294dc105d393377d31c4))
+* **disconnect:** respect pycubrid error_source for overlapping CAS and server codes ([#938](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/938)) ([2f36731](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2f367311d4c5b321d61e9d93100b23d2f8008837)), closes [#916](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/916)
+* **docs:** close four parser gaps in the deterministic documentation check ([#922](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/922)) ([3584728](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3584728aa90e6258b8c1db531c168b32e44677b7))
+* **docs:** close the parser cases left by the second docs-check review ([#928](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/928)) ([245ef30](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/245ef30d389d3dddf7c75302ceb826bc5c2b4c29))
+* **docs:** follow the configured site slugifier and toc id rules in the docs-check parser ([#958](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/958)) ([8a70c48](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8a70c48de815270652cb0a5dd7d982746d1fed72)), closes [#957](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/957)
+* **docs:** port the shell substitution and quote fixes from pycubrid to the docs check ([#935](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/935)) ([0be57b5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/0be57b5b6dc6c26e2f3665a8b9e5189e331163d5))
+* **docs:** report issue-number lines in block quotes inside list items ([#930](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/930)) ([b2860a2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b2860a24e5c58de01fb1900d79e54747f5581d07))
+* **docs:** sync the docs-check shell scanner with pycubrid ([#960](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/960)) ([047100a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/047100acdfee034cfdd6a17ae5bb60ce899e5c06)), closes [#959](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/959)
+* **json:** reject boolean JSON path indices instead of rendering invalid array paths ([#917](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/917)) ([7744dd6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7744dd62e2477b25d2a904f115f3a8cce75f5f18))
+* **scripts:** dispose reflection probe engine on every exit path ([#977](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/977)) ([1303262](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/13032624148045302d0edcdfe245a28ce4c20f01))
+* **test:** keep the CUBRID 11.4 Docker test database in a named volume ([#1001](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1001)) ([85ec642](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85ec6427c7f10e0b082ff3371680f54385dbcbfa)), closes [#1000](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1000)
+* **test:** register the Docker test database for a stable host ([#998](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/998)) ([24759a9](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24759a92444c98d920787ac31c9ba35d0695465c))
+* **transactions:** retain pending isolation restoration after a failed begin retry ([#947](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/947)) ([2080f8b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2080f8bc71d48ce1e321d79d88429b52cced712c)), closes [#937](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/937)
+
+
+### Documentation
+
+* **agents:** name a maintainer's review as the standalone-agent alternative to Copilot ([#927](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/927)) ([6b3793a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6b3793a9dfc0d41f3ae975a246e1f54d2a22a328)), closes [#926](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/926)
+* **async:** document the Python 3.15 limit of garbage-collected connection cleanup ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/909)) ([a0ec6a6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a0ec6a67043281262c1db6d499b2d2f1c9fc273f))
+* **async:** make README quickstart examples runnable as standalone Python scripts ([#944](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/944)) ([09d07bf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/09d07bffe8bd69f7d08e7bec8f6c470e1e8b8ae6))
+* **contributing:** clarify good-first-issue access for human contributors ([#913](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/913)) ([7a2512f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a2512f4694ee5129081ad87a449cae8bb3d4a88))
+* correct the documented boolean expression positions ([#986](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/986)) ([7c7958b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7c7958be8e82fa49dd3fb56591ad5a5108e16e30))
+* describe CAS error -4 as an interrupted statement ([#939](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/939)) ([2551c79](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2551c791676bf5bbdc374a118007dc023d2588bc))
+* **onboarding:** lead with one synchronous SQLAlchemy path for CUBRID beginners ([#942](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/942)) ([a3d4916](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a3d49164b532d2485138da1ab647ecc8a856214c))
+* **quickstart:** remove the lab container's anonymous volume with docker rm -f -v ([#949](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/949)) ([53d250a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/53d250ad18d04068ce66da7d429e9546480c6a94)), closes [#948](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/948)
+* **site:** keep wrapped lines that start with an issue number from rendering as headings ([#924](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/924)) ([b9b4ff5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b9b4ff5b2c36d547a10dee0c83d803c56bc7f5b3))
+* state the boolean expressions that still fail on CUBRID ([#971](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/971)) ([6dc4728](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6dc4728c7742917e551d64a39971ef1c366d5c57)), closes [#968](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/968)
+* **structure:** finish the first-connection course with lessons 3 to 5 ([#956](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/956)) ([a472087](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a472087cb1e9b956b7aa1b0c338794b2f91e2480))
+* **structure:** organize the site navigation by reader question ([#954](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/954)) ([a5c42a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a5c42a4287a9f0a6930b11ddc84614dbacc780f8)), closes [#943](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/943)
+* **structure:** split the first two first-connection lessons into their own pages ([#955](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/955)) ([6a85659](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6a8565987ebde18e367b2e60fffd5f21a2aade17))
+* **types:** correct the namespace of reflected timezone types ([#973](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/973)) ([9480036](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9480036c1a184d6227c93562c67452ded57cfbc8)), closes [#882](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/882)
+* **versioning:** identify development docs and distinguish candidate, abandoned and published versions ([#951](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/951)) ([7a0ba84](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a0ba84861786c4abae476bfbd67ab0b88fb0f7b))
+
 ## [1.11.1](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.0...v1.11.1) (2026-10-14)
 
 
