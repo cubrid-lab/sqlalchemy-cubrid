@@ -132,7 +132,7 @@ CUBRID_VERSION=11.4 docker compose up -d
 # View logs
 docker compose logs -f cubrid
 
-# Stop, keeping the data volume
+# Stop, keeping the data volume (10.2 and 11.2 keep their database on it)
 docker compose down
 
 # Stop and delete the data volume (removes all test data)
@@ -140,7 +140,8 @@ docker compose down -v
 ```
 
 `docker-compose.yml` sets `CUBRID_DB_HOST: localhost`, so the database keeps working
-when the container is recreated on the same volume. A volume created before that setting
+when the container is recreated on the same volume. That volume holds the database on
+10.2 and 11.2; 11.4 keeps it elsewhere, so `down` does not keep 11.4 data. A volume created before that setting
 fails with -353 after a recreate; repair it with `make docker-fix-db-host`, which keeps
 the data (see
 [Troubleshooting](docs/TROUBLESHOOTING.md#database-server-host-not-found-after-recreating-the-container)).

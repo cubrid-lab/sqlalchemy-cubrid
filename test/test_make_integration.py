@@ -12,11 +12,13 @@ from pathlib import Path
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
 import time
 
 import pytest
+import yaml
 
 PROJECT = "sa-it-stub"
 UP = f"docker compose -p {PROJECT} up -d"
@@ -629,8 +631,6 @@ def test_integration_lets_startup_finish_before_cleanup(integration_runner, sign
 
 def test_compose_registers_the_database_for_a_stable_host() -> None:
     """The image records CUBRID_DB_HOST (else the container ID) on the volume (#997)."""
-    import yaml
-
     root = Path(__file__).resolve().parents[1]
     compose = yaml.safe_load((root / "docker-compose.yml").read_text())
     environment = compose["services"]["cubrid"]["environment"]
@@ -671,16 +671,29 @@ def test_fix_db_host_rewrites_only_the_testdb_host(tmp_path: Path) -> None:
     env["CUBRID_DATABASES"] = str(databases)
     env["TMPDIR"] = str(tmp_path)
     makefile = Path(__file__).resolve().parents[1] / "Makefile"
+    listing.chmod(0o640)
+    os.utime(listing, (1_000_000_000, 1_000_000_000))
+    inode = listing.stat().st_ino
 
-    result = subprocess.run(
-        [make, "-f", str(makefile), "docker-fix-db-host"],
-        cwd=tmp_path,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
+    def fix() -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [make, "-f", str(makefile), "docker-fix-db-host"],
+            cwd=tmp_path,
+            env=env,
+            capture_output=True,
+            text=True,
+        )
+
+    result = fix()
 
     assert result.returncode == 0, result.stderr
+    # Rewritten in place, so the owner and mode the server relies on are kept.
+    assert listing.stat().st_ino == inode
+    assert stat.S_IMODE(listing.stat().st_mode) == 0o640
+    backup = databases / "databases.txt.before-fix-db-host"
+    # cp -p: the backup keeps the original's mode and timestamp.
+    assert stat.S_IMODE(backup.stat().st_mode) == 0o640
+    assert backup.stat().st_mtime == 1_000_000_000
     assert log.read_text().startswith("compose exec -T -u root cubrid sh -c ")
     original = (databases / "databases.txt.before-fix-db-host").read_text()
     assert original.splitlines()[1].split()[2] == "ee2bfa1105f9"
@@ -700,3 +713,6 @@ def test_fix_db_host_rewrites_only_the_testdb_host(tmp_path: Path) -> None:
         "databases.txt",
         "databases.txt.before-fix-db-host",
     ]
+    # A second run keeps the first backup, the only record of the stale host.
+    assert fix().returncode == 0
+    assert backup.read_text() == original

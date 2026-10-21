@@ -155,7 +155,8 @@ make test-offline  # Run every offline test (fast + repository-tooling) with cov
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
-make docker-down   # Stop and remove CUBRID Docker container
+make docker-down   # Stop CUBRID and delete its data volume (removes all test data)
+make docker-fix-db-host # Repair a volume created before CUBRID_DB_HOST was set (keeps the data)
 make clean         # Remove build artifacts and caches
 ```
 
