@@ -171,7 +171,20 @@ def test_lint_target_drift_is_detected(tooling_config: Path, surface: str) -> No
     config.write_text(
         config.read_text().replace("make lint", "ruff check sqlalchemy_cubrid/ test/")
     )
-    assert any("shared Makefile lint target" in error for error in check(tooling_config))
+    assert any("shared Makefile lint" in error for error in check(tooling_config))
+
+
+@pytest.mark.parametrize("surface", ["tox.ini", ".github/workflows/ci.yml"])
+def test_format_check_target_drift_is_detected(tooling_config: Path, surface: str) -> None:
+    # `make lint` no longer checks formatting (#1009); both runners need format-check.
+    config = tooling_config / surface
+    text = config.read_text()
+    if surface == "tox.ini":
+        text = text.replace("make lint format-check", "make lint")
+    else:
+        text = text.replace("run: make format-check", "run: ruff format --check .")
+    config.write_text(text)
+    assert any("format-check target" in error for error in check(tooling_config))
 
 
 def test_formal_suite_cannot_enter_regular_tox_integration(tooling_config: Path) -> None:

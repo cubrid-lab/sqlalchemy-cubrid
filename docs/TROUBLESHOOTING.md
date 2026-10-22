@@ -192,7 +192,7 @@ Inside the container, `csql -u dba testdb -c "SELECT 1"` fails the same way, alt
 
 **Cause:** the image registers the database in `databases.txt`, for `CUBRID_DB_HOST`
 or, when that is unset, for the hostname of the container that created it, which is that
-container's ID. On 10.2 and 11.2 the file is on the `cubrid-data` volume. `down` keeps
+container's ID. The file is on the `cubrid-data` volume, or on `cubrid-databases` for 11.4. `down` keeps
 the volume, and a recreated container has a new ID, so nothing resolves the recorded
 host. `docker-compose.yml` sets `CUBRID_DB_HOST: localhost`, so a volume it creates keeps
 working; a volume created by an older copy still records the old ID. `make integration`

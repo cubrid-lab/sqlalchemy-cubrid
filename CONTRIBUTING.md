@@ -52,17 +52,21 @@ pre-commit install
 Most tests run without a CUBRID instance:
 
 ```bash
-# Run the fast offline tests (what you want while iterating)
+# Run every offline test: the fast tests and the repository-tooling tests
 make test
 
-# Run the repository-tooling tests (Makefile recipes, signal handling, repo scripts)
+# Run only the fast offline tests (what you want while iterating)
+make test-fast
+
+# Run only the repository-tooling tests (Makefile targets, signal handling, repo scripts)
 make test-repo
 
-# Run every offline test (both of the above)
-make test-offline
+# Run the complete non-test quality gate: lint, format check, strict typing,
+# security and the docs-reason checks
+make check
 
-# Run shared lint, strict typing and security checks
-make check-all
+# Run make check, then make test (no Docker)
+make verify
 
 # Run a specific test file
 pytest test/test_compiler.py -v
@@ -71,7 +75,8 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
-`make test` selects `-m "not integration and not repo"`. The `repo` marker is
+`make test` selects `-m "not integration"` (`make test-offline` is an alias kept
+for compatibility); `make test-fast` selects `-m "not integration and not repo"`. The `repo` marker is
 applied by `test/conftest.py` to every test in the modules listed in
 `REPO_TOOLING_MODULES` (`test_make_integration.py`, `test_docs_reason.py`,
 `test_release_detect.py`): they run the Makefile and repository scripts through
@@ -132,7 +137,7 @@ CUBRID_VERSION=11.4 docker compose up -d
 # View logs
 docker compose logs -f cubrid
 
-# Stop, keeping the data volume (10.2 and 11.2 keep their database on it)
+# Stop, keeping the data volumes
 docker compose down
 
 # Stop and delete the data volume (removes all test data)
@@ -140,8 +145,10 @@ docker compose down -v
 ```
 
 `docker-compose.yml` sets `CUBRID_DB_HOST: localhost`, so the database keeps working
-when the container is recreated on the same volume. That volume holds the database on
-10.2 and 11.2; 11.4 keeps it elsewhere, so `down` does not keep 11.4 data. A volume created before that setting
+when the container is recreated on the same volume. Images up to 11.3 keep the database
+on the `cubrid-data` volume and 11.4 on `cubrid-databases`, so `down` keeps it on every
+supported version. Opening a database created by another CUBRID version is not verified,
+so run `make docker-down` (which deletes the test data) before switching `CUBRID_VERSION`. A volume created before that setting
 fails with -353 after a recreate; repair it with `make docker-fix-db-host`, which keeps
 the data (see
 [Troubleshooting](docs/TROUBLESHOOTING.md#database-server-host-not-found-after-recreating-the-container)).
@@ -173,16 +180,25 @@ This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formattin
 ### Running Checks
 
 ```bash
-# Check synchronized tooling and every maintained Python source path
+# Check synchronized tooling and lint every maintained Python source path
 make lint
 
-# Apply fixes and formatting over the same shared paths
+# Check formatting over the same shared paths (never modifies files)
+make format-check
+
+# Apply fixes and formatting over the same shared paths (the only mutating target)
 make format
 
-# Check strict typing, or run lint + typing + security together
+# Check strict typing, or run the complete non-test quality gate
 make typecheck
-make check-all
+make check
+
+# Check that the required tools are installed at their pinned versions
+make doctor
 ```
+
+`make check-all` still works as a deprecated alias of `make check` for one minor
+release and prints a deprecation notice on stderr.
 
 ### Pre-commit Hooks
 
@@ -208,13 +224,12 @@ pre-commit run --all-files
 
 3. **Run the offline test suite** and ensure all tests pass:
    ```bash
-   make test
-   make test-repo   # when you touched the Makefile, scripts/ or their tests
+   make test        # every offline test, including the repository-tooling tests
    ```
 
-4. **Run the shared lint, type and security checks**:
+4. **Run the shared lint, format, type, security and docs-reason checks**:
    ```bash
-   make check-all
+   make check
    ```
 
 5. **Run integration tests** if your change affects database interaction:

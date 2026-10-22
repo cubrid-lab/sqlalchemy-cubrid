@@ -126,28 +126,40 @@ _both = sa.and_(_rows.c.a == 1, _rows.c.b == 2)
 
 @_aggregate_order_by
 @pytest.mark.parametrize(
-    ("concat", "expected"),
+    ("concat", "expected", "binds"),
     [
         (
             lambda: sa.func.group_concat(_rows.c.s).aggregate_order_by(_rows.c.s.desc()),
             {1: "y,x", 2: "z,x,x", 3: None},
+            False,
         ),
         (
             lambda: sa.func.group_concat(_rows.c.s.distinct()).aggregate_order_by(_rows.c.s.desc()),
             {1: "y,x", 2: "z,x", 3: None},
+            False,
         ),
         (
             lambda: sa.func.group_concat(_rows.c.b).aggregate_order_by(_rows.c.b),
             {1: "0,2,2", 2: "0", 3: None},
+            False,
         ),
         (
             lambda: sa.func.group_concat(_both).aggregate_order_by(_both),
             {1: "0,1", 2: "0", 3: None},
+            True,
         ),
     ],
     ids=["desc", "distinct", "integer", "boolean"],
 )
-def test_group_concat_aggregate_order_by(engine: sa.Engine, concat, expected) -> None:
+def test_group_concat_aggregate_order_by(engine: sa.Engine, concat, expected, binds) -> None:
+    if binds and engine.dialect.driver == "cubrid":
+        # CUBRIDdb sends the argument and the ORDER BY item with their own bound
+        # markers, which CUBRID does not treat as the same expression (-494);
+        # pycubrid renders both as the same literal SQL (DRIVER_COMPAT.md, #1003).
+        with pytest.raises(sa.exc.DBAPIError) as info:
+            _by_group(engine, concat())
+        assert info.value.orig.args[0] == -494
+        return
     assert _by_group(engine, concat()) == expected
     stmt = sa.select(_rows.c.g).group_by(_rows.c.g).having(concat() == expected[1])
     with engine.connect() as conn:

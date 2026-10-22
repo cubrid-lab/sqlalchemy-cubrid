@@ -17,7 +17,9 @@ locally against about 24 s for the full suite, too small a saving to justify
 letting offline regressions first fail on main (#742). Live integration on PRs
 stays representative: contributors must run the regression checks relevant to
 their change locally and record commands/results in the PR.
-`make test` and `make integration` remain available without changing their scope.
+`make test-fast` runs this offline selection locally, and `make integration` remains
+available without changing its scope; `make test` also runs the repository-tooling
+tests (#1009).
 
 Change selection is in `ci.yml`'s `detect-changes` job. Non-documentation paths
 are code by default, so new source/configuration files do not silently become docs.

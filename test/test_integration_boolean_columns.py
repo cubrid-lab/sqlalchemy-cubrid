@@ -257,7 +257,13 @@ def test_boolean_simple_case_value(engine: sa.Engine) -> None:
                 ),
             ):
                 stmt = sa.select(pairs.c.id, case).order_by(pairs.c.id)
-                assert [tuple(row) for row in conn.execute(stmt)] == rows
+                got = [tuple(row) for row in conn.execute(stmt)]
+                if engine.dialect.driver == "cubrid":
+                    # CUBRIDdb binds 10 and 20 on the server, and CUBRID types a
+                    # CASE of bound values as a string (DRIVER_COMPAT.md, #1003).
+                    assert all(isinstance(value, str) for _, value in got)
+                    got = [(i, int(value)) for i, value in got]
+                assert got == rows
             stmt = sa.select(pairs.c.id, sa.case((pairs.c.id > 0, both), else_=sa.literal(False)))
             rows = conn.execute(stmt.order_by(pairs.c.id)).all()
             assert [(i, None if v is None else bool(v)) for i, v in rows] == [

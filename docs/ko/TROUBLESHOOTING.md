@@ -191,8 +191,8 @@ OperationalError: ... Failed to connect to database server, 'testdb', on the fol
 `cubrid server status`에는 `testdb`가 보여도 마찬가지입니다.
 
 **원인:** 이미지는 `databases.txt`에 데이터베이스를 `CUBRID_DB_HOST`로, 이 값이 없으면
-데이터베이스를 만든 컨테이너의 호스트 이름(그 컨테이너의 ID)으로 등록합니다. 10.2와 11.2에서는
-이 파일이 `cubrid-data` 볼륨에 있습니다. `down`은 볼륨을 남기고, 다시 만든 컨테이너는 새 ID를
+데이터베이스를 만든 컨테이너의 호스트 이름(그 컨테이너의 ID)으로 등록합니다. 이 파일은
+`cubrid-data` 볼륨에, 11.4에서는 `cubrid-databases` 볼륨에 있습니다. `down`은 볼륨을 남기고, 다시 만든 컨테이너는 새 ID를
 가지므로 기록된 호스트를 아무도 해석하지 못합니다. `docker-compose.yml`은
 `CUBRID_DB_HOST: localhost`를 설정하므로 이 파일로 만든 볼륨은 계속 동작합니다. 이전 파일로
 만든 볼륨에는 예전 ID가 남아 있습니다. `make integration`은 자체 Compose 프로젝트를 쓰고
