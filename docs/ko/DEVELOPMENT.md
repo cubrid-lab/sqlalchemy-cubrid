@@ -144,15 +144,20 @@ graph TD
 모든 흔한 개발 작업은 `make`로 사용할 수 있습니다:
 
 ```bash
-make help          # 사용 가능한 모든 타깃 표시
+make help          # 사용 가능한 모든 타깃을 용도별로 표시
 make install       # 모든 의존성과 함께 개발 모드 설치
-make lint          # ruff 린터 + 포맷 검사 실행
+make doctor        # 필요한 도구가 고정된 버전으로 설치되어 있지 않으면 실패
+make lint          # ruff 린터 실행 (파일을 수정하지 않음)
+make format-check  # ruff 포맷 검사 (파일을 수정하지 않음)
 make check-tool-versions # 로컬/CI 도구 핀과 타입 검사 셀 일치 확인
 make typecheck     # 의존성 버전 출력 및 strict mypy 검사
-make format        # 린트 문제 자동 수정 및 코드 포맷
-make test          # 커버리지와 함께 빠른 오프라인 테스트 실행 (95% 임계값)
+make security      # bandit 실행
+make check         # 테스트를 제외한 전체 품질 게이트 (lint, format-check, typecheck, security, check-docs-reason)
+make format        # 린트 문제 자동 수정 및 코드 포맷 (파일을 수정하는 유일한 타깃)
+make test          # 모든 오프라인 테스트(빠른 테스트 + 저장소 도구 테스트)를 커버리지와 함께 실행 (95% 임계값)
+make test-fast     # 빠른 오프라인 테스트만 커버리지와 함께 실행
 make test-repo     # 저장소 도구 테스트 실행 (Makefile, 시그널 처리, 저장소 스크립트)
-make test-offline  # 모든 오프라인 테스트(빠른 테스트 + 저장소 도구 테스트)를 커버리지와 함께 실행
+make verify        # make check 후 make test 실행 (Docker 없음)
 make test-all      # 모든 Python 버전에서 tox 실행
 make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 (pycubrid) → 삭제
 make docker-up     # CUBRID Docker 컨테이너 시작
@@ -441,7 +446,13 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 중단합니다. 확인을 통과한 뒤에야 정리를 등록하므로 `docker compose -p <project> down -v`는
 이번 실행이 만든 리소스만 삭제합니다.
 
-정리는 셸이 종료될 때 실행되며, 컨테이너 시작, 준비 대기 또는 테스트가 실패한
+레시피는 `scripts/run_integration.py` 한 번의 호출이며, 이 스크립트가 드라이버와
+프로젝트 검증, 소유권 확인, 시작, 준비 대기, 시그널 처리, 정리와 종료 상태를
+담당합니다(#1009). Make 타깃은 `INTEGRATION_DRIVER`, `CUBRID_PORT`,
+`INTEGRATION_PROJECT`, `INTEGRATION_READY_TIMEOUT`, `INTEGRATION_STOP_GRACE`,
+`WAIT_FOR_CUBRID`, `PYTEST`를 그대로 전달합니다.
+
+정리는 러너가 종료될 때 실행되며, 컨테이너 시작, 준비 대기 또는 테스트가 실패한
 경우와 실행이 `SIGINT`(Ctrl-C), `SIGTERM`(예: `timeout`이나 `kill`) 또는
 `SIGHUP`(터미널 종료)을 받은 경우에도 실행됩니다.
 
@@ -451,7 +462,8 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
   중간에 멈추면 `down -v`가 이미 놓친 컨테이너와 다시 생성된 볼륨이 남을 수 있습니다.
   `up -d`는 자체 프로세스 그룹에서 실행되므로 터미널의 Ctrl-C가 전달되지 않습니다.
   유예 시간이 지나도 실행 중이면 Compose 플러그인 프로세스를 포함한 그룹 전체에
-  `SIGTERM`을 보내고, 정리는 그 그룹 전체가 종료될 때까지 기다립니다.
+  `SIGTERM`을 보내고(다시 `INTEGRATION_STOP_GRACE`초 뒤에도 실행 중이면 `SIGKILL`),
+  정리는 그 그룹 전체가 종료될 때까지 기다립니다.
 - 그 밖의 실행 중인 단계(준비 대기 또는 pytest)에는 즉시 `SIGTERM`을 보내고,
   `INTEGRATION_STOP_GRACE`초 후에도 실행 중이면 강제 종료합니다.
 - 정리는 한 번만 실행되고, 명령은 128 + 시그널 번호(130, 143 또는 129)로 종료합니다.
@@ -461,7 +473,7 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
   않습니다. `down -v` 자체가 멈추면 `SIGQUIT`(`Ctrl-\`)로 기다리지 않고 `make`를
   중지할 수 있습니다.
 - 비대화형 셸의 백그라운드 작업에서 `SIGINT`처럼 `make`가 시작될 때 이미 무시되던
-  시그널은 처리할 수 없습니다.
+  시그널은 계속 무시되며 처리할 수 없습니다.
 
 정리까지 실패하면 최초 실패를 유지하고, 테스트가 성공했더라도 정리가 실패하면
 명령은 실패합니다. 정리 오류는 명시적으로 출력됩니다. `SIGKILL`이나 호스트 종료처럼
@@ -566,7 +578,7 @@ make test
 SQLAlchemy 공개 API로는 발동할 수 없어 오프라인 스위트에서 절대 실행되지
 않습니다. 정확한 라인 번호는 모듈이 바뀔 때마다 변하므로, 여기 고정된
 목록 대신 `pytest test/ -m "not integration and not repo" --cov=sqlalchemy_cubrid
---cov-report=term-missing`(또는 `make test`)을 실행해 `Missing` 열에서
+--cov-report=term-missing`(또는 `make test-fast`)을 실행해 `Missing` 열에서
 현재 목록을 확인하세요.
 
 ---
@@ -587,8 +599,10 @@ SQLAlchemy 공개 API로는 발동할 수 없어 오프라인 스위트에서 �
 ### 검사 실행
 
 ```bash
-# 도구 일관성과 유지보수 대상 Python 소스 전체의 린트/포맷 검사
+# 도구 일관성 확인 후 유지보수 대상 Python 소스 전체의 린트와 포맷 검사
+# (둘 다 파일을 수정하지 않음)
 make lint
+make format-check
 
 # 같은 공통 소스 경로에 수정과 포맷 적용
 make format
@@ -610,7 +624,7 @@ SQLAlchemy/Alembic으로 프로젝트의 엄격한 설정에 따라 `sqlalchemy_
 소스를 다루며 문서의 코드 스니펫을 다시 작성하지 않습니다.
 
 Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모, 샘플,
-`docs/source`의 Python 설정을 포함합니다. CI와 tox는 `make lint`를 실행하고,
+`docs/source`의 Python 설정을 포함합니다. CI와 tox는 `make lint`와 `make format-check`를 실행하고,
 훅은 계속 모든 추적된 Python/pyi 파일을 검사합니다. 일관성 검사는 유지보수 대상
 디렉터리 누락이나 공통 타깃을 우회하는 실행 설정을 거부합니다.
 
@@ -832,7 +846,7 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 문서 예외는 코드·인용·템플릿 주석 밖의 내용이 채워진 단독 물리 소스 줄
 `Docs: not needed - <reason>` 또는 기존 유지보수자 관리 라벨을 사용합니다.
 `make check-docs-reason`은 doctest와 실제 이벤트 JSON/워크플로 회귀 검사를 실행하며
-`make check-all`과 docs-sync 잡도 같은 검사를 실행합니다. 번역 도움 요청은 우회
+`make check`와 docs-sync 잡도 같은 검사를 실행합니다. 번역 도움 요청은 우회
 권한을 부여하지 않습니다. 유지보수자가 기존 `translations-deferred` 라벨을 명시적으로
 승인하고 후속 작업을 기록합니다. 한국어 필수·다른 언어 권고 검사는 유지합니다.
 

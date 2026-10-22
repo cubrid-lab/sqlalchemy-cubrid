@@ -1,10 +1,13 @@
-.PHONY: help install lint format check-tool-versions check-docs-reason agent-eval-check typecheck security check check-all test test-repo test-offline test-all integration integration-local docker-up docker-down docker-fix-db-host changelog clean clean-all doctor release-check
+.PHONY: help install doctor check-tool-versions lint format-check format typecheck security check-docs-reason check check-all agent-eval-check verify test test-fast test-repo test-offline test-all integration integration-local docker-up docker-down docker-fix-db-host changelog clean clean-all release-check
 
-PYTEST = python3 -m pytest
-PYTHON = python3
-RUFF = ruff
-MYPY = $(PYTHON) -m mypy
-BANDIT = bandit
+# Every tool runs through the same interpreter, and each can be overridden from the
+# command line or the environment, e.g. `make check PYTHON=.venv/bin/python`.
+PYTHON ?= python3
+PYTEST ?= $(PYTHON) -m pytest
+RUFF ?= $(PYTHON) -m ruff
+MYPY ?= $(PYTHON) -m mypy
+BANDIT ?= $(PYTHON) -m bandit
+PRE_COMMIT ?= $(PYTHON) -m pre_commit
 SRC = sqlalchemy_cubrid
 TESTS = test
 LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples docs/source
@@ -13,50 +16,57 @@ LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples
 # via cubrid://), host port for the run-owned CUBRID container, an optional fixed
 # Compose project name (default: a fresh name per run), and how many seconds, on a
 # signal, `docker compose up -d` gets to finish before SIGTERM and any step gets
-# after SIGTERM before SIGKILL. See docs/DEVELOPMENT.md.
+# after SIGTERM before SIGKILL. scripts/run_integration.py owns the lifecycle; see
+# docs/DEVELOPMENT.md.
 INTEGRATION_DRIVER ?= pycubrid
 CUBRID_PORT ?= 33000
 # Seconds make integration waits for the new server to answer SELECT 1 through the
 # selected driver before it gives up (a fresh container needs about 20 seconds).
 INTEGRATION_READY_TIMEOUT ?= 180
-WAIT_FOR_CUBRID = $(PYTHON) -m scripts.wait_for_cubrid --timeout $(INTEGRATION_READY_TIMEOUT)
+WAIT_FOR_CUBRID ?= $(PYTHON) -m scripts.wait_for_cubrid --timeout $(INTEGRATION_READY_TIMEOUT)
 INTEGRATION_PROJECT ?=
 INTEGRATION_STOP_GRACE ?= 10
-# Run a command in its own session, ignoring INT/TERM/HUP, so that signals sent to
-# the whole process group (Ctrl-C, a closed terminal, GNU timeout) cannot abort
-# make integration's cleanup halfway.
-RUN_DETACHED = $(PYTHON) -c 'import signal, subprocess, sys; [signal.signal(s, signal.SIG_IGN) for s in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)]; rc = subprocess.call(sys.argv[1:], start_new_session=True); sys.exit(128 - rc if rc < 0 else rc)'
-# Exec a command as the leader of a new process group. `docker compose up -d` runs
-# this way: a terminal Ctrl-C does not interrupt it, and stopping it also stops the
-# Compose CLI plugin process it spawns. On a signal, cleanup first lets it finish,
-# because the daemon completes a container create even after the client is killed,
-# which would leave resources that `down -v` has already missed.
-RUN_IN_NEW_GROUP = $(PYTHON) -c 'import os, sys; os.setpgid(0, 0); os.execvp(sys.argv[1], sys.argv[1:])'
-# After a delay, send a signal to a process (to its whole group if it leads one).
-SIGNAL_AFTER = $(PYTHON) -c 'import os, signal, sys, time; time.sleep(float(sys.argv[2])); pid = int(sys.argv[3]); os.kill(-pid if os.getpgid(pid) == pid else pid, getattr(signal, sys.argv[1]))'
-# Wait until no process is left in a process group, then SIGKILL the group after a
-# delay. The Compose plugin can outlive the `docker` CLI that started it, so cleanup
-# must not start before the whole group is gone. Returns at once if the group does
-# not exist (the step was not a group leader).
-WAIT_GROUP = $(PYTHON) -c 'exec("import os, signal, sys, time\ngrace, pgid = float(sys.argv[1]), int(sys.argv[2])\ndef alive():\n    try:\n        os.killpg(pgid, 0)\n    except ProcessLookupError:\n        return False\n    return True\ndeadline = time.monotonic() + grace\nwhile alive() and time.monotonic() < deadline:\n    time.sleep(0.1)\nif alive():\n    os.killpg(pgid, signal.SIGKILL)\nwhile alive() and time.monotonic() < deadline + 5:\n    time.sleep(0.1)\n")'
 
-help: ## Show this help message
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+##@ Setup
+
+help: ## Show this help message, grouped by purpose
+	@awk 'BEGIN {FS = ":.*?## "} \
+		/^##@ / {printf "\n\033[1m%s\033[0m\n", substr($$0, 5)} \
+		/^[a-zA-Z_-]+:.*?## / {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 install: ## Install in development mode with the dev dependency group (pip >= 25.1)
 	pip install --upgrade "pip>=25.1"
 	pip install -e . --group dev
-	pre-commit install
+	$(PRE_COMMIT) install
+
+# Every tool is checked before the verdict, so one run lists everything missing.
+doctor: ## Check the required tooling; fails if a tool is missing, broken or not the pinned version
+	@echo "Checking development environment..."
+	@status=0; \
+	$(PYTHON) -c 'import sys; print("Python", sys.version.split()[0]); sys.exit(sys.version_info < (3, 11))' \
+		|| { echo "ERROR: '$(PYTHON)' is missing or older than Python 3.11" >&2; status=1; }; \
+	for tool in "$(PYTEST)" "$(RUFF)" "$(MYPY)" "$(BANDIT)" "$(PRE_COMMIT)"; do \
+		$$tool --version || { echo "ERROR: '$$tool --version' failed" >&2; status=1; }; \
+	done; \
+	$(PYTHON) scripts/check_tool_versions.py || status=1; \
+	if [ $$status -ne 0 ]; then \
+		echo "ERROR: required tooling is missing or invalid; run 'make install' in the project environment" >&2; \
+		exit $$status; \
+	fi; \
+	echo "All checks passed!"
+
+##@ Quality (static checks; only format modifies files)
 
 check-tool-versions: ## Detect local and CI tool-version drift
 	$(PYTHON) scripts/check_tool_versions.py
 
-lint: check-tool-versions ## Run linter and format checks
+lint: check-tool-versions ## Run the Ruff linter (never modifies files)
 	$(RUFF) check $(LINT_PATHS)
+
+format-check: check-tool-versions ## Check Ruff formatting (never modifies files)
 	$(RUFF) format --check $(LINT_PATHS)
 
-format: ## Auto-fix lint issues and format code
+format: check-tool-versions ## Auto-fix lint issues and format code (the only mutating target)
 	$(RUFF) check --fix $(LINT_PATHS)
 	$(RUFF) format $(LINT_PATHS)
 
@@ -67,22 +77,37 @@ typecheck: ## Run mypy type checking
 security: ## Run security scans (bandit)
 	$(BANDIT) -r $(SRC)/ _sqlalchemy_cubrid_alembic.py -c pyproject.toml
 
-check: lint typecheck ## Run lint + typecheck
-
 check-docs-reason: ## Check docs reasons and real event/workflow regressions
 	$(PYTHON) -m doctest scripts/check_docs_reason.py -v
 	$(PYTHON) -m unittest discover -s test -p 'test_docs_reason.py' -v
+
+check: lint format-check typecheck security check-docs-reason ## Complete non-test quality gate: lint, format-check, typecheck, security, check-docs-reason
+
+# Deprecated alias of `check`, kept for one minor release (#1009).
+check-all: check ## Deprecated alias of check (removed after the next minor release)
+	@echo "WARNING: 'make check-all' is deprecated and will be removed after the next minor release; use 'make check'." >&2
 
 agent-eval-check: ## Validate the agent-evals tasks and re-grade their fixtures (offline; no model, no DB)
 	$(PYTHON) scripts/agent_eval.py validate
 	$(PYTHON) scripts/agent_eval.py check
 
-check-all: check security check-docs-reason ## Run lint + typecheck + security + docs gate tests
+##@ Tests (offline; no Docker, no database)
+
+verify: check test ## Run check, then the complete offline suite (no Docker)
 
 # Offline test lanes (#594). `repo` marks repository-tooling tests (Makefile
 # recipes, signal handling, repo scripts; see REPO_TOOLING_MODULES in
-# test/conftest.py). CI runs both lanes as required jobs.
-test: ## Run the fast offline tests with coverage (no DB, no repo-tooling tests)
+# test/conftest.py). CI runs the fast and repository-tooling lanes as required jobs.
+test: ## Run every offline test (fast + repository-tooling) with coverage
+	$(PYTEST) $(TESTS)/ -v \
+		-m "not integration" \
+		--cov=$(SRC) \
+		--cov-report=term-missing \
+		--cov-fail-under=95
+
+test-offline: test ## Alias of test
+
+test-fast: ## Run the fast offline tests with coverage (no repository-tooling tests)
 	$(PYTEST) $(TESTS)/ -v \
 		-m "not integration and not repo" \
 		--cov=$(SRC) \
@@ -92,105 +117,23 @@ test: ## Run the fast offline tests with coverage (no DB, no repo-tooling tests)
 test-repo: ## Run the repository-tooling tests (Makefile, signal handling, repo scripts)
 	$(PYTEST) $(TESTS)/ -v -m repo
 
-test-offline: ## Run every offline test (fast + repo-tooling) with coverage
-	$(PYTEST) $(TESTS)/ -v \
-		-m "not integration" \
-		--cov=$(SRC) \
-		--cov-report=term-missing \
-		--cov-fail-under=95
-
 test-all: ## Run tests across all Python versions via tox
 	tox
 
+##@ Integration (Docker)
+
+# scripts/run_integration.py owns driver validation, the run-owned Compose project,
+# ownership checks, readiness, signal handling, cleanup and the exit status. `exec`
+# makes it the recipe's only process, so make's signals reach it directly.
 integration: ## Run integration tests (INTEGRATION_DRIVER=pycubrid|cubriddb) in a fresh, run-owned Docker Compose project and always clean it up
-	@set -e; \
-	case "$(INTEGRATION_DRIVER)" in \
-		pycubrid) url_scheme="cubrid+pycubrid" ;; \
-		cubriddb) url_scheme="cubrid" ;; \
-		*) \
-			echo "INTEGRATION_DRIVER must be pycubrid or cubriddb (got '$(INTEGRATION_DRIVER)'); nothing was started." >&2; \
-			exit 2 ;; \
-	esac; \
-	project="$(INTEGRATION_PROJECT)"; \
-	if [ -n "$$project" ]; then \
-		case "$$project" in \
-			[abcdefghijklmnopqrstuvwxyz0123456789]*) project_ok=1 ;; \
-			*) project_ok= ;; \
-		esac; \
-		case "$$project" in *[!abcdefghijklmnopqrstuvwxyz0123456789_-]*) project_ok= ;; esac; \
-		if [ -z "$$project_ok" ]; then \
-			echo "INTEGRATION_PROJECT must match ^[a-z0-9][a-z0-9_-]*\$$ (got '$$project'); nothing was started." >&2; \
-			exit 2; \
-		fi; \
-	else \
-		project="sqlalchemy-cubrid-it-$$(date +%Y%m%d%H%M%S)-$$$$"; \
-	fi; \
-	probe_failed() { \
-		status=$$?; \
-		echo "Ownership check of Compose project '$$project' failed (status $$status); nothing was started." >&2; \
-		exit "$$status"; \
-	}; \
-	label="label=com.docker.compose.project=$$project"; \
-	existing_containers=$$(docker ps -aq --filter "$$label") || probe_failed; \
-	existing_volumes=$$(docker volume ls -q --filter "$$label") || probe_failed; \
-	existing_networks=$$(docker network ls -q --filter "$$label") || probe_failed; \
-	all_volumes=$$(docker volume ls -q) || probe_failed; \
-	existing_data_volume=$$(printf '%s\n' "$$all_volumes" | grep -Fx -e "$${project}_cubrid-data" -e "$${project}_cubrid-databases" || true); \
-	if [ -n "$$existing_containers$$existing_volumes$$existing_networks$$existing_data_volume" ]; then \
-		echo "Refusing to run: Compose project '$$project' already has containers, volumes or networks." >&2; \
-		echo "make integration only starts and removes a project it creates; nothing was started or removed." >&2; \
-		exit 1; \
-	fi; \
-	CUBRID_PORT="$(CUBRID_PORT)"; export CUBRID_PORT; \
-	exec 3<&0; \
-	child=; starting=; cleaning=; \
-	run() { "$$@" <&3 & child=$$!; status=0; wait "$$child" || status=$$?; child=; return "$$status"; }; \
-	stop_children() { \
-		if [ -n "$$child" ]; then \
-			if [ -n "$$starting" ]; then \
-				echo "Letting docker compose up finish (up to $(INTEGRATION_STOP_GRACE)s) so that cleanup sees everything it created" >&2; \
-				$(SIGNAL_AFTER) SIGTERM "$(INTEGRATION_STOP_GRACE)" "$$child" 2>/dev/null & timer=$$!; \
-			else \
-				kill -TERM "-$$child" 2>/dev/null || kill -TERM "$$child" 2>/dev/null || true; \
-				$(SIGNAL_AFTER) SIGKILL "$(INTEGRATION_STOP_GRACE)" "$$child" 2>/dev/null & timer=$$!; \
-			fi; \
-			wait "$$child" 2>/dev/null || true; \
-			kill -KILL "$$timer" 2>/dev/null || true; \
-			wait "$$timer" 2>/dev/null || true; \
-			$(WAIT_GROUP) "$(INTEGRATION_STOP_GRACE)" "$$child"; \
-		fi; \
-		for pid in $$(jobs -p); do \
-			kill -TERM "-$$pid" 2>/dev/null || kill -TERM "$$pid" 2>/dev/null || true; \
-		done; \
-	}; \
-	cleanup() { \
-		original_status=$$1; \
-		if [ -n "$$cleaning" ]; then return 0; fi; \
-		cleaning=1; \
-		trap '' INT TERM HUP; \
-		trap - 0; \
-		stop_children; \
-		if $(RUN_DETACHED) docker compose -p "$$project" down -v; then \
-			cleanup_status=0; \
-		else \
-			cleanup_status=$$?; \
-			echo "Docker cleanup of Compose project '$$project' failed (status $$cleanup_status)" >&2; \
-		fi; \
-		if [ "$$original_status" -ne 0 ]; then exit "$$original_status"; fi; \
-		exit "$$cleanup_status"; \
-	}; \
-	trap 'cleanup $$?' 0; \
-	trap 'echo "Received SIGINT; cleaning up" >&2; cleanup 130' INT; \
-	trap 'echo "Received SIGTERM; cleaning up" >&2; cleanup 143' TERM; \
-	trap 'echo "Received SIGHUP; cleaning up" >&2; cleanup 129' HUP; \
-	echo "Using run-owned Compose project '$$project' on host port $$CUBRID_PORT (driver: $(INTEGRATION_DRIVER))"; \
-	starting=1; \
-	run $(RUN_IN_NEW_GROUP) docker compose -p "$$project" up -d; \
-	starting=; \
-	CUBRID_TEST_URL="$$url_scheme://dba@localhost:$$CUBRID_PORT/testdb"; export CUBRID_TEST_URL; \
-	echo "Waiting for CUBRID to be ready (up to $(INTEGRATION_READY_TIMEOUT)s)..."; \
-	run $(WAIT_FOR_CUBRID); \
-	run $(PYTEST) $(TESTS)/ -m integration -v
+	@exec $(PYTHON) scripts/run_integration.py \
+		--driver="$(INTEGRATION_DRIVER)" \
+		--port="$(CUBRID_PORT)" \
+		--project="$(INTEGRATION_PROJECT)" \
+		--ready-timeout="$(INTEGRATION_READY_TIMEOUT)" \
+		--stop-grace="$(INTEGRATION_STOP_GRACE)" \
+		--wait="$(WAIT_FOR_CUBRID)" \
+		--test="$(PYTEST) $(TESTS)/ -m integration -v"
 
 integration-local: ## Run integration tests against an already-running CUBRID (set CUBRID_TEST_URL; no Docker)
 	@if [ -z "$$CUBRID_TEST_URL" ]; then \
@@ -220,6 +163,8 @@ docker-fix-db-host: ## Repair a running container's volume that registers testdb
 		echo "Saved the previous file as $$f.before-fix-db-host"; \
 		grep "^testdb[[:space:]]" "$$f"'
 
+##@ Maintenance
+
 changelog: ## Generate changelog with git-cliff
 	git-cliff --output CHANGELOG.md
 
@@ -230,15 +175,6 @@ clean: ## Remove build artifacts and caches
 
 clean-all: clean ## Remove all artifacts including .mypy_cache and .tox
 	rm -rf .mypy_cache/ .tox/ htmlcov/
-
-doctor: ## Check development environment
-	@echo "Checking development environment..."
-	@python3 --version || echo "ERROR: python3 not found"
-	@$(RUFF) --version || echo "ERROR: ruff not found"
-	@$(MYPY) --version || echo "ERROR: mypy not found"
-	@$(BANDIT) --version || echo "ERROR: bandit not found"
-	@pre-commit --version || echo "ERROR: pre-commit not found"
-	@echo "All checks passed!"
 
 release-check: ## Read-only release consistency gate (run by release-please.yml and publish-pypi.yml). Usage: make release-check VERSION=x.y.z
 	@if [ -z "$(VERSION)" ]; then echo "Usage: make release-check VERSION=x.y.z"; exit 1; fi

@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **`make test` now runs every offline test, and `make lint` no longer checks formatting
+  (#1009).** `make test` is the former `make test-offline` (fast and repository-tooling
+  tests); the former fast lane is `make test-fast`. `make lint` is `ruff check` only; run
+  `make format-check` (or `make check`) for the formatting check. `make check` is now the
+  complete non-test quality gate (lint, format-check, typecheck, security,
+  check-docs-reason), so local scripts that ran `make check-all` or `make test-offline`
+  keep working through the aliases below.
+
+### Changed
+
+- **Makefile targets have one meaning each, and `make integration` runs a script
+  (#1009)** — the `integration` recipe was about 90 lines of shell with four embedded
+  Python one-liners (`RUN_DETACHED`, `RUN_IN_NEW_GROUP`, `SIGNAL_AFTER`, `WAIT_GROUP`).
+  It is now one call to `scripts/run_integration.py`, which owns driver and project
+  validation, the ownership check, startup, readiness, signal handling, cleanup and the
+  exit status with the same guarantees; `test/test_make_integration.py` drives it through
+  `make` under sh and bash as before. A `docker compose up -d` group that ignores SIGTERM
+  after the grace period is now killed after another `INTEGRATION_STOP_GRACE` seconds
+  instead of blocking cleanup. New targets: `test-fast`, `format-check` and `verify`
+  (`check` + `test`, no Docker). `make doctor` exits non-zero, without its success line,
+  when Python is older than 3.11, a tool is missing or broken, or the Ruff/Mypy pins
+  drift. `make format` also runs `check-tool-versions`, every tool variable can be
+  overridden (`?=`) and runs through `$(PYTHON) -m <tool>`, and `make help` groups the
+  targets by purpose. CI lint and `tox -e lint` run `make lint` and `make format-check`.
+
+### Deprecated
+
+- **`make check-all` (#1009)** — an alias of `make check` that prints a deprecation
+  notice on stderr; it will be removed after the next minor release. `make test-offline`
+  remains an alias of `make test`.
+
 ## [1.11.3] - 2026-10-21
 
 ### Upgrade notes

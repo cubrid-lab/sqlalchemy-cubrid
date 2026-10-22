@@ -193,8 +193,11 @@ def check(root: Path) -> list[str]:
     lint_job = _unique(r"^  lint:\n(.*?)(?=^  [\w-]+:|\Z)", workflow, "CI lint job")
     if not re.search(r"^\s*run: make lint\s*$", lint_job, re.MULTILINE):
         errors.append("CI lint must call the shared Makefile lint target")
-    if tox.get("testenv:lint", "commands").strip() != "make lint PYTHON={envpython}":
-        errors.append("tox lint must call the shared Makefile lint target")
+    # `make lint` is `ruff check` only; formatting is the separate format-check (#1009).
+    if not re.search(r"^\s*run: make format-check\s*$", lint_job, re.MULTILINE):
+        errors.append("CI lint must call the shared Makefile format-check target")
+    if tox.get("testenv:lint", "commands").strip() != "make lint format-check PYTHON={envpython}":
+        errors.append("tox lint must call the shared Makefile lint and format-check targets")
     if "--ignore=test/test_suite.py" not in shlex.split(tox.get("testenv:integration", "commands")):
         errors.append(
             "tox integration must exclude the formal suite that requires explicit --dburi"

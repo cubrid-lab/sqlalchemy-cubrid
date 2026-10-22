@@ -1,0 +1,181 @@
+"""Makefile target semantics (#1009).
+
+``make test`` is the complete offline suite, ``make check`` the complete non-test
+quality gate, ``make verify`` both without Docker, and only ``make format``
+modifies files. Most checks use ``make -n`` (print, do not run); the ``doctor`` and
+``check-all`` checks run the targets with every tool replaced by ``true`` or
+``false``, so nothing is installed, linted or modified.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+
+import pytest
+import yaml
+
+ROOT = Path(__file__).resolve().parents[1]
+MAKEFILE = (ROOT / "Makefile").read_text(encoding="utf-8")
+TOOLS = ("PYTEST", "RUFF", "MYPY", "BANDIT", "PRE_COMMIT")
+
+
+def _make(*args: str) -> subprocess.CompletedProcess[str]:
+    make = shutil.which("make")
+    if make is None:
+        pytest.skip("make is required for Makefile regression tests")
+    env = os.environ.copy()
+    # Do not inherit outer make state or tool overrides.
+    for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "PYTHON", *TOOLS):
+        env.pop(key, None)
+    return subprocess.run(
+        [make, "--no-print-directory", *args],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+
+
+def _dry_run(*targets: str) -> list[str]:
+    result = _make("-n", *targets)
+    assert result.returncode == 0, result.stderr
+    return result.stdout.splitlines()
+
+
+def _prerequisites(target: str) -> list[str]:
+    match = re.search(rf"^{re.escape(target)}:([^#\n]*)", MAKEFILE, re.M)
+    assert match, f"target {target!r} not found in Makefile"
+    return match.group(1).split()
+
+
+def test_tool_variables_are_overridable_and_use_the_interpreter():
+    assert re.search(r"^PYTHON \?= python3$", MAKEFILE, re.M)
+    for name, module in zip(TOOLS, ("pytest", "ruff", "mypy", "bandit", "pre_commit"), strict=True):
+        assert re.search(rf"^{name} \?= \$\(PYTHON\) -m {module}$", MAKEFILE, re.M), name
+    # No tool is looked up on PATH or bound with a plain `=`.
+    assert not re.search(r"^(PYTHON|PYTEST|RUFF|MYPY|BANDIT|PRE_COMMIT) = ", MAKEFILE, re.M)
+
+
+def test_integration_helpers_moved_out_of_the_makefile():
+    for name in ("RUN_DETACHED", "RUN_IN_NEW_GROUP", "SIGNAL_AFTER", "WAIT_GROUP"):
+        assert name not in MAKEFILE
+    recipe = re.search(r"^integration:.*\n((?:\t.*\n)+)", MAKEFILE, re.M)
+    assert recipe
+    # One command (continuation lines included): the runner, exec'd by the shell.
+    assert recipe.group(1).startswith("\t@exec $(PYTHON) scripts/run_integration.py ")
+    assert recipe.group(1).count("\n") == recipe.group(1).count("\\\n") + 1
+    for option in ("driver", "port", "project", "ready-timeout", "stop-grace", "wait", "test"):
+        assert f"--{option}=" in recipe.group(1)
+
+
+@pytest.mark.parametrize("target", ["lint", "format-check"])
+def test_lint_and_format_check_never_modify_files(target):
+    lines = _dry_run(target, "LINT_PATHS=x.py")
+    assert lines[0] == "python3 scripts/check_tool_versions.py"
+    expected = {
+        "lint": "python3 -m ruff check x.py",
+        "format-check": "python3 -m ruff format --check x.py",
+    }
+    assert lines[1:] == [expected[target]]
+
+
+def test_format_is_the_mutating_target_and_checks_tool_versions():
+    assert _dry_run("format", "LINT_PATHS=x.py") == [
+        "python3 scripts/check_tool_versions.py",
+        "python3 -m ruff check --fix x.py",
+        "python3 -m ruff format x.py",
+    ]
+
+
+def test_check_is_the_complete_non_test_quality_gate():
+    assert _prerequisites("check") == [
+        "lint",
+        "format-check",
+        "typecheck",
+        "security",
+        "check-docs-reason",
+    ]
+    lines = _dry_run("check")
+    assert not any("pytest" in line or "docker" in line for line in lines)
+
+
+def test_verify_is_check_and_test_without_docker():
+    assert _prerequisites("verify") == ["check", "test"]
+    lines = _dry_run("verify")
+    assert not any("docker" in line or "run_integration" in line for line in lines)
+    assert any('-m "not integration"' in line for line in lines)
+
+
+@pytest.mark.parametrize("target", ["clean", "clean-all"])
+def test_clean_never_removes_docker_or_cubrid_data(target):
+    lines = _dry_run(target)
+    assert lines
+    assert not any("docker" in line or "cubrid" in line.lower() for line in lines)
+
+
+def test_check_all_is_a_deprecated_alias_of_check():
+    assert _prerequisites("check-all") == ["check"]
+    stubs = [f"{name}=true" for name in ("PYTHON", *TOOLS)]
+    result = _make("check-all", *stubs)
+    assert result.returncode == 0, result.stderr
+    assert "'make check-all' is deprecated" in result.stderr
+    assert "deprecated" not in result.stdout
+
+
+def test_doctor_passes_when_every_tool_answers():
+    result = _make("doctor", *(f"{name}=true" for name in ("PYTHON", *TOOLS)))
+    assert result.returncode == 0, result.stderr
+    assert "All checks passed!" in result.stdout
+
+
+@pytest.mark.parametrize("broken", ["PYTHON", *TOOLS])
+def test_doctor_fails_closed_for_a_missing_or_invalid_tool(broken):
+    stubs = [f"{name}={'false' if name == broken else 'true'}" for name in ("PYTHON", *TOOLS)]
+    result = _make("doctor", *stubs)
+    assert result.returncode != 0
+    assert "All checks passed!" not in result.stdout + result.stderr
+    assert "ERROR: required tooling is missing or invalid" in result.stderr
+
+
+def test_doctor_fails_for_a_tool_that_is_not_installed():
+    result = _make("doctor", "RUFF=/nonexistent/ruff")
+    assert result.returncode != 0
+    assert "All checks passed!" not in result.stdout + result.stderr
+
+
+def test_help_groups_targets_by_purpose():
+    result = _make("help")
+    assert result.returncode == 0, result.stderr
+    text = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout)
+    sections = re.findall(r"^(\S.*)$", text, re.M)
+    assert sections == [
+        "Setup",
+        "Quality (static checks; only format modifies files)",
+        "Tests (offline; no Docker, no database)",
+        "Integration (Docker)",
+        "Maintenance",
+    ]
+    documented = re.findall(r"^([a-zA-Z_-]+):.*?## ", MAKEFILE, re.M)
+    listed = re.findall(r"^  (\S+)\s", text, re.M)
+    assert listed == documented
+
+
+def test_ci_calls_only_canonical_targets():
+    # Deprecated aliases are kept for contributors, never for CI (#1009).
+    targets = set(re.findall(r"^([a-zA-Z_-]+):", MAKEFILE, re.M))
+    deprecated = {"check-all", "test-offline"}
+    calls = []
+    for workflow in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        for job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].values():
+            for step in job.get("steps", []):
+                calls += re.findall(
+                    r"(?:^\s*|[;&|]\s*)make ([a-z][a-z-]*)", step.get("run", ""), re.M
+                )
+    assert calls
+    assert set(calls) <= targets - deprecated

@@ -126,6 +126,7 @@ jobs:
               - 'test/test_docs_provenance_hook.py'
               - 'test/test_docs_reason.py'
               - 'test/test_make_integration.py'
+              - 'test/test_makefile_targets.py'
               - 'test/test_reflection_probe.py'
               - 'test/test_reflection_probe_shape.py'
               - 'test/test_release_detect.py'
@@ -234,6 +235,8 @@ jobs:
           uv pip freeze --system
       - name: Lint maintained Python sources
         run: make lint
+      - name: Check formatting of maintained Python sources
+        run: make format-check
       - name: Lint CHANGELOG structure
         run: python scripts/lint_changelog.py
       - name: Korean documents keep the structure of their English source
@@ -342,9 +345,9 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # Repository-tooling tests (#594): the Makefile `integration` recipe with its
-  # sh/bash signal handling, and the repo scripts, all through subprocesses.
-  # They are kept out of the fast offline lane (`make test`) but stay required
+  # Repository-tooling tests (#594): the Makefile targets, `make integration` and
+  # its runner's signal handling, and the repo scripts, all through subprocesses.
+  # They are kept out of the fast offline lane (`make test-fast`) but stay required
   # here on every PR and push, on every supported Python (matrix-result fails
   # unless this job succeeds). Same selection as `make test-repo`.
   repo-tests:

@@ -1,8 +1,10 @@
 """Exercise Docker ownership and failure propagation without starting Docker.
 
-Every command the ``integration`` recipe runs (``docker``, the readiness wait
-and the pytest command) is a logging stub on ``PATH``, so no container, volume or
-network is ever created or removed.
+``make integration`` runs ``scripts/run_integration.py`` (#1009). Every command
+that runner starts (``docker``, the readiness wait and the pytest command) is a
+logging stub on ``PATH``, so no container, volume or network is ever created or
+removed. The tests drive the real Makefile target, so they cover the recipe's
+variable pass-through as well as the runner.
 """
 
 from __future__ import annotations
@@ -40,7 +42,12 @@ def integration_runner(request, tmp_path: Path):
         if bash is None:
             pytest.skip("bash is not installed")
         shell_override = [f"SHELL={bash}"]
-    shutil.copyfile(Path(__file__).resolve().parents[1] / "Makefile", tmp_path / "Makefile")
+    root = Path(__file__).resolve().parents[1]
+    shutil.copyfile(root / "Makefile", tmp_path / "Makefile")
+    (tmp_path / "scripts").mkdir()
+    shutil.copyfile(
+        root / "scripts" / "run_integration.py", tmp_path / "scripts" / "run_integration.py"
+    )
     log = tmp_path / "commands.log"
     stub = (
         f"#!{sys.executable}\n"
@@ -210,8 +217,17 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
         shell_pid, stub_pid = map(int, ready.read_text(encoding="utf-8").split())
         return shell_pid, stub_pid
 
-    def start(*block_phases: str, extra_env: dict[str, str] | None = None, **kwargs):
-        """Start make in its own process group; stubs block at ``block_phases``."""
+    def start(
+        *block_phases: str,
+        extra_env: dict[str, str] | None = None,
+        ignore_sigint: bool = False,
+        **kwargs,
+    ):
+        """Start make in its own process group; stubs block at ``block_phases``.
+
+        ``ignore_sigint`` starts make with SIGINT ignored, as a background job of
+        a non-interactive shell is.
+        """
         env_overrides = {"BLOCK_PHASES": ",".join(block_phases), **(extra_env or {})}
         command, env = command_and_env(extra_env=env_overrides, **kwargs)
         process = subprocess.Popen(
@@ -222,6 +238,9 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
             stderr=subprocess.PIPE,
             text=True,
             start_new_session=True,
+            preexec_fn=(lambda: signal.signal(signal.SIGINT, signal.SIG_IGN))
+            if ignore_sigint
+            else None,
         )
         shell_pid, stub_pid = wait_ready(block_phases[0], process)
         return process, shell_pid, stub_pid
@@ -639,6 +658,63 @@ def test_integration_lets_startup_finish_before_cleanup(integration_runner, sign
     assert commands.index("UP finished") < commands.index(DOWN)
     assert _lifecycle(commands).count(DOWN) == 1
     assert WAIT not in commands
+    assert not _alive(stub_pid)
+
+
+def test_integration_cleans_up_when_a_step_cannot_start(integration_runner):
+    # Like `set -e` on a shell's "command not found", the run fails with 127 and
+    # still removes what it started.
+    result, commands = integration_runner(make_vars=("WAIT_FOR_CUBRID=/nonexistent/wait",))
+    assert "Error 127" in result.stderr
+    assert _lifecycle(commands) == [UP, DOWN]
+
+
+def test_integration_recipe_runs_the_runner_as_its_only_process(integration_runner):
+    # The recipe execs scripts/run_integration.py, so no shell sits between make
+    # and the runner: make's forwarded SIGTERM reaches the process that cleans up.
+    process, runner_pid, _ = integration_runner.start("TEST", extra_env={"TEST_BLOCK_SECONDS": "1"})
+    args = subprocess.run(
+        ["ps", "-o", "ppid=,args=", "-p", str(runner_pid)],
+        capture_output=True,
+        text=True,
+        check=False,
+    ).stdout.split()
+    returncode, stderr = _finish(process)
+    assert returncode == 0, stderr
+    assert args, "runner exited before ps could inspect it"
+    assert int(args[0]) == process.pid
+    assert "scripts/run_integration.py" in args
+
+
+def test_integration_keeps_a_signal_ignored_at_entry_ignored(integration_runner):
+    # Like a shell trap, the runner cannot handle a signal that was already
+    # ignored when make started; the run continues and cleans up normally.
+    process, runner_pid, _ = integration_runner.start(
+        "TEST", extra_env={"TEST_BLOCK_SECONDS": "1"}, ignore_sigint=True
+    )
+    os.kill(runner_pid, signal.SIGINT)
+    returncode, stderr = _finish(process)
+    assert returncode == 0, stderr
+    assert "Received SIGINT" not in stderr
+    commands = integration_runner.commands()
+    assert "TEST finished" in commands
+    assert _lifecycle(commands).count(DOWN) == 1
+
+
+def test_integration_kills_a_startup_group_that_ignores_sigterm(integration_runner):
+    # After the grace period, a `docker compose up -d` group that ignores SIGTERM
+    # gets SIGKILL another grace period later, so cleanup cannot hang on it.
+    process, runner_pid, stub_pid = integration_runner.start(
+        "UP",
+        extra_env={"IGNORE_TERM_PHASE": "UP"},
+        make_vars=("INTEGRATION_STOP_GRACE=1",),
+    )
+    started = time.monotonic()
+    os.kill(runner_pid, signal.SIGTERM)
+    returncode, stderr = _finish(process)
+    assert time.monotonic() - started < 10
+    assert "Error 143" in stderr, stderr
+    assert _lifecycle(integration_runner.commands()) == [UP, DOWN]
     assert not _alive(stub_pid)
 
 

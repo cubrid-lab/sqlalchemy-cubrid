@@ -49,14 +49,15 @@ _probe_error: str | None = None
 #: Repository-tooling test modules (#594): they exercise the Makefile, its
 #: signal handling and repository scripts through subprocesses, not the
 #: dialect, and dominate the offline run's wall-clock time. Every test they
-#: collect gets the ``repo`` marker, so ``make test`` (``-m "not integration
-#: and not repo"``) skips them and ``make test-repo`` (``-m repo``) and the
-#: required ``repo-tests`` CI job run them. The list lives here rather than in
+#: collect gets the ``repo`` marker, so ``make test-fast`` (``-m "not
+#: integration and not repo"``) skips them and ``make test-repo`` (``-m repo``),
+#: ``make test`` and the required ``repo-tests`` CI job run them. The list lives here rather than in
 #: a ``pytestmark`` because ``test_release_detect.py`` is kept identical
 #: across repositories.
 REPO_TOOLING_MODULES = frozenset(
     {
         "test_make_integration.py",
+        "test_makefile_targets.py",
         "test_docs_reason.py",
         "test_release_detect.py",
         "test_check_docs_translation.py",
