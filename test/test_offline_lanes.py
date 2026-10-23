@@ -7,11 +7,12 @@
 
 """The fast offline lane and the repository-tooling lane cover every offline test (#594).
 
-``make test`` deselects the ``repo`` marker that ``test/conftest.py`` applies
-to ``REPO_TOOLING_MODULES``. These checks keep that split from silently
-dropping tests: the fast selections exclude ``repo``, the repository-tooling
-selections are ``-m repo``, and the ``repo-tests`` CI job runs and is required
-when repository tooling changes (``docs/CI_POLICY.md``).
+``make test-fast`` deselects the ``repo`` marker that ``test/conftest.py``
+applies to ``REPO_TOOLING_MODULES``; ``make test`` (and its alias
+``make test-offline``) runs both lanes (#1009). These checks keep that split
+from silently dropping tests: the fast selections exclude ``repo``, the
+repository-tooling selections are ``-m repo``, and the ``repo-tests`` CI job
+runs and is required when repository tooling changes (``docs/CI_POLICY.md``).
 """
 
 from __future__ import annotations
@@ -51,10 +52,15 @@ def test_repo_tooling_modules_exist_and_are_test_modules():
 
 @pytest.mark.parametrize(
     ("target", "selection"),
-    [("test", FAST), ("test-repo", "-m repo"), ("test-offline", '-m "not integration"')],
+    [("test", '-m "not integration"'), ("test-fast", FAST), ("test-repo", "-m repo")],
 )
 def test_make_targets_select_their_lane(target, selection):
     assert selection in _make_recipe(target)
+
+
+def test_test_offline_is_an_alias_of_test():
+    text = (ROOT / "Makefile").read_text(encoding="utf-8")
+    assert re.search(r"^test-offline: test ##[^\n]*\n(?!\t)", text, re.M)
 
 
 def test_tox_runs_both_lanes():

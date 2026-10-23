@@ -58,17 +58,21 @@ pre-commit install
 대부분의 테스트는 CUBRID 인스턴스 없이 실행됩니다:
 
 ```bash
-# 빠른 오프라인 테스트 실행 (반복 작업 중에 쓰는 명령)
+# 모든 오프라인 테스트 실행: 빠른 테스트와 저장소 도구 테스트
 make test
 
-# 저장소 도구 테스트 실행 (Makefile 레시피, 시그널 처리, 저장소 스크립트)
+# 빠른 오프라인 테스트만 실행 (반복 작업 중에 쓰는 명령)
+make test-fast
+
+# 저장소 도구 테스트만 실행 (Makefile 타깃, 시그널 처리, 저장소 스크립트)
 make test-repo
 
-# 모든 오프라인 테스트 실행 (위 두 가지 모두)
-make test-offline
+# 테스트를 제외한 전체 품질 게이트 실행: 린트, 포맷 검사, strict 타입 검사,
+# 보안 검사와 docs-reason 검사
+make check
 
-# 공유 린트, strict 타입 검사와 보안 검사 실행
-make check-all
+# make check 후 make test 실행 (Docker 없음)
+make verify
 
 # 특정 테스트 파일 실행
 pytest test/test_compiler.py -v
@@ -77,7 +81,8 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
-`make test`는 `-m "not integration and not repo"`를 선택합니다. `repo` 마커는
+`make test`는 `-m "not integration"`을 선택하고(`make test-offline`은 호환성을 위해 남긴
+별칭입니다), `make test-fast`는 `-m "not integration and not repo"`를 선택합니다. `repo` 마커는
 `test/conftest.py`가 `REPO_TOOLING_MODULES`에 나열된 모듈
 (`test_make_integration.py`, `test_docs_reason.py`, `test_release_detect.py`)의
 모든 테스트에 적용합니다. 이 테스트들은 Makefile과 저장소 스크립트를 서브프로세스로
@@ -186,16 +191,25 @@ docker compose down -v
 ### 검사 실행
 
 ```bash
-# 동기화된 도구 설정과 유지 관리하는 모든 Python 소스 경로 검사
+# 동기화된 도구 설정 확인과 유지 관리하는 모든 Python 소스 경로 린트
 make lint
 
-# 같은 공유 경로에 수정과 포맷 적용
+# 같은 공유 경로의 포맷 검사 (파일을 수정하지 않음)
+make format-check
+
+# 같은 공유 경로에 수정과 포맷 적용 (파일을 수정하는 유일한 타깃)
 make format
 
-# strict 타입 검사, 또는 린트 + 타입 검사 + 보안 검사를 함께 실행
+# strict 타입 검사, 또는 테스트를 제외한 전체 품질 게이트 실행
 make typecheck
-make check-all
+make check
+
+# 필요한 도구가 고정된 버전으로 설치되어 있는지 확인
+make doctor
 ```
+
+`make check-all`은 한 마이너 릴리스 동안 `make check`의 폐기 예정 별칭으로 계속
+동작하며 stderr에 폐기 예정 안내를 출력합니다.
 
 ### Pre-commit 훅
 
@@ -223,13 +237,12 @@ pre-commit run --all-files
 
 3. **오프라인 테스트 스위트를 실행하고** 모든 테스트가 통과하는지 확인하세요:
    ```bash
-   make test
-   make test-repo   # Makefile, scripts/ 또는 해당 테스트를 변경한 경우
+   make test        # 저장소 도구 테스트를 포함한 모든 오프라인 테스트
    ```
 
-4. **공유 린트, 타입, 보안 검사를 실행하세요**:
+4. **공유 린트, 포맷, 타입, 보안, docs-reason 검사를 실행하세요**:
    ```bash
-   make check-all
+   make check
    ```
 
 5. 변경이 데이터베이스 상호작용에 영향을 주면 **통합 테스트를 실행하세요**:

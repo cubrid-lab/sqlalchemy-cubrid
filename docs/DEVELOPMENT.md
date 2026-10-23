@@ -143,15 +143,20 @@ graph TD
 All common development tasks are available via `make`:
 
 ```bash
-make help          # Show all available targets
+make help          # Show all available targets, grouped by purpose
 make install       # Install in dev mode with all dependencies
-make lint          # Run ruff linter + format checks
+make doctor        # Fail unless the required tools are installed at their pinned versions
+make lint          # Run the ruff linter (never modifies files)
+make format-check  # Check ruff formatting (never modifies files)
 make check-tool-versions # Verify local/CI tool pins and type-check cells agree
 make typecheck     # Report versions and run strict mypy
-make format        # Auto-fix lint issues and format code
-make test          # Run the fast offline tests with coverage (95% threshold)
+make security      # Run bandit
+make check         # Complete non-test quality gate (lint, format-check, typecheck, security, check-docs-reason)
+make format        # Auto-fix lint issues and format code (the only mutating target)
+make test          # Run every offline test (fast + repository-tooling) with coverage (95% threshold)
+make test-fast     # Run only the fast offline tests with coverage
 make test-repo     # Run the repository-tooling tests (Makefile, signal handling, repo scripts)
-make test-offline  # Run every offline test (fast + repository-tooling) with coverage
+make verify        # make check, then make test (no Docker)
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID Docker container
@@ -453,7 +458,14 @@ the check itself fails (for example, the Docker daemon is unreachable), it print
 passes does it register cleanup, so `docker compose -p <project> down -v` only
 removes resources that this run created.
 
-Cleanup runs on shell exit, including after failed startup, readiness waiting or
+The recipe is a single call to `scripts/run_integration.py`, which owns this
+lifecycle: driver and project validation, the ownership check, startup, readiness,
+signal handling, cleanup and the exit status (#1009). The Make target passes
+`INTEGRATION_DRIVER`, `CUBRID_PORT`, `INTEGRATION_PROJECT`,
+`INTEGRATION_READY_TIMEOUT`, `INTEGRATION_STOP_GRACE`, `WAIT_FOR_CUBRID` and
+`PYTEST` through to it.
+
+Cleanup runs when the runner exits, including after failed startup, readiness waiting or
 tests, and when the run receives `SIGINT` (Ctrl-C), `SIGTERM` (for example from
 `timeout` or `kill`) or `SIGHUP` (a closed terminal):
 
@@ -463,8 +475,9 @@ tests, and when the run receives `SIGINT` (Ctrl-C), `SIGTERM` (for example from
   stopping `up -d` halfway could leave a container, and a re-created volume, that
   `down -v` had already missed. `up -d` runs in its own process group, so a
   terminal Ctrl-C does not reach it. If it is still running after the grace period,
-  its group, including the Compose plugin process, is sent `SIGTERM`, and cleanup
-  waits for the whole group to exit.
+  its group, including the Compose plugin process, is sent `SIGTERM` (and `SIGKILL`
+  if it is still running another `INTEGRATION_STOP_GRACE` seconds later), and
+  cleanup waits for the whole group to exit.
 - Any other running step (the readiness wait or pytest) is sent `SIGTERM` at once
   and killed if it is still running `INTEGRATION_STOP_GRACE` seconds later.
 - Cleanup runs once, and the command exits with 128 + the signal number (130, 143
@@ -475,7 +488,7 @@ tests, and when the run receives `SIGINT` (Ctrl-C), `SIGTERM` (for example from
   `timeout` does) interrupts or repeats it. If `down -v` itself hangs, `SIGQUIT`
   (`Ctrl-\`) stops `make` without waiting for it.
 - A signal that was already ignored when `make` started, such as `SIGINT` for a
-  background job of a non-interactive shell, cannot be handled.
+  background job of a non-interactive shell, stays ignored and cannot be handled.
 
 The original failure is preserved if cleanup also fails; cleanup failure after
 passing tests also makes the command fail. Cleanup errors are reported
@@ -582,7 +595,7 @@ A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty
 `else` arm in type normalization) that cannot trigger through SQLAlchemy's
 public API and so never execute under the offline suite. Their exact line
 numbers shift as the modules change; run `pytest test/ -m "not integration and
-not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test`)
+not repo" --cov=sqlalchemy_cubrid --cov-report=term-missing` (or `make test-fast`)
 and check the `Missing` column for the current set instead of a pinned list
 here.
 
@@ -605,8 +618,10 @@ formatting.
 ### Running Checks
 
 ```bash
-# Check tooling consistency and lint/format all maintained Python sources
+# Check tooling consistency, then lint and check the formatting of all
+# maintained Python sources (neither modifies files)
 make lint
+make format-check
 
 # Apply fixes and formatting over the same shared source paths
 make format
@@ -632,7 +647,7 @@ and hooks on Python sources rather than rewriting documentation snippets.
 
 The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
 demos, samples and `docs/source` Python configuration. CI and tox invoke
-`make lint`; the hooks keep checking all tracked Python/pyi files. The drift
+`make lint` and `make format-check`; the hooks keep checking all tracked Python/pyi files. The drift
 checker rejects omitted maintained directories or a runner that bypasses this
 shared target.
 
@@ -871,7 +886,7 @@ shipped the fixes it covered (pycubrid#390, #395, #430, #431).
 Documentation exceptions use a populated standalone physical source line
 `Docs: not needed - <reason>` outside code, quotes or template comments, or the existing maintainer-managed
 label. `make check-docs-reason` runs executable doctests and real event-JSON/workflow
-regressions; `make check-all` and the docs-sync job run those same checks.
+regressions; `make check` and the docs-sync job run those same checks.
 Translation help requests do not authorize a bypass: maintainers explicitly
 approve the existing `translations-deferred` label and record follow-up. The
 Korean-required and other-language advisory translation checks are unchanged.

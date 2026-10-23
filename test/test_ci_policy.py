@@ -358,7 +358,7 @@ def test_live_smoke_is_folded_into_make_integration() -> None:
         if "python -m scripts.check_not_all_skipped make-integration.log" in s.get("run", "")
     ]
     assert len(guard) == 1
-    assert "run $(PYTEST) $(TESTS)/ -m integration -v" in (ROOT / "Makefile").read_text()
+    assert '--test="$(PYTEST) $(TESTS)/ -m integration -v"' in (ROOT / "Makefile").read_text()
     for name in ("test_integration.py", "test_regression.py"):
         text = (ROOT / "test" / name).read_text()
         assert re.search(r"^pytestmark = pytest\.mark\.integration$", text, re.M), name

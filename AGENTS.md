@@ -31,7 +31,7 @@ owns supported versions and driver status.
 | Reflection and types | [Dialect guide](docs/agents/dialect.md), [Architecture guide](docs/agents/architecture.md), [docs/TYPES.md](docs/TYPES.md) | `make test`, `make check`, `make integration` |
 | Alembic migrations | [Dialect guide](docs/agents/dialect.md) (transactional DDL), [Architecture guide](docs/agents/architecture.md), [docs/ALEMBIC.md](docs/ALEMBIC.md) | `make test`, `make check`, `make integration` |
 | pycubrid drivers and async | [Architecture guide](docs/agents/architecture.md), [docs/CONNECTION.md](docs/CONNECTION.md), [docs/DRIVER_COMPAT.md](docs/DRIVER_COMPAT.md), [docs/SA_COMPAT.md](docs/SA_COMPAT.md) | `make test`, `make check`, `make integration` |
-| Tests and CI workflows | [Testing and CI guide](docs/agents/testing-ci.md), [docs/CI_POLICY.md](docs/CI_POLICY.md), [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | `make test-offline`, `make check-all` |
+| Tests and CI workflows | [Testing and CI guide](docs/agents/testing-ci.md), [docs/CI_POLICY.md](docs/CI_POLICY.md), [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) | `make verify` |
 | Documentation and support claims | [Documentation guide](docs/agents/documentation.md), [Documentation definition of done](#documentation-definition-of-done), [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md) | `python scripts/check_support_claims.py`, `python scripts/generate_llms_full.py`, `python scripts/check_docs_links.py`, `python scripts/check_agents_docs.py` |
 | Release | [Release Process](#release-process), [GitHub Release Policy](#github-release-policy), [RELEASING.md](RELEASING.md) | `make release-check VERSION=x.y.z` (read-only; never release by hand) |
 | Performance and roadmap | [Performance guide](docs/agents/performance.md), [docs/PERFORMANCE.md](docs/PERFORMANCE.md) | the measurement steps in docs/PERFORMANCE.md |
@@ -49,13 +49,16 @@ make install          # pip install -e . --group dev (PEP 735 groups, pip >= 25.
 ### Key Commands
 
 ```bash
-make test             # Fast offline tests with 95% coverage threshold (-m "not integration and not repo")
+make doctor           # Fail unless the required tools are installed at their pinned versions
+make test             # Every offline test (fast + repo) with 95% coverage threshold (-m "not integration")
+make test-fast        # Fast offline tests only (-m "not integration and not repo")
 make test-repo        # Repository-tooling tests (Makefile, signal handling, repo scripts; -m repo)
-make test-offline     # Every offline test (fast + repo) with coverage
-make lint             # ruff check + format
-make format           # Auto-fix lint/format
+make lint             # ruff check (never modifies files)
+make format-check     # ruff format --check (never modifies files)
+make format           # Auto-fix lint/format (the only mutating target)
 make typecheck        # mypy
-make check            # lint + typecheck
+make check            # lint + format-check + typecheck + security + check-docs-reason
+make verify           # check + test (no Docker)
 make integration      # Run-owned Docker project → integration tests → cleanup (INTEGRATION_DRIVER=pycubrid|cubriddb)
 make integration-local # Integration tests against an already-running CUBRID (set CUBRID_TEST_URL)
 make test-all         # tox (envlist in tox.ini)
@@ -64,7 +67,7 @@ make test-all         # tox (envlist in tox.ini)
 ### Test Commands (manual)
 
 ```bash
-# Offline (no DB needed) — this is the primary test command (same as `make test`)
+# Fast offline lane (no DB needed; same as `make test-fast`)
 pytest test/ -v -m "not integration and not repo" \
   --cov=sqlalchemy_cubrid --cov-report=term-missing --cov-fail-under=95
 
@@ -218,9 +221,25 @@ Issues and implementation acceptance are repository-local: file work in the
 repository whose code, workflow, or documentation must change. Each repository
 owns its scope, priority, assignee, validation, release decision and closure.
 Every issue must be understandable without opening another repository's issue.
-Cross-repository links are allowed as technical references (Refs owner/repo#N),
-but do not transfer work or require another repository to close its issue.
-For changes to several repositories, create independent local issues and PRs.
+When several repositories need changes, create a separate, self-contained issue
+and PR in each repository. Never use an issue here as an organization-wide
+tracker, a shared implementation contract or an approval gate for other projects.
+Link another repository's issue only when its concrete technical behavior is
+essential evidence for local reproduction or verification; do not cross-link
+implementation issues by default or inherit another repository's acceptance
+criteria, ownership or closure requirements.
+
+Before publishing or editing an issue, inspect its title and full body:
+- Describe this repository's problem, evidence, affected files and actual Make
+  targets, expected behavior and checkable completion criteria.
+- Exclude contest/judging, assessment, submission, presentation rehearsal,
+  evaluation-tag/SHA freezes and event-timed implementation gates. Commit or
+  release identifiers belong only where needed to reproduce technical behavior.
+- Do not invent `make spec-*` targets, assume a sibling project's commands apply
+  here or prescribe a universal command/report format without checking this
+  repository's Makefile and CI.
+- Search for duplicate issues and conflicting target semantics before posting;
+  reread the saved title/body and correct misplaced scope or references.
 Never use issue auto-closing keywords with another repository's issue; its
 maintainer controls closure. The existing required PR title check rejects
 direct foreign-repository closing references in the PR body, the PR title and
