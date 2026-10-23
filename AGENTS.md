@@ -161,9 +161,9 @@ PR's change against `main` is identical at both commits). Protected paths (the
 compiler's literal rendering, identifier quoting, dialect connect and
 `is_disconnect`, the Alembic implementation, every workflow, the release and
 lane-audit scripts, and the gate itself) need a maintainer's `APPROVED` review.
-A PR can publish a check with the same name, so the check is a reading aid and
-must not be made a required status check until it is posted from an identity a
-PR cannot impersonate (#929).
+A PR can publish a check with the same name, so this is an informational
+reading aid, not an authenticated merge gate. Keep it advisory and do not
+require it in branch protection (maintainer decision, 2026-10-23).
 
 **Human contributions** — follow the normal contributor/review process.
 This route is not a fallback for unnamed standalone agent tools, which use
