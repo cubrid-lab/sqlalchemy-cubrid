@@ -8186,8 +8186,9 @@ PRs run the same full offline selection (`-m "not integration and not repo"`) an
 95% coverage floor as pushes. The former three-file PR smoke ran in about 1 s
 locally against about 24 s for the full suite, too small a saving to justify
 letting offline regressions first fail on main (#742). Live integration on PRs
-stays representative: contributors must run the regression checks relevant to
-their change locally and record commands/results in the PR.
+stays representative: contributors are encouraged to run focused regression
+checks locally and document results or omissions. Required GitHub CI is the
+authoritative merge validation; focused local runs are not an extra gate.
 `make test-fast` runs this offline selection locally, and `make integration` remains
 available without changing its scope; `make test` also runs the repository-tooling
 tests (#1009).
