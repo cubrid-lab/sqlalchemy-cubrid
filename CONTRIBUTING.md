@@ -294,7 +294,7 @@ file and `workflow_call` inputs at that commit, update the related callers toget
 and validate through a PR. The pinned doc-lint job still downloads its configured
 main-based assets; pinning the caller does not freeze those assets.
 
-### Agent-review evidence gate (advisory only)
+### Agent-review evidence gate
 
 `agent-review` is optional **diagnostic information**, not a required check,
 a code approval or a condition of merging. The current script may still
