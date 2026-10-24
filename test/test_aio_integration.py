@@ -1340,6 +1340,20 @@ class TestAsyncTerminateLive872:
             with warnings.catch_warnings(record=True) as caught:
                 warnings.simplefilter("always")
 
+                # Open the DBAPI connection before the leak and return it to the
+                # pool, so leak() checks out an open connection. A connection
+                # opened inside leak() can outlive it: when the host's first
+                # address refuses (``localhost`` -> ``::1`` while the broker
+                # listens on 127.0.0.1 only, as make integration's Compose project
+                # does), asyncio's create_connection keeps that attempt's exception
+                # in a reference cycle, and the frame chain of that cycle keeps
+                # leak()'s frame and the connection alive until the cycle
+                # collector runs.
+                async with eng.connect() as warm:
+                    await warm.execute(sa.text("SELECT 1 FROM db_root"))
+                    pooled = (await warm.get_raw_connection()).driver_connection
+                del warm
+
                 async def leak() -> Any:
                     conn = await eng.connect()
                     await conn.execute(sa.text("SELECT 1 FROM db_root"))
@@ -1352,6 +1366,8 @@ class TestAsyncTerminateLive872:
                     driver = await leak()
                 finally:
                     gc.enable()
+                # leak() reused the pooled connection and opened no new one.
+                assert driver is pooled
                 self._assert_terminated(driver, caught, eng)
         finally:
             await eng.dispose()

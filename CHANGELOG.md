@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Tests
+
+- **The #872 live test of a garbage-collected async connection passes in `make integration`
+  again** — `TestAsyncTerminateLive872::test_garbage_collected_connection_is_terminated`
+  failed in every `make integration` lane after #1017 published the Compose broker on
+  `127.0.0.1` only, which stopped the 1.11.4 release matrix. On a host where `localhost`
+  resolves to `::1` first (GitHub runners), asyncio's `create_connection` keeps the refused
+  `::1` attempt's exception in a reference cycle, and the frames of that cycle kept the
+  test's connection alive until the cycle collector ran. The test now opens the pooled
+  connection before the leak and asserts that the leaked checkout reused it, so it still
+  requires the refcount-freed connection's socket to be terminated, with no ResourceWarning
+  and nothing checked out.
+
 ## [1.11.4] - 2026-10-24
 
 ### Upgrade notes
