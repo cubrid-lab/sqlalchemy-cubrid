@@ -75,7 +75,8 @@ pytest test/test_compiler.py -v
 pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
 ```
 
-`make test` selects `-m "not integration"` (`make test-offline` is an alias kept
+`make test` also writes `junit.xml`, `coverage.xml` and `summary.json` to the gitignored
+`test-results/test/` (see [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md)). It selects `-m "not integration"` (`make test-offline` is an alias kept
 for compatibility); `make test-fast` selects `-m "not integration and not repo"`. The `repo` marker is
 applied by `test/conftest.py` to every test in the modules listed in
 `REPO_TOOLING_MODULES` (`test_make_integration.py`, `test_docs_reason.py`,

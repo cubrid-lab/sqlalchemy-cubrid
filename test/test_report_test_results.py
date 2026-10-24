@@ -1,0 +1,174 @@
+# test/test_report_test_results.py
+# Copyright (C) 2021-2026 by sqlalchemy-cubrid authors and contributors
+# <see AUTHORS file>
+#
+# This module is part of sqlalchemy-cubrid and is released under
+# the MIT License: http://www.opensource.org/licenses/mit-license.php
+
+"""Offline tests for ``scripts/report_test_results.py`` (#1019)."""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+from scripts import report_test_results as mod
+
+JUNIT_HEAD = '<?xml version="1.0"?><testsuites><testsuite name="pytest">'
+JUNIT_TAIL = "</testsuite></testsuites>"
+
+PASSING = '<testcase classname="t" name="a"/><testcase classname="t" name="b"/>'
+SKIPPED = '<testcase classname="t" name="s"><skipped type="pytest.skip" message="x"/></testcase>'
+XFAILED = '<testcase classname="t" name="x"><skipped type="pytest.xfail" message="r"/></testcase>'
+XPASSED = (
+    '<testcase classname="t" name="xp"><failure message="[XPASS(strict)] r">t</failure></testcase>'
+)
+FAILED = '<testcase classname="t" name="f"><failure message="assert 0">t</failure></testcase>'
+ERRORED = '<testcase classname="t" name="e"><error message="boom">t</error></testcase>'
+
+
+def _junit(tmp_path: Path, *cases: str) -> Path:
+    path = tmp_path / "junit.xml"
+    path.write_text(JUNIT_HEAD + "".join(cases) + JUNIT_TAIL, encoding="utf-8")
+    return path
+
+
+def _coverage(tmp_path: Path, rate: float) -> Path:
+    path = tmp_path / "coverage.xml"
+    path.write_text(f'<?xml version="1.0"?><coverage line-rate="{rate}"/>', encoding="utf-8")
+    return path
+
+
+def _summary(tmp_path: Path, junit: Path | None, coverage: Path | None, exit_code: int = 0):
+    return mod.build_summary(
+        lane="test",
+        junit=junit or tmp_path / "missing-junit.xml",
+        coverage=coverage,
+        threshold=95,
+        pytest_exit=exit_code,
+    )
+
+
+def test_parse_junit_counts_every_outcome(tmp_path):
+    path = _junit(tmp_path, PASSING, SKIPPED, XFAILED, XPASSED, FAILED, ERRORED)
+    assert mod.parse_junit(path) == {
+        "selected": 7,
+        "passed": 2,
+        "failed": 1,
+        "errors": 1,
+        "skipped": 1,
+        "xfailed": 1,
+        "xpassed": 1,
+    }
+
+
+def test_pass_with_skips(tmp_path):
+    summary = _summary(tmp_path, _junit(tmp_path, PASSING, SKIPPED), _coverage(tmp_path, 0.9712))
+    assert summary["status"] == "PASS"
+    assert summary["schema_version"] == 1
+    assert summary["counts"]["skipped"] == 1
+    assert summary["coverage"] == {"percent": 97.12, "threshold": 95, "threshold_met": True}
+    assert summary["problems"] == []
+
+
+@pytest.mark.parametrize("bad", [FAILED, ERRORED, XPASSED])
+def test_failing_tests_are_fail_even_if_pytest_exit_is_zero(tmp_path, bad):
+    summary = _summary(tmp_path, _junit(tmp_path, PASSING, bad), _coverage(tmp_path, 0.99))
+    assert summary["status"] == "FAIL"
+
+
+def test_nonzero_pytest_exit_is_fail(tmp_path):
+    summary = _summary(tmp_path, _junit(tmp_path, PASSING), _coverage(tmp_path, 0.99), 1)
+    assert summary["status"] == "FAIL"
+
+
+def test_nonzero_pytest_exit_without_files_is_fail(tmp_path):
+    summary = _summary(tmp_path, None, None, 2)
+    assert summary["status"] == "FAIL"
+    assert summary["counts"] is None
+    assert summary["problems"]
+
+
+def test_coverage_below_threshold_is_fail(tmp_path):
+    summary = _summary(tmp_path, _junit(tmp_path, PASSING), _coverage(tmp_path, 0.9499))
+    assert summary["status"] == "FAIL"
+    assert summary["coverage"]["threshold_met"] is False
+
+
+def test_missing_junit_is_incomplete(tmp_path):
+    summary = _summary(tmp_path, None, _coverage(tmp_path, 0.99))
+    assert summary["status"] == "INCOMPLETE"
+    assert "JUnit" in summary["problems"][0]
+
+
+def test_malformed_junit_is_incomplete(tmp_path):
+    path = tmp_path / "junit.xml"
+    path.write_text("<testsuite", encoding="utf-8")
+    assert _summary(tmp_path, path, _coverage(tmp_path, 0.99))["status"] == "INCOMPLETE"
+
+
+def test_missing_coverage_is_incomplete(tmp_path):
+    summary = _summary(tmp_path, _junit(tmp_path, PASSING), tmp_path / "nope.xml")
+    assert summary["status"] == "INCOMPLETE"
+    assert summary["coverage"]["percent"] is None
+    assert "coverage" in summary["problems"][0]
+
+
+def test_zero_test_cases_is_incomplete(tmp_path):
+    summary = _summary(tmp_path, _junit(tmp_path), _coverage(tmp_path, 0.99))
+    assert summary["status"] == "INCOMPLETE"
+
+
+def test_coverage_is_optional_for_other_lanes(tmp_path):
+    summary = mod.build_summary(
+        lane="live",
+        junit=_junit(tmp_path, PASSING),
+        coverage=None,
+        threshold=None,
+        pytest_exit=0,
+    )
+    assert summary["status"] == "PASS"
+    assert summary["coverage"] == {"percent": None, "threshold": None, "threshold_met": None}
+    assert "coverage" not in mod.format_line(summary)
+
+
+def test_main_writes_summary_and_prints_a_matching_line(tmp_path, capsys):
+    out = tmp_path / "out" / "summary.json"
+    code = mod.main(
+        [
+            "--lane", "test",
+            "--junit", str(_junit(tmp_path, PASSING, SKIPPED, XFAILED)),
+            "--coverage", str(_coverage(tmp_path, 0.96)),
+            "--threshold", "95",
+            "--pytest-exit", "0",
+            "--output", str(out),
+        ]
+    )  # fmt: skip
+    assert code == 0
+    data = json.loads(out.read_text(encoding="utf-8"))
+    line = capsys.readouterr().out
+    assert data["status"] == "PASS"
+    assert line.startswith(
+        "test: PASS; 4 selected, 2 passed, 0 failed, 0 errors, 1 skipped, 1 xfailed"
+    )
+    assert "coverage 96.00% (threshold 95% met)" in line
+    assert str(out) in line
+
+
+def test_main_exits_nonzero_and_records_fail(tmp_path, capsys):
+    out = tmp_path / "summary.json"
+    code = mod.main(
+        [
+            "--lane", "test",
+            "--junit", str(_junit(tmp_path, PASSING, FAILED)),
+            "--coverage", str(_coverage(tmp_path, 0.99)),
+            "--threshold", "95",
+            "--pytest-exit", "1",
+            "--output", str(out),
+        ]
+    )  # fmt: skip
+    assert code == 1
+    assert json.loads(out.read_text(encoding="utf-8"))["status"] == "FAIL"
+    assert "test: FAIL" in capsys.readouterr().out

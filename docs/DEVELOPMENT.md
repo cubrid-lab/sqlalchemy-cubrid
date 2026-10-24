@@ -163,7 +163,7 @@ make docker-up     # Start CUBRID (broker on 127.0.0.1, port CUBRID_TEST_PORT, e
 make docker-down   # Stop and remove the CUBRID container; keeps its data volumes
 make docker-clean  # Stop CUBRID and delete its data volumes (removes all test data)
 make docker-fix-db-host # Repair a volume created before CUBRID_DB_HOST was set (keeps the data)
-make clean         # Remove build artifacts and caches
+make clean         # Remove build artifacts, caches and test-results/
 ```
 
 ---
@@ -592,6 +592,24 @@ pytest test/ -v \
 # Or via make
 make test
 ```
+
+`make test` also writes machine-readable results (#1019), replacing the previous
+contents of the directory on every run:
+
+| File | Content |
+|---|---|
+| `test-results/test/junit.xml` | pytest `--junitxml` report |
+| `test-results/test/coverage.xml` | Cobertura coverage report |
+| `test-results/test/summary.json` | `schema_version`, `status` (`PASS`, `FAIL` or `INCOMPLETE`), `counts` (selected, passed, failed, errors, skipped, xfailed, xpassed), `coverage` (percent, threshold, threshold_met) and `problems` |
+
+The last console line repeats the summary, e.g. `test: PASS; 3012 selected, ... ;
+coverage 96.10% (threshold 95% met) -> test-results/test/summary.json`. `status` is
+`FAIL` when pytest exits non-zero, a test fails or errors, or coverage is below 95%,
+and the target then exits non-zero; it is `INCOMPLETE` when pytest exits 0 but the
+JUnit or coverage file is missing or empty. A non-strict `xpass` is a plain pass in
+JUnit and counts as `passed`. The directory is gitignored and removed by
+`make clean`. The files are written by `scripts/report_test_results.py`, which takes
+the lane name and file paths as arguments so another lane can reuse it.
 
 ### Known Unreachable Lines
 

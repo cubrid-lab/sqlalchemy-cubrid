@@ -28,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when it is not given, `make docker-up` leaves the port to Compose (a `.env` value, or 33000).
   `make integration` still creates and removes its own run-owned project.
 
+### Added
+
+- **`make test` writes machine-readable results under `test-results/test/` (#1019)** —
+  `junit.xml` (pytest `--junitxml`), `coverage.xml` and `summary.json` (schema version,
+  `PASS`/`FAIL`/`INCOMPLETE` status, selected/passed/failed/errors/skipped/xfailed/xpassed
+  counts and the coverage percentage against the 95% threshold), written by the reusable
+  `scripts/report_test_results.py`. The last console line repeats the summary, a failing
+  suite still exits non-zero with `status: FAIL`, `test-results/` is gitignored and
+  `make clean` removes it. Test selection and the coverage floor are unchanged.
+
 ### Changed
 
 - **Makefile targets have one meaning each, and `make integration` runs a script

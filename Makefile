@@ -112,12 +112,26 @@ verify: check test ## Run check, then the complete offline suite (no Docker)
 # Offline test lanes (#594). `repo` marks repository-tooling tests (Makefile
 # recipes, signal handling, repo scripts; see REPO_TOOLING_MODULES in
 # test/conftest.py). CI runs the fast and repository-tooling lanes as required jobs.
-test: ## Run every offline test (fast + repository-tooling) with coverage
+# `make test` writes test-results/test/{junit.xml,coverage.xml,summary.json} (#1019).
+# pytest's own status is kept, the helper turns the files into summary.json and the
+# final console line, and the recipe fails when either one failed.
+TEST_RESULTS = test-results/test
+test: ## Run every offline test (fast + repository-tooling) with coverage; writes test-results/test/
+	rm -rf $(TEST_RESULTS)
+	mkdir -p $(TEST_RESULTS)
+	@status=0; \
 	$(PYTEST) $(TESTS)/ -v \
 		-m "not integration" \
+		--junitxml=$(TEST_RESULTS)/junit.xml \
 		--cov=$(SRC) \
 		--cov-report=term-missing \
-		--cov-fail-under=95
+		--cov-report=xml:$(TEST_RESULTS)/coverage.xml \
+		--cov-fail-under=95 || status=$$?; \
+	$(PYTHON) -m scripts.report_test_results --lane test \
+		--junit $(TEST_RESULTS)/junit.xml --coverage $(TEST_RESULTS)/coverage.xml \
+		--threshold 95 --pytest-exit $$status --output $(TEST_RESULTS)/summary.json \
+		|| { [ $$status -ne 0 ] && exit $$status || exit 1; }; \
+	exit $$status
 
 test-offline: test ## Alias of test
 
@@ -188,7 +202,7 @@ changelog: ## Generate changelog with git-cliff
 	git-cliff --output CHANGELOG.md
 
 clean: ## Remove build artifacts and caches
-	rm -rf build/ dist/ *.egg-info .pytest_cache/ .coverage .ruff_cache/ __pycache__/
+	rm -rf build/ dist/ *.egg-info .pytest_cache/ .coverage .ruff_cache/ __pycache__/ test-results/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
 	find . -type f -name '*.pyc' -delete 2>/dev/null || true
 

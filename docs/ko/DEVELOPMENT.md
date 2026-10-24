@@ -164,7 +164,7 @@ make docker-up     # CUBRID 시작 (브로커는 127.0.0.1, 포트 CUBRID_TEST_P
 make docker-down   # CUBRID 컨테이너 중지 및 제거 (데이터 볼륨 유지)
 make docker-clean  # CUBRID 중지 및 데이터 볼륨 삭제 (테스트 데이터가 모두 삭제됨)
 make docker-fix-db-host # CUBRID_DB_HOST 설정 전에 만든 볼륨 복구 (데이터 유지)
-make clean         # 빌드 산출물과 캐시 제거
+make clean         # 빌드 산출물, 캐시, test-results/ 제거
 ```
 
 ---
@@ -575,6 +575,24 @@ pytest test/ -v \
 # 또는 make로
 make test
 ```
+
+`make test`는 기계가 읽을 수 있는 결과도 기록합니다(#1019). 실행할 때마다 디렉터리의
+이전 내용을 교체합니다.
+
+| 파일 | 내용 |
+|---|---|
+| `test-results/test/junit.xml` | pytest `--junitxml` 보고서 |
+| `test-results/test/coverage.xml` | Cobertura 커버리지 보고서 |
+| `test-results/test/summary.json` | `schema_version`, `status`(`PASS`, `FAIL`, `INCOMPLETE`), `counts`(selected, passed, failed, errors, skipped, xfailed, xpassed), `coverage`(percent, threshold, threshold_met), `problems` |
+
+콘솔의 마지막 줄이 같은 요약을 출력합니다(예: `test: PASS; 3012 selected, ... ;
+coverage 96.10% (threshold 95% met) -> test-results/test/summary.json`). pytest가 0이
+아닌 값으로 종료하거나, 테스트가 실패/오류이거나, 커버리지가 95% 미만이면 `status`는
+`FAIL`이고 타깃도 0이 아닌 값으로 종료합니다. pytest가 0으로 종료했지만 JUnit 또는
+커버리지 파일이 없거나 비어 있으면 `INCOMPLETE`입니다. strict가 아닌 `xpass`는 JUnit에서
+일반 통과이므로 `passed`로 집계됩니다. 이 디렉터리는 gitignore 대상이며
+`make clean`이 제거합니다. 파일은 `scripts/report_test_results.py`가 작성하며, 레인 이름과
+파일 경로를 인자로 받으므로 다른 레인에서도 재사용할 수 있습니다.
 
 ### 알려진 도달 불가능 라인
 

@@ -10,6 +10,7 @@ modifies files. ``make docker-down`` keeps the local test data and only
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 import re
@@ -238,3 +239,32 @@ def test_ci_calls_only_canonical_targets():
                 )
     assert calls
     assert set(calls) <= targets - deprecated
+
+
+def test_test_writes_junit_coverage_and_summary_under_test_results():
+    # #1019: one pytest run keeps its selection and the 95% floor and reports to
+    # test-results/test/, then the helper writes summary.json and sets the status.
+    text = "\n".join(_dry_run("test"))
+    assert '-m "not integration"' in text
+    assert "--cov-fail-under=95" in text
+    assert "--junitxml=test-results/test/junit.xml" in text
+    assert "--cov-report=xml:test-results/test/coverage.xml" in text
+    assert "-m scripts.report_test_results" in text
+    assert "--output test-results/test/summary.json" in text
+    assert text.count("-m pytest") == 1
+
+
+def test_test_results_are_gitignored_and_removed_by_clean():
+    assert "test-results/" in (ROOT / ".gitignore").read_text().splitlines()
+    assert "test-results/" in " ".join(_dry_run("clean"))
+
+
+def test_test_keeps_pytest_failure_status_and_records_fail(tmp_path):
+    # Stub pytest as a failing command that writes no files: the recipe must still
+    # report (INCOMPLETE data -> FAIL because pytest failed) and exit non-zero.
+    result = _make("test", "PYTEST=false", f"TEST_RESULTS={tmp_path / 'r'}")
+    assert result.returncode != 0
+    summary = json.loads((tmp_path / "r" / "summary.json").read_text())
+    assert summary["status"] == "FAIL"
+    assert summary["pytest_exit_code"] == 1
+    assert "test: FAIL" in result.stdout
