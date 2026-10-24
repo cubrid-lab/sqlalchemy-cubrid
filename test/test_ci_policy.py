@@ -714,3 +714,13 @@ def test_release_repeats_the_ci_endpoint_cell_steps(name: str) -> None:
         for c in json.loads(match["other"])["include"]
     ]
     assert sorted(full_step["if"].split(" || ")) == sorted(cells)
+
+
+def test_upstream_canary_created_issue_enters_triage() -> None:
+    """GITHUB_TOKEN issue creation cannot rely on the issue-opened workflow."""
+    report = workflow("upstream-canary.yml")["jobs"]["report"]
+    command = next(step["run"] for step in report["steps"] if "gh issue create" in step.get("run", ""))
+    normalized = " ".join(command.replace("\\\n", " ").split())
+    created = normalized.split("gh issue create", 1)[1].splitlines()[0]
+    for label in ('--label ci', '--label "priority: medium"', '--label "size: S"', '--label "status: needs triage"'):
+        assert label in created
