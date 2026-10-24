@@ -1,4 +1,4 @@
-"""Check issue metadata without making contributors manage GitHub labels."""
+"""Check label/title structure; only a maintainer can complete issue triage."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ _TYPE_LABELS = frozenset(
 _PRIORITIES = frozenset(
     {"priority: critical", "priority: high", "priority: medium", "priority: low"}
 )
-_SIZES = frozenset({"size: XS", "size: S", "size: M", "size: L", "size: XL"})
+_SIZES = frozenset({"size: small", "size: medium", "size: large"})
 
 
 def _title_is_valid(title: str) -> bool:
