@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.4] - 2026-10-24
+
 ### Upgrade notes
 
 - **`make test` now runs every offline test, and `make lint` no longer checks formatting
@@ -82,6 +84,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. `mkdocs.yml` now registers the `mermaid` SuperFences custom fence, so the documentation site renders the Mermaid diagrams on every page (they were shown as code listings before). Documentation only; no behavior change.
 
+* **agents:** require repository-local issue authoring checks ([#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012)) ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
+* **architecture:** show Broker, CAS and CCI in the end-to-end driver communication flow ([#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1016)) ([f8a9aa5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f8a9aa5d133835ce60455725259756550d50be64))
+* **contributing:** fix single-test pytest node example ([c04a380](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c04a380f4b9a512fa8ecb892324fe6b59fde31b7)), refs [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881)
+* enforce repository-local issue drafting ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
+* **triage:** clarify PR overlap and execution precedence ([1d082cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1d082ccccb2010b2ab6db474eaeca770431a6b7e)), refs [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023)
+
 ### CI
 
 - **CI publishes the offline test summary and uploads results on success and failure
@@ -97,6 +105,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pytest-logs-make-integration-*` artifact; nothing else in the workflows changes.
 
 - **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged.
+
+* **release:** verify against the current cookbook and restart after the abandoned 1.11.3 ([#1007](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1007)) ([72bf7be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/72bf7be9fa0ab27454401b21972a080edd796d13))
 
 ## [1.11.3] - 2026-10-21
 
