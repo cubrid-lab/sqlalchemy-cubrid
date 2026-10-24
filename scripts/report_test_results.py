@@ -51,6 +51,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import re
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -194,6 +195,21 @@ def _version(*names: str) -> str | None:
     return None
 
 
+# Credential assignments (NAME=value, quoted or not) and authenticated URLs.
+_ASSIGNMENT = re.compile(
+    r"""(\b\w*(?:PASSWORD|PASSWD|PWD|TOKEN|SECRET|CREDENTIAL|API_?KEY)\w*=)"""
+    r"""("[^"]*"|'[^']*'|\S*)""",
+    re.IGNORECASE,
+)
+_URL_PASSWORD = re.compile(r"(\b[A-Za-z][\w+.-]*://[^\s:/@]*:)[^\s@]*(@)")
+
+
+def redact(text: str) -> str:
+    """Mask credential assignments and URL passwords in *text* with ``***``."""
+    text = _ASSIGNMENT.sub(r"\1***", text)
+    return _URL_PASSWORD.sub(r"\1***\2", text)
+
+
 def build_environment(
     *, lane: str, command: str, cubrid_version: str, driver: str
 ) -> dict[str, object]:
@@ -201,7 +217,7 @@ def build_environment(
     return {
         "schema_version": SCHEMA_VERSION,
         "lane": lane,
-        "command": command,
+        "command": redact(command),
         "python": platform.python_version(),
         "platform": platform.platform(),
         "sqlalchemy": _version("SQLAlchemy"),

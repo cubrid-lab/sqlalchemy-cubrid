@@ -47,7 +47,9 @@ ignored when the run starts stays ignored, as it would for a shell trap.
 from __future__ import annotations
 
 import argparse
+import html
 import importlib.util
+import json
 import os
 import re
 import shlex
@@ -55,6 +57,7 @@ import signal
 import subprocess
 import sys
 import time
+import urllib.parse
 from collections.abc import Sequence
 from pathlib import Path
 from types import FrameType, ModuleType
@@ -69,6 +72,8 @@ ROOT = Path(__file__).resolve().parent.parent
 # Files a run writes into --results-dir besides the pytest JUnit file.
 RESULT_FILES = ("junit.xml", "summary.json", "environment.json", "service.log")
 LOG_TIMEOUT = 60.0
+# Environment variables that may carry a database URL with a password.
+URL_VARIABLES = ("CUBRID_TEST_URL", "CUBRID_TEST_AURL", "CUBRID_URL")
 
 
 class Interrupted(Exception):
@@ -258,7 +263,61 @@ def _cleanup(project: str, env: dict[str, str]) -> int:
     return status
 
 
-def _report(args: argparse.Namespace, status: int, reason: str = "") -> int:
+def _secrets() -> list[str]:
+    """The configured secrets (CUBRID_PASSWORD, URL passwords) in every written form."""
+    raw = [os.environ.get("CUBRID_PASSWORD", "")]
+    for name in URL_VARIABLES:
+        try:
+            raw.append(urllib.parse.urlsplit(os.environ.get(name, "")).password or "")
+        except ValueError:
+            continue
+    forms: set[str] = set()
+    for secret in filter(None, raw):
+        for form in (secret, urllib.parse.unquote(secret), urllib.parse.quote(secret, safe="")):
+            forms.add(form)
+            forms.add(html.escape(form))
+            forms.add(html.escape(form, quote=False))
+    return sorted(filter(None, forms), key=len, reverse=True)
+
+
+def _sanitize_results(args: argparse.Namespace) -> None:
+    """Replace the configured secrets in junit.xml and service.log with ``***``."""
+    secrets = _secrets()
+    if not args.results_dir or not secrets:
+        return
+    for name in ("junit.xml", "service.log"):
+        path = ROOT / args.results_dir / name
+        try:
+            data = path.read_bytes()
+            for secret in secrets:
+                data = data.replace(secret.encode(), b"***")
+            path.write_bytes(data)
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            _err(f"WARNING: could not sanitize {path}: {exc}")
+            path.unlink(missing_ok=True)
+
+
+def _cubrid_version(project: str, env: dict[str, str]) -> str:
+    """The CUBRID image tag Compose resolves (exported env, then .env, then the default)."""
+    command = ["docker", "compose", "-p", project, "config", "--format", "json"]
+    try:
+        completed = subprocess.run(  # nosec B603 B607 - fixed docker compose argv
+            command, env=env, stdout=subprocess.PIPE, text=True, timeout=LOG_TIMEOUT, check=False
+        )
+        image = json.loads(completed.stdout)["services"]["cubrid"]["image"]
+        tag = image.rsplit("/", 1)[-1].partition(":")[2]
+        if completed.returncode == 0 and tag:
+            return tag
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+        pass
+    return os.environ.get("CUBRID_VERSION") or "unknown"
+
+
+def _report(
+    args: argparse.Namespace, status: int, reason: str = "", cubrid_version: str = ""
+) -> int:
     """Write environment.json and summary.json; return 0 unless the summary is not PASS.
 
     A reporting failure only warns and returns 0, so it never changes the exit status.
@@ -278,7 +337,7 @@ def _report(args: argparse.Namespace, status: int, reason: str = "") -> int:
                 "environment",
                 "--lane", "integration",
                 "--command", args.command,
-                "--cubrid-version", os.environ.get("CUBRID_VERSION") or "11.2",
+                "--cubrid-version", cubrid_version or os.environ.get("CUBRID_VERSION") or "unknown",
                 "--driver", args.driver if args.driver in URL_SCHEMES else "unknown",
                 "--output", str(results / "environment.json"),
             ]
@@ -404,6 +463,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     _clear_results(args)
     env = {**os.environ, "CUBRID_TEST_PORT": args.port}
+    cubrid_version = _cubrid_version(project, env)
     # Cleanup is registered only now, after the ownership check passed.
     for signum in HANDLED_SIGNALS:
         if signal.getsignal(signum) is not signal.SIG_IGN:
@@ -433,9 +493,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         finally:
             # The log is best effort; teardown is guaranteed.
             cleanup_status = _cleanup(project, env)
+        if cleanup_status and not status:
+            # Tests passed but teardown failed: collect from whatever remains.
+            _save_service_log(args, project, env)
+        _sanitize_results(args)
         # Last, so the summary carries the final status, cleanup included.
         reason = "docker cleanup failed" if cleanup_status and not status else ""
-        summary_status = _report(args, status or cleanup_status, reason)
+        summary_status = _report(args, status or cleanup_status, reason, cubrid_version)
     # A zero exit with a summary that is not PASS (INCOMPLETE) still fails the run.
     return status or cleanup_status or summary_status
 

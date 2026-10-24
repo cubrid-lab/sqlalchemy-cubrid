@@ -619,7 +619,7 @@ CI는 `make test`를 실행하지 않습니다. 오프라인 레인(`ci.yml`의 
 |---|---|
 | `junit.xml` | `-m integration` 전체 세션의 pytest `--junitxml` 보고서 |
 | `summary.json` | `make test`와 같은 스키마(`status`, `counts`, `problems`, `pytest_exit_code`)에 `executed`(통과, 실패, 오류, xfail, xpass한 테스트가 있었는지) 추가 |
-| `environment.json` | `command`, `python`, `platform`, `sqlalchemy`, `sqlalchemy_cubrid`, `driver`(이름, 버전), `cubrid_version`(`CUBRID_VERSION`, 기본값 11.2). URL, 비밀번호, 그 밖의 환경 변수는 기록하지 않음 |
+| `environment.json` | `command`, `python`, `platform`, `sqlalchemy`, `sqlalchemy_cubrid`, `driver`(이름, 버전), `cubrid_version`(Compose가 결정한 이미지 태그: 내보낸 `CUBRID_VERSION`, `.env`, 기본값 순). `command`의 자격 증명 대입과 URL 비밀번호는 마스킹하며 URL이나 다른 환경 변수는 기록하지 않음 |
 | `service.log` | CUBRID 컨테이너 로그. 실패한 실행에서만(최선 노력) |
 
 `scripts/run_integration.py`가 실행이 끝난 뒤 `scripts/report_test_results.py`(`make test`의
@@ -629,8 +629,10 @@ CI는 `make test`를 실행하지 않습니다. 오프라인 레인(`ci.yml`의 
 pytest가 0으로 끝났지만 JUnit 파일이 없거나 선택된 테스트가 모두 건너뛰어졌다면 `INCOMPLETE`이며
 실행은 1로 종료합니다. 이전 파일은 실행이 Compose 프로젝트를 소유한 뒤에야 교체합니다. 그 전에
 거부된 실행(잘못된 `INTEGRATION_DRIVER`/`INTEGRATION_PROJECT`, 실패하거나 양성인 소유권 점검)은
-오래된 `PASS` 대신 사유를 적은 `FAIL` 요약을 남깁니다. `service.log` 저장은 정리를 건너뛰게 하지
-않습니다. 결과 디렉터리마다 한 번에 하나의 `make integration`만 실행하세요.
+오래된 `PASS` 대신 사유를 적은 `FAIL` 요약을 남깁니다. 요약을 쓰기 전에 `junit.xml`과 `service.log`에서
+`CUBRID_PASSWORD`와 `CUBRID_TEST_URL`, `CUBRID_TEST_AURL`, `CUBRID_URL`의 비밀번호(퍼센트 인코딩과
+XML 이스케이프 형태 포함)를 `***`로 바꿉니다. `service.log`는 정리만 실패한 경우에도 수집하며,
+저장이 정리를 건너뛰게 하지 않습니다. 결과 디렉터리마다 한 번에 하나의 `make integration`만 실행하세요.
 `make integration-local`은 Docker 수명 주기를 실행하지 않으며 결과도 기록하지 않습니다. 향후 라이브
 `make verify`는 각 레인을 `test-results/verify/` 아래 별도 `INTEGRATION_RESULTS` 디렉터리로
 실행하고 레인별 `summary.json`을 집계할 것으로 예상됩니다(없거나 `PASS`가 아닌 레인이 있으면

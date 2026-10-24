@@ -310,3 +310,28 @@ def test_environment_records_versions_and_no_credential(tmp_path, monkeypatch):
     assert document["driver"]["name"] == "pycubrid"
     assert document["sqlalchemy"]
     assert document["python"] and document["platform"]
+
+
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        ("CUBRID_PASSWORD=topsecret make integration", "CUBRID_PASSWORD=*** make integration"),
+        ("make integration API_TOKEN='a b' X=1", "make integration API_TOKEN=*** X=1"),
+        ('DB_SECRET="s s" make x', "DB_SECRET=*** make x"),
+        (
+            "make it CUBRID_TEST_URL=cubrid+pycubrid://dba:p%40ss@localhost/db",
+            "make it CUBRID_TEST_URL=cubrid+pycubrid://dba:***@localhost/db",
+        ),
+        (
+            "make integration INTEGRATION_DRIVER=pycubrid",
+            "make integration INTEGRATION_DRIVER=pycubrid",
+        ),
+    ],
+)
+def test_environment_redacts_credentials_in_the_command(tmp_path, command, expected):
+    output = tmp_path / "environment.json"
+    mod.main(
+        ["environment", "--lane", "l", "--command", command, "--cubrid-version", "11.2",
+         "--driver", "pycubrid", "--output", str(output)]
+    )  # fmt: skip
+    assert json.loads(output.read_text("utf-8"))["command"] == expected

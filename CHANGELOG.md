@@ -45,7 +45,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose JUnit file is missing or whose tests were all skipped is `INCOMPLETE` and exits 1;
   a run refused before it owns its Compose project leaves a `FAIL` summary instead of a
   stale `PASS`. `environment.json` holds Python, SQLAlchemy, driver and CUBRID versions,
-  platform and command, never credentials. `INTEGRATION_RESULTS` overrides the directory.
+  platform and command (credentials in the command are masked); the CUBRID version is the
+  image tag Compose resolves, and the configured passwords are replaced with `***` in
+  `junit.xml` and `service.log`. `INTEGRATION_RESULTS` overrides the directory.
 
 ### Changed
 

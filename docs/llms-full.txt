@@ -7940,7 +7940,7 @@ an open decision (#1018), and a `verify` directory would claim an aggregate that
 |---|---|
 | `junit.xml` | pytest `--junitxml` report of the whole `-m integration` session |
 | `summary.json` | the `make test` schema (`status`, `counts`, `problems`, `pytest_exit_code`) plus `executed` (did any test pass, fail, error, xfail or xpass) |
-| `environment.json` | `command`, `python`, `platform`, `sqlalchemy`, `sqlalchemy_cubrid`, `driver` (name, version), `cubrid_version` (`CUBRID_VERSION`, default 11.2); never a URL, password or other environment variable |
+| `environment.json` | `command`, `python`, `platform`, `sqlalchemy`, `sqlalchemy_cubrid`, `driver` (name, version), `cubrid_version` (the image tag Compose resolves: exported `CUBRID_VERSION`, then `.env`, then the default); credential assignments and URL passwords in `command` are masked, and no URL or other environment variable is recorded |
 | `service.log` | the CUBRID container log, after a failing run only (best effort) |
 
 `scripts/run_integration.py` writes them with `scripts/report_test_results.py` (the reporter of
@@ -7951,7 +7951,10 @@ fails after green tests; it is `INCOMPLETE` (and the run exits 1) when pytest ex
 JUnit file is missing or every selected test was skipped. The run replaces the previous
 files only once it owns its Compose project; a run refused before that (invalid
 `INTEGRATION_DRIVER` or `INTEGRATION_PROJECT`, a failed or positive ownership probe) leaves
-a `FAIL` summary that names the reason instead of a stale `PASS`. Saving `service.log`
+a `FAIL` summary that names the reason instead of a stale `PASS`. Before the summary is
+written, `CUBRID_PASSWORD` and the passwords of `CUBRID_TEST_URL`, `CUBRID_TEST_AURL` and
+`CUBRID_URL` (also percent-encoded and XML-escaped) are replaced with `***` in `junit.xml` and
+`service.log`. `service.log` is also collected after a cleanup-only failure, and saving it
 never skips the cleanup. Run one `make integration` per results directory at a time.
 `make integration-local` runs no Docker lifecycle and writes no results. A future live
 `make verify` is expected to run its lanes with their own `INTEGRATION_RESULTS` directories

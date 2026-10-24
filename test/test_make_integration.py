@@ -64,9 +64,21 @@ with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
 existing = set(filter(None, os.environ.get("EXISTING", "").split(",")))
 if name == "docker":
     if args[0] == "compose":
-        phase = "UP" if "up" in args else "LOGS" if "logs" in args else "DOWN"
+        phase = (
+            "UP" if "up" in args else "LOGS" if "logs" in args
+            else "CONFIG" if "config" in args else "DOWN"
+        )
         if phase == "LOGS":
-            print("cubrid service log line")
+            print("cubrid service log line " + os.environ.get("LOG_SECRET", ""))
+        if phase == "CONFIG":
+            # Like Compose: exported variable, then .env in the project directory, then 11.2.
+            tag = os.environ.get("CUBRID_VERSION", "")
+            dotenv = Path(".env")
+            if not tag and dotenv.exists():
+                for line in dotenv.read_text(encoding="utf-8").splitlines():
+                    if line.startswith("CUBRID_VERSION="):
+                        tag = line.split("=", 1)[1]
+            print('{"services": {"cubrid": {"image": "cubrid/cubrid:' + (tag or "11.2") + '"}}}')
     else:
         # Read-only ownership probes: docker ps / volume ls / network ls with a
         # project label filter, and an unfiltered volume listing for the name.
@@ -90,6 +102,9 @@ else:
     for arg in args:
         if arg.startswith("--junitxml=") and cases != "none":
             body = {
+                "fail": '<testcase classname="t" name="f"><failure message="'
+                + os.environ.get("JUNIT_MESSAGE", "")
+                + '">t</failure></testcase>',
                 "pass": '<testcase classname="t" name="a"/>',
                 "skip": '<testcase classname="t" name="s"><skipped type="pytest.skip" message="x"/></testcase>',
             }[cases]
@@ -281,6 +296,7 @@ def _lifecycle(commands: list[str]) -> list[str]:
         for command in commands
         if not command.startswith(("docker ps", "docker volume", "docker network"))
         and " logs " not in command
+        and " config " not in command
     ]
 
 
@@ -1066,3 +1082,50 @@ def test_integration_local_writes_no_results(integration_runner, tmp_path):
     result, _ = integration_runner("integration-local")
     assert result.returncode == 0, result.stderr
     assert not _results(tmp_path).exists()
+
+
+def test_integration_redacts_secrets_from_junit_and_service_log(integration_runner, tmp_path):
+    secret = "p@ss/w&rd<1>"
+    quoted = "p%40ss%2Fw%26rd%3C1%3E"
+    escaped = "p@ss/w&amp;rd&lt;1&gt;"
+    result, _ = integration_runner(
+        test=7,
+        extra_env={
+            "CUBRID_PASSWORD": secret,
+            "CUBRID_URL": f"cubrid+pycubrid://dba:{quoted}@localhost:33000/x",
+            "JUNIT_CASES": "fail",
+            "JUNIT_MESSAGE": f"login {escaped} failed with {quoted} and {secret}",
+            "LOG_SECRET": f"{secret} {quoted}",
+        },
+    )
+    assert result.returncode != 0
+    texts = [path.read_text("utf-8") for path in _results(tmp_path).iterdir()]
+    assert any("login ***" in text for text in texts)
+    assert any("cubrid service log line" in text for text in texts)
+    for text in texts:
+        for form in (secret, quoted, escaped, "w&rd"):
+            assert form not in text
+
+
+def test_integration_records_the_version_compose_resolves(integration_runner, tmp_path):
+    import json
+
+    (tmp_path / ".env").write_text("CUBRID_VERSION=10.2\n", encoding="utf-8")
+    result, _ = integration_runner()
+    assert result.returncode == 0, result.stderr
+    environment = json.loads((_results(tmp_path) / "environment.json").read_text("utf-8"))
+    assert environment["cubrid_version"] == "10.2"
+    # An exported variable wins over .env, as in Compose.
+    result, _ = integration_runner(extra_env={"CUBRID_VERSION": "11.4"})
+    environment = json.loads((_results(tmp_path) / "environment.json").read_text("utf-8"))
+    assert environment["cubrid_version"] == "11.4"
+
+
+def test_integration_collects_the_service_log_after_a_cleanup_only_failure(
+    integration_runner, tmp_path
+):
+    result, commands = integration_runner(down=9)
+    assert result.returncode != 0
+    assert any(" logs " in command for command in commands)
+    assert "cubrid service log line" in (_results(tmp_path) / "service.log").read_text("utf-8")
+    assert _summary(tmp_path)["status"] == "FAIL"
