@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.5] - 2026-10-24
+
+### CI
+
+* **release:** restart release preparation after the abandoned 1.11.4 ([#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037)) ([3184d9b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3184d9b462bae6e2dd50d187e33abf83f44e5775)), refs [#1011](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1011)
+
 ### Tests
 
 - **The #872 live test of a garbage-collected async connection passes in `make integration`
