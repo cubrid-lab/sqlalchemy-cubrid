@@ -611,6 +611,19 @@ JUnit and counts as `passed`. The directory is gitignored and removed by
 `make clean`. The files are written by `scripts/report_test_results.py`, which takes
 the lane name and file paths as arguments so another lane can reuse it.
 
+### CI results
+
+CI does not run `make test`; its offline lanes (`offline-tests` in `ci.yml` and the release
+copy `offline-endpoints` in `integration-full.yml`) run the same fast selection directly and
+write `test-results/offline/{junit.xml,coverage.xml,summary.json}` with the same helper. On
+every run, passing or failing, each lane appends the one-line summary to the job summary
+(`python -m scripts.report_test_results step-summary --summary test-results/offline/summary.json`)
+and uploads `test-results/` as the `test-results-offline-py<version>` artifact (7 days). The
+jobs that run integration tests (`integration-tests` and `make-integration` in `ci.yml`,
+`integration-full` and `make-integration` in `integration-full.yml`) upload the pytest logs they
+already write as `pytest-logs-*` artifacts, also on failure. A job summary and JUnit for the
+live lanes follow the live reporting work (#1020).
+
 ### Known Unreachable Lines
 
 A few lines in `compiler.py` and `dml.py` are defensive fallbacks (an empty

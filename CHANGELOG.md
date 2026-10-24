@@ -73,6 +73,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **CI publishes the offline test summary and uploads results on success and failure
+  (#1021)** — the `offline-tests` and `offline-endpoints` jobs write JUnit, coverage and
+  `summary.json` under `test-results/offline/` with `scripts/report_test_results.py`, append
+  the summary to the job summary through its new `step-summary` subcommand and upload
+  `test-results/`; the integration jobs upload their pytest logs. Every one of those steps
+  runs with `if: always()`, so a failing run keeps its evidence. Test selection, the 95%
+  coverage floor and the permissions are unchanged. The summary of the live lanes follows #1020.
+
 - **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged.
 
 ## [1.11.3] - 2026-10-21

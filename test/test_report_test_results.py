@@ -215,3 +215,47 @@ def test_threshold_without_coverage_is_incomplete(tmp_path, capsys):
     )
     assert code == 1
     assert "INCOMPLETE" in capsys.readouterr().out
+
+
+def _write_summary(tmp_path, pytest_exit=0, junit_cases=(PASSING,)):
+    out = tmp_path / "summary.json"
+    mod.main(
+        [
+            "--lane", "offline",
+            "--junit", str(_junit(tmp_path, *junit_cases)),
+            "--coverage", str(_coverage(tmp_path, 0.96)),
+            "--threshold", "95",
+            "--pytest-exit", str(pytest_exit),
+            "--output", str(out),
+        ]
+    )  # fmt: skip
+    return out
+
+
+def test_step_summary_renders_the_console_line_as_markdown(tmp_path, capsys):
+    out = _write_summary(tmp_path)
+    capsys.readouterr()
+    code = mod.main(["step-summary", "--summary", str(out), "--title", "Unit tests (Python 3.12)"])
+    assert code == 0
+    text = capsys.readouterr().out
+    summary = json.loads(out.read_text(encoding="utf-8"))
+    assert text == f"### Unit tests (Python 3.12)\n\n`{mod.format_line(summary)}`\n"
+    assert "offline: PASS" in text
+
+
+def test_step_summary_shows_a_failing_lane_and_still_exits_zero(tmp_path, capsys):
+    out = _write_summary(tmp_path, pytest_exit=1, junit_cases=(PASSING, FAILED))
+    capsys.readouterr()
+    assert mod.main(["step-summary", "--summary", str(out)]) == 0
+    text = capsys.readouterr().out
+    assert text.startswith("### Test results\n\n`offline: FAIL;")
+
+
+@pytest.mark.parametrize("content", [None, "not json", "[]", '{"lane": "x"}'])
+def test_step_summary_reports_a_missing_or_unreadable_summary(tmp_path, capsys, content):
+    path = tmp_path / "summary.json"
+    if content is not None:
+        path.write_text(content, encoding="utf-8")
+    assert mod.main(["step-summary", "--summary", str(path), "--title", "T"]) == 0
+    text = capsys.readouterr().out
+    assert text == f"### T\n\nNo readable `{path}` was written (the run stopped early).\n"

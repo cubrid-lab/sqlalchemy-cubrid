@@ -328,14 +328,40 @@ jobs:
       # Full offline suite on every event, PRs included (#742), so regressions
       # in reflection, DML, async and Alembic modules fail before merge.
       - name: Run offline tests with coverage
+        id: offline
         run: |
           python -m pytest \
             test/ \
             -m "not integration and not repo" \
             -v --tb=short \
+            --junitxml=test-results/offline/junit.xml \
             --cov=sqlalchemy_cubrid \
             --cov-report=term-missing \
+            --cov-report=xml:test-results/offline/coverage.xml \
             --cov-fail-under=95
+      # Also on failure (#1021): the summary and the JUnit/coverage files outlive a red run.
+      - name: Write test results summary
+        if: always()
+        env:
+          PYTEST_OUTCOME: ${{ steps.offline.outcome }}
+        run: |
+          status=1
+          [ "$PYTEST_OUTCOME" = success ] && status=0
+          python -m scripts.report_test_results --lane offline \
+            --junit test-results/offline/junit.xml \
+            --coverage test-results/offline/coverage.xml --threshold 95 \
+            --pytest-exit "$status" --output test-results/offline/summary.json
+      - name: Publish test results summary
+        if: always()
+        run: python -m scripts.report_test_results step-summary --summary test-results/offline/summary.json --title "Offline tests (Python ${{ matrix.python-version }})" >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-results-offline-py${{ matrix.python-version }}
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: warn
       - name: Upload coverage
         # Also on failure: a cell under the coverage floor keeps its evidence.
         if: always()
@@ -556,6 +582,15 @@ jobs:
           make integration INTEGRATION_DRIVER=pycubrid 2>&1 | tee make-integration.log
       - name: Guard against an all-skipped make integration run (#486)
         run: python -m scripts.check_not_all_skipped make-integration.log --label "make integration (pycubrid)"
+      - name: Upload pytest logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pytest-logs-make-integration-pycubrid-cubrid11.4
+          path: |
+            make-integration.log
+          retention-days: 7
+          if-no-files-found: warn
 
   integration-tests:
     # Starts with lint/type/offline (#744); matrix-result still requires all of them.
@@ -809,6 +844,19 @@ jobs:
           python -m pytest test/test_suite.py \
             --dburi="$CUBRID_TEST_URL" \
             -v --tb=short
+
+      - name: Upload pytest logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pytest-logs-integration-py${{ matrix.python-version }}-cubrid${{ matrix.cubrid-version }}
+          path: |
+            integration.log
+            async-integration.log
+            pycubrid-sync-integration.log
+            regression.log
+          retention-days: 7
+          if-no-files-found: warn
 
       - name: Run cub_server stop/start pool recovery tests (#565)
         # Last step: it stops and restarts cub_server in the service container.

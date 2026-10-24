@@ -594,6 +594,19 @@ coverage 96.10% (threshold 95% met) -> test-results/test/summary.json`). pytest�
 `make clean`이 제거합니다. 파일은 `scripts/report_test_results.py`가 작성하며, 레인 이름과
 파일 경로를 인자로 받으므로 다른 레인에서도 재사용할 수 있습니다.
 
+### CI 결과
+
+CI는 `make test`를 실행하지 않습니다. 오프라인 레인(`ci.yml`의 `offline-tests`와
+`integration-full.yml`의 릴리스 복사본 `offline-endpoints`)이 같은 빠른 선택을 직접 실행하고,
+같은 도우미로 `test-results/offline/{junit.xml,coverage.xml,summary.json}`을 기록합니다.
+성공/실패와 관계없이 매 실행마다 각 레인은 한 줄 요약을 job summary에 추가하고
+(`python -m scripts.report_test_results step-summary --summary test-results/offline/summary.json`)
+`test-results/`를 `test-results-offline-py<버전>` 아티팩트(7일)로 업로드합니다. 통합 테스트를
+실행하는 job(`ci.yml`의 `integration-tests`, `make-integration`, `integration-full.yml`의
+`integration-full`, `make-integration`)은 이미 기록하는 pytest 로그를 실패 시에도
+`pytest-logs-*` 아티팩트로 업로드합니다. 라이브 레인의 job summary와 JUnit은 라이브 리포팅
+작업(#1020)에서 이어집니다.
+
 ### 알려진 도달 불가능 라인
 
 `compiler.py`와 `dml.py`의 일부 라인(`for_update_clause`/`limit_clause`의 빈

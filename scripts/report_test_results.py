@@ -29,6 +29,12 @@ Usage::
 
     python -m scripts.report_test_results --lane test --junit J.xml \
         --coverage C.xml --threshold 95 --pytest-exit 0 --output summary.json
+    python -m scripts.report_test_results step-summary --summary summary.json \
+        --title "Unit tests (Python 3.12)" >> "$GITHUB_STEP_SUMMARY"
+
+``step-summary`` prints the one-line summary of a ``summary.json`` as Markdown for the
+GitHub job summary (#1021). It always exits 0 and says so when the file is missing or
+unreadable, so a publishing step never hides the failure of the test step before it.
 """
 
 from __future__ import annotations
@@ -154,7 +160,30 @@ def format_line(summary: dict[str, object]) -> str:
     return line
 
 
+def step_summary(summary_path: Path, title: str) -> str:
+    """Markdown for ``$GITHUB_STEP_SUMMARY``: a heading and the console line."""
+    heading = f"### {title}\n\n"
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        line = format_line(summary)
+    except (OSError, ValueError, KeyError, TypeError, AssertionError):
+        return f"{heading}No readable `{summary_path}` was written (the run stopped early).\n"
+    return f"{heading}`{line}`\n"
+
+
+def step_summary_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="report_test_results step-summary")
+    parser.add_argument("--summary", required=True, type=Path, help="summary.json to render")
+    parser.add_argument("--title", default="Test results", help="heading, e.g. the matrix entry")
+    args = parser.parse_args(argv)
+    print(step_summary(args.summary, args.title), end="")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["step-summary"]:
+        return step_summary_main(argv[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane", required=True, help="lane name recorded in summary.json")
     parser.add_argument("--junit", required=True, type=Path, help="pytest --junitxml file")
