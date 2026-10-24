@@ -191,13 +191,18 @@ These guardrails apply regardless of the implementation tool:
   `main` and other open PRs. A green check or an AI recommendation does not
   override an unresolved design decision, an incompatible release boundary,
   protected-path approval, or a blocking finding.
+- **When policy changes:** inspect open issue descriptions, open PRs and
+  contributor-facing templates for contradictory instructions. Update the
+  active work and explain any superseded plan during the same review cycle;
+  otherwise record an explicit, narrowly scoped follow-up.
 - **After merging:** the responsible maintainer reconciles linked issues and
   competing open PRs in the same review cycle. Comment and close a truly
   superseded PR with a link to its replacement; if independent work remains,
   explain why and update its scope. Coordinate with external contributors,
   retain their history, and do not close a parent issue until its own acceptance
   criteria are satisfied.
-- **Priority is not merge readiness:** `priority: critical/high/medium/low`
+- **Priority is not merge readiness:** `priority: critical`, `priority: high`,
+  `priority: medium`, or `priority: low`
   on an issue records urgency and impact; `size:` records effort. Choose the
   next *executable* PR based on issue priority, satisfied dependencies, risk,
   validation, and maintainer release decisions. A high-priority blocked issue
