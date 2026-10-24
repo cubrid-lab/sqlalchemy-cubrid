@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.6] - 2026-10-24
+
+### Documentation
+
+* **development:** fix stale pytest node ([#1034](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1034)) ([003dca4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/003dca4d9bf79aeb1d67814c5fa8e92824216405)), refs [#1033](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1033)
+
 ## [1.11.5] - 2026-10-24
 
 ### Upgrade notes
