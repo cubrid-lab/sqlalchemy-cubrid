@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.5](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.4...v1.11.5) (2026-10-24)
+
+
+### CI
+
+* **release:** restart release preparation after the abandoned 1.11.4 ([#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037)) ([3184d9b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3184d9b462bae6e2dd50d187e33abf83f44e5775)), closes [#1011](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1011)
+
 ## [1.11.4](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.3...v1.11.4) (2026-10-24)
 
 
