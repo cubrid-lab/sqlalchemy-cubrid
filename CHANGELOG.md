@@ -24,7 +24,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `make docker-down` to start from an empty database must call `make docker-clean`.
   `docker-compose.yml` publishes the broker as `127.0.0.1:${CUBRID_TEST_PORT}:33000`, so
   it is no longer reachable from other hosts; `CUBRID_TEST_PORT` (default 33000) is the
-  host-port override for `make docker-up`, `docker compose up` and `make integration`.
+  host-port override for `make docker-up`, `docker compose up` and `make integration`;
+  when it is not given, `make docker-up` leaves the port to Compose (a `.env` value, or 33000).
   `make integration` still creates and removes its own run-owned project.
 
 ### Changed

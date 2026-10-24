@@ -29,6 +29,10 @@ CUBRID_TEST_PORT := $(CUBRID_PORT)
 CUBRID_PORT_WARNING = $(warning CUBRID_PORT is deprecated; use CUBRID_TEST_PORT)
 endif
 endif
+# make docker-up passes the port to Compose only when it was given (on the make
+# command line, in the shell, or through CUBRID_PORT); otherwise Compose resolves it
+# itself, from .env or its own 33000 default, exactly as a direct `docker compose up`.
+DOCKER_UP_PORT_ENV := $(if $(filter undefined,$(origin CUBRID_TEST_PORT)),,CUBRID_TEST_PORT="$(CUBRID_TEST_PORT)" )
 CUBRID_TEST_PORT ?= 33000
 # Seconds make integration waits for the new server to answer SELECT 1 through the
 # selected driver before it gives up (a fresh container needs about 20 seconds).
@@ -154,9 +158,9 @@ integration-local: ## Run integration tests against an already-running CUBRID (s
 
 # The manual stack (Compose project named after the checkout directory, or
 # COMPOSE_PROJECT_NAME). Only docker-clean deletes its data volumes (#1008).
-docker-up: ## Start the local CUBRID test database (broker on 127.0.0.1:CUBRID_TEST_PORT, default 33000)
-	$(CUBRID_PORT_WARNING)CUBRID_TEST_PORT="$(CUBRID_TEST_PORT)" docker compose up -d
-	@echo "CUBRID container starting on 127.0.0.1:$(CUBRID_TEST_PORT)... Use 'docker compose logs -f' to monitor."
+docker-up: ## Start the local CUBRID test database (broker on 127.0.0.1:CUBRID_TEST_PORT, else .env, else 33000)
+	$(CUBRID_PORT_WARNING)$(DOCKER_UP_PORT_ENV)docker compose up -d
+	@echo "CUBRID container starting on $$(docker compose port cubrid 33000 2>/dev/null || echo 'the configured port')... Use 'docker compose logs -f' to monitor."
 
 docker-down: ## Stop and remove the local CUBRID container and network; keeps the test data volumes
 	docker compose down

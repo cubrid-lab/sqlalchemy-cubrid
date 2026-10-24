@@ -143,7 +143,8 @@ def test_docker_clean_is_the_only_target_that_deletes_test_data_volumes():
 @pytest.mark.parametrize(
     ("args", "port"),
     [
-        ((), "33000"),
+        # No port given: Compose resolves it (.env, then its 33000 default).
+        ((), None),
         (("CUBRID_TEST_PORT=33300",), "33300"),
         # The deprecated pre-#1008 name, used only when CUBRID_TEST_PORT is unset.
         (("CUBRID_PORT=33301",), "33301"),
@@ -153,9 +154,19 @@ def test_docker_clean_is_the_only_target_that_deletes_test_data_volumes():
 def test_docker_up_passes_the_broker_port_to_compose(args, port):
     result = _make("-n", "docker-up", *args)
     assert result.returncode == 0, result.stderr
-    assert result.stdout.splitlines()[0] == f'CUBRID_TEST_PORT="{port}" docker compose up -d'
+    prefix = "" if port is None else f'CUBRID_TEST_PORT="{port}" '
+    assert result.stdout.splitlines()[0] == f"{prefix}docker compose up -d"
     deprecated = "CUBRID_PORT is deprecated; use CUBRID_TEST_PORT" in result.stderr
     assert deprecated == (args == ("CUBRID_PORT=33301",))
+
+
+def test_docker_up_leaves_an_env_file_port_to_compose():
+    # A port set only in Compose's .env must not be overridden by the Make default.
+    result = _make("-n", "docker-up")
+    assert result.returncode == 0, result.stderr
+    assert "CUBRID_TEST_PORT=" not in result.stdout.splitlines()[0]
+    compose = (ROOT / "docker-compose.yml").read_text()
+    assert "${CUBRID_TEST_PORT:-${CUBRID_PORT:-33000}}" in compose
 
 
 @pytest.mark.parametrize("target", ["docker-down", "docker-clean", "check", "test", "help"])

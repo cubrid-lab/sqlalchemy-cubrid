@@ -160,7 +160,7 @@ make test-repo     # 저장소 도구 테스트 실행 (Makefile, 시그널 처�
 make verify        # make check 후 make test 실행 (Docker 없음)
 make test-all      # 모든 Python 버전에서 tox 실행
 make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 (pycubrid) → 삭제
-make docker-up     # CUBRID 시작 (브로커는 127.0.0.1, 포트 CUBRID_TEST_PORT, 기본값 33000)
+make docker-up     # CUBRID 시작 (브로커는 127.0.0.1, 포트 CUBRID_TEST_PORT, 없으면 .env, 그다음 33000)
 make docker-down   # CUBRID 컨테이너 중지 및 제거 (데이터 볼륨 유지)
 make docker-clean  # CUBRID 중지 및 데이터 볼륨 삭제 (테스트 데이터가 모두 삭제됨)
 make docker-fix-db-host # CUBRID_DB_HOST 설정 전에 만든 볼륨 복구 (데이터 유지)

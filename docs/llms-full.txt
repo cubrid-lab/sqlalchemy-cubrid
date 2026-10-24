@@ -7463,7 +7463,7 @@ make test-repo     # Run the repository-tooling tests (Makefile, signal handling
 make verify        # make check, then make test (no Docker)
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
-make docker-up     # Start CUBRID (broker on 127.0.0.1, port CUBRID_TEST_PORT, default 33000)
+make docker-up     # Start CUBRID (broker on 127.0.0.1, port CUBRID_TEST_PORT, else .env, else 33000)
 make docker-down   # Stop and remove the CUBRID container; keeps its data volumes
 make docker-clean  # Stop CUBRID and delete its data volumes (removes all test data)
 make docker-fix-db-host # Repair a volume created before CUBRID_DB_HOST was set (keeps the data)
