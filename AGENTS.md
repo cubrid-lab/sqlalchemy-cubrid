@@ -272,10 +272,37 @@ implementation follows the agreed contract.
   Re-read the issue after saving. Never mark a tracker complete just because
   its children merged; confirm its integration acceptance separately.
 
+## Issue triage lifecycle
+
+Every newly opened issue in this repository starts with `status: needs triage`.
+Forms attach it immediately, and the `issues: opened` workflow covers external
+submissions. Tools using `GITHUB_TOKEN` must include it at creation because
+their events do not retrigger an issue-opened workflow.
+
+1. **Validity and scope:** inspect facts/unknowns, impact, issue type, owning
+   repository, acceptance checks, existing PRs and duplicates. Close duplicates
+   or invalid requests with an explanation; do not invent evidence.
+2. **Relative priority:** review **every currently open issue** here
+   (paginating if necessary), relevant release/security risks, active PRs,
+   readiness, and actual dependencies before confirming one
+   `priority: critical/high/medium/low`. Reprioritize existing work only
+   when evidence warrants it and record why.
+3. **Effort:** assign exactly one existing `size: XS/S/M/L/XL`. Split work
+   too large for independent review, retaining any parent acceptance contract;
+   preserve other labels, assignees and contributor ownership.
+4. **Read back:** after saving type, priority and size labels, fetch the issue
+   again. Remove `status: needs triage` only after confirming its actual
+   labels, duplicate disposition, scope, and review decision. Otherwise retain
+   the status. No bot may automatically score priority or complete triage.
+
+Triage is not a new PR merge gate and does not weaken existing validation,
+security, protected-path or release requirements.
+
 ## Issue Labeling (cubrid-lab org standard)
 
-For maintainer/agent-managed issue creation in **any cubrid-lab repository**, assign exactly one
-`priority: <value>` label and exactly one `size: <value>` label at creation time,
+For maintainer/agent-managed issue creation in this repository, first set
+`status: needs triage`. Finalize exactly one `priority: <value>` and one
+`size: <value>` during maintainer triage,
 alongside a type label (`bug`/`enhancement`/`documentation`/`chore`/`ci`/…) and an
 `area:` label when applicable. These must be GitHub labels, not just text in the
 issue title or body.
@@ -288,11 +315,11 @@ themselves assign a label.
 
 Issue titles use the same `type(scope): description` format as pull request
 titles (see [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-and-commit-titles)).
-`.github/workflows/issue-triage.yml` flags incomplete human-submitted issue
-titles or labels as `status: needs triage` without posting a comment or
-guessing priority/size. Maintainers remove that label once triage is complete.
-Agents and workflows creating issues through CLI/API must supply canonical
-metadata at creation; `GITHUB_TOKEN`-created issues do not retrigger this guard.
+`.github/workflows/issue-triage.yml` marks externally opened issues with
+`status: needs triage` without guessing priority/size. Authorized agents and
+workflows using `GITHUB_TOKEN` must include that label at issue creation;
+their own issue events may not start another workflow. Maintainers remove the
+label only after verification of the completed triage.
 
 Use the following exact names, with **one space after the colon**:
 
@@ -319,10 +346,9 @@ helps contributors pick appropriately scoped work.
 Rules:
 
 1. **Size reflects effort, not importance** — a one-line fix for a critical bug is still `size: XS`.
-2. **Maintainers, triagers and authorized agents filing for them assign both `priority:` and `size:` when filing.** If scope or impact
-   is uncertain, use a provisional estimate, explain the uncertainty in the body,
-   and add `status: needs triage`. External reports may start with that label;
-   refine estimates during maintainer triage.
+2. **Maintainers finalize both `priority:` and `size:` after review.** If scope
+   or impact is uncertain, retain `status: needs triage`; a provisional estimate
+   is not evidence of a completed review.
 3. **`good first issue` should be `size: XS` or `size: S`.** If a good-first-issue grows
    past `size: S`, re-scope it or drop the `good first issue` label.
 4. **`size: XL` is a signal to split**, not a green light to start a sprawling change.
