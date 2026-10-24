@@ -9,26 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.11.5] - 2026-10-24
 
-### CI
-
-* **release:** restart release preparation after the abandoned 1.11.4 ([#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037)) ([3184d9b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3184d9b462bae6e2dd50d187e33abf83f44e5775)), refs [#1011](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1011)
-
-### Tests
-
-- **The #872 live test of a garbage-collected async connection passes in `make integration`
-  again** — `TestAsyncTerminateLive872::test_garbage_collected_connection_is_terminated`
-  failed in every `make integration` lane after #1017 published the Compose broker on
-  `127.0.0.1` only, which stopped the 1.11.4 release matrix. On a host where `localhost`
-  resolves to `::1` first (GitHub runners), asyncio's `create_connection` keeps the refused
-  `::1` attempt's exception in a reference cycle, and the frames of that cycle kept the
-  test's connection alive until the cycle collector ran. The test now opens the pooled
-  connection before the leak and asserts that the leaked checkout reused it, so it still
-  requires the refcount-freed connection's socket to be terminated, with no ResourceWarning
-  and nothing checked out.
-
-## [1.11.4] - 2026-10-24
-
 ### Upgrade notes
+
+- **1.11.1, 1.11.2, 1.11.3 and 1.11.4 were never published (#838, #910, #1005, #1011).**
+  Their release gates failed (1.11.1 on Python 3.15, 1.11.2 in the CUBRIDdb integration
+  lanes, #1003, 1.11.3 in the cookbook candidate verification, 1.11.4 in the
+  `make integration` lanes, #1035), so none of them has a tag, GitHub Release or PyPI
+  version. 1.11.5 contains every 1.11.1 to 1.11.4 change below; upgrade from 1.11.0
+  directly to 1.11.5.
 
 - **`make test` now runs every offline test, and `make lint` no longer checks formatting
   (#1009).** `make test` is the former `make test-offline` (fast and repository-tooling
@@ -48,6 +36,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   host-port override for `make docker-up`, `docker compose up` and `make integration`;
   when it is not given, `make docker-up` leaves the port to Compose (a `.env` value, or 33000).
   `make integration` still creates and removes its own run-owned project.
+
+- **A MERGE assignment key that is a column of another table now raises `CompileError`
+  (#847)**, also when the target has a column of the same name. Such a key was silently
+  read as the target's column, as the MERGE documentation then described. Use the
+  target's column (`target.c.name`) or the string `"name"`; the column-list shorthand
+  `when_not_matched_then_insert([source.c.id, ...])` is unchanged.
 
 ### Added
 
@@ -87,6 +81,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   overridden (`?=`) and runs through `$(PYTHON) -m <tool>`, and `make help` groups the
   targets by purpose. CI lint and `tox -e lint` run `make lint` and `make format-check`.
 
+- **MERGE assignment keys must belong to the target (#847)** — `visit_merge()` resolved a
+  Column key by name, so `source.c.name` used as an UPDATE or INSERT key in
+  `when_matched_then_update()` / `when_not_matched_then_insert()` mappings or pairs was
+  accepted as `target.c.name`. A bound column key now has to have lineage to the target
+  (the target's own column or one of an alias of it); any other table's column raises
+  `CompileError` naming that table. String keys, unbound `sa.column()` keys and the
+  column-list shorthand still resolve by name, and the SQL and bind order of legitimate
+  statements are unchanged.
+
 ### Deprecated
 
 - **`make check-all` (#1009)** — an alias of `make check` that prints a deprecation
@@ -98,62 +101,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   then print a deprecation warning) and by `docker-compose.yml`; `CUBRID_TEST_PORT` wins
   when both are set. Other targets ignore it, so a `CUBRID_PORT` exported for another
   CUBRID tool does not make them warn.
-
-### Documentation
-
-- **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. `mkdocs.yml` now registers the `mermaid` SuperFences custom fence, so the documentation site renders the Mermaid diagrams on every page (they were shown as code listings before). Documentation only; no behavior change.
-
-* **agents:** require repository-local issue authoring checks ([#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012)) ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
-* **architecture:** show Broker, CAS and CCI in the end-to-end driver communication flow ([#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1016)) ([f8a9aa5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f8a9aa5d133835ce60455725259756550d50be64))
-* **contributing:** fix single-test pytest node example ([c04a380](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c04a380f4b9a512fa8ecb892324fe6b59fde31b7)), refs [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881)
-* enforce repository-local issue drafting ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
-* **triage:** clarify PR overlap and execution precedence ([1d082cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1d082ccccb2010b2ab6db474eaeca770431a6b7e)), refs [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023)
-
-### CI
-
-- **CI publishes the offline test summary and uploads results on success and failure
-  (#1021)** — the `offline-tests` and `offline-endpoints` jobs write JUnit, coverage and
-  `summary.json` under `test-results/offline/` with `scripts/report_test_results.py`, append
-  the summary to the job summary through its new `step-summary` subcommand and upload
-  `test-results/`; the integration jobs upload their pytest logs. Every one of those steps
-  runs with `if: always()`, so a failing run keeps its evidence. Test selection, the 95%
-  coverage floor and the permissions are unchanged. The summary of the live lanes follows #1020.
-
-- **The `make-integration` jobs also upload `test-results/integration/` (#1020)** — the
-  live results of `make integration` join `make-integration.log` in the existing
-  `pytest-logs-make-integration-*` artifact; nothing else in the workflows changes.
-
-- **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged.
-
-* **release:** verify against the current cookbook and restart after the abandoned 1.11.3 ([#1007](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1007)) ([72bf7be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/72bf7be9fa0ab27454401b21972a080edd796d13))
-
-## [1.11.3] - 2026-10-21
-
-### Upgrade notes
-
-- **1.11.1 and 1.11.2 were never published (#838, #910).** Their release gates failed (1.11.1
-  on Python 3.15, 1.11.2 in the CUBRIDdb integration lanes, #1003), so neither has a tag,
-  GitHub Release or PyPI version. 1.11.3 contains every 1.11.1 and 1.11.2 change below;
-  upgrade from 1.11.0 directly to 1.11.3.
-
-- **A MERGE assignment key that is a column of another table now raises `CompileError`
-  (#847)**, also when the target has a column of the same name. Such a key was silently
-  read as the target's column, as the MERGE documentation then described. Use the
-  target's column (`target.c.name`) or the string `"name"`; the column-list shorthand
-  `when_not_matched_then_insert([source.c.id, ...])` is unchanged.
-
-### Changed
-
-- **MERGE assignment keys must belong to the target (#847)** — `visit_merge()` resolved a
-  Column key by name, so `source.c.name` used as an UPDATE or INSERT key in
-  `when_matched_then_update()` / `when_not_matched_then_insert()` mappings or pairs was
-  accepted as `target.c.name`. A bound column key now has to have lineage to the target
-  (the target's own column or one of an alias of it); any other table's column raises
-  `CompileError` naming that table. String keys, unbound `sa.column()` keys and the
-  column-list shorthand still resolve by name, and the SQL and bind order of legitimate
-  statements are unchanged.
-
-### Deprecated
 
 - **Unused `display_width` and `values` type arguments (#870)** — `SMALLINT` /
   `BIGINT` accept `display_width` and `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` /
@@ -457,6 +404,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. `mkdocs.yml` now registers the `mermaid` SuperFences custom fence, so the documentation site renders the Mermaid diagrams on every page (they were shown as code listings before). Documentation only; no behavior change.
+
+* **agents:** require repository-local issue authoring checks ([#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012)) ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
+* **architecture:** show Broker, CAS and CCI in the end-to-end driver communication flow ([#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1016)) ([f8a9aa5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f8a9aa5d133835ce60455725259756550d50be64))
+* **contributing:** fix single-test pytest node example ([c04a380](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c04a380f4b9a512fa8ecb892324fe6b59fde31b7)), refs [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881)
+* enforce repository-local issue drafting ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
+* **triage:** clarify PR overlap and execution precedence ([1d082cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1d082ccccb2010b2ab6db474eaeca770431a6b7e)), refs [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023)
+
 - **Two CUBRIDdb result differences are documented (#1003)** — CUBRIDdb binds values on the
   server, where pycubrid writes them into the SQL. With CUBRIDdb a `CASE` whose `THEN`/`ELSE`
   values are all bound parameters returns a string (`'10'`, not `10`), and a `GROUP_CONCAT`
@@ -620,6 +575,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+* **release:** restart release preparation after the abandoned 1.11.4 ([#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037)) ([3184d9b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3184d9b462bae6e2dd50d187e33abf83f44e5775)), refs [#1011](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1011)
+
+- **CI publishes the offline test summary and uploads results on success and failure
+  (#1021)** — the `offline-tests` and `offline-endpoints` jobs write JUnit, coverage and
+  `summary.json` under `test-results/offline/` with `scripts/report_test_results.py`, append
+  the summary to the job summary through its new `step-summary` subcommand and upload
+  `test-results/`; the integration jobs upload their pytest logs. Every one of those steps
+  runs with `if: always()`, so a failing run keeps its evidence. Test selection, the 95%
+  coverage floor and the permissions are unchanged. The summary of the live lanes follows #1020.
+
+- **The `make-integration` jobs also upload `test-results/integration/` (#1020)** — the
+  live results of `make integration` join `make-integration.log` in the existing
+  `pytest-logs-make-integration-*` artifact; nothing else in the workflows changes.
+
+- **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged.
+
+* **release:** verify against the current cookbook and restart after the abandoned 1.11.3 ([#1007](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1007)) ([72bf7be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/72bf7be9fa0ab27454401b21972a080edd796d13))
+
 * **release:** start release preparation after the abandoned 1.11.2 ([#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006)) ([b1a2dfe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b1a2dfe825c983a2114025b8cbaa82ff4da6c09d))
 
 - **The CUBRID 11.4 local Docker test database is kept in a named volume (#1000)** — `docker-compose.yml` mounted its named volume only at `/var/lib/cubrid`, where images up to 11.3 keep their databases; `cubrid/cubrid:11.4` keeps them in `/home/cubrid/CUBRID/databases`, so with `CUBRID_VERSION=11.4` the database lived in an anonymous volume, `docker compose down` lost it (`Unknown class "dba.keep_me"` after the next `up`) and left that volume dangling. A second named volume, `cubrid-databases`, now holds that path, `make docker-down` deletes both, and `make integration`'s ownership check also refuses a pre-existing `<project>_cubrid-databases`. Checked on CUBRID 10.2, 11.2 and 11.4: a table created before `down` is still there after `up`, and `make docker-down` leaves no volume behind. Opening a database created by another CUBRID version is not verified, so the guides say to reset before switching `CUBRID_VERSION`. The same fix landed in pycubrid (cubrid-lab/pycubrid#1004).
@@ -769,6 +742,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grouped Dependabot run.
 
 ### Tests
+
+- **The #872 live test of a garbage-collected async connection passes in `make integration`
+  again** — `TestAsyncTerminateLive872::test_garbage_collected_connection_is_terminated`
+  failed in every `make integration` lane after #1017 published the Compose broker on
+  `127.0.0.1` only, which stopped the 1.11.4 release matrix. On a host where `localhost`
+  resolves to `::1` first (GitHub runners), asyncio's `create_connection` keeps the refused
+  `::1` attempt's exception in a reference cycle, and the frames of that cycle kept the
+  test's connection alive until the cycle collector ran. The test now opens the pooled
+  connection before the leak and asserts that the leaked checkout reused it, so it still
+  requires the refcount-freed connection's socket to be terminated, with no ResourceWarning
+  and nothing checked out.
 
 - **The CASE value and GROUP_CONCAT ORDER BY live tests pass with CUBRIDdb (#1003)** — the
   tests added for #987 and #991 asserted pycubrid's results, so the release matrix's
