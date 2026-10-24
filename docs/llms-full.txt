@@ -6072,7 +6072,7 @@ make docker-fix-db-host
 
 The previous file is saved next to it as `databases.txt.before-fix-db-host`.
 
-**Fix, deleting the data:** `make docker-down` runs `docker compose down -v`, which
+**Fix, deleting the data:** `make docker-clean` runs `docker compose down -v`, which
 **removes the volume and every table in it**; the next `make docker-up` creates a fresh
 database. Use it only for a volume whose data you do not need.
 
@@ -7463,8 +7463,9 @@ make test-repo     # Run the repository-tooling tests (Makefile, signal handling
 make verify        # make check, then make test (no Docker)
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
-make docker-up     # Start CUBRID Docker container
-make docker-down   # Stop CUBRID and delete its data volume (removes all test data)
+make docker-up     # Start CUBRID (broker on 127.0.0.1, port CUBRID_TEST_PORT, default 33000)
+make docker-down   # Stop and remove the CUBRID container; keeps its data volumes
+make docker-clean  # Stop CUBRID and delete its data volumes (removes all test data)
 make docker-fix-db-host # Repair a volume created before CUBRID_DB_HOST was set (keeps the data)
 make clean         # Remove build artifacts and caches
 ```
@@ -7561,11 +7562,14 @@ pytest test/test_integration.py -v
 # Run async integration tests
 pytest test/test_aio_integration.py -v
 
-# Stop the container and delete its data volume (removes all test data)
+# Stop the container and delete its data volumes (removes all test data)
 docker compose down -v
 ```
 
-`docker compose down` without `-v` keeps the volume. A volume created before
+`docker compose down` without `-v` (`make docker-down`) keeps the volumes;
+`make docker-clean` runs `docker compose down -v`. The broker is published on `127.0.0.1`
+only; set `CUBRID_TEST_PORT` to use another host port (`CUBRID_PORT`, the deprecated
+former name, is used only when `CUBRID_TEST_PORT` is unset). A volume created before
 `docker-compose.yml` set `CUBRID_DB_HOST` fails with -353 once its container is
 recreated; `make docker-fix-db-host` repairs it and keeps the data (see
 [Troubleshooting](TROUBLESHOOTING.md#database-server-host-not-found-after-recreating-the-container)).
@@ -7765,7 +7769,7 @@ removes resources that this run created.
 The recipe is a single call to `scripts/run_integration.py`, which owns this
 lifecycle: driver and project validation, the ownership check, startup, readiness,
 signal handling, cleanup and the exit status (#1009). The Make target passes
-`INTEGRATION_DRIVER`, `CUBRID_PORT`, `INTEGRATION_PROJECT`,
+`INTEGRATION_DRIVER`, `CUBRID_TEST_PORT`, `INTEGRATION_PROJECT`,
 `INTEGRATION_READY_TIMEOUT`, `INTEGRATION_STOP_GRACE`, `WAIT_FOR_CUBRID` and
 `PYTEST` through to it.
 
@@ -7801,9 +7805,10 @@ explicitly. Cleanup is not guaranteed after an untrappable termination such as
 `docker compose -p <project> down -v` after checking its name with
 `docker compose ls -a`.
 
-The container publishes CUBRID on host port 33000. If that port is already in
-use, pick another one with `make integration CUBRID_PORT=33999`; the test URL
-follows it. `INTEGRATION_PROJECT=<name>` fixes the project name. It must match
+The container publishes CUBRID on `127.0.0.1`, host port 33000. If that port is
+already in use, pick another one with `make integration CUBRID_TEST_PORT=33999`; the
+test URL follows it. `CUBRID_PORT`, the deprecated former name, is used only when
+`CUBRID_TEST_PORT` is unset, and makes `make integration` print a deprecation warning. `INTEGRATION_PROJECT=<name>` fixes the project name. It must match
 `^[a-z0-9][a-z0-9_-]*$` (otherwise the command exits with status 2 before running
 any Docker command), and the same pre-existence check applies. Two concurrent
 runs with the same fixed `INTEGRATION_PROJECT` are not supported. pytest keeps the

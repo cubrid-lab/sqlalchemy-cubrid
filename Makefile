@@ -1,4 +1,4 @@
-.PHONY: help install doctor check-tool-versions lint format-check format typecheck security check-docs-reason check check-all agent-eval-check verify test test-fast test-repo test-offline test-all integration integration-local docker-up docker-down docker-fix-db-host changelog clean clean-all release-check
+.PHONY: help install doctor check-tool-versions lint format-check format typecheck security check-docs-reason check check-all agent-eval-check verify test test-fast test-repo test-offline test-all integration integration-local docker-up docker-down docker-clean docker-fix-db-host changelog clean clean-all release-check
 
 # Every tool runs through the same interpreter, and each can be overridden from the
 # command line or the environment, e.g. `make check PYTHON=.venv/bin/python`.
@@ -13,13 +13,23 @@ TESTS = test
 LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples docs/source
 # make integration: the driver the suite connects with (pycubrid, the recommended
 # pure-Python driver, via cubrid+pycubrid://; or cubriddb, the CUBRIDdb C extension,
-# via cubrid://), host port for the run-owned CUBRID container, an optional fixed
-# Compose project name (default: a fresh name per run), and how many seconds, on a
-# signal, `docker compose up -d` gets to finish before SIGTERM and any step gets
-# after SIGTERM before SIGKILL. scripts/run_integration.py owns the lifecycle; see
-# docs/DEVELOPMENT.md.
+# via cubrid://), an optional fixed Compose project name (default: a fresh name per
+# run), and how many seconds, on a signal, `docker compose up -d` gets to finish
+# before SIGTERM and any step gets after SIGTERM before SIGKILL.
+# scripts/run_integration.py owns the lifecycle; see docs/DEVELOPMENT.md.
 INTEGRATION_DRIVER ?= pycubrid
-CUBRID_PORT ?= 33000
+# Host port of the CUBRID broker, published on 127.0.0.1 only, for make docker-up
+# and the run-owned make integration container (#1008). CUBRID_PORT is the
+# deprecated former name, still honoured when CUBRID_TEST_PORT is not set; the
+# recipes that use the port then warn (other tools set CUBRID_PORT too, so a
+# parse-time warning would fire on every target).
+ifeq ($(origin CUBRID_TEST_PORT),undefined)
+ifneq ($(CUBRID_PORT),)
+CUBRID_TEST_PORT := $(CUBRID_PORT)
+CUBRID_PORT_WARNING = $(warning CUBRID_PORT is deprecated; use CUBRID_TEST_PORT)
+endif
+endif
+CUBRID_TEST_PORT ?= 33000
 # Seconds make integration waits for the new server to answer SELECT 1 through the
 # selected driver before it gives up (a fresh container needs about 20 seconds).
 INTEGRATION_READY_TIMEOUT ?= 180
@@ -126,9 +136,9 @@ test-all: ## Run tests across all Python versions via tox
 # ownership checks, readiness, signal handling, cleanup and the exit status. `exec`
 # makes it the recipe's only process, so make's signals reach it directly.
 integration: ## Run integration tests (INTEGRATION_DRIVER=pycubrid|cubriddb) in a fresh, run-owned Docker Compose project and always clean it up
-	@exec $(PYTHON) scripts/run_integration.py \
+	@exec $(PYTHON) scripts/run_integration.py $(CUBRID_PORT_WARNING)\
 		--driver="$(INTEGRATION_DRIVER)" \
-		--port="$(CUBRID_PORT)" \
+		--port="$(CUBRID_TEST_PORT)" \
 		--project="$(INTEGRATION_PROJECT)" \
 		--ready-timeout="$(INTEGRATION_READY_TIMEOUT)" \
 		--stop-grace="$(INTEGRATION_STOP_GRACE)" \
@@ -142,11 +152,16 @@ integration-local: ## Run integration tests against an already-running CUBRID (s
 	fi
 	$(PYTEST) $(TESTS)/ -m integration -v
 
-docker-up: ## Start CUBRID Docker container
-	docker compose up -d
-	@echo "CUBRID container starting... Use 'docker compose logs -f' to monitor."
+# The manual stack (Compose project named after the checkout directory, or
+# COMPOSE_PROJECT_NAME). Only docker-clean deletes its data volumes (#1008).
+docker-up: ## Start the local CUBRID test database (broker on 127.0.0.1:CUBRID_TEST_PORT, default 33000)
+	$(CUBRID_PORT_WARNING)CUBRID_TEST_PORT="$(CUBRID_TEST_PORT)" docker compose up -d
+	@echo "CUBRID container starting on 127.0.0.1:$(CUBRID_TEST_PORT)... Use 'docker compose logs -f' to monitor."
 
-docker-down: ## Stop and remove CUBRID Docker container and its data volume (deletes the test data)
+docker-down: ## Stop and remove the local CUBRID container and network; keeps the test data volumes
+	docker compose down
+
+docker-clean: ## Remove the local CUBRID container, network and test data volumes (deletes the test data)
 	docker compose down -v
 
 # A volume created before docker-compose.yml set CUBRID_DB_HOST registers testdb

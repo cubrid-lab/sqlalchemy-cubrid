@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   check-docs-reason), so local scripts that ran `make check-all` or `make test-offline`
   keep working through the aliases below.
 
+- **`make docker-down` now keeps the local test data, `make docker-clean` deletes it, and
+  the broker listens on `127.0.0.1` only (#1008).** `make docker-down` runs
+  `docker compose down` (the data volumes are kept); the new `make docker-clean` runs
+  `docker compose down -v`, which `make docker-down` ran before. A script that relied on
+  `make docker-down` to start from an empty database must call `make docker-clean`.
+  `docker-compose.yml` publishes the broker as `127.0.0.1:${CUBRID_TEST_PORT}:33000`, so
+  it is no longer reachable from other hosts; `CUBRID_TEST_PORT` (default 33000) is the
+  host-port override for `make docker-up`, `docker compose up` and `make integration`.
+  `make integration` still creates and removes its own run-owned project.
+
 ### Changed
 
 - **Makefile targets have one meaning each, and `make integration` runs a script
@@ -39,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`make check-all` (#1009)** — an alias of `make check` that prints a deprecation
   notice on stderr; it will be removed after the next minor release. `make test-offline`
   remains an alias of `make test`.
+
+- **`CUBRID_PORT` (#1008)** — the former name of `CUBRID_TEST_PORT`. It is still used
+  when `CUBRID_TEST_PORT` is unset, by `make docker-up` and `make integration` (which
+  then print a deprecation warning) and by `docker-compose.yml`; `CUBRID_TEST_PORT` wins
+  when both are set. Other targets ignore it, so a `CUBRID_PORT` exported for another
+  CUBRID tool does not make them warn.
 
 ### Documentation
 

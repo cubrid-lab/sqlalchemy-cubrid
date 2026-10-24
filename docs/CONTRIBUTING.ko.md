@@ -137,27 +137,35 @@ tox -e lint   # 린트 검사만 실행
 로컬 개발용 `docker-compose.yml`을 제공합니다:
 
 ```bash
-# CUBRID 시작 (기본 버전: 11.2)
-docker compose up -d
+# CUBRID 시작 (기본 버전: 11.2), 127.0.0.1:33000
+make docker-up                         # 또는: docker compose up -d
 
 # 특정 CUBRID 버전으로 테스트
-CUBRID_VERSION=11.4 docker compose up -d
+CUBRID_VERSION=11.4 make docker-up
+
+# 다른 호스트 포트로 브로커 공개 (테스트 URL도 이 포트를 따라야 함)
+CUBRID_TEST_PORT=33300 make docker-up
 
 # 로그 보기
 docker compose logs -f cubrid
 
-# 중지 (데이터 볼륨 유지)
-docker compose down
+# 컨테이너 중지 및 제거 (데이터 볼륨 유지)
+make docker-down                       # docker compose down
 
 # 중지 및 데이터 볼륨 삭제 (테스트 데이터가 모두 삭제됨)
-docker compose down -v
+make docker-clean                      # docker compose down -v
 ```
+
+브로커는 `127.0.0.1`에만, 호스트 포트 `CUBRID_TEST_PORT`(기본값 33000)로 공개됩니다.
+예전 이름인 `CUBRID_PORT`는 `CUBRID_TEST_PORT`가 없을 때 계속 동작하지만 더 이상 권장되지
+않습니다(deprecated). `make docker-down`은 테스트 데이터를 남기고, `make docker-clean`만
+삭제합니다(#1008 이전에는 `make docker-down`이 삭제했습니다).
 
 `docker-compose.yml`은 `CUBRID_DB_HOST: localhost`를 설정하므로 같은 볼륨에서 컨테이너를
 다시 만들어도 데이터베이스가 계속 동작합니다. 11.3까지의 이미지는 데이터베이스를
 `cubrid-data` 볼륨에, 11.4는 `cubrid-databases`에 두므로 지원하는 모든 버전에서 `down`이 데이터를 남깁니다.
 다른 CUBRID 버전이 만든 데이터베이스가 열린다는 보장은 없으므로 `CUBRID_VERSION`을 바꾸기 전에
-`make docker-down`(테스트 데이터 삭제)을 실행하세요. 이 설정 전에 만든 볼륨은 다시 만든 뒤 -353으로
+`make docker-clean`(테스트 데이터 삭제)을 실행하세요. 이 설정 전에 만든 볼륨은 다시 만든 뒤 -353으로
 실패합니다. 데이터를 유지하는 `make docker-fix-db-host`로 복구하세요
 ([문제 해결](ko/TROUBLESHOOTING.md#컨테이너를-다시-만든-뒤-데이터베이스-서버-호스트를-찾을-수-없음)).
 
@@ -167,7 +175,7 @@ docker compose down -v
 프로젝트를 시작하고, 그 프로젝트에 이미 컨테이너·볼륨·네트워크가 있으면 실행을
 거부하며, Ctrl-C, `SIGTERM` 또는 `SIGHUP` 뒤에도 자신이 만든 것만 제거합니다
 (`docker compose -p <project> down -v`). 포트 33000이 사용 중이면
-`make integration CUBRID_PORT=<port>`를 사용하세요. 선택한 드라이버를 통해 서버가
+`make integration CUBRID_TEST_PORT=<port>`를 사용하세요. 선택한 드라이버를 통해 서버가
 응답할 때까지 기다린 뒤 pycubrid(`cubrid+pycubrid://`)로 전체 통합 스위트를
 실행합니다. CUBRIDdb C 확장(`cubrid://`)으로 실행하려면
 `make integration INTEGRATION_DRIVER=cubriddb`를 사용하세요.

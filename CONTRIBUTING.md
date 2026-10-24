@@ -128,27 +128,35 @@ We maintain **≥ 95% code coverage**. The CI pipeline enforces this threshold.
 A `docker-compose.yml` is provided for local development:
 
 ```bash
-# Start CUBRID (default version: 11.2)
-docker compose up -d
+# Start CUBRID (default version: 11.2) on 127.0.0.1:33000
+make docker-up                         # or: docker compose up -d
 
 # Test against a specific CUBRID version
-CUBRID_VERSION=11.4 docker compose up -d
+CUBRID_VERSION=11.4 make docker-up
+
+# Publish the broker on another host port (the test URL must follow it)
+CUBRID_TEST_PORT=33300 make docker-up
 
 # View logs
 docker compose logs -f cubrid
 
-# Stop, keeping the data volumes
-docker compose down
+# Stop and remove the container, keeping the data volumes
+make docker-down                       # docker compose down
 
-# Stop and delete the data volume (removes all test data)
-docker compose down -v
+# Stop and delete the data volumes (removes all test data)
+make docker-clean                      # docker compose down -v
 ```
+
+The broker is published on `127.0.0.1` only, on host port `CUBRID_TEST_PORT` (default
+33000). `CUBRID_PORT`, its former name, still works when `CUBRID_TEST_PORT` is unset and
+is deprecated. `make docker-down` keeps the test data; only `make docker-clean` deletes
+it (before #1008, `make docker-down` deleted it).
 
 `docker-compose.yml` sets `CUBRID_DB_HOST: localhost`, so the database keeps working
 when the container is recreated on the same volume. Images up to 11.3 keep the database
 on the `cubrid-data` volume and 11.4 on `cubrid-databases`, so `down` keeps it on every
 supported version. Opening a database created by another CUBRID version is not verified,
-so run `make docker-down` (which deletes the test data) before switching `CUBRID_VERSION`. A volume created before that setting
+so run `make docker-clean` (which deletes the test data) before switching `CUBRID_VERSION`. A volume created before that setting
 fails with -353 after a recreate; repair it with `make docker-fix-db-host`, which keeps
 the data (see
 [Troubleshooting](docs/TROUBLESHOOTING.md#database-server-host-not-found-after-recreating-the-container)).
@@ -158,7 +166,7 @@ Supported CUBRID versions: `11.4`, `11.2`, `11.0`, `10.2`.
 `make integration` does not use this default stack. It starts its own uniquely
 named Compose project, refuses to run if that project already has containers,
 volumes or networks, and removes only what it created (`docker compose -p
-<project> down -v`), also after Ctrl-C, `SIGTERM` or `SIGHUP`. Use `make integration CUBRID_PORT=<port>` if port 33000 is
+<project> down -v`), also after Ctrl-C, `SIGTERM` or `SIGHUP`. Use `make integration CUBRID_TEST_PORT=<port>` if port 33000 is
 taken. It waits until the server answers through the selected driver and then runs
 the whole integration suite with pycubrid (`cubrid+pycubrid://`); use
 `make integration INTEGRATION_DRIVER=cubriddb` to run it through the CUBRIDdb C

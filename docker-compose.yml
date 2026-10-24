@@ -9,7 +9,9 @@ services:
       # recreated container no longer resolves (-353, #997).
       CUBRID_DB_HOST: localhost
     ports:
-      - "${CUBRID_PORT:-33000}:33000"
+      # Published on the loopback interface only (#1008). CUBRID_PORT is the
+      # deprecated former name of CUBRID_TEST_PORT, used only when it is unset.
+      - "127.0.0.1:${CUBRID_TEST_PORT:-${CUBRID_PORT:-33000}}:33000"
     healthcheck:
       test: ["CMD", "csql", "-u", "dba", "testdb", "-c", "SELECT 1"]
       interval: 15s
@@ -17,10 +19,10 @@ services:
       retries: 10
       start_period: 30s
     volumes:
-      # Named volumes keep the database across `docker compose down`; only
-      # `docker compose down -v` (make docker-down) deletes it. Images up to 11.3
-      # keep databases in /var/lib/cubrid, the 11.4 image in
-      # /home/cubrid/CUBRID/databases (#1000).
+      # Named volumes keep the database across `docker compose down` (make
+      # docker-down); only `docker compose down -v` (make docker-clean) deletes
+      # it. Images up to 11.3 keep databases in /var/lib/cubrid, the 11.4 image
+      # in /home/cubrid/CUBRID/databases (#1000).
       - cubrid-data:/var/lib/cubrid
       - cubrid-databases:/home/cubrid/CUBRID/databases
 

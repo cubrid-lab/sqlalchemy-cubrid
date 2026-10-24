@@ -160,8 +160,9 @@ make test-repo     # 저장소 도구 테스트 실행 (Makefile, 시그널 처�
 make verify        # make check 후 make test 실행 (Docker 없음)
 make test-all      # 모든 Python 버전에서 tox 실행
 make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 (pycubrid) → 삭제
-make docker-up     # CUBRID Docker 컨테이너 시작
-make docker-down   # CUBRID 중지 및 데이터 볼륨 삭제 (테스트 데이터가 모두 삭제됨)
+make docker-up     # CUBRID 시작 (브로커는 127.0.0.1, 포트 CUBRID_TEST_PORT, 기본값 33000)
+make docker-down   # CUBRID 컨테이너 중지 및 제거 (데이터 볼륨 유지)
+make docker-clean  # CUBRID 중지 및 데이터 볼륨 삭제 (테스트 데이터가 모두 삭제됨)
 make docker-fix-db-host # CUBRID_DB_HOST 설정 전에 만든 볼륨 복구 (데이터 유지)
 make clean         # 빌드 산출물과 캐시 제거
 ```
@@ -254,7 +255,10 @@ pytest test/test_aio_integration.py -v
 docker compose down -v
 ```
 
-`-v` 없이 `docker compose down`을 하면 볼륨이 남습니다. `docker-compose.yml`이
+`-v` 없이 `docker compose down`(`make docker-down`)을 하면 볼륨이 남고,
+`make docker-clean`은 `docker compose down -v`를 실행합니다. 브로커는 `127.0.0.1`에만
+공개되며, 다른 호스트 포트를 쓰려면 `CUBRID_TEST_PORT`를 설정하세요(더 이상 권장되지 않는
+예전 이름 `CUBRID_PORT`는 `CUBRID_TEST_PORT`가 없을 때만 사용됩니다). `docker-compose.yml`이
 `CUBRID_DB_HOST`를 설정하기 전에 만든 볼륨은 컨테이너를 다시 만들면 -353으로 실패합니다.
 `make docker-fix-db-host`가 데이터를 유지한 채 복구합니다
 ([문제 해결](TROUBLESHOOTING.md#컨테이너를-다시-만든-뒤-데이터베이스-서버-호스트를-찾을-수-없음)).
@@ -448,7 +452,7 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 
 레시피는 `scripts/run_integration.py` 한 번의 호출이며, 이 스크립트가 드라이버와
 프로젝트 검증, 소유권 확인, 시작, 준비 대기, 시그널 처리, 정리와 종료 상태를
-담당합니다(#1009). Make 타깃은 `INTEGRATION_DRIVER`, `CUBRID_PORT`,
+담당합니다(#1009). Make 타깃은 `INTEGRATION_DRIVER`, `CUBRID_TEST_PORT`,
 `INTEGRATION_PROJECT`, `INTEGRATION_READY_TIMEOUT`, `INTEGRATION_STOP_GRACE`,
 `WAIT_FOR_CUBRID`, `PYTEST`를 그대로 전달합니다.
 
@@ -481,9 +485,10 @@ CUBRIDdb C 확장 필요. CI는 cubrid-python v11.3.0.51에서 빌드하며,
 `docker compose ls -a`로 이름을 확인한 뒤 `docker compose -p <project> down -v`로
 삭제하세요.
 
-컨테이너는 CUBRID를 호스트 포트 33000에 게시합니다. 이 포트가 이미 사용 중이면
-`make integration CUBRID_PORT=33999`처럼 다른 포트를 지정하세요. 테스트 URL도 이
-포트를 따릅니다. `INTEGRATION_PROJECT=<name>`으로 프로젝트 이름을 고정할 수
+컨테이너는 CUBRID를 `127.0.0.1`의 호스트 포트 33000에 게시합니다. 이 포트가 이미 사용
+중이면 `make integration CUBRID_TEST_PORT=33999`처럼 다른 포트를 지정하세요. 테스트
+URL도 이 포트를 따릅니다. 더 이상 권장되지 않는 예전 이름 `CUBRID_PORT`는
+`CUBRID_TEST_PORT`가 없을 때만 사용되며, `make integration`이 사용 중단 경고를 출력합니다. `INTEGRATION_PROJECT=<name>`으로 프로젝트 이름을 고정할 수
 있습니다. 이름은 `^[a-z0-9][a-z0-9_-]*$`와 일치해야 하며(그렇지 않으면 Docker 명령을
 실행하기 전에 상태 2로 종료), 같은 사전 존재 확인이 적용됩니다. 같은 고정
 `INTEGRATION_PROJECT`로 두 실행을 동시에 하는 것은 지원하지 않습니다. pytest는

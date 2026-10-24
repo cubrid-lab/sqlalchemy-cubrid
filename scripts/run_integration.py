@@ -10,7 +10,7 @@ lifecycle the recipe used to spell out in shell (#575, #593, #1000):
    its Compose label and no volume named exactly ``<project>_cubrid-data`` or
    ``<project>_cubrid-databases``. Anything found exits 1 ("Refusing to run");
    a failing probe exits with its status. Nothing is started or removed then.
-3. ``docker compose -p <project> up -d`` with ``CUBRID_PORT`` exported, as the
+3. ``docker compose -p <project> up -d`` with ``CUBRID_TEST_PORT`` exported, as the
    leader of its own process group, so a terminal Ctrl-C does not reach it.
 4. The readiness wait (``--wait``) and the test command (``--test``), with
    ``CUBRID_TEST_URL`` pointing at the run-owned server through the driver.
@@ -291,7 +291,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return 1
 
-    env = {**os.environ, "CUBRID_PORT": args.port}
+    env = {**os.environ, "CUBRID_TEST_PORT": args.port}
     # Cleanup is registered only now, after the ownership check passed.
     for signum in HANDLED_SIGNALS:
         if signal.getsignal(signum) is not signal.SIG_IGN:

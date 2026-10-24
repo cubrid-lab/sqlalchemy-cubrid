@@ -2,7 +2,8 @@
 
 ``make test`` is the complete offline suite, ``make check`` the complete non-test
 quality gate, ``make verify`` both without Docker, and only ``make format``
-modifies files. Most checks use ``make -n`` (print, do not run); the ``doctor`` and
+modifies files. ``make docker-down`` keeps the local test data and only
+``make docker-clean`` deletes it (#1008). Most checks use ``make -n`` (print, do not run); the ``doctor`` and
 ``check-all`` checks run the targets with every tool replaced by ``true`` or
 ``false``, so nothing is installed, linted or modified.
 """
@@ -29,7 +30,15 @@ def _make(*args: str) -> subprocess.CompletedProcess[str]:
         pytest.skip("make is required for Makefile regression tests")
     env = os.environ.copy()
     # Do not inherit outer make state or tool overrides.
-    for key in ("MAKEFLAGS", "MFLAGS", "MAKEOVERRIDES", "PYTHON", *TOOLS):
+    for key in (
+        "MAKEFLAGS",
+        "MFLAGS",
+        "MAKEOVERRIDES",
+        "PYTHON",
+        "CUBRID_PORT",
+        "CUBRID_TEST_PORT",
+        *TOOLS,
+    ):
         env.pop(key, None)
     return subprocess.run(
         [make, "--no-print-directory", *args],
@@ -117,6 +126,45 @@ def test_clean_never_removes_docker_or_cubrid_data(target):
     lines = _dry_run(target)
     assert lines
     assert not any("docker" in line or "cubrid" in line.lower() for line in lines)
+
+
+def test_docker_down_keeps_the_test_data_volumes():
+    assert _dry_run("docker-down") == ["docker compose down"]
+
+
+def test_docker_clean_is_the_only_target_that_deletes_test_data_volumes():
+    assert _dry_run("docker-clean") == ["docker compose down -v"]
+    documented = re.findall(r"^([a-zA-Z_-]+):.*?## ", MAKEFILE, re.M)
+    deleting = [target for target in documented if "down -v" in "\n".join(_dry_run(target))]
+    # make integration removes only its own run-owned project, in the runner.
+    assert deleting == ["docker-clean"]
+
+
+@pytest.mark.parametrize(
+    ("args", "port"),
+    [
+        ((), "33000"),
+        (("CUBRID_TEST_PORT=33300",), "33300"),
+        # The deprecated pre-#1008 name, used only when CUBRID_TEST_PORT is unset.
+        (("CUBRID_PORT=33301",), "33301"),
+        (("CUBRID_PORT=33301", "CUBRID_TEST_PORT=33300"), "33300"),
+    ],
+)
+def test_docker_up_passes_the_broker_port_to_compose(args, port):
+    result = _make("-n", "docker-up", *args)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines()[0] == f'CUBRID_TEST_PORT="{port}" docker compose up -d'
+    deprecated = "CUBRID_PORT is deprecated; use CUBRID_TEST_PORT" in result.stderr
+    assert deprecated == (args == ("CUBRID_PORT=33301",))
+
+
+@pytest.mark.parametrize("target", ["docker-down", "docker-clean", "check", "test", "help"])
+def test_deprecated_port_warning_is_limited_to_targets_that_use_the_port(target):
+    # Other CUBRID tools export CUBRID_PORT as a client setting; it must not make
+    # every target warn (#1008).
+    result = _make("-n", target, "CUBRID_PORT=33301")
+    assert result.returncode == 0, result.stderr
+    assert "deprecated" not in result.stderr
 
 
 def test_check_all_is_a_deprecated_alias_of_check():

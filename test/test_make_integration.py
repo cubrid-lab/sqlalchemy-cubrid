@@ -89,6 +89,10 @@ else:
         stream.write("CUBRID_TEST_URL=" + os.environ.get("CUBRID_TEST_URL", "") + "\\n")
         if os.environ.get("READ_STDIN"):
             stream.write("stdin=" + sys.stdin.read().strip() + "\\n")
+if phase == "UP" and os.environ.get("LOG_UP_PORT"):
+    # The host port Compose interpolates into docker-compose.yml.
+    with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
+        stream.write("up CUBRID_TEST_PORT=" + os.environ.get("CUBRID_TEST_PORT", "") + "\\n")
 if phase == os.environ.get("IGNORE_TERM_PHASE"):
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
 if phase == "UP" and os.environ.get("UP_GRANDCHILD"):
@@ -160,6 +164,7 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
             "MFLAGS",
             "MAKEOVERRIDES",
             "CUBRID_PORT",
+            "CUBRID_TEST_PORT",
             "INTEGRATION_PROJECT",
             "INTEGRATION_DRIVER",
         ):
@@ -400,10 +405,43 @@ def test_integration_uses_fresh_project_per_run(integration_runner):
     )
 
 
-def test_integration_honours_port_override(integration_runner):
-    result, commands = integration_runner(make_vars=("CUBRID_PORT=33999",))
+@pytest.mark.parametrize("source", ["make", "env"])
+def test_integration_honours_port_override(integration_runner, source):
+    result, commands = integration_runner(
+        make_vars=("CUBRID_TEST_PORT=33999",) if source == "make" else (),
+        extra_env={
+            "LOG_UP_PORT": "1",
+            **({"CUBRID_TEST_PORT": "33999"} if source == "env" else {}),
+        },
+    )
     assert result.returncode == 0, result.stderr
+    assert "up CUBRID_TEST_PORT=33999" in commands
     assert "CUBRID_TEST_URL=cubrid+pycubrid://dba@localhost:33999/testdb" in commands
+    assert "deprecated" not in result.stderr
+
+
+@pytest.mark.parametrize("source", ["make", "env"])
+def test_integration_honours_the_deprecated_port_variable(integration_runner, source):
+    # CUBRID_PORT, the name before #1008, still selects the port, with a warning.
+    result, commands = integration_runner(
+        make_vars=("CUBRID_PORT=33998",) if source == "make" else (),
+        extra_env={"LOG_UP_PORT": "1", **({"CUBRID_PORT": "33998"} if source == "env" else {})},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "up CUBRID_TEST_PORT=33998" in commands
+    assert "CUBRID_TEST_URL=cubrid+pycubrid://dba@localhost:33998/testdb" in commands
+    assert "CUBRID_PORT is deprecated; use CUBRID_TEST_PORT" in result.stderr
+
+
+def test_integration_prefers_cubrid_test_port_over_the_deprecated_name(integration_runner):
+    result, commands = integration_runner(
+        make_vars=("CUBRID_TEST_PORT=33999",),
+        extra_env={"LOG_UP_PORT": "1", "CUBRID_PORT": "33998"},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "up CUBRID_TEST_PORT=33999" in commands
+    assert "CUBRID_TEST_URL=cubrid+pycubrid://dba@localhost:33999/testdb" in commands
+    assert "deprecated" not in result.stderr
 
 
 @pytest.mark.parametrize(
@@ -725,6 +763,36 @@ def test_compose_registers_the_database_for_a_stable_host() -> None:
     environment = compose["services"]["cubrid"]["environment"]
     assert environment["CUBRID_DB"] == "testdb"
     assert environment["CUBRID_DB_HOST"] == "localhost"
+
+
+def test_compose_service_contract() -> None:
+    """One service, ``cubrid``, with ``testdb``, a SQL health check and no fixed name (#1008)."""
+    root = Path(__file__).resolve().parents[1]
+    compose = yaml.safe_load((root / "docker-compose.yml").read_text())
+    assert list(compose["services"]) == ["cubrid"]
+    service = compose["services"]["cubrid"]
+    assert service["image"] == "cubrid/cubrid:${CUBRID_VERSION:-11.2}"
+    assert service["environment"]["CUBRID_DB"] == "testdb"
+    assert service["healthcheck"]["test"] == [
+        "CMD",
+        "csql",
+        "-u",
+        "dba",
+        "testdb",
+        "-c",
+        "SELECT 1",
+    ]
+    # Run-owned make integration projects must not collide on a container name.
+    assert "container_name" not in service
+
+
+def test_compose_publishes_the_broker_on_loopback_only() -> None:
+    """``CUBRID_TEST_PORT`` (deprecated fallback ``CUBRID_PORT``) on 127.0.0.1 (#1008)."""
+    root = Path(__file__).resolve().parents[1]
+    compose = yaml.safe_load((root / "docker-compose.yml").read_text())
+    assert compose["services"]["cubrid"]["ports"] == [
+        "127.0.0.1:${CUBRID_TEST_PORT:-${CUBRID_PORT:-33000}}:33000"
+    ]
 
 
 def test_compose_keeps_every_image_database_directory_in_a_named_volume() -> None:

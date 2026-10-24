@@ -83,9 +83,11 @@ pytest test/ -v -m integration
 ### Docker
 
 ```bash
-docker compose up -d                          # Default version from docker-compose.yml
-CUBRID_VERSION=11.4 docker compose up -d      # Specific version
-docker compose down -v                        # Cleanup
+make docker-up                                # Default version, broker on 127.0.0.1:33000
+CUBRID_VERSION=11.4 make docker-up            # Specific version
+CUBRID_TEST_PORT=33300 make docker-up         # Another host port (CUBRID_PORT is deprecated)
+make docker-down                              # Stop and remove; keeps the test data volumes
+make docker-clean                             # Stop and delete the test data volumes
 ```
 
 ## Code Conventions
