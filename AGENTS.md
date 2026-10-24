@@ -104,7 +104,7 @@ make docker-clean                             # Stop and delete the test data vo
 ### Naming
 
 - Classes: `CubridDialect`, `CubridSQLCompiler`, `CubridTypeCompiler`, `CubridDDLCompiler`
-- Test classes: `TestCubridSQLCompiler`, `TestCubridTypes`, etc.
+- Test classes: `TestSelectCompilation`, `TestCubridTypes`, etc.
 - Test files: `test/test_*.py`
 
 ### Patterns to Follow

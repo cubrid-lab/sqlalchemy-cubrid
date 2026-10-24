@@ -209,7 +209,7 @@ pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py \
 pytest test/test_compiler.py -v
 
 # 단일 테스트 실행
-pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
+pytest test/test_compiler.py::TestSelectCompilation::test_select_limit -v
 ```
 
 ### 속성 기반 퍼즈 테스트 (Hypothesis)

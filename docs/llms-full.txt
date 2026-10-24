@@ -7513,7 +7513,7 @@ pytest test/ -v --ignore=test/test_integration.py --ignore=test/test_suite.py \
 pytest test/test_compiler.py -v
 
 # Run a single test
-pytest test/test_compiler.py::TestCubridSQLCompiler::test_select_limit -v
+pytest test/test_compiler.py::TestSelectCompilation::test_select_limit -v
 ```
 
 ### Property-Based Fuzz Tests (Hypothesis)
