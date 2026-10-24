@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.11.6](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.5...v1.11.6) (2026-10-24)
+
+
+### Documentation
+
+* **development:** fix stale pytest node ([#1034](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1034)) ([003dca4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/003dca4d9bf79aeb1d67814c5fa8e92824216405)), closes [#1033](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1033)
+
 ## [1.11.5](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.4...v1.11.5) (2026-10-24)
 
 
