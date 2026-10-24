@@ -9,7 +9,7 @@ import pytest
 
 from scripts.check_issue_metadata import main, metadata_gaps
 
-_VALID = ("bug", "priority: high", "size: M", "area: protocol")
+_VALID = ("bug", "priority: high", "size: medium", "area: protocol")
 
 
 @pytest.mark.parametrize(
@@ -24,39 +24,40 @@ _VALID = ("bug", "priority: high", "size: M", "area: protocol")
         ("fix: WIP preserve state", _VALID, ("title",)),
         ("fix: preserve state ", _VALID, ("title",)),
         ("fix: preserve state\n", _VALID, ("title",)),
-        ("fix: preserve cursor state", ("priority: high", "size: M"), ("type",)),
+        ("fix: preserve cursor state", ("priority: high", "size: medium"), ("type",)),
         (
             "fix: fail closed when the integration service is unavailable",
-            ("ci", "priority: critical", "size: M"),
+            ("ci", "priority: critical", "size: medium"),
             (),
         ),
-        ("fix: fence prepared requests", ("enhancement", "priority: high", "size: L"), ()),
+        ("fix: fence prepared requests", ("enhancement", "priority: high", "size: large"), ()),
         ("fix: preserve cursor state", (*_VALID, "ci"), ()),
-        ("test: add coverage", ("testing", "priority: medium", "size: S"), ()),
-        ("refactor: simplify compiler", ("refactor", "priority: medium", "size: S"), ()),
-        ("ci: extend coverage", ("ci", "testing", "priority: medium", "size: M"), ()),
+        ("test: add coverage", ("testing", "priority: medium", "size: small"), ()),
+        ("refactor: simplify compiler", ("refactor", "priority: medium", "size: small"), ()),
+        ("ci: extend coverage", ("ci", "testing", "priority: medium", "size: medium"), ()),
         (
             "epic: compare drivers",
-            ("enhancement", "testing", "priority: high", "size: L"),
+            ("enhancement", "testing", "priority: high", "size: large"),
             ("title",),
         ),
-        ("test: compare drivers", ("enhancement", "testing", "priority: high", "size: L"), ()),
+        ("test: compare drivers", ("enhancement", "testing", "priority: high", "size: large"), ()),
         ("feat(aio)!: drop the legacy flag", _VALID, ()),
-        ("build: switch the build backend", ("chore", "priority: low", "size: S"), ()),
+        ("build: switch the build backend", ("chore", "priority: low", "size: small"), ()),
         ("revert: restore the escape probe", _VALID, ()),
         ("Fix: preserve cursor state", _VALID, ("title",)),
-        ("perf: tune fetches", ("enhancement", "priority: medium", "size: S"), ()),
-        ("perf: tune fetches", ("performance", "priority: medium", "size: S"), ()),
-        ("perf: tune fetches", ("enhancement", "performance", "priority: medium", "size: S"), ()),
-        ("fix: preserve cursor state", ("bug", "size: M"), ("priority",)),
-        ("fix: preserve cursor state", ("bug", "priority:high", "size: M"), ("priority",)),
+        ("perf: tune fetches", ("enhancement", "priority: medium", "size: small"), ()),
+        ("perf: tune fetches", ("performance", "priority: medium", "size: small"), ()),
+        ("perf: tune fetches", ("enhancement", "performance", "priority: medium", "size: small"), ()),
+        ("fix: preserve cursor state", ("bug", "size: medium"), ("priority",)),
+        ("fix: preserve cursor state", ("bug", "priority:high", "size: medium"), ("priority",)),
         (
             "fix: preserve cursor state",
-            ("bug", "priority: high", "priority: low", "size: M"),
+            ("bug", "priority: high", "priority: low", "size: medium"),
             ("priority",),
         ),
         ("fix: preserve cursor state", ("bug", "priority: high"), ("size",)),
         ("fix: preserve cursor state", ("bug", "priority: high", "size:M"), ("size",)),
+        ("fix: preserve cursor state", ("bug", "priority: high", "size: XS"), ("size",)),
     ],
 )
 def test_metadata_gaps(title: str, labels: tuple[str, ...], expected: tuple[str, ...]) -> None:
