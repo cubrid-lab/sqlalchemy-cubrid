@@ -42,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
-- **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. Documentation only; no behavior change.
+- **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. `mkdocs.yml` now registers the `mermaid` SuperFences custom fence, so the documentation site renders the Mermaid diagrams on every page (they were shown as code listings before). Documentation only; no behavior change.
 
 ### CI
 
