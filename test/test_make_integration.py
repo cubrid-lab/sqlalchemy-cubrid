@@ -45,9 +45,8 @@ def integration_runner(request, tmp_path: Path):
     root = Path(__file__).resolve().parents[1]
     shutil.copyfile(root / "Makefile", tmp_path / "Makefile")
     (tmp_path / "scripts").mkdir()
-    shutil.copyfile(
-        root / "scripts" / "run_integration.py", tmp_path / "scripts" / "run_integration.py"
-    )
+    for script in ("run_integration.py", "report_test_results.py"):
+        shutil.copyfile(root / "scripts" / script, tmp_path / "scripts" / script)
     log = tmp_path / "commands.log"
     stub = (
         f"#!{sys.executable}\n"
@@ -65,7 +64,9 @@ with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
 existing = set(filter(None, os.environ.get("EXISTING", "").split(",")))
 if name == "docker":
     if args[0] == "compose":
-        phase = "UP" if "up" in args else "DOWN"
+        phase = "UP" if "up" in args else "LOGS" if "logs" in args else "DOWN"
+        if phase == "LOGS":
+            print("cubrid service log line")
     else:
         # Read-only ownership probes: docker ps / volume ls / network ls with a
         # project label filter, and an unfiltered volume listing for the name.
@@ -85,6 +86,19 @@ elif name == "wait-stub":
     phase = "WAIT"
 else:
     phase = "TEST"
+    cases = os.environ.get("JUNIT_CASES", "pass")
+    for arg in args:
+        if arg.startswith("--junitxml=") and cases != "none":
+            body = {
+                "pass": '<testcase classname="t" name="a"/>',
+                "skip": '<testcase classname="t" name="s"><skipped type="pytest.skip" message="x"/></testcase>',
+            }[cases]
+            Path(arg.split("=", 1)[1]).write_text(
+                '<?xml version="1.0"?><testsuites><testsuite name="pytest">'
+                + body
+                + "</testsuite></testsuites>",
+                encoding="utf-8",
+            )
     with open(os.environ["COMMAND_LOG"], "a", encoding="utf-8") as stream:
         stream.write("CUBRID_TEST_URL=" + os.environ.get("CUBRID_TEST_URL", "") + "\\n")
         if os.environ.get("READ_STDIN"):
@@ -258,11 +272,15 @@ sys.exit(int(os.environ.get(phase + "_STATUS", "0")))
 
 
 def _lifecycle(commands: list[str]) -> list[str]:
-    """Drop the read-only ownership probes and keep the lifecycle commands."""
+    """Drop the probes and the service-log read; keep the lifecycle commands.
+
+    The ``--junitxml`` argument the runner appends to the test command is dropped too.
+    """
     return [
-        command
+        re.sub(r" --junitxml=\S+$", "", command)
         for command in commands
         if not command.startswith(("docker ps", "docker volume", "docker network"))
+        and " logs " not in command
     ]
 
 
@@ -885,3 +903,166 @@ def test_fix_db_host_rewrites_only_the_testdb_host(tmp_path: Path) -> None:
     # A second run keeps the first backup, the only record of the stale host.
     assert fix().returncode == 0
     assert backup.read_text() == original
+
+
+# --- Result files (#1020) ----------------------------------------------------
+
+RESULTS = Path("test-results") / "integration"
+
+
+def _results(tmp_path: Path) -> Path:
+    return tmp_path / RESULTS
+
+
+def _summary(tmp_path: Path) -> dict:
+    import json
+
+    return json.loads((_results(tmp_path) / "summary.json").read_text(encoding="utf-8"))
+
+
+def test_integration_writes_results_and_a_matching_console_line(integration_runner, tmp_path):
+    result, _ = integration_runner()
+    assert result.returncode == 0, result.stderr
+    summary = _summary(tmp_path)
+    assert summary["status"] == "PASS"
+    assert summary["lane"] == "integration"
+    assert summary["executed"] is True
+    assert summary["counts"]["passed"] == 1
+    assert (_results(tmp_path) / "junit.xml").is_file()
+    assert not (_results(tmp_path) / "service.log").exists()
+    # The last console line is derived from summary.json.
+    last = result.stdout.strip().splitlines()[-1]
+    assert last.startswith("integration: PASS; 1 selected, 1 passed")
+    assert last.endswith(str(_results(tmp_path) / "summary.json"))
+    import json
+
+    environment = json.loads((_results(tmp_path) / "environment.json").read_text("utf-8"))
+    assert environment["lane"] == "integration"
+    assert environment["command"] == "make integration INTEGRATION_DRIVER=pycubrid"
+    assert environment["cubrid_version"] == "11.2"
+    assert environment["driver"]["name"] == "pycubrid"
+    for key in ("python", "platform", "sqlalchemy"):
+        assert environment[key]
+
+
+def test_integration_results_never_contain_a_credential(integration_runner, tmp_path):
+    secret = "topsecret-1020"
+    result, _ = integration_runner(
+        test=7,
+        extra_env={
+            "CUBRID_PASSWORD": secret,
+            "CUBRID_TEST_URL": f"cubrid+pycubrid://dba:{secret}@localhost:33000/external",
+            "CUBRID_TEST_AURL": f"cubrid+pycubrid://dba:{secret}@localhost:33000/external",
+        },
+    )
+    assert result.returncode != 0
+    files = [path for path in _results(tmp_path).rglob("*") if path.is_file()]
+    assert {path.name for path in files} >= {"summary.json", "environment.json", "junit.xml"}
+    for path in files:
+        assert secret not in path.read_text(encoding="utf-8"), path
+
+
+def test_integration_failing_tests_are_fail_and_save_the_service_log(integration_runner, tmp_path):
+    result, commands = integration_runner(test=7)
+    assert result.returncode != 0
+    summary = _summary(tmp_path)
+    assert summary["status"] == "FAIL"
+    assert summary["pytest_exit_code"] == 7
+    assert "cubrid service log line" in (_results(tmp_path) / "service.log").read_text("utf-8")
+    assert commands[-1] == DOWN
+
+
+def test_integration_service_log_failure_never_skips_cleanup(integration_runner, tmp_path):
+    result, commands = integration_runner(test=7, extra_env={"LOGS_STATUS": "5"})
+    assert result.returncode != 0
+    assert commands.count(DOWN) == 1
+    assert _summary(tmp_path)["status"] == "FAIL"
+
+
+def test_integration_cleanup_failure_is_fail_even_when_tests_passed(integration_runner, tmp_path):
+    result, _ = integration_runner(down=9)
+    assert result.returncode != 0
+    summary = _summary(tmp_path)
+    assert summary["status"] == "FAIL"
+    assert summary["pytest_exit_code"] == 9
+    assert "docker cleanup failed" in summary["problems"]
+
+
+def test_integration_setup_failure_is_fail_without_junit(integration_runner, tmp_path):
+    result, _ = integration_runner(wait=6)
+    assert result.returncode != 0
+    assert _summary(tmp_path)["status"] == "FAIL"
+    assert not (_results(tmp_path) / "junit.xml").exists()
+
+
+@pytest.mark.parametrize("cases", ["skip", "none"])
+def test_integration_a_lane_that_proved_nothing_is_incomplete(integration_runner, tmp_path, cases):
+    # Exit 0 from pytest, but every test skipped or no JUnit file: never PASS.
+    result, _ = integration_runner(extra_env={"JUNIT_CASES": cases})
+    assert result.returncode != 0
+    assert _summary(tmp_path)["status"] == "INCOMPLETE"
+    assert _summary(tmp_path)["executed"] is (False if cases == "skip" else None)
+
+
+def test_integration_clears_a_previous_pass_once_it_owns_the_project(integration_runner, tmp_path):
+    results = _results(tmp_path)
+    results.mkdir(parents=True)
+    for name in ("summary.json", "junit.xml", "service.log", "environment.json"):
+        (results / name).write_text("previous run", encoding="utf-8")
+    result, _ = integration_runner(extra_env={"JUNIT_CASES": "none"})
+    assert result.returncode != 0
+    assert (results / "summary.json").read_text("utf-8") != "previous run"
+    assert not (results / "service.log").exists()
+    assert not (results / "junit.xml").exists()
+
+
+@pytest.mark.parametrize("existing", ["container", "named-volume"])
+def test_integration_refusal_replaces_a_previous_pass(integration_runner, tmp_path, existing):
+    results = _results(tmp_path)
+    results.mkdir(parents=True)
+    (results / "summary.json").write_text('{"status": "PASS"}', encoding="utf-8")
+    (results / "junit.xml").write_text("stale", encoding="utf-8")
+    result, commands = integration_runner(existing=existing)
+    assert result.returncode != 0
+    assert not any(command.startswith("docker compose") for command in commands)
+    summary = _summary(tmp_path)
+    assert summary["status"] == "FAIL"
+    assert any("refused to run" in problem for problem in summary["problems"])
+    assert not (results / "junit.xml").exists()
+
+
+def test_integration_failed_ownership_probe_replaces_a_previous_pass(integration_runner, tmp_path):
+    results = _results(tmp_path)
+    results.mkdir(parents=True)
+    (results / "summary.json").write_text('{"status": "PASS"}', encoding="utf-8")
+    result, _ = integration_runner(extra_env={"FAILING_PROBE": "volume"})
+    assert "failed (status 5)" in result.stderr
+    assert result.returncode != 0
+    assert _summary(tmp_path)["status"] == "FAIL"
+
+
+@pytest.mark.parametrize(
+    ("make_vars", "reason"),
+    [
+        (("INTEGRATION_DRIVER=oracle",), "INTEGRATION_DRIVER"),
+        (("INTEGRATION_PROJECT=Bad",), "PROJECT"),
+    ],
+)
+def test_integration_rejected_arguments_leave_a_fail_summary(
+    integration_runner, tmp_path, make_vars, reason
+):
+    results = _results(tmp_path)
+    results.mkdir(parents=True)
+    (results / "summary.json").write_text('{"status": "PASS"}', encoding="utf-8")
+    result, commands = integration_runner(make_vars=make_vars)
+    assert result.returncode != 0
+    assert commands == []
+    summary = _summary(tmp_path)
+    assert summary["status"] == "FAIL"
+    assert any(reason in problem for problem in summary["problems"])
+
+
+def test_integration_local_writes_no_results(integration_runner, tmp_path):
+    result, _ = integration_runner("integration-local")
+    assert result.returncode == 0, result.stderr
+    assert not _results(tmp_path).exists()

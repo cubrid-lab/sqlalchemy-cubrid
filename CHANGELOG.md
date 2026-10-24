@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   suite still exits non-zero with `status: FAIL`, `test-results/` is gitignored and
   `make clean` removes it. Test selection and the coverage floor are unchanged.
 
+- **`make integration` writes `junit.xml`, `summary.json`, `environment.json` and, after a
+  failure, `service.log` under `test-results/integration/` (#1020)** — through the same
+  `scripts/report_test_results.py` (new `environment` subcommand and `--require-executed`
+  option), written after `docker compose down -v` so a cleanup failure is `FAIL`; a run
+  whose JUnit file is missing or whose tests were all skipped is `INCOMPLETE` and exits 1;
+  a run refused before it owns its Compose project leaves a `FAIL` summary instead of a
+  stale `PASS`. `environment.json` holds Python, SQLAlchemy, driver and CUBRID versions,
+  platform and command, never credentials. `INTEGRATION_RESULTS` overrides the directory.
+
 ### Changed
 
 - **Makefile targets have one meaning each, and `make integration` runs a script
@@ -80,6 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `test-results/`; the integration jobs upload their pytest logs. Every one of those steps
   runs with `if: always()`, so a failing run keeps its evidence. Test selection, the 95%
   coverage floor and the permissions are unchanged. The summary of the live lanes follows #1020.
+
+- **The `make-integration` jobs also upload `test-results/integration/` (#1020)** — the
+  live results of `make integration` join `make-integration.log` in the existing
+  `pytest-logs-make-integration-*` artifact; nothing else in the workflows changes.
 
 - **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged.
 

@@ -25,7 +25,7 @@ SHA_PIN = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 OFFLINE = [("ci.yml", "offline-tests"), ("integration-full.yml", "offline-endpoints")]
 # (workflow, job, log files the artifact carries, matrix keys its name must carry)
 LOGS = [
-    ("ci.yml", "make-integration", ["make-integration.log"], []),
+    ("ci.yml", "make-integration", ["make-integration.log", "test-results/integration/"], []),
     (
         "ci.yml",
         "integration-tests",
@@ -44,7 +44,7 @@ LOGS = [
         ],
         ["python-version", "cubrid-version"],
     ),
-    ("integration-full.yml", "make-integration", ["make-integration.log"], ["driver", "cubrid-version"]),
+    ("integration-full.yml", "make-integration", ["make-integration.log", "test-results/integration/"], ["driver", "cubrid-version"]),
 ]  # fmt: skip
 
 

@@ -401,6 +401,7 @@ jobs:
           name: pytest-logs-make-integration-${{ matrix.driver }}-cubrid${{ matrix.cubrid-version }}
           path: |
             make-integration.log
+            test-results/integration/
           retention-days: 7
           if-no-files-found: warn
 

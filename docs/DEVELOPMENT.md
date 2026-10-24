@@ -621,8 +621,38 @@ every run, passing or failing, each lane appends the one-line summary to the job
 and uploads `test-results/` as the `test-results-offline-py<version>` artifact (7 days). The
 jobs that run integration tests (`integration-tests` and `make-integration` in `ci.yml`,
 `integration-full` and `make-integration` in `integration-full.yml`) upload the pytest logs they
-already write as `pytest-logs-*` artifacts, also on failure. A job summary and JUnit for the
-live lanes follow the live reporting work (#1020).
+already write as `pytest-logs-*` artifacts, also on failure; the two `make-integration` jobs
+also upload `test-results/integration/` (the live results below) in the same artifact. A job
+summary for the live lanes is not written yet.
+
+### Live results (`make integration`)
+
+`make integration` writes the following files (#1020), in `INTEGRATION_RESULTS` (default
+`test-results/integration/`, gitignored, removed by `make clean`). The directory is
+`integration`, the lane's name, not `verify`: what a future live `make verify` runs is still
+an open decision (#1018), and a `verify` directory would claim an aggregate that does not exist.
+
+| File | Content |
+|---|---|
+| `junit.xml` | pytest `--junitxml` report of the whole `-m integration` session |
+| `summary.json` | the `make test` schema (`status`, `counts`, `problems`, `pytest_exit_code`) plus `executed` (did any test pass, fail, error, xfail or xpass) |
+| `environment.json` | `command`, `python`, `platform`, `sqlalchemy`, `sqlalchemy_cubrid`, `driver` (name, version), `cubrid_version` (`CUBRID_VERSION`, default 11.2); never a URL, password or other environment variable |
+| `service.log` | the CUBRID container log, after a failing run only (best effort) |
+
+`scripts/run_integration.py` writes them with `scripts/report_test_results.py` (the reporter of
+`make test`) once the run is over, so the summary carries the final exit status and the last
+console line repeats it, e.g. `integration: PASS; 450 selected, ... -> .../summary.json`.
+`status` is `FAIL` when pytest or the readiness wait fails, or when `docker compose down -v`
+fails after green tests; it is `INCOMPLETE` (and the run exits 1) when pytest exits 0 but the
+JUnit file is missing or every selected test was skipped. The run replaces the previous
+files only once it owns its Compose project; a run refused before that (invalid
+`INTEGRATION_DRIVER` or `INTEGRATION_PROJECT`, a failed or positive ownership probe) leaves
+a `FAIL` summary that names the reason instead of a stale `PASS`. Saving `service.log`
+never skips the cleanup. Run one `make integration` per results directory at a time.
+`make integration-local` runs no Docker lifecycle and writes no results. A future live
+`make verify` is expected to run its lanes with their own `INTEGRATION_RESULTS` directories
+under `test-results/verify/` and aggregate each lane's `summary.json` (a lane that is missing
+or not `PASS` makes the aggregate `INCOMPLETE` or `FAIL`).
 
 ### Known Unreachable Lines
 

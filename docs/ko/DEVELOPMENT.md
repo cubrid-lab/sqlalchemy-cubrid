@@ -604,8 +604,37 @@ CI는 `make test`를 실행하지 않습니다. 오프라인 레인(`ci.yml`의 
 `test-results/`를 `test-results-offline-py<버전>` 아티팩트(7일)로 업로드합니다. 통합 테스트를
 실행하는 job(`ci.yml`의 `integration-tests`, `make-integration`, `integration-full.yml`의
 `integration-full`, `make-integration`)은 이미 기록하는 pytest 로그를 실패 시에도
-`pytest-logs-*` 아티팩트로 업로드합니다. 라이브 레인의 job summary와 JUnit은 라이브 리포팅
-작업(#1020)에서 이어집니다.
+`pytest-logs-*` 아티팩트로 업로드합니다. 두 `make-integration` job은 같은 아티팩트에
+`test-results/integration/`(아래 라이브 결과)도 함께 올립니다. 라이브 레인의 job summary는
+아직 기록하지 않습니다.
+
+### 라이브 결과 (`make integration`)
+
+`make integration`은 `INTEGRATION_RESULTS`(기본값 `test-results/integration/`, gitignore 대상,
+`make clean`으로 제거)에 다음 파일을 기록합니다(#1020). 디렉터리 이름은 `verify`가 아니라 레인
+이름인 `integration`입니다. 향후 라이브 `make verify`가 무엇을 실행할지는 아직 열린 결정(#1018)이라,
+`verify` 디렉터리는 존재하지 않는 집계를 암시하기 때문입니다.
+
+| 파일 | 내용 |
+|---|---|
+| `junit.xml` | `-m integration` 전체 세션의 pytest `--junitxml` 보고서 |
+| `summary.json` | `make test`와 같은 스키마(`status`, `counts`, `problems`, `pytest_exit_code`)에 `executed`(통과, 실패, 오류, xfail, xpass한 테스트가 있었는지) 추가 |
+| `environment.json` | `command`, `python`, `platform`, `sqlalchemy`, `sqlalchemy_cubrid`, `driver`(이름, 버전), `cubrid_version`(`CUBRID_VERSION`, 기본값 11.2). URL, 비밀번호, 그 밖의 환경 변수는 기록하지 않음 |
+| `service.log` | CUBRID 컨테이너 로그. 실패한 실행에서만(최선 노력) |
+
+`scripts/run_integration.py`가 실행이 끝난 뒤 `scripts/report_test_results.py`(`make test`의
+리포터)로 파일을 기록하므로, 요약에는 정리까지 포함한 최종 종료 상태가 담기고 마지막 콘솔 줄이
+이를 반복합니다(예: `integration: PASS; 450 selected, ... -> .../summary.json`). pytest나 준비
+대기가 실패하거나 테스트가 통과한 뒤 `docker compose down -v`가 실패하면 `status`는 `FAIL`입니다.
+pytest가 0으로 끝났지만 JUnit 파일이 없거나 선택된 테스트가 모두 건너뛰어졌다면 `INCOMPLETE`이며
+실행은 1로 종료합니다. 이전 파일은 실행이 Compose 프로젝트를 소유한 뒤에야 교체합니다. 그 전에
+거부된 실행(잘못된 `INTEGRATION_DRIVER`/`INTEGRATION_PROJECT`, 실패하거나 양성인 소유권 점검)은
+오래된 `PASS` 대신 사유를 적은 `FAIL` 요약을 남깁니다. `service.log` 저장은 정리를 건너뛰게 하지
+않습니다. 결과 디렉터리마다 한 번에 하나의 `make integration`만 실행하세요.
+`make integration-local`은 Docker 수명 주기를 실행하지 않으며 결과도 기록하지 않습니다. 향후 라이브
+`make verify`는 각 레인을 `test-results/verify/` 아래 별도 `INTEGRATION_RESULTS` 디렉터리로
+실행하고 레인별 `summary.json`을 집계할 것으로 예상됩니다(없거나 `PASS`가 아닌 레인이 있으면
+집계는 `INCOMPLETE` 또는 `FAIL`).
 
 ### 알려진 도달 불가능 라인
 

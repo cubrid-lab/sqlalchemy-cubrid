@@ -18,6 +18,9 @@ LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples
 # before SIGTERM and any step gets after SIGTERM before SIGKILL.
 # scripts/run_integration.py owns the lifecycle; see docs/DEVELOPMENT.md.
 INTEGRATION_DRIVER ?= pycubrid
+# Where make integration writes junit.xml, summary.json, environment.json and (after a
+# failure) service.log (#1020); relative to the repository root.
+INTEGRATION_RESULTS ?= test-results/integration
 # Host port of the CUBRID broker, published on 127.0.0.1 only, for make docker-up
 # and the run-owned make integration container (#1008). CUBRID_PORT is the
 # deprecated former name, still honoured when CUBRID_TEST_PORT is not set; the
@@ -163,7 +166,9 @@ integration: ## Run integration tests (INTEGRATION_DRIVER=pycubrid|cubriddb) in 
 		--ready-timeout="$(INTEGRATION_READY_TIMEOUT)" \
 		--stop-grace="$(INTEGRATION_STOP_GRACE)" \
 		--wait="$(WAIT_FOR_CUBRID)" \
-		--test="$(PYTEST) $(TESTS)/ -m integration -v"
+		--test="$(PYTEST) $(TESTS)/ -m integration -v" \
+		--results-dir="$(INTEGRATION_RESULTS)" \
+		--command="make integration INTEGRATION_DRIVER=$(INTEGRATION_DRIVER)"
 
 integration-local: ## Run integration tests against an already-running CUBRID (set CUBRID_TEST_URL; no Docker)
 	@if [ -z "$$CUBRID_TEST_URL" ]; then \
