@@ -18,8 +18,8 @@ Status:
   and the coverage threshold (when given) is met.
 * ``FAIL``: pytest exited non-zero, a test failed or errored, or coverage is below
   the threshold.
-* ``INCOMPLETE``: pytest exited 0 but the JUnit file (or the coverage file, when one
-  was given) is missing or unreadable, or holds no test case, 
+* ``INCOMPLETE``: pytest exited 0 but the JUnit file (or the coverage file, which is
+  required whenever a threshold is given) is missing or unreadable, or holds no test case, 
 
 The exit status is 0 only for ``PASS``. A strict ``xpass`` is reported as a failure
 by pytest and is counted as ``xpassed`` (not ``failed``); a non-strict ``xpass`` is a
@@ -37,38 +37,50 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from xml.etree import ElementTree  # noqa: S405 - parses the files pytest itself wrote
+from xml.etree.ElementTree import ParseError
+
+from defusedxml import ElementTree
 
 SCHEMA_VERSION = 1
 COUNT_KEYS = ("selected", "passed", "failed", "errors", "skipped", "xfailed", "xpassed")
 
 
 def parse_junit(path: Path) -> dict[str, int]:
-    """Count the outcomes of every ``<testcase>`` in a pytest JUnit file."""
+    """Count the outcomes of the ``<testcase>`` records in a pytest JUnit file.
+
+    pytest writes one record per failing phase, so a test whose call and teardown both
+    fail has two records. ``selected`` counts each test once (by class name and name);
+    every failure and error is still counted. A test with a failure or error is never
+    also counted as passed, skipped or xfailed.
+    """
     counts = dict.fromkeys(COUNT_KEYS, 0)
-    root = ElementTree.parse(path).getroot()  # noqa: S314
+    clean: dict[tuple[str, str], str] = {}
+    bad: set[tuple[str, str]] = set()
+    root = ElementTree.parse(path).getroot()
     for case in root.iter("testcase"):
-        counts["selected"] += 1
+        key = (case.get("classname") or "", case.get("name") or "")
+        clean.setdefault(key, "passed")
         if case.find("error") is not None:
             counts["errors"] += 1
+            bad.add(key)
         elif (failure := case.find("failure")) is not None:
             if "XPASS(strict)" in (failure.get("message") or ""):
                 counts["xpassed"] += 1
             else:
                 counts["failed"] += 1
+            bad.add(key)
         elif (skipped := case.find("skipped")) is not None:
-            if skipped.get("type") == "pytest.xfail":
-                counts["xfailed"] += 1
-            else:
-                counts["skipped"] += 1
-        else:
-            counts["passed"] += 1
+            clean[key] = "xfailed" if skipped.get("type") == "pytest.xfail" else "skipped"
+    counts["selected"] = len(clean)
+    for key, outcome in clean.items():
+        if key not in bad:
+            counts[outcome] += 1
     return counts
 
 
 def parse_coverage(path: Path) -> float:
     """Total line coverage, in percent, from a Cobertura ``coverage.xml``."""
-    root = ElementTree.parse(path).getroot()  # noqa: S314
+    root = ElementTree.parse(path).getroot()
     return round(float(root.attrib["line-rate"]) * 100, 2)
 
 
@@ -85,13 +97,15 @@ def build_summary(
     counts: dict[str, int] | None = None
     try:
         counts = parse_junit(junit)
-    except (OSError, ElementTree.ParseError) as exc:
+    except (OSError, ParseError) as exc:
         problems.append(f"cannot read JUnit file {junit}: {exc}")
     percent: float | None = None
+    if coverage is None and threshold is not None:
+        problems.append("a coverage threshold was given without a coverage file")
     if coverage is not None:
         try:
             percent = parse_coverage(coverage)
-        except (OSError, ElementTree.ParseError, KeyError, ValueError) as exc:
+        except (OSError, ParseError, KeyError, ValueError) as exc:
             problems.append(f"cannot read coverage file {coverage}: {exc}")
     threshold_met: bool | None = None
     if threshold is not None and percent is not None:

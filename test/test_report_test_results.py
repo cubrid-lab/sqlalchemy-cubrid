@@ -172,3 +172,46 @@ def test_main_exits_nonzero_and_records_fail(tmp_path, capsys):
     assert code == 1
     assert json.loads(out.read_text(encoding="utf-8"))["status"] == "FAIL"
     assert "test: FAIL" in capsys.readouterr().out
+
+
+def test_call_and_teardown_failures_of_one_test_are_selected_once(tmp_path):
+    # pytest writes one <testcase> per failing phase for the same test.
+    call = '<testcase classname="t" name="both"><failure message="assert 0">t</failure></testcase>'
+    teardown = '<testcase classname="t" name="both"><error message="teardown">t</error></testcase>'
+    counts = mod.parse_junit(_junit(tmp_path, PASSING, call, teardown))
+    assert counts["selected"] == 3
+    assert counts["passed"] == 2
+    assert (counts["failed"], counts["errors"]) == (1, 1)
+
+
+def test_teardown_error_after_a_pass_is_not_also_a_pass(tmp_path):
+    ok = '<testcase classname="t" name="x"/>'
+    teardown = '<testcase classname="t" name="x"><error message="teardown">t</error></testcase>'
+    counts = mod.parse_junit(_junit(tmp_path, ok, teardown))
+    assert counts == {
+        "selected": 1,
+        "passed": 0,
+        "failed": 0,
+        "errors": 1,
+        "skipped": 0,
+        "xfailed": 0,
+        "xpassed": 0,
+    }
+
+
+def test_threshold_without_coverage_is_incomplete(tmp_path, capsys):
+    summary = mod.build_summary(
+        lane="test",
+        junit=_junit(tmp_path, PASSING),
+        coverage=None,
+        threshold=95,
+        pytest_exit=0,
+    )
+    assert summary["status"] == "INCOMPLETE"
+    assert "without a coverage file" in summary["problems"][0]
+    code = mod.main(
+        ["--lane", "test", "--junit", str(tmp_path / "junit.xml"), "--threshold", "95"]
+        + ["--pytest-exit", "0", "--output", str(tmp_path / "s.json")]
+    )
+    assert code == 1
+    assert "INCOMPLETE" in capsys.readouterr().out

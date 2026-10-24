@@ -187,6 +187,7 @@ the tables, not by the test.
 | colorama | 0.4.6 | BSD License | Permissive | https://github.com/tartley/colorama |
 | coverage | 7.16.2 | Apache-2.0 | Permissive | https://github.com/coveragepy/coveragepy |
 | cryptography | 50.0.2 | Apache-2.0 OR BSD-3-Clause | Permissive | https://github.com/pyca/cryptography |
+| defusedxml | 0.7.1 | Python Software Foundation License | Permissive | https://github.com/tiran/defusedxml |
 | distlib | 0.4.3 | Python Software Foundation License | Permissive | https://github.com/pypa/distlib |
 | filelock | 4.0.12 | MIT | Permissive | https://github.com/tox-dev/py-filelock |
 | greenlet | 3.5.6 | MIT AND PSF-2.0 | Permissive | https://greenlet.readthedocs.io |

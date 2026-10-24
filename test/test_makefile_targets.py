@@ -247,10 +247,10 @@ def test_test_writes_junit_coverage_and_summary_under_test_results():
     text = "\n".join(_dry_run("test"))
     assert '-m "not integration"' in text
     assert "--cov-fail-under=95" in text
-    assert "--junitxml=test-results/test/junit.xml" in text
-    assert "--cov-report=xml:test-results/test/coverage.xml" in text
+    assert '--junitxml="test-results/test/junit.xml"' in text
+    assert '--cov-report=xml:"test-results/test/coverage.xml"' in text
     assert "-m scripts.report_test_results" in text
-    assert "--output test-results/test/summary.json" in text
+    assert '--output "test-results/test/summary.json"' in text
     assert text.count("-m pytest") == 1
 
 
@@ -268,3 +268,30 @@ def test_test_keeps_pytest_failure_status_and_records_fail(tmp_path):
     assert summary["status"] == "FAIL"
     assert summary["pytest_exit_code"] == 1
     assert "test: FAIL" in result.stdout
+
+
+def test_test_quotes_every_results_path_in_the_recipe():
+    text = "\n".join(_dry_run("test", "TEST_RESULTS=a b"))
+    assert 'rm -rf -- "a b"' in text
+    assert '--junitxml="a b/junit.xml"' in text
+    assert '--output "a b/summary.json"' in text
+
+
+@pytest.mark.parametrize("bad", ["", ".", "./", "..", "/"])
+def test_test_refuses_a_results_dir_that_could_delete_more_than_its_own(bad):
+    result = _make("test", f"TEST_RESULTS={bad}", "PYTEST=false")
+    assert result.returncode != 0
+    assert "refusing to use TEST_RESULTS" in result.stderr
+    assert (ROOT / "Makefile").exists()
+    assert (ROOT / "test").is_dir()
+
+
+def test_test_results_dir_with_spaces_deletes_only_itself(tmp_path):
+    sibling = tmp_path / "my"
+    sibling.mkdir()
+    (sibling / "keep.txt").write_text("x")
+    target = tmp_path / "my results"
+    result = _make("test", "PYTEST=false", f"TEST_RESULTS={target}")
+    assert result.returncode != 0
+    assert (sibling / "keep.txt").exists()
+    assert json.loads((target / "summary.json").read_text())["status"] == "FAIL"

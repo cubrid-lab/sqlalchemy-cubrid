@@ -72,6 +72,8 @@ test = [
     "alembic>=1.7.2,<2.0",
     # scripts/check_docs_links.py and check_agents_docs.py parse Markdown (#908).
     "markdown-it-py>=4",
+    # scripts/report_test_results.py parses the JUnit and coverage XML (#1019).
+    "defusedxml>=0.7.1",
 ]
 lint = [
     "ruff==0.17.1",

@@ -117,19 +117,21 @@ verify: check test ## Run check, then the complete offline suite (no Docker)
 # final console line, and the recipe fails when either one failed.
 TEST_RESULTS = test-results/test
 test: ## Run every offline test (fast + repository-tooling) with coverage; writes test-results/test/
-	rm -rf $(TEST_RESULTS)
-	mkdir -p $(TEST_RESULTS)
+	@case "$(TEST_RESULTS)" in ""|.|./|..|../|/) \
+		echo "ERROR: refusing to use TEST_RESULTS='$(TEST_RESULTS)'" >&2; exit 2;; esac
+	rm -rf -- "$(TEST_RESULTS)"
+	mkdir -p -- "$(TEST_RESULTS)"
 	@status=0; \
 	$(PYTEST) $(TESTS)/ -v \
 		-m "not integration" \
-		--junitxml=$(TEST_RESULTS)/junit.xml \
+		--junitxml="$(TEST_RESULTS)/junit.xml" \
 		--cov=$(SRC) \
 		--cov-report=term-missing \
-		--cov-report=xml:$(TEST_RESULTS)/coverage.xml \
+		--cov-report=xml:"$(TEST_RESULTS)/coverage.xml" \
 		--cov-fail-under=95 || status=$$?; \
 	$(PYTHON) -m scripts.report_test_results --lane test \
-		--junit $(TEST_RESULTS)/junit.xml --coverage $(TEST_RESULTS)/coverage.xml \
-		--threshold 95 --pytest-exit $$status --output $(TEST_RESULTS)/summary.json \
+		--junit "$(TEST_RESULTS)/junit.xml" --coverage "$(TEST_RESULTS)/coverage.xml" \
+		--threshold 95 --pytest-exit $$status --output "$(TEST_RESULTS)/summary.json" \
 		|| { [ $$status -ne 0 ] && exit $$status || exit 1; }; \
 	exit $$status
 
