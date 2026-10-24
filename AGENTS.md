@@ -176,6 +176,43 @@ These guardrails apply regardless of the implementation tool:
 - The responsible maintainer checks the final relevant head, required CI
   and any independent high-risk approval before merging.
 
+## PR overlap and execution order
+
+- **Before opening a PR:** check the linked issue's current decision and
+  dependencies, relevant open PRs, and changes merged into `main` since the
+  branch was created. Overlapping filenames call for review, not automatic
+  rejection. In the PR, name relevant `Supersedes #N`, `Depends on #N`, or
+  `Parallel to #N` relationships, with a brief reason; otherwise say `None`.
+- **Select a canonical implementation:** compare the accepted behavior, scope,
+  validation, and maintainer decision. Neither the newest PR nor the lowest
+  issue number automatically wins. Do not merge a narrower, outdated policy
+  after a more complete, incompatible replacement has landed.
+- **Before merging:** repeat the overlap and dependency check against current
+  `main` and other open PRs. A green check or an AI recommendation does not
+  override an unresolved design decision, an incompatible release boundary,
+  protected-path approval, or a blocking finding.
+- **When policy changes:** inspect open issue descriptions, open PRs and
+  contributor-facing templates for contradictory instructions. Update the
+  active work and explain any superseded plan during the same review cycle;
+  otherwise record an explicit, narrowly scoped follow-up.
+- **After merging:** the responsible maintainer reconciles linked issues and
+  competing open PRs in the same review cycle. Comment and close a truly
+  superseded PR with a link to its replacement; if independent work remains,
+  explain why and update its scope. Coordinate with external contributors,
+  retain their history, and do not close a parent issue until its own acceptance
+  criteria are satisfied.
+- **Priority is not merge readiness:** `priority: critical`, `priority: high`,
+  `priority: medium`, or `priority: low`
+  on an issue records urgency and impact; `size:` records effort. Choose the
+  next *executable* PR based on issue priority, satisfied dependencies, risk,
+  validation, and maintainer release decisions. A high-priority blocked issue
+  may need a decision before code, while an independent lower-priority PR can
+  proceed. Neither creation date nor PR number determines execution order.
+  Record exceptional reprioritization with a reason in the relevant issue.
+
+This is a maintainer workflow, not another CI gate or a request for duplicate
+status checks, bots, or cross-repository trackers.
+
 ## Issue specification and ownership
 
 Issues and implementation acceptance are repository-local: file work in the
