@@ -263,7 +263,9 @@ jobs:
               gh issue comment "$issue" --body "$body"
               echo "Commented on existing issue #${issue}"
             else
-              gh issue create --title "$ISSUE_TITLE" --label ci --body "$body"
+              gh issue create --title "$ISSUE_TITLE" --label ci \
+                --label "priority: medium" --label "size: S" \
+                --label "status: needs triage" --body "$body"
             fi
             {
               echo "## Upstream canary failed"
