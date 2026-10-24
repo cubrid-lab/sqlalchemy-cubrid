@@ -75,6 +75,8 @@ flowchart TD
     aio --> server
 ```
 
+See [full communication architecture](docs/ARCHITECTURE.md#end-to-end-communication-architecture) for the Broker, CAS and CCI path.
+
 ```mermaid
 flowchart TD
     expr["SQL Expression"] --> compiler["CubridSQLCompiler"] --> sql["SQL String"]

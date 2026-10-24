@@ -89,6 +89,74 @@ sequenceDiagram
     SA-->>App: CursorResult
 ```
 
+## End-to-End Communication Architecture
+The diagrams above show how SQLAlchemy discovers and drives the dialect. This section shows where the dialect ends and where the driver, the Broker, the CAS process and the database server begin. The connection URL selects the dialect class and therefore the driver:
+
+| URL | Dialect class | DB-API driver |
+|-----|---------------|---------------|
+| `cubrid://` or `cubrid+cubriddb://` | `CubridDialect` | official `CUBRIDdb` (C extension) |
+| `cubrid+pycubrid://` | `PyCubridDialect` | `pycubrid` (pure Python, sync) |
+| `cubrid+aiopycubrid://` | `PyCubridAsyncDialect` | `pycubrid.aio` (pure Python, async) |
+
+```mermaid
+flowchart TD
+    app["Application"]
+
+    subgraph sa_side["SQLAlchemy (this project)"]
+        sa["SQLAlchemy Core/ORM<br/>(async engine for aiopycubrid)"]
+        d_cubriddb["CubridDialect"]
+        d_pycubrid["PyCubridDialect"]
+        d_aio["PyCubridAsyncDialect"]
+    end
+
+    subgraph drivers["DB-API drivers (client side)"]
+        cubriddb["CUBRIDdb wrapper"]
+        cext["_cubrid C extension"]
+        cci["CCI client library"]
+        pycubrid["pycubrid<br/>(CAS wire protocol, pure Python)"]
+        aio["pycubrid.aio<br/>(CAS wire protocol, asyncio)"]
+    end
+
+    subgraph server_side["CUBRID server host"]
+        broker["CUBRID Broker<br/>(entry port)"]
+        cas["CAS process<br/>(allocated, port may be redirected)"]
+        dbserver["CUBRID database server"]
+    end
+
+    app --> sa
+    sa --> d_cubriddb
+    sa --> d_pycubrid
+    sa --> d_aio
+    d_cubriddb --> cubriddb --> cext --> cci
+    d_pycubrid --> pycubrid
+    d_aio --> aio
+    cci -->|"TCP"| broker
+    pycubrid -->|"TCP"| broker
+    aio -->|"TCP"| broker
+    broker -->|"assigns a CAS"| cas
+    cci <-->|"TCP, CAS wire protocol"| cas
+    pycubrid <-->|"TCP, CAS wire protocol"| cas
+    aio <-->|"TCP, CAS wire protocol"| cas
+    cas <--> dbserver
+```
+
+No edge leads from SQLAlchemy or the dialect to the Broker, the CAS process or the database server: the dialect never performs wire I/O.
+
+### Responsibilities
+*   **Dialect (this project):** SQL generation and type compilation, selecting and adapting the DB-API driver, building connection arguments from the URL, error and disconnect classification, schema reflection, and SQLAlchemy-side connection pooling. It contains no CAS packet serialization.
+*   **DB-API driver:** owns all client-side networking. `CUBRIDdb` reaches the server through the `_cubrid` C extension, which calls **CCI**, the CUBRID client library written in C. `pycubrid` and `pycubrid.aio` implement the client side of the CAS wire protocol directly in Python and do not use CCI.
+*   **Broker:** the server-side listener on the broker (entry) port. It accepts the initial connection and assigns a CAS process.
+*   **CAS:** the Common Application Server, a server-side CUBRID process that serves one client connection and talks to the database server. The **CAS wire protocol** is the format in which clients and CAS exchange requests and results. This CAS has no relation to the Compare-And-Swap concurrency primitive. For packet-level details see the [pycubrid protocol documentation](https://github.com/cubrid-lab/pycubrid/blob/main/docs/PROTOCOL.md).
+
+### Connection Lifecycle
+1.  `create_engine()` parses the URL, which selects the dialect class and, through `import_dbapi()`, the driver.
+2.  On the first checkout, the dialect builds the connection arguments and the driver connects to the Broker's entry port.
+3.  The Broker assigns a CAS process. Depending on the broker configuration, the client continues on the same port or reconnects to a different port served by the assigned CAS.
+4.  The driver opens a database session through the CAS, which connects to the database server.
+5.  Statements are executed and results are fetched over the established client-to-CAS connection. After the CAS is assigned, the Broker is not necessarily a hop for each query, and a query does not trigger a fresh Broker handshake. SQLAlchemy's pool reuses the connection.
+
+Sync versus async is a property of the client API (`pycubrid` versus `pycubrid.aio`, selected by `cubrid+pycubrid://` versus `cubrid+aiopycubrid://`), not a different database engine or a different server path. The official `CUBRIDdb` driver is synchronous only, and there is no async variant of it.
+
 ## Schema Reflection
 The reflection process allows SQLAlchemy to inspect an existing CUBRID database and reconstruct Table objects automatically.
 

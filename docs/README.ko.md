@@ -67,6 +67,8 @@ flowchart TD
     aio --> server
 ```
 
+Broker, CAS, CCI 경로는 [전체 통신 아키텍처](ko/ARCHITECTURE.md#종단-간-통신-아키텍처)에서 볼 수 있습니다.
+
 ```mermaid
 flowchart TD
     expr["SQL Expression"] --> compiler["CubridSQLCompiler"] --> sql["SQL String"]

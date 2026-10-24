@@ -87,6 +87,74 @@ sequenceDiagram
     SA-->>App: CursorResult
 ```
 
+## 종단 간 통신 아키텍처
+위 다이어그램은 SQLAlchemy가 방언을 발견하고 구동하는 방식을 보여 줍니다. 이 절은 방언이 어디에서 끝나고 드라이버, Broker, CAS 프로세스, 데이터베이스 서버가 어디에서 시작하는지 보여 줍니다. 연결 URL이 방언 클래스를, 따라서 드라이버를 선택합니다.
+
+| URL | 방언 클래스 | DB-API 드라이버 |
+|-----|-------------|-----------------|
+| `cubrid://` 또는 `cubrid+cubriddb://` | `CubridDialect` | 공식 `CUBRIDdb` (C 확장) |
+| `cubrid+pycubrid://` | `PyCubridDialect` | `pycubrid` (순수 Python, 동기) |
+| `cubrid+aiopycubrid://` | `PyCubridAsyncDialect` | `pycubrid.aio` (순수 Python, 비동기) |
+
+```mermaid
+flowchart TD
+    app["Application"]
+
+    subgraph sa_side["SQLAlchemy (이 프로젝트)"]
+        sa["SQLAlchemy Core/ORM<br/>(aiopycubrid는 async 엔진)"]
+        d_cubriddb["CubridDialect"]
+        d_pycubrid["PyCubridDialect"]
+        d_aio["PyCubridAsyncDialect"]
+    end
+
+    subgraph drivers["DB-API 드라이버 (클라이언트 측)"]
+        cubriddb["CUBRIDdb wrapper"]
+        cext["_cubrid C extension"]
+        cci["CCI client library"]
+        pycubrid["pycubrid<br/>(CAS 와이어 프로토콜, 순수 Python)"]
+        aio["pycubrid.aio<br/>(CAS 와이어 프로토콜, asyncio)"]
+    end
+
+    subgraph server_side["CUBRID 서버 호스트"]
+        broker["CUBRID Broker<br/>(진입 포트)"]
+        cas["CAS 프로세스<br/>(할당됨, 포트가 리다이렉트될 수 있음)"]
+        dbserver["CUBRID 데이터베이스 서버"]
+    end
+
+    app --> sa
+    sa --> d_cubriddb
+    sa --> d_pycubrid
+    sa --> d_aio
+    d_cubriddb --> cubriddb --> cext --> cci
+    d_pycubrid --> pycubrid
+    d_aio --> aio
+    cci -->|"TCP"| broker
+    pycubrid -->|"TCP"| broker
+    aio -->|"TCP"| broker
+    broker -->|"CAS 할당"| cas
+    cci <-->|"TCP, CAS 와이어 프로토콜"| cas
+    pycubrid <-->|"TCP, CAS 와이어 프로토콜"| cas
+    aio <-->|"TCP, CAS 와이어 프로토콜"| cas
+    cas <--> dbserver
+```
+
+SQLAlchemy나 방언에서 Broker, CAS 프로세스, 데이터베이스 서버로 직접 향하는 화살표는 없습니다. 방언은 와이어 I/O를 수행하지 않습니다.
+
+### 역할 분담
+*   **방언(이 프로젝트):** SQL 생성과 타입 컴파일, DB-API 드라이버 선택과 어댑테이션, URL에서 연결 인자 구성, 오류 및 연결 끊김 분류, 스키마 리플렉션, SQLAlchemy 측 커넥션 풀링. CAS 패킷 직렬화는 포함하지 않습니다.
+*   **DB-API 드라이버:** 클라이언트 측 네트워킹을 모두 담당합니다. `CUBRIDdb`는 `_cubrid` C 확장을 통해 서버에 접근하며, 이 확장은 C로 작성된 CUBRID 클라이언트 라이브러리인 **CCI**를 호출합니다. `pycubrid`와 `pycubrid.aio`는 CAS 와이어 프로토콜의 클라이언트 측을 Python으로 직접 구현하며 CCI를 사용하지 않습니다.
+*   **Broker:** 브로커(진입) 포트에서 대기하는 서버 측 리스너입니다. 최초 연결을 받아 CAS 프로세스를 할당합니다.
+*   **CAS:** Common Application Server, 하나의 클라이언트 연결을 처리하고 데이터베이스 서버와 통신하는 서버 측 CUBRID 프로세스입니다. **CAS 와이어 프로토콜**은 클라이언트와 CAS가 요청과 결과를 주고받는 형식입니다. 이 CAS는 Compare-And-Swap 동시성 기법과 무관합니다. 패킷 수준의 세부 사항은 [pycubrid 프로토콜 문서](https://github.com/cubrid-lab/pycubrid/blob/main/docs/PROTOCOL.md)를 참고하세요.
+
+### 연결 수명 주기
+1.  `create_engine()`이 URL을 파싱하여 방언 클래스를 선택하고, `import_dbapi()`를 통해 드라이버를 선택합니다.
+2.  첫 체크아웃 시 방언이 연결 인자를 구성하고, 드라이버가 Broker의 진입 포트로 연결합니다.
+3.  Broker가 CAS 프로세스를 할당합니다. 브로커 설정에 따라 클라이언트는 같은 포트에서 계속하거나, 할당된 CAS가 서비스하는 다른 포트로 재연결합니다.
+4.  드라이버가 CAS를 통해 데이터베이스 세션을 열고, CAS가 데이터베이스 서버에 연결합니다.
+5.  문장 실행과 결과 조회는 수립된 클라이언트-CAS 연결로 이루어집니다. CAS가 할당된 뒤에는 Broker가 매 쿼리의 경유지라고 할 수 없으며, 쿼리마다 Broker 핸드셰이크를 새로 수행하지 않습니다. SQLAlchemy 풀이 연결을 재사용합니다.
+
+동기와 비동기의 차이는 클라이언트 API(`pycubrid`와 `pycubrid.aio`, 각각 `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`로 선택)에 관한 것이며, 다른 데이터베이스 엔진이나 다른 서버 경로를 뜻하지 않습니다. 공식 `CUBRIDdb` 드라이버는 동기 전용이며 비동기 변형은 없습니다.
+
 ## 스키마 리플렉션
 
 리플렉션 과정은 SQLAlchemy가 기존 CUBRID 데이터베이스를 검사해 Table 객체를 자동으로 재구성하게 합니다.
