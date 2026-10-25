@@ -157,10 +157,37 @@ test-all: ## Run tests across all Python versions via tox
 # run-owned live lane (INTEGRATION_DRIVER, default pycubrid), which needs Docker and fails
 # when CUBRID never becomes ready or every live test skips. The phases are sub-makes, not
 # prerequisites, so even `make -j` starts each one only after the previous one succeeded.
-verify: ## Full verification: check, the offline suite, then the live integration lane (needs Docker)
-	@$(MAKE) --no-print-directory check
-	@$(MAKE) --no-print-directory test
-	@$(MAKE) --no-print-directory integration
+# Whatever happens, VERIFY_RESULTS/summary.json then records each phase (a phase that never
+# started is NOT_RUN) with the lanes' JUnit files and the live environment.json (#1020); the
+# exit status stays that of the first failing phase.
+VERIFY_RESULTS = test-results/verify
+# `make -n` still runs recipe lines that call $(MAKE); the summary is then skipped so a dry
+# run writes nothing.
+DRY_RUN = $(findstring n,$(firstword -$(MAKEFLAGS)))
+verify: ## Full verification: check, the offline suite, then the live integration lane (needs Docker); writes test-results/verify/
+	@for dir in "$(VERIFY_RESULTS)" "$(TEST_RESULTS)" "$(INTEGRATION_RESULTS)"; do \
+		case "$$dir" in ""|.|./|..|../|/) \
+			echo "ERROR: refusing to use results directory '$$dir'" >&2; exit 2;; esac; \
+	done
+	@rm -rf -- "$(VERIFY_RESULTS)" "$(TEST_RESULTS)" "$(INTEGRATION_RESULTS)"
+	@status=0; check=not-run; offline=not-run; live=not-run; \
+	if $(MAKE) --no-print-directory check; then check=0; else status=$$?; check=$$status; fi; \
+	if [ $$status -eq 0 ]; then \
+		if $(MAKE) --no-print-directory test; then offline=0; else status=$$?; offline=$$status; fi; \
+	fi; \
+	if [ $$status -eq 0 ]; then \
+		if $(MAKE) --no-print-directory integration; then live=0; else status=$$?; live=$$status; fi; \
+	fi; \
+	[ -z "$(DRY_RUN)" ] || exit $$status; \
+	$(PYTHON) -m scripts.report_test_results aggregate --output "$(VERIFY_RESULTS)/summary.json" \
+		--phase "check=$$check" \
+		--phase "test=$$offline:$(TEST_RESULTS)/summary.json" \
+		--phase "integration=$$live:$(INTEGRATION_RESULTS)/summary.json" \
+		--copy-junit "test=$(TEST_RESULTS)/junit.xml" \
+		--copy-junit "integration=$(INTEGRATION_RESULTS)/junit.xml" \
+		--environment "$(INTEGRATION_RESULTS)/environment.json" \
+		|| { [ $$status -ne 0 ] || status=1; }; \
+	exit $$status
 
 # scripts/run_integration.py owns driver validation, the run-owned Compose project,
 # ownership checks, readiness, signal handling, cleanup and the exit status. `exec`

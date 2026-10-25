@@ -17,6 +17,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 
 import pytest
 import yaml
@@ -116,11 +117,20 @@ def test_check_is_the_complete_non_test_quality_gate():
     assert not any("pytest" in line or "docker" in line for line in lines)
 
 
-def test_verify_runs_check_then_test_then_the_live_lane():
+def _results(tmp_path):
+    """Result directories under tmp_path, so a verify run never touches test-results/."""
+    return [
+        f"TEST_RESULTS={tmp_path}/test",
+        f"INTEGRATION_RESULTS={tmp_path}/integration",
+        f"VERIFY_RESULTS={tmp_path}/verify",
+    ]
+
+
+def test_verify_runs_check_then_test_then_the_live_lane(tmp_path):
     # Sub-makes, not prerequisites, so `make -j` cannot start a later phase early.
     assert _prerequisites("verify") == []
     # Pin the driver so an exported INTEGRATION_DRIVER=cubriddb cannot change the default.
-    lines = _dry_run("verify", "INTEGRATION_DRIVER=pycubrid")
+    lines = _dry_run("verify", "INTEGRATION_DRIVER=pycubrid", *_results(tmp_path))
     offline = next(i for i, line in enumerate(lines) if '-m "not integration"' in line)
     live = next(i for i, line in enumerate(lines) if "scripts/run_integration.py" in line)
     static = max(i for i, line in enumerate(lines) if "bandit" in line or " -m ruff " in line)
@@ -138,18 +148,23 @@ def test_verify_never_starts_the_live_lane_after_failing_offline_tests(tmp_path,
     log = tmp_path / "python.log"
     stub = tmp_path / "python"
     # Logs every call; the offline pytest run fails, everything else succeeds.
+    # The verify summary itself runs the real reporter.
     stub.write_text(
         f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\n'
+        f'case " $* " in *"report_test_results aggregate "*) exec "{sys.executable}" "$@" ;; esac\n'
         'case " $* " in *" -m pytest "*"not integration"*) exit 1 ;; esac\nexit 0\n'
     )
     stub.chmod(0o755)
-    # Keep the real recipes' result directories inside tmp_path.
-    results = [f"TEST_RESULTS={tmp_path}/test", f"INTEGRATION_RESULTS={tmp_path}/integration"]
-    result = _make(*jobs, "verify", f"PYTHON={stub}", *results)
+    result = _make(*jobs, "verify", f"PYTHON={stub}", *_results(tmp_path))
     assert result.returncode != 0
     calls = log.read_text().splitlines()
     assert any("-m pytest" in call for call in calls)
     assert not any("scripts/run_integration.py" in call for call in calls)
+    # The summary records the failed offline phase and the live lane that never ran.
+    summary = json.loads((tmp_path / "verify" / "summary.json").read_text(encoding="utf-8"))
+    phases = {phase["name"]: phase["status"] for phase in summary["phases"]}
+    assert summary["status"] == "FAIL"
+    assert phases == {"check": "PASS", "test": "FAIL", "integration": "NOT_RUN"}
 
 
 @pytest.mark.parametrize("target", ["clean", "clean-all"])

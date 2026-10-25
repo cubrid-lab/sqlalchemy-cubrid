@@ -335,3 +335,125 @@ def test_environment_redacts_credentials_in_the_command(tmp_path, command, expec
          "--driver", "pycubrid", "--output", str(output)]
     )  # fmt: skip
     assert json.loads(output.read_text("utf-8"))["command"] == expected
+
+
+def _lane(tmp_path: Path, name: str, status: str) -> Path:
+    path = tmp_path / name / "summary.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"lane": name, "status": status}), encoding="utf-8")
+    return path
+
+
+def _statuses(summary):
+    return {phase["name"]: phase["status"] for phase in summary["phases"]}
+
+
+def test_aggregate_passes_only_when_every_phase_passed(tmp_path):
+    summary = mod.build_aggregate(
+        [
+            ("check", 0, None),
+            ("test", 0, _lane(tmp_path, "test", "PASS")),
+            ("integration", 0, _lane(tmp_path, "integration", "PASS")),
+        ]
+    )
+    assert summary["status"] == "PASS"
+    assert summary["problems"] == []
+    assert [phase["name"] for phase in summary["phases"]] == ["check", "test", "integration"]
+
+
+@pytest.mark.parametrize(
+    ("live", "expected", "phase"),
+    [
+        # The lane's own verdict wins over a zero exit status.
+        ((0, "INCOMPLETE"), "INCOMPLETE", "INCOMPLETE"),
+        ((0, "FAIL"), "FAIL", "FAIL"),
+        # A non-zero exit status is a failure even next to a stale PASS summary.
+        ((1, "PASS"), "FAIL", "FAIL"),
+    ],
+)
+def test_aggregate_takes_the_worst_lane_verdict(tmp_path, live, expected, phase):
+    exit_code, status = live
+    summary = mod.build_aggregate(
+        [("test", 0, _lane(tmp_path, "test", "PASS")),
+         ("integration", exit_code, _lane(tmp_path, "integration", status))]
+    )  # fmt: skip
+    assert summary["status"] == expected
+    assert _statuses(summary)["integration"] == phase
+
+
+def test_aggregate_never_passes_a_phase_that_did_not_run(tmp_path):
+    summary = mod.build_aggregate(
+        [("check", 0, None), ("test", 0, _lane(tmp_path, "test", "PASS")),
+         ("integration", None, tmp_path / "integration" / "summary.json")]
+    )  # fmt: skip
+    assert summary["status"] == "INCOMPLETE"
+    assert _statuses(summary)["integration"] == "NOT_RUN"
+    assert "integration did not run" in summary["problems"]
+
+
+@pytest.mark.parametrize("content", [None, "not json", '{"status": "GREEN"}'])
+def test_aggregate_treats_a_missing_or_unreadable_lane_summary_as_incomplete(tmp_path, content):
+    path = tmp_path / "integration" / "summary.json"
+    if content is not None:
+        path.parent.mkdir(parents=True)
+        path.write_text(content, encoding="utf-8")
+    summary = mod.build_aggregate([("integration", 0, path)])
+    assert summary["status"] == "INCOMPLETE"
+    assert summary["problems"]
+
+
+def test_aggregate_main_writes_the_summary_junit_and_environment(tmp_path, capsys, monkeypatch):
+    monkeypatch.setenv("CUBRID_PASSWORD", "topsecret")
+    lanes = tmp_path / "lanes"
+    test_summary = _lane(lanes, "test", "PASS")
+    live_summary = _lane(lanes, "integration", "PASS")
+    (lanes / "test" / "junit.xml").write_text("<testsuites/>", encoding="utf-8")
+    (lanes / "integration" / "junit.xml").write_text("<testsuites/>", encoding="utf-8")
+    (lanes / "integration" / "environment.json").write_text('{"lane": "x"}', encoding="utf-8")
+    output = tmp_path / "verify" / "summary.json"
+    code = mod.main(
+        [
+            "aggregate", "--output", str(output),
+            "--phase", "check=0",
+            "--phase", f"test=0:{test_summary}",
+            "--phase", f"integration=0:{live_summary}",
+            "--copy-junit", f"test={lanes / 'test' / 'junit.xml'}",
+            "--copy-junit", f"integration={lanes / 'integration' / 'junit.xml'}",
+            "--copy-junit", f"missing={lanes / 'missing.xml'}",
+            "--environment", str(lanes / "integration" / "environment.json"),
+        ]
+    )  # fmt: skip
+    assert code == 0
+    summary = json.loads(output.read_text(encoding="utf-8"))
+    assert summary["status"] == "PASS"
+    verify = output.parent
+    assert sorted(p.name for p in (verify / "junit").iterdir()) == ["integration.xml", "test.xml"]
+    assert (verify / "environment.json").read_text(encoding="utf-8") == '{"lane": "x"}'
+    # No credential from the environment reaches any verify result file.
+    for path in verify.rglob("*"):
+        if path.is_file():
+            assert "topsecret" not in path.read_text(encoding="utf-8")
+    line = capsys.readouterr().out
+    assert line.startswith("verify: PASS; check PASS, test PASS, integration PASS -> ")
+
+
+def test_aggregate_main_exits_nonzero_unless_pass(tmp_path, capsys):
+    output = tmp_path / "summary.json"
+    assert mod.main(["aggregate", "--output", str(output), "--phase", "check=2"]) == 1
+    assert json.loads(output.read_text(encoding="utf-8"))["status"] == "FAIL"
+    assert "verify: FAIL; check FAIL" in capsys.readouterr().out
+
+
+def test_aggregate_rejects_a_malformed_phase(tmp_path):
+    with pytest.raises(SystemExit):
+        mod.main(["aggregate", "--output", str(tmp_path / "s.json"), "--phase", "check=ok"])
+
+
+def test_step_summary_renders_the_verify_summary(tmp_path, capsys):
+    output = tmp_path / "summary.json"
+    mod.main(["aggregate", "--output", str(output), "--phase", "check=0",
+              "--phase", "integration=not-run"])  # fmt: skip
+    capsys.readouterr()
+    assert mod.main(["step-summary", "--summary", str(output), "--title", "Verify"]) == 0
+    text = capsys.readouterr().out
+    assert text.startswith("### Verify\n\n`verify: INCOMPLETE; check PASS, integration NOT_RUN")

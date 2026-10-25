@@ -41,6 +41,14 @@ Usage::
 ``environment`` writes ``environment.json`` (Python, SQLAlchemy, driver and CUBRID
 versions, platform, command; never credentials) next to a live lane's ``summary.json``.
 
+``aggregate`` writes ``make verify``'s ``test-results/verify/summary.json`` (#1020) from
+its phases, in order: ``--phase NAME=EXIT`` (or ``NAME=not-run``), optionally with
+``:SUMMARY`` naming the phase's own ``summary.json``. A phase is ``PASS`` only when it
+exited 0 and its summary (when it has one) is ``PASS``; ``verify`` is ``FAIL`` when a phase
+failed, ``INCOMPLETE`` when one did not run or proved nothing, and ``PASS`` otherwise.
+``--copy-junit NAME=PATH`` copies a lane's JUnit file to ``junit/NAME.xml`` and
+``--environment PATH`` copies the live lane's (already redacted) ``environment.json``.
+
 ``step-summary`` prints the one-line summary of a ``summary.json`` as Markdown for the
 GitHub job summary (#1021). It always exits 0 and says so when the file is missing or
 unreadable, so a publishing step never hides the failure of the test step before it.
@@ -52,6 +60,7 @@ import argparse
 import json
 import platform
 import re
+import shutil
 import sys
 from importlib import metadata
 from pathlib import Path
@@ -167,6 +176,8 @@ def build_summary(
 
 def format_line(summary: dict[str, object]) -> str:
     """The one-line console summary; always derived from *summary*."""
+    if "phases" in summary:
+        return format_aggregate_line(summary)
     counts = summary["counts"]
     coverage = summary["coverage"]
     assert isinstance(coverage, dict)
@@ -184,6 +195,122 @@ def format_line(summary: dict[str, object]) -> str:
     if isinstance(problems, list) and problems:
         line += " [" + "; ".join(str(p) for p in problems) + "]"
     return line
+
+
+def _phase_summary(path: Path) -> tuple[str | None, str]:
+    """The ``status`` of a phase's ``summary.json`` and a problem when it is unusable."""
+    try:
+        status = json.loads(path.read_text(encoding="utf-8"))["status"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        return None, f"cannot read {path}: {exc}"
+    if status not in {"PASS", "FAIL", "INCOMPLETE"}:
+        return None, f"{path} has an unknown status {status!r}"
+    return status, ""
+
+
+def build_aggregate(phases: list[tuple[str, int | None, Path | None]]) -> dict[str, object]:
+    """``make verify``'s summary: one entry per phase, in the order they were given."""
+    entries: list[dict[str, object]] = []
+    problems: list[str] = []
+    for name, exit_code, summary_path in phases:
+        lane_status: str | None = None
+        if exit_code is None:
+            status = "NOT_RUN"
+            problems.append(f"{name} did not run")
+        else:
+            if summary_path is not None:
+                lane_status, problem = _phase_summary(summary_path)
+                if problem:
+                    problems.append(f"{name}: {problem}")
+            if exit_code != 0 or lane_status == "FAIL":
+                status = "FAIL"
+            elif summary_path is not None and lane_status != "PASS":
+                status = "INCOMPLETE"
+                if lane_status == "INCOMPLETE":
+                    problems.append(f"{name} is INCOMPLETE")
+            else:
+                status = "PASS"
+        entries.append(
+            {
+                "name": name,
+                "status": status,
+                "exit_code": exit_code,
+                "summary": None if summary_path is None else str(summary_path),
+                "summary_status": lane_status,
+            }
+        )
+    statuses = {entry["status"] for entry in entries}
+    if not entries:
+        overall = "INCOMPLETE"
+        problems.append("no phase was given")
+    elif "FAIL" in statuses:
+        overall = "FAIL"
+    elif statuses == {"PASS"}:
+        overall = "PASS"
+    else:
+        overall = "INCOMPLETE"
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "lane": "verify",
+        "status": overall,
+        "phases": entries,
+        "problems": problems,
+    }
+
+
+def format_aggregate_line(summary: dict[str, object]) -> str:
+    phases = summary["phases"]
+    assert isinstance(phases, list)
+    line = f"{summary['lane']}: {summary['status']}; " + ", ".join(
+        f"{phase['name']} {phase['status']}" for phase in phases
+    )
+    problems = summary["problems"]
+    if isinstance(problems, list) and problems:
+        line += " [" + "; ".join(str(p) for p in problems) + "]"
+    return line
+
+
+def _parse_phase(text: str) -> tuple[str, int | None, Path | None]:
+    name, sep, rest = text.partition("=")
+    if not name or not sep:
+        raise argparse.ArgumentTypeError(f"expected NAME=EXIT[:SUMMARY], got {text!r}")
+    code, _, path = rest.partition(":")
+    if code == "not-run":
+        exit_code = None
+    else:
+        try:
+            exit_code = int(code)
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"bad exit status in {text!r}") from None
+    return name, exit_code, Path(path) if path else None
+
+
+def _parse_pair(text: str) -> tuple[str, Path]:
+    name, sep, path = text.partition("=")
+    if not name or not sep or not path:
+        raise argparse.ArgumentTypeError(f"expected NAME=PATH, got {text!r}")
+    return name, Path(path)
+
+
+def aggregate_main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="report_test_results aggregate")
+    parser.add_argument("--phase", action="append", default=[], type=_parse_phase)
+    parser.add_argument("--copy-junit", action="append", default=[], type=_parse_pair)
+    parser.add_argument("--environment", type=Path, default=None)
+    parser.add_argument("--output", required=True, type=Path, help="summary.json to write")
+    args = parser.parse_args(argv)
+    directory = args.output.parent
+    directory.mkdir(parents=True, exist_ok=True)
+    for name, junit in args.copy_junit:
+        if junit.is_file():
+            (directory / "junit").mkdir(exist_ok=True)
+            shutil.copyfile(junit, directory / "junit" / f"{name}.xml")
+    if args.environment is not None and args.environment.is_file():
+        shutil.copyfile(args.environment, directory / "environment.json")
+    summary = build_aggregate(args.phase)
+    args.output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    print(f"{format_aggregate_line(summary)} -> {args.output}")
+    return 0 if summary["status"] == "PASS" else 1
 
 
 def _version(*names: str) -> str | None:
@@ -275,6 +402,8 @@ def main(argv: list[str] | None = None) -> int:
         return step_summary_main(argv[1:])
     if argv[:1] == ["environment"]:
         return environment_main(argv[1:])
+    if argv[:1] == ["aggregate"]:
+        return aggregate_main(argv[1:])
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--lane", required=True, help="lane name recorded in summary.json")
     parser.add_argument("--junit", required=True, type=Path, help="pytest --junitxml file")

@@ -7935,8 +7935,8 @@ summary for the live lanes is not written yet.
 `make integration` writes the following files (#1020), in `INTEGRATION_RESULTS` (default
 `test-results/integration/`, gitignored, removed by `make clean`). The directory is
 `integration`, the lane's name: `make verify` (#1018) runs `make check`, `make test` and then
-this same `make integration` lane (default driver `pycubrid`), so it writes these files here too
-and writes no separate aggregate.
+this same `make integration` lane (default driver `pycubrid`), so it writes these files here too;
+its own summary is in `test-results/verify/` (below).
 
 | File | Content |
 |---|---|
@@ -7961,6 +7961,27 @@ never skips the cleanup. Run one `make integration` per results directory at a t
 `make integration-local` runs no Docker lifecycle and writes no results. `make verify` starts
 the live lane only after `make check` and `make test` succeeded (sequential sub-makes, also under
 `make -j`), and fails when that lane is not `PASS`.
+
+### Verification summary (`make verify`)
+
+`make verify` first removes `test-results/verify/`, `test-results/test/` and
+`test-results/integration/`, runs its phases, and then always writes `test-results/verify/` (#1020),
+also after a failure:
+
+| File | Content |
+|---|---|
+| `summary.json` | `schema_version`, `lane` (`verify`), overall `status` and `problems`, and one `phases` entry per phase in order (`check`, `test`, `integration`), each with its `status`, `exit_code`, the lane `summary` it read and that summary's `summary_status` |
+| `junit/test.xml`, `junit/integration.xml` | copies of the lanes' JUnit files, for the lanes that wrote one |
+| `environment.json` | a copy of the live lane's (already redacted) `environment.json`, when it was written |
+
+A phase is `PASS` only when it exited 0 and its own `summary.json` (for `test` and `integration`)
+says `PASS`. A phase that never started because an earlier one failed is `NOT_RUN`. The overall
+status is `FAIL` when any phase failed, `INCOMPLETE` when a phase did not run, its summary is
+missing or unreadable, or the lane proved nothing, and `PASS` only when every phase passed. The
+last console line repeats it, e.g. `verify: PASS; check PASS, test PASS, integration PASS ->
+test-results/verify/summary.json`. `make verify` keeps the exit status of the first failing phase
+and exits non-zero whenever the summary is not `PASS`. The summary records no command, URL or
+environment variable; `make -n verify` writes nothing.
 
 ### Known Unreachable Lines
 

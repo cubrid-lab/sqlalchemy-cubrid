@@ -18,6 +18,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fallback is unchanged. `make install` now also installs the `[pycubrid]` extra, so the live
   lane can connect right after it. Development tooling only; the dialect API is unchanged.
 
+### Added
+
+- **`make verify` writes `test-results/verify/` (#1020)** — after its phases, also after a
+  failure, `make verify` writes `summary.json` with the overall `PASS`/`FAIL`/`INCOMPLETE` status
+  and one entry per phase (`check`, `test`, `integration`). A phase that never started is
+  `NOT_RUN`, and a missing or unreadable lane summary or an all-skipped live lane is never
+  `PASS`. It also copies each lane's JUnit file to `junit/` and the live lane's redacted
+  `environment.json`. The new `scripts/report_test_results.py aggregate` subcommand builds it,
+  and `step-summary` renders it. `make verify` now clears `test-results/test/` and
+  `test-results/integration/` before it starts; `make -n verify` writes nothing.
+
 ### CI
 
 - **Every new issue starts in `status: needs triage` (#1028)** — the issue forms add the

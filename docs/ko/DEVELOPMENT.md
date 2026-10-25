@@ -614,8 +614,8 @@ CI는 `make test`를 실행하지 않습니다. 오프라인 레인(`ci.yml`의 
 `make integration`은 `INTEGRATION_RESULTS`(기본값 `test-results/integration/`, gitignore 대상,
 `make clean`으로 제거)에 다음 파일을 기록합니다(#1020). 디렉터리 이름은 레인
 이름인 `integration`입니다. `make verify`(#1018)는 `make check`, `make test`, 이어서 같은
-`make integration` 레인(기본 드라이버 `pycubrid`)을 실행하므로 이 파일도 여기에 기록하며 별도 집계는
-쓰지 않습니다.
+`make integration` 레인(기본 드라이버 `pycubrid`)을 실행하므로 이 파일도 여기에 기록하며, 자체 요약은
+`test-results/verify/`에 둡니다(아래).
 
 | 파일 | 내용 |
 |---|---|
@@ -638,6 +638,25 @@ XML 이스케이프 형태 포함)를 `***`로 바꿉니다. `service.log`는 �
 `make integration-local`은 Docker 수명 주기를 실행하지 않으며 결과도 기록하지 않습니다. `make verify`는
 `make check`와 `make test`가 성공한 뒤에만 live 레인을 시작하며(`make -j`에서도 순차 sub-make),
 그 레인이 `PASS`가 아니면 실패합니다.
+
+### 검증 요약 (`make verify`)
+
+`make verify`는 먼저 `test-results/verify/`, `test-results/test/`, `test-results/integration/`을
+지우고 단계를 실행한 뒤, 실패한 경우에도 항상 `test-results/verify/`를 기록합니다(#1020).
+
+| 파일 | 내용 |
+|---|---|
+| `summary.json` | `schema_version`, `lane`(`verify`), 전체 `status`와 `problems`, 단계 순서(`check`, `test`, `integration`)대로의 `phases` 항목(각 `status`, `exit_code`, 읽은 레인 `summary`, 그 요약의 `summary_status`) |
+| `junit/test.xml`, `junit/integration.xml` | JUnit 파일을 쓴 레인의 JUnit 사본 |
+| `environment.json` | live 레인의 (이미 마스킹된) `environment.json` 사본(기록된 경우) |
+
+단계는 종료 상태가 0이고 자체 `summary.json`(`test`, `integration`)이 `PASS`일 때만 `PASS`입니다.
+앞 단계가 실패해 시작하지 않은 단계는 `NOT_RUN`입니다. 전체 상태는 실패한 단계가 있으면 `FAIL`,
+실행되지 않은 단계가 있거나 요약이 없거나 읽을 수 없거나 레인이 아무것도 증명하지 못했으면
+`INCOMPLETE`, 모든 단계가 통과했을 때만 `PASS`입니다. 마지막 콘솔 줄이 이를 반복합니다(예:
+`verify: PASS; check PASS, test PASS, integration PASS -> test-results/verify/summary.json`).
+`make verify`는 처음 실패한 단계의 종료 상태를 유지하며 요약이 `PASS`가 아니면 0이 아닌 값으로
+끝납니다. 요약에는 명령, URL, 환경 변수를 기록하지 않으며 `make -n verify`는 아무것도 쓰지 않습니다.
 
 ### 알려진 도달 불가능 라인
 
