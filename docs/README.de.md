@@ -1,6 +1,6 @@
 <!-- CUBRID-LAB-ICON:START -->
 <p align="center">
-  <a href="https://github.com/cubrid-lab/brand"><img src="https://raw.githubusercontent.com/cubrid-lab/brand/8aa81b79f00ae936b03a9546f14f514c5e2554a7/dist/icons/sqlalchemy-cubrid.svg" alt="sqlalchemy-cubrid icon (CUBRID Lab brand repository)" width="120"></a>
+  <a href="https://github.com/cubrid-lab/brand"><img src="https://raw.githubusercontent.com/cubrid-lab/brand/38b46469a1e18c7e9f7270f0b3d286ab45c3b376/dist/icons/sqlalchemy-cubrid.svg" alt="sqlalchemy-cubrid icon (CUBRID Lab brand repository)" width="120"></a>
 </p>
 <!-- CUBRID-LAB-ICON:END -->
 
