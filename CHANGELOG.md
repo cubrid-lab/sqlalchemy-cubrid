@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **The README and documentation site show the cube-shaped ORM icon (#1054)** — every brand
+  pin moves to cubrid-lab/brand `38b4646`, which redraws the ORM icon as a complete cube with
+  side-to-side grooves; only the pinned commit changed.
 - **The README and documentation site show the redesigned Python Yellow ORM icon (#1050)** — the English
   README, its five translations and the documentation site logo and favicon now load the
   sqlalchemy-cubrid icon from the [cubrid-lab/brand](https://github.com/cubrid-lab/brand)
