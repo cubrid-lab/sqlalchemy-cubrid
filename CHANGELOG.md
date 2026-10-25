@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.11.7] - 2026-10-25
+
+### Documentation
+
+* **agents:** remove agent-specific footer from commit example ([b51b29f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b51b29fa793d12d4ec54d9ef65adb3c43cd2ae5f))
+* **agents:** remove tool-specific commit footer ([#1043](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1043)) ([b51b29f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b51b29fa793d12d4ec54d9ef65adb3c43cd2ae5f))
+
 ## [1.11.6] - 2026-10-24
 
 ### Documentation
