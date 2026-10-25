@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fails when CUBRID never becomes ready or every live test skips, and it starts the live lane
   only after the offline suite passed, also under `make -j`. `make test` stays offline; run
   `make check test` for the former offline-only `make verify`. The deprecated `CUBRID_PORT`
-  fallback is unchanged. Development tooling only; the dialect API is unchanged.
+  fallback is unchanged. `make install` now also installs the `[pycubrid]` extra, so the live
+  lane can connect right after it. Development tooling only; the dialect API is unchanged.
 
 ### CI
 

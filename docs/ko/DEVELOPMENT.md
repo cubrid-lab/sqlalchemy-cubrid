@@ -45,7 +45,8 @@ make install
 
 `make install`이 수행하는 것:
 1. `pip install --upgrade "pip>=25.1"` — 의존성 그룹에는 pip 25.1 이상이 필요합니다
-2. `pip install -e . --group dev` — `dev` 의존성 그룹과 함께 편집 가능 설치
+2. `pip install -e ".[pycubrid]" --group dev` — `make verify`의 live 레인이 연결하는 `pycubrid`
+   드라이버와 `dev` 의존성 그룹을 포함한 편집 가능 설치
 3. `pre-commit install` — git 훅 설정
 
 기여자 도구는 게시되는 extra가 아니라 `pyproject.toml`의 `[dependency-groups]`

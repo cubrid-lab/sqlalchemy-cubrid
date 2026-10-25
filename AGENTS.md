@@ -43,7 +43,7 @@ owns supported versions and driver status.
 ```bash
 git clone https://github.com/cubrid-lab/sqlalchemy-cubrid.git
 cd sqlalchemy-cubrid
-make install          # pip install -e . --group dev (PEP 735 groups, pip >= 25.1) + pre-commit hooks
+make install          # pip install -e ".[pycubrid]" --group dev (PEP 735 groups, pip >= 25.1) + pre-commit hooks
 ```
 
 ### Key Commands

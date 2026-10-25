@@ -7348,7 +7348,8 @@ make install
 
 `make install` performs:
 1. `pip install --upgrade "pip>=25.1"` — dependency groups need pip 25.1 or later
-2. `pip install -e . --group dev` — editable install with the `dev` dependency group
+2. `pip install -e ".[pycubrid]" --group dev` — editable install with the `pycubrid` driver
+   (which the live lane of `make verify` connects with) and the `dev` dependency group
 3. `pre-commit install` — git hook setup
 
 Contributor tooling is declared in `[dependency-groups]` in `pyproject.toml`
