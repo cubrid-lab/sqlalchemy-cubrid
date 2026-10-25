@@ -110,8 +110,6 @@ agent-eval-check: ## Validate the agent-evals tasks and re-grade their fixtures 
 
 ##@ Tests (offline; no Docker, no database)
 
-verify: check test ## Run check, then the complete offline suite (no Docker)
-
 # Offline test lanes (#594). `repo` marks repository-tooling tests (Makefile
 # recipes, signal handling, repo scripts; see REPO_TOOLING_MODULES in
 # test/conftest.py). CI runs the fast and repository-tooling lanes as required jobs.
@@ -154,6 +152,15 @@ test-all: ## Run tests across all Python versions via tox
 	tox
 
 ##@ Integration (Docker)
+
+# Full verification (#1018): the static gate, the complete offline suite, then the
+# run-owned live lane (INTEGRATION_DRIVER, default pycubrid), which needs Docker and fails
+# when CUBRID never becomes ready or every live test skips. The phases are sub-makes, not
+# prerequisites, so even `make -j` starts each one only after the previous one succeeded.
+verify: ## Full verification: check, the offline suite, then the live integration lane (needs Docker)
+	@$(MAKE) --no-print-directory check
+	@$(MAKE) --no-print-directory test
+	@$(MAKE) --no-print-directory integration
 
 # scripts/run_integration.py owns driver validation, the run-owned Compose project,
 # ownership checks, readiness, signal handling, cleanup and the exit status. `exec`

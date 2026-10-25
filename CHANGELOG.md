@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **`make verify` now runs the live integration lane (#1018)** — it runs `make check`, the
+  complete offline `make test` and then the run-owned `make integration` lane (default
+  `INTEGRATION_DRIVER=pycubrid`), so it needs Docker and takes as long as the live suite. It
+  fails when CUBRID never becomes ready or every live test skips, and it starts the live lane
+  only after the offline suite passed, also under `make -j`. `make test` stays offline; run
+  `make check test` for the former offline-only `make verify`. The deprecated `CUBRID_PORT`
+  fallback is unchanged. Development tooling only; the dialect API is unchanged.
+
 ### CI
 
 - **Every new issue starts in `status: needs triage` (#1028)** — the issue forms add the

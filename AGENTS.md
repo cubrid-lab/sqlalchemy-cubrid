@@ -58,7 +58,7 @@ make format-check     # ruff format --check (never modifies files)
 make format           # Auto-fix lint/format (the only mutating target)
 make typecheck        # mypy
 make check            # lint + format-check + typecheck + security + check-docs-reason
-make verify           # check + test (no Docker)
+make verify           # check, test, then the live integration lane (Docker)
 make integration      # Run-owned Docker project → integration tests → cleanup (INTEGRATION_DRIVER=pycubrid|cubriddb)
 make integration-local # Integration tests against an already-running CUBRID (set CUBRID_TEST_URL)
 make test-all         # tox (envlist in tox.ini)

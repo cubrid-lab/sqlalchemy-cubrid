@@ -71,7 +71,7 @@ make test-repo
 # 보안 검사와 docs-reason 검사
 make check
 
-# make check 후 make test 실행 (Docker 없음)
+# 전체 검증: make check, make test, 이어서 live make integration 레인 (Docker 필요)
 make verify
 
 # 특정 테스트 파일 실행

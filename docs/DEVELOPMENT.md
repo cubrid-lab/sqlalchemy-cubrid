@@ -156,7 +156,7 @@ make format        # Auto-fix lint issues and format code (the only mutating tar
 make test          # Run every offline test (fast + repository-tooling) with coverage (95% threshold)
 make test-fast     # Run only the fast offline tests with coverage
 make test-repo     # Run the repository-tooling tests (Makefile, signal handling, repo scripts)
-make verify        # make check, then make test (no Docker)
+make verify        # make check, make test, then the live make integration lane (Docker)
 make test-all      # Run tox across all Python versions
 make integration   # Start a run-owned Docker project → run integration tests (pycubrid) → remove it
 make docker-up     # Start CUBRID (broker on 127.0.0.1, port CUBRID_TEST_PORT, else .env, else 33000)
@@ -629,8 +629,9 @@ summary for the live lanes is not written yet.
 
 `make integration` writes the following files (#1020), in `INTEGRATION_RESULTS` (default
 `test-results/integration/`, gitignored, removed by `make clean`). The directory is
-`integration`, the lane's name, not `verify`: what a future live `make verify` runs is still
-an open decision (#1018), and a `verify` directory would claim an aggregate that does not exist.
+`integration`, the lane's name: `make verify` (#1018) runs `make check`, `make test` and then
+this same `make integration` lane (default driver `pycubrid`), so it writes these files here too
+and writes no separate aggregate.
 
 | File | Content |
 |---|---|
@@ -652,10 +653,9 @@ written, `CUBRID_PASSWORD` and the passwords of `CUBRID_TEST_URL`, `CUBRID_TEST_
 `CUBRID_URL` (also percent-encoded and XML-escaped) are replaced with `***` in `junit.xml` and
 `service.log`. `service.log` is also collected after a cleanup-only failure, and saving it
 never skips the cleanup. Run one `make integration` per results directory at a time.
-`make integration-local` runs no Docker lifecycle and writes no results. A future live
-`make verify` is expected to run its lanes with their own `INTEGRATION_RESULTS` directories
-under `test-results/verify/` and aggregate each lane's `summary.json` (a lane that is missing
-or not `PASS` makes the aggregate `INCOMPLETE` or `FAIL`).
+`make integration-local` runs no Docker lifecycle and writes no results. `make verify` starts
+the live lane only after `make check` and `make test` succeeded (sequential sub-makes, also under
+`make -j`), and fails when that lane is not `PASS`.
 
 ### Known Unreachable Lines
 

@@ -1,7 +1,8 @@
 """Makefile target semantics (#1009).
 
 ``make test`` is the complete offline suite, ``make check`` the complete non-test
-quality gate, ``make verify`` both without Docker, and only ``make format``
+quality gate, ``make verify`` those two and then the live ``make integration`` lane
+(#1018), and only ``make format``
 modifies files. ``make docker-down`` keeps the local test data and only
 ``make docker-clean`` deletes it (#1008). Most checks use ``make -n`` (print, do not run); the ``doctor`` and
 ``check-all`` checks run the targets with every tool replaced by ``true`` or
@@ -115,11 +116,37 @@ def test_check_is_the_complete_non_test_quality_gate():
     assert not any("pytest" in line or "docker" in line for line in lines)
 
 
-def test_verify_is_check_and_test_without_docker():
-    assert _prerequisites("verify") == ["check", "test"]
+def test_verify_runs_check_then_test_then_the_live_lane():
+    # Sub-makes, not prerequisites, so `make -j` cannot start a later phase early.
+    assert _prerequisites("verify") == []
     lines = _dry_run("verify")
+    offline = next(i for i, line in enumerate(lines) if '-m "not integration"' in line)
+    live = next(i for i, line in enumerate(lines) if "scripts/run_integration.py" in line)
+    static = max(i for i, line in enumerate(lines) if "bandit" in line or " -m ruff " in line)
+    assert static < offline < live
+    assert '--driver="pycubrid"' in "\n".join(lines[live:])
+
+
+def test_test_stays_offline():
+    lines = _dry_run("test")
     assert not any("docker" in line or "run_integration" in line for line in lines)
-    assert any('-m "not integration"' in line for line in lines)
+
+
+@pytest.mark.parametrize("jobs", [[], ["-j3"]], ids=["serial", "parallel"])
+def test_verify_never_starts_the_live_lane_after_failing_offline_tests(tmp_path, jobs):
+    log = tmp_path / "python.log"
+    stub = tmp_path / "python"
+    # Logs every call; the offline pytest run fails, everything else succeeds.
+    stub.write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$*" >> "{log}"\n'
+        'case " $* " in *" -m pytest "*"not integration"*) exit 1 ;; esac\nexit 0\n'
+    )
+    stub.chmod(0o755)
+    result = _make(*jobs, "verify", f"PYTHON={stub}")
+    assert result.returncode != 0
+    calls = log.read_text().splitlines()
+    assert any("-m pytest" in call for call in calls)
+    assert not any("scripts/run_integration.py" in call for call in calls)
 
 
 @pytest.mark.parametrize("target", ["clean", "clean-all"])

@@ -157,7 +157,7 @@ make format        # 린트 문제 자동 수정 및 코드 포맷 (파일을 �
 make test          # 모든 오프라인 테스트(빠른 테스트 + 저장소 도구 테스트)를 커버리지와 함께 실행 (95% 임계값)
 make test-fast     # 빠른 오프라인 테스트만 커버리지와 함께 실행
 make test-repo     # 저장소 도구 테스트 실행 (Makefile, 시그널 처리, 저장소 스크립트)
-make verify        # make check 후 make test 실행 (Docker 없음)
+make verify        # make check, make test, 이어서 live make integration 레인 (Docker 필요)
 make test-all      # 모든 Python 버전에서 tox 실행
 make integration   # 실행 전용 Docker 프로젝트 시작 → 통합 테스트 실행 (pycubrid) → 삭제
 make docker-up     # CUBRID 시작 (브로커는 127.0.0.1, 포트 CUBRID_TEST_PORT, 없으면 .env, 그다음 33000)
@@ -611,9 +611,10 @@ CI는 `make test`를 실행하지 않습니다. 오프라인 레인(`ci.yml`의 
 ### 라이브 결과 (`make integration`)
 
 `make integration`은 `INTEGRATION_RESULTS`(기본값 `test-results/integration/`, gitignore 대상,
-`make clean`으로 제거)에 다음 파일을 기록합니다(#1020). 디렉터리 이름은 `verify`가 아니라 레인
-이름인 `integration`입니다. 향후 라이브 `make verify`가 무엇을 실행할지는 아직 열린 결정(#1018)이라,
-`verify` 디렉터리는 존재하지 않는 집계를 암시하기 때문입니다.
+`make clean`으로 제거)에 다음 파일을 기록합니다(#1020). 디렉터리 이름은 레인
+이름인 `integration`입니다. `make verify`(#1018)는 `make check`, `make test`, 이어서 같은
+`make integration` 레인(기본 드라이버 `pycubrid`)을 실행하므로 이 파일도 여기에 기록하며 별도 집계는
+쓰지 않습니다.
 
 | 파일 | 내용 |
 |---|---|
@@ -633,10 +634,9 @@ pytest가 0으로 끝났지만 JUnit 파일이 없거나 선택된 테스트가 
 `CUBRID_PASSWORD`와 `CUBRID_TEST_URL`, `CUBRID_TEST_AURL`, `CUBRID_URL`의 비밀번호(퍼센트 인코딩과
 XML 이스케이프 형태 포함)를 `***`로 바꿉니다. `service.log`는 정리만 실패한 경우에도 수집하며,
 저장이 정리를 건너뛰게 하지 않습니다. 결과 디렉터리마다 한 번에 하나의 `make integration`만 실행하세요.
-`make integration-local`은 Docker 수명 주기를 실행하지 않으며 결과도 기록하지 않습니다. 향후 라이브
-`make verify`는 각 레인을 `test-results/verify/` 아래 별도 `INTEGRATION_RESULTS` 디렉터리로
-실행하고 레인별 `summary.json`을 집계할 것으로 예상됩니다(없거나 `PASS`가 아닌 레인이 있으면
-집계는 `INCOMPLETE` 또는 `FAIL`).
+`make integration-local`은 Docker 수명 주기를 실행하지 않으며 결과도 기록하지 않습니다. `make verify`는
+`make check`와 `make test`가 성공한 뒤에만 live 레인을 시작하며(`make -j`에서도 순차 sub-make),
+그 레인이 `PASS`가 아니면 실패합니다.
 
 ### 알려진 도달 불가능 라인
 

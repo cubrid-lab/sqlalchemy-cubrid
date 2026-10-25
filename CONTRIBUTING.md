@@ -65,7 +65,7 @@ make test-repo
 # security and the docs-reason checks
 make check
 
-# Run make check, then make test (no Docker)
+# Full verification: make check, make test, then the live make integration lane (Docker)
 make verify
 
 # Run a specific test file
