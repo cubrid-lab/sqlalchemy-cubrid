@@ -264,7 +264,6 @@ jobs:
               echo "Commented on existing issue #${issue}"
             else
               gh issue create --title "$ISSUE_TITLE" --label ci \
-                --label "priority: medium" --label "size: S" \
                 --label "status: needs triage" --body "$body"
             fi
             {

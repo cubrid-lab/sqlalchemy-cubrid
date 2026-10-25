@@ -723,11 +723,8 @@ def test_upstream_canary_created_issue_enters_triage() -> None:
         step["run"] for step in report["steps"] if "gh issue create" in step.get("run", "")
     )
     create_command = script.split("gh issue create", 1)[1]
-    expected_labels = (
-        "--label ci",
-        '--label "priority: medium"',
-        '--label "size: S"',
-        '--label "status: needs triage"',
-    )
-    for label in expected_labels:
-        assert label in create_command
+    assert "--label ci" in create_command
+    assert '--label "status: needs triage"' in create_command
+    # Priority and size are maintainer triage decisions, never set by the bot.
+    assert "priority:" not in create_command
+    assert "size:" not in create_command

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- **Every new issue starts in `status: needs triage` (#1028)** — the issue forms add the
+  label, `issue-triage.yml` adds it to every opened issue instead of only to issues with
+  incomplete titles or labels, and the upstream canary adds it to the issues it files. The
+  unused `scripts/check_issue_metadata.py` check is removed. Priority and size are still set
+  by a maintainer, who removes the label after triage.
+
 ## [1.11.7] - 2026-10-25
 
 ### Documentation
