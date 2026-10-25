@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI
+
+- **`repo-tests` installs the `[pycubrid]` extra (#1049)** — the job now installs
+  `-e ".[pycubrid]" --group dev`, as `make install` does, so the benchmark-script tests that
+  import `pycubrid` run in CI instead of being skipped. The `importorskip` guards stay for a
+  plain `pip install -e .` checkout.
+
 ## [1.12.0] - 2026-10-25
 
 ### Upgrade notes

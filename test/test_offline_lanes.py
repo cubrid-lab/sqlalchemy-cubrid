@@ -88,6 +88,11 @@ def test_ci_repo_job_runs_repo_lane_when_tooling_changes():
     assert repo_versions.group(1) == pr_versions.group(1)
 
 
+def test_ci_repo_job_installs_pycubrid_extra():
+    """The benchmark-script tests import pycubrid; without the extra they skip in CI (#1049)."""
+    assert 'uv pip install --system -e ".[pycubrid]" --group dev' in _ci_job("repo-tests")
+
+
 def test_ci_repo_job_is_required_when_selected():
     result = _ci_job("matrix-result")
     needs = re.search(r"needs: \[(.*?)\]", result)
