@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.12.0](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.7...v1.12.0) (2026-10-25)
+
+
+### Added
+
+* **make:** run the live integration lane in make verify ([#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1045)) ([4d168ea](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4d168eaf4b382841fe4880ba25db3f103319636d))
+* **make:** write a verification summary under test-results/verify ([#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1047)) ([ac596a5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ac596a54429da7c60a023de3a6bd9967216053c8))
+
 ## [1.11.7](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.6...v1.11.7) (2026-10-25)
 
 

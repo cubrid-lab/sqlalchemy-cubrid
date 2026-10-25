@@ -65,7 +65,7 @@ from sqlalchemy.sql.sqltypes import (
     TIMESTAMP,
 )
 
-__version__ = "1.11.7"
+__version__ = "1.12.0"
 
 __all__ = (
     "insert",
