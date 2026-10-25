@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **The README and documentation site show the redesigned ORM icon (#1050)** — the English
+  README, its five translations and the documentation site logo and favicon now load the
+  sqlalchemy-cubrid icon from the [cubrid-lab/brand](https://github.com/cubrid-lab/brand)
+  commit that carries the 2026-10-25 ORM role redesign; only the pinned commit changed.
+
 ## [1.12.0] - 2026-10-25
 
 ### Upgrade notes
