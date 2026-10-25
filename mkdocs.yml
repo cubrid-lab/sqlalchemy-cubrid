@@ -8,8 +8,8 @@ edit_uri: edit/main/docs/
 theme:
   name: material
   # CUBRID Lab repository icon, pinned to an immutable cubrid-lab/brand commit.
-  logo: https://raw.githubusercontent.com/cubrid-lab/brand/0e0391a091bde06f5ac54cb1ce0896b22cded2b1/dist/icons/sqlalchemy-cubrid.svg
-  favicon: https://raw.githubusercontent.com/cubrid-lab/brand/0e0391a091bde06f5ac54cb1ce0896b22cded2b1/dist/icons/sqlalchemy-cubrid.svg
+  logo: https://raw.githubusercontent.com/cubrid-lab/brand/8aa81b79f00ae936b03a9546f14f514c5e2554a7/dist/icons/sqlalchemy-cubrid.svg
+  favicon: https://raw.githubusercontent.com/cubrid-lab/brand/8aa81b79f00ae936b03a9546f14f514c5e2554a7/dist/icons/sqlalchemy-cubrid.svg
   features:
     - navigation.tabs
     - navigation.sections
