@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.0] - 2026-10-25
+
 ### Upgrade notes
 
 - **`make verify` now runs the live integration lane (#1018)** — it runs `make check`, the
@@ -31,6 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   The new `scripts/report_test_results.py aggregate` subcommand builds the summary, and
   `step-summary` renders it. `make verify` now clears `test-results/test/` and
   `test-results/integration/` before it starts; `make -n verify` writes nothing.
+
+* **make:** run the live integration lane in make verify ([#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1045)) ([4d168ea](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4d168eaf4b382841fe4880ba25db3f103319636d))
+* **make:** write a verification summary under test-results/verify ([#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1047)) ([ac596a5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ac596a54429da7c60a023de3a6bd9967216053c8))
 
 ### CI
 
