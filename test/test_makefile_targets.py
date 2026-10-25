@@ -119,7 +119,8 @@ def test_check_is_the_complete_non_test_quality_gate():
 def test_verify_runs_check_then_test_then_the_live_lane():
     # Sub-makes, not prerequisites, so `make -j` cannot start a later phase early.
     assert _prerequisites("verify") == []
-    lines = _dry_run("verify")
+    # Pin the driver so an exported INTEGRATION_DRIVER=cubriddb cannot change the default.
+    lines = _dry_run("verify", "INTEGRATION_DRIVER=pycubrid")
     offline = next(i for i, line in enumerate(lines) if '-m "not integration"' in line)
     live = next(i for i, line in enumerate(lines) if "scripts/run_integration.py" in line)
     static = max(i for i, line in enumerate(lines) if "bandit" in line or " -m ruff " in line)
@@ -142,7 +143,9 @@ def test_verify_never_starts_the_live_lane_after_failing_offline_tests(tmp_path,
         'case " $* " in *" -m pytest "*"not integration"*) exit 1 ;; esac\nexit 0\n'
     )
     stub.chmod(0o755)
-    result = _make(*jobs, "verify", f"PYTHON={stub}")
+    # Keep the real recipes' result directories inside tmp_path.
+    results = [f"TEST_RESULTS={tmp_path}/test", f"INTEGRATION_RESULTS={tmp_path}/integration"]
+    result = _make(*jobs, "verify", f"PYTHON={stub}", *results)
     assert result.returncode != 0
     calls = log.read_text().splitlines()
     assert any("-m pytest" in call for call in calls)
