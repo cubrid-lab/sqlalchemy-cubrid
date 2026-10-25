@@ -392,14 +392,12 @@ title becomes the commit title. The `PR title` check enforces it.
 - <bullet 2: ...>
 
 Closes #<issue>
-
-Ultraworked with [Sisyphus](https://github.com/code-yeongyu/oh-my-opencode)
-Co-authored-by: Sisyphus <clio-agent@sisyphuslabs.ai>
 ```
 
-The tool-attribution example applies only to work produced with that tool.
-Preserve actual contributor authorship and real coauthors; outside contributions
-do not require a named agent, tool credit or a blanket coauthor trailer.
+The copyable example deliberately has no agent-specific footer. Preserve actual
+contributor authorship and any existing real coauthor trailers; add new credits
+only when they truthfully identify a contributor. Neither a named AI tool nor
+a specific agent review sequence is a prerequisite for contributions.
 
 ### Rules (MANDATORY)
 
