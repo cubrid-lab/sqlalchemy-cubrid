@@ -606,8 +606,9 @@ CI는 `make test`를 실행하지 않습니다. 오프라인 레인(`ci.yml`의 
 실행하는 job(`ci.yml`의 `integration-tests`, `make-integration`, `integration-full.yml`의
 `integration-full`, `make-integration`)은 이미 기록하는 pytest 로그를 실패 시에도
 `pytest-logs-*` 아티팩트로 업로드합니다. 두 `make-integration` job은 같은 아티팩트에
-`test-results/integration/`(아래 라이브 결과)도 함께 올립니다. 라이브 레인의 job summary는
-아직 기록하지 않습니다.
+`test-results/integration/`(아래 라이브 결과)도 함께 올리고, 그 레인의 `summary.json` 줄을
+job summary에 덧붙입니다(`Publish live results summary`, 실패 시에도; 요약이 없으면 그렇다고
+표시).
 
 ### 라이브 결과 (`make integration`)
 

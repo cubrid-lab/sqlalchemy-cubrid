@@ -4,7 +4,9 @@ The offline lanes (``offline-tests`` in ci.yml and its release copy ``offline-en
 in integration-full.yml) write JUnit, coverage and ``summary.json`` under
 ``test-results/offline/``, append the summary to the job summary and upload the
 directory. The jobs that run integration tests upload the pytest logs they already
-write. Every one of those steps runs with ``if: always()``. Test selection, the
+write, and the ``make integration`` jobs also append the live lane's
+``test-results/integration/summary.json`` to the job summary. Every one of those steps
+runs with ``if: always()``. Test selection, the
 coverage floor and the permissions are unchanged.
 """
 
@@ -136,6 +138,25 @@ def test_integration_jobs_upload_their_pytest_logs_on_every_run(
         i for i, s in enumerate(steps) if ".log" in str(s.get("run", "")) and "tee " in s["run"]
     ]
     assert producers and steps.index(upload) > max(producers)
+
+
+MAKE_INTEGRATION = [("ci.yml", "make-integration"), ("integration-full.yml", "make-integration")]
+
+
+@pytest.mark.parametrize(("wf", "job"), MAKE_INTEGRATION)
+def test_make_integration_publishes_the_live_summary_on_every_run(wf: str, job: str) -> None:
+    steps = _steps(wf, job)
+    names = [s.get("name") for s in steps]
+    publish = _named(steps, "Publish live results summary")
+    assert publish["if"] == "always()"
+    assert "step-summary --summary test-results/integration/summary.json" in publish["run"]
+    assert publish["run"].rstrip().endswith('>> "$GITHUB_STEP_SUMMARY"')
+    # After the run that writes the summary, before the upload that carries it.
+    assert (
+        names.index("Run make integration")
+        < names.index("Publish live results summary")
+        < names.index("Upload pytest logs")
+    )
 
 
 # The workflow-level permissions as they were before #1021; the caller sets integration-full's.

@@ -393,6 +393,9 @@ jobs:
         run: |
           python -m scripts.check_not_all_skipped make-integration.log \
             --label "make integration (${{ matrix.driver }}, CUBRID ${{ matrix.cubrid-version }})"
+      - name: Publish live results summary
+        if: always()
+        run: python -m scripts.report_test_results step-summary --summary test-results/integration/summary.json --title "make integration (${{ matrix.driver }}, CUBRID ${{ matrix.cubrid-version }})" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload pytest logs
         if: always()

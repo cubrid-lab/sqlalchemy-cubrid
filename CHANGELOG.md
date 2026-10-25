@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### CI
 
+- **The `make integration` CI jobs publish the live results summary (#1021)** — `make-integration`
+  in `ci.yml` and `integration-full.yml` append `test-results/integration/summary.json` to the job
+  summary with `if: always()`, so a failing or incomplete live lane shows its status and counts
+  next to the uploaded `pytest-logs-*` artifact. No permission, secret or test-selection change.
 - **Every new issue starts in `status: needs triage` (#1028)** — the issue forms add the
   label, `issue-triage.yml` adds it to every opened issue instead of only to issues with
   incomplete titles or labels, and the upstream canary adds it to the issues it files. The

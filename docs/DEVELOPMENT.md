@@ -623,8 +623,9 @@ and uploads `test-results/` as the `test-results-offline-py<version>` artifact (
 jobs that run integration tests (`integration-tests` and `make-integration` in `ci.yml`,
 `integration-full` and `make-integration` in `integration-full.yml`) upload the pytest logs they
 already write as `pytest-logs-*` artifacts, also on failure; the two `make-integration` jobs
-also upload `test-results/integration/` (the live results below) in the same artifact. A job
-summary for the live lanes is not written yet.
+also upload `test-results/integration/` (the live results below) in the same artifact, and append
+that lane's `summary.json` line to the job summary (`Publish live results summary`, also on
+failure; a missing summary is reported as such).
 
 ### Live results (`make integration`)
 
