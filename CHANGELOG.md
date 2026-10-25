@@ -25,8 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and one entry per phase (`check`, `test`, `integration`). A phase that never started is
   `NOT_RUN`, and a missing or unreadable lane summary or an all-skipped live lane is never
   `PASS`. It also copies each lane's JUnit file to `junit/` and the live lane's redacted
-  `environment.json`. The new `scripts/report_test_results.py aggregate` subcommand builds it,
-  and `step-summary` renders it. `make verify` now clears `test-results/test/` and
+  `environment.json`, with configured passwords masked, and a file it cannot copy keeps the
+  summary from `PASS`. The new `scripts/run_verify.py` runs the phases and forwards a SIGINT,
+  SIGTERM or SIGHUP sent to make to the running phase, so `make integration` still cleans up.
+  The new `scripts/report_test_results.py aggregate` subcommand builds the summary, and
+  `step-summary` renders it. `make verify` now clears `test-results/test/` and
   `test-results/integration/` before it starts; `make -n verify` writes nothing.
 
 ### CI

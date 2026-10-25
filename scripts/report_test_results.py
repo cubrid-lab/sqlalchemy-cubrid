@@ -47,7 +47,9 @@ its phases, in order: ``--phase NAME=EXIT`` (or ``NAME=not-run``), optionally wi
 exited 0 and its summary (when it has one) is ``PASS``; ``verify`` is ``FAIL`` when a phase
 failed, ``INCOMPLETE`` when one did not run or proved nothing, and ``PASS`` otherwise.
 ``--copy-junit NAME=PATH`` copies a lane's JUnit file to ``junit/NAME.xml`` and
-``--environment PATH`` copies the live lane's (already redacted) ``environment.json``.
+``--environment PATH`` the live lane's ``environment.json``; the configured secrets
+(``CUBRID_PASSWORD`` and URL passwords, also percent-encoded and XML-escaped) are replaced
+with ``***`` in every copy, and a file that cannot be copied keeps the summary from ``PASS``.
 
 ``step-summary`` prints the one-line summary of a ``summary.json`` as Markdown for the
 GitHub job summary (#1021). It always exits 0 and says so when the file is missing or
@@ -57,11 +59,14 @@ unreadable, so a publishing step never hides the failure of the test step before
 from __future__ import annotations
 
 import argparse
+import html
 import json
+import os
 import platform
 import re
-import shutil
 import sys
+import urllib.parse
+from collections.abc import Mapping
 from importlib import metadata
 from pathlib import Path
 from xml.etree.ElementTree import ParseError
@@ -203,15 +208,22 @@ def _phase_summary(path: Path) -> tuple[str | None, str]:
         status = json.loads(path.read_text(encoding="utf-8"))["status"]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         return None, f"cannot read {path}: {exc}"
-    if status not in {"PASS", "FAIL", "INCOMPLETE"}:
+    if not isinstance(status, str) or status not in {"PASS", "FAIL", "INCOMPLETE"}:
         return None, f"{path} has an unknown status {status!r}"
     return status, ""
 
 
-def build_aggregate(phases: list[tuple[str, int | None, Path | None]]) -> dict[str, object]:
-    """``make verify``'s summary: one entry per phase, in the order they were given."""
+def build_aggregate(
+    phases: list[tuple[str, int | None, Path | None]], problems: list[str] | None = None
+) -> dict[str, object]:
+    """``make verify``'s summary: one entry per phase, in the order they were given.
+
+    *problems* (for example a result file that could not be copied) keep an otherwise
+    passing summary ``INCOMPLETE``.
+    """
     entries: list[dict[str, object]] = []
-    problems: list[str] = []
+    problems = list(problems or [])
+    copy_problems = bool(problems)
     for name, exit_code, summary_path in phases:
         lane_status: str | None = None
         if exit_code is None:
@@ -245,7 +257,7 @@ def build_aggregate(phases: list[tuple[str, int | None, Path | None]]) -> dict[s
         problems.append("no phase was given")
     elif "FAIL" in statuses:
         overall = "FAIL"
-    elif statuses == {"PASS"}:
+    elif statuses == {"PASS"} and not copy_problems:
         overall = "PASS"
     else:
         overall = "INCOMPLETE"
@@ -301,16 +313,56 @@ def aggregate_main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     directory = args.output.parent
     directory.mkdir(parents=True, exist_ok=True)
-    for name, junit in args.copy_junit:
-        if junit.is_file():
-            (directory / "junit").mkdir(exist_ok=True)
-            shutil.copyfile(junit, directory / "junit" / f"{name}.xml")
-    if args.environment is not None and args.environment.is_file():
-        shutil.copyfile(args.environment, directory / "environment.json")
-    summary = build_aggregate(args.phase)
+    secrets = configured_secrets(os.environ)
+    copies = [(junit, directory / "junit" / f"{name}.xml") for name, junit in args.copy_junit]
+    if args.environment is not None:
+        copies.append((args.environment, directory / "environment.json"))
+    problems = []
+    for source, target in copies:
+        if not source.exists():
+            continue
+        try:
+            target.parent.mkdir(exist_ok=True)
+            target.write_bytes(scrub(source.read_bytes(), secrets))
+        except OSError as exc:
+            target.unlink(missing_ok=True)
+            problems.append(f"could not copy {source}: {exc}")
+    summary = build_aggregate(args.phase, problems)
     args.output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
     print(f"{format_aggregate_line(summary)} -> {args.output}")
     return 0 if summary["status"] == "PASS" else 1
+
+
+# Environment variables that may carry a database URL with a password.
+URL_VARIABLES = ("CUBRID_TEST_URL", "CUBRID_TEST_AURL", "CUBRID_URL")
+
+
+def configured_secrets(environ: Mapping[str, str]) -> list[str]:
+    """``CUBRID_PASSWORD`` and URL passwords in every written form, longest first.
+
+    The same forms ``scripts/run_integration.py`` (``_secrets``) masks in the live lane's
+    own files; kept in step with it.
+    """
+    raw = [environ.get("CUBRID_PASSWORD", "")]
+    for name in URL_VARIABLES:
+        try:
+            raw.append(urllib.parse.urlsplit(environ.get(name, "")).password or "")
+        except ValueError:
+            continue
+    forms: set[str] = set()
+    for secret in filter(None, raw):
+        for form in (secret, urllib.parse.unquote(secret), urllib.parse.quote(secret, safe="")):
+            forms.add(form)
+            forms.add(html.escape(form))
+            forms.add(html.escape(form, quote=False))
+    return sorted(filter(None, forms), key=len, reverse=True)
+
+
+def scrub(data: bytes, secrets: list[str]) -> bytes:
+    """Replace every form of the configured secrets in *data* with ``***``."""
+    for secret in secrets:
+        data = data.replace(secret.encode(), b"***")
+    return data
 
 
 def _version(*names: str) -> str | None:

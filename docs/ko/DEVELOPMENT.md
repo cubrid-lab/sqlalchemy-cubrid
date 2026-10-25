@@ -642,17 +642,27 @@ XML 이스케이프 형태 포함)를 `***`로 바꿉니다. `service.log`는 �
 ### 검증 요약 (`make verify`)
 
 `make verify`는 먼저 `test-results/verify/`, `test-results/test/`, `test-results/integration/`을
-지우고 단계를 실행한 뒤, 실패한 경우에도 항상 `test-results/verify/`를 기록합니다(#1020).
+지운 뒤 `scripts/run_verify.py`를 `exec`합니다. 이 스크립트는 단계를 차례로 실행하고, 실패나 시그널
+뒤에도 항상 `test-results/verify/`를 기록합니다(#1020). 단계는 호출자의 프로세스 그룹에 남으므로
+Ctrl-C는 평소처럼 전달됩니다. make에만 보낸 SIGINT, SIGTERM, SIGHUP(`timeout make verify`,
+`kill <make pid>`)은 실행 중인 단계로 전달되어 `make integration`이 Compose 프로젝트를 정리하며,
+`make verify`는 다음 단계를 시작하지 않고 128 + 시그널 번호로 종료합니다.
 
 | 파일 | 내용 |
 |---|---|
 | `summary.json` | `schema_version`, `lane`(`verify`), 전체 `status`와 `problems`, 단계 순서(`check`, `test`, `integration`)대로의 `phases` 항목(각 `status`, `exit_code`, 읽은 레인 `summary`, 그 요약의 `summary_status`) |
-| `junit/test.xml`, `junit/integration.xml` | JUnit 파일을 쓴 레인의 JUnit 사본 |
-| `environment.json` | live 레인의 (이미 마스킹된) `environment.json` 사본(기록된 경우) |
+| `junit/test.xml`, `junit/integration.xml` | 실행되어 JUnit 파일을 쓴 레인의 JUnit 사본 |
+| `environment.json` | live 레인이 실행되어 기록한 `environment.json` 사본 |
+
+모든 사본에서 `CUBRID_PASSWORD`와 `CUBRID_TEST_URL`, `CUBRID_TEST_AURL`, `CUBRID_URL`의 비밀번호
+(퍼센트 인코딩과 XML 이스케이프 형태 포함)를 live 레인과 같이 `***`로 바꿉니다. 실패한 오프라인
+테스트가 JUnit 보고서에 이를 출력할 수 있기 때문입니다. 존재하지만 복사할 수 없는 결과 파일은
+제외되며 요약이 `PASS`가 되지 않게 합니다.
 
 단계는 종료 상태가 0이고 자체 `summary.json`(`test`, `integration`)이 `PASS`일 때만 `PASS`입니다.
 앞 단계가 실패해 시작하지 않은 단계는 `NOT_RUN`입니다. 전체 상태는 실패한 단계가 있으면 `FAIL`,
-실행되지 않은 단계가 있거나 요약이 없거나 읽을 수 없거나 레인이 아무것도 증명하지 못했으면
+실행되지 않은 단계가 있거나 요약이 없거나 읽을 수 없거나 레인이 아무것도 증명하지 못했거나 결과
+파일을 복사하지 못했으면
 `INCOMPLETE`, 모든 단계가 통과했을 때만 `PASS`입니다. 마지막 콘솔 줄이 이를 반복합니다(예:
 `verify: PASS; check PASS, test PASS, integration PASS -> test-results/verify/summary.json`).
 `make verify`는 처음 실패한 단계의 종료 상태를 유지하며 요약이 `PASS`가 아니면 0이 아닌 값으로

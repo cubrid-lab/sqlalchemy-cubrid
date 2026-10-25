@@ -7965,19 +7965,28 @@ the live lane only after `make check` and `make test` succeeded (sequential sub-
 ### Verification summary (`make verify`)
 
 `make verify` first removes `test-results/verify/`, `test-results/test/` and
-`test-results/integration/`, runs its phases, and then always writes `test-results/verify/` (#1020),
-also after a failure:
+`test-results/integration/`, then `exec`s `scripts/run_verify.py`, which runs the phases one after
+another and always writes `test-results/verify/` (#1020), also after a failure or a signal. The
+phases stay in the caller's process group, so Ctrl-C reaches them as usual; a SIGINT, SIGTERM or
+SIGHUP sent only to make (`timeout make verify`, `kill <make pid>`) is forwarded to the running
+phase, so `make integration` still cleans up its Compose project, and `make verify` then exits
+128 + the signal number without starting another phase.
 
 | File | Content |
 |---|---|
 | `summary.json` | `schema_version`, `lane` (`verify`), overall `status` and `problems`, and one `phases` entry per phase in order (`check`, `test`, `integration`), each with its `status`, `exit_code`, the lane `summary` it read and that summary's `summary_status` |
-| `junit/test.xml`, `junit/integration.xml` | copies of the lanes' JUnit files, for the lanes that wrote one |
-| `environment.json` | a copy of the live lane's (already redacted) `environment.json`, when it was written |
+| `junit/test.xml`, `junit/integration.xml` | copies of the JUnit files of the lanes that ran and wrote one |
+| `environment.json` | a copy of the live lane's `environment.json`, when it ran and wrote one |
+
+Every copy has `CUBRID_PASSWORD` and the passwords of `CUBRID_TEST_URL`, `CUBRID_TEST_AURL` and
+`CUBRID_URL` (also percent-encoded and XML-escaped) replaced with `***`, as the live lane does for
+its own files; a failing offline test can print them into its JUnit report. A result file that
+exists but cannot be copied is left out and keeps the summary from `PASS`.
 
 A phase is `PASS` only when it exited 0 and its own `summary.json` (for `test` and `integration`)
 says `PASS`. A phase that never started because an earlier one failed is `NOT_RUN`. The overall
 status is `FAIL` when any phase failed, `INCOMPLETE` when a phase did not run, its summary is
-missing or unreadable, or the lane proved nothing, and `PASS` only when every phase passed. The
+missing or unreadable, the lane proved nothing or a result file could not be copied, and `PASS` only when every phase passed. The
 last console line repeats it, e.g. `verify: PASS; check PASS, test PASS, integration PASS ->
 test-results/verify/summary.json`. `make verify` keeps the exit status of the first failing phase
 and exits non-zero whenever the summary is not `PASS`. The summary records no command, URL or

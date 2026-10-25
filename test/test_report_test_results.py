@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -391,7 +392,10 @@ def test_aggregate_never_passes_a_phase_that_did_not_run(tmp_path):
     assert "integration did not run" in summary["problems"]
 
 
-@pytest.mark.parametrize("content", [None, "not json", '{"status": "GREEN"}'])
+@pytest.mark.parametrize(
+    "content",
+    [None, "not json", '{"status": "GREEN"}', '{"status": []}', '{"status": {}}', "[]"],
+)
 def test_aggregate_treats_a_missing_or_unreadable_lane_summary_as_incomplete(tmp_path, content):
     path = tmp_path / "integration" / "summary.json"
     if content is not None:
@@ -407,7 +411,10 @@ def test_aggregate_main_writes_the_summary_junit_and_environment(tmp_path, capsy
     lanes = tmp_path / "lanes"
     test_summary = _lane(lanes, "test", "PASS")
     live_summary = _lane(lanes, "integration", "PASS")
-    (lanes / "test" / "junit.xml").write_text("<testsuites/>", encoding="utf-8")
+    # A failing offline test can print a configured credential into its JUnit report.
+    (lanes / "test" / "junit.xml").write_text(
+        "<testsuites>topsecret</testsuites>", encoding="utf-8"
+    )
     (lanes / "integration" / "junit.xml").write_text("<testsuites/>", encoding="utf-8")
     (lanes / "integration" / "environment.json").write_text('{"lane": "x"}', encoding="utf-8")
     output = tmp_path / "verify" / "summary.json"
@@ -457,3 +464,30 @@ def test_step_summary_renders_the_verify_summary(tmp_path, capsys):
     assert mod.main(["step-summary", "--summary", str(output), "--title", "Verify"]) == 0
     text = capsys.readouterr().out
     assert text.startswith("### Verify\n\n`verify: INCOMPLETE; check PASS, integration NOT_RUN")
+
+
+def test_aggregate_records_a_result_file_it_cannot_copy(tmp_path, capsys):
+    lane = _lane(tmp_path, "integration", "PASS")
+    unreadable = tmp_path / "integration" / "junit.xml"
+    unreadable.mkdir()  # exists, but reading it fails
+    output = tmp_path / "verify" / "summary.json"
+    code = mod.main(
+        ["aggregate", "--output", str(output), "--phase", f"integration=0:{lane}",
+         "--copy-junit", f"integration={unreadable}"]
+    )  # fmt: skip
+    assert code == 1
+    summary = json.loads(output.read_text(encoding="utf-8"))
+    assert summary["status"] == "INCOMPLETE"
+    assert _statuses(summary) == {"integration": "PASS"}
+    assert any("could not copy" in problem for problem in summary["problems"])
+    assert not (output.parent / "junit" / "integration.xml").exists()
+
+
+def test_configured_secrets_match_the_live_runner(monkeypatch):
+    from scripts import run_integration
+
+    monkeypatch.setenv("CUBRID_PASSWORD", "p&ss")
+    monkeypatch.setenv("CUBRID_TEST_URL", "cubrid+pycubrid://dba:w%40rd@localhost/testdb")
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
+    monkeypatch.delenv("CUBRID_URL", raising=False)
+    assert mod.configured_secrets(os.environ) == run_integration._secrets()
