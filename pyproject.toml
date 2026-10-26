@@ -76,7 +76,7 @@ test = [
     "defusedxml>=0.7.1",
 ]
 lint = [
-    "ruff==0.17.1",
+    "ruff==0.17.2",
 ]
 typecheck = [
     "mypy==2.4.0",
