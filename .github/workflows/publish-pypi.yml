@@ -293,7 +293,7 @@ jobs:
     if: needs.build.result == 'success'
     permissions:
       contents: read # all the called workflow needs
-    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@fbaaa8c28d1d0033577ceee5aa9269e42f871984 # main
+    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@969c3f9c9d78c32525bde5153dcab57122e5b663 # main
     with:
       package: sqlalchemy-cubrid
       version: ${{ needs.detect.outputs.version }}
@@ -557,7 +557,7 @@ jobs:
       (needs.publish.result == 'success' || needs.detect.outputs.mode == 'verify-only')
     permissions:
       contents: read # all the called workflow needs
-    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@fbaaa8c28d1d0033577ceee5aa9269e42f871984 # main
+    uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@969c3f9c9d78c32525bde5153dcab57122e5b663 # main
     with:
       package: sqlalchemy-cubrid
       version: ${{ needs.detect.outputs.version }}
