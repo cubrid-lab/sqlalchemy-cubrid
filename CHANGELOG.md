@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+
+- **README and docs site show the transparent brand icon (#1089)** — the icon URL pinned in the README, its translations and `mkdocs.yml` (logo and favicon) now points at brand revision `e55990a`, where the ORM icon's two plate gaps are real transparency instead of white strokes. Documentation only; behavior is unchanged.
+
 ## [1.12.1] - 2026-10-27
 
 ### Documentation
