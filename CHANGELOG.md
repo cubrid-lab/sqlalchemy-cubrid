@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Documentation
 
+- **README and docs site show the emblem-aligned brand icon (#1063)** — the icon URL pinned in the README, its translations and `mkdocs.yml` (logo and favicon) now points at the brand revision `538bad3`, whose Python Yellow keyline keeps the cube silhouette of the organization emblem (open seams, no flat bottom). Documentation only; behavior is unchanged.
 - **The README and documentation site show the cube-shaped ORM icon (#1054)** — every brand
   pin moves to cubrid-lab/brand `38b4646`, which redraws the ORM icon as a complete cube with
   side-to-side grooves; only the pinned commit changed.
