@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.12.1](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.0...v1.12.1) (2026-10-27)
+
+
+### Documentation
+
+* **readme:** repin the brand icon to the 2026-10-25 brand revision ([#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1051)) ([7159590](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715959028dcab9915eaab7478dca2228bc0345a5))
+* **readme:** repin the brand icon to the cube redesign ([#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1055)) ([f166be7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f166be7df70599af34bd353110075f9b092ee327))
+* **readme:** repin the brand icon to the emblem-aligned keyline ([#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1064)) ([c5fd64d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c5fd64d8d64ff8d31edd4db292ebb47dd8c6f250))
+* **readme:** repin the brand icon to the shared white marks ([#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1067)) ([e1ae6a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e1ae6a4d1bc1d91bbb7028b07d344499b6997179))
+* require human-readable agent communication ([#1056](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1056)) ([74afeb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/74afeb36fe5cba4503b2b860dafdd0b19903af7b))
+
 ## [1.12.0](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.11.7...v1.12.0) (2026-10-25)
 
 
