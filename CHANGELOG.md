@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   import `pycubrid` run in CI instead of being skipped. The `importorskip` guards stay for a
   plain `pip install -e .` checkout.
 
+### Tests
+
+- **The KILL QUERY helper's pipes are closed after each run (#1061)** — `test_interrupted_query_keeps_connection`
+  reaped its helper process but left the stdout/stderr pipes open, so a later `gc.collect()` in
+  `TestAsyncTerminateClosedLoop872` could record their `ResourceWarning`s and fail the cubriddb lane of
+  the release compatibility matrix. That test now also collects leftover garbage before recording warnings.
+
 ## [1.12.0] - 2026-10-25
 
 ### Upgrade notes

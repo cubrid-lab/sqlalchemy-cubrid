@@ -1573,6 +1573,12 @@ class TestIsDisconnect:
                         if killer.poll() is None:
                             killer.kill()
                         killer.wait(timeout=60)
+                        # wait() leaves the pipes open; an unclosed pipe found
+                        # by a later test's gc.collect() is a ResourceWarning
+                        # there (TestAsyncTerminateClosedLoop872).
+                        for stream in (killer.stdout, killer.stderr):
+                            if stream is not None:
+                                stream.close()
         finally:
             try:
                 if victim_engine is not None:
@@ -4258,6 +4264,9 @@ class TestAsyncTerminateClosedLoop872:
             holder["sock"] = raw.driver_connection._writer.transport.get_extra_info("socket")
             holder["conn"] = conn
 
+        # Collect garbage left by earlier tests first, so only this test's
+        # objects can produce the warnings recorded below.
+        gc.collect()
         with warnings.catch_warnings(record=True) as caught:
             warnings.simplefilter("always")
             asyncio.run(leak())  # closes the loop that owns the transport
