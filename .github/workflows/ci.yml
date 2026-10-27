@@ -125,6 +125,7 @@ jobs:
               - 'test/test_bench_artifact.py'
               - 'test/test_bench_dialect_baseline.py'
               - 'test/test_check_docs_translation.py'
+              - 'test/test_check_translation_sync.py'
               - 'test/test_check_integration_connection.py'
               - 'test/test_docs_provenance_hook.py'
               - 'test/test_docs_reason.py'

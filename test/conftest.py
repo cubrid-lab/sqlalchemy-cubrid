@@ -61,6 +61,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_docs_reason.py",
         "test_release_detect.py",
         "test_check_docs_translation.py",
+        "test_check_translation_sync.py",
         "test_workflow_timeouts.py",
         "test_workflow_installs.py",
         "test_workflow_hygiene.py",
