@@ -1,5 +1,10 @@
 # AGENTS.md
 
+## Organization-wide writing standard
+
+Issue titles use **type only** (such as `feat: ...`, `bug: ...`), with no required module scope. Explain a clear human-readable problem or goal and verifiable acceptance criteria; separate verified observations from assumptions and omit personal comments/internal IDs. Triage evaluates validity, duplication, scope, priority and size; PRs/commits follow local Conventional Commits and existing PR validation gates. See [cubrid-lab's writing standard](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md).
+
+
 Project knowledge base for AI coding agents.
 
 ## Project Overview
@@ -313,8 +318,7 @@ canonical labels. Outside reporters do not need label-write permission: they can
 describe urgency and effort, but those descriptions help triage and do not
 themselves assign a label.
 
-Issue titles use the same `type(scope): description` format as pull request
-titles (see [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-and-commit-titles)).
+Issue titles use `type: description` without a module scope (see [organization standard](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md)).
 `.github/workflows/issue-triage.yml` marks externally opened issues with
 `status: needs triage` without guessing priority/size. Authorized agents and
 workflows using `GITHUB_TOKEN` must include that label at issue creation;
@@ -400,7 +404,7 @@ need linked test/run evidence or an explicit untested qualifier in the PR body.
 
 ## Commit Convention
 
-Issue titles, pull request titles and commit subjects follow
+Pull request titles and commit subjects follow
 [CONTRIBUTING.md - Pull request and commit titles](CONTRIBUTING.md#pull-request-and-commit-titles):
 `type(scope)!: description` with types `feat`, `fix`, `docs`, `test`, `perf`,
 `refactor`, `ci`, `build`, `chore`, `style`, `revert`; English, lowercase start
