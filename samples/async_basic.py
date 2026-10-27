@@ -2,11 +2,12 @@
 """Minimal async usage example for sqlalchemy-cubrid.
 
 Requirements:
-    pip install sqlalchemy-cubrid pycubrid
+    pip install "sqlalchemy-cubrid[pycubrid]"
 
 Usage:
-    # Start CUBRID (e.g. via Docker):
-    #   docker run -d --name cubrid -p 33000:33000 cubrid/cubrid:11.2
+    # Start CUBRID (e.g. via Docker, from docs/LESSON_PREPARE.md):
+    #   docker run -d --name sqlalchemy-cubrid-quickstart -e CUBRID_DB=testdb \
+    #     -p 127.0.0.1:33000:33000 cubrid/cubrid:11.4
     python samples/async_basic.py
 """
 
@@ -17,7 +18,7 @@ import asyncio
 from sqlalchemy import Column, Integer, MetaData, String, Table, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-DB_URL = "cubrid+aiopycubrid://dba:@localhost:33000/demodb"
+DB_URL = "cubrid+aiopycubrid://dba:@127.0.0.1:33000/testdb"
 
 
 async def main() -> None:
