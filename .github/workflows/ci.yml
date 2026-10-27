@@ -129,6 +129,7 @@ jobs:
               - 'test/test_check_integration_connection.py'
               - 'test/test_docs_provenance_hook.py'
               - 'test/test_docs_reason.py'
+              - 'test/test_generate_llms_full.py'
               - 'test/test_make_integration.py'
               - 'test/test_makefile_targets.py'
               - 'test/test_reflection_probe.py'

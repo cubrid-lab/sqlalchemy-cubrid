@@ -265,6 +265,7 @@ def test_ci_event_groups_do_not_cancel_each_other() -> None:
 
 
 def test_documentation_generator_includes_policy_and_preserves_index(tmp_path: Path) -> None:
+    import importlib.util
     import shutil
     import sys
 
@@ -275,6 +276,17 @@ def test_documentation_generator_includes_policy_and_preserves_index(tmp_path: P
     shutil.copyfile(ROOT / "scripts/generate_llms_full.py", scripts / "generate_llms_full.py")
     policy = "# CI policy regression fixture\n\nEvent-isolated representative validation.\n"
     (docs / "CI_POLICY.md").write_text(policy)
+    # The generator refuses to run when a canonical page is missing (#853), so
+    # give every other listed page a placeholder.
+    spec = importlib.util.spec_from_file_location(
+        "_ci_policy_llms_full", ROOT / "scripts/generate_llms_full.py"
+    )
+    assert spec and spec.loader
+    generator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(generator)
+    for name in generator.DOC_FILES:
+        if not (docs / name).exists():
+            (docs / name).write_text(f"# {name}\n")
     index = (ROOT / "docs/llms.txt").read_bytes()
     (docs / "llms.txt").write_bytes(index)
     subprocess.run(

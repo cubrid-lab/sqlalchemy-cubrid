@@ -82,6 +82,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_check_integration_connection.py",
         "test_reflection_probe.py",
         "test_reflection_probe_shape.py",
+        "test_generate_llms_full.py",
     }
 )
 _missing_repo_modules = sorted(
