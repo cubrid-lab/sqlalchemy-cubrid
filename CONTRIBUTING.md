@@ -353,8 +353,7 @@ Existing tests, docs requirements and PR review/merge policies remain unchanged.
 
 ## Pull request and commit titles
 
-This rule covers issue titles, pull request titles and commit subjects in every
-cubrid-lab repository. Pull requests are squash-merged and the pull request
+This section covers pull request titles and commit subjects. Issue titles use type-only prefixes such as `feat:` and `bug:`; see the [organization writing standard](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md). Pull requests are squash-merged and the pull request
 title becomes the commit title on `main`, so the pull request title is the one
 that must be right. The `PR title` check enforces it.
 
@@ -429,10 +428,7 @@ release. Maintainers prepare release PRs with `release-please.yml`; see
 ## Reporting Issues
 
 Search for an existing issue first, then use the closest issue form. Keep its
-prefilled title prefix (`fix:`, `feat:`, or `chore:`); for a custom issue, use
-the same `type(scope): description` format as pull request titles (see
-[Pull request and commit titles](#pull-request-and-commit-titles)), for example
-`fix(reflection): ...` or `docs: ...`.
+prefilled title prefix (`bug:`, `feat:`, or `chore:`); for a custom issue, use `bug: ...`, `feat: ...`, or another type-only prefix without a module scope.
 
 Reporters describe impact and reproduction; they do **not** need permission
 to apply GitHub labels. Maintainers assign a type label, one
