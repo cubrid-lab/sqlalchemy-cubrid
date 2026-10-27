@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.12.1] - 2026-10-27
+
 ### Documentation
 
 - **README and docs site show the brand icon with white marks (#1066)** — the icon URL pinned in the README, its translations and `mkdocs.yml` (logo and favicon) now points at brand revision `3a385be`, where the Python Yellow icons draw white role marks on a bare cube like every other language. Documentation only; behavior is unchanged.
@@ -19,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sqlalchemy-cubrid icon from the [cubrid-lab/brand](https://github.com/cubrid-lab/brand)
   commit that carries the 2026-10-25 ORM role redesign (lateral plates) and the Python Yellow
   colour with an ochre keyline; only the pinned commit changed.
+
+* **readme:** repin the brand icon to the 2026-10-25 brand revision ([#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1051)) ([7159590](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715959028dcab9915eaab7478dca2228bc0345a5))
+* **readme:** repin the brand icon to the cube redesign ([#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1055)) ([f166be7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f166be7df70599af34bd353110075f9b092ee327))
+* **readme:** repin the brand icon to the emblem-aligned keyline ([#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1064)) ([c5fd64d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c5fd64d8d64ff8d31edd4db292ebb47dd8c6f250))
+* **readme:** repin the brand icon to the shared white marks ([#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1067)) ([e1ae6a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e1ae6a4d1bc1d91bbb7028b07d344499b6997179))
+* require human-readable agent communication ([#1056](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1056)) ([74afeb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/74afeb36fe5cba4503b2b860dafdd0b19903af7b))
 
 ### CI
 
