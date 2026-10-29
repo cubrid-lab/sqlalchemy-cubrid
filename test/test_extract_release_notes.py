@@ -61,3 +61,64 @@ def test_missing_section_still_fails_closed(tmp_path: Path) -> None:
     result = extract(tmp_path, CHANGELOG, "v9.9.9")
     assert result.returncode == 1
     assert not (tmp_path / "RELEASE_NOTES.md").exists()
+
+
+def test_wrong_argument_count_prints_usage_and_exits_2(tmp_path: Path) -> None:
+    """No tag and two tags are both usage errors, not a silent success."""
+    for args in ([], ["v1.2.0", "v1.1.0"]):
+        (tmp_path / "CHANGELOG.md").write_text(CHANGELOG, encoding="utf-8")
+        result = subprocess.run(
+            [sys.executable, str(SCRIPT), *args],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 2
+        assert "usage: extract_release_notes.py vX.Y.Z" in result.stderr
+        assert not (tmp_path / "RELEASE_NOTES.md").exists()
+
+
+def test_missing_changelog_fails_closed(tmp_path: Path) -> None:
+    """No CHANGELOG.md is an error, not an empty release body."""
+    result = subprocess.run(
+        [sys.executable, str(SCRIPT), "v1.2.0"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 1
+    assert "ERROR: CHANGELOG.md not found" in result.stderr
+    assert not (tmp_path / "RELEASE_NOTES.md").exists()
+
+
+def test_undated_header_is_treated_as_missing(tmp_path: Path) -> None:
+    """A `## [1.2.0]` header without a date is not a release section."""
+    changelog = "# Changelog\n\n## [1.2.0]\n\n- Not dated.\n"
+
+    result = extract(tmp_path, changelog, "v1.2.0")
+
+    assert result.returncode == 1
+    assert "ERROR: Missing dated CHANGELOG section for 1.2.0" in result.stderr
+    assert not (tmp_path / "RELEASE_NOTES.md").exists()
+
+
+def test_empty_section_fails_closed(tmp_path: Path) -> None:
+    """A dated header with no body must not produce an empty release."""
+    changelog = (
+        "# Changelog\n\n## [1.2.0] - 2026-10-01\n\n"
+        "## [1.1.0] - 2026-09-01\n\n### Fixed\n\n- Older.\n"
+    )
+
+    result = extract(tmp_path, changelog, "v1.2.0")
+
+    assert result.returncode == 1
+    assert "ERROR: Empty CHANGELOG section for 1.2.0" in result.stderr
+    assert not (tmp_path / "RELEASE_NOTES.md").exists()
+
+
+def test_version_without_the_leading_v_still_gets_a_v_prefixed_link(tmp_path: Path) -> None:
+    """The release workflow passes the tag, but the bare version must work too."""
+    assert extract(tmp_path, CHANGELOG, "1.1.0").returncode == 0
+    assert notes(tmp_path) == "### Fixed\n\n- Older.\n\n" + LINK + "v1.0.0...v1.1.0\n"
