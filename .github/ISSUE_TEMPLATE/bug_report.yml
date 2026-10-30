@@ -1,6 +1,6 @@
 name: Bug Report
 description: Report a bug in sqlalchemy-cubrid
-title: "fix: "
+title: "bug: "
 labels: ["bug", "status: needs triage"]
 body:
   - type: markdown
@@ -19,7 +19,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Keep the `fix:` title prefix. You do not need to apply labels;
+        Keep the `bug:` title prefix. You do not need to apply labels;
         maintainers assign priority and size after triage.
         Keep this body as the current specification; put dated progress in comments.
         Before implementation, check existing Assignees, claims and open PRs.
