@@ -546,5 +546,15 @@ documentation, presentations, and other maintainer-facing writing.
   separate lookup table. Edit an existing editable comment to correct unclear
   wording rather than adding redundant follow-up comments.
 
+Source comments, docstrings, test names, examples, PR descriptions and review
+replies follow the organization's canonical rule,
+[Explanations in code, tests, reviews and agent-written text](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md#6-explanations-in-code-tests-reviews-and-agent-written-text).
+State the SQL behavior, why the dialect handles it that way, and the CUBRID
+limitation or invariant involved before an issue link such as `(#591)`; the
+link stays afterwards for traceability. Do not rename tests, fixtures,
+compatibility-suite requirements or exact SQL examples to satisfy this rule,
+and revise existing comments only where a new reader would be confused.
+
 This is a shared writing convention, not a new CI check, reviewer approval,
-or merge gate. Keep existing repository-specific technical and safety rules.
+or merge gate. This repository's dialect compatibility, test, security and
+release rules keep precedence over it.
