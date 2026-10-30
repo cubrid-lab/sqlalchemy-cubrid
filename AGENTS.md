@@ -4,7 +4,6 @@
 
 Issue titles use **type only** (such as `feat: ...`, `bug: ...`), with no required module scope. Explain a clear human-readable problem or goal and verifiable acceptance criteria; separate verified observations from assumptions and omit personal comments/internal IDs. Triage evaluates validity, duplication, scope, priority and size; PRs/commits follow local Conventional Commits and existing PR validation gates. See [cubrid-lab's writing standard](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md).
 
-
 Project knowledge base for AI coding agents.
 
 ## Project Overview
