@@ -61,11 +61,20 @@ class _BaseDMLCompiler(Protocol):
     def _render_cte_clause(
         self, nesting_level: int | None = None, include_following_stack: bool = False
     ) -> str:
-        """Render the pending WITH clause (private SQLAlchemy hook, used for #591)."""
+        """Render the pending WITH clause (private SQLAlchemy hook).
+
+        ``visit_replace()`` records its result to find where the INSERT verb
+        starts, so REPLACE keeps a leading WITH clause intact (#591).
+        """
 
 
 class _BaseSelectCompiler(Protocol):
-    """Typed boundaries for the boolean-grouping hooks used for #966, #968 and #970."""
+    """Private SQLAlchemy SELECT-compiler hooks wrapped to parenthesize booleans.
+
+    CUBRID rejects a bare ``EXISTS``, ``NOT`` or ``AND``/``OR`` expression as a
+    SELECT column, ORDER BY item or function argument, so the overrides below
+    call these hooks and add parentheses (#966, #968, #970).
+    """
 
     def _label_select_column(self, select: Any, column: Any, *args: Any, **kw: Any) -> Any: ...
 
