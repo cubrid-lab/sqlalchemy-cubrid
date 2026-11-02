@@ -355,7 +355,15 @@ Python 3.11, 3.12, 3.13, 3.14, 3.15(표준 GIL 빌드)를 지원합니다.
 ### CUBRID에서 ON DUPLICATE KEY UPDATE는 어떻게 사용하나요?
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
 stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 

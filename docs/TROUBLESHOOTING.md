@@ -1396,11 +1396,12 @@ print(engine.dialect.server_version_info)  # (11, 2, 0, 378)
 ### Inspect Compiled SQL
 
 ```python
-from sqlalchemy.dialects import registry
+from sqlalchemy import column, select, table
 
 # Compile a statement for CUBRID without executing
 from sqlalchemy_cubrid.dialect import CubridDialect
 
+users = table("users", column("id"), column("name"))
 stmt = select(users).where(users.c.name == "Alice")
 compiled = stmt.compile(dialect=CubridDialect())
 print(str(compiled))
