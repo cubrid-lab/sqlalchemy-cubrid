@@ -244,7 +244,7 @@ users = Table(
     Column("id", Integer, primary_key=True),
     Column("name", String(50)),
 )
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### `cubrid://` और `cubrid+pycubrid://` में क्या अंतर है?
