@@ -16,7 +16,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 
-UV_ACTION = "astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e"
+UV_ACTION = "astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2"
 UV_VERSION = "0.12.17"
 # The release gate keeps setup-uv's event guard (`auto`); routine CI always caches.
 WORKFLOWS = {"ci.yml": True, "integration-full.yml": "auto", "upstream-canary.yml": True}
