@@ -103,3 +103,280 @@ def test_disposes_engine_when_connect_fails(monkeypatch: pytest.MonkeyPatch) -> 
     with pytest.raises(OSError, match="connection refused"):
         sync_probe("cubrid://dba@localhost:33000/testdb")
     assert engine.disposed
+
+
+def test_main_success_default_async_url(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    test_url = "cubrid+pycubrid://dba:secretpw@localhost:33000/testdb"
+    monkeypatch.setenv("CUBRID_TEST_URL", test_url)
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+
+    monkeypatch.setattr(MODULE, "sync_probe", fake_sync_probe)
+    monkeypatch.setattr(MODULE, "async_probe", fake_async_probe)
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 0
+    assert len(calls) == 2
+    assert calls[0][0] == "sync"
+    assert calls[0][1].drivername == "cubrid+pycubrid"
+    assert calls[1][0] == "async"
+    assert calls[1][1].drivername == "cubrid+aiopycubrid"
+
+    out, err = capsys.readouterr()
+    assert "Pure-driver integration preflight passed: pycubrid sync and aiopycubrid async\n" in out
+    assert err == ""
+
+
+def test_main_success_custom_async_url(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    test_url = "cubrid+pycubrid://dba:secretpw@localhost:33000/testdb"
+    test_aurl = "cubrid+aiopycubrid://dba:secretpw@customhost:33000/customdb"
+
+    monkeypatch.setenv("CUBRID_TEST_URL", test_url)
+    monkeypatch.setenv("CUBRID_TEST_AURL", test_aurl)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+
+    monkeypatch.setattr(
+        MODULE,
+        "sync_probe",
+        fake_sync_probe,
+    )
+    monkeypatch.setattr(
+        MODULE,
+        "async_probe",
+        fake_async_probe,
+    )
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 0
+    assert len(calls) == 2
+    assert calls[0][0] == "sync"
+    assert calls[0][1].drivername == "cubrid+pycubrid"
+    assert calls[1][0] == "async"
+    assert calls[1][1].drivername == "cubrid+aiopycubrid"
+    assert calls[1][1].host == "customhost"
+    assert calls[1][1].database == "customdb"
+
+    out, err = capsys.readouterr()
+
+    assert "Pure-driver integration preflight passed: pycubrid sync and aiopycubrid async\n" in out
+    assert err == ""
+
+
+def test_main_fails_when_test_url_unset(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+
+    monkeypatch.delenv("CUBRID_TEST_URL", raising=False)
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+
+    monkeypatch.setattr(MODULE, "sync_probe", fake_sync_probe)
+    monkeypatch.setattr(MODULE, "async_probe", fake_async_probe)
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 1
+    assert calls == []
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.split()[-1] == "(ValueError)"
+
+
+def test_main_fails_on_non_pycubrid_driver(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    test_url = "cubrid://dba:secretpw@localhost:33000/testdb"
+
+    monkeypatch.setenv("CUBRID_TEST_URL", test_url)
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+
+    monkeypatch.setattr(MODULE, "sync_probe", fake_sync_probe)
+    monkeypatch.setattr(MODULE, "async_probe", fake_async_probe)
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 1
+    assert calls == []
+
+    out, err = capsys.readouterr()
+
+    assert out == ""
+    assert err.split()[-1] == "(ValueError)"
+    assert "secretpw" not in err
+
+
+def test_main_fails_and_redacts_on_probe_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    test_url = "cubrid+pycubrid://dba:secretpw@localhost:33000/testdb"
+
+    monkeypatch.setenv("CUBRID_TEST_URL", test_url)
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+        raise OSError("refused secretpw")
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+
+    monkeypatch.setattr(MODULE, "sync_probe", fake_sync_probe)
+    monkeypatch.setattr(MODULE, "async_probe", fake_async_probe)
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 1
+    assert len(calls) == 1
+    assert calls[0][0] == "sync"
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.split()[-1] == "(OSError)"
+    assert "secretpw" not in err
+    assert "refused" not in err
+
+
+def test_main_fails_and_redacts_on_async_probe_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    test_url = "cubrid+pycubrid://dba:secretpw@localhost:33000/testdb"
+    test_aurl = "cubrid+aiopycubrid://dba:secretpw@localhost:33000/testdb"
+
+    monkeypatch.setenv("CUBRID_TEST_URL", test_url)
+    monkeypatch.setenv("CUBRID_TEST_AURL", test_aurl)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+        raise RuntimeError("async timeout secretpw")
+
+    monkeypatch.setattr(MODULE, "sync_probe", fake_sync_probe)
+    monkeypatch.setattr(MODULE, "async_probe", fake_async_probe)
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 1
+    assert len(calls) == 2
+    assert calls[0][0] == "sync"
+    assert calls[1][0] == "async"
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.split()[-1] == "(RuntimeError)"
+    assert "secretpw" not in err
+    assert "timeout" not in err
+
+
+def test_main_fails_on_invalid_custom_async_url(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    test_url = "cubrid+pycubrid://dba:secretpw@localhost:33000/testdb"
+    test_aurl = "cubrid+pycubrid://dba:secretpw@localhost:33000/testdb"
+
+    monkeypatch.setenv("CUBRID_TEST_URL", test_url)
+    monkeypatch.setenv("CUBRID_TEST_AURL", test_aurl)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+
+    monkeypatch.setattr(MODULE, "sync_probe", fake_sync_probe)
+    monkeypatch.setattr(MODULE, "async_probe", fake_async_probe)
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 1
+    assert calls == []
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.split()[-1] == "(ValueError)"
+    assert "secretpw" not in err
+
+
+def test_main_fails_and_redacts_on_async_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    test_url = "cubrid+pycubrid://dba:secretpw@localhost:33000/testdb"
+
+    monkeypatch.setenv("CUBRID_TEST_URL", test_url)
+    monkeypatch.delenv("CUBRID_TEST_AURL", raising=False)
+
+    calls = []
+
+    def fake_sync_probe(url):
+        calls.append(("sync", url))
+
+    async def fake_async_probe(url):
+        calls.append(("async", url))
+        raise TimeoutError("probe timed out secretpw")
+
+    monkeypatch.setattr(MODULE, "sync_probe", fake_sync_probe)
+    monkeypatch.setattr(MODULE, "async_probe", fake_async_probe)
+
+    exit_code = MODULE.main()
+
+    assert exit_code == 1
+    assert len(calls) == 2
+    assert calls[0][0] == "sync"
+    assert calls[1][0] == "async"
+
+    out, err = capsys.readouterr()
+    assert out == ""
+    assert err.split()[-1] == "(TimeoutError)"
+    assert "secretpw" not in err
+    assert "timed out" not in err
