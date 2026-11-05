@@ -1379,11 +1379,12 @@ print(engine.dialect.server_version_info)  # (11, 2, 0, 378)
 ### 컴파일된 SQL 검사
 
 ```python
-from sqlalchemy.dialects import registry
+from sqlalchemy import column, select, table
 
 # 실행 없이 CUBRID용 문장 컴파일
 from sqlalchemy_cubrid.dialect import CubridDialect
 
+users = table("users", column("id"), column("name"))
 stmt = select(users).where(users.c.name == "Alice")
 compiled = stmt.compile(dialect=CubridDialect())
 print(str(compiled))

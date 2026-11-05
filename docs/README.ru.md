@@ -236,8 +236,16 @@ Python 3.11, 3.12, 3.13, 3.14 и 3.15 (стандартные сборки с GI
 ### Как использовать ON DUPLICATE KEY UPDATE с CUBRID?
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### В чём разница между `cubrid://` и `cubrid+pycubrid://`?

@@ -236,8 +236,16 @@ Nein. CUBRID unterstützt weder `INSERT ... RETURNING` noch `UPDATE ... RETURNIN
 ### Wie verwende ich ON DUPLICATE KEY UPDATE mit CUBRID?
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### Was ist der Unterschied zwischen `cubrid://` und `cubrid+pycubrid://`?

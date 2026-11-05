@@ -235,8 +235,16 @@ Python 3.11, 3.12, 3.13, 3.14, और 3.15 (मानक GIL बिल्ड)।
 ### मैं CUBRID के साथ ON DUPLICATE KEY UPDATE कैसे उपयोग करूँ?
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### `cubrid://` और `cubrid+pycubrid://` में क्या अंतर है?

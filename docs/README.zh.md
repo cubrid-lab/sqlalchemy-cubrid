@@ -234,8 +234,16 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 ### 如何在 CUBRID 中使用 ON DUPLICATE KEY UPDATE？
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### `cubrid://` 和 `cubrid+pycubrid://` 有什么区别？
