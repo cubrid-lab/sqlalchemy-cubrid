@@ -9,7 +9,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
 ## 목차
 
 - [설치 문제](#설치-문제)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
+  - [ImportError: No module named 'CUBRIDdb'](#importerror-could-not-import-cubriddb)
   - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
   - [C 확장 빌드 실패](#c-확장-빌드-실패)
 - [연결 문제](#연결-문제)
@@ -76,12 +76,12 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
 
 ## 설치 문제
 
-### ImportError: No module named 'CUBRIDdb'
+### ImportError: Could not import CUBRIDdb
 
 **증상:**
 
 ```
-ImportError: No module named 'CUBRIDdb'
+ImportError: Could not import CUBRIDdb. The bare cubrid:// URL uses the legacy CUBRIDdb C-extension driver. Switch to the maintained pure-Python driver with a cubrid+pycubrid:// URL (pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb from cubrid-python v11.3.0.51 or later (the CUBRID-Python 9.3.x releases on PyPI are untested).
 ```
 
 **원인:** CUBRID C 확장 Python 드라이버가 설치되지 않음.
