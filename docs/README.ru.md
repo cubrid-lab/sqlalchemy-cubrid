@@ -10,7 +10,7 @@
 
 **Диалект SQLAlchemy 2.0–2.1 для базы данных CUBRID** — Python ORM, рефлексия схемы, миграции Alembic и сопоставление типов для SQLAlchemy и специфичных для CUBRID типов.
 
-[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -264,18 +264,18 @@ stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Al
 
 ## Дорожная карта
 
-См. [`ROADMAP.md`](../ROADMAP.md), чтобы узнать о направлении проекта и следующих этапах.
+См. [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md), чтобы узнать о направлении проекта и следующих этапах.
 
 Для обзора по всей экосистеме см. [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md).
 
 ## Участие в проекте
 
-См. [CONTRIBUTING.md](../CONTRIBUTING.md) с рекомендациями и [docs/DEVELOPMENT.md](DEVELOPMENT.md) с настройкой среды разработки.
+См. [CONTRIBUTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) с рекомендациями и [docs/DEVELOPMENT.md](DEVELOPMENT.md) с настройкой среды разработки.
 
 ## Безопасность
 
-Сообщайте об уязвимостях конфиденциально через GitHub private vulnerability reporting (запасной вариант — электронная почта) -- см. [SECURITY.md](../SECURITY.md). Не создавайте публичные issues по вопросам безопасности.
+Сообщайте об уязвимостях конфиденциально через GitHub private vulnerability reporting (запасной вариант — электронная почта) -- см. [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md). Не создавайте публичные issues по вопросам безопасности.
 
 ## Лицензия
 
-MIT -- см. [LICENSE](../LICENSE).
+MIT -- см. [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE).
