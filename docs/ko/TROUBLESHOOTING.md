@@ -1322,7 +1322,7 @@ flowchart TD
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
-    i1 -->|CUBRIDdb| i2[Install CUBRID-Python and CCI dependencies]
+    i1 -->|CUBRIDdb| i2[Build CUBRIDdb from cubrid-python v11.3.0.51+ or switch to cubrid+pycubrid]
     i1 -->|pycubrid| i3[Install pycubrid and use cubrid+pycubrid URL]
 
     conn --> c1{Broker reachable?}
