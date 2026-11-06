@@ -449,6 +449,19 @@ a specific agent review sequence is a prerequisite for contributions.
 
 ## Release Process
 
+**1.x API compatibility:** keep SQLAlchemy Core/ORM, compiled SQL, types and
+value correctness, reflection, migrations and supported-driver semantics stable.
+An individually approved **dialect-specific convenience API** may change in a
+reviewed **MINOR** after an actual user-impact assessment and usable Upgrade
+notes; there is no automatic 2.0 wait or blanket 28-day delay. Do **not**
+retroactively erase an explicit published "future MAJOR" deprecation promise:
+first ship an API-specific revised warning/migration notice, then review its
+later removal independently. In particular, #892's ignored `display_width`
+and `values` constructor arguments are a candidate, **not** yet approved for
+immediate removal from `main`. Cover positional `SMALLINT(11)` and `BIGINT(20)`
+users too. Keep PATCH compatible and all existing CI and publish gates.
+Authoritative policy: [`RELEASING.md`](RELEASING.md#public-api-compatibility-in-1x).
+
 **Cadence:** review meaningful release candidates approximately every two
 weeks; skip empty cycles. Security/correctness emergencies may ship earlier
 only with normal review and validation. The schedule governs **merging a

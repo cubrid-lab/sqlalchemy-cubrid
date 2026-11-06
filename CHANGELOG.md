@@ -2,10 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+This project normally follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html),
+with a narrowly scoped, explicit **repository-local exception**: after a
+maintainer decision, documented migration guidance and any revised published
+notice previously promised to users, dialect-specific convenience APIs may
+change incompatibly in a 1.x MINOR. Unlike strict SemVer, this exception can
+break callers using those extensions; see
+[the 1.x API policy](RELEASING.md#public-api-compatibility-in-1x).
+Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
+
+### Upgrade notes
+
+- **1.x dialect-extension API policy clarified (#892)** — the dialect can
+  consider individually reviewed, low-impact changes to project-specific
+  convenience APIs in a later MINOR without waiting for 2.0. This is
+  prospective and requires a documented user-impact assessment and migration
+  instructions; it does **not** permit breaking SQLAlchemy Core/ORM behavior,
+  generated SQL, data correctness, reflection or migrations. Already published
+  API-specific promises still require an explicit revised notice in a
+  published release before removal. In particular, the deprecated
+  `SMALLINT`/`BIGINT` `display_width` and string-type `values` arguments
+  **continue to work with warnings in this change**; #892's actual removal,
+  including positional calls such as `SMALLINT(11)`, is a separate decision.
 
 ## [1.12.2] - 2026-11-05
 
