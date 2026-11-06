@@ -1,14 +1,11 @@
 # PRD: sqlalchemy-cubrid — CUBRID Dialect for SQLAlchemy 2.0–2.1
 
-> This PRD contains planning and status snapshots from the 1.8.0 period. Its
-> Python and CI matrix statements are not current support guidance; see the
-> [Support Matrix](SUPPORT_MATRIX.md) for current policy. [#697](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/697)
-> owns the remaining updates to those statements.
+> **Historical snapshot (v1.8.0)** — this is an archived requirements and status document, not live support, release, API, or CI guidance. For the current supported versions and test matrix, see the [Support Matrix](SUPPORT_MATRIX.md) and [CI Policy](CI_POLICY.md). Historical planning claims below are preserved as a record, not promises about the current package.
 
 ## 1. Overview
 
 **Project**: sqlalchemy-cubrid
-**Current Version**: 1.8.0
+**Version at snapshot**: 1.8.0
 **Status**: Production/Stable (actively maintained; async + JSON shipped)
 **Repository**: [github.com/cubrid-lab/sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 **License**: MIT
@@ -331,18 +328,18 @@ Limitations imposed by CUBRID itself (not the dialect):
 
 ## 6. Documentation
 
-| Document | Lines | Content |
-|---|---|---|
-| [`README.md`](../README.md) | 80 | Concise landing page |
-| [`docs/CONNECTION.md`](CONNECTION.md) | 258 | Connection strings, URL format, driver setup |
-| [`docs/TYPES.md`](TYPES.md) | 313 | Full type mapping, CUBRID-specific types |
-| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | 206 | The three CUBRID MVCC isolation levels |
-| [`docs/DML_EXTENSIONS.md`](DML_EXTENSIONS.md) | 361 | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
-| [`docs/ALEMBIC.md`](ALEMBIC.md) | 376 | Alembic migration guide, limitations |
-| [`docs/FEATURE_SUPPORT.md`](FEATURE_SUPPORT.md) | 442 | Feature comparison with MySQL/PG/SQLite |
-| [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | 383 | Dev setup, testing, Docker, CI/CD |
-| [`CHANGELOG.md`](../CHANGELOG.md) | 119 | Release history (Keep a Changelog) |
-| [`CONTRIBUTING.md`](../CONTRIBUTING.md) | 225 | Contribution guidelines |
+| Document | Content |
+|---|---|
+| [`README.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) | Concise landing page |
+| [`docs/CONNECTION.md`](CONNECTION.md) | Connection strings, URL format, driver setup |
+| [`docs/TYPES.md`](TYPES.md) | Full type mapping, CUBRID-specific types |
+| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | The three CUBRID MVCC isolation levels |
+| [`docs/DML_EXTENSIONS.md`](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
+| [`docs/ALEMBIC.md`](ALEMBIC.md) | Alembic migration guide, limitations |
+| [`docs/FEATURE_SUPPORT.md`](FEATURE_SUPPORT.md) | Feature comparison with MySQL/PG/SQLite |
+| [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | Dev setup, testing, Docker, CI/CD |
+| [`CHANGELOG.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md) | Release history (Keep a Changelog) |
+| [`CONTRIBUTING.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) | Contribution guidelines |
 
 ---
 
