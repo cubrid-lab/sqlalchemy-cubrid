@@ -12,6 +12,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
   - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
   - [C 확장 빌드 실패](#c-확장-빌드-실패)
+  - [비동기 엔진에서 greenlet 누락](#비동기-엔진에서-greenlet-누락)
 - [연결 문제](#연결-문제)
   - [포트 33000 연결 거부](#포트-33000-연결-거부)
   - [컨테이너를 다시 만든 뒤 데이터베이스 서버 호스트를 찾을 수 없음](#컨테이너를-다시-만든-뒤-데이터베이스-서버-호스트를-찾을-수-없음)
@@ -142,6 +143,33 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+---
+
+### 비동기 엔진에서 greenlet 누락
+
+**증상:** 비동기 SQLAlchemy 엔진 생성 시 연결 전에 다음 오류가 발생합니다.
+
+```text
+ImportError: The SQLAlchemy asyncio module requires that the Python 'greenlet' library is installed.
+```
+
+**원인:** SQLAlchemy 2.1에서는 기본 패키지만 설치할 때 `greenlet`이
+자동 설치되지 않을 수 있습니다. `pycubrid`만 설치하고 SQLAlchemy의 비동기
+의존성을 설치하지 않았다면 `create_async_engine()`이 실패합니다.
+
+**해결:** 비동기 의존성이 포함된 권장 방언 extra 또는 SQLAlchemy의 asyncio
+extra를 설치합니다.
+
+```bash
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+# 방언과 드라이버가 이미 설치된 경우:
+python -m pip install "sqlalchemy[asyncio]"
+```
+
+해당 Python·플랫폼에 맞는 `greenlet` wheel이 없으면 컴파일러 등 빌드 도구가
+필요할 수 있습니다. 애플리케이션과 **동일한 가상 환경**에 설치되었는지 확인하세요.
+비동기 방언 URL은 `cubrid+aiopycubrid://`를 사용하며 `cubrid://`가 아닙니다.
 
 ---
 
