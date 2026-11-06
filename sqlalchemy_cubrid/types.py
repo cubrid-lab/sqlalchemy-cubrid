@@ -53,7 +53,7 @@ def _warn_ignored_argument(name: str, type_name: str) -> None:
         stacklevel += 1
     warnings.warn(
         f"The {name!r} argument of {type_name} has no effect and is deprecated; "
-        "it will be removed in a future major release (#870)",
+        "it may be removed in a future 1.x MINOR release; omit this ignored argument (#892)",
         DeprecationWarning,
         stacklevel=stacklevel,
     )
