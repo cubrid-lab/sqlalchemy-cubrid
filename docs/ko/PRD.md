@@ -332,13 +332,13 @@ not repo" --collect-only`를 실행하거나 `offline-tests` CI job 출력에서
 | 문서 | 내용 |
 |---|---|
 | [`README.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) | 간결한 랜딩 페이지 |
-| [`docs/CONNECTION.md`](CONNECTION.md) | 연결 문자열, URL 형식, 드라이버 설정 |
-| [`docs/TYPES.md`](TYPES.md) | 전체 타입 매핑, CUBRID 전용 타입 |
-| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | CUBRID의 세 가지 MVCC 격리 수준 |
-| [`docs/DML_EXTENSIONS.md`](DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
-| [`docs/ALEMBIC.md`](ALEMBIC.md) | Alembic 마이그레이션 가이드, 한계 |
-| [`docs/FEATURE_SUPPORT.md`](FEATURE_SUPPORT.md) | MySQL/PG/SQLite와의 기능 비교 |
-| [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | 개발 환경 설정, 테스트, Docker, CI/CD |
+| [`docs/CONNECTION.md`](../CONNECTION.md) | 연결 문자열, URL 형식, 드라이버 설정 |
+| [`docs/TYPES.md`](../TYPES.md) | 전체 타입 매핑, CUBRID 전용 타입 |
+| [`docs/ISOLATION_LEVELS.md`](../ISOLATION_LEVELS.md) | CUBRID의 세 가지 MVCC 격리 수준 |
+| [`docs/DML_EXTENSIONS.md`](../DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
+| [`docs/ALEMBIC.md`](../ALEMBIC.md) | Alembic 마이그레이션 가이드, 한계 |
+| [`docs/FEATURE_SUPPORT.md`](../FEATURE_SUPPORT.md) | MySQL/PG/SQLite와의 기능 비교 |
+| [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md) | 개발 환경 설정, 테스트, Docker, CI/CD |
 | [`CHANGELOG.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md) | 릴리스 이력 (Keep a Changelog) |
 | [`CONTRIBUTING.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) | 기여 가이드라인 |
 
