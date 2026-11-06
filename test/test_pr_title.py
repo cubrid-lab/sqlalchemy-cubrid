@@ -98,7 +98,10 @@ def _validator() -> str:
 
 
 def _run(
-    title: str, body: str = "", commits: str | None = None, timeout: float | None = None,
+    title: str,
+    body: str = "",
+    commits: str | None = None,
+    timeout: float | None = None,
     author: str = "contributor",
 ) -> subprocess.CompletedProcess[str]:
     env = {
