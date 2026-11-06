@@ -36,6 +36,28 @@ version comparison or a bot PR body:
 When PyPI or the GitHub API cannot be read, the state is **unknown**, not
 "absent" and not "the newest release": record it as unknown and check again.
 
+## Release cadence
+
+Aim to **review and publish one meaningful release about every two weeks**.
+This is a planning target, not a scheduled deployment, mandatory version bump
+or guaranteed release date. Skip a cycle without worthwhile changes, and delay
+a candidate rather than bypassing tests, compatibility review or publication
+checks.
+
+Urgent security vulnerabilities, correctness defects or regressions may justify
+an earlier reviewed PATCH/MINOR as appropriate. Before an expedited release,
+confirm its exact contents and downstream impact on SQLAlchemy, Alembic and the
+supported CUBRID drivers; do not accidentally ship unrelated unfinished
+changes or break existing dependency/support contracts.
+
+`release-please.yml` continues to **prepare/update** a candidate when
+`main` changes. Preparing a PR never publishes it: maintainers control when
+to review and **merge** the release PR, which triggers the existing guarded
+publisher. No cron job, forced tag, bypass, new CI gate or workflow change is
+needed. This cadence is **independent** of release dates and version numbers
+in `pycubrid` and other sibling repositories; coordinate compatibility when
+necessary, but do not require synchronized releases.
+
 ## Normal flow
 
 `release-please.yml` → reviewed release PR → squash merge → `publish-pypi.yml`.
