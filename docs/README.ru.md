@@ -26,6 +26,16 @@
 
 > **Статус: Production/Stable** — стабильный диалект SQLAlchemy для CUBRID 10.2–11.4. Обычные PR проходят офлайн-CI; для изменений повышенного риска добавляются интеграционные тесты с реальной базой данных.
 
+## С чего начать
+
+CUBRID — это **отдельный сервер базы данных**. Установка
+`sqlalchemy-cubrid` или `pycubrid` не устанавливает сервер и не создаёт
+базу данных. Если вы впервые используете CUBRID или SQLAlchemy, следуйте
+[руководству по первому подключению](QUICKSTART.md) (на английском):
+используйте существующий сервер либо временный локальный Docker-контейнер,
+установите рекомендуемый `sqlalchemy-cubrid[pycubrid]`, выполните первый
+запрос и сохраните первую строку. Остальная часть страницы — справочник.
+
 ## Почему sqlalchemy-cubrid?
 
 CUBRID — это высокопроизводительная реляционная база данных с открытым исходным
@@ -69,7 +79,8 @@ flowchart TD
 
 - Python 3.11 или новее
 - SQLAlchemy 2.0 – 2.1
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-расширение) **или** [pycubrid](https://github.com/cubrid-lab/pycubrid) (чистый Python)
+- **Рекомендуется:** [pycubrid](https://github.com/cubrid-lab/pycubrid) (чистый Python, синхронный/асинхронный; `cubrid+pycubrid://`)
+- **Альтернатива:** соберите расширение CUBRIDdb из исходников [cubrid-python v11.3.0.51+](https://github.com/CUBRID/cubrid-python) (`cubrid://`). Выпуск `CUBRID-Python` 9.3.x на PyPI **не тестировался**; extras `[cubrid]`/`[cubriddb]` устарели ([совместимость драйверов](DRIVER_COMPAT.md)).
 
 ## Установка
 
