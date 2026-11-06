@@ -24,7 +24,7 @@
 
 ---
 
-> **Status: Production/Stable** — Stabiler, gewarteter SQLAlchemy-Dialekt für CUBRID 10.2–11.4. Jeder PR wird durch Live-Datenbank-Integrations-CI validiert.
+> **Status: Production/Stable** — Stabiler, gewarteter SQLAlchemy-Dialekt für CUBRID 10.2–11.4. Normale PRs durchlaufen Offline-CI; für risikoreiche Änderungen kommen Live-Datenbank-Integrationstests hinzu.
 
 ## Warum sqlalchemy-cubrid?
 
