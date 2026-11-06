@@ -85,6 +85,22 @@ python -m pip install "sqlalchemy-cubrid[pycubrid]"
 python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
 ```
 
+**Windows (PowerShell), 이미 접속 가능한 DB가 있는 방법 A:**
+
+```powershell
+py --version  # Python 3.11 이상 확인
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
+```
+
+`py --version`으로 오래된 인터프리터가 선택된다면 설치된 Python 3.11 이상을
+명시하세요(예: `py -3.12 -m venv .venv`). **이번 변경에서 Windows 명령은
+실제 실행 검증하지 않았습니다.** 위 Docker 실습은 별도로 Linux/amd64에서만
+검증했으며, Windows 가상 환경 설치 안내가 Docker 이미지 호환성 검증을 뜻하지는
+않습니다.
+
 `[pycubrid]` 부분은 방언과 함께 권장 순수 Python 드라이버를 설치합니다. 마지막 명령은
 설치된 세 버전(SQLAlchemy, sqlalchemy-cubrid, pycubrid)을 출력합니다(예: `2.1.4 1.11.0 1.13.0`).
 이 가이드를 마지막으로 실행한 2026-10-15의 PyPI 공개 릴리스이며, 더 새로운 릴리스가 있으면 더 높은
