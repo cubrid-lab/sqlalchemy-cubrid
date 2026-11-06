@@ -26,6 +26,15 @@
 
 > **状态：Production/Stable** — 支持 CUBRID 10.2–11.4 和 SQLAlchemy 2.0–2.1 的稳定维护方言。普通 PR 运行离线 CI；高风险变更才额外执行真实数据库集成测试。
 
+## 从这里开始
+
+CUBRID 是**需要单独运行的数据库服务器**。安装
+`sqlalchemy-cubrid` 或 `pycubrid` 并不会安装 CUBRID，也不会自动创建数据库。
+如果是第一次使用，请先阅读[首次连接 CUBRID 的教程](QUICKSTART.md)（英文）：
+使用现有数据库或临时的本地 Docker 实验环境，安装推荐的
+`sqlalchemy-cubrid[pycubrid]`，完成第一条查询并保存第一行数据。
+本页其余部分可在连接成功后作为参考。
+
 ## 为什么选择 sqlalchemy-cubrid？
 
 CUBRID 是一款高性能开源关系型数据库，在韩国公共部门和企业应用中被广泛采用。
@@ -67,7 +76,8 @@ flowchart TD
 
 - Python 3.11 或更高版本
 - SQLAlchemy 2.0 – 2.1
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python)（C 扩展）**或** [pycubrid](https://github.com/cubrid-lab/pycubrid)（纯 Python）
+- **推荐：**[pycubrid](https://github.com/cubrid-lab/pycubrid)（纯 Python，同步及异步；`cubrid+pycubrid://`）
+- **可选：**从 [cubrid-python v11.3.0.51+](https://github.com/CUBRID/cubrid-python) 源码构建 CUBRIDdb C 扩展（`cubrid://`）。PyPI 上的 `CUBRID-Python` 9.3.x **未经测试**，`[cubrid]`/`[cubriddb]` extras 已弃用（参阅[驱动兼容性说明](DRIVER_COMPAT.md)）。
 
 ## 安装
 
