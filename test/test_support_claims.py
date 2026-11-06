@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scripts.check_support_claims import check_claims
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,6 +45,39 @@ def test_deprecated_extra_is_allowed_but_deprecated_driver_is_rejected() -> None
     assert "README.md: supported CUBRIDdb driver is misclassified" in check_claims(
         METADATA, readme, MATRIX
     )
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ("missing", "CUBRIDdb driver row is missing"),
+        ("malformed", "CUBRIDdb driver row is malformed"),
+        ("no-source", "CUBRIDdb source and extras need distinct install guidance"),
+        ("no-cubrid-extra", "CUBRIDdb source and extras need distinct install guidance"),
+        ("no-cubriddb-extra", "CUBRIDdb source and extras need distinct install guidance"),
+        ("no-deprecation", "deprecated installation extras are not identified"),
+    ],
+)
+def test_cubriddb_driver_support_row_errors_are_reported(change: str, expected: str) -> None:
+    """Corrupt one supported CUBRIDdb source/extra claim at a time (#1072)."""
+    row = next(line for line in MATRIX.splitlines() if line.startswith("| CUBRIDdb (CCI) |"))
+    if change == "missing":
+        replacement = ""
+    elif change == "malformed":
+        replacement = row + " extra |"
+    else:
+        source, removed = {
+            "no-source": ("v11.3.0.51+", ""),
+            "no-cubrid-extra": ("[cubrid]", ""),
+            "no-cubriddb-extra": ("[cubriddb]", ""),
+            "no-deprecation": ("extras are deprecated and", "extras"),
+        }[change]
+        assert source in row, f"support matrix fixture changed: {source}"
+        replacement = row.replace(source, removed, 1)
+    assert replacement != row, f"mutation did not change the CUBRIDdb row: {change}"
+    assert MATRIX.count(row) == 1
+    matrix = MATRIX.replace(row, replacement, 1)
+    assert f"docs/SUPPORT_MATRIX.md: {expected}" in check_claims(METADATA, README, matrix)
 
 
 def test_test_group_and_pycubrid_sqlalchemy_bounds_must_match_project() -> None:
