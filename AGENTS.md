@@ -449,6 +449,15 @@ a specific agent review sequence is a prerequisite for contributions.
 
 ## Release Process
 
+**Cadence:** review meaningful release candidates approximately every two
+weeks; skip empty cycles. Security/correctness emergencies may ship earlier
+only with normal review and validation. The schedule governs **merging a
+reviewed release PR**, not Release Please candidate generation or automatic
+publishing on a timer. Do not rush an unverified candidate or couple
+sqlalchemy-cubrid releases to pycubrid version/date changes. Keep all
+SQLAlchemy/Alembic compatibility, CI and publication checks intact.
+See [`RELEASING.md`](RELEASING.md#release-cadence) for the operating rule.
+
 Maintainers own release/tag/publication actions and repository credentials.
 Contributors provide the change and validation evidence through the normal PR path.
 
