@@ -4272,6 +4272,7 @@ class TestDialectSmallCorrectness870:
             cubrid_types.STRING(values=["a"])
         # Each warning points at this caller, not at a constructor in types.py.
         assert {w[0].filename for w in (w1, w2, w3)} == {__file__}
+        assert all("future 1.x MINOR release" in str(w[0].message) for w in (w1, w2, w3))
         assert not hasattr(small, "display_width")
         assert not hasattr(varchar, "values")
         assert repr(small) == "SMALLINT()"
