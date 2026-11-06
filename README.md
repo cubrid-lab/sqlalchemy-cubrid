@@ -8,7 +8,7 @@
 
 **SQLAlchemy 2.0–2.1 dialect for the CUBRID database** — Python ORM, schema reflection, Alembic migrations, and type mapping for SQLAlchemy and CUBRID-specific types.
 
-[🇰🇷 한국어](docs/README.ko.md) · [🇺🇸 English](README.md) · [🇨🇳 中文](docs/README.zh.md) · [🇮🇳 हिन्दी](docs/README.hi.md) · [🇩🇪 Deutsch](docs/README.de.md) · [🇷🇺 Русский](docs/README.ru.md)
+[🇰🇷 한국어](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/README.zh.md) · [🇮🇳 हिन्दी](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/README.hi.md) · [🇩🇪 Deutsch](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/README.de.md) · [🇷🇺 Русский](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -30,7 +30,7 @@
 sqlalchemy-cubrid lets SQLAlchemy work with a CUBRID database. CUBRID itself is
 a separate database server that must already be running; installing these
 packages does not install CUBRID or create a database. New to CUBRID or to
-SQLAlchemy? Follow [Your First SQLAlchemy Connection to CUBRID](docs/QUICKSTART.md):
+SQLAlchemy? Follow [Your First SQLAlchemy Connection to CUBRID](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/QUICKSTART.md):
 it shows what to prepare when you already have a database, how to start a
 disposable local one with Docker, and takes you on the recommended
 `sqlalchemy-cubrid[pycubrid]` path to a first query and a first saved row. The
@@ -57,7 +57,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 
 - **Status**: Production/Stable [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
 - Supported matrix: SQLAlchemy `>=2.0,<2.2`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.11`–`3.15`
-- Ordinary PRs run the full offline suite with the 95% coverage floor on one Ubuntu/Python 3.12 lane; high-risk changes add Python 3.14/CUBRID 11.4 live integration. Main/changed-weekly runs add Python 3.11/CUBRID 10.2 and run the offline suite on the oldest and newest supported Python (3.11, 3.15). The full supported integration matrix remains manual and release-gated. See [CI execution policy](docs/CI_POLICY.md).
+- Ordinary PRs run the full offline suite with the 95% coverage floor on one Ubuntu/Python 3.12 lane; high-risk changes add Python 3.14/CUBRID 11.4 live integration. Main/changed-weekly runs add Python 3.11/CUBRID 10.2 and run the offline suite on the oldest and newest supported Python (3.11, 3.15). The full supported integration matrix remains manual and release-gated. See [CI execution policy](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/CI_POLICY.md).
 - An advisory SQLAlchemy pre-release canary logs its resolved version; a passing run alone does not establish 2.2 beta compatibility (see #778)
 - See [Known Limitations](#known-limitations) for behavior boundaries and unsupported features
 
@@ -75,7 +75,7 @@ flowchart TD
     aio --> server
 ```
 
-See [full communication architecture](docs/ARCHITECTURE.md#end-to-end-communication-architecture) for the Broker, CAS and CCI path.
+See [full communication architecture](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ARCHITECTURE.md#end-to-end-communication-architecture) for the Broker, CAS and CCI path.
 
 ```mermaid
 flowchart TD
@@ -119,7 +119,7 @@ pip install "sqlalchemy-cubrid[alembic]"
 
 With the CUBRIDdb C-extension driver (the bare `cubrid://` URL), build
 CUBRIDdb from [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or
-later; see [Driver Compatibility](docs/DRIVER_COMPAT.md#building-cubriddb-from-source).
+later; see [Driver Compatibility](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md#building-cubriddb-from-source).
 
 > **The `[cubrid]` and `[cubriddb]` extras are deprecated.** They install the
 > `CUBRID-Python` package from PyPI, whose newest release is 9.3.x (2015). That release is
@@ -129,13 +129,13 @@ later; see [Driver Compatibility](docs/DRIVER_COMPAT.md#building-cubriddb-from-s
 > `[pycubrid]` driver (the `cubrid+pycubrid://` URL). To select the CUBRIDdb C-extension
 > driver explicitly, use the `cubrid+cubriddb://` URL.
 
-<img src="docs/demo.gif" alt="sqlalchemy-cubrid in action" width="100%"/>
+<img src="https://raw.githubusercontent.com/cubrid-lab/sqlalchemy-cubrid/main/docs/demo.gif" alt="sqlalchemy-cubrid in action" width="100%"/>
 
 ## Quick Start
 
 These short examples assume a running database named `demodb` and a `dba`
 account whose password is `password`; replace the URL with your own values.
-The [first-connection guide](docs/QUICKSTART.md) instead uses a local lab
+The [first-connection guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/QUICKSTART.md) instead uses a local lab
 database, `testdb`, with no password. The ORM example creates a `users` table;
 the async insert example creates and drops a table of its own.
 
@@ -310,28 +310,28 @@ after the statement (see [Known Limitations](#known-limitations)).
 - **No sequences** — CUBRID uses `AUTO_INCREMENT` only
 - **Single effective schema** — CUBRID exposes one schema per connection (the current user's schema); `get_schema_names()` reports that one schema and every reflection method honours `schema=` consistently (the default schema is reflected; any other schema yields no tables/views). Owner-qualified cross-schema reflection is not supported.
 - **Uncommitted DDL holds schema locks** — CUBRID DDL is transactional (`ROLLBACK` undoes it; only client autocommit, which the dialect turns off, commits it early), so by default a whole Alembic upgrade is one transaction (`transactional_ddl = True`) and keeps the tables it touches locked until it commits; use `transaction_per_migration=True` for long or large-table migrations
-- **SQLAlchemy 2.0–2.1 only** — capped at `<2.2`; SA 2.2 compatibility shims exist, but the advisory pre-release canary has not yet proven installation or compatibility of a published 2.2 beta (see #778) ([details](docs/ARCHITECTURE.md))
+- **SQLAlchemy 2.0–2.1 only** — capped at `<2.2`; SA 2.2 compatibility shims exist, but the advisory pre-release canary has not yet proven installation or compatibility of a published 2.2 beta (see #778) ([details](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ARCHITECTURE.md))
 - **Async requires pycubrid >= 1.8.0,<2.0** — the `cubrid+aiopycubrid://` driver needs the async-capable pycubrid package line currently supported by this project
 - **CARDINALITY() broken** — `func.cardinality()` raises `CompileError` with workaround guidance; the CUBRID server has a [known bug](https://github.com/cubrid-lab/.github/issues/3)
 - **Reserved words auto-quoted** — Column names matching CUBRID reserved words (`day`, `count`, `value`, etc.) are automatically double-quoted in DDL; see [reserved word list](https://github.com/cubrid-lab/.github/issues/5)
-- **Timezone type reflection** — CUBRID's `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as distinct SQLAlchemy types (`sqlalchemy_cubrid.types.TIMESTAMPTZ`/`TIMESTAMPLTZ`/`DATETIMETZ`/`DATETIMELTZ`, each with `timezone=True`) rather than collapsing into plain `TIMESTAMP`/`DATETIME` (#181, #442); see [Type Mapping](docs/TYPES.md#type-reflection-ischema_names-only)
+- **Timezone type reflection** — CUBRID's `TIMESTAMPTZ`, `TIMESTAMPLTZ`, `DATETIMETZ` and `DATETIMELTZ` reflect as distinct SQLAlchemy types (`sqlalchemy_cubrid.types.TIMESTAMPTZ`/`TIMESTAMPLTZ`/`DATETIMETZ`/`DATETIMELTZ`, each with `timezone=True`) rather than collapsing into plain `TIMESTAMP`/`DATETIME` (#181, #442); see [Type Mapping](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TYPES.md#type-reflection-ischema_names-only)
 
 ## Documentation
 
 | Guide | Description |
 |---|---|
-| [Your First Connection](docs/QUICKSTART.md) | Start here: prepare a database, first query, first saved row, first-connection problems |
-| [Connection](docs/CONNECTION.md) | Connection strings, URL format, driver setup, pool tuning |
-| [Type Mapping](docs/TYPES.md) | Full type mapping, CUBRID-specific types, collection types |
-| [DML Extensions](docs/DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, query trace |
-| [Isolation Levels](docs/ISOLATION_LEVELS.md) | The three CUBRID MVCC isolation levels, configuration |
-| [Alembic Migrations](docs/ALEMBIC.md) | Setup, configuration, limitations, batch workarounds |
-| [Feature Support](docs/FEATURE_SUPPORT.md) | Comparison with MySQL, PostgreSQL, SQLite |
-| [ORM Cookbook](docs/ORM_COOKBOOK.md) | Practical ORM examples, relationships, queries |
-| [Development](docs/DEVELOPMENT.md) | Dev setup, testing, Docker, coverage, CI/CD |
-| [Driver Compatibility](docs/DRIVER_COMPAT.md) | CUBRID-Python driver versions and known issues |
-| [Troubleshooting](docs/TROUBLESHOOTING.md) | Common issues, error solutions, debugging techniques |
-| [Async Connection](docs/CONNECTION.md#async-connection) | Async engine setup with `cubrid+aiopycubrid://` |
+| [Your First Connection](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/QUICKSTART.md) | Start here: prepare a database, first query, first saved row, first-connection problems |
+| [Connection](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/CONNECTION.md) | Connection strings, URL format, driver setup, pool tuning |
+| [Type Mapping](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TYPES.md) | Full type mapping, CUBRID-specific types, collection types |
+| [DML Extensions](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, REPLACE INTO, query trace |
+| [Isolation Levels](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ISOLATION_LEVELS.md) | The three CUBRID MVCC isolation levels, configuration |
+| [Alembic Migrations](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ALEMBIC.md) | Setup, configuration, limitations, batch workarounds |
+| [Feature Support](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/FEATURE_SUPPORT.md) | Comparison with MySQL, PostgreSQL, SQLite |
+| [ORM Cookbook](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ORM_COOKBOOK.md) | Practical ORM examples, relationships, queries |
+| [Development](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DEVELOPMENT.md) | Dev setup, testing, Docker, coverage, CI/CD |
+| [Driver Compatibility](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md) | CUBRID-Python driver versions and known issues |
+| [Troubleshooting](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/TROUBLESHOOTING.md) | Common issues, error solutions, debugging techniques |
+| [Async Connection](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/CONNECTION.md#async-connection) | Async engine setup with `cubrid+aiopycubrid://` |
 
 ## Compatibility Matrix
 
@@ -404,13 +404,13 @@ Yes. Use `create_async_engine("cubrid+aiopycubrid://...")` with the pycubrid asy
 
 ## Roadmap
 
-See [`ROADMAP.md`](ROADMAP.md) for this project's direction and next milestones.
+See [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md) for this project's direction and next milestones.
 
 For the ecosystem-wide view, see the [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md).
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines and [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md) for development setup.
+See [CONTRIBUTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) for guidelines and [docs/DEVELOPMENT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DEVELOPMENT.md) for development setup.
 
 ### First contribution
 
@@ -426,7 +426,7 @@ Browse open [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid
 
 ## Security
 
-Report vulnerabilities privately through GitHub's private vulnerability reporting (email is the fallback) -- see [SECURITY.md](SECURITY.md). Do not open public issues for security concerns.
+Report vulnerabilities privately through GitHub's private vulnerability reporting (email is the fallback) -- see [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md). Do not open public issues for security concerns.
 
 ## Disclaimer
 
@@ -435,4 +435,4 @@ Report vulnerabilities privately through GitHub's private vulnerability reportin
 
 ## License
 
-MIT -- see [LICENSE](LICENSE).
+MIT -- see [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE).

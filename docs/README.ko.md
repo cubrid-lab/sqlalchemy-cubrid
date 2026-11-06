@@ -119,7 +119,7 @@ v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko
 > 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요. CUBRIDdb C 확장
 > 드라이버를 명시적으로 선택하려면 `cubrid+cubriddb://` URL을 사용하세요.
 
-<img src="https://github.com/cubrid-lab/sqlalchemy-cubrid/raw/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>
+<img src="https://raw.githubusercontent.com/cubrid-lab/sqlalchemy-cubrid/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>
 
 ## 빠른 시작
 
