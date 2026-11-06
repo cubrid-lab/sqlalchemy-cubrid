@@ -71,11 +71,13 @@ body:
       label: Environment
       description: Provide details about your environment
       placeholder: |
-        - Python version: 3.12
-        - SQLAlchemy version: 2.0.0
-        - CUBRID version: 11.2
-        - sqlalchemy-cubrid version: 1.4.0
-        - Operating System: Linux/macOS/Windows
+        - Python version: 3.12 (replace with your actual version)
+        - SQLAlchemy version: 2.1.x (exact installed version)
+        - sqlalchemy-cubrid version: 1.12.x (exact installed version)
+        - CUBRID server version: 11.4 (exact server version)
+        - Driver and version: pycubrid x.y.z / async pycubrid x.y.z / CUBRIDdb from cubrid-python vX
+        - URL scheme: cubrid+pycubrid:// / cubrid+aiopycubrid:// / cubrid:// (omit passwords and hosts)
+        - Operating system: Linux / macOS / Windows (specify version)
     validations:
       required: true
 
