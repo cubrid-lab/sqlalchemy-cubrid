@@ -7,7 +7,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 ## Table of Contents
 
 - [Installation Issues](#installation-issues)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-could-not-import-cubriddb)
+  - [ImportError: Could not import CUBRIDdb](#importerror-could-not-import-cubriddb)
   - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
 - [Connection Issues](#connection-issues)

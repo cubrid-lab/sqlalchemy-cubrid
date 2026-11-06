@@ -9,7 +9,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
 ## 목차
 
 - [설치 문제](#설치-문제)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-could-not-import-cubriddb)
+  - [ImportError: Could not import CUBRIDdb](#importerror-could-not-import-cubriddb)
   - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
   - [C 확장 빌드 실패](#c-확장-빌드-실패)
 - [연결 문제](#연결-문제)

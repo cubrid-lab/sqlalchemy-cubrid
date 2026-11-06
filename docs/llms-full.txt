@@ -5871,7 +5871,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 ## Table of Contents
 
 - [Installation Issues](#installation-issues)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
+  - [ImportError: Could not import CUBRIDdb](#importerror-could-not-import-cubriddb)
   - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
 - [Connection Issues](#connection-issues)
@@ -5938,12 +5938,12 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 
 ## Installation Issues
 
-### ImportError: No module named 'CUBRIDdb'
+### ImportError: Could not import CUBRIDdb
 
 **Symptom:**
 
 ```
-ImportError: No module named 'CUBRIDdb'
+ImportError: Could not import CUBRIDdb. The bare cubrid:// URL uses the legacy CUBRIDdb C-extension driver. Switch to the maintained pure-Python driver with a cubrid+pycubrid:// URL (pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb from cubrid-python v11.3.0.51 or later (the CUBRID-Python 9.3.x releases on PyPI are untested).
 ```
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
