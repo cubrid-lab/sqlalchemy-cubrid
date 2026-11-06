@@ -27,6 +27,14 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
   `SMALLINT`/`BIGINT` `display_width` and string-type `values` arguments
   **continue to work with warnings in this change**; #892's actual removal,
   including positional calls such as `SMALLINT(11)`, is a separate decision.
+  **This release revises the actual `DeprecationWarning` text** from "future
+  major" to "may be removed in a future 1.x MINOR". The ignored arguments
+  remain accepted in this release. Migrate `SMALLINT(display_width=11)` /
+  `SMALLINT(11)` to `SMALLINT()`, `BIGINT(20)` to `BIGINT()`, and
+  `VARCHAR(30, values=["x"])` to `VARCHAR(30)`. Removing ignored arguments
+  changes no generated CUBRID DDL. Applications using a `<2.0` dependency
+  range may automatically pick up a breaking MINOR after the notice period;
+  pin the specific version range or migrate ahead of removal.
 
 ## [1.12.2] - 2026-11-05
 
