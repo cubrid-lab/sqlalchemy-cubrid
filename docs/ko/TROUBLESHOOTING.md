@@ -1297,14 +1297,16 @@ CUBRID_VERSION=11.4 docker compose up -d
 CUBRID_VERSION=10.2 docker compose up -d
 ```
 
-**알려진 버전 차이:**
+**버전별 검증 현황:**
 
-| 기능 | CUBRID 10.2 | CUBRID 11.0+ |
+| 기능 | CUBRID 10.2 | CUBRID 11.0–11.4 |
 |---|---|---|
-| `UPDATE`의 `LIMIT` | ❌ | ✅ |
-| `CTE` (WITH 절) | ❌ | ✅ |
-| `MERGE` | ✅ | ✅ |
-| 인덱스 코멘트 | ❌ | ✅ |
+| `UPDATE`의 `LIMIT` | 검증되지 않음 | 검증되지 않음 |
+| `CTE` (`WITH` / `WITH RECURSIVE`) | ✅ 검증됨 | ✅ 검증됨 |
+| `MERGE` | 버전별 검증 근거 없음 | 버전별 검증 근거 없음 |
+| 인덱스 코멘트 | 검증되지 않음 | 검증되지 않음 |
+
+`WITH`와 `WITH RECURSIVE`는 CUBRID 10.2, 11.0, 11.2, 11.4에서 실제로 검증되었습니다. [CTE 검증 근거](../FEATURE_SUPPORT.md#query-features) 및 [지원 매트릭스](../SUPPORT_MATRIX.md#dml-extensions)를 참고하세요. “검증되지 않음”은 이 문서에 버전별 검증 근거가 없다는 뜻이며, 기능 미지원이라는 뜻이 아닙니다.
 
 ---
 
