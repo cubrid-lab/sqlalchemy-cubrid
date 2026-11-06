@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **1.x dialect-extension API policy clarified (#892)** — the dialect can
+  consider individually reviewed, low-impact changes to project-specific
+  convenience APIs in a later MINOR without waiting for 2.0. This is
+  prospective and requires a documented user-impact assessment and migration
+  instructions; it does **not** permit breaking SQLAlchemy Core/ORM behavior,
+  generated SQL, data correctness, reflection or migrations. Already published
+  API-specific promises still require an explicit revised notice in a
+  published release before removal. In particular, the deprecated
+  `SMALLINT`/`BIGINT` `display_width` and string-type `values` arguments
+  **continue to work with warnings in this change**; #892's actual removal,
+  including positional calls such as `SMALLINT(11)`, is a separate decision.
+
 ## [1.12.2] - 2026-11-05
 
 ### Documentation
