@@ -1286,6 +1286,16 @@ engine = create_engine(
 
 ## Docker 문제
 
+**Apple silicon / arm64에서 Docker 이미지 실행:** 실습에 사용하는
+`cubrid/cubrid:11.4` 이미지는 amd64용으로 안내되어 있으며 arm64 네이티브
+지원은 확인되지 않았습니다. Apple silicon Mac에서는
+[레슨 1의 `docker run` 명령](../LESSON_PREPARE.md#option-b-i-need-a-disposable-local-database)에
+`--platform linux/amd64`를 추가하여 Docker 에뮬레이션을 시도할 수 있습니다.
+기존 최대 3분 DB 연결 준비 확인 루프와 로그 점검도 그대로 적용하세요.
+이 방법은 **실제 검증되지 않았고** 속도가 느리거나 실행되지 않을 수 있습니다.
+동작하지 않으면 기존에 실행 중인 CUBRID 서버를 사용하는 레슨 1 옵션 A로
+진행하세요. 로컬 포트의 `127.0.0.1` 바인딩은 유지해야 합니다.
+
 ### 컨테이너는 시작되는데 연결 안 됨
 
 **해결:**
