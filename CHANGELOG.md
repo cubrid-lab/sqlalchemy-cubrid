@@ -33,7 +33,7 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
   `SMALLINT(11)` to `SMALLINT()`, `BIGINT(20)` to `BIGINT()`, and
   `VARCHAR(30, values=["x"])` to `VARCHAR(30)`. Removing ignored arguments
   changes no generated CUBRID DDL. Applications using a `<2.0` dependency
-  range may automatically pick up a breaking MINOR after the notice period;
+  range may automatically pick up a breaking MINOR once the revised notice has been published and removal is approved;
   pin the specific version range or migrate ahead of removal.
 
 ## [1.12.2] - 2026-11-05
