@@ -58,6 +58,53 @@ needed. This cadence is **independent** of release dates and version numbers
 in `pycubrid` and other sibling repositories; coordinate compatibility when
 necessary, but do not require synchronized releases.
 
+## Public API compatibility in 1.x
+
+`sqlalchemy-cubrid` follows a **repository-local, proportionate** approach to
+public API changes. Its SQLAlchemy dialect behavior, Core/ORM integration,
+compiled SQL, parameter/value correctness, reflection, Alembic migration
+semantics and supported-driver contract remain protected. The corresponding
+SQLAlchemy compliance and CUBRID integration checks are not optional.
+
+Public **dialect-specific convenience APIs** should normally remain
+compatible, but an *individually justified* removal or incompatible change
+may ship in a **1.x MINOR** instead of waiting for 2.0 when:
+
+1. An issue identifies the exact public calls, real-world usage risk,
+   alternatives and why keeping the deprecated behavior is not worthwhile.
+   Being outside SQLAlchemy's standard API is not by itself approval.
+2. The maintainer makes an explicit, reviewable decision, with clear
+   **Upgrade notes and before/after migration examples** in the breaking
+   MINOR. Include both keyword and positional call forms where applicable.
+   The caller may have a `<2.0` dependency range; warn that such a range can
+   select the breaking MINOR without intervention.
+3. Prefer a warning in an earlier published version when practical. **No
+   universal 28-day waiting period** or extra approval workflow applies.
+   **A prior published, specific removal promise must not be silently
+   contradicted.** If an API was already documented or warned as removable
+   *only in a future MAJOR*, first publish a revised API-specific warning and
+   migration notice before the removal release. The subsequent MINOR must
+   independently pass final-head review and full release validation.
+4. PATCH releases remain backward compatible apart from a separately
+   reviewed urgent security/correctness exception that cannot be deferred.
+   Core SQLAlchemy and database correctness must not be reclassified as
+   convenience functionality to justify a MINOR break.
+
+For example, **#892** concerns ignored, already deprecated
+`display_width` on `SMALLINT`/`BIGINT` and `values` on character types.
+Removing them affects constructor calls, including positional
+`SMALLINT(11)`/`BIGINT(20)`, but not emitted CUBRID DDL. The shipped warning
+currently promises a future **MAJOR**. A reviewed plan may instead remove
+them in a later **MINOR** *after* the revised notice is actually published.
+The policy change alone does not rewrite that warning or authorize an
+immediate removal on `main`.
+
+The existing `release-please.yml` process remains in charge of candidate
+generation. A reviewed, intentional breaking MINOR must be explicitly marked
+and versioned through the existing Conventional Commit/`Release-As` procedure;
+do not use a normal PATCH or bypass any review, tests or publish safeguards.
+This policy does not depend on or govern the independent `pycubrid` repository.
+
 ## Normal flow
 
 `release-please.yml` → reviewed release PR → squash merge → `publish-pypi.yml`.
