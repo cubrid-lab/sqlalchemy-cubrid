@@ -2562,6 +2562,20 @@ from sqlalchemy_cubrid import (
 )
 ```
 
+> **1.x migration notice (#892):** The dialect-specific `SMALLINT` and `BIGINT`
+> `display_width` argument and `CHAR`, `VARCHAR`, `NCHAR`, `NVARCHAR`,
+> `STRING` `values` argument are accepted but **ignored**, and still emit a
+> `DeprecationWarning`. The earlier warning promised removal in a future
+> MAJOR; this version **revises that notice**: they may be removed in a later
+> reviewed **1.x MINOR**, after this revised warning has been published.
+> Remove the unused keyword argument now (e.g. `SMALLINT(display_width=11)`
+> → `SMALLINT()`; `VARCHAR(30, values=["x"])` → `VARCHAR(30)`).
+> Positional `SMALLINT(11)` and `BIGINT(20)` also represent ignored widths
+> and should become `SMALLINT()` and `BIGINT()`. No DDL or data semantics
+> change when they are omitted. Applications allowing `sqlalchemy-cubrid<2.0`
+> may otherwise receive a breaking MINOR; test upgrades or use an explicit
+> dependency cap until migrated. **These calls remain accepted in this release.**
+
 ### Numeric Types
 
 | Type               | CUBRID SQL        | Description                                  |
