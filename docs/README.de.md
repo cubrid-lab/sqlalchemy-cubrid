@@ -10,7 +10,7 @@
 
 **SQLAlchemy-2.0–2.1-Dialekt für die CUBRID-Datenbank** — Python-ORM, Schema-Reflexion, Alembic-Migrationen und Typzuordnung für SQLAlchemy und CUBRID-spezifische Typen.
 
-[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -264,18 +264,18 @@ Ja. Verwenden Sie `create_async_engine("cubrid+aiopycubrid://...")` mit dem pycu
 
 ## Roadmap
 
-Siehe [`ROADMAP.md`](../ROADMAP.md) für die Ausrichtung des Projekts und die nächsten Meilensteine.
+Siehe [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md) für die Ausrichtung des Projekts und die nächsten Meilensteine.
 
 Für die Ökosystem-Perspektive siehe die [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md).
 
 ## Mitwirken
 
-Siehe [CONTRIBUTING.md](../CONTRIBUTING.md) für Hinweise und [docs/DEVELOPMENT.md](DEVELOPMENT.md) für die Entwicklungsumgebung.
+Siehe [CONTRIBUTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) für Hinweise und [docs/DEVELOPMENT.md](DEVELOPMENT.md) für die Entwicklungsumgebung.
 
 ## Sicherheit
 
-Melden Sie Schwachstellen vertraulich über GitHubs Private Vulnerability Reporting (alternativ per E-Mail) -- siehe [SECURITY.md](../SECURITY.md). Erstellen Sie keine öffentlichen Issues für Sicherheitsprobleme.
+Melden Sie Schwachstellen vertraulich über GitHubs Private Vulnerability Reporting (alternativ per E-Mail) -- siehe [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md). Erstellen Sie keine öffentlichen Issues für Sicherheitsprobleme.
 
 ## Lizenz
 
-MIT -- siehe [LICENSE](../LICENSE).
+MIT -- siehe [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE).

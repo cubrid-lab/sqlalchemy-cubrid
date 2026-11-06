@@ -1699,7 +1699,7 @@ session.query(Config).filter(Config.data["key"] == "value")
 ```
 
 > **CUBRID < 10.2 workaround:** Store JSON as `STRING`/`VARCHAR` and
-> serialize/deserialize in Python. See [Troubleshooting](../docs/TROUBLESHOOTING.md#json-type-usage).
+> serialize/deserialize in Python. See [Troubleshooting](TROUBLESHOOTING.md#json-type-usage).
 
 ### 4. Collection Types Instead of ARRAY
 
@@ -4929,7 +4929,7 @@ snapshot here.
 
 ---
 
-*See also: [Connection Guide](CONNECTION.md) · [Type System](TYPES.md) · [Feature Support](FEATURE_SUPPORT.md) · [Driver Compatibility](DRIVER_COMPAT.md) · [Changelog](../CHANGELOG.md)*
+*See also: [Connection Guide](CONNECTION.md) · [Type System](TYPES.md) · [Feature Support](FEATURE_SUPPORT.md) · [Driver Compatibility](DRIVER_COMPAT.md) · [Changelog](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md)*
 
 ---
 
@@ -8373,7 +8373,7 @@ rule-5 cutoff gating, only `SECTION_POLICY_CUTOFF` differs.
 
 ---
 
-*See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
+*See also: [Contributing Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
 
 ---
 

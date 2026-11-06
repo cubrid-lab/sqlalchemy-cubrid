@@ -1030,4 +1030,4 @@ rule-5 cutoff gating, only `SECTION_POLICY_CUTOFF` differs.
 
 ---
 
-*See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
+*See also: [Contributing Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
