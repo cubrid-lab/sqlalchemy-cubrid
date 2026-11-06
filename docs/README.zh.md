@@ -24,7 +24,7 @@
 
 ---
 
-> **状态：Production/Stable** — 支持 CUBRID 10.2–11.4 和 SQLAlchemy 2.0–2.1 的稳定维护方言。每个 PR 均通过实时数据库集成 CI 验证。
+> **状态：Production/Stable** — 支持 CUBRID 10.2–11.4 和 SQLAlchemy 2.0–2.1 的稳定维护方言。普通 PR 运行离线 CI；高风险变更才额外执行真实数据库集成测试。
 
 ## 为什么选择 sqlalchemy-cubrid？
 
