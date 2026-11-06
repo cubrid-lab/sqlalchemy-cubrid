@@ -10,7 +10,7 @@
 
 **CUBRID 데이터베이스를 위한 SQLAlchemy 2.0–2.1 방언** — SQLAlchemy 및 CUBRID 전용 타입을 위한 Python ORM, 스키마 리플렉션, Alembic 마이그레이션, 타입 매핑을 제공합니다.
 
-[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -383,7 +383,7 @@ stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Al
 
 ## 로드맵
 
-이 프로젝트의 방향과 다음 마일스톤은 [`ROADMAP.md`](../ROADMAP.md)를 참고하세요.
+이 프로젝트의 방향과 다음 마일스톤은 [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md)를 참고하세요.
 
 생태계 전체 관점은 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)를 참고하세요.
 
@@ -405,11 +405,11 @@ CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선�
 
 ## 보안
 
-취약점은 GitHub의 비공개 취약점 제보(private vulnerability reporting)로 제보해 주세요(대체 수단은 이메일) -- 자세한 내용은 [SECURITY.md](../SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
+취약점은 GitHub의 비공개 취약점 제보(private vulnerability reporting)로 제보해 주세요(대체 수단은 이메일) -- 자세한 내용은 [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
 
 ## 라이선스
 
-MIT -- [LICENSE](../LICENSE) 참조.
+MIT -- [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE) 참조.
 
 ## PR 검증 범위
 
