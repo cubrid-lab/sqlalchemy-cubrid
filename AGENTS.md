@@ -120,7 +120,7 @@ make docker-clean                             # Stop and delete the test data vo
 
 ### Anti-Patterns (Never Do)
 
-- No `as any`, `@ts-ignore` equivalents — no type suppression
+- Avoid unscoped or unexplained type suppression. Use `# type: ignore[code]` **only when needed** for a documented, narrow third-party typing limitation; explain the reason at the call site and keep the specific mypy error code. Never use a bare `# type: ignore` or broad suppression to hide a real defect. Existing justified, error-coded ignores remain permitted.
 - No f-string interpolation in SQL queries (SQL injection risk)
 - No `super(ClassName, self)` — use `super()` only
 - No Python 2 constructs (`basestring`, `getargspec`, etc.)
