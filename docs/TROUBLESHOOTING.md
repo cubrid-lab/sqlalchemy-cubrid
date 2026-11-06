@@ -1314,14 +1314,16 @@ CUBRID_VERSION=11.4 docker compose up -d
 CUBRID_VERSION=10.2 docker compose up -d
 ```
 
-**Known version differences:**
+**Version-specific checks:**
 
-| Feature | CUBRID 10.2 | CUBRID 11.0+ |
+| Feature | CUBRID 10.2 | CUBRID 11.0–11.4 |
 |---|---|---|
-| `LIMIT` in `UPDATE` | ❌ | ✅ |
-| `CTE` (WITH clause) | ❌ | ✅ |
-| `MERGE` | ✅ | ✅ |
-| Index comments | ❌ | ✅ |
+| `LIMIT` in `UPDATE` | Not verified | Not verified |
+| `CTE` (`WITH` / `WITH RECURSIVE`) | ✅ Verified | ✅ Verified |
+| `MERGE` | Not verified by version | Not verified by version |
+| Index comments | Not verified | Not verified |
+
+`WITH` and `WITH RECURSIVE` were checked live on 10.2, 11.0, 11.2 and 11.4; see [CTE tests and boundaries](FEATURE_SUPPORT.md#query-features) and the [support matrix](SUPPORT_MATRIX.md#dml-extensions). “Not verified” denotes missing per-version evidence in this guide, **not** a claim that the database lacks the feature.
 
 ---
 
