@@ -85,10 +85,10 @@ may ship in a **1.x MINOR** instead of waiting for 2.0 when:
    *only in a future MAJOR*, first publish a revised API-specific warning and
    migration notice before the removal release. The subsequent MINOR must
    independently pass final-head review and full release validation.
-4. PATCH releases remain backward compatible apart from a separately
-   reviewed urgent security/correctness exception that cannot be deferred.
-   Core SQLAlchemy and database correctness must not be reclassified as
-   convenience functionality to justify a MINOR break.
+4. PATCH releases remain backward compatible. Urgent security or
+   correctness fixes may be expedited but may not use PATCH to bypass this
+   compatibility rule. Core SQLAlchemy and database correctness must not be
+   reclassified as convenience functionality to justify a MINOR break.
 
 For example, **#892** concerns ignored, already deprecated
 `display_width` on `SMALLINT`/`BIGINT` and `values` on character types.
