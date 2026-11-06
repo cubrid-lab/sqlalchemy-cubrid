@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.12.3](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.2...v1.12.3) (2026-11-06)
+
+
+### Fixed
+
+* capture driver and URL scheme in bug reports ([6c190e5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6c190e5550be775273c54e34ffbb06c9e8b44261)), closes [#1079](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1079)
+* **types:** revise the ignored type argument retirement warning ([c6cd853](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c6cd853109f24d06ceaf7cd5cadbf9c5f234d622)), closes [#892](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/892)
+
+
+### Documentation
+
+* add troubleshooting and questions to issue chooser ([9f5ea30](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9f5ea30de76c91762d2dd5ee65e8d2760818780d)), closes [#1077](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1077)
+* add Windows virtual environment setup to Lesson 1 ([cf75832](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/cf75832e1069ea60968cdfef92d16fa9fbc734d8)), closes [#1087](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1087)
+* clarify when scoped type ignores are acceptable ([f8f37fb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f8f37fbe05825244fec3e0470b6e8191d09ea64e)), closes [#1101](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1101)
+* correct CUBRID 10.2 feature support guidance ([34a4952](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/34a4952530ebfac1a638edd470f6629267baa0d1)), closes [#1082](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1082)
+* correct live CI claims in translated READMEs ([10a31cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/10a31cc662ca6d62d34cf38dc9a72c5da114642b)), closes [#1075](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1075)
+* define flexible 1.x dialect API compatibility policy ([7457b3f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7457b3fdce388dd4005da901bd4bb35f63f32eb0)), closes [#892](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/892)
+* explain Apple silicon options for the CUBRID lab ([7c6e1e6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7c6e1e69ba3485104ba8f372d788a92df77a3517)), closes [#1088](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1088)
+* explain missing greenlet errors for async engines ([bbf029e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/bbf029e9c7015830760acb280a2ede58e4776311)), closes [#1084](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1084)
+* fix broker readiness and quickstart troubleshooting ([5886ff7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5886ff74c8b357123f1551c3b3a056f78b1e74e1)), closes [#1080](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1080)
+* fix published site links to repository files ([136fbc8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/136fbc816571aec01a9d394c7a6b12db5cb61187)), closes [#1076](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1076)
+* give users a consistent support and questions path ([abbaca4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/abbaca4182087b64f45f083c8fda3a096f58ebf2)), closes [#1078](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1078)
+* guide translated users to their first CUBRID connection ([b0b06d0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b0b06d043f5b7a863e6ec450aa3e48edc018eba5)), closes [#1074](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1074)
+* label the 1.8.0 PRD as a historical snapshot ([7dc5c9f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7dc5c9f7fa43aaa52f34ef441b8b36f3905f0a9d)), closes [#1096](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1096)
+* make PyPI README links and demo render correctly ([97a855c](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/97a855cc89a743440de3e0c13327eb5f437161b7)), closes [#1097](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1097)
+* remove unsupported CUBRID-Python install advice ([e74b96e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e74b96e9039216c3e7bec66edc5760f201240740)), closes [#1083](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1083)
+* use pycubrid URLs in translated connection examples ([59dd870](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/59dd8708d274225a003a6d0be91d682d46c7f19a)), closes [#1073](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1073)
+
 ## [1.12.2](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.1...v1.12.2) (2026-11-05)
 
 
