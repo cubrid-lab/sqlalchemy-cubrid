@@ -153,24 +153,38 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ```
 OperationalError: (CUBRIDdb.DatabaseError) Connection refused
+OperationalError: (pycubrid.exceptions.OperationalError) failed to connect to CUBRID broker
 ```
 
 **해결:**
 
-1. **CUBRID 브로커 실행 확인:**
+1. **컨테이너 내부에서 브로커와 DB 로그인을 확인**하세요(호스트에 CUBRID가 설치되지 않았다면 호스트에서 `cubrid` 명령을 실행할 수 없음):
 
    ```bash
-   cubrid broker status
-   cubrid service status
+   docker compose ps
+   docker compose exec -T cubrid cubrid broker status
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
 
-2. **Docker 컨테이너 미준비:**
+2. **고정 시간 대기 대신 실제 DB 연결 준비 여부를 확인**하세요:
 
    ```bash
    docker compose up -d
-   sleep 10  # 전체 초기화 대기
-   docker compose ps  # "running" 상태 확인
+   docker compose ps
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
+
+   **레슨 1의 `docker run` 실습 컨테이너**를 사용한다면 Compose 명령 대신:
+
+   ```bash
+   docker ps --filter name=sqlalchemy-cubrid-quickstart
+   docker logs sqlalchemy-cubrid-quickstart
+   docker exec sqlalchemy-cubrid-quickstart cubrid broker status
+   docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+   ```
+
+   아직 `SELECT 1`이 실패하면 [레슨 1의 최대 3분 준비 확인 루프](../LESSON_PREPARE.md)를
+   사용하세요. 실행 중인 컨테이너나 브로커 상태만으로 DB 로그인 준비가 확인되는 것은 아닙니다.
 
 3. **잘못된 포트:** 실제 브로커 포트는 `cubrid_broker.conf`에서 확인.
 
@@ -1252,8 +1266,15 @@ engine = create_engine(
 # 1. 컨테이너가 실제로 실행 중인지 확인
 docker compose ps
 
-# 2. 브로커 초기화 대기 (~10초 소요)
-docker compose up -d && sleep 10
+# 2. 고정 시간 대기 대신 Compose 헬스체크/실제 DB 로그인 확인
+docker compose up -d
+docker compose ps
+docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
+
+# 레슨 1 실습 컨테이너를 사용한다면:
+# docker logs sqlalchemy-cubrid-quickstart
+# docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+# 먼저 레슨 1의 최대 3분 준비 확인 루프를 사용하세요.
 
 # 3. 연결 테스트
 python3 -c "
@@ -1273,11 +1294,11 @@ with engine.connect() as conn:
 ```yaml
 services:
   cubrid:
-    image: cubrid/cubrid:11.2
+    image: cubrid/cubrid:11.4
     environment:
       CUBRID_DB: testdb  # 이 데이터베이스만 생성됨
     ports:
-      - "33000:33000"
+      - "127.0.0.1:33000:33000"
 ```
 
 연결 URL이 다른 데이터베이스 이름을 사용하면 실패합니다. `CUBRID_DB`를 연결 URL과 일치시키세요.

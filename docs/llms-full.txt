@@ -6016,24 +6016,39 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ```
 OperationalError: (CUBRIDdb.DatabaseError) Connection refused
+OperationalError: (pycubrid.exceptions.OperationalError) failed to connect to CUBRID broker
 ```
 
 **Fixes:**
 
-1. **Check the CUBRID broker is running:**
+1. **Check the broker inside the container** (not on the host, unless CUBRID is installed there):
 
    ```bash
-   cubrid broker status
-   cubrid service status
+   docker compose ps
+   docker compose exec -T cubrid cubrid broker status
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
 
-2. **Docker container not ready:**
+2. **Wait for database login readiness, not an arbitrary delay:**
 
    ```bash
    docker compose up -d
-   sleep 10  # Wait for full initialization
-   docker compose ps  # Verify "running" status
+   docker compose ps
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
+
+   For the **Lesson 1 `docker run` lab** instead of Compose:
+
+   ```bash
+   docker ps --filter name=sqlalchemy-cubrid-quickstart
+   docker logs sqlalchemy-cubrid-quickstart
+   docker exec sqlalchemy-cubrid-quickstart cubrid broker status
+   docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+   ```
+
+   If `SELECT 1` is not ready yet, use the **up-to-three-minute readiness loop** in
+   [Lesson 1](LESSON_PREPARE.md) rather than repeatedly restarting the container.
+   A running container or an available broker alone does not prove database login readiness.
 
 3. **Wrong port:** Check `cubrid_broker.conf` for the actual broker port.
 
@@ -7133,8 +7148,15 @@ No configuration needed — it works automatically.
 # 1. Check container is actually running
 docker compose ps
 
-# 2. Wait for broker initialization (takes ~10 seconds)
-docker compose up -d && sleep 10
+# 2. Wait until the Compose healthcheck / actual database login succeeds
+docker compose up -d
+docker compose ps
+docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
+
+# For the separate Lesson 1 lab use:
+# docker logs sqlalchemy-cubrid-quickstart
+# docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+# See Lesson 1's up-to-three-minute readiness loop before troubleshooting further.
 
 # 3. Test connection
 python3 -c "
@@ -7154,11 +7176,11 @@ with engine.connect() as conn:
 ```yaml
 services:
   cubrid:
-    image: cubrid/cubrid:11.2
+    image: cubrid/cubrid:11.4
     environment:
       CUBRID_DB: testdb  # Only this database is created
     ports:
-      - "33000:33000"
+      - "127.0.0.1:33000:33000"
 ```
 
 If your connection URL uses a different database name, it will fail. Match `CUBRID_DB` with your connection URL.
