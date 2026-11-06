@@ -133,7 +133,7 @@ v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko
 ```python
 from sqlalchemy import create_engine, text
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 with engine.connect() as conn:
     result = conn.execute(text("SELECT 1"))
@@ -159,7 +159,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
 
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -331,7 +331,7 @@ Core 삽입에서 자동 증가 PK가 필요하면 문장 실행 후 `SELECT LAS
 
 ```python
 from sqlalchemy import create_engine
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
 순수 Python 드라이버(CUBRID 네이티브 라이브러리 불필요)를 쓰려면: `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`. `[pycubrid]` extra의 `greenlet`은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다.
