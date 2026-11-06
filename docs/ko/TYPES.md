@@ -80,6 +80,19 @@ from sqlalchemy_cubrid import (
 )
 ```
 
+> **1.x 마이그레이션 안내 (#892):** `SMALLINT`·`BIGINT`의 `display_width`와
+> `CHAR`·`VARCHAR`·`NCHAR`·`NVARCHAR`·`STRING`의 `values`는
+> 현재 인자를 받아도 SQL 생성에 사용하지 않으며 `DeprecationWarning`을 발생시킵니다.
+> 기존 경고는 향후 MAJOR에서 제거한다고 안내했지만, **이번 버전부터 예고를 수정**합니다.
+> 변경된 경고가 실제로 배포된 이후 검토를 거쳐 **1.x MINOR**에서 제거할 수 있습니다.
+> 지금부터 `SMALLINT(display_width=11)`은 `SMALLINT()`로,
+> `VARCHAR(30, values=["x"])`는 `VARCHAR(30)`으로 변경하세요.
+> 위치 인자인 `SMALLINT(11)`, `BIGINT(20)`도 너비를 무시하므로 각각
+> `SMALLINT()`, `BIGINT()`로 바꿔야 합니다. 해당 인자를 생략해도 DDL과
+> 데이터 동작은 달라지지 않습니다. `<2.0` 범위를 허용하는 사용자는 향후 MINOR
+> 업그레이드 시 기존 호출이 깨질 수 있으므로 미리 코드를 수정하거나 버전을
+> 제한하세요. **이번 변경에서는 인자가 제거되지 않습니다.**
+
 ### 숫자 타입
 
 | 타입                | CUBRID SQL        | 설명                                         |
