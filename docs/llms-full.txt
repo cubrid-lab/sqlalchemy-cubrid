@@ -7212,6 +7212,16 @@ No configuration needed — it works automatically.
 
 ## Docker Issues
 
+**Apple silicon / arm64 Docker image:** The course's
+`cubrid/cubrid:11.4` lab image is documented for amd64, not native arm64.
+On a Mac with Apple silicon, try adding `--platform linux/amd64` to the
+[Lesson 1 `docker run` example](LESSON_PREPARE.md#option-b-i-need-a-disposable-local-database)
+to request Docker emulation; then use the existing three-minute database
+readiness loop and inspect the container logs. This is **unverified** and can
+be slower. If emulation does not work, use a reachable pre-existing CUBRID
+server (Lesson 1 Option A). Do not replace the loopback port binding or
+assume the image has native arm64 support.
+
 ### Container Starts but Cannot Connect
 
 **Fix:**
