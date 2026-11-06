@@ -314,6 +314,22 @@ python -m pip install "sqlalchemy-cubrid[pycubrid]"
 python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
 ```
 
+**Windows (PowerShell), with an existing reachable database (Option A):**
+
+```powershell
+py --version  # Use Python 3.11 or later
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
+```
+
+If `py --version` selects an older interpreter, use an installed Python 3.11+
+explicitly (for example `py -3.12 -m venv .venv`). These **PowerShell**
+commands have not been verified on Windows in this change; the separate Docker
+lab above remains verified only on Linux/amd64. Do not confuse a working Python
+environment on Windows with verification of the Docker image.
+
 The `[pycubrid]` part installs the recommended pure-Python driver together with
 the dialect. The last command prints the three installed versions, for example
 `2.1.4 1.11.0 1.13.0`: SQLAlchemy, sqlalchemy-cubrid and pycubrid. Those are the
