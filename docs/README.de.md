@@ -26,6 +26,17 @@
 
 > **Status: Production/Stable** — Stabiler, gewarteter SQLAlchemy-Dialekt für CUBRID 10.2–11.4. Normale PRs durchlaufen Offline-CI; für risikoreiche Änderungen kommen Live-Datenbank-Integrationstests hinzu.
 
+## Hier beginnen
+
+CUBRID ist ein **separat laufender Datenbankserver**. Die Installation von
+`sqlalchemy-cubrid` oder `pycubrid` installiert weder CUBRID noch legt sie eine
+Datenbank an. Wenn Sie neu anfangen, folgen Sie
+[Erste Verbindung zu CUBRID mit SQLAlchemy](QUICKSTART.md) (englisch):
+Wählen Sie einen vorhandenen Server oder richten Sie das lokale Docker-Testlabor
+ein, und führen Sie mit dem empfohlenen
+`sqlalchemy-cubrid[pycubrid]`-Treiber die erste Abfrage und das erste INSERT aus.
+Die übrigen Abschnitte dienen danach als Nachschlagewerk.
+
 ## Warum sqlalchemy-cubrid?
 
 CUBRID ist eine leistungsstarke relationale Open-Source-Datenbank, die in
@@ -69,7 +80,8 @@ flowchart TD
 
 - Python 3.11 oder neuer
 - SQLAlchemy 2.0 – 2.1
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-Erweiterung) **oder** [pycubrid](https://github.com/cubrid-lab/pycubrid) (reines Python)
+- **Empfohlen:** [pycubrid](https://github.com/cubrid-lab/pycubrid) (reines Python, synchron/async; `cubrid+pycubrid://`)
+- **Alternative:** CUBRIDdb-C-Erweiterung aus [cubrid-python v11.3.0.51+](https://github.com/CUBRID/cubrid-python) selbst bauen (`cubrid://`). Die PyPI-Version `CUBRID-Python` 9.3.x ist **nicht getestet**; die Extras `[cubrid]`/`[cubriddb]` sind veraltet ([Treiberhinweise](DRIVER_COMPAT.md)).
 
 ## Installation
 
