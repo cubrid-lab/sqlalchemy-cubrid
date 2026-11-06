@@ -26,6 +26,16 @@
 
 > **स्थिति: Production/Stable** — CUBRID 10.2–11.4 और SQLAlchemy 2.0–2.1 के लिए स्थिर रूप से रखरखाव किया गया dialect। सामान्य PR पर ऑफ़लाइन CI चलता है; अधिक जोखिम वाले बदलावों के लिए लाइव DB इंटीग्रेशन परीक्षण जोड़े जाते हैं।
 
+## यहाँ से शुरू करें
+
+CUBRID एक **अलग डेटाबेस सर्वर** है: `sqlalchemy-cubrid` या `pycubrid`
+इंस्टॉल करने से सर्वर इंस्टॉल नहीं होता और न कोई डेटाबेस बनता है।
+पहली बार उपयोग करने वालों के लिए
+[SQLAlchemy से CUBRID का पहला कनेक्शन](QUICKSTART.md) (अंग्रेज़ी) उपलब्ध है।
+इसमें पहले से चल रहे CUBRID सर्वर या लोकल Docker लैब की तैयारी,
+अनुशंसित `sqlalchemy-cubrid[pycubrid]` ड्राइवर से पहली क्वेरी और पहली
+पंक्ति सेव करने का तरीका बताया गया है। इसके बाद नीचे दिए गए संदर्भ उदाहरण देखें।
+
 ## sqlalchemy-cubrid क्यों?
 
 CUBRID एक उच्च-प्रदर्शन ओपन-सोर्स रिलेशनल डेटाबेस है, जिसका उपयोग कोरियाई सार्वजनिक
@@ -68,7 +78,8 @@ flowchart TD
 
 - Python 3.11 या उससे नया संस्करण
 - SQLAlchemy 2.0 – 2.1
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-extension) **या** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python)
+- **अनुशंसित:** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, sync/async; `cubrid+pycubrid://`)
+- **वैकल्पिक:** [cubrid-python v11.3.0.51+](https://github.com/CUBRID/cubrid-python) स्रोत से CUBRIDdb C-extension बनाएं (`cubrid://`)। PyPI का `CUBRID-Python` 9.3.x **परीक्षित नहीं** है; `[cubrid]`/`[cubriddb]` extras deprecated हैं ([driver मार्गदर्शन](DRIVER_COMPAT.md))।
 
 ## इंस्टॉलेशन
 
