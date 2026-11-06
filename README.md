@@ -424,6 +424,17 @@ Most first issues can be developed and tested with the offline checks in CONTRIB
 
 Browse open [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) tasks.
 
+## Getting help
+
+Read the [first-connection guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/)
+and [troubleshooting guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/TROUBLESHOOTING/)
+first. For usage questions, use
+[GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions).
+For reproducible bugs, use the
+[bug report template](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new?template=bug_report.yml).
+For all reporting options, see [SUPPORT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SUPPORT.md).
+Report security vulnerabilities privately (see the next section), not in public issues.
+
 ## Security
 
 Report vulnerabilities privately through GitHub's private vulnerability reporting (email is the fallback) -- see [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md). Do not open public issues for security concerns.
