@@ -39,6 +39,18 @@ Docker에서 `testdb` 데이터베이스가 있는 일회용 CUBRID 11.4 서버�
 명령은 x86_64(amd64) Linux에서 검증했습니다. `cubrid/cubrid:11.4` 이미지는 amd64용으로만
 배포되므로 다른 아키텍처(예: Apple silicon)와 Windows는 검증하지 않았습니다.
 
+**Apple silicon 대안(이 프로젝트에서 직접 검증하지 않음):** Docker Desktop의
+Linux/amd64 에뮬레이션으로 이미지를 실행할 수 있습니다. 아래 `docker run`
+명령에서 `docker run` 바로 다음에 `--platform linux/amd64`를 추가하세요.
+`127.0.0.1` 로컬 포트 바인딩과 `csql SELECT 1`을 사용한 최대 3분 준비
+확인 루프는 그대로 유지해야 합니다. 에뮬레이션은 느리거나 설치 환경에 따라
+동작하지 않을 수 있으며 **arm64 네이티브 지원을 의미하지 않습니다**.
+준비 확인에 실패하면 `docker logs sqlalchemy-cubrid-quickstart`로 원인을
+확인하고, `docker rm -f -v sqlalchemy-cubrid-quickstart`로 실패한 일회용
+컨테이너를 정리하세요. 계속 동작하지 않으면 [방법 A](#방법-a-이미-cubrid-데이터베이스가-있습니다)의
+기존 CUBRID 서버에 연결하면 됩니다. 비밀번호가 없는 로컬 DBA 실습 포트를
+외부 인터페이스에 게시하지 마세요.
+
 ```bash
 docker run -d --name sqlalchemy-cubrid-quickstart -e CUBRID_DB=testdb \
   -p 127.0.0.1:33000:33000 cubrid/cubrid:11.4
