@@ -24,7 +24,7 @@
 
 ---
 
-> **상태: Production/Stable** — CUBRID 10.2–11.4 및 SQLAlchemy 2.0–2.1을 지원하는 유지보수 다이얼렉트입니다. 모든 PR에 대해 라이브 DB 통합 CI가 실행됩니다.
+> **상태: Production/Stable** — CUBRID 10.2–11.4 및 SQLAlchemy 2.0–2.1을 지원하는 유지보수 다이얼렉트입니다. 일반 PR은 오프라인 CI를 실행하며, 고위험 변경은 라이브 DB 통합 검사를 추가합니다.
 
 ## 여기서 시작하세요
 
