@@ -2,8 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
+This project normally follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html),
+with a narrowly scoped, explicit **repository-local exception**: after a
+maintainer decision, documented migration guidance and any revised published
+notice previously promised to users, dialect-specific convenience APIs may
+change incompatibly in a 1.x MINOR. Unlike strict SemVer, this exception can
+break callers using those extensions; see
+[the 1.x API policy](RELEASING.md#public-api-compatibility-in-1x).
+Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
