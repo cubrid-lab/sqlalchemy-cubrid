@@ -5904,6 +5904,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
   - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
+  - [Missing greenlet for async engines](#missing-greenlet-for-async-engines)
 - [Connection Issues](#connection-issues)
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Database Server Host Not Found After Recreating the Container](#database-server-host-not-found-after-recreating-the-container)
@@ -6035,6 +6036,34 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 ```bash
 pip install "sqlalchemy-cubrid[pycubrid]"
 ```
+
+---
+
+### Missing greenlet for async engines
+
+**Symptom:** creating an async SQLAlchemy engine fails before connecting:
+
+```text
+ImportError: The SQLAlchemy asyncio module requires that the Python 'greenlet' library is installed.
+```
+
+**Cause:** In SQLAlchemy 2.1, installing the base SQLAlchemy package alone
+does not necessarily install `greenlet`. An environment with `pycubrid` but
+without SQLAlchemy's asyncio dependencies cannot use `create_async_engine()`.
+
+**Fix:** install the supported dialect extra, which includes the async
+dependencies, or install SQLAlchemy's asyncio extra explicitly:
+
+```bash
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+# If the dialect and driver are already installed:
+python -m pip install "sqlalchemy[asyncio]"
+```
+
+Some Python/platform combinations do not have a compatible `greenlet` wheel
+and require a compiler/build tools. Check that the install command succeeded
+in the **same virtual environment** used by the async application. Use
+`cubrid+aiopycubrid://` for the async dialect, not `cubrid://`.
 
 ---
 
