@@ -403,6 +403,16 @@ CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선�
 
 열려 있는 [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) 작업을 둘러보세요.
 
+## 도움받기
+
+먼저 [첫 연결 가이드](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/)와
+[문제 해결 안내](https://cubrid-lab.github.io/sqlalchemy-cubrid/TROUBLESHOOTING/)를
+확인하세요. 사용법 질문은
+[GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)에,
+재현 가능한 버그는 [버그 신고 양식](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new?template=bug_report.yml)에
+남겨 주세요. 전체 안내는 [SUPPORT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SUPPORT.md)를
+참고하세요. 보안 취약점은 공개 이슈가 아닌 비공개 채널로 제보해야 합니다.
+
 ## 보안
 
 취약점은 GitHub의 비공개 취약점 제보(private vulnerability reporting)로 제보해 주세요(대체 수단은 이메일) -- 자세한 내용은 [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
