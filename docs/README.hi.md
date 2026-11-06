@@ -10,7 +10,7 @@
 
 **CUBRID डेटाबेस के लिए SQLAlchemy 2.0–2.1 dialect** — SQLAlchemy और CUBRID-विशिष्ट types के लिए Python ORM, schema reflection, Alembic migrations, और type mapping प्रदान करता है।
 
-[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -263,18 +263,18 @@ stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Al
 
 ## रोडमैप
 
-इस परियोजना की दिशा और अगले milestones के लिए [`ROADMAP.md`](../ROADMAP.md) देखें।
+इस परियोजना की दिशा और अगले milestones के लिए [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md) देखें।
 
 पूरे ecosystem के दृष्टिकोण के लिए [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md) देखें।
 
 ## योगदान
 
-दिशानिर्देशों के लिए [CONTRIBUTING.md](../CONTRIBUTING.md) और development setup के लिए [docs/DEVELOPMENT.md](DEVELOPMENT.md) देखें।
+दिशानिर्देशों के लिए [CONTRIBUTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) और development setup के लिए [docs/DEVELOPMENT.md](DEVELOPMENT.md) देखें।
 
 ## सुरक्षा
 
-कमज़ोरियों की रिपोर्ट GitHub की निजी vulnerability reporting के माध्यम से करें (वैकल्पिक रूप से ईमेल) -- विवरण के लिए [SECURITY.md](../SECURITY.md) देखें। सुरक्षा चिंताओं के लिए सार्वजनिक issues न खोलें।
+कमज़ोरियों की रिपोर्ट GitHub की निजी vulnerability reporting के माध्यम से करें (वैकल्पिक रूप से ईमेल) -- विवरण के लिए [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md) देखें। सुरक्षा चिंताओं के लिए सार्वजनिक issues न खोलें।
 
 ## लाइसेंस
 
-MIT -- [LICENSE](../LICENSE) देखें.
+MIT -- [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE) देखें.
