@@ -157,7 +157,7 @@ def test_omitted_maintained_source_directory_is_detected(tooling_config: Path) -
     config = tooling_config / "Makefile"
     config.write_text(
         config.read_text().replace(
-            " scripts demos samples docs/source", " scripts demos docs/source"
+            " scripts demos samples", " scripts demos"
         )
     )
     assert any(
