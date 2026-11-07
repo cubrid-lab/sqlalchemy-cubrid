@@ -1872,6 +1872,15 @@ Behavior changes you may notice (details in the entries below):
 
 This maintenance release contains fixes and supporting documentation and tests. The detailed sections below identify the affected behavior and related references.
 
+### Highlights
+
+- **More accurate SQL execution** — fixes multi-column primary-key reflection, numeric bind handling, `OFFSET` without `LIMIT`, and `IS DISTINCT FROM` execution.
+- **Safer ORM behavior** — improves `executemany` inserts and makes unsupported multi-row `ON DUPLICATE KEY UPDATE` expressions fail with a clear error.
+- **Stronger regression coverage** — adds UUID round-trip, property-based, differential, and real-application ORM tests, and makes SQLAlchemy dialect compliance checks gate CI.
+- **Expanded documentation** — adds runnable examples and clarifies driver-specific numeric precision limitations.
+
+The detailed changes below preserve the original technical context and references.
+
 ### Added
 - **Runnable usage examples in public docstrings (#337)** — added short, live-verified examples to the five main entry points: the connection URL forms (`cubrid+pycubrid://`, `cubrid+cubriddb://`, async `cubrid+aiopycubrid://`) in the package docstring, the `ON DUPLICATE KEY UPDATE` construct on `insert()`, and reflection via `inspect()` in the dialect module docstring (`REPLACE` and `MERGE` already had examples). Docstrings only — no behavior change; each example was executed against a live CUBRID 11.4.
 - **UUID type contract test matrix (#376)** — added `test/test_uuid_contract.py`, which pins the full round-trip contract for `sa.Uuid()` (Python `uuid.UUID` values) and `sa.Uuid(as_uuid=False)` (string values) across INSERT, SELECT, WHERE, UPDATE, and reflection, against a live CUBRID. CUBRID has no native UUID type; the dialect stores it as `CHAR(32)`, and these 8 `integration`-marked tests catch any regression in that CHAR-backed storage or the value coercion (verified: `sa.Uuid()` round-trips as `uuid.UUID`, `as_uuid=False` as `str`, WHERE/UPDATE by UUID work, and reflection reports `CHAR`). Wired into the nightly `integration-full` bug-hunt job.
@@ -1916,6 +1925,15 @@ This maintenance release contains fixes and supporting documentation and tests. 
 ## [1.7.0] - 2026-09-02
 
 This release contains multiple dialect improvements and compatibility changes. Review the detailed sections below for the affected features and upgrade considerations.
+
+### Highlights
+
+- **More reliable SQL and schema handling** — adds native ENUM support, null-safe distinct comparisons, and safer handling of unsupported SQL constructs.
+- **Improved reflection and migrations** — fixes schema-name handling, isolation-level round trips, and support for column alterations through Alembic.
+- **More dependable connection recovery** — recognizes additional pycubrid disconnect errors so SQLAlchemy can invalidate broken pooled connections.
+- **Driver and compatibility guidance** — documents the explicit `cubrid+cubriddb://` connection URL and aligns SQLAlchemy support guidance with versions 2.0–2.1.
+
+The detailed changes below include the original issue references and CI/documentation updates.
 
 ### Docs
 - **Documented that CUBRID's `LIST` collection type is a synonym for `SEQUENCE`** — CUBRID accepts `LIST(type)` in DDL but normalizes it to `SEQUENCE` at parse time, so a `LIST(INTEGER)` column is stored and reflected as `SEQUENCE OF INTEGER` (verified on live CUBRID 11.2). Clarified in `docs/TYPES.md` and via a code comment in `ischema_names` why the dialect exposes only the canonical `SEQUENCE` type and deliberately omits a `LIST` type/reflection entry (a type compiling to `LIST(...)` would produce spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`). No behavior change.
