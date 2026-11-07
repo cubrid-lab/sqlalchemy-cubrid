@@ -18,7 +18,7 @@ HEADER = re.compile(r"^## \[(\d+\.\d+\.\d+)\]", re.MULTILINE)
 BROKEN_LABEL = re.compile(r"\[[^\]\n]{1,100}\n[^\]\n]{1,100}\]\(")
 BROKEN_DESTINATION = re.compile(r"\[[^\]\n]{1,100}\]\s*\n\s*\(")
 ISSUE_LINE = re.compile(r"^\s{0,3}#\s*\d+(?:\s|$)")
-BYLINE = re.compile(r"^\s*(?:by @\S+|\(first contribution 🎉\))\s*$")
+BYLINE = re.compile(r"^\s*(?:by @\S+|\(first contribution 🎉\))")
 
 
 def release_section(text: str, version: str) -> str:
