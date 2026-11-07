@@ -1963,9 +1963,18 @@ This release contains multiple dialect improvements and compatibility changes. R
 
 ## [1.5.1] - 2026-07-18
 
+This maintenance release makes unsupported SQLAlchemy operations fail explicitly instead of silently falling back to unexpected behavior.
+
 ### Fixed
-- **RETURNING now raises explicit `CompileError` (#229)** — the dialect previously set `insert_returning = update_returning = delete_returning = False` and silently fell back to `LAST_INSERT_ID()` for any `.returning()` call. Users had no signal that RETURNING wasn't actually executing server-side. `visit_insert`/`visit_update`/`visit_delete` now check `stmt._returning` before compilation and raise `CompileError` pointing to `result.inserted_primary_key` as the auto-increment PK retrieval path.
-- **Two-phase commit explicitly disabled (#230)** — `supports_twophase_commit = False` added to `CubridDialect`, and `two_phase_transactions` is now a `_CLOSED` requirement flag in `requirements.py` so the SA test suite properly skips two-phase tests.
+
+- **Reject unsupported `RETURNING` statements** — insert, update, and delete statements using `.returning()` now raise `CompileError` rather than silently using an unrelated primary-key retrieval path. For generated primary keys, use `result.inserted_primary_key` where applicable ([#229](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/229)).
+- **Declare two-phase transactions unsupported** — the dialect explicitly disables two-phase commit support, allowing SQLAlchemy's compatibility tests to skip operations that CUBRID does not support through this dialect ([#230](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/230)).
+
+### Upgrade notes
+
+Applications that previously called `.returning()` without an immediate error must change those statements; the dialect does not provide server-side `RETURNING` support.
+
+
 ## [1.5.0] - 2026-05-23
 
 ### Added
@@ -1992,17 +2001,28 @@ This release contains multiple dialect improvements and compatibility changes. R
 
 ## [1.4.2] - 2026-04-21
 
+This release improves connection-pool health checks for the synchronous and asynchronous pycubrid dialects.
+
 ### Changed
-- **Native pycubrid ping for pooling** — both sync and async pycubrid dialects now use native `Connection.ping()` / `AsyncConnection.ping()` (`CHECK_CAS`, FC=32) in `do_ping()` for lower `pool_pre_ping` latency (~0.5–2ms instead of ~2–10ms query round trips) (#149, pycubrid#70, pycubrid#95)
-- **pycubrid extra floor raised** — `sqlalchemy-cubrid[pycubrid]` now requires `pycubrid>=1.3.2,<2.0` so sync and async `pool_pre_ping` share the same native ping contract
+
+- **Faster connection health checks** — `pool_pre_ping` uses the driver's native `Connection.ping()` or `AsyncConnection.ping()` rather than a SQL query. This reduces the extra round trip needed to validate a pooled connection ([#149](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/149)).
+- **Updated pycubrid requirement** — installing the `[pycubrid]` extra now requires `pycubrid>=1.3.2,<2.0` to provide the native ping interface for both dialects.
+
+### Upgrade notes
+
+Applications using the `[pycubrid]` extra must meet the updated minimum driver version. The change affects connection health checks, not application SQL.
+
 
 ## [1.4.1] - 2026-04-21
 
-### Changed
-- **Docs-only patch release** — aligns Beta-era documentation without runtime or packaging code changes
-- **Oracle audit fixes** — clarified reflection internals, `postfetch_lastrowid` behavior, SQLAlchemy private API dependency coverage, type reflection notes, and `ON DUPLICATE KEY UPDATE` semantics
-- **PRD and development docs alignment** — resolved internal contradictions across guide counts, entry points, CI matrix details, and unreachable-line notes
-- **README translation sync** — refreshed Korean, German, Russian, Chinese, and Hindi READMEs to match the English baseline
+This documentation-only patch clarifies supported behavior and keeps translated guides consistent. **No runtime or packaging behavior changed.**
+
+### Documentation
+
+- **Clarified dialect behavior** — expanded explanations of schema reflection, `postfetch_lastrowid`, SQLAlchemy internal API dependencies, type handling, and `ON DUPLICATE KEY UPDATE`.
+- **Aligned development documentation** — corrected inconsistencies in the product requirements, contributor guidance, and CI descriptions.
+- **Updated translations** — synchronized the Korean, German, Russian, Chinese, and Hindi READMEs with the English documentation.
+
 
 ## [1.4.0] - 2026-04-20
 
