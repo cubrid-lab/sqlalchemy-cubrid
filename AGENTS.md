@@ -376,9 +376,9 @@ If no documentation change is needed, state the reason explicitly in the PR body
 
 The body reason must be a populated standalone physical source line, not a placeholder or an
 example in quoted/code/comment text. Maintainers control GitHub label exceptions.
-Requesting translation help in a PR body grants no exemption: the existing
-`translations-deferred` label requires explicit maintainer approval and a recorded
-follow-up. Korean-required checks and other-language advisory checks remain intact.
+README translation drift (including Korean) is advisory after the 2026
+contest final evaluation; the `translations-deferred` label is not needed
+for it. Korean `docs/ko/` page-structure validation remains required.
 
 Do not mark work complete until code, tests, and documentation are consistent.
 
