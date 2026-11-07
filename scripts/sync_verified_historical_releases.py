@@ -37,7 +37,9 @@ def main() -> int:
             print(f"{tag}: already synchronized")
             continue
         if not isinstance(actual, str) or actual.strip() != section:
-            raise ValueError(f"{tag}: live body differs from canonical section; manual review required")
+            raise ValueError(
+                f"{tag}: live body differs from canonical section; manual review required"
+            )
         latest = github_json(f"repos/{REPO}/releases/{release['id']}")
         if latest.get("body") != actual or latest.get("tag_name") != tag:
             raise ValueError(f"{tag}: concurrent modification detected")
