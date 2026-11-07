@@ -130,14 +130,13 @@ The brand-icon changes above were delivered in [#1051](https://github.com/cubrid
 
 ### Documentation
 
-* **agents:** remove agent-specific footer from commit example ([b51b29f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b51b29fa793d12d4ec54d9ef65adb3c43cd2ae5f))
-* **agents:** remove tool-specific commit footer ([#1043](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1043)) ([b51b29f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b51b29fa793d12d4ec54d9ef65adb3c43cd2ae5f))
+- **Simplified the agent commit-message example** — removed the agent-specific and tool-specific footer guidance from the repository's commit example. This is a documentation-only update; it does not change the dialect or runtime behavior ([#1043](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1043), [commit b51b29f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b51b29fa793d12d4ec54d9ef65adb3c43cd2ae5f)).
 
 ## [1.11.6] - 2026-10-24
 
 ### Documentation
 
-* **development:** fix stale pytest node ([#1034](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1034)) ([003dca4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/003dca4d9bf79aeb1d67814c5fa8e92824216405)), refs [#1033](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1033)
+- **Corrected an outdated pytest test reference** — updated the development documentation so its example points to a current test rather than a stale pytest node. This is a documentation-only update; it does not change runtime behavior ([#1034](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1034), [#1033](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1033), [commit 003dca4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/003dca4d9bf79aeb1d67814c5fa8e92824216405)).
 
 ## [1.11.5] - 2026-10-24
 
