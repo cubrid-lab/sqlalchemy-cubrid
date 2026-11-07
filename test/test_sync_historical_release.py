@@ -25,14 +25,15 @@ CHANGELOG = (
 
 
 def release(body: str = "old body", **kwargs: object) -> dict:
-    return {
+    result = {
         "tag_name": "v1.12.2",
         "draft": False,
         "published_at": "2026-11-05T00:00:00Z",
         "body": body,
         "id": 123,
-        **kwargs,
     }
+    result.update(kwargs)
+    return result
 
 
 def prepare(value: dict, expected: str = "old body") -> tuple[str, str]:
