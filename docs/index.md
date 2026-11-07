@@ -86,7 +86,7 @@ engine.dispose()
   [choose an isolation level](ISOLATION_LEVELS.md).
 - **Reference:** [type mapping](TYPES.md), [feature support](FEATURE_SUPPORT.md),
   [support matrix](SUPPORT_MATRIX.md) and [driver compatibility](DRIVER_COMPAT.md),
-  including the supported CUBRIDdb C-extension driver.
+  including [how server, driver and package version numbers differ](DRIVER_COMPAT.md#server-driver-and-distribution-versions).
 - **Help:** start with [troubleshooting](TROUBLESHOOTING.md); ask usage questions in
   [GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions),
   report reproducible bugs through the [bug report template](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new?template=bug_report.yml),
