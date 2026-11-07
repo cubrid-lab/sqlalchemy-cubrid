@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   correct-release-body:
+    if: github.ref == 'refs/heads/main' && github.repository == 'cubrid-lab/sqlalchemy-cubrid'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
