@@ -119,3 +119,45 @@ jobs:
               raise ValueError("v1.12.1 post-update verification failed")
           print("v1.12.1 editorial correction published and verified")
           PY
+
+      - name: Publish reviewed v1.11.6 and v1.11.7 editorial corrections
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts")
+          from sync_historical_release import extract_version, github_json, make_body
+
+          repo = "cubrid-lab/sqlalchemy-cubrid"
+          previous = {"v1.11.6": "v1.11.5", "v1.11.7": "v1.11.6"}
+          original_changelog = subprocess.run(
+              ["git", "show", "HEAD^:CHANGELOG.md"], text=True,
+              capture_output=True, check=True
+          ).stdout
+          current_changelog = Path("CHANGELOG.md").read_text(encoding="utf-8")
+          for tag, prior in previous.items():
+              old = make_body(extract_version(original_changelog, tag[1:]), prior, tag, repo)
+              new = make_body(extract_version(current_changelog, tag[1:]), prior, tag, repo)
+              release = github_json(f"repos/{repo}/releases/tags/{tag}")
+              if (release.get("tag_name") != tag or release.get("draft") is not False
+                      or not release.get("published_at")):
+                  raise ValueError(f"{tag}: not published")
+              if release.get("body", "").strip() == new:
+                  print(f"{tag}: already published")
+                  continue
+              if release.get("body", "").strip() != old:
+                  raise ValueError(f"{tag}: unexpected original body; refusing overwrite")
+              latest = github_json(f"repos/{repo}/releases/{release['id']}")
+              if latest.get("body") != release.get("body"):
+                  raise ValueError(f"{tag}: concurrent modification")
+              github_json(f"repos/{repo}/releases/{release['id']}",
+                          method="PATCH", body=json.dumps({"body": new}))
+              verified = github_json(f"repos/{repo}/releases/{release['id']}")
+              if verified.get("body") != new:
+                  raise ValueError(f"{tag}: post-write verification failed")
+              print(f"{tag}: editorial correction published")
+          PY
