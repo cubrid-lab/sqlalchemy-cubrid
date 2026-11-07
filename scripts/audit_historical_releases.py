@@ -20,9 +20,7 @@ HISTORY = re.compile(r"^## \[([0-9]+\.[0-9]+\.[0-9]+)\]", re.MULTILINE)
 
 
 def get_json(path: str) -> object:
-    result = subprocess.run(
-        ["gh", "api", path], capture_output=True, text=True, check=True
-    )
+    result = subprocess.run(["gh", "api", path], capture_output=True, text=True, check=True)
     return json.loads(result.stdout)
 
 
@@ -72,14 +70,16 @@ def create_audit(releases: list[dict], changelog: str, directory: Path) -> dict:
         (folder / "metadata.json").write_text(
             json.dumps(metadata, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
         )
-        rows.append({
-            "tag": tag,
-            "version_in_changelog": tag[1:] in recorded,
-            "title_matches_tag": tag == name,
-            "has_comparison_link": "**Full Changelog**" in body,
-            "body_characters": len(body),
-            "draft": bool(release.get("draft")),
-        })
+        rows.append(
+            {
+                "tag": tag,
+                "version_in_changelog": tag[1:] in recorded,
+                "title_matches_tag": tag == name,
+                "has_comparison_link": "**Full Changelog**" in body,
+                "body_characters": len(body),
+                "draft": bool(release.get("draft")),
+            }
+        )
     rows.sort(key=lambda x: tuple(int(n) for n in x["tag"][1:].split(".")), reverse=True)
     report = {
         "release_count": len(rows),
