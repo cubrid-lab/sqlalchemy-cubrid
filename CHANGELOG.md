@@ -127,6 +127,8 @@ Branding change history: [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid
 
 ## [1.11.5] - 2026-10-24
 
+This release consolidates changes from versions 1.11.1–1.11.4, which were not published. Review the upgrade notes first; the detailed sections below retain the complete changes and references.
+
 ### Upgrade notes
 
 - **1.11.1, 1.11.2, 1.11.3 and 1.11.4 were never published (#838, #910, #1005, #1011).**
@@ -941,6 +943,8 @@ Branding change history: [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid
 
 ## [1.11.0] - 2026-10-12
 
+This release introduces Python 3.15 support and a broad set of compatibility, reliability, and test improvements. Review the upgrade notes before adopting it; detailed changes and references follow.
+
 ### Upgrade notes
 
 - **Python 3.15 is supported (#666).** Standard GIL builds only. The pycubrid routes
@@ -1401,6 +1405,8 @@ Branding change history: [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid
 
 ## [1.10.0] - 2026-10-08
 
+This release raises the minimum supported Python version to 3.11. Applications on Python 3.10 should remain on the compatible 1.9.x line until upgraded. Review the upgrade notes and detailed changes below.
+
 ### Upgrade notes
 - **Python 3.11 or newer is required (#686).** Python 3.10 reached upstream end
   of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10
@@ -1485,6 +1491,8 @@ Branding change history: [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid
 * state one SQLAlchemy range on the documentation home page ([#717](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/717)) ([56d606f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/56d606fe62c0575463ea691311515bd3720d3094)), closes [#716](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/716)
 
 ## [1.9.0] - 2026-10-04
+
+This release contains a substantial set of dialect and development improvements. Read the upgrade notes and compatibility guidance before upgrading; the detailed changes below preserve the full technical history.
 
 ### Release tooling
 - Release preparation moves to SHA-pinned release-please in PR-only mode. Generated Conventional Commit notes are composed with curated Upgrade notes; reviewed candidates still use the existing guarded publisher. Maintainers freeze candidate edits and explicitly start final-head PR CI; see RELEASING.md.
@@ -1790,6 +1798,8 @@ Branding change history: [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid
 
 ## [1.8.0] - 2026-09-29
 
+This release includes substantial dialect and integration changes. Review the upgrade notes and the detailed sections below to assess compatibility and migration impact.
+
 ### Upgrade notes
 Behavior changes you may notice (details in the entries below):
 - **Alembic upgrades are atomic by default (#503).** CUBRID DDL is transactional, so a failed multi-revision `alembic upgrade` now rolls back the whole run, including the `alembic_version` update. Set `transaction_per_migration=True` in `context.configure()` to keep per-revision commits (recommended for long or large-table migrations). Offline `--sql` scripts no longer contain `BEGIN;`; run them with `csql --no-auto-commit --no-single-line` so a failing statement stops the script.
@@ -1858,6 +1868,8 @@ Behavior changes you may notice (details in the entries below):
 
 ## [1.7.1] - 2026-09-18
 
+This maintenance release contains fixes and supporting documentation and tests. The detailed sections below identify the affected behavior and related references.
+
 ### Added
 - **Runnable usage examples in public docstrings (#337)** — added short, live-verified examples to the five main entry points: the connection URL forms (`cubrid+pycubrid://`, `cubrid+cubriddb://`, async `cubrid+aiopycubrid://`) in the package docstring, the `ON DUPLICATE KEY UPDATE` construct on `insert()`, and reflection via `inspect()` in the dialect module docstring (`REPLACE` and `MERGE` already had examples). Docstrings only — no behavior change; each example was executed against a live CUBRID 11.4.
 - **UUID type contract test matrix (#376)** — added `test/test_uuid_contract.py`, which pins the full round-trip contract for `sa.Uuid()` (Python `uuid.UUID` values) and `sa.Uuid(as_uuid=False)` (string values) across INSERT, SELECT, WHERE, UPDATE, and reflection, against a live CUBRID. CUBRID has no native UUID type; the dialect stores it as `CHAR(32)`, and these 8 `integration`-marked tests catch any regression in that CHAR-backed storage or the value coercion (verified: `sa.Uuid()` round-trips as `uuid.UUID`, `as_uuid=False` as `str`, WHERE/UPDATE by UUID work, and reflection reports `CHAR`). Wired into the nightly `integration-full` bug-hunt job.
@@ -1900,6 +1912,8 @@ Behavior changes you may notice (details in the entries below):
 - **Added `THIRD_PARTY_LICENSES.md` and a Provenance section in `docs/ARCHITECTURE.md`** — the license inventory covers the default runtime tree (SQLAlchemy, greenlet, typing_extensions) and the optional `[alembic]`/`[cubrid]` extras; the provenance note states that this dialect is an independent implementation, not a port of the legacy `CUBRID-Python`-bundled dialect. Documentation only.
 
 ## [1.7.0] - 2026-09-02
+
+This release contains multiple dialect improvements and compatibility changes. Review the detailed sections below for the affected features and upgrade considerations.
 
 ### Docs
 - **Documented that CUBRID's `LIST` collection type is a synonym for `SEQUENCE`** — CUBRID accepts `LIST(type)` in DDL but normalizes it to `SEQUENCE` at parse time, so a `LIST(INTEGER)` column is stored and reflected as `SEQUENCE OF INTEGER` (verified on live CUBRID 11.2). Clarified in `docs/TYPES.md` and via a code comment in `ischema_names` why the dialect exposes only the canonical `SEQUENCE` type and deliberately omits a `LIST` type/reflection entry (a type compiling to `LIST(...)` would produce spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`). No behavior change.
