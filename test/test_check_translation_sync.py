@@ -76,20 +76,18 @@ def test_english_and_korean_changed_is_ok(
     assert "::warning" not in captured.out
 
 
-def test_english_only_change_fails_with_a_required_translation_error(
+def test_english_only_change_warns_about_korean(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     _setup_docs(tmp_path, "ko")
     monkeypatch.chdir(tmp_path)
     _patch_git(monkeypatch, "README.md\n")
 
-    assert MODULE.main() == 1
+    assert MODULE.main() == 0
     captured = capsys.readouterr()
-    assert (
-        "::error::README.md changed but the required translation did not: docs/README.ko.md (한국어)"
-        in captured.out
-    )
-    assert "translation sync OK" not in captured.out
+    assert "community translation drifted: docs/README.ko.md (한국어)" in captured.out
+    assert "::error::" not in captured.out
+    assert "translation sync OK" in captured.out
 
 
 def test_community_translation_drift_warns_without_failing(
@@ -147,4 +145,4 @@ def test_base_ref_selects_the_git_range(
 
 def test_source_constant_names_the_canonical_readme() -> None:
     assert MODULE.SOURCE.as_posix() == SOURCE_LINE
-    assert MODULE.REQUIRED_LANGS == {"ko"}
+    assert MODULE.REQUIRED_LANGS == set()
