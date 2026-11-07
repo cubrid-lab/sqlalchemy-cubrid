@@ -238,7 +238,9 @@ class PrTitleValidatorTest(unittest.TestCase):
         )
         self.assertEqual(bot.returncode, 0, bot.stdout + bot.stderr)
         for author in ("contributor", "dependabot", "dependabot-bot"):
-            human = _run("chore(deps): bump ruff from 0.16.8 to 0.16.9", upstream_notes, author=author)
+            human = _run(
+                "chore(deps): bump ruff from 0.16.8 to 0.16.9", upstream_notes, author=author
+            )
             self.assertEqual(human.returncode, 1, human.stdout + human.stderr)
             self.assertIn("Cross-repository issue closure", human.stdout)
 
