@@ -133,3 +133,12 @@ def test_wrapped_entry_without_author_remains_byte_for_byte() -> None:
         "* unrelated\n"
     )
     assert module.annotate(wrapped, REPO, lambda *_: None) == wrapped
+
+
+def test_first_contribution_lookup_failure_preserves_verified_byline() -> None:
+    def get(path: str) -> object:
+        if path.endswith("/pulls"):
+            return mock_get(path)
+        raise OSError("search unavailable")
+
+    assert module.verified_credit(REPO, "abc1234", get) == " by @community-dev"
