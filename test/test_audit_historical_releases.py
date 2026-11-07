@@ -76,7 +76,8 @@ def test_audit_refuses_to_overwrite_snapshot(tmp_path: Path) -> None:
 def test_draft_release_not_counted_as_published(tmp_path: Path) -> None:
     report = module.create_audit(
         [{"tag_name": "v1.0.0", "draft": True, "body": "draft"}],
-        "## [1.0.0]\n", tmp_path,
+        "## [1.0.0]\n",
+        tmp_path,
     )
     assert report["release_count"] == 0
     assert report["versions_in_changelog_without_published_release"] == ["1.0.0"]
