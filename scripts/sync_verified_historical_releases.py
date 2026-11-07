@@ -4,6 +4,7 @@
 This migration deliberately refuses releases with editorial differences. It only
 adds a missing comparison link to four verified unchanged release bodies.
 """
+
 from __future__ import annotations
 
 import json
