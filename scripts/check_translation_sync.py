@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Check README translation drift using the repository's documented policy.
 
-English README.md is canonical. Korean docs/README.ko.md is required when it
-changes; a missing Korean update fails the check unless a maintainer grants
-the `translations-deferred` label with a recorded follow-up. Other languages
+English README.md is canonical. Korean docs/README.ko.md must be updated when
+the English README changes; a missing update fails the check unless a maintainer
+grants the `translations-deferred` label with a recorded follow-up. Other languages
 are community translations: drift produces advisory annotations only.
 """
 
