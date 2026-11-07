@@ -337,7 +337,7 @@ SELECT VERSION()
 
 ### 흔한 연결 오류
 
-#### `ImportError: No module named 'CUBRIDdb'`
+#### `ImportError: Could not import CUBRIDdb`
 
 `cubrid://` URL이 사용하는 CUBRIDdb C 확장 드라이버가 설치되지 않았습니다. 권장 순수 Python 드라이버로 전환하세요:
 
