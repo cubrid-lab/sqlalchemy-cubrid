@@ -6,11 +6,13 @@ import subprocess
 from pathlib import Path
 
 REPO = "cubrid-lab/sqlalchemy-cubrid"
-TAGS = ["v1.3.0","v1.2.3","v1.2.1","v1.1.0","v1.0.0"]
+TAGS = ["v1.3.0", "v1.2.3", "v1.2.1", "v1.1.0", "v1.0.0"]
 ROOT = Path("docs/release-note-repairs")
 OLD = "https://github.com/cubrid-labs/sqlalchemy-cubrid"
 NEW = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
-ALLOWED = re.compile(re.escape(OLD) + r"(?=/(?:compare/|blob/main/CHANGELOG\.md|issues/\d+|pull/\d+))")
+ALLOWED = re.compile(
+    re.escape(OLD) + r"(?=/(?:compare/|blob/main/CHANGELOG\.md|issues/\d+|pull/\d+))"
+)
 
 
 def corrected(original):
@@ -22,7 +24,13 @@ def gh(path, payload=None):
     if payload is not None:
         args += ["--method", "PATCH", "--input", "-"]
     args.append(path)
-    proc = subprocess.run(args, input=json.dumps(payload) if payload else None, text=True, capture_output=True, check=True)
+    proc = subprocess.run(
+        args,
+        input=json.dumps(payload) if payload else None,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
     return json.loads(proc.stdout)
 
 
@@ -37,7 +45,11 @@ def run(apply):
             continue
         endpoint = f"repos/{REPO}/releases/tags/{tag}"
         current = gh(endpoint)
-        if current.get("tag_name") != tag or current.get("draft") is not False or not current.get("published_at"):
+        if (
+            current.get("tag_name") != tag
+            or current.get("draft") is not False
+            or not current.get("published_at")
+        ):
             raise ValueError(f"{tag}: no verified published release")
         body = current.get("body")
         if body == after:
@@ -47,14 +59,24 @@ def run(apply):
             raise ValueError(f"{tag}: published description changed; refusing to overwrite it")
         rid = current["id"]
         latest = gh(f"repos/{REPO}/releases/{rid}")
-        if (latest.get("body"), latest.get("tag_name"), latest.get("draft")) != (before, tag, False):
+        if (latest.get("body"), latest.get("tag_name"), latest.get("draft")) != (
+            before,
+            tag,
+            False,
+        ):
             raise ValueError(f"{tag}: concurrent release change")
         updated = gh(f"repos/{REPO}/releases/{rid}", {"body": after})
         verified = gh(f"repos/{REPO}/releases/{rid}")
         for item in [updated, verified]:
-            if item.get("body") != after or item.get("tag_name") != tag or item.get("draft") is not False:
+            if (
+                item.get("body") != after
+                or item.get("tag_name") != tag
+                or item.get("draft") is not False
+            ):
                 raise ValueError(f"{tag}: published correction verification failed")
-        if latest.get("published_at") != verified.get("published_at") or latest.get("prerelease") != verified.get("prerelease"):
+        if latest.get("published_at") != verified.get("published_at") or latest.get(
+            "prerelease"
+        ) != verified.get("prerelease"):
             raise ValueError(f"{tag}: published release metadata changed unexpectedly")
         print(f"{tag}: corrected navigational links without changing tag or artifacts")
 
