@@ -53,36 +53,23 @@ This release improves documentation, examples, and contribution guidance. Runtim
 
 ## [1.12.1] - 2026-10-27
 
+This maintenance release improves documentation branding, contributor guidance, and test reliability. **There are no runtime behavior changes.**
+
 ### Documentation
 
-- **README and docs site show the brand icon with white marks (#1066)** — the icon URL pinned in the README, its translations and `mkdocs.yml` (logo and favicon) now points at brand revision `3a385be`, where the Python Yellow icons draw white role marks on a bare cube like every other language. Documentation only; behavior is unchanged.
-- **README and docs site show the emblem-aligned brand icon (#1063)** — the icon URL pinned in the README, its translations and `mkdocs.yml` (logo and favicon) now points at the brand revision `538bad3`, whose Python Yellow keyline keeps the cube silhouette of the organization emblem (open seams, no flat bottom). Documentation only; behavior is unchanged.
-- **The README and documentation site show the cube-shaped ORM icon (#1054)** — every brand
-  pin moves to cubrid-lab/brand `38b4646`, which redraws the ORM icon as a complete cube with
-  side-to-side grooves; only the pinned commit changed.
-- **The README and documentation site show the redesigned Python Yellow ORM icon (#1050)** — the English
-  README, its five translations and the documentation site logo and favicon now load the
-  sqlalchemy-cubrid icon from the [cubrid-lab/brand](https://github.com/cubrid-lab/brand)
-  commit that carries the 2026-10-25 ORM role redesign (lateral plates) and the Python Yellow
-  colour with an ochre keyline; only the pinned commit changed.
-
-- **Human-readable agent communication (#1056)** — added repository guidance for human-readable agent communication ([commit 74afeb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/74afeb36fe5cba4503b2b860dafdd0b19903af7b)).
-
-The brand-icon changes above were delivered in [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1051) ([7159590](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715959028dcab9915eaab7478dca2228bc0345a5)), [#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1055) ([f166be7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f166be7df70599af34bd353110075f9b092ee327)), [#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1064) ([c5fd64d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c5fd64d8d64ff8d31edd4db292ebb47dd8c6f250)) and [#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1067) ([e1ae6a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e1ae6a4d1bc1d91bbb7028b07d344499b6997179)).
+- **Updated documentation branding** — the README, its five translations, and the documentation site's logo and favicon now use the revised Python Yellow ORM icon. The updates progressively aligned the icon with the cube-shaped organization emblem and white role markings. These are documentation asset changes only ([#1050](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1050), [#1054](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1054), [#1063](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1063), [#1066](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1066)).
+- **Clarified contributor communication guidance** — added guidance encouraging clear, human-readable communication from coding agents ([#1056](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1056), [commit 74afeb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/74afeb36fe5cba4503b2b860dafdd0b19903af7b)).
 
 ### CI
 
-- **`repo-tests` installs the `[pycubrid]` extra (#1049)** — the job now installs
-  `-e ".[pycubrid]" --group dev`, as `make install` does, so the benchmark-script tests that
-  import `pycubrid` run in CI instead of being skipped. The `importorskip` guards stay for a
-  plain `pip install -e .` checkout.
+- **Run pycubrid-dependent tests in CI** — the `repo-tests` job now installs the `[pycubrid]` extra, preventing benchmark-script tests from being skipped solely because the dependency is absent. Optional-import guards remain for minimal installations ([#1049](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1049)).
 
 ### Tests
 
-- **The KILL QUERY helper's pipes are closed after each run (#1061)** — `test_interrupted_query_keeps_connection`
-  reaped its helper process but left the stdout/stderr pipes open, so a later `gc.collect()` in
-  `TestAsyncTerminateClosedLoop872` could record their `ResourceWarning`s and fail the cubriddb lane of
-  the release compatibility matrix. That test now also collects leftover garbage before recording warnings.
+- **Prevent resource warnings from interrupted-query tests** — the KILL QUERY test helper now closes its stdout/stderr pipes and clears leftover garbage before warning collection, preventing unrelated failures in the cubriddb compatibility lane ([#1061](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1061)).
+
+Branding change history: [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1051) ([7159590](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715959028dcab9915eaab7478dca2228bc0345a5)), [#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1055) ([f166be7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f166be7df70599af34bd353110075f9b092ee327)), [#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1064) ([c5fd64d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c5fd64d8d64ff8d31edd4db292ebb47dd8c6f250)), and [#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1067) ([e1ae6a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e1ae6a4d1bc1d91bbb7028b07d344499b6997179)).
+
 
 ## [1.12.0] - 2026-10-25
 
