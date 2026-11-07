@@ -64,7 +64,8 @@ def test_source_preview_checks_allowlisted_navigation_links(
     assert AFTER != BEFORE
     sync.run(apply=False)
     assert sync.corrected(BEFORE) == AFTER
-    assert sync.corrected("https://github.com/cubrid-labs/" + sync.REPO.split("/")[1] + "/tree/old") != AFTER
+    unapproved = "https://github.com/cubrid-labs/" + sync.REPO.split("/")[1] + "/tree/old"
+    assert sync.corrected(unapproved) == unapproved
 
 
 def test_updates_body_only_and_refetches(prepared: Path, monkeypatch: pytest.MonkeyPatch) -> None:
