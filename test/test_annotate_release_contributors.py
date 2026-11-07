@@ -109,3 +109,27 @@ def test_code_fences_and_other_repositories_are_untouched() -> None:
 
 def test_absent_api_evidence_leaves_note_unchanged() -> None:
     assert module.annotate(ENTRY, REPO, lambda *_: None) == ENTRY
+
+
+def test_wrapped_entry_appends_credit_after_the_complete_markdown_link() -> None:
+    wrapped = (
+        "* **Types** — Correct decoding ([#123]"
+        "(https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/123))\n"
+        "  and preserve the documented behavior "
+        "([abc1234](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/abc1234))\n"
+    )
+    changed = module.annotate(wrapped, REPO, lambda *_: " by @alice")
+    assert changed == wrapped.rstrip("\n") + " by @alice\n"
+    assert "[#123](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/123)" in changed
+    assert "\n  and preserve" in changed
+    assert "by @alice" not in changed.splitlines()[0]
+
+
+def test_wrapped_entry_without_author_remains_byte_for_byte() -> None:
+    wrapped = (
+        "* Documentation notes with\n"
+        "  an existing wrapped sentence\n\n"
+        "### Fixed\n"
+        "* unrelated\n"
+    )
+    assert module.annotate(wrapped, REPO, lambda *_: None) == wrapped
