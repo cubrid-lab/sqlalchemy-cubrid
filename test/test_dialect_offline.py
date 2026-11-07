@@ -130,8 +130,17 @@ class TestDialectBasics:
             return real_import(name, *args, **kwargs)
 
         with patch("builtins.__import__", side_effect=_fake_import):
-            with pytest.raises(ImportError, match="Could not import CUBRIDdb"):
+            with pytest.raises(ImportError, match="Could not import CUBRIDdb") as caught:
                 CubridDialect.import_dbapi()
+
+        message = str(caught.value)
+        assert "sqlalchemy-cubrid[cubriddb]" in message
+        assert "sqlalchemy-cubrid[pycubrid]" in message
+        assert "cubrid+cubriddb://" in message
+        assert "cubrid+pycubrid://" in message
+        assert "legacy CUBRIDdb" not in message
+        assert "9.3.x releases on PyPI are untested" not in message
+        assert isinstance(caught.value.__cause__, ImportError)
 
     def test_create_connect_args_full_url(self):
         dialect = CubridDialect()
