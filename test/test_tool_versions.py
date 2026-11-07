@@ -155,11 +155,7 @@ def test_expanded_ruff_cli_scope_is_detected(tooling_config: Path) -> None:
 
 def test_omitted_maintained_source_directory_is_detected(tooling_config: Path) -> None:
     config = tooling_config / "Makefile"
-    config.write_text(
-        config.read_text().replace(
-            " scripts demos samples", " scripts demos"
-        )
-    )
+    config.write_text(config.read_text().replace(" scripts demos samples", " scripts demos"))
     assert any(
         "all maintained Python source directories" in error for error in check(tooling_config)
     )
