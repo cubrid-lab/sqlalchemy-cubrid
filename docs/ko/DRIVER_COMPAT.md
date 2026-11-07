@@ -8,12 +8,61 @@
 
 ## 목차
 
+- [데이터베이스와 드라이버 버전 구분](#데이터베이스와-드라이버-버전-구분)
 - [드라이버 개요](#드라이버-개요)
 - [버전 호환성 매트릭스](#버전-호환성-매트릭스)
 - [예외 계층](#예외-계층)
 - [드라이버 API 사용](#드라이버-api-사용)
 - [알려진 문제](#알려진-문제)
 - [설치 참고](#설치-참고)
+
+## 데이터베이스와 드라이버 버전 구분
+
+CUBRID Python 드라이버의 릴리스 버전은 CUBRID Database 제품 버전과 비슷하게 보일 수 있습니다. 관련 릴리스 계열의 이름을 따른 것으로 해석할 수 있지만, **각 번호가 가리키는 구성 요소는 서로 다릅니다.** 주·부 버전이 같아야 접속할 수 있다는 뜻도 아니며, 숫자가 비슷하다고 모든 조합의 호환성이 보장되는 것도 아닙니다.
+
+| 구분 | 예시 | 버전이 의미하는 대상 |
+|---|---|---|
+| CUBRID 데이터베이스 서버 | `11.4.1` | 실행 중인 DBMS 버전. `SELECT VERSION()`으로 확인 |
+| CUBRIDdb 공식 소스 릴리스 | [`v11.3.0.51`](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51) | Python C 확장 드라이버의 **GitHub 소스 릴리스**. 서버 버전도, PyPI의 11.3 패키지도 아님 |
+| CCI 클라이언트 라이브러리 | `11.2.0` | 해당 드라이버 릴리스에 사용된 네이티브 C 클라이언트 인터페이스 |
+| PyPI 배포판 릴리스 | [`CUBRID-Python 9.3.0`](https://pypi.org/project/CUBRID-Python/9.3.0/) | PyPI에 등록된 C 확장 드라이버 패키지 릴리스 버전 |
+| PyPI 소스 압축 파일 식별자 | `9.3.0.0001`, `9.3.0.0002` | 2014년과 2015년에 각각 업로드된, **같은 PyPI 9.3.0 릴리스 내 두 소스 파일**의 이름 |
+| 설치된 C 확장 모듈 버전 | 예: `11.3.0.0001` | 빌드된 `_cubrid.__version__` 값. 네 번째 부분은 Git 커밋 수로 생성될 수 있어 공식 소스 태그의 끝자리와 다를 수 있음 |
+| SQLAlchemy Dialect 버전 | 예: `sqlalchemy-cubrid 1.x` | 이 저장소에서 별도로 배포하는 Python 패키지 버전 |
+
+2025년 9월 8일 게시된 [공식 CUBRID Python `v11.3.0.51` 릴리스 노트](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51)는 **CCI 11.2.0**으로 빌드하여 **CUBRID 서버 11.4.1**과의 적합성을 확인했다고 밝힙니다. 한 릴리스 설명 안에서도 버전 번호가 서로 다르게 나타나는 사례입니다. 해당 GitHub 릴리스에서는 소스 아카이브를 받을 수 있지만 **별도 바이너리 첨부 파일은 없으며**, PyPI에 `CUBRID-Python 11.3`으로 게시된 릴리스도 아닙니다.
+
+[PyPI의 `CUBRID-Python` 프로젝트](https://pypi.org/project/CUBRID-Python/)는 9.3.0 패키지를 CUBRID Database 9.3.0용 커넥터로 설명합니다. 이는 제품 버전과 연계된 당시의 명명 방식에 관한 자료이지, 다른 서버에 연결할 수 없다는 증거는 아닙니다. 과거 [9.3.0.1 드라이버와 CUBRID 11.4 조합의 테스트](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/583)에서는 연결은 가능했으나 `BIGINT` 반환 타입 차이가 확인되었습니다. 지원 정책, 연결 가능 여부, 실제 검증 조합, 알려진 제약은 구분해서 기록해야 합니다.
+
+### 연결 구조
+
+```mermaid
+flowchart TD
+    app["Application / SQLAlchemy Core & ORM"] --> dialect["sqlalchemy-cubrid dialect"]
+    dialect --> pure["pycubrid / pycubrid.aio"]
+    dialect --> native["CUBRIDdb (_cubrid C extension)"]
+    native --> cci["CCI client library"]
+    cci --> cas["CUBRID Broker / CAS"]
+    pure --> cas
+    cas --> database["CUBRID database server"]
+```
+
+`[cubrid]`, `[cubriddb]`, `[pycubrid]` extra는 **설치할 의존성을 고르는 옵션**이지 데이터베이스 서버 버전이 아닙니다. `cubrid://`와 `cubrid+cubriddb://`는 CUBRIDdb를, `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 각각 pycubrid 드라이버를 선택합니다. 이 URL에는 드라이버 릴리스 버전이 들어 있지 않습니다.
+
+### 환경에서 실제 버전 확인
+
+```python
+from importlib.metadata import PackageNotFoundError, version
+import CUBRIDdb
+
+try:
+    print("Installed driver distribution:", version("CUBRID-Python"))
+except PackageNotFoundError:
+    print("Driver distribution metadata not found")
+print("Loaded C extension:", CUBRIDdb._cubrid.__version__)
+```
+
+`CUBRID-Python`과 `cubrid_python`은 배포판 이름을 정규화한 표기 차이이며 **서로 다른 두 드라이버가 아닙니다.** 실행 중인 **데이터베이스 서버** 버전은 실제 연결에서 `SELECT VERSION()`을 실행해 확인합니다. CUBRIDdb를 소스에서 직접 빌드했다면 사용한 Git 태그 또는 커밋도 별도로 남깁니다. 설치된 패키지 버전만으로 서버 버전이나 전체 기능 호환성을 추정해서는 안 됩니다.
 
 ---
 
