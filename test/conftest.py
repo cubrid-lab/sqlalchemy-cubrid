@@ -88,6 +88,7 @@ REPO_TOOLING_MODULES = frozenset(
         "test_audit_historical_releases.py",
         "test_sync_historical_release.py",
         "test_sync_verified_historical_releases.py",
+        "test_sync_legacy_release_links.py",
     }
 )
 _missing_repo_modules = sorted(
