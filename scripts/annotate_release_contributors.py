@@ -25,15 +25,11 @@ FIRST = " (first contribution 🎉)"
 
 
 def github_json(path: str) -> object:
-    completed = subprocess.run(
-        ["gh", "api", path], check=True, capture_output=True, text=True
-    )
+    completed = subprocess.run(["gh", "api", path], check=True, capture_output=True, text=True)
     return json.loads(completed.stdout)
 
 
-def verified_credit(
-    repo: str, sha: str, get: Callable[[str], object] = github_json
-) -> str | None:
+def verified_credit(repo: str, sha: str, get: Callable[[str], object] = github_json) -> str | None:
     """Return an attribution only if a single merged non-bot PR is identified."""
     try:
         prs = get(f"repos/{repo}/commits/{sha}/pulls")
@@ -65,10 +61,7 @@ def verified_credit(
         if isinstance(merged_at, str) and re.fullmatch(
             r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", merged_at
         ):
-            query = (
-                f"repo:{repo} is:pr is:merged author:{name} "
-                f"merged:<{merged_at}"
-            )
+            query = f"repo:{repo} is:pr is:merged author:{name} merged:<{merged_at}"
             results = get(f"search/issues?q={quote(query, safe='')}&per_page=1")
             if isinstance(results, dict) and results.get("total_count") == 0:
                 suffix += FIRST
@@ -98,9 +91,7 @@ def annotate(
             return
         chunk = "".join(pending)
         if pending[0].startswith(("* ", "- ")) and not CREDIT.search(chunk):
-            matches = [
-                m for m in COMMIT.finditer(chunk) if m.group("repo").lower() == repo.lower()
-            ]
+            matches = [m for m in COMMIT.finditer(chunk) if m.group("repo").lower() == repo.lower()]
             if len(matches) == 1:
                 sha = matches[0].group("sha")
                 if sha not in cache:
@@ -110,7 +101,9 @@ def annotate(
                     while last > 0 and not pending[last].strip():
                         last -= 1
                     line = pending[last]
-                    ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+                    ending = (
+                        "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
+                    )
                     pending[last] = line.removesuffix(ending) + cache[sha] + ending
         result.extend(pending)
         pending.clear()
