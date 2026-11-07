@@ -78,9 +78,7 @@ def test_idempotent_rerun_does_not_write(monkeypatch: pytest.MonkeyPatch) -> Non
         release(SECTION, published_at=None),
     ],
 )
-def test_refuses_drift_or_unpublished(
-    monkeypatch: pytest.MonkeyPatch, bad: dict
-) -> None:
+def test_refuses_drift_or_unpublished(monkeypatch: pytest.MonkeyPatch, bad: dict) -> None:
     with pytest.raises(ValueError):
         run_case([bad], monkeypatch)
 
