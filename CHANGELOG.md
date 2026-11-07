@@ -1872,7 +1872,7 @@ Behavior changes you may notice (details in the entries below):
 
 This maintenance release contains fixes and supporting documentation and tests. The detailed sections below identify the affected behavior and related references.
 
-### Highlights
+**Highlights**
 
 - **More accurate SQL execution** — fixes multi-column primary-key reflection, numeric bind handling, `OFFSET` without `LIMIT`, and `IS DISTINCT FROM` execution.
 - **Safer ORM behavior** — improves `executemany` inserts and makes unsupported multi-row `ON DUPLICATE KEY UPDATE` expressions fail with a clear error.
@@ -1926,7 +1926,7 @@ The detailed changes below preserve the original technical context and reference
 
 This release contains multiple dialect improvements and compatibility changes. Review the detailed sections below for the affected features and upgrade considerations.
 
-### Highlights
+**Highlights**
 
 - **More reliable SQL and schema handling** — adds native ENUM support, null-safe distinct comparisons, and safer handling of unsupported SQL constructs.
 - **Improved reflection and migrations** — fixes schema-name handling, isolation-level round trips, and support for column alterations through Alembic.
@@ -1987,14 +1987,15 @@ This release strengthens schema reflection and SQLAlchemy compatibility. Primary
 
 This maintenance release makes unsupported SQLAlchemy operations fail explicitly instead of silently falling back to unexpected behavior.
 
+### Upgrade notes
+
+Applications that previously called `.returning()` without an immediate error must change those statements; the dialect does not provide server-side `RETURNING` support.
+
 ### Fixed
 
 - **Reject unsupported `RETURNING` statements** — insert, update, and delete statements using `.returning()` now raise `CompileError` rather than silently using an unrelated primary-key retrieval path. For generated primary keys, use `result.inserted_primary_key` where applicable ([#229](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/229)).
 - **Declare two-phase transactions unsupported** — the dialect explicitly disables two-phase commit support, allowing SQLAlchemy's compatibility tests to skip operations that CUBRID does not support through this dialect ([#230](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/230)).
 
-### Upgrade notes
-
-Applications that previously called `.returning()` without an immediate error must change those statements; the dialect does not provide server-side `RETURNING` support.
 
 
 ## [1.5.0] - 2026-05-23
@@ -2029,14 +2030,15 @@ This patch improves collection-type reflection and SQLAlchemy 2.1 compatibility,
 
 This release improves connection-pool health checks for the synchronous and asynchronous pycubrid dialects.
 
+### Upgrade notes
+
+Applications using the `[pycubrid]` extra must meet the updated minimum driver version. The change affects connection health checks, not application SQL.
+
 ### Changed
 
 - **Faster connection health checks** — `pool_pre_ping` uses the driver's native `Connection.ping()` or `AsyncConnection.ping()` rather than a SQL query. This reduces the extra round trip needed to validate a pooled connection ([#149](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/149)).
 - **Updated pycubrid requirement** — installing the `[pycubrid]` extra now requires `pycubrid>=1.3.2,<2.0` to provide the native ping interface for both dialects.
 
-### Upgrade notes
-
-Applications using the `[pycubrid]` extra must meet the updated minimum driver version. The change affects connection health checks, not application SQL.
 
 
 ## [1.4.1] - 2026-04-21
