@@ -988,9 +988,10 @@ Documentation exceptions use a populated standalone physical source line
 `Docs: not needed - <reason>` outside code, quotes or template comments, or the existing maintainer-managed
 label. `make check-docs-reason` runs executable doctests and real event-JSON/workflow
 regressions; `make check` and the docs-sync job run those same checks.
-Translation help requests do not authorize a bypass: maintainers explicitly
-approve the existing `translations-deferred` label and record follow-up. The
-Korean-required and other-language advisory translation checks are unchanged.
+README translation drift, including Korean, now reports warnings only; the
+`translations-deferred` label is no longer needed. A missing or outdated
+README translation can be resynchronized in a follow-up PR. This does not
+relax the required Korean `docs/ko/` structural checks below.
 
 English under `docs/` is the source of truth and Korean under `docs/ko/` is the one
 translation kept complete. `python scripts/check_docs_translation.py` (run by the
