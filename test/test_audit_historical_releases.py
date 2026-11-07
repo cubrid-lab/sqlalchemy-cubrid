@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.repo_tooling
 path = Path(__file__).resolve().parents[1] / "scripts/audit_historical_releases.py"
 spec = importlib.util.spec_from_file_location("audit_historical_releases", path)
 assert spec and spec.loader
@@ -62,3 +61,22 @@ def test_duplicate_tags_are_not_silently_overwritten(tmp_path: Path) -> None:
             "## [1.12.2]\n",
             tmp_path,
         )
+
+
+def test_audit_refuses_to_overwrite_snapshot(tmp_path: Path) -> None:
+    folder = tmp_path / "audit"
+    folder.mkdir()
+    original = folder / "report.json"
+    original.write_text("original")
+    with pytest.raises(ValueError, match="not empty"):
+        module.create_audit([], "", folder)
+    assert original.read_text() == "original"
+
+
+def test_draft_release_not_counted_as_published(tmp_path: Path) -> None:
+    report = module.create_audit(
+        [{"tag_name": "v1.0.0", "draft": True, "body": "draft"}],
+        "## [1.0.0]\n", tmp_path,
+    )
+    assert report["release_count"] == 0
+    assert report["versions_in_changelog_without_published_release"] == ["1.0.0"]
