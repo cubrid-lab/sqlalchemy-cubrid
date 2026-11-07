@@ -96,6 +96,9 @@ jobs:
               - 'test/test_prepare_release.py'
               - 'test/test_reconcile_release_labels.py'
               - 'test/test_release_detect.py'
+              - 'test/test_annotate_release_contributors.py'
+              - 'test/test_audit_historical_releases.py'
+              - 'test/test_check_release_note_wrap.py'
               - 'test/test_release_summary.py'
               - 'test/test_release_workflows.py'
               - 'test/test_release_please_config.py'
@@ -425,7 +428,13 @@ jobs:
         with:
           python-version: "3.12"
           version: "0.12.17"
-      - run: uv pip install --system -e ".[pycubrid]" --group dev
+          enable-cache: true
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
+      - name: Install and report pinned dependencies
+        run: |
+          uv pip install --system -e ".[pycubrid]" --group dev
+          uv pip freeze --system
       - name: Exercise release tools and workflow contracts
         run: |
           python - <<'PY'
