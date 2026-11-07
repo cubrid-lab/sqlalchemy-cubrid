@@ -63,7 +63,11 @@ def verified_credit(repo: str, sha: str, get: Callable[[str], object] = github_j
         ):
             query = f"repo:{repo} is:pr is:merged author:{name} merged:<{merged_at}"
             results = get(f"search/issues?q={quote(query, safe='')}&per_page=1")
-            if isinstance(results, dict) and results.get("total_count") == 0 and results.get("incomplete_results") is False:
+            if (
+                isinstance(results, dict)
+                and results.get("total_count") == 0
+                and results.get("incomplete_results") is False
+            ):
                 suffix += FIRST
     except (OSError, subprocess.CalledProcessError, ValueError, TypeError) as error:
         print(f"::warning::First-time status unknown for {name}: {error}", file=sys.stderr)
