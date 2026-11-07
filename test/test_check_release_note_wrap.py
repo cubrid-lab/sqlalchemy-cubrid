@@ -7,7 +7,6 @@ from pathlib import Path
 
 import pytest
 
-pytestmark = pytest.mark.repo_tooling
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/check_release_note_wrap.py"
 SPEC = importlib.util.spec_from_file_location("check_release_note_wrap", SCRIPT)
 assert SPEC and SPEC.loader
@@ -34,6 +33,7 @@ def test_safe_soft_wrapping_is_allowed() -> None:
         "- Incorrectly wrapped [pull request]\n(https://github.com/example/pull/1)",
         "- Corrected behavior  \nwith a forced line break",
         "- Fixed the bug\nby @author",
+        "- Fixed the bug\nby @author (first contribution 🎉).",
     ],
 )
 def test_unintended_markdown_breaks_are_detected(bad: str) -> None:
