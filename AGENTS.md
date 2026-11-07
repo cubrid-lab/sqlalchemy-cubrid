@@ -560,7 +560,7 @@ documentation, presentations, and other maintainer-facing writing.
   Do not substitute `P1`/`P2` for repository priority labels.
 - When an internal identifier is necessary for accurate cross-reference,
   **describe the subject first**, then add the identifier in context:
-  `pycubrid introduction (0:20; storyboard shot P1)`. Use descriptive
+  `sqlalchemy-cubrid dialect introduction (0:20; section 1)`. Use descriptive
   names and timestamps, section titles, or paths wherever practical.
 - Use natural, actionable wording. Prefer `Listen to the full narration and
   verify the pronunciation of each project name` to `Maintainer full listen`.
@@ -587,3 +587,9 @@ and revise existing comments only where a new reader would be confused.
 This is a shared writing convention, not a new CI check, reviewer approval,
 or merge gate. This repository's dialect compatibility, test, security and
 release rules keep precedence over it.
+
+## Local design and evidence authority
+
+This repository owns **the Python SQLAlchemy CUBRID dialect and its supported CUBRIDdb/pycubrid DB-API integrations**. Even when an issue, PR or release note mentions another CUBRID Lab project, its title, opening rationale, test evidence, ADR decision and implementation acceptance must be independently understandable using SQLAlchemy URL dialect selection, SQL compilation, ORM/pool integration, dialect compatibility and its own real CUBRID regressions. Do not copy another repository's language/tool requirements, issue tracking, architecture approval or release schedule.
+
+The pycubrid and CUBRIDdb drivers are real supported runtime integrations; refer to their tested public DB-API behavior, not their project roadmaps or release policies. Use external links as explicit dependency or research context; keep local tests, review decisions and issue closure local. Verify the relevant PR title/body, issue, contributor instructions and published docs for pasted foreign terminology. This is a manual writing check and leaves existing CI and maintainer approval unchanged.
