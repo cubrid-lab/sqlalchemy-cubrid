@@ -72,8 +72,34 @@ jobs:
               - '.github/docs-requirements/**'
               - '.github/workflows/docs.yml'
               - '.github/workflows/ci.yml'
+            release:
+              - 'scripts/annotate_release_contributors.py'
+              - 'scripts/audit_historical_releases.py'
+              - 'scripts/check_release_note_wrap.py'
+              - 'scripts/compose_release_changelog.py'
+              - 'scripts/lint_changelog.py'
+              - 'scripts/check_release_title.py'
+              - 'scripts/extract_release_notes.py'
+              - 'scripts/prepare_release.py'
+              - 'scripts/reconcile_release_labels.py'
+              - 'scripts/release_detect.py'
+              - 'scripts/release_summary.py'
+              - '.github/workflows/release-please.yml'
+              - 'test/test_annotate_release_contributors.py'
+              - 'test/test_audit_historical_releases.py'
+              - 'test/test_check_release_note_wrap.py'
+              - 'test/test_compose_release_changelog.py'
+              - 'test/test_lint_changelog_sections.py'
+              - 'test/test_check_release_title.py'
+              - 'test/test_extract_release_notes.py'
+              - 'test/test_prepare_release.py'
+              - 'test/test_reconcile_release_labels.py'
+              - 'test/test_release_detect.py'
+              - 'test/test_release_summary.py'
+              - 'test/test_release_workflows.py'
+              - 'test/test_release_please_config.py'
             code:
-              - '!{docs/**,*.md,**/*.md,LICENSE,LICENSE.*,NOTICE,llms.txt,.gitignore,.gitattributes}'
+              - '!{docs/**,*.md,**/*.md,LICENSE,LICENSE.*,NOTICE,llms.txt,.gitignore,.gitattributes,scripts/annotate_release_contributors.py,scripts/audit_historical_releases.py,scripts/check_release_note_wrap.py,scripts/compose_release_changelog.py,scripts/lint_changelog.py,scripts/check_release_title.py,scripts/extract_release_notes.py,scripts/prepare_release.py,scripts/reconcile_release_labels.py,scripts/release_detect.py,scripts/release_summary.py,.github/workflows/release-please.yml,test/test_annotate_release_contributors.py,test/test_audit_historical_releases.py,test/test_check_release_note_wrap.py,test/test_compose_release_changelog.py,test/test_lint_changelog_sections.py,test/test_check_release_title.py,test/test_extract_release_notes.py,test/test_prepare_release.py,test/test_reconcile_release_labels.py,test/test_release_detect.py,test/test_release_summary.py,test/test_release_workflows.py,test/test_release_please_config.py}'
             risk:
               - 'sqlalchemy_cubrid/dialect.py'
               - 'sqlalchemy_cubrid/base.py'
@@ -386,6 +412,44 @@ jobs:
   # They are kept out of the fast offline lane (`make test-fast`) but stay required
   # here on every PR and push, on every supported Python (matrix-result fails
   # unless this job succeeds). Same selection as `make test-repo`.
+  release-tests:
+    name: Release automation regression tests
+    needs: detect-changes
+    if: needs.detect-changes.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          version: "0.12.17"
+      - run: uv pip install --system -e ".[pycubrid]" --group dev
+      - name: Exercise release tools and workflow contracts
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+
+          files = sorted(set(
+              Path("test").glob("test_*release*.py")
+          ) | set(Path("test").glob("test_*changelog*.py")) | {
+              Path("test/test_annotate_release_contributors.py"),
+              Path("test/test_audit_historical_releases.py"),
+              Path("test/test_check_release_note_wrap.py"),
+          })
+          files = [str(f) for f in files if f.is_file()]
+          if not files:
+              sys.exit("No release automation tests selected")
+          subprocess.run([sys.executable, "-m", "pytest", "-q", *files], check=True)
+          PY
+
   repo-tests:
     needs: detect-changes
     if: needs.detect-changes.outputs.tooling == 'true'
@@ -891,7 +955,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [detect-changes, lint, doc-lint, docs-check, docs-build, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, alembic-compat, make-integration]
+    needs: [detect-changes, lint, doc-lint, docs-check, docs-build, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, release-tests, alembic-compat, make-integration]
     steps:
       - name: Check selected job results
         env:
@@ -914,6 +978,8 @@ jobs:
           R_INTEGRATION_TESTS: ${{ needs.integration-tests.result }}
           E_INTEGRATION_TESTS: ${{ needs.detect-changes.outputs.live }}
           R_REPO_TESTS: ${{ needs.repo-tests.result }}
+          R_RELEASE_TESTS: ${{ needs.release-tests.result }}
+          E_RELEASE_TESTS: ${{ needs.detect-changes.outputs.release }}
           E_REPO_TESTS: ${{ needs.detect-changes.outputs.tooling }}
           R_ALEMBIC_COMPAT: ${{ needs.alembic-compat.result }}
           E_ALEMBIC_COMPAT: ${{ needs.detect-changes.outputs.live }}
@@ -939,5 +1005,6 @@ jobs:
           check packaging-smoke-test "$R_PACKAGING_SMOKE_TEST" "$E_PACKAGING_SMOKE_TEST"
           check integration-tests "$R_INTEGRATION_TESTS" "$E_INTEGRATION_TESTS"
           check repo-tests "$R_REPO_TESTS" "$E_REPO_TESTS"
+          check release-tests "$R_RELEASE_TESTS" "$E_RELEASE_TESTS"
           check alembic-compat "$R_ALEMBIC_COMPAT" "$E_ALEMBIC_COMPAT"
           check make-integration "$R_MAKE_INTEGRATION" "$E_MAKE_INTEGRATION"
