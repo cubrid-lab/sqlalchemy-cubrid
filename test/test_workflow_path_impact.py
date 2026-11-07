@@ -70,7 +70,11 @@ WORKFLOWS = sorted(p.name for p in (ROOT / ".github/workflows").glob("*.y*ml"))
 def test_workflow_impact_table(name: str) -> None:
     groups = _selected(f".github/workflows/{name}")
     # Every workflow is validated by the tooling lane and the full offline suite.
-    assert {"code", "tooling"} <= groups, name
+    if name == "release-please.yml":
+        assert {"tooling", "release"} <= groups, name
+        assert "code" not in groups, name
+    else:
+        assert {"code", "tooling"} <= groups, name
     # #786: only the workflows that define or mirror the docs build select it.
     assert ("site" in groups) == (name in {"ci.yml", "docs.yml"}), name
     if name == "ci.yml":
@@ -86,6 +90,11 @@ def test_workflow_impact_table(name: str) -> None:
         ("sqlalchemy_cubrid/pycubrid_dialect.py", {"code", "risk"}),
         ("test/test_integration_basic.py", {"code", "risk"}),
         ("scripts/check_not_all_skipped.py", {"code", "risk", "tooling"}),
+        ("scripts/annotate_release_contributors.py", {"release", "risk", "tooling"}),
+        ("scripts/check_release_note_wrap.py", {"release", "risk", "tooling"}),
+        ("test/test_annotate_release_contributors.py", {"release", "tooling"}),
+        ("test/test_check_release_note_wrap.py", {"release", "tooling"}),
+        (".github/workflows/release-please.yml", {"release", "tooling"}),
         ("pyproject.toml", {"code", "risk", "tooling"}),
         ("test/test_compiler.py", {"code"}),
         ("docs/CI_POLICY.md", {"docs", "site"}),
