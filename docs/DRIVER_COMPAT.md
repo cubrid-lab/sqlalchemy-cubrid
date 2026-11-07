@@ -51,14 +51,22 @@ The `[cubrid]`, `[cubriddb]` and `[pycubrid]` extras are **dependency installati
 ### Check the versions in an environment
 
 ```python
+from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
-import CUBRIDdb
+
+for name in ("sqlalchemy-cubrid", "pycubrid", "CUBRID-Python"):
+    try:
+        print(f"{name}: {version(name)}")
+    except PackageNotFoundError:
+        print(f"{name}: not installed")
 
 try:
-    print("Installed driver distribution:", version("CUBRID-Python"))
-except PackageNotFoundError:
-    print("Driver distribution metadata not found")
-print("Loaded C extension:", CUBRIDdb._cubrid.__version__)
+    cubriddb = import_module("CUBRIDdb")
+except ImportError:
+    print("CUBRIDdb C extension: not importable")
+else:
+    extension = getattr(cubriddb, "_cubrid", None)
+    print("CUBRIDdb C extension:", getattr(extension, "__version__", "unknown"))
 ```
 
 `CUBRID-Python` and `cubrid_python` are spelling variants of the normalized distribution name; they do **not** mean two independent drivers. To inspect the running **server** instead, execute `SELECT VERSION()` through a live connection. Record the upstream Git tag or source commit separately when you built CUBRIDdb yourself. Do not infer server version, source tag, or full feature compatibility from the installed package version alone.
