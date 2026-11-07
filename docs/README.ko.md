@@ -6,7 +6,7 @@
 
 # sqlalchemy-cubrid
 
-> 🌐 Translated from [README.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) — 한국어는 심사 기간 동안 동기화가 **필수**입니다: README.md가 바뀌면 같은 PR에서 이 파일도 업데이트하세요 (`translation-sync` CI 검사, 보류 시 `translations-deferred` 라벨). English is canonical.
+> 🌐 Translated from [README.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) — 한국어 README 번역 동기화는 **필수**입니다: README.md가 바뀌면 같은 PR에서 이 파일도 업데이트하세요 (`translation-sync` CI 검사, 예외는 유지보수자가 승인한 `translations-deferred` 라벨과 후속 작업 기록이 필요). English is canonical.
 
 **CUBRID 데이터베이스를 위한 SQLAlchemy 2.0–2.1 방언** — SQLAlchemy 및 CUBRID 전용 타입을 위한 Python ORM, 스키마 리플렉션, Alembic 마이그레이션, 타입 매핑을 제공합니다.
 
