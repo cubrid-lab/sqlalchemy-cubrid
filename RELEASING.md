@@ -10,7 +10,8 @@ Key invariants:
 - The version is single-sourced from `sqlalchemy_cubrid/__init__.py` (`__version__`).
 - `RELEASE_CHANGELOG.md` contains generated Conventional Commit entries.
   `CHANGELOG.md` combines them with reviewed Upgrade notes and remains the
-  publication source; historical sections are preserved byte for byte.
+  publication source; historical sections are preserved byte for byte in normal
+  releases (an explicitly reviewed retrospective cleanup is the sole exception).
 - A release is decided from git facts on `main`, never from a PR title.
 - The workflows never delete PyPI files, never move a tag and never create a
   version that was not merged through a release PR.
@@ -108,6 +109,15 @@ This policy does not depend on or govern the independent `pycubrid` repository.
 ## Normal flow
 
 `release-please.yml` → reviewed release PR → squash merge → `publish-pypi.yml`.
+
+The public release-note layout and `by @username` / first-contribution rules
+are defined in [`docs/RELEASE_NOTES_STYLE.md`](docs/RELEASE_NOTES_STYLE.md).
+`release-please.yml` decorates a temporary copy of generated entries with
+verified PR-author credits before composing the candidate's `CHANGELOG.md`.
+Unverified attribution is omitted. Maintain the original wrapped Markdown
+links and paragraph boundaries; run the release-note format regression tests.
+A retrospective cleanup is a separately reviewed, backed-up migration and
+must not alter tag refs, publication state or release artifacts.
 
 ### 1. Prepare the release PR
 

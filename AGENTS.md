@@ -534,9 +534,16 @@ These rules add to the release procedure above; the procedures and gates in
   after 1.10.0.
 - Use `Documentation`, not `Docs`. Put release automation and tooling entries under
   `CI` or `Changed`.
-- Never bulk-rewrite historical notes or regenerate them from current `main`. A
-  selective fix needs a dry-run diff and maintainer approval. Never invent PR or commit
-  references. Note formatting never changes tags, dates, artifacts or publish state.
+- Release notes follow [the release notes style](docs/RELEASE_NOTES_STYLE.md):
+  concise user-impact summaries, verified PR-author credits as `by @username`,
+  and `(first contribution 🎉)` only when earlier merged PR history verifies it.
+  No separate Contributors heading is used.
+- Never rewrite historical notes by default or regenerate them from current
+  code. A one-time, explicitly reviewed retrospective cleanup can cover every
+  published release only after preserving original bodies and checking each
+  version's diff and author evidence. Keep `CHANGELOG.md` canonical and synchronize
+  published Release bodies after the reviewed source changes merge. Never invent
+  PR/commit references or change tags, dates, assets or publish state.
 
 ## Human-readable communication (all agents)
 

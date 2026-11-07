@@ -38,17 +38,18 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [1.12.2] - 2026-11-05
 
+This release improves documentation, examples, and contribution guidance. Runtime behavior is unchanged.
+
+### Changed
+
+- **Contribution guidance** — Clarified evidence-based issue triage and self-explanatory comments, including guidance for agents ([#1060](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1060), [#1103](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1103)) by @yeongseon.
+
 ### Documentation
 
-- **README and docs site show the transparent brand icon (#1089)** — the icon URL pinned in the README, its translations and `mkdocs.yml` (logo and favicon) now points at brand revision `e55990a`, where the ORM icon's two plate gaps are real transparency instead of white strokes. Documentation only; behavior is unchanged.
-
-* adopt the organization rule for self-explanatory comments ([#1103](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1103)) ([dd7f2b8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/dd7f2b86642b439ebc29fa303e0e02ed1e52d8cb))
-* adopt type-only issue titles and evidence-based triage ([#1060](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1060)) ([8b59020](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8b590207ccedb4b0b3b305c970b7673de27de06c))
-* define the names the FAQ and troubleshooting snippets use ([#1105](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1105)) ([51d8232](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/51d8232d8c5f12a2a8591a73aa019b542d1c2cb2))
-* point agents at the organization rule for self-explanatory comments ([dd7f2b8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/dd7f2b86642b439ebc29fa303e0e02ed1e52d8cb))
-* **readme:** repin the brand icon to the transparent role marks ([#1090](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1090)) ([b19b1f7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b19b1f777be6171a08adfbbf4065d9be2fb96a42))
-* **samples:** fix the async sample's install line and Docker hint ([#1092](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1092)) ([0dcdb5f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/0dcdb5fdf026702d822a92659f56d9372f939804))
-* use the Python yellow from the brand tokens in the site theme ([#1093](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1093)) ([02556d2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/02556d2fd579111f8cd330af896bd8af58261364))
+- **Brand icons** — Updated the README, translations, documentation logo, and favicon to the transparent ORM icon at brand revision `e55990a`, with transparent gaps rather than white strokes ([#1089](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1089), [#1090](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1090)) by @yeongseon.
+- **Documentation theme** — Aligned the documentation site's Python Yellow theme with shared brand tokens ([#1093](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1093)) by @yeongseon.
+- **FAQ and troubleshooting** — Clarified the names used in help text and diagnostic examples ([#1105](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1105)) by @AzalHoseinian (first contribution 🎉).
+- **Async sample** — Corrected the installation command and Docker guidance ([#1092](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1092)) by @bfs2021 (first contribution 🎉).
 
 ## [1.12.1] - 2026-10-27
 
