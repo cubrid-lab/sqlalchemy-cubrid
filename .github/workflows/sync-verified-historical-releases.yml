@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/sync-verified-historical-releases.yml'
+      - 'CHANGELOG.md'
   workflow_dispatch:
 
 permissions:
@@ -69,4 +70,50 @@ jobs:
                       or verified.get("draft") is not False or not verified.get("published_at")):
                   raise ValueError(f"{tag}: post-write verification failed")
               print(f"{tag}: comparison link added; all original text preserved")
+          PY
+
+      - name: Synchronize reviewed v1.12.1 editorial correction
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts")
+          from sync_historical_release import extract_version, github_json, make_body
+
+          repo = "cubrid-lab/sqlalchemy-cubrid"
+          tag = "v1.12.1"
+          old_changelog = subprocess.run(
+              ["git", "show", "HEAD^:CHANGELOG.md"], text=True,
+              capture_output=True, check=True
+          ).stdout
+          old_body = make_body(extract_version(old_changelog, "1.12.1"),
+                               "v1.12.0", tag, repo)
+          new_body = make_body(
+              extract_version(Path("CHANGELOG.md").read_text(encoding="utf-8"), "1.12.1"),
+              "v1.12.0", tag, repo
+          )
+          release = github_json(f"repos/{repo}/releases/tags/{tag}")
+          if (release.get("tag_name") != tag or release.get("draft") is not False
+                  or not release.get("published_at")):
+              raise ValueError("v1.12.1 is not a valid published release")
+          if release.get("body") == new_body:
+              print("v1.12.1 already updated")
+              sys.exit(0)
+          if release.get("body", "").strip() != old_body:
+              raise ValueError("v1.12.1 differs from reviewed original; refusing overwrite")
+          latest = github_json(f"repos/{repo}/releases/{release['id']}")
+          if (latest.get("body") != release["body"] or latest.get("tag_name") != tag
+                  or latest.get("draft") is not False):
+              raise ValueError("v1.12.1 changed before PATCH")
+          result = github_json(f"repos/{repo}/releases/{release['id']}",
+                               method="PATCH", body=json.dumps({"body": new_body}))
+          verified = github_json(f"repos/{repo}/releases/{release['id']}")
+          if (result.get("body") != new_body or verified.get("body") != new_body
+                  or verified.get("tag_name") != tag or verified.get("draft") is not False):
+              raise ValueError("v1.12.1 post-update verification failed")
+          print("v1.12.1 editorial correction published and verified")
           PY
