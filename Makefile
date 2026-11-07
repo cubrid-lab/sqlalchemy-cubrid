@@ -10,7 +10,7 @@ BANDIT ?= $(PYTHON) -m bandit
 PRE_COMMIT ?= $(PYTHON) -m pre_commit
 SRC = sqlalchemy_cubrid
 TESTS = test
-LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples docs/source
+LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples
 # make integration: the driver the suite connects with (pycubrid, the recommended
 # pure-Python driver, via cubrid+pycubrid://; or cubriddb, the CUBRIDdb C extension,
 # via cubrid://), an optional fixed Compose project name (default: a fresh name per

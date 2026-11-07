@@ -721,8 +721,8 @@ SQLAlchemy/Alembic으로 프로젝트의 엄격한 설정에 따라 `sqlalchemy_
 `include = ["*.py", "*.pyi"]`와 동일한 훅 타입 설정으로 CLI, CI, 훅 모두 Python
 소스를 다루며 문서의 코드 스니펫을 다시 작성하지 않습니다.
 
-Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모, 샘플,
-`docs/source`의 Python 설정을 포함합니다. CI와 tox는 `make lint`와 `make format-check`를 실행하고,
+Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모와 샘플의
+Python 소스를 포함합니다. CI와 tox는 `make lint`와 `make format-check`를 실행하고,
 훅은 계속 모든 추적된 Python/pyi 파일을 검사합니다. 일관성 검사는 유지보수 대상
 디렉터리 누락이나 공통 타깃을 우회하는 실행 설정을 거부합니다.
 

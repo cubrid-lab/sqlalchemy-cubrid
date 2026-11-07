@@ -188,7 +188,7 @@ def check(root: Path) -> list[str]:
     tests = _unique(r"^TESTS\s*=\s*([^\n]+)", makefile, "Makefile test directory")
     lint_paths = _unique(r"^LINT_PATHS\s*=\s*([^\n]+)", makefile, "Makefile Ruff scope")
     paths = set(lint_paths.replace("$(SRC)", source).replace("$(TESTS)", tests).split())
-    if not {source, tests, "scripts", "demos", "samples", "docs/source"} <= paths:
+    if not {source, tests, "scripts", "demos", "samples"} <= paths:
         errors.append("Makefile Ruff scope must include all maintained Python source directories")
     lint_job = _unique(r"^  lint:\n(.*?)(?=^  [\w-]+:|\Z)", workflow, "CI lint job")
     if not re.search(r"^\s*run: make lint\s*$", lint_job, re.MULTILINE):
