@@ -55,6 +55,20 @@ Example (fictional contributors and PR IDs):
 
 - **Examples** — Clarified setup instructions (PR #125) by @charlie.
 
+## Markdown line wrapping
+
+Do not hard-wrap or mechanically reflow inline links, issue references,
+attribution phrases or backtick-delimited identifiers. Markdown may soft-wrap a
+sentence, but a wrapped continuation must remain part of the same bullet.
+
+In particular, a bare issue marker such as "#123" or "# 123" must never start
+its own physical line. Prior MkDocs rendering treated such lines as headings.
+Prefer full Markdown issue/PR links within the same logical change entry.
+Do not split Markdown link labels or destinations across lines, insert an
+unintended two-space hard break, or place a "by @username" credit on a separate
+line. Use "scripts/check_release_note_wrap.py" against each release candidate
+after composing CHANGELOG.md and run its regression tests.
+
 ## Release Please and review
 
 The preparation workflow keeps release-please-generated
