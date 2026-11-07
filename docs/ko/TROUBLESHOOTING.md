@@ -10,7 +10,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
 
 - [설치 문제](#설치-문제)
   - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
-  - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
+  - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C 확장 빌드 실패](#c-확장-빌드-실패)
   - [비동기 엔진에서 greenlet 누락](#비동기-엔진에서-greenlet-누락)
 - [연결 문제](#연결-문제)
@@ -111,12 +111,12 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 ---
 
-### ImportError: No module named 'pycubrid'
+### ModuleNotFoundError: No module named 'pycubrid'
 
 **증상:**
 
 ```
-ImportError: No module named 'pycubrid'
+ModuleNotFoundError: No module named 'pycubrid'
 ```
 
 **해결:**
@@ -258,20 +258,24 @@ make docker-fix-db-host
 
 ### 인증 실패
 
-**증상:**
+**증상:** 사용한 드라이버와 SQLAlchemy 예외 래핑 방식에 따라
+기반 CUBRID 오류 메시지에 다음과 같은 문구가 나타납니다:
 
-```
-OperationalError: Authentication failed
+```text
+User "..." is invalid
+Incorrect or missing password
 ```
 
-**해결:** CUBRID 기본 `dba` 사용자에게는 **비밀번호가 없습니다**:
+**해결:** URL의 사용자, 데이터베이스 및 비밀번호를 확인하세요. 비밀번호가 없는
+`dba` 계정은 **로컬 일회용 Docker 실습 환경**의 설정이며 운영 서버에도
+적용된다고 가정하면 안 됩니다:
 
 ```python
-# 올바름 — 비밀번호 없음
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+# 로컬 일회용 실습 환경에서만 비밀번호 없음
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
-# 올바름 — 비밀번호 설정 시
-engine = create_engine("cubrid://dba:mypassword@localhost:33000/testdb")
+# 서버에 비밀번호가 설정된 경우
+engine = create_engine("cubrid+pycubrid://dba:mypassword@localhost:33000/testdb")
 ```
 
 ---
