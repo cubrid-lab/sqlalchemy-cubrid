@@ -25,3 +25,48 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/sync_verified_historical_releases.py
+
+      - name: Preserve original notes and complete missing historical comparison links
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import subprocess
+
+          repo = "cubrid-lab/sqlalchemy-cubrid"
+          tags = """v0.7.1 v0.8.0 v1.0.0 v1.1.0 v1.2.0 v1.2.1 v1.2.2 v1.2.3 v1.3.0 v1.4.0 v1.4.1 v1.4.2 v1.4.3 v1.5.0 v1.5.1 v1.6.0 v1.7.0 v1.7.1 v1.8.0 v1.9.0 v1.10.0 v1.11.0 v1.11.5 v1.11.6 v1.11.7 v1.12.0 v1.12.1 v1.12.2""".split()
+
+          def api(path, payload=None):
+              cmd = ["gh", "api", path]
+              if payload is not None:
+                  cmd += ["--method", "PATCH", "--input", "-"]
+              output = subprocess.run(cmd, input=json.dumps(payload) if payload is not None else None,
+                                      text=True, capture_output=True, check=True)
+              return json.loads(output.stdout)
+
+          for i, tag in enumerate(tags):
+              release = api(f"repos/{repo}/releases/tags/{tag}")
+              original = release.get("body")
+              if (release.get("tag_name") != tag or release.get("draft") is not False
+                      or not release.get("published_at") or not isinstance(original, str)):
+                  raise ValueError(f"{tag}: invalid published release")
+              if "**Full Changelog**:" in original or i == 0:
+                  print(f"{tag}: retained existing text")
+                  continue
+              previous = tags[i - 1]
+              link = f"**Full Changelog**: https://github.com/{repo}/compare/{previous}...{tag}"
+              target = original.rstrip() + "\n\n" + link
+              current = api(f"repos/{repo}/releases/{release['id']}")
+              if (current.get("body") != original or current.get("tag_name") != tag
+                      or current.get("draft") is not False or not current.get("published_at")):
+                  raise ValueError(f"{tag}: release changed before update")
+              response = api(f"repos/{repo}/releases/{release['id']}", {"body": target})
+              if response.get("body") != target or response.get("tag_name") != tag:
+                  raise ValueError(f"{tag}: PATCH response mismatch")
+              verified = api(f"repos/{repo}/releases/{release['id']}")
+              if (verified.get("body") != target or verified.get("tag_name") != tag
+                      or verified.get("draft") is not False or not verified.get("published_at")):
+                  raise ValueError(f"{tag}: post-write verification failed")
+              print(f"{tag}: comparison link added; all original text preserved")
+          PY
