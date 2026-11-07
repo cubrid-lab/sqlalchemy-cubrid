@@ -8,7 +8,6 @@ from urllib.parse import unquote
 
 import pytest
 
-pytestmark = pytest.mark.repo_tooling
 source = Path(__file__).resolve().parents[1] / "scripts/annotate_release_contributors.py"
 spec = importlib.util.spec_from_file_location("annotate_release_contributors", source)
 assert spec and spec.loader
@@ -33,7 +32,7 @@ def mock_get(path: str) -> object:
         ]
     assert "search/issues" in path
     assert "merged:<2026-10-30T04:41:38Z" in unquote(path)
-    return {"total_count": 0}
+    return {"total_count": 0, "incomplete_results": False}
 
 
 def test_verified_first_contribution() -> None:
@@ -144,5 +143,14 @@ def test_first_contribution_lookup_failure_preserves_verified_byline() -> None:
         if path.endswith("/pulls"):
             return mock_get(path)
         raise OSError("search unavailable")
+
+    assert module.verified_credit(REPO, "abc1234", get) == " by @community-dev"
+
+
+def test_incomplete_search_does_not_claim_first_contribution() -> None:
+    def get(path: str) -> object:
+        if path.endswith("/pulls"):
+            return mock_get(path)
+        return {"total_count": 0, "incomplete_results": True}
 
     assert module.verified_credit(REPO, "abc1234", get) == " by @community-dev"
