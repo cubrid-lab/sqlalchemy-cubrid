@@ -82,3 +82,44 @@ def test_version_extraction_is_exact() -> None:
     assert "Fixed something" not in module.extract_version(CHANGELOG, "1.12.2")
     with pytest.raises(ValueError, match="not found"):
         module.extract_version(CHANGELOG, "1.12.3")
+
+
+def test_main_verifies_published_release_after_patch(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    from unittest.mock import Mock
+    import sys
+
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(CHANGELOG, encoding="utf-8")
+    _, target = prepare(release())
+    api = Mock(side_effect=[release(), release(), release(body=target), release(body=target)])
+    monkeypatch.setattr(module, "github_json", api)
+    monkeypatch.setattr(sys, "argv", ["sync", "--tag", "v1.12.2", "--previous-tag", "v1.12.1", "--changelog", str(changelog), "--expected-sha256", module.digest("old body"), "--apply"])
+
+    assert module.main() == 0
+    assert [call.kwargs.get("method", "GET") for call in api.call_args_list] == ["GET", "GET", "PATCH", "GET"]
+    assert "Verified published" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize(
+    "final_response",
+    [release(body="unexpected"), release(body="different", draft=True), OSError("GET failed")],
+)
+def test_main_rejects_unverified_publication(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    final_response: object,
+) -> None:
+    from unittest.mock import Mock
+    import sys
+
+    changelog = tmp_path / "CHANGELOG.md"
+    changelog.write_text(CHANGELOG, encoding="utf-8")
+    _, target = prepare(release())
+    api = Mock(side_effect=[release(), release(), release(body=target), final_response])
+    monkeypatch.setattr(module, "github_json", api)
+    monkeypatch.setattr(sys, "argv", ["sync", "--tag", "v1.12.2", "--previous-tag", "v1.12.1", "--changelog", str(changelog), "--expected-sha256", module.digest("old body"), "--apply"])
+
+    assert module.main() == 1
+    assert "Verified published" not in capsys.readouterr().out
+    assert api.call_count == 4
