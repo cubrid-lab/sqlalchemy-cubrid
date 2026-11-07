@@ -16,7 +16,11 @@ sync = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(sync)
 
 TAG = "v1.2.0"
-BEFORE = "**Full Changelog**: https://github.com/cubrid-labs/" + sync.REPO.split("/")[1] + "/compare/v1.1.0...v1.2.0\n"
+BEFORE = (
+    "**Full Changelog**: https://github.com/cubrid-labs/"
+    + sync.REPO.split("/")[1]
+    + "/compare/v1.1.0...v1.2.0\n"
+)
 AFTER = sync.corrected(BEFORE)
 
 
@@ -77,9 +81,7 @@ def test_updates_body_only_and_refetches(prepared: Path, monkeypatch: pytest.Mon
     assert calls[2][1] == {"body": AFTER}
 
 
-def test_idempotent_recheck_does_not_write(
-    prepared: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_idempotent_recheck_does_not_write(prepared: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls = simulate(monkeypatch, [release(AFTER)])
     assert len(calls) == 1
 
@@ -100,16 +102,12 @@ def test_rejects_unverified_or_changed_release(
         simulate(monkeypatch, [invalid])
 
 
-def test_rejects_second_read_drift(
-    prepared: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_second_read_drift(prepared: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError, match="concurrent"):
         simulate(monkeypatch, [release(BEFORE), release("edited")])
 
 
-def test_rejects_unexpected_patch_response(
-    prepared: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_unexpected_patch_response(prepared: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(ValueError, match="verification"):
         simulate(monkeypatch, [release(BEFORE), release(BEFORE), release("wrong"), release(AFTER)])
 
@@ -129,9 +127,7 @@ def test_rejects_published_date_or_prerelease_change(
         )
 
 
-def test_rejects_wider_source_changes(
-    prepared: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_rejects_wider_source_changes(prepared: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (prepared / (TAG + ".corrected.md")).write_text(AFTER + "unreviewed", encoding="utf-8")
     with pytest.raises(ValueError, match="link-only correction"):
         simulate(monkeypatch, [])
