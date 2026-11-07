@@ -85,10 +85,14 @@ jobs:
           fi
           git show "$GITHUB_SHA:CHANGELOG.md" > /tmp/base-changelog.md
           cp scripts/compose_release_changelog.py /tmp/compose-release.py
+          cp scripts/annotate_release_contributors.py /tmp/annotate-release-contributors.py
+          cp scripts/check_release_note_wrap.py /tmp/check-release-note-wrap.py
           git fetch origin "refs/heads/$branch"
           git checkout -B "$branch" FETCH_HEAD
           version=$(python -c 'import json; print(json.load(open(".release-please-manifest.json"))["."])')
-          python /tmp/compose-release.py --base-changelog /tmp/base-changelog.md --generated-changelog RELEASE_CHANGELOG.md --version "$version"
+          python /tmp/annotate-release-contributors.py --input RELEASE_CHANGELOG.md --output /tmp/release-changelog-attributed.md --repo "$GITHUB_REPOSITORY"
+          python /tmp/compose-release.py --base-changelog /tmp/base-changelog.md --generated-changelog /tmp/release-changelog-attributed.md --version "$version"
+          python /tmp/check-release-note-wrap.py --input CHANGELOG.md --version "$version"
           python -m pip install build twine packaging
           make release-check VERSION="$version"
           rm -rf dist build ./*.egg-info
