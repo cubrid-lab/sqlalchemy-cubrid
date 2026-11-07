@@ -1,0 +1,32 @@
+name: Correct reviewed historical Release links
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/release-note-repairs/**"
+      - "scripts/sync_legacy_release_links.py"
+      - ".github/workflows/sync-legacy-release-links.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sqlalchemy-cubrid-legacy-release-notes
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify source changes affect only reviewed own-repo links
+        run: python3 scripts/sync_legacy_release_links.py
+      - name: Update existing published GitHub Release descriptions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/sync_legacy_release_links.py --apply
