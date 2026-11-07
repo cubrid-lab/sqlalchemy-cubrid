@@ -292,11 +292,10 @@ standalone physical source line `Docs: not needed - <reason>` rather than leavin
 the explanation must contain visible text. Empty emphasized link captions such as
 `[**<!-- empty -->**](/issue)` or `[**![](/img)**](/issue)` do not supply a reason,
 while `[**tests only**](/issue)` does. The `docs-not-needed` label remains
-maintainer-controlled. For translation help,
-state missing languages and a reason in the PR body. That is a request, not
-permission: only explicit maintainer approval via the existing
-`translations-deferred` label defers the translation gate, with follow-up recorded.
-Korean-required and other-language advisory checks remain unchanged.
+maintainer-controlled. Missing README translations, including Korean
+`docs/README.ko.md`, now emit advisory warnings; a `translations-deferred`
+label is not needed. Maintainers may track translation resynchronization in a
+follow-up PR. Korean `docs/ko/` page-structure parity checks remain required.
 
 Reusable workflow updates use reviewed upstream commit SHAs. Verify the target
 file and `workflow_call` inputs at that commit, update the related callers together,
