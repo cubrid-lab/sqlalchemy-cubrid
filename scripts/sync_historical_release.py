@@ -29,9 +29,7 @@ def github_json(path: str, *, method: str = "GET", body: str | None = None) -> d
     command = ["gh", "api", "--method", method, path]
     if body is not None:
         command += ["--input", "-"]
-    result = subprocess.run(
-        command, input=body, capture_output=True, text=True, check=True
-    )
+    result = subprocess.run(command, input=body, capture_output=True, text=True, check=True)
     parsed = json.loads(result.stdout)
     if not isinstance(parsed, dict):
         raise ValueError("unexpected GitHub API response")
@@ -102,9 +100,7 @@ def main() -> int:
     if not re.fullmatch(r"[a-f0-9]{64}", args.expected_sha256):
         parser.error("--expected-sha256 must be a lowercase SHA-256 hex digest")
     try:
-        release = github_json(
-            f"repos/{args.repo}/releases/tags/{quote(args.tag, safe='')}"
-        )
+        release = github_json(f"repos/{args.repo}/releases/tags/{quote(args.tag, safe='')}")
         original, target = prepare(
             release,
             Path(args.changelog).read_text(encoding="utf-8"),
@@ -125,9 +121,7 @@ def main() -> int:
             print("DRY RUN: no changes made. Review the full Markdown diff first.")
             return 0
         # Re-fetch immediately before PATCH to catch changes since preparation.
-        latest = github_json(
-            f"repos/{args.repo}/releases/{release['id']}"
-        )
+        latest = github_json(f"repos/{args.repo}/releases/{release['id']}")
         if latest.get("tag_name") != args.tag or latest.get("body") != original:
             raise ValueError("release changed before update; aborting")
         updated = github_json(
