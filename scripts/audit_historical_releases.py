@@ -40,11 +40,15 @@ def list_releases(repo: str) -> list[dict]:
 
 def create_audit(releases: list[dict], changelog: str, directory: Path) -> dict:
     """Store the exact original bodies; report discrepancies without rewriting."""
+    if directory.exists() and any(directory.iterdir()):
+        raise ValueError(f"audit output directory is not empty: {directory}")
     directory.mkdir(parents=True, exist_ok=True)
     recorded = set(HISTORY.findall(changelog))
     rows = []
     seen: set[str] = set()
     for release in releases:
+        if release.get("draft"):
+            continue
         tag = release.get("tag_name")
         if not isinstance(tag, str) or not TAG.fullmatch(tag):
             continue
