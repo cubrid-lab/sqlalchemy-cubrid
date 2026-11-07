@@ -56,6 +56,12 @@ def verified_credit(
             return None
         suffix = f" by @{name}"
         merged_at = pr.get("merged_at")
+    except (OSError, subprocess.CalledProcessError, ValueError, TypeError) as error:
+        print(f"::warning::Contributor lookup skipped for {sha}: {error}", file=sys.stderr)
+        return None
+    # A failure to check *first-time* status must not erase already verified
+    # authorship. Only omit the optional celebration when the search fails.
+    try:
         if isinstance(merged_at, str) and re.fullmatch(
             r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", merged_at
         ):
@@ -66,10 +72,9 @@ def verified_credit(
             results = get(f"search/issues?q={quote(query, safe='')}&per_page=1")
             if isinstance(results, dict) and results.get("total_count") == 0:
                 suffix += FIRST
-        return suffix
     except (OSError, subprocess.CalledProcessError, ValueError, TypeError) as error:
-        print(f"::warning::Contributor lookup skipped for {sha}: {error}", file=sys.stderr)
-        return None
+        print(f"::warning::First-time status unknown for {name}: {error}", file=sys.stderr)
+    return suffix
 
 
 def annotate(
