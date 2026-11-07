@@ -131,7 +131,12 @@ def main() -> int:
         )
         if updated.get("tag_name") != args.tag or updated.get("body") != target:
             raise ValueError("release update response differs from approved body")
-        print(f"Updated GitHub Release body for {args.tag}.")
+        # Read the published release again; a successful PATCH response alone is
+        # not sufficient evidence that readers see the approved Markdown.
+        published = github_json(f"repos/{args.repo}/releases/tags/{quote(args.tag, safe='')}")
+        if published.get("draft") is not False or published.get("body") != target:
+            raise ValueError("published GitHub Release does not match approved body")
+        print(f"Verified published GitHub Release body for {args.tag}.")
         return 0
     except (OSError, ValueError, KeyError, subprocess.CalledProcessError) as error:
         print(f"::error::{error}", file=sys.stderr)
