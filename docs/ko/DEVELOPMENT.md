@@ -944,9 +944,9 @@ PR을 막아서는 안 됩니다. 다만 실패는 보고됩니다. 기본 브�
 문서 예외는 코드·인용·템플릿 주석 밖의 내용이 채워진 단독 물리 소스 줄
 `Docs: not needed - <reason>` 또는 기존 유지보수자 관리 라벨을 사용합니다.
 `make check-docs-reason`은 doctest와 실제 이벤트 JSON/워크플로 회귀 검사를 실행하며
-`make check`와 docs-sync 잡도 같은 검사를 실행합니다. 번역 도움 요청은 우회
-권한을 부여하지 않습니다. 유지보수자가 기존 `translations-deferred` 라벨을 명시적으로
-승인하고 후속 작업을 기록합니다. 한국어 필수·다른 언어 권고 검사는 유지합니다.
+`make check`와 docs-sync 잡도 같은 검사를 실행합니다. 영문 `README.md`의 한국어
+및 기타 번역이 누락되면 경고만 표시합니다. `translations-deferred` 라벨은 이
+권고 검사에 더 이상 필요하지 않지만 `docs/ko/` 문서 구조 검사는 계속 필수입니다.
 
 `docs/` 아래 영어 문서가 기준이고, `docs/ko/` 아래 한국어는 완전하게 유지하는 유일한
 번역입니다. `python scripts/check_docs_translation.py`(린트 잡에서 실행)는 모든
