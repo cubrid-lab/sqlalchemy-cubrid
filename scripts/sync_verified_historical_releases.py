@@ -41,15 +41,28 @@ def main() -> int:
                 f"{tag}: live body differs from canonical section; manual review required"
             )
         latest = github_json(f"repos/{REPO}/releases/{release['id']}")
-        if latest.get("body") != actual or latest.get("tag_name") != tag:
+        if (
+            latest.get("body") != actual
+            or latest.get("tag_name") != tag
+            or latest.get("draft") is not False
+            or not latest.get("published_at")
+        ):
             raise ValueError(f"{tag}: concurrent modification detected")
         updated = github_json(
             f"repos/{REPO}/releases/{release['id']}",
             method="PATCH",
-            body=json.dumps({"body": expected}),
+            body=json.dumps({"tag_name": tag, "body": expected}),
         )
         if updated.get("body") != expected or updated.get("tag_name") != tag:
             raise ValueError(f"{tag}: patch response mismatch")
+        verified = github_json(f"repos/{REPO}/releases/{release['id']}")
+        if (
+            verified.get("body") != expected
+            or verified.get("tag_name") != tag
+            or verified.get("draft") is not False
+            or not verified.get("published_at")
+        ):
+            raise ValueError(f"{tag}: post-update verification failed")
         print(f"{tag}: added comparison link; no existing note text changed")
     return 0
 
