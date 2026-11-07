@@ -119,3 +119,41 @@ jobs:
               raise ValueError("v1.12.1 post-update verification failed")
           print("v1.12.1 editorial correction published and verified")
           PY
+
+      - name: Restore missing v1.4.2 release details
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import sys
+          sys.path.insert(0, "scripts")
+          from sync_historical_release import extract_version, github_json, make_body
+
+          repo = "cubrid-lab/sqlalchemy-cubrid"
+          tag = "v1.4.2"
+          expected = "**Full Changelog**: https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.4.1...v1.4.2"
+          target = make_body(
+              extract_version(Path("CHANGELOG.md").read_text(encoding="utf-8"), "1.4.2"),
+              "v1.4.1", tag, repo
+          )
+          release = github_json(f"repos/{repo}/releases/tags/{tag}")
+          if (release.get("tag_name") != tag or release.get("draft") is not False
+                  or not release.get("published_at")):
+              raise ValueError("v1.4.2 is not a published release")
+          if release.get("body", "").strip() == target:
+              print("v1.4.2 already synchronized")
+              sys.exit(0)
+          if release.get("body", "").strip() != expected:
+              raise ValueError("v1.4.2 original body differs; refusing overwrite")
+          latest = github_json(f"repos/{repo}/releases/{release['id']}")
+          if latest.get("body") != release.get("body"):
+              raise ValueError("v1.4.2 concurrent modification detected")
+          github_json(f"repos/{repo}/releases/{release['id']}",
+                      method="PATCH", body=json.dumps({"body": target}))
+          verified = github_json(f"repos/{repo}/releases/{release['id']}")
+          if verified.get("body") != target:
+              raise ValueError("v1.4.2 post-write verification failed")
+          print("v1.4.2 release details restored")
+          PY
