@@ -29,6 +29,7 @@ jobs:
       release: ${{ steps.release.outputs.build == 'true' }}
       code: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' }}
       docs: ${{ steps.filter.outputs.docs }}
+      release_tooling: ${{ steps.filter.outputs.release_tooling }}
       site: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.site == 'true' }}
       tooling: ${{ steps.filter.outputs.tooling }}
       live: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' && (github.event_name != 'pull_request' || steps.filter.outputs.risk == 'true') }}
@@ -72,7 +73,7 @@ jobs:
               - '.github/docs-requirements/**'
               - '.github/workflows/docs.yml'
               - '.github/workflows/ci.yml'
-            release:
+            release_tooling:
               - 'scripts/annotate_release_contributors.py'
               - 'scripts/audit_historical_releases.py'
               - 'scripts/check_release_note_wrap.py'
@@ -415,7 +416,7 @@ jobs:
   release-tests:
     name: Release automation regression tests
     needs: detect-changes
-    if: needs.detect-changes.outputs.release == 'true'
+    if: needs.detect-changes.outputs.release_tooling == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -979,7 +980,7 @@ jobs:
           E_INTEGRATION_TESTS: ${{ needs.detect-changes.outputs.live }}
           R_REPO_TESTS: ${{ needs.repo-tests.result }}
           R_RELEASE_TESTS: ${{ needs.release-tests.result }}
-          E_RELEASE_TESTS: ${{ needs.detect-changes.outputs.release }}
+          E_RELEASE_TESTS: ${{ needs.detect-changes.outputs.release_tooling }}
           E_REPO_TESTS: ${{ needs.detect-changes.outputs.tooling }}
           R_ALEMBIC_COMPAT: ${{ needs.alembic-compat.result }}
           E_ALEMBIC_COMPAT: ${{ needs.detect-changes.outputs.live }}
