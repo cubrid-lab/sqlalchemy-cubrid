@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib.util
 import sys
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -54,8 +53,12 @@ def run_case(responses: list[dict], monkeypatch: pytest.MonkeyPatch) -> list[tup
 
 def test_publishes_verified_notes_and_refetches(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = run_case(
-        [release("\n" + SECTION + "\n"), release("\n" + SECTION + "\n"),
-         release(TARGET), release(TARGET)],
+        [
+            release("\n" + SECTION + "\n"),
+            release("\n" + SECTION + "\n"),
+            release(TARGET),
+            release(TARGET),
+        ],
         monkeypatch,
     )
     assert [call[1] for call in calls] == ["GET", "GET", "PATCH", "GET"]
@@ -69,8 +72,11 @@ def test_idempotent_rerun_does_not_write(monkeypatch: pytest.MonkeyPatch) -> Non
 
 @pytest.mark.parametrize(
     "bad",
-    [release("unexpected"), release(SECTION, draft=True),
-     release(SECTION, published_at=None)],
+    [
+        release("unexpected"),
+        release(SECTION, draft=True),
+        release(SECTION, published_at=None),
+    ],
 )
 def test_refuses_drift_or_unpublished(
     monkeypatch: pytest.MonkeyPatch, bad: dict
