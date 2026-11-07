@@ -69,6 +69,10 @@ flowchart TD
 
 Broker, CAS, CCI 경로는 [전체 통신 아키텍처](ko/ARCHITECTURE.md#종단-간-통신-아키텍처)에서 볼 수 있습니다.
 
+CUBRID 데이터베이스 서버, CUBRIDdb GitHub 소스 태그, PyPI 패키지 릴리스와
+실제 설치된 드라이버의 버전 번호는 서로 다릅니다.
+[서버와 드라이버 버전 구분](ko/DRIVER_COMPAT.md#데이터베이스와-드라이버-버전-구분)을 참고하세요.
+
 ```mermaid
 flowchart TD
     expr["SQL Expression"] --> compiler["CubridSQLCompiler"] --> sql["SQL String"]

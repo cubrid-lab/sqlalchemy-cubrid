@@ -86,7 +86,7 @@ engine.dispose()
   [choose an isolation level](ISOLATION_LEVELS.md).
 - **Reference:** [type mapping](TYPES.md), [feature support](FEATURE_SUPPORT.md),
   [support matrix](SUPPORT_MATRIX.md) and [driver compatibility](DRIVER_COMPAT.md),
-  including the supported CUBRIDdb C-extension driver.
+  including [how server, driver and package version numbers differ](DRIVER_COMPAT.md#server-driver-and-distribution-versions).
 - **Help:** start with [troubleshooting](TROUBLESHOOTING.md); ask usage questions in
   [GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions),
   report reproducible bugs through the [bug report template](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new?template=bug_report.yml),
@@ -9156,12 +9156,69 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 ## Table of Contents
 
+- [Server, driver, and distribution versions](#server-driver-and-distribution-versions)
 - [Driver Overview](#driver-overview)
 - [Version Compatibility Matrix](#version-compatibility-matrix)
 - [Exception Hierarchy](#exception-hierarchy)
 - [Driver API Usage](#driver-api-usage)
 - [Known Issues](#known-issues)
 - [Installation Notes](#installation-notes)
+
+## Server, driver, and distribution versions
+
+Some CUBRID Python driver release numbers resemble CUBRID Database product versions. The names reflect related release families, but **the numbers identify different components**. Matching major/minor numbers is not a requirement for connecting, nor proof that every cross-version combination works.
+
+| Identifier | Example | What the version identifies |
+|---|---|---|
+| CUBRID database server | `11.4.1` | The running database; check with `SELECT VERSION()` |
+| CUBRIDdb upstream source release | [`v11.3.0.51`](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51) | A published **GitHub source release** of the Python C-extension driver, not a CUBRID server release or a PyPI 11.3 package |
+| CCI client library | `11.2.0` | Native C client interface used by that specific upstream driver release |
+| PyPI distribution release | [`CUBRID-Python 9.3.0`](https://pypi.org/project/CUBRID-Python/9.3.0/) | The version listed on PyPI for the C-extension driver package |
+| PyPI source archive revision | `9.3.0.0001`, `9.3.0.0002` | Filenames for two source archives **within the same PyPI 9.3.0 release**, uploaded in 2014 and 2015 respectively |
+| Installed C-extension version | For example, `11.3.0.0001` | `_cubrid.__version__` in a particular build; its fourth field can be a Git commit count rather than the upstream source tag suffix |
+| SQLAlchemy dialect version | For example, `sqlalchemy-cubrid 1.x` | This project's independently published Python package version |
+
+The [official CUBRID Python `v11.3.0.51` release notes](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51) (published 2025-09-08) state that it was built with **CCI 11.2.0** and conforms to **CUBRID server 11.4.1**. That is an explicit example of different version numbers in one working release context. Its GitHub release has source archives but **no attached binary release assets**; this is not a `CUBRID-Python 11.3` release on PyPI.
+
+The [PyPI `CUBRID-Python` project](https://pypi.org/project/CUBRID-Python/) describes its 9.3.0 package as a connector for CUBRID Database 9.3.0. This is historical naming context, **not** proof that it cannot connect to another server version. An earlier [9.3.0.1 driver / CUBRID 11.4 test](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/583) did connect but exposed a `BIGINT` conversion difference; support policy, successful connection, tested combinations, and known limitations must be kept separate.
+
+### Connection path
+
+```mermaid
+flowchart TD
+    app["Application / SQLAlchemy Core & ORM"] --> dialect["sqlalchemy-cubrid dialect"]
+    dialect --> pure["pycubrid / pycubrid.aio"]
+    dialect --> native["CUBRIDdb (_cubrid C extension)"]
+    native --> cci["CCI client library"]
+    cci --> cas["CUBRID Broker / CAS"]
+    pure --> cas
+    cas --> database["CUBRID database server"]
+```
+
+The `[cubrid]`, `[cubriddb]` and `[pycubrid]` extras are **dependency installation choices**, not server versions. `cubrid://` and `cubrid+cubriddb://` select CUBRIDdb; `cubrid+pycubrid://` and `cubrid+aiopycubrid://` select the respective pycubrid drivers. Neither URL embeds a driver release number.
+
+### Check the versions in an environment
+
+```python
+from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version
+
+for name in ("sqlalchemy-cubrid", "pycubrid", "CUBRID-Python"):
+    try:
+        print(f"{name}: {version(name)}")
+    except PackageNotFoundError:
+        print(f"{name}: not installed")
+
+try:
+    cubriddb = import_module("CUBRIDdb")
+except ImportError:
+    print("CUBRIDdb C extension: not importable")
+else:
+    extension = getattr(cubriddb, "_cubrid", None)
+    print("CUBRIDdb C extension:", getattr(extension, "__version__", "unknown"))
+```
+
+`CUBRID-Python` and `cubrid_python` are spelling variants of the normalized distribution name; they do **not** mean two independent drivers. To inspect the running **server** instead, execute `SELECT VERSION()` through a live connection. Record the upstream Git tag or source commit separately when you built CUBRIDdb yourself. Do not infer server version, source tag, or full feature compatibility from the installed package version alone.
 
 ---
 
