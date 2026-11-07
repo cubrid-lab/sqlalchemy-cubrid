@@ -52,14 +52,22 @@ flowchart TD
 ### 환경에서 실제 버전 확인
 
 ```python
+from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
-import CUBRIDdb
+
+for name in ("sqlalchemy-cubrid", "pycubrid", "CUBRID-Python"):
+    try:
+        print(f"{name}: {version(name)}")
+    except PackageNotFoundError:
+        print(f"{name}: not installed")
 
 try:
-    print("Installed driver distribution:", version("CUBRID-Python"))
-except PackageNotFoundError:
-    print("Driver distribution metadata not found")
-print("Loaded C extension:", CUBRIDdb._cubrid.__version__)
+    cubriddb = import_module("CUBRIDdb")
+except ImportError:
+    print("CUBRIDdb C extension: not importable")
+else:
+    extension = getattr(cubriddb, "_cubrid", None)
+    print("CUBRIDdb C extension:", getattr(extension, "__version__", "unknown"))
 ```
 
 `CUBRID-Python`과 `cubrid_python`은 배포판 이름을 정규화한 표기 차이이며 **서로 다른 두 드라이버가 아닙니다.** 실행 중인 **데이터베이스 서버** 버전은 실제 연결에서 `SELECT VERSION()`을 실행해 확인합니다. CUBRIDdb를 소스에서 직접 빌드했다면 사용한 Git 태그 또는 커밋도 별도로 남깁니다. 설치된 패키지 버전만으로 서버 버전이나 전체 기능 호환성을 추정해서는 안 됩니다.
