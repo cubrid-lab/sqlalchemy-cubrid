@@ -51,12 +51,19 @@ def test_existing_contributor_has_plain_credit() -> None:
     assert module.verified_credit(REPO, "abc1234", get) == " by @community-dev"
 
 
-@pytest.mark.parametrize("prs", [[], [{}], [{"merged_at": None}], [
-    {"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "bot[bot]", "type": "Bot"}}
-], [
-    {"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "a", "type": "User"}},
-    {"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "b", "type": "User"}},
-]])
+@pytest.mark.parametrize(
+    "prs",
+    [
+        [],
+        [{}],
+        [{"merged_at": None}],
+        [{"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "bot[bot]", "type": "Bot"}}],
+        [
+            {"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "a", "type": "User"}},
+            {"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "b", "type": "User"}},
+        ],
+    ],
+)
 def test_no_guess_for_missing_bot_or_ambiguous_authorship(prs: list) -> None:
     assert module.verified_credit(REPO, "abc1234", lambda _: prs) is None
 
@@ -127,10 +134,7 @@ def test_wrapped_entry_appends_credit_after_the_complete_markdown_link() -> None
 
 def test_wrapped_entry_without_author_remains_byte_for_byte() -> None:
     wrapped = (
-        "* Documentation notes with\n"
-        "  an existing wrapped sentence\n\n"
-        "### Fixed\n"
-        "* unrelated\n"
+        "* Documentation notes with\n  an existing wrapped sentence\n\n### Fixed\n* unrelated\n"
     )
     assert module.annotate(wrapped, REPO, lambda *_: None) == wrapped
 
