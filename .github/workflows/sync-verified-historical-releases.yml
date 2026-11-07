@@ -1,0 +1,27 @@
+name: Synchronize verified historical release notes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sync-verified-historical-releases.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: sync-verified-historical-releases
+  cancel-in-progress: false
+
+jobs:
+  sync-verified:
+    if: github.ref == 'refs/heads/main' && github.repository == 'cubrid-lab/sqlalchemy-cubrid'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Synchronize only byte-equivalent canonical notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/sync_verified_historical_releases.py

@@ -134,6 +134,7 @@ jobs:
               - 'test/test_check_release_note_wrap.py'
               - 'test/test_audit_historical_releases.py'
               - 'test/test_sync_historical_release.py'
+              - 'test/test_sync_verified_historical_releases.py'
               - 'test/test_make_integration.py'
               - 'test/test_makefile_targets.py'
               - 'test/test_reflection_probe.py'
