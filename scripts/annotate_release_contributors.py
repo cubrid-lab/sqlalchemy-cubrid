@@ -77,29 +77,57 @@ def annotate(
     repo: str,
     resolve: Callable[[str, str], str | None] = verified_credit,
 ) -> str:
-    """Keep every original line and append a credit only to evidenced entries."""
+    """Append credit at the end of a *whole* bullet; never split Markdown links.
+
+    GitHub-flavored Markdown allows wrapped continuation lines in bullet items.
+    A byline added in the middle of a wrapped item may break inline references
+    or change the sentence. Collect each item before appending attribution.
+    """
     result: list[str] = []
+    pending: list[str] = []
     fence: str | None = None
     cache: dict[str, str | None] = {}
-    for line in notes.splitlines(keepends=True):
-        stripped = line.lstrip()
-        if stripped.startswith((chr(96) * 3, "~" * 3)):
-            mark = stripped[0]
-            fence = None if fence == mark else mark
-            result.append(line)
-            continue
-        if fence is None and line.startswith(("* ", "- ")) and not CREDIT.search(line):
+
+    def flush() -> None:
+        if not pending:
+            return
+        chunk = "".join(pending)
+        if pending[0].startswith(("* ", "- ")) and not CREDIT.search(chunk):
             matches = [
-                m for m in COMMIT.finditer(line) if m.group("repo").lower() == repo.lower()
+                m for m in COMMIT.finditer(chunk) if m.group("repo").lower() == repo.lower()
             ]
             if len(matches) == 1:
                 sha = matches[0].group("sha")
                 if sha not in cache:
                     cache[sha] = resolve(repo, sha)
                 if cache[sha]:
+                    last = len(pending) - 1
+                    while last > 0 and not pending[last].strip():
+                        last -= 1
+                    line = pending[last]
                     ending = "\r\n" if line.endswith("\r\n") else "\n" if line.endswith("\n") else ""
-                    line = line.removesuffix(ending) + cache[sha] + ending
-        result.append(line)
+                    pending[last] = line.removesuffix(ending) + cache[sha] + ending
+        result.extend(pending)
+        pending.clear()
+
+    for line in notes.splitlines(keepends=True):
+        stripped = line.lstrip()
+        fence_marker = stripped[:1] if stripped.startswith((chr(96) * 3, "~" * 3)) else None
+        if fence_marker is not None:
+            flush()
+            fence = None if fence == fence_marker else fence_marker
+            result.append(line)
+        elif fence is not None:
+            result.append(line)
+        elif line.startswith(("* ", "- ")):
+            flush()
+            pending.append(line)
+        elif pending and line.strip() and not line.startswith(("# ", "## ", "### ")):
+            pending.append(line)
+        else:
+            flush()
+            result.append(line)
+    flush()
     return "".join(result)
 
 
