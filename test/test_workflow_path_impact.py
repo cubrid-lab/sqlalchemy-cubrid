@@ -90,6 +90,8 @@ def test_workflow_impact_table(name: str) -> None:
         ("sqlalchemy_cubrid/pycubrid_dialect.py", {"code", "risk"}),
         ("test/test_integration_basic.py", {"code", "risk"}),
         ("scripts/check_not_all_skipped.py", {"code", "risk", "tooling"}),
+        # The release-test runner decides what the focused lane runs: full validation.
+        ("scripts/run_release_tests.py", {"code", "risk", "tooling"}),
         ("scripts/annotate_release_contributors.py", {"release_tooling", "risk", "tooling"}),
         ("scripts/check_release_note_wrap.py", {"release_tooling", "risk", "tooling"}),
         ("test/test_annotate_release_contributors.py", {"release_tooling", "tooling"}),
@@ -138,6 +140,49 @@ def test_every_repository_tooling_module_selects_the_tooling_lane() -> None:
 
     missing = sorted(m for m in REPO_TOOLING_MODULES if "tooling" not in _selected(f"test/{m}"))
     assert not missing, f"add to the tooling filter in ci.yml: {missing}"
+
+
+def _release_tooling_code(event: str, code: bool, release_tooling: bool) -> bool:
+    """Evaluate the detect-changes ``code`` output the way Actions would (#1154)."""
+    outputs = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())["jobs"][
+        "detect-changes"
+    ]["outputs"]
+    clause = (
+        "(steps.filter.outputs.code == 'true' || (github.event_name != 'pull_request'"
+        " && steps.filter.outputs.release_tooling == 'true'))"
+    )
+    for name in ("code", "live", "extended"):
+        assert clause in outputs[name], name
+    return code or (event != "pull_request" and release_tooling)
+
+
+@pytest.mark.parametrize("event", ["push", "schedule", "workflow_dispatch"])
+def test_release_tooling_only_changes_keep_full_validation_outside_pull_requests(
+    event: str,
+) -> None:
+    assert _release_tooling_code(event, code=False, release_tooling=True)
+    assert not _release_tooling_code("pull_request", code=False, release_tooling=True)
+    assert _release_tooling_code("pull_request", code=True, release_tooling=True)
+
+
+def test_release_tests_cover_every_listed_module_and_fail_closed(tmp_path: Path) -> None:
+    from scripts.run_release_tests import release_tooling_paths, select
+
+    listed = release_tooling_paths()
+    assert len(listed) == len(set(listed)), "duplicate release_tooling entries"
+    selected = select()
+    assert {p for p in listed if p.startswith("test/")} <= set(selected)
+
+    workflows = tmp_path / ".github/workflows"
+    workflows.mkdir(parents=True)
+    (workflows / "ci.yml").write_text((ROOT / ".github/workflows/ci.yml").read_text())
+    (tmp_path / "test").mkdir()
+    for path in listed:
+        if path != "test/test_extract_release_notes.py":
+            (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+            (tmp_path / path).write_text("")
+    with pytest.raises(SystemExit, match="test/test_extract_release_notes.py"):
+        select(tmp_path)
 
 
 WORKFLOW_REF = re.compile(r"\.github['\"]?\s*[/,]\s*['\"]?workflows")
