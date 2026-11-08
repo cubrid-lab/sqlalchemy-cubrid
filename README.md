@@ -77,6 +77,10 @@ flowchart TD
 
 See [full communication architecture](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ARCHITECTURE.md#end-to-end-communication-architecture) for the Broker, CAS and CCI path.
 
+CUBRID database server versions, CUBRIDdb GitHub source tags, PyPI package releases
+and installed driver versions are distinct identifiers. See
+[server and driver version terminology](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md#server-driver-and-distribution-versions).
+
 ```mermaid
 flowchart TD
     expr["SQL Expression"] --> compiler["CubridSQLCompiler"] --> sql["SQL String"]
