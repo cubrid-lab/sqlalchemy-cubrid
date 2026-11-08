@@ -1420,87 +1420,25 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
 This release raises the minimum supported Python version to 3.11. Applications on Python 3.10 should remain on the compatible 1.9.x line until upgraded. Review the upgrade notes and detailed changes below.
 
 ### Upgrade notes
-- **Python 3.11 or newer is required (#686).** Python 3.10 reached upstream end
-  of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10
-  `pip` keeps installing 1.9.x, the last line that supports it; only the latest
-  release line receives fixes, so 1.9.x gets no further releases. Upgrade Python,
-  recreate your virtual environment and validate your application before upgrading.
 
-### Removed
-- **Python 3.10 support (#686)** — `requires-python` is `>=3.11` and the 3.10
-  classifier is gone. CI no longer tests 3.10: the oldest integration cell is
-  Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python
-  3.11–3.14 and the Alembic compatibility job runs on 3.11. Python 3.10 used to
-  select SQLAlchemy 2.0 by itself (SQLAlchemy 2.1 needs Python 3.11), so the
-  oldest CI cell and the Python 3.11 row of the full matrix now pin
-  `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary
-  integration tests on the minimum supported SQLAlchemy line. No dialect
-  behavior changes on Python 3.11 or newer.
+- **Python 3.11 or newer is required (#686, #703)** — Python 3.10 reached upstream end of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10 `pip` keeps installing 1.9.x, the last line that supports it; only the latest release line receives fixes, so 1.9.x gets no further releases. Upgrade Python, recreate your virtual environment and validate your application before upgrading.
 
 ### Changed
-- **tox no longer lists Python 3.10 (#687)** — `py310` is removed from
-  `envlist`, and `typecheck-sa20` type-checks SQLAlchemy 2.0.53 on Python 3.11
-  instead of 3.10. Local tooling only; CI and the dialect are unchanged.
-- **Ruff and mypy target Python 3.11 (#688)** — `target-version = "py311"` and
-  `python_version = "3.11"` in `pyproject.toml`, matching the minimum supported
-  version. The rule selection is unchanged and no source needed a fix.
+
+- **Development tooling updated for Python 3.11 (#687, #688)** — Removed `py310` from tox `envlist` and re-targeted `typecheck-sa20` to Python 3.11 (#687); updated Ruff `target-version` and mypy `python_version` to 3.11 in `pyproject.toml` (#688).
+- **Disconnect detection drops the Python 3.10 timeout case** — `CubridDialect._has_oserror_cause` now checks `OSError` directly: from Python 3.11, `asyncio.TimeoutError` is the built-in `TimeoutError`, an `OSError` subclass, so the separate check was obsolete after #686. A `TimeoutError` cause is still treated as a disconnect ([#732](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/732), closes #689) by @UsmanGhias.
+
+### Removed
+
+- **Python 3.10 support (#686, #703)** — `requires-python` is `>=3.11` and the 3.10 classifier is gone. CI no longer tests 3.10: the oldest integration cell is Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python 3.11–3.14 and the Alembic compatibility job runs on 3.11. Python 3.10 used to select SQLAlchemy 2.0 by itself (SQLAlchemy 2.1 needs Python 3.11), so the oldest CI cell and the Python 3.11 row of the full matrix now pin `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary integration tests on the minimum supported SQLAlchemy line. No dialect behavior changes on Python 3.11 or newer.
 
 ### Documentation
-- **Reproducible third-party license inventory by install scope (#727)** —
-  `THIRD_PARTY_LICENSES.md` is regenerated from one fresh environment per scope
-  (default runtime, `[pycubrid]`, `[alembic]`, `[cubrid]`/`[cubriddb]`, `[dev]`) at
-  a recorded commit, Python and OS by the standard-library
-  `scripts/generate_third_party_licenses.py` (shared with pycubrid). The old
-  document covered only the runtime tree and listed SQLAlchemy 2.0 with greenlet;
-  SQLAlchemy 2.1 installs no greenlet by default, which the scope notes now
-  explain. MPL-2.0 packages (`certifi`, `hypothesis`, `pathspec`, `[dev]` only)
-  are classified separately from permissive licenses instead of under a blanket
-  "no copyleft" statement, GPL-family metadata is flagged for review (docutils is
-  resolved from its own `COPYING`), and the CUBRID-Python BSD variant stays
-  explicitly unresolved. The document separates dependency installation from
-  what the wheel and sdist distribute. `test/test_third_party_licenses.py` fails
-  when a declared dependency is missing from its scope, a recorded version falls
-  outside a declared range, a category disagrees with the generator, a reviewed
-  row loses its review, or the CUBRID-Python entry stops saying the variant is
-  unresolved (exact `==` pins are checked for presence only, so Dependabot pin
-  bumps need no inventory refresh); `ci.yml` now routes
-  `THIRD_PARTY_LICENSES.md` changes to the repository-tooling lane that runs it.
-  No runtime change.
-- **The README and quickstart state Python 3.11 or later (#695)** — the
-  requirement lines, the tested and supported ranges (3.11–3.14) and the FAQ
-  answer in `README.md` and `docs/README.ko.md`, and the prerequisites in
-  `docs/QUICKSTART.md` and `docs/ko/QUICKSTART.md`. The Python 3.10 retirement
-  notice in both READMEs now describes the requirement as in effect from 1.10.0.
-- **In-page links work on the documentation site (#721)** — the site used the default heading slugifier, which drops non-ASCII characters, so Korean headings got ids such as `_2` and every Korean table of contents entry was dead; English links written for GitHub's slugs missed as well (208 broken anchors). `mkdocs.yml` now uses the Unicode-aware slugifier from `pymdown-extensions`, the eight anchors that were still wrong are fixed (among them a misspelled Korean heading and links to repeated "Basic Usage" headings), and `validation.links.anchors: warn` makes the strict build fail on a new broken anchor.
-- **Korean pages reviewed against the English wording (#719)** — the structure check cannot see a missing sentence. `docs/ko/DRIVER_COMPAT.md` gains the paragraph on how the `cursor.lastrowid` fallback opens and closes its cursor, `docs/ko/FEATURE_SUPPORT.md` says that the dialect handles `stmt.inserted` references, and the Native Enum row of `docs/ko/SUPPORT_MATRIX.md` matches English. The four translations added in this release (`PRD`, `SA_COMPAT`, `RELEASE_PLEASE_VALIDATION`, the contribution guide) were reviewed sentence by sentence: no content was missing, a few meanings were corrected (for example "checks not run", not "could not run") and unreadable literal renderings were rewritten. The banner on every Korean page now says the structure is checked by CI. English is unchanged.
-- **The documentation home page states one SQLAlchemy range (#716)** — its ecosystem list said "SQLAlchemy 2.0–2.2" while its first line, the README and the support matrix say 2.0–2.1. Both languages now say 2.0–2.1; the dependency pin (`>=2.0,<2.3`) is unchanged.
-- **CI fails when a Korean document drifts from its English source (#710)** — `scripts/check_docs_translation.py` compares every `docs/<name>.md` with `docs/ko/<name>.md` and fails on a missing Korean file or a different number of headings (levels 2-4), fenced code blocks or table rows; the lint job runs it on every event. Until now only README drift was checked. Documents that are deliberately English-only are listed in the script with a reason. The check compares structure, not wording. Same script as cubrid-lab/pycubrid#721.
-- **SA_COMPAT, PRD and the release-please validation record are available in Korean (#709)** — `docs/ko/SA_COMPAT.md`, `docs/ko/PRD.md` and `docs/ko/RELEASE_PLEASE_VALIDATION.md` are added, and the three documents, which were not in the site navigation, are listed in both languages. With these, every document under `docs/` has a Korean counterpart.
-- **Korean contribution guide (#708)** — `docs/CONTRIBUTING.ko.md` translates the current `CONTRIBUTING.md`, keeping commands, English GitHub conventions, label names and title examples unchanged. It is linked from the Korean README and the Korean navigation. English stays the authoritative version.
-- **Korean documentation home page and one Korean navigation section (#707)** — `docs/ko/index.md` is the Korean landing page, linked from the English home page and back. The Korean guides sat three levels deep under "Project → Translations"; they are now one top-level "한국어" section grouped like the English navigation, and every Korean page is reachable from it.
-- **Korean support matrix, feature table and CI policy match the English documents (#706)** — `docs/ko/SUPPORT_MATRIX.md` shows the CI matrix as a table and loses a Korean-only closing section; `docs/ko/FEATURE_SUPPORT.md` drops a limitation row (`IS DISTINCT FROM`) that the English table does not list; `docs/ko/CI_POLICY.md` is a full translation instead of a summary. Both CI policy pages are in the site navigation. The English text is unchanged.
 
-### Conventional commits
-
-#### Features
-
-* **python:** require Python 3.11 or later ([#703](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/703)) ([f764d27](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f764d27d2f20ece8b2f914b61c5dc1776313b04e)), closes [#686](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/686)
-
-
-#### Documentation
-
-* **agents:** align contributor ownership and good-first-issue guardrails ([#739](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/739)) ([41153c4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/41153c4d3d88cb7ce3beaf488ca508e40ab570ab)), closes [#733](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/733)
-* **i18n:** add a Korean contribution guide ([#713](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/713)) ([fcc94b4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fcc94b47d764b7fffdc327da701c99a1d7054b60)), closes [#708](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/708)
-* **i18n:** add the Korean documentation home page ([#712](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/712)) ([2966d51](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2966d5128c938f2ed32c8f173e226f2190bafa63)), closes [#707](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/707)
-* **i18n:** correct Korean sections that fell behind the English wording ([#720](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/720)) ([7578501](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/75785012c55e95181b0144b08a669cc43bdaa411)), closes [#719](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/719)
-* **i18n:** synchronize the Korean SUPPORT_MATRIX and FEATURE_SUPPORT and translate CI_POLICY in full ([#711](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/711)) ([6c3c7c8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6c3c7c88b3ab3ea3fc718daa23671074f6e10350)), closes [#706](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/706)
-* **i18n:** translate SA_COMPAT, PRD and RELEASE_PLEASE_VALIDATION into Korean ([#714](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/714)) ([ff2dbdb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ff2dbdb1813c452ab93b4380b9bc1ce932cb92d4)), closes [#709](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/709)
-* **licenses:** reproducible license inventory by install scope ([#755](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/755)) ([2c0390d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2c0390d41fef1891d0cc80b73c0eacdf2b70362a))
-* **llms:** update the Python requirement in the canonical index ([#740](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/740)) ([c67f6af](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c67f6af859f71d203c76a8fac3e678f907918f7f)), closes [#702](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/702) [#685](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/685)
-* **python:** state Python 3.11 or later in the README and quickstart ([#731](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/731)) ([4ee946d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4ee946dc8ab236bfe6ce0ae17e5358c52efd1b27)), closes [#695](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/695)
-* **python:** update contributor and CI docs for Python 3.11 ([#718](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/718)) ([f31ff01](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f31ff0158821aabf6b4cd77bcaeeeedb2a5936ca)), closes [#696](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/696)
-* **site:** generate heading anchors that match the links in the documents ([#722](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/722)) ([9c31e6a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9c31e6ad7b194d40046b5bde3b079f3da5aa96e4)), closes [#721](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/721)
-* state one SQLAlchemy range on the documentation home page ([#717](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/717)) ([56d606f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/56d606fe62c0575463ea691311515bd3720d3094)), closes [#716](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/716)
+- **Python 3.11 documentation updates (#695, #731)** — Stated the Python 3.11+ requirement and 3.11–3.14 support range across README and quickstarts (#695, #731).
+- **Contributor and CI guides state Python 3.11** — updated the contributor and CI documentation for the Python 3.11 minimum ([#718](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/718), closes #696) by @kragent66-glitch (first contribution 🎉).
+- **Canonical index states Python 3.11** — updated the Python requirement in the canonical `llms` index ([#740](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/740), closes #702, #685) by @anush-933 (first contribution 🎉).
+- **Korean translation expansion and synchronization (#706, #707, #708, #709, #710, #711, #712, #713, #714, #719, #720)** — Added Korean homepage and navigation (#707, #712), contribution guide (#708, #713), and translations for `SA_COMPAT`, `PRD`, and `RELEASE_PLEASE_VALIDATION` (#709, #714); aligned Korean matrices and feature tables with English (#706, #711, #719, #720); and added `scripts/check_docs_translation.py` in CI to detect drift (#710).
+- **Site navigation, anchors, and license inventory (#716, #717, #721, #722, #727, #733, #739, #755)** — Fixed documentation site heading anchors with Unicode-aware slugifier (#721, #722), aligned the homepage SQLAlchemy support range to 2.0–2.1 (#716, #717), added reproducible scope-based license inventory in `THIRD_PARTY_LICENSES.md` (#727, #755), and aligned contributor ownership guardrails (#733, #739).
 
 ## [1.9.0] - 2026-10-04
 
