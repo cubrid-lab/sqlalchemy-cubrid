@@ -632,7 +632,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
 
 ### CI
 
-* **release:** restart release preparation after the abandoned 1.11.4 ([#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037)) ([3184d9b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3184d9b462bae6e2dd50d187e33abf83f44e5775)), refs [#1011](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1011)
+* **release:** restart release preparation after the abandoned 1.11.4 ([#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037)) ([3184d9b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3184d9b462bae6e2dd50d187e33abf83f44e5775)), refs [#1011](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1011) by @yeongseon.
 
 - **CI publishes the offline test summary and uploads results on success and failure
   (#1021)** — the `offline-tests` and `offline-endpoints` jobs write JUnit, coverage and
@@ -640,37 +640,37 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   the summary to the job summary through its new `step-summary` subcommand and upload
   `test-results/`; the integration jobs upload their pytest logs. Every one of those steps
   runs with `if: always()`, so a failing run keeps its evidence. Test selection, the 95%
-  coverage floor and the permissions are unchanged. The summary of the live lanes follows #1020.
+  coverage floor and the permissions are unchanged. The summary of the live lanes follows #1020 ([#1027](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1027)) by @yeongseon.
 
 - **The `make-integration` jobs also upload `test-results/integration/` (#1020)** — the
   live results of `make integration` join `make-integration.log` in the existing
-  `pytest-logs-make-integration-*` artifact; nothing else in the workflows changes.
+  `pytest-logs-make-integration-*` artifact; nothing else in the workflows changes ([#1032](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1032)) by @yeongseon.
 
-- **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged.
+- **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged ([#999](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/999)) by @yeongseon.
 
-* **release:** verify against the current cookbook and restart after the abandoned 1.11.3 ([#1007](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1007)) ([72bf7be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/72bf7be9fa0ab27454401b21972a080edd796d13))
+* **release:** verify against the current cookbook and restart after the abandoned 1.11.3 ([#1007](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1007)) ([72bf7be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/72bf7be9fa0ab27454401b21972a080edd796d13)) by @yeongseon.
 
-* **release:** start release preparation after the abandoned 1.11.2 ([#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006)) ([b1a2dfe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b1a2dfe825c983a2114025b8cbaa82ff4da6c09d))
+* **release:** start release preparation after the abandoned 1.11.2 ([#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006)) ([b1a2dfe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b1a2dfe825c983a2114025b8cbaa82ff4da6c09d)) by @yeongseon.
 
-- **The CUBRID 11.4 local Docker test database is kept in a named volume (#1000)** — `docker-compose.yml` mounted its named volume only at `/var/lib/cubrid`, where images up to 11.3 keep their databases; `cubrid/cubrid:11.4` keeps them in `/home/cubrid/CUBRID/databases`, so with `CUBRID_VERSION=11.4` the database lived in an anonymous volume, `docker compose down` lost it (`Unknown class "dba.keep_me"` after the next `up`) and left that volume dangling. A second named volume, `cubrid-databases`, now holds that path, `make docker-down` deletes both, and `make integration`'s ownership check also refuses a pre-existing `<project>_cubrid-databases`. Checked on CUBRID 10.2, 11.2 and 11.4: a table created before `down` is still there after `up`, and `make docker-down` leaves no volume behind. Opening a database created by another CUBRID version is not verified, so the guides say to reset before switching `CUBRID_VERSION`. The same fix landed in pycubrid (cubrid-lab/pycubrid#1004) ([#1001](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1001)).
+- **The CUBRID 11.4 local Docker test database is kept in a named volume (#1000)** — `docker-compose.yml` mounted its named volume only at `/var/lib/cubrid`, where images up to 11.3 keep their databases; `cubrid/cubrid:11.4` keeps them in `/home/cubrid/CUBRID/databases`, so with `CUBRID_VERSION=11.4` the database lived in an anonymous volume, `docker compose down` lost it (`Unknown class "dba.keep_me"` after the next `up`) and left that volume dangling. A second named volume, `cubrid-databases`, now holds that path, `make docker-down` deletes both, and `make integration`'s ownership check also refuses a pre-existing `<project>_cubrid-databases`. Checked on CUBRID 10.2, 11.2 and 11.4: a table created before `down` is still there after `up`, and `make docker-down` leaves no volume behind. Opening a database created by another CUBRID version is not verified, so the guides say to reset before switching `CUBRID_VERSION`. The same fix landed in pycubrid (cubrid-lab/pycubrid#1004) ([#1001](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1001)) by @yeongseon.
 
-- **The local Docker test database keeps working after its container is recreated (#997)** — the image registers the database in `databases.txt`, which images up to 11.3 keep on the `cubrid-data` volume (11.4: see #1000 above), for `CUBRID_DB_HOST`, or, when that is unset, for the creating container's hostname, its container ID. `docker-compose.yml` did not set it, and `docker compose down` keeps the volume, so after `make docker-up` or `docker compose up -d` recreated the container, every connection failed with -353 (`Failed to connect to database server, 'testdb', on the following host(s): <old container ID>`). `docker-compose.yml` now sets `CUBRID_DB_HOST: localhost`, which a recreated container resolves. A volume created before this change keeps the old ID: `make docker-fix-db-host` rewrites only `testdb`'s host field to `localhost`, keeps the data and saves the previous file as `databases.txt.before-fix-db-host` on its first run, and `make docker-down` (`docker compose down -v`) deletes the volume and its data. `make integration` was not affected (it uses a run-owned Compose project removed with `down -v`), though its fresh containers now also register `localhost`; CI (service containers) and the dialect are unchanged. The same fix landed in pycubrid (cubrid-lab/pycubrid#1001) ([#998](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/998)).
+- **The local Docker test database keeps working after its container is recreated (#997)** — the image registers the database in `databases.txt`, which images up to 11.3 keep on the `cubrid-data` volume (11.4: see #1000 above), for `CUBRID_DB_HOST`, or, when that is unset, for the creating container's hostname, its container ID. `docker-compose.yml` did not set it, and `docker compose down` keeps the volume, so after `make docker-up` or `docker compose up -d` recreated the container, every connection failed with -353 (`Failed to connect to database server, 'testdb', on the following host(s): <old container ID>`). `docker-compose.yml` now sets `CUBRID_DB_HOST: localhost`, which a recreated container resolves. A volume created before this change keeps the old ID: `make docker-fix-db-host` rewrites only `testdb`'s host field to `localhost`, keeps the data and saves the previous file as `databases.txt.before-fix-db-host` on its first run, and `make docker-down` (`docker compose down -v`) deletes the volume and its data. `make integration` was not affected (it uses a run-owned Compose project removed with `down -v`), though its fresh containers now also register `localhost`; CI (service containers) and the dialect are unchanged. The same fix landed in pycubrid (cubrid-lab/pycubrid#1001) ([#998](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/998)) by @yeongseon.
 
-- **Repository-tooling tests run when only their inputs change (#964)** — `repo`-marked tests run only in the `repo-tests` job, which starts when the `tooling` path filter matches, and the filter missed `agent-evals/**` and ten repository-tooling test modules (`test_agent_eval.py`, `test_bench_artifact.py`, `test_check_docs_translation.py`, `test_docs_provenance_hook.py`, `test_docs_reason.py`, `test_make_integration.py`, `test_release_detect.py`, `test_sqlalchemy_range.py`, `test_support_claims.py`, `test_verify_dist.py`). A pull request changing only an agent-evals task or one of those modules ran none of them. `ci.yml` now lists them and `test/conftest.py`, where `REPO_TOOLING_MODULES` is defined, and `test_workflow_path_impact.py` checks that every `REPO_TOOLING_MODULES` entry selects the tooling lane. `docs/CI_POLICY.md` (English and Korean) says so. No lane, marker or other filter changes.
+- **Repository-tooling tests run when only their inputs change (#964)** — `repo`-marked tests run only in the `repo-tests` job, which starts when the `tooling` path filter matches, and the filter missed `agent-evals/**` and ten repository-tooling test modules (`test_agent_eval.py`, `test_bench_artifact.py`, `test_check_docs_translation.py`, `test_docs_provenance_hook.py`, `test_docs_reason.py`, `test_make_integration.py`, `test_release_detect.py`, `test_sqlalchemy_range.py`, `test_support_claims.py`, `test_verify_dist.py`). A pull request changing only an agent-evals task or one of those modules ran none of them. `ci.yml` now lists them and `test/conftest.py`, where `REPO_TOOLING_MODULES` is defined, and `test_workflow_path_impact.py` checks that every `REPO_TOOLING_MODULES` entry selects the tooling lane. `docs/CI_POLICY.md` (English and Korean) says so. No lane, marker or other filter changes ([#965](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/965)) by @yeongseon.
 
-- **Manual agent runs are recorded and summarized as distributions (#906)** — `scripts/agent_eval.py` adds `prompt` (the task statement and the `report.json` format without the grading key: no fix commit, allowed files, docs decision or expected result), `record` (one run's agent and model identity, task revision and prompt digest, starting SHA, reported and observed commands, live checks reported as not run, changed files, optional wall-clock time, review findings, an optional exclusion reason for a run that is not a fair sample, and the rubric result) and `summarize` (per task revision and model: run count, verdict counts, criteria that did not pass, wall-clock range, excluded runs counted apart, and a 95% Wilson interval, never a bare pass percentage). `agent-evals/README.md` describes the manual-only protocol: an isolated clone without later history or a push remote, no publish credentials, and the grader run from the repository's own checkout. Nothing runs an agent in CI, and no score gates a pull request.
+- **Manual agent runs are recorded and summarized as distributions (#906)** — `scripts/agent_eval.py` adds `prompt` (the task statement and the `report.json` format without the grading key: no fix commit, allowed files, docs decision or expected result), `record` (one run's agent and model identity, task revision and prompt digest, starting SHA, reported and observed commands, live checks reported as not run, changed files, optional wall-clock time, review findings, an optional exclusion reason for a run that is not a fair sample, and the rubric result) and `summarize` (per task revision and model: run count, verdict counts, criteria that did not pass, wall-clock range, excluded runs counted apart, and a 95% Wilson interval, never a bare pass percentage). `agent-evals/README.md` describes the manual-only protocol: an isolated clone without later history or a push remote, no publish credentials, and the grader run from the repository's own checkout. Nothing runs an agent in CI, and no score gates a pull request ([#963](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/963)) by @yeongseon.
 
-- **Agent evaluation tasks for reflection and Alembic (#906)** — `agent-evals/` adds two tasks from documented fixes: `reflect-string-server-defaults` (#865, server defaults reflected against recorded catalog rows) and `alembic-alter-column-sql` (#861, Alembic `alter_column` SQL). Neither has recorded live evidence; the Alembic task is the deliberate case where the fix depends on server-version behavior, so a candidate passes only if it reports the live migration check as not run and says live behavior is not verified. Each task has evaluator-owned hidden tests of its contract (failing at the base SHA, passing at the fix; the reflection one answers by statement text, so it does not depend on query order), a reference fix and failure fixtures (tests and docs without the source fix, a false live claim, offline results reported as live, and for Alembic a missing *not verified* statement) whose dry-run results are real `run` output. No dialect source or CI lane changes.
+- **Agent evaluation tasks for reflection and Alembic (#906)** — `agent-evals/` adds two tasks from documented fixes: `reflect-string-server-defaults` (#865, server defaults reflected against recorded catalog rows) and `alembic-alter-column-sql` (#861, Alembic `alter_column` SQL). Neither has recorded live evidence; the Alembic task is the deliberate case where the fix depends on server-version behavior, so a candidate passes only if it reports the live migration check as not run and says live behavior is not verified. Each task has evaluator-owned hidden tests of its contract (failing at the base SHA, passing at the fix; the reflection one answers by statement text, so it does not depend on query order), a reference fix and failure fixtures (tests and docs without the source fix, a false live claim, offline results reported as live, and for Alembic a missing *not verified* statement) whose dry-run results are real `run` output. No dialect source or CI lane changes ([#962](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/962)) by @yeongseon.
 
-- **Offline agent evaluation tasks and grader (#906)** — `agent-evals/` adds a versioned task format for benchmarking coding agents on frozen historical fixes, and `scripts/agent_eval.py` grades a candidate's patch, test report and dry-run result: the task's offline tests and evaluator-owned hidden tests at its base SHA (a pytest run that skips every test is not a pass), the regression test, allowed files, affected documentation, the CHANGELOG section, and claims. A live CUBRID claim without a passing recorded live run (each clause is checked on its own), an unreported live check, compiled or bound SQL reported as live evidence, and calling the supported CUBRIDdb driver deprecated all fail; a candidate without a dry-run result is at best incomplete. The first task is the #914 JSON bool path fix, with recorded fixtures for each failure. `make agent-eval-check` re-grades them deterministically; it calls no model and needs no database, and its tests run in the existing `repo` lane. No agent score gates a pull request, and no other CI lane changes. See `agent-evals/README.md`.
+- **Offline agent evaluation tasks and grader (#906)** — `agent-evals/` adds a versioned task format for benchmarking coding agents on frozen historical fixes, and `scripts/agent_eval.py` grades a candidate's patch, test report and dry-run result: the task's offline tests and evaluator-owned hidden tests at its base SHA (a pytest run that skips every test is not a pass), the regression test, allowed files, affected documentation, the CHANGELOG section, and claims. A live CUBRID claim without a passing recorded live run (each clause is checked on its own), an unreported live check, compiled or bound SQL reported as live evidence, and calling the supported CUBRIDdb driver deprecated all fail; a candidate without a dry-run result is at best incomplete. The first task is the #914 JSON bool path fix, with recorded fixtures for each failure. `make agent-eval-check` re-grades them deterministically; it calls no model and needs no database, and its tests run in the existing `repo` lane. No agent score gates a pull request, and no other CI lane changes. See `agent-evals/README.md` ([#961](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/961)) by @yeongseon.
 
-- **The documentation check's shell scanner matches pycubrid again (#959)** — `scripts/_markdown.py` takes pycubrid's final `_substitution_end()` byte for byte (cubrid-lab/pycubrid#978): `case` inside arithmetic is a variable name, `esac` closes an empty `case` but is a pattern after `(`, `|` or with a quoted suffix, `;&` and `;;&` end a clause, and a `#` comment inside a substitution changes nothing; the unused `_keyword_at()` is removed. The file now differs from pycubrid's only in its header line and one issue reference; pycubrid's regression cases are added to `test_adjacent_shell_operators_are_separate`. No other checker rule changes ([#960](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/960)).
+- **The documentation check's shell scanner matches pycubrid again (#959)** — `scripts/_markdown.py` takes pycubrid's final `_substitution_end()` byte for byte (cubrid-lab/pycubrid#978): `case` inside arithmetic is a variable name, `esac` closes an empty `case` but is a pattern after `(`, `|` or with a quoted suffix, `;&` and `;;&` end a clause, and a `#` comment inside a substitution changes nothing; the unused `_keyword_at()` is removed. The file now differs from pycubrid's only in its header line and one issue reference; pycubrid's regression cases are added to `test_adjacent_shell_operators_are_separate`. No other checker rule changes ([#960](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/960)) by @yeongseon.
 
-- **The documentation check allocates site anchors as the site does (#957)** — `scripts/_markdown.py`, the parser shared with pycubrid and cubrid-cookbook-python, now reads this repository's `mkdocs.yml` and uses the slugifier it configures (`pymdownx.slugs`, as before; Python-Markdown's default for a site that sets none), and allocates site ids with the `toc` extension's rule: a heading with an empty slug gets `_1` instead of an empty id, and a taken `_N` id is incremented (`_1` then `_2`) instead of becoming `_N_1`. Ordinary headings keep their anchors. The change is the one merged in cubrid-lab/cubrid-cookbook-python#402 and cubrid-lab/pycubrid#976, so the shared functions stay identical; tests cover accented and Korean headings under both slugifiers, the `mkdocs.yml` detection and the collision rules ([#958](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/958)).
+- **The documentation check allocates site anchors as the site does (#957)** — `scripts/_markdown.py`, the parser shared with pycubrid and cubrid-cookbook-python, now reads this repository's `mkdocs.yml` and uses the slugifier it configures (`pymdownx.slugs`, as before; Python-Markdown's default for a site that sets none), and allocates site ids with the `toc` extension's rule: a heading with an empty slug gets `_1` instead of an empty id, and a taken `_N` id is incremented (`_1` then `_2`) instead of becoming `_N_1`. Ordinary headings keep their anchors. The change is the one merged in cubrid-lab/cubrid-cookbook-python#402 and cubrid-lab/pycubrid#976, so the shared functions stay identical; tests cover accented and Korean headings under both slugifiers, the `mkdocs.yml` detection and the collision rules ([#958](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/958)) by @yeongseon.
 
-- **The site build runs when the MkDocs provenance hook changes (#952)** — `scripts/docs_provenance_hook.py`, which `mkdocs.yml` loads since #951, was not in `ci.yml`'s `site` path filter, so a pull request changing only the hook skipped `mkdocs build --strict` and a broken hook would first fail on `main`. It is now a site input; `docs/CI_POLICY.md` (English and Korean) lists it.
+- **The site build runs when the MkDocs provenance hook changes (#952)** — `scripts/docs_provenance_hook.py`, which `mkdocs.yml` loads since #951, was not in `ci.yml`'s `site` path filter, so a pull request changing only the hook skipped `mkdocs build --strict` and a broken hook would first fail on `main`. It is now a site input; `docs/CI_POLICY.md` (English and Korean) lists it ([#953](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/953)) by @yeongseon.
 
-- **Prepare release checks the `last-release-sha` baseline override (#945)** — the override set after abandoning 1.11.1 is meant to last only until the next release is published, but nothing enforced that, and a stale override makes a later recovery silently list commits that already shipped. The reconciliation step that runs before release-please now classifies the override: it is active only while it is the merge of a release PR on `main` with a recorded abandonment, no `autorelease: pending`/`tagged` label and no tag for its version; once a later release containing it passes the existing publication proof, it is obsolete and preparation stops with a request to remove it in a normal PR. A malformed, unrelated or unreadable override also stops preparation, and an API error is reported as unresolved rather than as absence. Nothing is edited automatically. `RELEASING.md` ("Baseline override lifecycle") and `AGENTS.md` describe the rule; the current 1.11.1 override is active.
+- **Prepare release checks the `last-release-sha` baseline override (#945)** — the override set after abandoning 1.11.1 is meant to last only until the next release is published, but nothing enforced that, and a stale override makes a later recovery silently list commits that already shipped. The reconciliation step that runs before release-please now classifies the override: it is active only while it is the merge of a release PR on `main` with a recorded abandonment, no `autorelease: pending`/`tagged` label and no tag for its version; once a later release containing it passes the existing publication proof, it is obsolete and preparation stops with a request to remove it in a normal PR. A malformed, unrelated or unreadable override also stops preparation, and an API error is reported as unresolved rather than as absence. Nothing is edited automatically. `RELEASING.md` ("Baseline override lifecycle") and `AGENTS.md` describe the rule; the current 1.11.1 override is active ([#950](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/950)) by @yeongseon.
 
 - **The documentation check handles shell substitutions as pycubrid does (#934)** —
   `scripts/_markdown.py` takes the three shell fixes from cubrid-lab/pycubrid#947:
@@ -686,7 +686,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   names no goal, even from substitutions read before the error. Arithmetic expansion
   (`$((make - removed))`) runs no command except the substitutions nested in it, `case` and
   `esac` are keywords only at the start of a command, and an unquoted newline in a substitution
-  body separates commands.
+  body separates commands by @yeongseon.
 
 - **`agent-review` no longer counts empty reply-only Copilot records as review rounds
   (#933)** — a Copilot record with no body and no thread-opening comment, such as a reply
@@ -694,7 +694,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   as a summary-only round, which could put a PR past the two-round budget and reject valid
   evidence. A record that opens a thread still counts. Ported unchanged from
   cubrid-lab/cubrid-mcp-server#349, so the gate copies stay identical outside their
-  constants ([#936](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/936)).
+  constants ([#936](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/936)) by @yeongseon.
 
 - **Advisory `agent-review` check for review evidence (#905)** —
   `.github/workflows/agent-review.yml` runs `scripts/agent_review_gate.py` from the base
@@ -714,13 +714,13 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   advisory: a pull request can publish a check with the same name, so it must not be made
   a required check until it is posted from an identity a PR cannot impersonate (#929).
   `CONTRIBUTING.md`, `AGENTS.md`, the PR template and `docs/CONTRIBUTING.ko.md` document
-  it.
+  it ([#1015](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1015)) by @yeongseon.
 - **Issue-number lines in block quotes inside list items are reported (#925)** — the
   `#<digit>` line check now accepts block quote markers after a list marker or after list
   indentation (`- > #750`, a quote in a later paragraph of an item), where Python-Markdown also
   renders a heading. Container prefixes are consumed one at a time, in any order, in linear time
   (a backtracking pattern took seconds on a long run of list markers); the existing exclusions
-  (an indented continuation line, `1)`, two spaces after `>`) are unchanged ([#930](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/930)).
+  (an indented continuation line, `1)`, two spaces after `>`) are unchanged ([#930](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/930)) by @yeongseon.
 
 - **The documentation check takes link lines from the source and masks inline HTML (#923)** —
   markdown-it's link and image rules now record each link's source tail, so the lines after a
@@ -733,7 +733,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   only looks like a link tail is checked. In a
   shell block, `#` starts a comment only at the start of a word, so `echo x\ #note \`
   still continues the line. `[site]( "See [foo][bar]")` stays reported: CommonMark does not
-  parse it as a link ([#928](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/928)).
+  parse it as a link ([#928](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/928)) by @yeongseon.
 
 - **The documentation check reports lines that the site renders as headings (#920)** — a
   paragraph line under `docs/` that starts with `#` and a digit, such as a wrapped issue
@@ -742,7 +742,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   item or in a block quote too, following Python-Markdown's list and quote rules, and asks
   for `\#`. The 11 such lines on 7 pages (`docs/CI_POLICY.md`, `docs/DRIVER_COMPAT.md`,
   `docs/RELEASE_PLEASE_VALIDATION.md` and four Korean pages) are escaped; they read the
-  same on GitHub ([#924](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/924)).
+  same on GitHub ([#924](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/924)) by @yeongseon.
 
 - **The documentation check closes its remaining parser gaps (#921)** — `scripts/_markdown.py`
   and `scripts/check_docs_links.py` now match pycubrid's reviewed parser
@@ -759,7 +759,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
     trailing backslash (not `\\`, not in single quotes, not in a comment), and a quote that
     spans lines keeps its `make` lines quoted (a quote never closed in the block is prose);
   - adjacent shell operators such as `;>` are separate, and `&>>` is one redirection;
-  - `<source src>` is checked ([#922](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/922)).
+  - `<source src>` is checked ([#922](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/922)) by @yeongseon.
 
 - **Deterministic documentation defects block the merge (#908)** — a new `docs-check` job
   in `ci.yml` runs `scripts/check_docs_links.py` and `scripts/check_agents_docs.py` on every
@@ -777,13 +777,13 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   goal of a `make` command is checked. External links are never fetched,
   `scripts/check_support_claims.py` stays the authority for support wording, and the shared
   `doc-lint` workflow stays advisory; its measured findings are in `docs/CI_POLICY.md`.
-  `<!-- docs-check: ignore -->` marks a reviewed false positive.
+  `<!-- docs-check: ignore -->` marks a reviewed false positive ([#919](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/919)) by @yeongseon.
 
 - **Release preparation starts after the abandoned 1.11.1** — 1.11.1 has no tag, so
   release-please fell back to `bootstrap-sha` and proposed 1.12.0 with every commit since
   1.8.0. `release-please-config.json` now sets `last-release-sha` to the 1.11.1 merge, so the
   next candidate is computed from the commits after it, and RELEASING.md's abandoned-version
-  recovery documents setting that override and removing it after the next release is tagged.
+  recovery documents setting that override and removing it after the next release is tagged ([#912](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/912)) by @yeongseon.
 
 - **A release commit's `main` push no longer repeats the release's runtime lanes
   (#737)** — `ci.yml` runs `scripts/release_detect.py --mode push`, the decision
@@ -796,12 +796,12 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   10.2 and 3.14/11.4. On the 1.11.0 release commit this would have saved 14.1
   runner minutes for about 1.4 added to the release. `docs/CI_POLICY.md` records
   measured runner minutes after the #760 and #797 consolidation and the first
-  grouped Dependabot run.
+  grouped Dependabot run ([#841](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/841)) by @yeongseon.
 
 ### Tests
 
-- **The #872 live test of a garbage-collected async connection passes in `make integration`
-  again** — `TestAsyncTerminateLive872::test_garbage_collected_connection_is_terminated`
+- **The live test for garbage-collected async connections passes in `make integration`
+  again (#872)** — `TestAsyncTerminateLive872::test_garbage_collected_connection_is_terminated`
   failed in every `make integration` lane after #1017 published the Compose broker on
   `127.0.0.1` only, which stopped the 1.11.4 release matrix. On a host where `localhost`
   resolves to `::1` first (GitHub runners), asyncio's `create_connection` keeps the refused
@@ -809,17 +809,17 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   test's connection alive until the cycle collector ran. The test now opens the pooled
   connection before the leak and asserts that the leaked checkout reused it, so it still
   requires the refcount-freed connection's socket to be terminated, with no ResourceWarning
-  and nothing checked out.
+  and nothing checked out ([#1035](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1035)) by @yeongseon.
 
 - **The CASE value and GROUP_CONCAT ORDER BY live tests pass with CUBRIDdb (#1003)** — the
   tests added for #987 and #991 asserted pycubrid's results, so the release matrix's
   `make integration (cubriddb, …)` lanes failed on CUBRID 10.2 and 11.4 and 1.11.2 was not
   published. They now pin the CUBRIDdb results above and keep the exact pycubrid
-  assertions.
+  assertions ([#1004](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1004)) by @yeongseon.
 
 - **ORDER BY output matches SQLAlchemy's for plain items (#968)** — the dialect renders ORDER BY
   one item at a time, so a guard test compares its output with SQLAlchemy's own
-  `order_by_clause` for ORDER BY items that need no grouping.
+  `order_by_clause` for ORDER BY items that need no grouping ([#969](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/969)) by @yeongseon.
 
 - **SHOW TRACE read failures release both result handles (#854)** — `test/test_trace.py` gains
   the missing offline test for `trace_query()`'s read path: when reading the `SHOW TRACE` rows
@@ -829,14 +829,14 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   offline and does not replace integration coverage on a real server. No production code
   changes: the described behaviour already holds, so no failure could be demonstrated ([#931](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/931)) by @tnalbant (first contribution 🎉).
 
-- **#872 garbage-collection tests no longer depend on the cycle collector** — the live
+- **Garbage-collection tests no longer depend on the cycle collector (#872)** — the live
   async terminate test and the closed-event-loop test now commit before losing the
   connection, so the pool's cleanup runs when the last reference goes and terminates the
   connection on every supported Python, including 3.15, and they assert that the cleanup
   chose terminate. The reference-cycle case is a separate test that probes the installed
   SQLAlchemy and is an expected failure where the pool cannot clean such a connection up
   (SQLAlchemy 2.1 on CPython 3.15). Both failed on all four Python 3.15 cells of the full
-  compatibility matrix.
+  compatibility matrix ([#894](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/894)) by @yeongseon.
 
 - **Benchmark artifacts verify the measured dialect and carry their provenance in the report
   (#903)** — before measuring, `scripts/bench_dialect_baseline.py` now checks the installed
@@ -850,7 +850,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   fields, because it rebuilds them from the hashed report; and `validate`/`compare
   --source-repo DIR` recompute the package hash from git. `/1` manifests, including the
   first pinned pair, are rejected and kept unchanged; the re-recorded pair is in
-  `benchmarks/2026-10-14-artifact-pair-v2`. Benchmark tooling only.
+  `benchmarks/2026-10-14-artifact-pair-v2`. Benchmark tooling only ([#904](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/904)) by @yeongseon.
 
 - **Versioned benchmark artifact manifests for external regression tracking (#901)** —
   the new `scripts/bench_artifact.py` exports one complete
@@ -867,7 +867,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   as the operator supplies them; verifying them is tracked in #903. The baseline script now records its SHA-256, the connection target, `pool_pre_ping`,
   autocommit, the insertmanyvalues settings and a completion status. A pinned pair (v1.11.0
   against `main`, CUBRID 11.4) is in `benchmarks/2026-10-14-artifact-pair`; the #830 archives
-  are unchanged. Benchmark tooling only; no dialect change and no CI gate.
+  are unchanged. Benchmark tooling only; no dialect change and no CI gate ([#902](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/902)) by @yeongseon.
 
 - **Isolated live CTE coverage (#849)** — the 14 SQLAlchemy `CTETest` compliance nodes
   are strict xfails because their fixture cleanup fails on CUBRID's per-row foreign-key
@@ -876,7 +876,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   SELECT, bound parameters, UPDATE and DELETE with a CTE scalar subquery and every values-via-CTE
   variant pass; UPDATE/DELETE ... FROM are asserted as the documented limits; INSERT
   FROM SELECT over a CTE passes since #897. The ledger entries are kept, with a
-  pointer to this evidence.
+  pointer to this evidence ([#898](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/898)) by @yeongseon.
 
 - **Offline tests for identifier quoting, preflight engine disposal and the reflection probe report (#859, #858, #857)** — `test/test_base.py` covers escaped and reserved identifier quoting, `test/test_check_integration_connection.py` pins disposal of the preflight sync engine on success and on errors, and `test/test_reflection_probe_shape.py` pins the `reflection_probe` report shape with a fake inspector ([#978](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/978), [#979](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/979), [#981](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/981)) by @CloudCorpRecords.
 
