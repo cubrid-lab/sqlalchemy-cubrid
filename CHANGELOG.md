@@ -61,6 +61,14 @@ This release improves documentation, examples, and contribution guidance. Runtim
 - **FAQ and troubleshooting** — Clarified the names used in help text and diagnostic examples ([#1105](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1105)) by @AzalHoseinian (first contribution 🎉).
 - **Async sample** — Corrected the installation command and Docker guidance ([#1092](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1092)) by @bfs2021 (first contribution 🎉).
 
+### Tests
+
+- **ORM profiler and translation drift checks** — Covered the ORM profiler's dialect hotspot filtering and ordering, exercised the README translation drift checks with mocked Git, and pinned the fail-closed exits of `scripts/extract_release_notes.py` ([#1068](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1068), [#1069](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1069), [#1094](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1094)) by @kcncb (first contribution 🎉).
+
+- **llms-full generator** — `scripts/generate_llms_full.py` now rejects missing canonical pages, with tests ([#1065](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1065)) by @anaylab (first contribution 🎉).
+
+- **Integration connection check** — Pinned the `scripts/check_integration_connection.py` main entry point ([#1104](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1104)) by @WATSONSK14 (first contribution 🎉).
+
 ## [1.12.1] - 2026-10-27
 
 This maintenance release improves documentation branding, contributor guidance, and test reliability. **There are no runtime behavior changes.**
