@@ -1001,9 +1001,8 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   and the C `_decimal` requirement for Decimal-subclass parameters. README (+ ko),
   `DRIVER_COMPAT`, `CI_POLICY`, `DEVELOPMENT`, `PRD` (+ ko) and `ROADMAP` match. The
   German, Hindi, Russian and Chinese READMEs are left to their open translation issues
-  (#698–#701).
+  (#698–#701) ([#807](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/807)).
 
-* **python:** declare Python 3.15 support ([#807](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/807)) ([92d79eb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/92d79eb051bf07076a8572c01e5b61a7056b831e))
 
 ### Changed
 
@@ -1030,7 +1029,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   `THIRD_PARTY_LICENSES.md` state the same range. The 2.2 forward-compat shims and the weekly
   `--pre` canary stay: the canary installs SQLAlchemy in a separate explicit step
   (`>=2.1.0b1,<2.3`), which is not bound by the package cap, so it still forward-tests 2.2
-  pre-releases. Packaging metadata only (release type: patch); no dialect code changes.
+  pre-releases. Packaging metadata only (release type: patch); no dialect code changes ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/777)).
 - **Cookbook release verification pinned to the shared cookbook SHA** — the `verify-cookbook` call to `cubrid-cookbook-python`'s `smoke-test.yml` in `.github/workflows/publish-pypi.yml` is pinned to `bd6749093813d3a447f993fec72ac733adbeae63`, the same commit as the other two package repositories (pycubrid, sqlalchemy-cubrid, cubrid-mcp-server). Since the previous pin the cookbook adds the Python 3.11 cell on release calls (`Smoke Tests (CUBRID 11.4, Python 3.11)`), so the release verification report now needs all three cells (11.2/3.12, 11.4/3.12, 11.4/3.11). `RELEASING.md` lists the third job. CI only; the dialect is unchanged.
 - **Documentation site build on pull requests (#786)** — `ci.yml` gains a `docs-build` job
   that runs the `docs.yml` build (install `.github/docs-requirements/requirements.txt`,
@@ -1077,10 +1076,6 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   ownership table and the expected before/after runner minutes. CI only; the
   dialect is unchanged.
 
-### Fixed
-
-* **packaging:** cap SQLAlchemy below 2.2 to match the documented support matrix ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/777)) ([715349a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715349a58f207facfdc43520ead2456f72eddbe4)), refs [#774](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/774)
-
 ### Documentation
 
 - **Connection, driver-compatibility and PRD docs state the Python 3.11+ requirement
@@ -1089,16 +1084,16 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   pre-release) and the `docs/PRD.md` CI matrix, success criteria and dependency rows, with
   their Korean copies, still described Python 3.10. They now give 3.11 as the minimum,
   3.11–3.14 as the tested range, as the full compatibility matrix runs them, and mark 3.10
-  as not supported from 1.10.0. Historical rows and measurements are unchanged. Docs only.
+  as not supported from 1.10.0. Historical rows and measurements are unchanged. Docs only ([#803](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/803)).
 - **The compliance-lane pycubrid pin is labelled as the declared floor (#479)** —
   `docs/SUPPORT_MATRIX.md` (+ ko) listed the pycubrid compliance lanes as "pycubrid 1.8.0
   (recommended)", which read as a recommendation to install 1.8.0. The pin is the declared
   floor of `pycubrid>=1.8.0,<2.0`, kept on purpose; pycubrid is the recommended driver, and
-  the integration lanes test the latest release. Docs only.
+  the integration lanes test the latest release. Docs only ([#801](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/801)).
 - **Private vulnerability reporting is the preferred security channel (#738)** — GitHub
   private vulnerability reporting is now enabled for the repository. `SECURITY.md` names it
   as the preferred private route and keeps the maintainer email as the fallback; `README.md`
-  and the translated READMEs say the same. Docs only.
+  and the translated READMEs say the same. Docs only ([#796](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/796)).
 - **No more "nightly" full integration (#747)** — the PRD CI matrix (+ ko) listed a
   "Nightly" full integration run with Python 3.10. `integration-full.yml` has no
   schedule: it runs on manual dispatch and as the release gate, on Python
@@ -1106,7 +1101,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   and `test/version_differential/compare_snapshots.py` also referred to a nightly
   run; all now describe the current triggers, and the dogfood docstring names the
   CUBRID versions it actually runs on (10.2 and 11.4). `nightly` remains only as
-  the Hypothesis profile name. Docs and comments only.
+  the Hypothesis profile name. Docs and comments only ([#792](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/792)).
 - **`AGENTS.md` no longer carries stale planning context (#736)** — the
   "Performance Loop System" snapshot (R3 phases, issues #68/#70 as current work) is
   replaced by a short performance-context statement pointing to
@@ -1114,316 +1109,55 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   Volatile counts and inventories (module count, requirement-flag count, tested CUBRID
   versions, default Docker version, test file list including the nonexistent
   `test_dml.py`) are removed or point to their
-  canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only.
+  canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only ([#757](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/757)).
 - **Stale facts removed from PRD and DEVELOPMENT docs (#758)** — the nonexistent
   `test_dml.py` is no longer listed in `docs/DEVELOPMENT.md` and `docs/PRD.md` (and
   their Korean counterparts); DML tests live in `test/test_compiler.py` (ODKU regressions also in
   `test/test_regression.py`). The unguarded
   "12 Python modules", "40+ properties", "314 offline tests" and "3 uncovered lines"
   counts in `docs/PRD.md` are replaced with descriptions or pointers to the source.
-  `docs/llms-full.txt` is regenerated. Docs only.
+  `docs/llms-full.txt` is regenerated. Docs only ([#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/759)).
 - **`charset` names pycubrid 1.9.0 (#479)** — `docs/CONNECTION.md` (+ ko) said the `charset`
   URL option needs a pycubrid release "newer than 1.8.0"; it now names 1.9.0, the release
   that added it. Docs only.
 
 * **agents:** add support-claim review checklist ([#784](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/784)) ([a8ffc4b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a8ffc4bbd2ae41279f86ca125dfaba242ff2909e))
-* **agents:** replace stale performance planning snapshot with pointers ([#757](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/757)) ([f2b838a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f2b838a4e7fc418c63c0343c572bde1c2daf9c54))
 * **ci:** clarify SQLAlchemy pre-release canary coverage ([#788](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/788)) ([85817ca](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85817ca476e05604ba1347d6b99ff525da706489))
 * correct the older closing-guard CHANGELOG notes ([#819](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/819)) ([a508694](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a508694d34ec8f66243c3a97f5f46adaf5c991bc))
 * **driver:** clarify CUBRIDdb support and deprecated extras ([#781](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/781)) ([d20a6b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d20a6b25cba37cc9d9a55aef330600242cd038e6))
-* drop the stale nightly full-integration wording ([#792](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/792)) ([b0e95b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b0e95b27bb46ac90d505897e280f6037d41ea670))
 * **i18n:** update the Python requirement in the Chinese README ([#825](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/825)) ([6430aad](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6430aad77013ce353245258192371477ed70ddc1)) by @Vieta100-omo (first contribution 🎉)
-* label the compliance-lane pycubrid pin as the declared floor ([#801](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/801)) ([ea9392e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ea9392e8e5efea626a3777db3fb923ca7200b6ad)), refs [#479](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/479)
-* name private vulnerability reporting as the preferred security channel ([#796](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/796)) ([98b746f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/98b746f00fa66268f3334088bca705f3fe786713))
-* **python:** state the Python 3.11+ requirement in connection, driver and PRD docs ([#803](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/803)) ([8a6fb60](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8a6fb60c77dfc1c8c2db144328d37bc5ae420cf9))
 * **release:** record live release-please evidence and candidate regeneration ([#817](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/817)) ([27134e0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/27134e081f2e7285f563e0fde54f301339ebb5a1))
-* remove stale test_dml.py and unguarded counts from PRD/DEVELOPMENT ([#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/759)) ([c59c7db](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c59c7db92fc49769abeb832f1dce47fe48ca78f7))
 * **review:** distinguish agent review routes and dispositions ([#802](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/802)) ([24743d6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24743d604461fc681b84ecfadc0e4ec46b2c2668))
 * **support:** distinguish current guarantees from historical evidence ([#783](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/783)) ([92307cf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/92307cfcb856103827a488d5f4bf8895c02c192d))
 * **types:** identify pycubrid 1.9.0 collection binding ([#782](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/782)) ([81fc4ff](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/81fc4ff7744d5a200c2077183c601125e21f09f0))
 
 ### CI
 
-- **The closing guard catches a closing keyword used as link text** —
-  `[Closes](url) owner/repo#N` renders as "Closes owner/repo#N", but the gap after
-  the keyword stopped at `]`. The `PR title` check now crosses a link's `]`,
-  `](destination)` or `][label]`, and also a quoted continuation line, an image's
-  alt text and a link reference definition, including one whose destination and
-  title run on to later lines of the paragraph, each of which renders nothing
-  between the keyword and the reference. Scanning stays linear in the body length,
-  so adversarial link syntax at GitHub's 65,536-character limit stays well under the
-  tests' 5-second timeout. The fix came from Copilot's review of
-  cubrid-lab/pycubrid#849, and `pr-title.yml` is again byte-identical across
-  pycubrid, sqlalchemy-cubrid, cubrid-mcp-server and cubrid-cookbook-python.
-- **The release PR body also writes generated issue references as "refs"** — GitHub reads
-  release-please's `, closes [#N](…)` in the release PR body as a closing keyword, so merging
-  a release PR could close an issue that a commit only referenced. The **Prepare release**
-  workflow now rewrites those references in the PR body right after release-please updates
-  it, using the same rule as for `CHANGELOG.md`; no permission changes (#821).
-- **Generated release notes write issue references as "refs", not "closes"** — release-please
-  17.6.0 renders every issue trailer in a commit's final footer block as `, closes [#N](…)`,
-  so a commit that only said `Refs #479` was listed as closing that issue (#770).
-  `scripts/compose_release_changelog.py` now rewrites generated references to
-  `, refs [#N](…)` in `CHANGELOG.md`; curated entries and released history are unchanged.
-  `RELEASING.md` gives the freeze-label command as a JSON body, which also works with old
-  `gh` releases.
-- **The closing guard also checks the PR title and commit messages, and owners with
-  an underscore** — the PR title and the PR's commit messages make up the squash
-  commit, so the `PR title` check now reads them too, as plain text: Markdown code
-  does not hide a keyword there, and each commit message is checked on its own. The
-  job lists the commits with `gh api`, using a token that can only read pull
-  requests (the job has `pull-requests: read`; the workflow-level permissions stay
-  empty), and fails when a PR has 250 or more commits, because GitHub lists only
-  250. A test pins that step. Owners with an underscore, as Enterprise Managed Users
-  have (`alice_acme/repo#N`), are now matched in references and links. The job setup
-  and these checks come from pycubrid's guard (cubrid-lab/pycubrid#845); code-block
-  and comment handling of the PR body is unchanged; an underscore inside a word is
-  no longer read as emphasis, so underscore owners are matched there too.
-  cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#276) and cubrid-cookbook-python
-  (cubrid-lab/cubrid-cookbook-python#294) have the same change.
-- **The PR-body closing guard catches emphasized, linked, escaped and split
-  closures, and fails closed where Markdown structure is uncertain** — the
-  `PR title` check now rejects:
-  - emphasis or HTML around the keyword or the reference (`**Closes**`, `*Fixes*`,
-    `__Resolves__`, `Closes **owner/repo#N**`, `<b>Closes</b>`), a keyword split by
-    markup (`Close**s**`), and inline comments, processing instructions or CDATA
-    between the keyword and the reference;
-  - `http://`, `www.` and scheme-less `github.com/` issue URLs, autolinks, backslash
-    escapes (`\#`), HTML entities (`&#35;`, `&nbsp;`), a backslash line break,
-    leading zeros, and a foreign issue listed after another one
-    (`Closes #1, owner/repo#2`);
-  - a closing keyword followed by a link (`[text](…)`, `[text][label]`, `<a href>`)
-    when the body links any foreign issue, absolute or relative, since the link
-    text hides its target. This case has its own error message.
-
-  Only fenced and indented code blocks and HTML comment blocks are ignored. Inline
-  code and inline comments are scanned, because hiding them needs inline parsing
-  that link destinations, HTML attributes and autolinks can defeat. Once a fence
-  appears where its extent is unknown (in a list item, a block quote, after a list
-  marker, inside raw HTML, on an indented line, or as a line that only looks like a
-  fence), no later fence or comment is hidden, so a closing fence can never be
-  misread as an opener. Raw HTML blocks end where CommonMark ends them, and any
-  other line starting with a tag is treated as raw HTML until a blank line. Comments
-  after anything that may start an HTML tag are scanned, a comment also ends at
-  `--!>`, and after a raw-text element such as `<textarea>` or `<select>` the rest
-  of the body is scanned. Lines split only at CR and LF, a leading byte order mark
-  is dropped, and only spaces and tabs count as blank or indentation. A heading,
-  block quote, fence, thematic break or comment block directly under a list item now
-  ends the list, so indented code after it is ignored instead of blocking the PR.
-  Footnote text is treated like list text. A very long issue number is reported
-  instead of crashing the check, and long adversarial bodies stay fast at GitHub's
-  65,536-character limit. The same guard and regression cases are in
-  cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#275) and cubrid-cookbook-python
-  (cubrid-lab/cubrid-cookbook-python#293); a test pins the block's SHA-256 so every
-  copy changes together.
-- **The PR-body closing guard checks list-continuation lines** — a line indented
-  by four spaces under a list item (`- item`, a blank line, then
-  `    Closes other/repo#N`) is ordinary paragraph text on GitHub, not an indented
-  code block, so the `PR title` check now scans it. Indented code outside a list
-  stays ignored. Real indented code inside a list item is scanned too, so it
-  may block a PR but never lets a closure through. Regression cases cover bullet,
-  numbered, nested and lazy-continuation list items.
-- **Repository-local issue closure in PRs** — the required `PR title` check
-  rejects direct cross-repository auto-closing keywords, while local `Closes #N` and
-  cross-repository `Refs owner/repo#N` remain valid. The PR body is inert
-  environment data; no checkout or token permissions are needed. (Superseded in part
-  by the entries above: the job now has a `pull-requests: read` token to list the
-  commit messages, and the PR title and commit messages are checked too.) The guard
-  is a best-effort line scanner, not a full Markdown parser: fenced and indented
-  code and HTML comments are ignored in one pass, so a comment opener inside a fence
-  cannot hide a later closure, and `Closes: owner/repo#N` is caught too. (Superseded
-  in part by the guard entry above: inline code and inline comments are now
-  scanned.) Fences inside block quotes or list items are not recognized. Regression
-  cases cover longer, mixed and mismatched fences, tab indentation, inline code and
-  unterminated comment openers.
-- **The cookbook verifies the built wheel before it is published
-  (cubrid-lab/cubrid-cookbook-python#240)** — `publish-pypi.yml` gains
-  `verify-candidate`, which calls the cookbook smoke test in candidate mode on the
-  `release-dist` wheel of the same run (exact file set and SHA-256 checked against
-  the `build` job's `sha256` output), and `require-candidate`, which requires
-  `status == success`, `evidence == candidate artifact`, installed == requested ==
-  the release version and the verified digest == the built wheel's digest, and
-  whose downloaded candidate report must name this package, request, run and
-  repository,
-  `release-dist`, the release commit and the build's file map. `publish` needs
-  `require-candidate` and now also checks `dist/` and
-  `release-meta/` against the `build` job outputs `sha256` and the new
-  `meta_sha256` (`scripts/verify_dist.py`) before tagging. The gate is never
-  skipped after a successful build, `resume` included: builds are not
-  reproducible, so every run that publishes verifies its own bytes (a
-  `gh run rerun --failed` of the same run keeps its earlier verification). A
-  `dry-run` dispatch now verifies the freshly built wheel instead of the
-  already-published version; the post-publication `verify-cookbook` is
-  unchanged. Both cookbook calls use one pin, moved to `98866c2`. pycubrid gets
-  the same change. The candidate's pycubrid dependency still comes from PyPI, so
-  a release that needs an unpublished pycubrid must wait until that pycubrid
-  release is published. No runtime change.
-- **The PyPI duplicate guard uses `hashlib.file_digest()` (#730)** —
-  `scripts/pypi_duplicate_guard.py` hashes `dist/` files with the Python 3.11 stdlib
-  helper instead of a hand-written chunked read loop; the digests are the same. The
-  pycubrid and cubrid-mcp-server copies get the same change, so the three stay
-  identical. No runtime change.
-- **Python 3.15 is the newest offline endpoint (#666)** — the `ci.yml` offline cells for
-  main pushes, the weekly schedule and manual dispatches, and the release
-  `offline-endpoints` cells, move from Python 3.11/3.14 to 3.11/3.15, as the existing
-  oldest/newest policy (#734) and its test require. Pull requests keep the Python 3.12
-  cell, and the representative live cells (3.14/11.4 and 3.11/10.2) and SQLAlchemy
-  compliance lanes are unchanged. The manual `python-canary.yml` lane is kept and renamed
-  "Python 3.15 Packaging Check", so it no longer says 3.15 is unsupported. The live
-  Decimal-subclass round trip in `test/test_integration.py` is skipped on a Python without
-  the C `_decimal` module (CI's 3.15.0), where pycubrid refuses Decimal subclasses by design.
-- **The cub_server restart tests run on the latest pycubrid again (#479)** — in
-  `ci.yml` `integration-tests`, the restart step ran after the gating compliance step
-  had downgraded the job to `pycubrid==1.8.0`, so it tested the floor instead of the
-  latest release the other integration steps use. The step now runs
-  `uv pip install --system --upgrade-package pycubrid -e ".[pycubrid]"` and reports
-  the driver versions before its tests (a plain `.[pycubrid]` reinstall would keep
-  1.8.0, which satisfies the range). It stays the last step, and the compliance steps
-  and their `integration-full.yml` `sqlalchemy-compliance` copies are unchanged.
-  `test/test_ci_policy.py` pins the order and the upgrade. `docs/CI_POLICY.md` (and
-  Korean) say so. CI only; the dialect is unchanged.
-- **The release runs the remaining `ci.yml` push lanes itself (#737)** — the release
-  path (`publish-pypi.yml` → `integration-full.yml`) used to rely on the release PR and
-  the `main` push run of `ci.yml` for SQLAlchemy compliance, type checking,
-  `alembic-compat` and the pycubrid-extra and Alembic parts of the packaging smoke test,
-  but nothing required that push run to succeed and a later merge could cancel it.
-  `integration-full.yml` now runs `typecheck`, `alembic-compat` and
-  `packaging-smoke-test` (copies of the `ci.yml` jobs: same matrix values and commands)
-  and `sqlalchemy-compliance`, the gating CUBRIDdb (3.14/11.4) and released-pycubrid
-  (3.14/11.4 and 3.11/10.2) compliance lanes, on the checked-out release SHA, on every
-  dispatch and release call. `full-matrix-result` needs all four and fails on any
-  non-success result, so a failed, cancelled or skipped lane blocks publication.
-  `publish-pypi.yml` is unchanged (option b; it stays identical across cubrid-lab
-  repositories). Workflow-structure tests pin the copies to their `ci.yml` sources and
-  the gate's `needs`; `docs/CI_POLICY.md` (and Korean) and `RELEASING.md` describe the
-  new release coverage. CI only; the dialect is unchanged.
-- **Dependabot groups minor and patch updates (#737)** — `.github/dependabot.yml`
-  groups minor and patch version updates into one PR per ecosystem and directory
-  (`dev-tools` for pip `/`, `docs-tools` for `/.github/docs-requirements`,
-  `github-actions`), so a weekly batch runs CI once per group instead of once per
-  package. Major updates, security updates (`applies-to: version-updates`) and the
-  compatibility-sensitive SQLAlchemy, pycubrid, Alembic and CUBRID-Python stay in
-  their own PRs. Majors are still held from auto-merge, and a grouped PR still needs
-  the required checks. `docs/CI_POLICY.md` (+ ko) documents it, and
-  `test/test_workflow_hygiene.py` pins the settings. No runtime change.
-- **"Prepare release" fails visibly when a merged release is blocked** —
-  `scripts/reconcile_release_labels.py` now classifies every merged
-  `autorelease: pending` release PR it cannot mark tagged by the `publish-pypi.yml`
-  runs at its merge SHA. Any queued or running publisher run at that SHA, or a merge
-  under 2 hours old with no run yet, emits a notice and stays green. A newest
-  completed run that concluded with anything but success, a successful run without
-  publication proof, or no run 2 hours after the merge emits an error with the PR,
-  merge SHA, run URL and conclusion (plus the rerun-failed-jobs command for failed,
-  cancelled or timed-out runs, and the manual-label path for recovery dispatched at
-  another SHA), writes it to the step summary and fails the run. Before, after the
-  1.10.0 cookbook failure (run 37871732934, PR #704), release-please only logged
-  "aborting" on every push and the run stayed green. The tagged transition and its
-  fail-closed proof are unchanged; nothing is relabelled, rerun or dispatched
-  automatically. See RELEASING.md, "When preparation is blocked". CI only; the
-  dialect is unchanged.
-- **Cookbook release verification pinned to the cookbook SHA with the PyPI wait** — the `verify-cookbook` call in `.github/workflows/publish-pypi.yml` is pinned to `32e80c6ea9ae78324f764d7b873ffb64b000ddcc` (cubrid-cookbook-python#274), the same commit in pycubrid, sqlalchemy-cubrid and cubrid-mcp-server. The cookbook now waits up to 10 minutes for PyPI to serve the exact requested version before installing, and reports what PyPI served if it times out; this fixes the 1.10.0 post-publish stale-CDN failure that blocked release-please. CI only; the dialect is unchanged.
-- **Shared fence-aware CHANGELOG lint and composer** — `scripts/lint_changelog.py` and
-  `scripts/compose_release_changelog.py` adopt the canonical versions shared with
-  pycubrid, cubrid-mcp-server and the cookbook. Lines inside a fenced code block are
-  entry content, never headings; a `## [` release header inside a fence and an unclosed
-  fence fail closed in both scripts. The lint gains the shared duplicate-`###` rule,
-  gated by `SECTION_POLICY_CUTOFF` like the section policy, so it applies to
-  `[Unreleased]` and releases after 1.10.0 while the historical duplicate headings in
-  1.9.0 and 1.7.1 stay byte-identical. `docs/DEVELOPMENT.md` (and Korean) document the
-  fence rules. CI only; the dialect is unchanged.
-- **GitHub Release naming and standard release-note sections** — `AGENTS.md` gains a
-  "GitHub Release Policy" section: a Release title is exactly its tag `vX.Y.Z`, drafts
-  included; tags are never moved or recreated to fix a title; stale drafts are
-  classified against the tag and PyPI history and changed only with maintainer
-  approval; release notes come from `CHANGELOG.md`. `publish-pypi.yml` keeps creating
-  Releases with `--title "$TAG"`, and on resume or recovery it now fails closed through
-  the new `scripts/check_release_title.py` when the existing Release has another
-  title, instead of reusing it; it never renames a Release.
-  `scripts/extract_release_notes.py` appends exactly one
-  `**Full Changelog**: …/compare/<previous>...<tag>` line after the unchanged CHANGELOG
-  section (none for the first release or when the section already has a compare
-  link). `scripts/lint_changelog.py` requires the standard `###` sections (Upgrade
-  notes, Added, Changed, Deprecated, Removed, Fixed, Security, Performance,
-  Documentation, CI, Tests), each once, with content and in that order, in
-  `[Unreleased]` and releases after 1.10.0; 1.10.0 and older keep their headings.
-  release-please `changelog-sections` map commit types to those headings with the same
-  hidden types as before, and `scripts/compose_release_changelog.py` merges generated
-  notes into the standard headings instead of a `### Conventional commits` block. The
-  release-please reproduction script in `docs/RELEASE_PLEASE_VALIDATION.md` now loads
-  the real manifest and config, checks the manifest against `__version__` and the
-  heading each commit type produces; the 17.6.0 fixture is regenerated with the new
-  mapping. CI and release tooling only; the dialect is unchanged.
+- **The closing guard catches a closing keyword used as link text** — the `PR title` check now looks past link, image and link-reference syntax between a closing keyword and a foreign reference, in time linear in the body length (from the review of cubrid-lab/pycubrid#849).
+- **The release PR body also writes generated issue references as "refs"** — the **Prepare release** workflow rewrites release-please's `, closes [#N](…)` in the release PR body to `refs`, using the same rule as for `CHANGELOG.md`; no permission changes (#821).
+- **Generated release notes write issue references as "refs", not "closes"** — `scripts/compose_release_changelog.py` rewrites release-please 17.6.0's `, closes [#N](…)` to `, refs [#N](…)` in `CHANGELOG.md`, so a commit that only said `Refs #N` is no longer listed as closing it (#770).
+- **The closing guard also checks the PR title and commit messages, and owners with an underscore** — the `PR title` check also reads the PR title and each commit message (with a read-only `pull-requests` token; it fails when a PR has 250 or more commits), and matches owners such as `alice_acme/repo#N` (cubrid-lab/pycubrid#845; same change in cubrid-lab/cubrid-mcp-server#276 and cubrid-lab/cubrid-cookbook-python#294).
+- **The PR-body closing guard catches emphasized, linked, escaped and split closures, and fails closed where Markdown structure is uncertain** — emphasis, HTML, links, URLs, escapes, entities and split keywords around a foreign closure are rejected; only fenced and indented code blocks and HTML comment blocks are ignored, and once a fence's extent is uncertain no later text is hidden (same guard in cubrid-lab/cubrid-mcp-server#275 and cubrid-lab/cubrid-cookbook-python#293).
+- **The PR-body closing guard checks list-continuation lines** — lines indented under a list item are scanned as the paragraph text GitHub renders.
+- **Repository-local issue closure in PRs** — the required `PR title` check rejects direct cross-repository auto-closing keywords, while local `Closes #N` and cross-repository `Refs owner/repo#N` remain valid (partly superseded by the entries above).
+- **The cookbook verifies the built wheel before it is published (cubrid-lab/cubrid-cookbook-python#240)** — `publish-pypi.yml` gains `verify-candidate` and `require-candidate`, which run the cookbook smoke test on the exact built wheel (SHA-256 checked) before `publish`; a release that needs an unpublished pycubrid must wait until that pycubrid is published. No runtime change.
+- **The PyPI duplicate guard uses `hashlib.file_digest()` (#730)** — same digests, shared with pycubrid and cubrid-mcp-server. No runtime change.
+- **Python 3.15 is the newest offline endpoint (#666)** — the non-PR offline endpoint cells move from Python 3.11/3.14 to 3.11/3.15 (pull requests keep 3.12), and the live Decimal-subclass round trip is skipped on a Python without the C `_decimal` module.
+- **The cub_server restart tests run on the latest pycubrid again (#479)** — the restart step upgrades pycubrid after the compliance step had pinned the job to `pycubrid==1.8.0`. CI only.
+- **The release runs the remaining `ci.yml` push lanes itself (#737)** — `integration-full.yml` runs `typecheck`, `alembic-compat`, `packaging-smoke-test` and `sqlalchemy-compliance` on the release SHA, and `full-matrix-result` blocks publication on any failed, cancelled or skipped lane. CI only.
+- **Dependabot groups minor and patch updates (#737)** — one PR per ecosystem and directory; major and security updates and SQLAlchemy, pycubrid, Alembic and CUBRID-Python stay in their own PRs. No runtime change.
+- **"Prepare release" fails visibly when a merged release is blocked** — `scripts/reconcile_release_labels.py` fails the run with the PR, merge SHA and run URL when a merged release PR has no successful publication. A queued or running publisher run at that SHA, or a merge under 2 hours old with no run yet, only emits a notice and stays green. Before, after the 1.10.0 cookbook failure (PR #704), the run stayed green (see RELEASING.md, "When preparation is blocked"). CI only.
+- **Cookbook release verification pinned to the cookbook SHA with the PyPI wait** — `verify-cookbook` is pinned to `32e80c6ea9ae78324f764d7b873ffb64b000ddcc` (cubrid-cookbook-python#274), which waits up to 10 minutes for PyPI to serve the requested version; this fixes the 1.10.0 post-publish stale-CDN failure. CI only.
+- **Shared fence-aware CHANGELOG lint and composer** — `scripts/lint_changelog.py` and `scripts/compose_release_changelog.py` treat lines inside fenced code as entry content, and the lint gains the duplicate-`###` rule for `[Unreleased]` and releases after 1.10.0. CI only.
+- **GitHub Release naming and standard release-note sections** — a Release title is exactly its tag (`scripts/check_release_title.py` fails closed on resume or recovery), `scripts/extract_release_notes.py` appends one Full Changelog link, and the lint requires the standard `###` sections for `[Unreleased]` and releases after 1.10.0. CI and release tooling only.
 
 ### Tests
 
-- **Async cancellation and driver deadlines discard the connection (#479)** —
-  `test/test_aio_integration.py::TestAsyncCancellationAndDeadline` runs `SELECT SLEEP(5)`
-  through `cubrid+aiopycubrid://` with a one-slot pool. Under
-  `asyncio.wait_for(..., timeout=0.2)` it raises the built-in `TimeoutError`; with the
-  `read_timeout=0.5` URL option it raises `sa.exc.OperationalError` with
-  `connection_invalidated=True`. In both cases SQLAlchemy invalidates the connection,
-  the next `engine.connect()` gets a different driver connection that answers
-  `SELECT 1`, and no pool slot leaks. Covers pycubrid's session retirement on
-  cancellation and deadline (cubrid-lab/pycubrid#554,
-  cubrid-lab/pycubrid#556, cubrid-lab/pycubrid#687, cubrid-lab/pycubrid#744); the tests pass
-  on the 1.8.0 floor as well, so they have no version gate. Tests only.
-- **pycubrid 1.9.0 error classification through SQLAlchemy (#479)** — live tests for two
-  driver changes the dialect relies on, sync (`cubrid+pycubrid://`) and async
-  (`cubrid+aiopycubrid://`), on CUBRID 10.2 and 11.4. A zero `DATE`/`DATETIME`
-  (`'0000-00-00'`) raises `sqlalchemy.exc.DataError`, the connection is not invalidated,
-  and the same DB-API connection runs the next query (cubrid-lab/pycubrid#492/#512/#543;
-  `TestCompleteReplyValueError` in `test/test_integration.py`,
-  `test_zero_date_is_data_error_and_keeps_connection` in `test/test_aio_integration.py`).
-  The integrity tables (`_INTEGRITY_VIOLATIONS`, `_ASYNC_INTEGRITY_VIOLATIONS`,
-  `_CONSTRAINT_VIOLATIONS`) gain a parent `DELETE`/`UPDATE` restricted by a foreign key
-  (-924) and a `TRUNCATE` of a referenced table (-1284 on CUBRID 11.2+, -924 on 10.2/11.0),
-  which raise `IntegrityError` (cubrid-lab/pycubrid#493). On pycubrid 1.8.x, the supported
-  floor, these cases are strict expected failures. The tests record two `CUBRIDdb`
-  differences, documented in `docs/DRIVER_COMPAT.md`: a zero date escapes as a bare
-  `SystemError`, and a -1284 `TRUNCATE` is `DatabaseError`. Tests and docs only; the
-  dialect is unchanged.
-- **Release-please push guards are pinned (cubrid-lab/pycubrid#801)** —
-  `test/test_release_workflows.py` now asserts the exact, ordered guards of
-  `release-please.yml`: the push is directly preceded by the stale-main `exit`
-  and the `autorelease: review` re-check, the compose step starts with
-  `set -euo pipefail`, the branch `case` guard runs before checkout and is
-  followed by the generation-time stale-main `exit`, the freeze step counts the
-  exact `autorelease: review` label, and the checkout keeps
-  `persist-credentials: false`. Removing or weakening any of them now fails a
-  test; before, these mutations passed. `RELEASING.md` gains the recovery row
-  for abandoning a merged release (remove `autorelease: pending`, never add
-  `autorelease: tagged`), and the blocked-preparation steps say to skip waiting
-  for a green publisher run in that case. Test and docs only; the dialect and
-  workflows are unchanged.
+- **Async cancellation and driver deadlines discard the connection (#479)** — `test/test_aio_integration.py::TestAsyncCancellationAndDeadline` checks that a cancelled (`asyncio.wait_for`) or timed-out (`read_timeout=0.5`) `SELECT SLEEP(5)` invalidates the connection without leaking a pool slot (cubrid-lab/pycubrid#554, cubrid-lab/pycubrid#556, cubrid-lab/pycubrid#687, cubrid-lab/pycubrid#744). Tests only.
+- **pycubrid 1.9.0 error classification through SQLAlchemy (#479)** — live sync and async tests on CUBRID 10.2 and 11.4: a zero `DATE`/`DATETIME` raises `sqlalchemy.exc.DataError` without invalidating the connection (cubrid-lab/pycubrid#492/#512/#543), and foreign-key-restricted `DELETE`/`UPDATE` and a `TRUNCATE` of a referenced table raise `IntegrityError` (cubrid-lab/pycubrid#493; strict expected failures on the pycubrid 1.8.x floor). `docs/DRIVER_COMPAT.md` records two `CUBRIDdb` differences: a zero date escapes as a bare `SystemError`, and a -1284 `TRUNCATE` is `DatabaseError`. Tests and docs only.
+- **Release-please push guards are pinned (cubrid-lab/pycubrid#801)** — `test/test_release_workflows.py` asserts the exact, ordered guards of `release-please.yml`, and `RELEASING.md` gains the recovery row for abandoning a merged release. Test and docs only.
 - **Guard for the SQLAlchemy range (#774)** — `test/test_sqlalchemy_range.py` (a `repo` test) fails when the `sqlalchemy` upper bound in `pyproject.toml` (all extras) differs from the pin stated in the README, translated READMEs and docs, or when `SUPPORT_MATRIX` (English and Korean) does not list every minor below the cap as supported and the cap minor as unsupported.
-- **Live value round trips for pycubrid 1.9.0 fixes (#479)** — gaps 3, 5, 6, 8 and 9 of
-  the #479 inventory, through `cubrid+pycubrid://` in
-  `test/test_integration.py::TestPycubridValueRoundTrips` and through
-  `cubrid+aiopycubrid://` in `test/test_aio_integration.py::TestAsyncPycubridValueRoundTrips`:
-  `Decimal` values bound in plain notation (`1E-7`, `1.2345678901234567891E+20`) and `int` /
-  `Decimal` subclasses bound by value, all read back from `Numeric(38,10)` as `Decimal`
-  (cubrid-lab/pycubrid#517, #518); aware datetimes in `DateTime(timezone=True)` (`DATETIMETZ`)
-  and `TIMESTAMPTZ` columns, including the repeated hour at the end of US daylight saving
-  time, the `EST` abbreviation decoded with `fold=1`, and an unresolvable zone raising
-  `DataError` without invalidating the connection (pycubrid#413); `SELECT NULL` and a
-  NULL-typed `CASE` returning `None` and `EVALUATE 42` returning `42` (pycubrid#542);
-  `date(999, 1, 1)`, `date(99, 1, 2)` and `datetime` years 999 and 99 (pycubrid#519); a
-  `?charset=utf8` URL round trip of Korean and emoji text (pycubrid#86). `test_collection_roundtrip.py`
-  adds an all-`None` `SEQUENCE` row (`[None, None]`) for typed binding, and
-  `test_all_null_elements_are_decoded`, which seeds `SEQUENCE{NULL, NULL}`, `MULTISET{NULL}`
-  and `SET{NULL}` with SQL literals and so needs no typed binding: pycubrid 1.8.0 returned
-  those collections as raw bytes (pycubrid#483). The time zone cases resolve their
-  `ZoneInfo` inside the test and skip when the system has no IANA data for the zone, so
-  collecting `test_integration.py` no longer needs `tzdata`. Each case that fails on
-  pycubrid 1.8.0, the `[pycubrid]` floor, is a strict xfail there through the new
-  `test/_pycubrid_gate.py`. A ZoneInfo datetime in the repeated hour with `fold=1` is stored
-  one hour off, because pycubrid binds `DATETIMETZ'... America/New_York'` without the fold or
-  the abbreviation (cubrid-lab/pycubrid#819). `test_dst_end_second_occurrence_binds` is a
-  strict xfail while the installed pycubrid still renders that literal, and passes once it
-  names the occurrence. A version check cannot tell the fix apart, because pycubrid `main`
-  keeps the released version number until the next release. The `_NO_TYPED_COLLECTIONS_REASON` text and the module docstring
-  of `test_collection_roundtrip.py` now say typed collections shipped in pycubrid 1.9.0.
-  Tests only; the dialect is unchanged.
+- **Live value round trips for pycubrid 1.9.0 fixes (#479)** — sync and async tests cover plain-notation and subclass `Decimal` values, aware datetimes in `DATETIMETZ`/`TIMESTAMPTZ` including the repeated DST hour, NULL-typed results, years 999 and 99, a `?charset=utf8` round trip and all-`NULL` collections, (cubrid-lab/pycubrid#517, #518, #413, #542, #519, #86, #483); only the cases that fail on pycubrid 1.8.0, the `[pycubrid]` floor, are strict expected failures there. Known limitation: a `fold=1` datetime in the repeated hour is stored one hour off, because pycubrid binds `DATETIMETZ` without the fold (cubrid-lab/pycubrid#819). Tests only.
 
 ## [1.10.0] - 2026-10-08
 
