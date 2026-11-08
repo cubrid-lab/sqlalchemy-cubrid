@@ -2277,7 +2277,12 @@ This release establishes the 1.x compatibility contract and documents the suppor
 
 This stabilization release documents the supported environments and compatibility boundaries ahead of 1.0, including the minimum optional pycubrid driver version.
 
+### Upgrade notes
+
+- **1.0 support boundary (summary)** — SQLAlchemy 2.0–2.1 (pinned `<2.2`), Python 3.10–3.14 and CUBRID 10.2–11.4 are supported. DDL, DML, reflection, ORM, Core, Alembic migrations, ODKU/MERGE/REPLACE, window functions and CTEs are supported. JSON type: not yet mapped. Native Enum: not supported (use VARCHAR + CHECK). RETURNING: not supported. BOOLEAN: mapped to SMALLINT. After a soak period on PyPI, the next release is planned as 1.0.
+
 ### Added
+
 - `docs/SUPPORT_MATRIX.md`: Comprehensive support matrix documenting SQLAlchemy versions,
   Python versions, CUBRID versions, driver compatibility, feature support, type mappings,
   and known limitations — defines the 1.0 support boundary
@@ -2285,8 +2290,9 @@ This stabilization release documents the supported environments and compatibilit
 - Clarified public documentation to state SQLAlchemy 2.0–2.1 support explicitly
 
 ### Changed
+
 - **pycubrid dependency**: Pin optional `pycubrid` dependency to `>=0.6.0` — required for
-  tuple-based `fetchall()` return type introduced in pycubrid v0.6.0 (#72)
+  tuple-based `fetchall()` return type introduced in pycubrid v0.6.0 (#72; the pin itself, commit `c598b074`, already shipped in 0.7.1)
 - Version bumped to 0.8.0 (stabilization release on path to 1.0)
 
 ## [0.7.1] - 2026-03-13
