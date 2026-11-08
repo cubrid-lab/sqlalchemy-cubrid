@@ -1523,6 +1523,9 @@ This release contains a substantial set of dialect and development improvements.
 
 ### Changed
 
+- Release preparation moves to SHA-pinned release-please in PR-only mode. Generated Conventional Commit notes are composed with curated Upgrade notes; reviewed candidates still use the existing guarded publisher. Maintainers freeze candidate edits and explicitly start final-head PR CI; see RELEASING.md.
+- **PyPI Trusted Publisher filename** — the sole guarded release orchestrator is renamed from `release.yml` back to `publish-pypi.yml` (environment `pypi`), the filename that published 1.8.0 and that the PyPI Trusted Publisher is bound to. Under `release.yml` the first publication would have been refused with `invalid-publisher`, as happened in pycubrid (cubrid-lab/pycubrid#681). Release, full-matrix, artifact, tag and cookbook gates are unchanged; recovery commands and the successful-publication label reconciliation use the new filename, and a run of the former publish-only workflow of the same name does not count as a completed release. No dialect behavior, version, dependency or support change.
+
 - Omit unsupported coverage badges from badge-sync until a coverage feed exists (#645).
 - Reduce routine PR CI to one representative offline lane and targeted live checks;
   move full compatibility matrices to explicit dispatch/releases and schedule representative checks weekly.
@@ -1793,11 +1796,6 @@ This release contains a substantial set of dialect and development improvements.
 * refresh current support claims and remove stale test statistics ([#643](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/643)) ([dd9bb4e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/dd9bb4e8af6298ca686fcadac7b3379f89a16f5f))
 * **release:** document release-please review and recovery ([#657](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/657)) ([a01c338](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a01c3385ed4d8f4327c6dae55c13b386cc07cdef))
 * **types:** record the tested non-DBA ENUM reflection limitation ([#677](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/677)) ([112fde7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/112fde7d934b15a099ba9a044acc6429dd170e5d))
-
-### CI
-
-- Release preparation moves to SHA-pinned release-please in PR-only mode. Generated Conventional Commit notes are composed with curated Upgrade notes; reviewed candidates still use the existing guarded publisher. Maintainers freeze candidate edits and explicitly start final-head PR CI; see RELEASING.md.
-- **PyPI Trusted Publisher filename** — the sole guarded release orchestrator is renamed from `release.yml` back to `publish-pypi.yml` (environment `pypi`), the filename that published 1.8.0 and that the PyPI Trusted Publisher is bound to. Under `release.yml` the first publication would have been refused with `invalid-publisher`, as happened in pycubrid (cubrid-lab/pycubrid#681). Release, full-matrix, artifact, tag and cookbook gates are unchanged; recovery commands and the successful-publication label reconciliation use the new filename, and a run of the former publish-only workflow of the same name does not count as a completed release. No dialect behavior, version, dependency or support change.
 
 ## [1.8.0] - 2026-09-29
 
