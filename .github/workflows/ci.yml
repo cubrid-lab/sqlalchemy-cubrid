@@ -27,15 +27,12 @@ jobs:
     outputs:
       # A release commit's runtime lanes run in the release workflow instead (#737).
       release: ${{ steps.release.outputs.build == 'true' }}
-      # #1154: known release-tooling paths skip the runtime lanes on pull requests
-      # only; main pushes, weekly runs and dispatches still validate them as code.
-      code: ${{ (steps.filter.outputs.code == 'true' || (github.event_name != 'pull_request' && steps.filter.outputs.release_tooling == 'true')) && steps.release.outputs.build != 'true' }}
+      code: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' }}
       docs: ${{ steps.filter.outputs.docs }}
-      release_tooling: ${{ steps.filter.outputs.release_tooling }}
       site: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.site == 'true' }}
       tooling: ${{ steps.filter.outputs.tooling }}
-      live: ${{ (steps.filter.outputs.code == 'true' || (github.event_name != 'pull_request' && steps.filter.outputs.release_tooling == 'true')) && steps.release.outputs.build != 'true' && (github.event_name != 'pull_request' || steps.filter.outputs.risk == 'true') }}
-      extended: ${{ (steps.filter.outputs.code == 'true' || (github.event_name != 'pull_request' && steps.filter.outputs.release_tooling == 'true')) && steps.release.outputs.build != 'true' && github.event_name != 'pull_request' }}
+      live: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' && (github.event_name != 'pull_request' || steps.filter.outputs.risk == 'true') }}
+      extended: ${{ steps.filter.outputs.code == 'true' && steps.release.outputs.build != 'true' && github.event_name != 'pull_request' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -75,34 +72,8 @@ jobs:
               - '.github/docs-requirements/**'
               - '.github/workflows/docs.yml'
               - '.github/workflows/ci.yml'
-            release_tooling:
-              - 'scripts/annotate_release_contributors.py'
-              - 'scripts/audit_historical_releases.py'
-              - 'scripts/check_release_note_wrap.py'
-              - 'scripts/compose_release_changelog.py'
-              - 'scripts/lint_changelog.py'
-              - 'scripts/check_release_title.py'
-              - 'scripts/extract_release_notes.py'
-              - 'scripts/prepare_release.py'
-              - 'scripts/reconcile_release_labels.py'
-              - 'scripts/release_detect.py'
-              - 'scripts/release_summary.py'
-              - '.github/workflows/release-please.yml'
-              - 'test/test_annotate_release_contributors.py'
-              - 'test/test_audit_historical_releases.py'
-              - 'test/test_check_release_note_wrap.py'
-              - 'test/test_compose_release_changelog.py'
-              - 'test/test_lint_changelog_sections.py'
-              - 'test/test_check_release_title.py'
-              - 'test/test_extract_release_notes.py'
-              - 'test/test_prepare_release.py'
-              - 'test/test_reconcile_release_labels.py'
-              - 'test/test_release_detect.py'
-              - 'test/test_release_summary.py'
-              - 'test/test_release_workflows.py'
-              - 'test/test_release_please_config.py'
             code:
-              - '!{docs/**,*.md,**/*.md,LICENSE,LICENSE.*,NOTICE,llms.txt,.gitignore,.gitattributes,scripts/annotate_release_contributors.py,scripts/audit_historical_releases.py,scripts/check_release_note_wrap.py,scripts/compose_release_changelog.py,scripts/lint_changelog.py,scripts/check_release_title.py,scripts/extract_release_notes.py,scripts/prepare_release.py,scripts/reconcile_release_labels.py,scripts/release_detect.py,scripts/release_summary.py,.github/workflows/release-please.yml,test/test_annotate_release_contributors.py,test/test_audit_historical_releases.py,test/test_check_release_note_wrap.py,test/test_compose_release_changelog.py,test/test_lint_changelog_sections.py,test/test_check_release_title.py,test/test_extract_release_notes.py,test/test_prepare_release.py,test/test_reconcile_release_labels.py,test/test_release_detect.py,test/test_release_summary.py,test/test_release_workflows.py,test/test_release_please_config.py}'
+              - '!{docs/**,*.md,**/*.md,LICENSE,LICENSE.*,NOTICE,llms.txt,.gitignore,.gitattributes}'
             risk:
               - 'sqlalchemy_cubrid/dialect.py'
               - 'sqlalchemy_cubrid/base.py'
@@ -442,37 +413,6 @@ jobs:
           uv pip freeze --system
       - name: Run repository-tooling tests
         run: python -m pytest test/ -m repo -v --tb=short
-
-  # Release-note automation (#1154): its scripts, their tests and release-please.yml
-  # run here instead of the runtime lanes on a pull request. The module list is the
-  # release_tooling filter itself, so a deleted or renamed listed module fails this
-  # job until ci.yml is edited, and editing ci.yml selects the full validation.
-  release-tests:
-    name: Release automation regression tests
-    needs: detect-changes
-    if: needs.detect-changes.outputs.release_tooling == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          python-version: "3.12"
-          version: "0.12.17"
-          enable-cache: true
-          cache-dependency-glob: pyproject.toml
-          cache-suffix: ${{ github.job }}
-      - name: Install and report pinned dependencies
-        run: |
-          uv pip install --system -e ".[pycubrid]" --group dev
-          uv pip freeze --system
-      - name: Exercise release tools and workflow contracts
-        run: python scripts/run_release_tests.py
 
   # CubridImpl reaches Alembic through the alembic.plugins entry point on
   # Alembic 1.18+ and through the dialect's eager import on 1.7.2-1.17 (#595).
@@ -951,7 +891,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [detect-changes, lint, doc-lint, docs-check, docs-build, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, release-tests, alembic-compat, make-integration]
+    needs: [detect-changes, lint, doc-lint, docs-check, docs-build, typecheck, offline-tests, packaging-smoke-test, integration-tests, repo-tests, alembic-compat, make-integration]
     steps:
       - name: Check selected job results
         env:
@@ -974,8 +914,6 @@ jobs:
           R_INTEGRATION_TESTS: ${{ needs.integration-tests.result }}
           E_INTEGRATION_TESTS: ${{ needs.detect-changes.outputs.live }}
           R_REPO_TESTS: ${{ needs.repo-tests.result }}
-          R_RELEASE_TESTS: ${{ needs.release-tests.result }}
-          E_RELEASE_TESTS: ${{ needs.detect-changes.outputs.release_tooling }}
           E_REPO_TESTS: ${{ needs.detect-changes.outputs.tooling }}
           R_ALEMBIC_COMPAT: ${{ needs.alembic-compat.result }}
           E_ALEMBIC_COMPAT: ${{ needs.detect-changes.outputs.live }}
@@ -1001,6 +939,5 @@ jobs:
           check packaging-smoke-test "$R_PACKAGING_SMOKE_TEST" "$E_PACKAGING_SMOKE_TEST"
           check integration-tests "$R_INTEGRATION_TESTS" "$E_INTEGRATION_TESTS"
           check repo-tests "$R_REPO_TESTS" "$E_REPO_TESTS"
-          check release-tests "$R_RELEASE_TESTS" "$E_RELEASE_TESTS"
           check alembic-compat "$R_ALEMBIC_COMPAT" "$E_ALEMBIC_COMPAT"
           check make-integration "$R_MAKE_INTEGRATION" "$E_MAKE_INTEGRATION"
