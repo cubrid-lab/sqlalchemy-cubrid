@@ -1455,7 +1455,7 @@ This version adds CUBRID monetary and object-reference types and strengthens Ale
 
 - **SQLAlchemy 2.1 compatibility (historical status)**: SQLAlchemy 2.1.0b1 existed at the time of this tag, but the tested stable release was SQLAlchemy 2.0.48. All 396 tests passed against 2.0.48; this version did not establish 2.1 compatibility.
 
-- **Async DBAPI support (historical status)**: The CUBRID Python driver used with this tag did not expose an async DB-API path, so asynchronous dialect support was not available in v0.6.0. Later releases must be evaluated independently.
+- **Async DB-API support (historical status)**: The CUBRID Python driver used with this tag did not expose an async DB-API path, so asynchronous dialect support was not available in v0.6.0. Later releases must be evaluated independently.
 
 ### Added
 
