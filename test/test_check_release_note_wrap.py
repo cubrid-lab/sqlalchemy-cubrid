@@ -139,6 +139,7 @@ def test_unpublished_historical_draft_sections_have_valid_markdown_and_provenanc
     changelog = (SCRIPT.parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
     section = MODULE.release_section(changelog, version)
     assert not MODULE.violations(section), version
+    assert section.endswith("\n\n"), f"v{version} needs a blank line before the next version"
     assert "by @yeongseon" in section
     assert "https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/" in section
     assert "by @sisyphus-dev-ai" not in section
