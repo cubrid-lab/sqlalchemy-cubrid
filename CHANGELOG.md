@@ -131,7 +131,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `make format-check` (or `make check`) for the formatting check. `make check` is now the
   complete non-test quality gate (lint, format-check, typecheck, security,
   check-docs-reason), so local scripts that ran `make check-all` or `make test-offline`
-  keep working through the aliases below.
+  keep working through the aliases below ([#1010](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1010)) by @yeongseon.
 
 - **`make docker-down` now keeps the local test data, `make docker-clean` deletes it, and
   the broker listens on `127.0.0.1` only (#1008).** `make docker-down` runs
@@ -142,13 +142,13 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   it is no longer reachable from other hosts; `CUBRID_TEST_PORT` (default 33000) is the
   host-port override for `make docker-up`, `docker compose up` and `make integration`;
   when it is not given, `make docker-up` leaves the port to Compose (a `.env` value, or 33000).
-  `make integration` still creates and removes its own run-owned project.
+  `make integration` still creates and removes its own run-owned project ([#1017](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1017)) by @yeongseon.
 
 - **A MERGE assignment key that is a column of another table now raises `CompileError`
   (#847)**, also when the target has a column of the same name. Such a key was silently
   read as the target's column, as the MERGE documentation then described. Use the
   target's column (`target.c.name`) or the string `"name"`; the column-list shorthand
-  `when_not_matched_then_insert([source.c.id, ...])` is unchanged.
+  `when_not_matched_then_insert([source.c.id, ...])` is unchanged ([#895](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/895)) by @yeongseon.
 
 ### Added
 
@@ -158,7 +158,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   counts and the coverage percentage against the 95% threshold), written by the reusable
   `scripts/report_test_results.py`. The last console line repeats the summary, a failing
   suite still exits non-zero with `status: FAIL`, `test-results/` is gitignored and
-  `make clean` removes it. Test selection and the coverage floor are unchanged.
+  `make clean` removes it. Test selection and the coverage floor are unchanged ([#1022](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1022)) by @yeongseon.
 
 - **`make integration` writes `junit.xml`, `summary.json`, `environment.json` and, after a
   failure, `service.log` under `test-results/integration/` (#1020)** — through the same
@@ -169,7 +169,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   stale `PASS`. `environment.json` holds Python, SQLAlchemy, driver and CUBRID versions,
   platform and command (credentials in the command are masked); the CUBRID version is the
   image tag Compose resolves, and the configured passwords are replaced with `***` in
-  `junit.xml` and `service.log`. `INTEGRATION_RESULTS` overrides the directory.
+  `junit.xml` and `service.log`. `INTEGRATION_RESULTS` overrides the directory ([#1032](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1032)) by @yeongseon.
 
 ### Changed
 
@@ -186,7 +186,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   when Python is older than 3.11, a tool is missing or broken, or the Ruff/Mypy pins
   drift. `make format` also runs `check-tool-versions`, every tool variable can be
   overridden (`?=`) and runs through `$(PYTHON) -m <tool>`, and `make help` groups the
-  targets by purpose. CI lint and `tox -e lint` run `make lint` and `make format-check`.
+  targets by purpose. CI lint and `tox -e lint` run `make lint` and `make format-check` ([#1010](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1010)) by @yeongseon.
 
 - **MERGE assignment keys must belong to the target (#847)** — `visit_merge()` resolved a
   Column key by name, so `source.c.name` used as an UPDATE or INSERT key in
@@ -195,26 +195,26 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   (the target's own column or one of an alias of it); any other table's column raises
   `CompileError` naming that table. String keys, unbound `sa.column()` keys and the
   column-list shorthand still resolve by name, and the SQL and bind order of legitimate
-  statements are unchanged ([#895](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/895)).
+  statements are unchanged ([#895](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/895)) by @yeongseon.
 
 ### Deprecated
 
 - **`make check-all` (#1009)** — an alias of `make check` that prints a deprecation
   notice on stderr; it will be removed after the next minor release. `make test-offline`
-  remains an alias of `make test`.
+  remains an alias of `make test` ([#1010](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1010)) by @yeongseon.
 
 - **`CUBRID_PORT` (#1008)** — the former name of `CUBRID_TEST_PORT`. It is still used
   when `CUBRID_TEST_PORT` is unset, by `make docker-up` and `make integration` (which
   then print a deprecation warning) and by `docker-compose.yml`; `CUBRID_TEST_PORT` wins
   when both are set. Other targets ignore it, so a `CUBRID_PORT` exported for another
-  CUBRID tool does not make them warn.
+  CUBRID tool does not make them warn ([#1017](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1017)) by @yeongseon.
 
 - **Unused `display_width` and `values` type arguments (#870)** — `SMALLINT` /
   `BIGINT` accept `display_width` and `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` /
   `STRING` accept `values`, but neither ever changed the DDL or any behavior. Passing
   them now emits a `DeprecationWarning`; they are still accepted and ignored, and will
   be removed in a future major release. The unused private `CubridTypeCompiler._get`
-  helper is gone.
+  helper is gone ([#891](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/891)) by @yeongseon.
 
 ### Fixed
 
@@ -474,7 +474,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   backslashes when the server treats them as escapes; an unexpected probe result fails
   the connection. Native `ENUM` labels now use the same escaping. An explicit option
   still pins the mode and skips the probe; a dialect that has not connected still
-  assumes the server default ([#874](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/874)).
+  assumes the server default ([#874](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/874)) by @yeongseon.
 
 ### Documentation
 
