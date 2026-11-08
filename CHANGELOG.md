@@ -1424,7 +1424,7 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 
 ## [0.7.0] - 2026-03-12
 
-This version adds a pure-Python pycubrid dialect, including driver registration, connection management and regression tests.
+This version adds the `cubrid+pycubrid://` SQLAlchemy dialect for the pure-Python pycubrid DB-API driver, with native last-insert ID handling and regression tests.
 
 ### Added
 
@@ -1433,19 +1433,25 @@ This version adds a pure-Python pycubrid dialect, including driver registration,
   driver. Subclasses `CubridDialect` — inherits all SQL compilation, type mapping, and schema
   reflection. Overrides only driver-specific methods: `import_dbapi()`, `create_connect_args()`,
   `on_connect()`, `do_ping()` ([commit 1fd8a1e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1fd8a1e4ef82)) by @yeongseon.
+
 - **`PyCubridExecutionContext`**: Execution context that uses pycubrid's native `cursor.lastrowid`
   (returns `int | None` directly) with SQL `LAST_INSERT_ID()` fallback.
+
 - **`cubrid.pycubrid` entry point**: Registered in `pyproject.toml` so SQLAlchemy auto-discovers
   the pycubrid dialect via `create_engine("cubrid+pycubrid://...")`.
+
 - **`pycubrid` optional dependency**: `pip install "sqlalchemy-cubrid[pycubrid]"` installs pycubrid.
+
+### Documentation
+
+- **Documentation**: Updated `docs/CONNECTION.md` and `README.md` with pycubrid driver information.
+
+### Tests
+
 - **30 new offline tests**: `test/test_pycubrid_dialect.py` covering driver basics, connect args,
   on_connect, do_ping, execution context, entry point registration, isolation levels, and
   misc methods.
-- **Documentation**: Updated `docs/CONNECTION.md` and `README.md` with pycubrid driver information.
 
-### Changed
-
-- Version bumped to 0.7.0.
 
 ## [0.6.0] - 2026-03-12
 
