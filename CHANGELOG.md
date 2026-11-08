@@ -1806,7 +1806,7 @@ The intended source changes fix Alembic autogenerate reflection, but the publish
 
 ### Fixed
 
-- **Alembic autogenerate false-positive diffs** (#120):
+- **Alembic autogenerate false-positive diffs** (#120; [PR #121](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/121)) by @yeongseon:
   - `get_indexes()` now filters out the implicit indexes that CUBRID auto-creates
     for every primary-key and foreign-key constraint.  These auto-indexes
     previously caused Alembic to emit spurious `op.drop_index` /
@@ -1825,7 +1825,7 @@ The intended source changes fix Alembic autogenerate reflection, but the publish
   treats CUBRID's `VARCHAR(1073741823)` (the physical storage for `STRING`,
   `CLOB`, `TEXT`, and `String` without a length) as equivalent to SQLAlchemy's
   `Text()`, `CLOB()`, and `String()` (no length), eliminating false-positive
-  type-change diffs in Alembic autogenerate.
+  type-change diffs in Alembic autogenerate by @yeongseon.
 
 ## [1.2.1] - 2026-04-19
 
