@@ -1116,9 +1116,9 @@ Applications using the `[pycubrid]` extra must meet the updated minimum driver v
 
 ### Changed
 
-- **Faster connection health checks** — `pool_pre_ping` uses the driver's native `Connection.ping()` or `AsyncConnection.ping()` rather than a SQL query. This reduces the extra round trip needed to validate a pooled connection ([#149](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/149)).
+- **Faster connection health checks** — `pool_pre_ping` uses the driver's native `Connection.ping()` or `AsyncConnection.ping()` rather than a SQL query. This reduces the extra round trip needed to validate a pooled connection ([#149](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/149)) ([commit 045c761](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/045c761bc22412d468f9853929b363be82052ac1)) by @yeongseon.
 
-- **Updated pycubrid requirement** — installing the `[pycubrid]` extra now requires `pycubrid>=1.3.2,<2.0` to provide the native ping interface for both dialects.
+- **Updated pycubrid requirement** — installing the `[pycubrid]` extra now requires `pycubrid>=1.3.2,<2.0` to provide the native ping interface for both dialects ([commit 045c761](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/045c761bc22412d468f9853929b363be82052ac1)) by @yeongseon.
 
 
 
