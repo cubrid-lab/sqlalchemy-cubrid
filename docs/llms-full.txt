@@ -5916,7 +5916,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 ## Table of Contents
 
 - [Installation Issues](#installation-issues)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
+  - [ImportError: Could not import CUBRIDdb](#importerror-could-not-import-cubriddb)
   - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
   - [Missing greenlet for async engines](#missing-greenlet-for-async-engines)
@@ -5984,22 +5984,28 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 
 ## Installation Issues
 
-### ImportError: No module named 'CUBRIDdb'
+### ImportError: Could not import CUBRIDdb
 
 **Symptom:**
 
 ```
-ImportError: No module named 'CUBRIDdb'
+ImportError: Could not import CUBRIDdb. The cubrid:// and cubrid+cubriddb:// URLs use the CUBRIDdb C-extension driver. Install it with pip install "sqlalchemy-cubrid[cubriddb]" (the CUBRID-Python distribution on PyPI), or build CUBRIDdb from the official CUBRID/cubrid-python source. Alternatively, use the pure-Python pycubrid driver with pip install "sqlalchemy-cubrid[pycubrid]" and a cubrid+pycubrid:// URL. Check driver and server version compatibility separately.
 ```
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
-cubrid-python v11.3.0.51 or later, see
-[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
-CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
-9.3.x release, see
-[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
+**Fix — Option A: Install the CUBRIDdb C-extension driver:** install the PyPI
+CUBRID-Python package using the installation extra, or build the driver from
+[official CUBRID/cubrid-python source](https://github.com/CUBRID/cubrid-python):
+
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"
+```
+
+Source builds require appropriate CUBRID CCI headers and a C compiler; see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source).
+Check driver, Python, and CUBRID server version compatibility separately. The
+availability of an installation method does not prove every combination was tested.
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
