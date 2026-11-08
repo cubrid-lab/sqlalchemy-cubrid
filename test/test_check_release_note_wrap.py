@@ -57,3 +57,63 @@ def test_only_the_requested_release_is_inspected() -> None:
     assert MODULE.violations(MODULE.release_section(changelog, "1.12.2"))
     with pytest.raises(ValueError, match="not found"):
         MODULE.release_section(changelog, "9.9.9")
+
+
+def test_heading_requires_a_blank_line_before_its_content() -> None:
+    assert MODULE.violations("### Fixed\n- Missing heading gap.\n")
+
+
+def test_valid_lazy_list_wrapping_and_following_prose_are_allowed() -> None:
+    notes = (
+        "### Tests\n\n- Valid bullet content\n"
+        "continues on a lazy-wrapped line.\n\n"
+        "A separate explanatory paragraph is allowed.\n"
+    )
+    assert MODULE.violations(notes) == []
+
+
+def test_branding_revision_history_stays_in_the_documentation_section() -> None:
+    changelog = (SCRIPT.parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    notes = MODULE.release_section(changelog, "1.12.1")
+    documentation = notes.split("### Documentation", 1)[1].split("### CI", 1)[0]
+    tests = notes.split("### Tests", 1)[1]
+    assert "Branding revision PRs and commits" in documentation
+    assert "Branding change history:" not in tests
+
+
+def test_all_published_release_sections_have_intact_markdown_structure() -> None:
+    changelog = (SCRIPT.parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    published = (
+        "1.12.2",
+        "1.12.1",
+        "1.12.0",
+        "1.11.7",
+        "1.11.6",
+        "1.11.5",
+        "1.11.0",
+        "1.10.0",
+        "1.9.0",
+        "1.8.0",
+        "1.7.1",
+        "1.7.0",
+        "1.6.0",
+        "1.5.1",
+        "1.5.0",
+        "1.4.3",
+        "1.4.2",
+        "1.4.1",
+        "1.4.0",
+        "1.3.0",
+        "1.2.3",
+        "1.2.2",
+        "1.2.1",
+        "1.2.0",
+        "1.1.0",
+        "1.0.0",
+        "0.8.0",
+        "0.7.1",
+    )
+    for version in published:
+        section = MODULE.release_section(changelog, version)
+        problems = MODULE.violations(section)
+        assert not problems, f"v{version} has malformed release Markdown: {problems}"

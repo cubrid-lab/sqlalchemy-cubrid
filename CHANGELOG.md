@@ -64,6 +64,9 @@ This maintenance release improves documentation branding, contributor guidance, 
 ### Documentation
 
 - **Updated documentation branding** — the README, its five translations, and the documentation site's logo and favicon now use the revised Python Yellow ORM icon. The updates progressively aligned the icon with the cube-shaped organization emblem and white role markings. These are documentation asset changes only ([#1050](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1050), [#1054](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1054), [#1063](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1063), [#1066](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1066)) by @yeongseon.
+  - **Branding revision PRs and commits** — [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1051) ([7159590](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715959028dcab9915eaab7478dca2228bc0345a5)),
+    [#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1055) ([f166be7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f166be7df70599af34bd353110075f9b092ee327)),
+    [#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1064) ([c5fd64d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c5fd64d8d64ff8d31edd4db292ebb47dd8c6f250)), and [#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1067) ([e1ae6a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e1ae6a4d1bc1d91bbb7028b07d344499b6997179)).
 - **Clarified contributor communication guidance** — added guidance encouraging clear, human-readable communication from coding agents ([#1056](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1056), [commit 74afeb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/74afeb36fe5cba4503b2b860dafdd0b19903af7b)) by @yeongseon.
 
 ### CI
@@ -73,8 +76,6 @@ This maintenance release improves documentation branding, contributor guidance, 
 ### Tests
 
 - **Prevent resource warnings from interrupted-query tests** — the KILL QUERY test helper now closes its stdout/stderr pipes and clears leftover garbage before warning collection, preventing unrelated failures in the cubriddb compatibility lane ([#1061](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1061)) by @yeongseon.
-
-Branding change history: [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1051) ([7159590](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715959028dcab9915eaab7478dca2228bc0345a5)), [#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1055) ([f166be7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f166be7df70599af34bd353110075f9b092ee327)), [#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1064) ([c5fd64d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c5fd64d8d64ff8d31edd4db292ebb47dd8c6f250)), and [#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1067) ([e1ae6a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e1ae6a4d1bc1d91bbb7028b07d344499b6997179)).
 
 - **Benchmark baseline helpers covered by offline tests** — `test/test_bench_dialect_baseline.py` covers the benchmark baseline helpers ([#856](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/856), [#1039](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1039)) by @Nandankumarjv (first contribution 🎉), co-authored by @yeongseon.
 
@@ -1455,6 +1456,7 @@ This release includes substantial dialect and integration changes. Review the up
 ### Upgrade notes
 
 Behavior changes you may notice (details in the entries below):
+
 - **Alembic upgrades are atomic by default (#503).** CUBRID DDL is transactional, so a failed multi-revision `alembic upgrade` now rolls back the whole run, including the `alembic_version` update. Set `transaction_per_migration=True` in `context.configure()` to keep per-revision commits (recommended for long or large-table migrations). Offline `--sql` scripts no longer contain `BEGIN;`; run them with `csql --no-auto-commit --no-single-line` so a failing statement stops the script.
 - **Alembic registration (#504).** `CubridImpl` is registered when the dialect loads, so a default `env.py` works without importing `sqlalchemy_cubrid.alembic_impl`. The `[alembic]` and `[dev]` extras now require `alembic>=1.7.2`; `cubrid+aiopycubrid://` online migrations need Alembic's async template (`alembic init -t async`).
 - **Reflection.** Unique constraints are no longer reported twice and reflect as unique indexes, as on MySQL (#529); non-DBA users get complete metadata from the public catalog views (#549); a missing table or view raises `NoSuchTableError` (#530); `has_table()` / `has_index()` match mixed-case names (#543); `get_foreign_keys()` is sorted by name (#531); `BIT(n)` / `BIT VARYING(n)` keep their length (#545); a failing catalog query raises instead of silently returning incomplete metadata (#533, #549). Autogenerate also detects `Text` ↔ `String(n)` changes (#544). Review the first Alembic autogenerate diff after upgrading.
@@ -1680,15 +1682,19 @@ Applications that previously called `.returning()` without an immediate error mu
 This release expands SQLAlchemy 2.1 compatibility and improves asynchronous test reliability. Check the dependency range and compatibility notes when upgrading.
 
 ### Added
+
 - **SQLAlchemy 2.1 / forward-compat shims for SA 2.2 (#206)** — dependency upper bound bumped to `<2.3` (now `sqlalchemy>=2.0,<2.3`), enabling installation on SA 2.1 and future 2.2 releases. New `CubridCompiler.update_post_criteria_clause` override routes the existing `cubrid_limit` LIMIT rendering through the SA 2.1 hook that replaced `update_limit_clause`. `_render_json_extract_from_binary` now recognises `Float` as a numeric affinity since SA 2.1 split it out of `Numeric`, restoring `CAST(... AS DOUBLE)` emission for `JSON[...].as_float()`. `AsyncAdapt_pycubrid_connection.await_` is redeclared as a class-level staticmethod because SA 2.1 dropped the inherited attribute on `AsyncAdapt_dbapi_connection`. Cross-version offline test suite (639 tests) green on both SA 2.0.49 and SA 2.1.0b2 by @yeongseon.
 
 ### Performance
+
 - **Historical validation of the 1.4.2 native pycubrid ping (no change in this release)** — Tier 2 ORM benchmark in [cubrid-benchmark`2026-04-22_native-ping-hotpath`](https://github.com/cubrid-lab/cubrid-benchmark/tree/main/experiments/orm-overhead/runs/2026-04-22_native-ping-hotpath) (paired same-version A/B, 7 trials, bootstrap 95% CI) confirms `do_ping()` native CHECK_CAS path delivers a practical pre-ping hot-path win: SQLAlchemy Core `checkout_select_by_pk` +108.2% throughput [+107.8, +109.6], ORM `session_select_by_pk` +42.1% [+41.8, +43.9], with p50/p95 latency also reduced. Effect applies to short-lived checkout/session workloads with `pool_pre_ping=True` (typical web request pattern); steady-state long-connection workloads are unaffected. Measured on sqlalchemy-cubrid 1.4.2 (where the native ping shipped) with pycubrid 1.3.2, SQLAlchemy 2.0.48, CUBRID 11.2.9 and CPython 3.10.12; this release adds no ping change.
 
 ### CI
+
 - **`sqlalchemy-22-canary` CI job promoted to gating (#206)** — previously `continue-on-error: true` against a non-existent `sqlalchemy>=2.2.0b1`. Now installs `--pre "sqlalchemy>=2.1.0b1,<2.3"` so the job actually exercises the latest available SA pre-release and fails the build on regressions by @yeongseon.
 
 ### Tests
+
 - **Async integration stability for issue #208** — `test/test_aio_integration.py` now seeds per-test data instead of relying on module-shared CRUD state, adds live `pool_pre_ping=True` recovery coverage after an internal async transport drop, and verifies async SQLAlchemy INSERT returns `lastrowid` without adding a new `AsyncAdapt_pycubrid_connection.get_last_insert_id()` passthrough because async pycubrid already populates `cursor.lastrowid` and the dialect retains SQL fallback by @yeongseon.
 
 ## [1.4.3] - 2026-05-13
@@ -1696,11 +1702,13 @@ This release expands SQLAlchemy 2.1 compatibility and improves asynchronous test
 This patch improves collection-type reflection and SQLAlchemy 2.1 compatibility, while adding documentation for MERGE column resolution.
 
 ### Added
+
 - **`visit_double` alias** — forward compatibility with SQLAlchemy 2.1 which compiles `Double` via `visit_double()` (#206)
 - **MERGE column resolution docs** — column resolution rules and error reference added to `DML_EXTENSIONS.md` (#207)
 - **Collection member split tests** — `_split_collection_members` unit tests with paren-depth guard (#204)
 
 ### Fixed
+
 - **Paren-depth-aware collection member split** — reflection now correctly splits nested generic types like `NUMERIC(15,2)` inside `SET`/`MULTISET`/`SEQUENCE` (#204)
 - **Collection member type params preserved** — compilation and reflection retain precision/scale for parameterized member types (#194)
 - **Oracle review fixes** — type args, timezone semantics, and regression test gaps addressed (#203)
@@ -1736,14 +1744,17 @@ This documentation-only patch clarifies supported behavior and keeps translated 
 This release adds SQLAlchemy compatibility safeguards, Alembic migration guidance, and connection-pool stress coverage. It also updates the optional pycubrid dependency requirement.
 
 ### Added
+
 - **SQLAlchemy 2.2 compatibility shim** — `sqlalchemy_cubrid/_compat.py` insulates compiler from SA private API changes (`is_literal_value`, `bind_with_type`, `for_update_arg`, `limit_clause`, `offset_clause`). `bind_with_type` now preserves `expanding`/`literal_execute`/`isoutparam` flags; `is_literal_value` handles `visitors.Visitable` instances (Oracle post-review fixes) (#142). SQLAlchemy 2.2 remains unsupported: the dependency stays pinned to `<2.2`, and the shim prepares the codebase for a future bump without lifting the pin.
 - **Alembic safety checklist + advisory CLI** — `docs/ALEMBIC.md` adds Pre-Migration Checklist, Pre-Deploy Sequence, and Rollback Template; `scripts/alembic_safety_check.py` provides advisory detection for non-transactional DDL risks (#144)
 - **Compiler benchmark baseline** — `scripts/bench_compile.py` per-construct timing baseline. Baselines: SELECT+LIMIT ~178µs, INSERT ~129µs, INSERT ON DUPLICATE KEY UPDATE ~234µs (1.8× simple INSERT due to `replacement_traverse` overhead), SELECT FOR UPDATE ~153µs (#145)
 
 ### Fixed
+
 - **pycubrid dependency pin** — `pycubrid>=1.2.0,<2.0` (was missing upper bound) (#143)
 
 ### Tests
+
 - **QueuePool concurrency stress tests** — 6 tests covering sync concurrent checkouts within `pool_size`, overflow burst absorption with barrier sync, `pool_timeout` exhaustion, `pool_recycle` aged-connection replacement, async `gather` within `pool_size`, async overflow burst
 - **F401 lint regression** — removed unused `CubridDialect` import in `test/test_logging.py`
 
@@ -1752,6 +1763,7 @@ This release adds SQLAlchemy compatibility safeguards, Alembic migration guidanc
 This release improves schema reflection, SQL compilation, and Alembic migration diagnostics. It also adds stronger integration and packaging checks.
 
 ### Added
+
 - **FK parsing with ON DELETE/ON UPDATE** — `get_foreign_keys()` regex now captures referential action clauses from `SHOW CREATE TABLE` (#135)
 - **Multi-table UPDATE** — `UPDATE ... JOIN ... SET` syntax support via `CubridSQLCompiler` (#137)
 - **FULL OUTER JOIN / LATERAL rejection** — raises `CompileError` for unsupported join types instead of generating invalid SQL (#138)
@@ -1760,27 +1772,32 @@ This release improves schema reflection, SQL compilation, and Alembic migration 
 - **Reflection fallback logging** — silent errors in dialect.py now logged (#127)
 
 ### Changed
+
 - **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
 - **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity (documented requirement; the package metadata pin was raised to `>=1.2.0,<2.0` in 1.4.0, #143)
 - **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
 
 ### Fixed
+
 - **`has_index()` bug** — now filters by `class_of.class_name` to avoid cross-table false positives
 - **`reset_isolation_level()`** — uses canonical isolation level name instead of alias
 - **`get_isolation_level()` fallback** — returns canonical `"READ COMMITTED"` instead of driver-specific alias (#140)
 
 ### Documentation
+
 - **README consolidation** — authoritative support contract with async status and known limitations (#128)
 - **ARCHITECTURE.md / DEVELOPMENT.md refresh** — updated to reflect current module structure (#129)
 - **Reflection diagnostic guide** — troubleshooting for Alembic autogenerate issues (#131)
 - **SA_COMPAT.md** — documents SQLAlchemy private API dependencies and 2.2 readiness plan (#132)
 
 ### CI
+
 - **Distribution smoke test** — CI validates sdist/wheel build (#122)
 - **Release consistency CI** — automated tag/version/changelog alignment checks (#124)
 - **Async integration tests in CI** — promoted from optional to regular (#130)
 
 ### Tests
+
 - **Entry point verification test** — importlib.metadata check for dialect registration (#123)
 - **SHOW CREATE TABLE golden tests** — parsing fixture corpus for DDL reflection (#125)
 - **Alembic autogenerate regression tests** — false-positive diff detection (#126)
@@ -1921,16 +1938,19 @@ This release establishes the 1.x compatibility contract and documents the suppor
 > **Later update, not part of v1.0.0:** the 1.x compatibility policy above was revised after this release by [#1115](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1115); the current policy is in [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md#public-api-compatibility-in-1x).
 
 ### Added
+
 - Full type annotations across all 8 source modules (mypy errors: 280 → 0)
 - Compatibility Matrix in README (Python, CUBRID, SQLAlchemy, Alembic versions)
 
 ### Changed
+
 - Development Status classifier updated from "Beta" to "Production/Stable"
 - pycubrid optional dependency updated from `>=0.6.0` to `>=1.0,<2.0`
 - All documentation updated to explicitly state "SQLAlchemy 2.0–2.1" support
 - Version bumped to 1.0.0
 
 ### Fixed
+
 - `visit_join` signature: added missing `from_linter` parameter to match SQLAlchemy base class
 - `sqlalchemy.sql.util.warn`: replaced with correct `sqlalchemy.util.warn` API
 
@@ -1960,18 +1980,22 @@ This stabilization release documents the supported environments and compatibilit
 This patch fixes UTC timestamp compilation and schema inspection, improves statement compilation caching, and reduces index-reflection overhead.
 
 ### Upgrade notes
+
 - **First non-development PyPI release** — the only earlier PyPI uploads are `0.0.1.dev0` and `0.0.1.dev1` (2022). The optional `[pycubrid]` extra requires `pycubrid>=0.6.0` ([#72](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/72), [commit c598b07](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c598b0749e84166f45e4f67ef3109d1171605d55)).
 
 ### Changed
+
 - **Package metadata** — Updated PyPI classifiers and the project Changelog link ([#75](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/75), [commit e682336](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e682336b45)).
 - **Version scheme** — Re-versioned the project to 0.x for the pre-1.0 development phase ([commit f6171f1](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f6171f1f3598f14feb804bce9b1fb2097d60436e)).
 
 ### Fixed
+
 - **`visit_utc_timestamp_func`** — Compile `func.utc_timestamp()` to `UTC_TIMESTAMP()` instead of `UTC_TIME()`, returning a full datetime value instead of time-only (#53).
 - **`get_indexes()`** — Fix PK index filtering: read `is_primary_key` from column 0 of the single-column query result instead of unreachable column 6, excluding primary-key indexes correctly (#54).
 - **`has_table()`** — Recognize views as existing objects by accepting `class_type IN ('CLASS', 'VCLASS')` instead of only `'CLASS'` (#55).
 
 ### Performance
+
 - **Statement caching** — Enable SQLAlchemy statement caching on `Insert` and `Replace` using `inherit_cache = True`, with cache-key regression coverage ([#70](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/70), [commit 688c415](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/688c415b76)).
 - **Index reflection** — Avoid an N+1 primary-key catalog lookup in `get_indexes()` by using a batched query, with regression tests ([#70](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/70)).
 - **Column reflection** — Precompile patterns used by `get_columns()` at module level instead of on every invocation ([#70](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/70)).
