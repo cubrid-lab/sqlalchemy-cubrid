@@ -2204,12 +2204,12 @@ This release adds JSON columns, JSON path expressions, and typed JSON access for
 
 ### Added
 
-- **JSON type support** (CUBRID 10.2+)
+- **JSON type support** (CUBRID 10.2+, PR #115)
   - `JSON` type class subclassing `sqltypes.JSON`
   - `JSONIndexType` and `JSONPathType` for path expression formatting
-    (with embedded-quote escaping per CUBRID JSON path grammar)
+    (with embedded-quote escaping per CUBRID JSON path grammar: `"` → `""`)
   - `visit_JSON` type compiler emitting `JSON` DDL
-  - JSON path expressions via `JSON_EXTRACT` (`col["key"]`, `col[("a", "b")]`)
+  - JSON path expressions via `JSON_EXTRACT` (`col["key"]`, `col[("a", "b")]`, multi-level paths with indices such as `col[("a", 1, "b")]`); for example `select(Document.payload["meta", "author"].as_string())`
   - Typed access via `as_boolean`, `as_integer`, `as_numeric`, `as_float`, `as_string`
     using CASE / CAST / `JSON_UNQUOTE` as appropriate
   - JSON null → SQL NULL handling with CASE expressions for typed access
@@ -2223,6 +2223,13 @@ This release adds JSON columns, JSON path expressions, and typed JSON access for
   with `pyproject.toml` (was 1.0.0 vs 1.1.0)
 - Removed unused imports flagged by `ruff` in `aio_pycubrid_dialect.py` and
   `test/test_aio_pycubrid_dialect.py`
+
+- CI: switched the version-consistency check to `ast.parse` so it no longer requires installing runtime dependencies just to read `__version__`
+- `test_integration.py`: hoisted `Mapped`/`mapped_column` imports to module scope (function-local imports broke SQLAlchemy's annotation resolution under the `insertmanyvalues` test)
+
+### Tests
+
+- All 500 offline tests pass (47 new for JSON); all 8 integration matrix combinations pass (Python 3.10/3.12 × CUBRID 10.2/11.0/11.2/11.4); project coverage 98.61%, `types.py` 99%.
 
 ## [1.1.0] - 2026-04-18
 
