@@ -2291,8 +2291,7 @@ This stabilization release documents the supported environments and compatibilit
 
 ### Changed
 
-- **pycubrid dependency**: Pin optional `pycubrid` dependency to `>=0.6.0` — required for
-  tuple-based `fetchall()` return type introduced in pycubrid v0.6.0 (#72; the pin itself, commit `c598b074`, already shipped in 0.7.1)
+- **pycubrid dependency (historical context)** — the optional `pycubrid>=0.6.0` minimum was already introduced in v0.7.1 ([#72](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/72), [commit c598b07](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c598b0749e84166f45e4f67ef3109d1171605d55)) and remains in force in this release. The driver integration expects `list[tuple]` results from `fetchall()`; do not attribute this return shape to a new behavior introduced by pycubrid v0.6.0.
 - Version bumped to 0.8.0 (stabilization release on path to 1.0)
 
 ## [0.7.1] - 2026-03-13
