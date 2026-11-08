@@ -36,6 +36,16 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
   range may automatically pick up a breaking MINOR once the revised notice has been published and removal is approved;
   pin the specific version range or migrate ahead of removal.
 
+### Changed
+
+- The `Could not import CUBRIDdb` error raised for `cubrid://` and
+  `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver
+  legacy or the PyPI `CUBRID-Python` releases untested. It now lists both
+  installation paths (`sqlalchemy-cubrid[cubriddb]` or an official
+  CUBRID/cubrid-python source build) and the pure-Python
+  `cubrid+pycubrid://` alternative. The message prefix and the chained
+  original `ImportError` are unchanged.
+
 ## [1.12.2] - 2026-11-05
 
 ### Documentation
