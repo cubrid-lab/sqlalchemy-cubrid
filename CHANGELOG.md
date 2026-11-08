@@ -1064,19 +1064,19 @@ This patch improves collection-type reflection and SQLAlchemy 2.1 compatibility,
 
 ### Added
 
-- **`visit_double` alias** — forward compatibility with SQLAlchemy 2.1 which compiles `Double` via `visit_double()` (#206)
+- **`visit_double` alias** — forward compatibility with SQLAlchemy 2.1 which compiles `Double` via `visit_double()` (#206) ([commit deaeb80](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/deaeb80c6277435b1e1045f8df0ddb4ce686b5d6)) by @yeongseon.
 
-- **MERGE column resolution docs** — column resolution rules and error reference added to `DML_EXTENSIONS.md` (#207)
+- **MERGE column resolution docs** — column resolution rules and error reference added to `DML_EXTENSIONS.md` (#207) ([commit d568e81](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d568e81dcfd82184e8933fbf54f66048ca1a5cd8)) by @yeongseon.
 
-- **Collection member split tests** — `_split_collection_members` unit tests with paren-depth guard (#204)
+- **Collection member split tests** — `_split_collection_members` unit tests with paren-depth guard (#204) ([commit 2ee1803](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2ee1803c6126d377eadd82bb12a66da954f30626)) by @yeongseon.
 
 ### Fixed
 
-- **Paren-depth-aware collection member split** — reflection now correctly splits nested generic types like `NUMERIC(15,2)` inside `SET`/`MULTISET`/`SEQUENCE` (#204)
+- **Paren-depth-aware collection member split** — reflection now correctly splits nested generic types like `NUMERIC(15,2)` inside `SET`/`MULTISET`/`SEQUENCE` (#204) ([commit f46c678](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f46c6785c60200b0bdb3a16c8354a5c3211f1ee8)) by @yeongseon.
 
-- **Collection member type params preserved** — compilation and reflection retain precision/scale for parameterized member types (#194)
+- **Collection member type params preserved** — compilation and reflection retain precision/scale for parameterized member types (#194) ([commit 5342636](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5342636a112f4fa827e96c94ee20d7012175bb18)) by @yeongseon.
 
-- **Oracle review fixes** — type args, timezone semantics, and regression test gaps addressed (#203)
+- **Oracle review fixes** — type args, timezone semantics, and regression test gaps addressed (#203) ([commit b49d2f5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b49d2f5c97f348ca07320b46d4c10460d6c63d58)) by @yeongseon.
 
 ## [1.4.2] - 2026-04-21
 
