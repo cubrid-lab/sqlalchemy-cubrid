@@ -31,6 +31,12 @@ offline suite instead (see
 [Workflow change impact](#workflow-change-impact)). Repository tooling tests run in one Linux lane when tooling changes; tooling includes
 `agent-evals/**` and every repository-tooling test module, because the offline lanes
 never run those modules (#964).
+On a pull request, the release-note scripts, their test modules and `release-please.yml`
+listed in the `release_tooling` filter select only the `release-tests` lane (plus the
+tooling lane and static checks), not the runtime or live lanes. Main pushes, weekly runs
+and dispatches still treat them as code. `release-tests` runs the listed modules and
+fails when a listed path no longer exists, so deleting or renaming one requires a
+`ci.yml` edit, which selects full validation (#1154).
 The static lint job continues on all events, including generated documentation checks
 and the README async example test (`test/test_readme_async_examples.py`), so a
 README-only change still runs it.
