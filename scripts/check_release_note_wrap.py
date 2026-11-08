@@ -35,6 +35,7 @@ def violations(text: str) -> list[str]:
     errors: list[str] = []
     prose: list[tuple[int, str]] = []
     fence: str | None = None
+    within_section = False
     section_has_bullet = False
     lines = text.splitlines()
     for n, line in enumerate(lines, start=1):
@@ -46,13 +47,15 @@ def violations(text: str) -> list[str]:
         if fence is not None:
             continue
         if line.startswith("### "):
+            within_section = True
             section_has_bullet = False
             if n < len(lines) and lines[n].strip():
                 errors.append(f"line {n}: add a blank line after the section heading")
         elif line.startswith(("- ", "* ")):
             section_has_bullet = True
         elif (
-            section_has_bullet
+            within_section
+            and section_has_bullet
             and line
             and not line[0].isspace()
             and not line.startswith(("#", ">", "|", "---"))
