@@ -14,37 +14,25 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
+This maintenance release revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. SQL generation, reflection and connection behavior are unchanged.
+
 ### Upgrade notes
 
-- **1.x dialect-extension API policy clarified (#892)** — the dialect can
-  consider individually reviewed, low-impact changes to project-specific
-  convenience APIs in a later MINOR without waiting for 2.0. This is
-  prospective and requires a documented user-impact assessment and migration
-  instructions; it does **not** permit breaking SQLAlchemy Core/ORM behavior,
-  generated SQL, data correctness, reflection or migrations. Already published
-  API-specific promises still require an explicit revised notice in a
-  published release before removal. In particular, the deprecated
-  `SMALLINT`/`BIGINT` `display_width` and string-type `values` arguments
-  **continue to work with warnings in this change**; #892's actual removal,
-  including positional calls such as `SMALLINT(11)`, is a separate decision.
-  **This release revises the actual `DeprecationWarning` text** from "future
-  major" to "may be removed in a future 1.x MINOR". The ignored arguments
-  remain accepted in this release. Migrate `SMALLINT(display_width=11)` /
-  `SMALLINT(11)` to `SMALLINT()`, `BIGINT(20)` to `BIGINT()`, and
-  `VARCHAR(30, values=["x"])` to `VARCHAR(30)`. Removing ignored arguments
-  changes no generated CUBRID DDL. Applications using a `<2.0` dependency
-  range may automatically pick up a breaking MINOR once the revised notice has been published and removal is approved;
-  pin the specific version range or migrate ahead of removal.
+- **Revised deprecation notice for ignored type arguments (#892)** — the `DeprecationWarning` for the ignored `SMALLINT`/`BIGINT` `display_width` argument (including positional `SMALLINT(11)`) and the string-type `values` argument now says they may be removed in a future reviewed **1.x MINOR** instead of the next major release. The arguments are still accepted in this release and generate no different DDL. Migrate `SMALLINT(11)` to `SMALLINT()`, `BIGINT(20)` to `BIGINT()` and `VARCHAR(30, values=["x"])` to `VARCHAR(30)`, or pin a narrower version range. The 1.x compatibility policy behind this change is in [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md#public-api-compatibility-in-1x) ([#1115](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1115), [#1122](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1122)) by @yeongseon.
+- **Building from source needs setuptools 77 or newer** — the build backend requirement is now `setuptools>=77` for SPDX license metadata. Installing the published wheel is unaffected; source builds without build isolation need an up-to-date setuptools ([#1113](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1113)) by @CloudCorpRecords.
 
 ### Changed
 
-- The `Could not import CUBRIDdb` error raised for `cubrid://` and
-  `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver
-  legacy or the PyPI `CUBRID-Python` releases untested. It now lists both
-  installation paths (`sqlalchemy-cubrid[cubriddb]` or an official
-  CUBRID/cubrid-python source build) and the pure-Python
-  `cubrid+pycubrid://` alternative. The message prefix and the chained
-  original `ImportError` are unchanged.
+- **Missing-CUBRIDdb error** — the `Could not import CUBRIDdb` error for `cubrid://` and `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver legacy or the PyPI `CUBRID-Python` releases untested. It lists both installation paths (`sqlalchemy-cubrid[cubriddb]` or an official CUBRID/cubrid-python source build) and the pure-Python `cubrid+pycubrid://` alternative. The message prefix and the chained original `ImportError` are unchanged ([#1150](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1150)) by @yeongseon.
+
+### Documentation
+
+- **First connection and troubleshooting** — troubleshooting now shows the actual missing-pycubrid and authentication error messages, explains missing `greenlet` errors for async engines and broker readiness, and adds Windows virtual-environment setup to the first-connection lesson and Apple silicon options for the CUBRID lab. Translated READMEs guide readers to their first connection with `cubrid+pycubrid://` URLs and no longer overstate live CI coverage ([#1116](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1116), [#1118](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1118), [#1124](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1124), [#1126](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1126), [#1127](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1127), [#1131](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1131), [#1134](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1134), [#1137](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1137)) by @yeongseon.
+- **CUBRIDdb troubleshooting** — the entry quotes the actual `Could not import CUBRIDdb` error and lists the supported `sqlalchemy-cubrid[cubriddb]` and official source-build installation paths, keeping the heading and anchor correction first proposed in #1110 ([#1205](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1205)) by @yeongseon.
+- **Feature support and versions** — corrected the CUBRID 10.2 feature-support guidance and separated database server versions from Python driver versions, with a version check that works without CUBRIDdb installed ([#1117](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1117), [#1149](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1149)) by @yeongseon.
+- **Getting help** — the issue chooser and documentation now point to one support and questions path, and bug reports ask for the driver and URL scheme ([#1125](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1125), [#1129](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1129), [#1135](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1135)) by @yeongseon.
+- **Published pages** — fixed links from the documentation site and the PyPI README to repository files, made the PyPI demo render, and removed the unused Sphinx scaffold ([#1123](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1123), [#1132](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1132), [#1138](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1138)) by @yeongseon.
+- **Historical release notes** — earlier `CHANGELOG.md` sections now use the standard headings, credit verified human contributors (#1214), restore merged changes and published details they had omitted, and correct factual errors such as the PyPI 1.2.2 statement; all 28 published GitHub Release pages were updated to match and re-verified ([#1153](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1153)) by @yeongseon.
 
 ## [1.12.2] - 2026-11-05
 
