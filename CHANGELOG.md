@@ -2128,7 +2128,7 @@ This corrective release replaces the yanked PyPI 1.2.2 distribution. Install 1.2
 
 ## [1.2.2] - 2026-04-19
 
-The intended source changes fix Alembic autogenerate reflection, but the published PyPI 1.2.2 artifact was built from an older commit and was yanked. **Install 1.2.3 instead.**
+The intended source changes fix Alembic autogenerate reflection, but the published PyPI 1.2.2 artifact was built from an older commit: it lacks the #120 fix and the `cubrid.pycubrid` / `cubrid.aiopycubrid` entry points. **Install 1.2.3 instead.**
 
 ### Fixed
 
