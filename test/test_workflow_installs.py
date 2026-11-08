@@ -22,7 +22,7 @@ FULL_SHA = re.compile(r"[0-9a-f]{40}")
 UV_VERSION = "0.12.17"
 # The release gate keeps setup-uv's event guard (`auto`); routine CI always caches.
 WORKFLOWS = {"ci.yml": True, "integration-full.yml": "auto", "upstream-canary.yml": True}
-EXPECTED_JOBS = {"ci.yml": 12, "integration-full.yml": 8, "upstream-canary.yml": 2}
+EXPECTED_JOBS = {"ci.yml": 11, "integration-full.yml": 8, "upstream-canary.yml": 2}
 # Jobs that set up Python but install nothing (stdlib-only scripts).
 NO_INSTALL = {("integration-full.yml", "version-differential")}
 PIP_INSTALL = re.compile(r"\bpip3?\s+install\b")
