@@ -894,19 +894,19 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   `pycubrid>=1.8.0,<2.0`. On 3.15, pycubrid 1.10.0 and earlier reject `?charset=ksc5601`
   because Python 3.15 maps that codec alias to CP949; use `?charset=euckr` or the newer
   pycubrid. Building the official CUBRIDdb driver with GCC 14 fails on Python 3.14 and
-  3.15 alike (the two versions compared); see `docs/DRIVER_COMPAT.md`.
+  3.15 alike (the two versions compared); see `docs/DRIVER_COMPAT.md` ([#807](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/807)) by @yeongseon.
 - **`sqlalchemy-cubrid` no longer installs with SQLAlchemy 2.2 or newer (#774).** The package
   metadata now requires `sqlalchemy>=2.0,<2.2`, matching the supported range already
   documented (2.0 and 2.1). SQLAlchemy 2.2 is not released yet (PyPI latest 2.1.4), so no
   current install changes: 2.0.x and 2.1.x resolve exactly as before. Once 2.2 ships, `pip`
   keeps resolving SQLAlchemy 2.1.x for this package. SQLAlchemy 2.2 was never verified
   against the full compatibility matrix and is excluded until it ships and passes it; the
-  cap is then lifted in a later release.
+  cap is then lifted in a later release ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/777)) by @yeongseon.
 - **The `dev` extra is gone; contributors install the `dev` dependency group (#765).** Use
   `pip install -e . --group dev` (pip 25.1 or later) or `make install` instead of
   `pip install -e ".[dev]"`, which now installs only the package and warns that the extra
   does not exist. End users are not affected: the runtime extras (`pycubrid`, `alembic`,
-  `cubrid`, `cubriddb`) are unchanged.
+  `cubrid`, `cubriddb`) are unchanged ([#808](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/808)) by @yeongseon.
 
 ### Added
 
@@ -920,7 +920,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   and the C `_decimal` requirement for Decimal-subclass parameters. README (+ ko),
   `DRIVER_COMPAT`, `CI_POLICY`, `DEVELOPMENT`, `PRD` (+ ko) and `ROADMAP` match. The
   German, Hindi, Russian and Chinese READMEs are left to their open translation issues
-  (#698–#701) ([#807](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/807)).
+  (#698–#701) ([#807](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/807)) by @yeongseon.
 
 
 ### Changed
@@ -940,7 +940,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   environment that repeats the test requirements, and a CI type check without the
   `typecheck` group. Docs tools stay in `.github/docs-requirements/requirements.txt`
   (#761). The `dev` group resolves to the same 73 packages as the former extra. Packaging
-  metadata and contributor tooling only (release type: patch); no dialect code changes.
+  metadata and contributor tooling only (release type: patch); no dialect code changes ([#808](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/808)) by @yeongseon.
 - **SQLAlchemy is capped below 2.2 (#774)** — `sqlalchemy>=2.0,<2.3` became `>=2.0,<2.2` in
   `dependencies` and in the `dev` and `pycubrid` extras, so package metadata matches
   `docs/SUPPORT_MATRIX.md` (`≥ 2.2` unsupported). README, the translated READMEs,
@@ -948,15 +948,15 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   `THIRD_PARTY_LICENSES.md` state the same range. The 2.2 forward-compat shims and the weekly
   `--pre` canary stay: the canary installs SQLAlchemy in a separate explicit step
   (`>=2.1.0b1,<2.3`), which is not bound by the package cap, so it still forward-tests 2.2
-  pre-releases. Packaging metadata only (release type: patch); no dialect code changes ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/777)).
-- **Cookbook release verification pinned to the shared cookbook SHA** — the `verify-cookbook` call to `cubrid-cookbook-python`'s `smoke-test.yml` in `.github/workflows/publish-pypi.yml` is pinned to `bd6749093813d3a447f993fec72ac733adbeae63`, the same commit as the other two package repositories (pycubrid, sqlalchemy-cubrid, cubrid-mcp-server). Since the previous pin the cookbook adds the Python 3.11 cell on release calls (`Smoke Tests (CUBRID 11.4, Python 3.11)`), so the release verification report now needs all three cells (11.2/3.12, 11.4/3.12, 11.4/3.11). `RELEASING.md` lists the third job. CI only; the dialect is unchanged.
+  pre-releases. Packaging metadata only (release type: patch); no dialect code changes ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/777)) by @yeongseon.
+- **Cookbook release verification pinned to the shared cookbook SHA** — the `verify-cookbook` call to `cubrid-cookbook-python`'s `smoke-test.yml` in `.github/workflows/publish-pypi.yml` is pinned to `bd6749093813d3a447f993fec72ac733adbeae63`, the same commit as the other two package repositories (pycubrid, sqlalchemy-cubrid, cubrid-mcp-server). Since the previous pin the cookbook adds the Python 3.11 cell on release calls (`Smoke Tests (CUBRID 11.4, Python 3.11)`), so the release verification report now needs all three cells (11.2/3.12, 11.4/3.12, 11.4/3.11). `RELEASING.md` lists the third job. CI only; the dialect is unchanged ([#771](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/771)) by @yeongseon.
 - **Documentation site build on pull requests (#786)** — `ci.yml` gains a `docs-build` job
   that runs the `docs.yml` build (install `.github/docs-requirements/requirements.txt`,
   `scripts/generate_llms_full.py`, `mkdocs build --strict`) when `docs/**`, `mkdocs.yml`,
   `scripts/generate_llms_full.py`, `.github/docs-requirements/**`, `docs.yml` or `ci.yml`
   change. The new `site` path filter selects it, `matrix-result` expects it exactly when
   selected, and it never uploads or deploys anything. Previously a broken strict build or
-  docs-tool pin bump only failed on `main`. CI only; the dialect is unchanged.
+  docs-tool pin bump only failed on `main`. CI only; the dialect is unchanged ([#769](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/769)) by @yeongseon.
 - **Docs tools pinned, scan concurrency, pycubrid floor test and stale "nightly" wording (#761, #762, #764, #747)** —
   `docs.yml` installs `mkdocs`, `mkdocs-material` and `pymdown-extensions` from the exact pins in
   `.github/docs-requirements/requirements.txt`, which Dependabot now updates. `codeql.yml` and
@@ -965,14 +965,14 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   runs are never cancelled or dropped. `test/test_workflow_hygiene.py` fails when the compliance lane's pinned pycubrid
   differs from the `pycubrid>=` floor declared in `pyproject.toml`. The `integration-full.yml`
   fuzz and mutation job names and a comment no longer say "nightly" although there is no
-  schedule; gating is unchanged (fuzz still gates the release). CI only; the dialect is unchanged.
+  schedule; gating is unchanged (fuzz still gates the release). CI only; the dialect is unchanged ([#766](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/766)) by @yeongseon.
 - **Mutation testing no longer delays releases (#747)** — `publish-pypi.yml`'s `build`
   waits for the whole called `integration-full.yml`, so the non-gating `mutation-testing`
   job added its run time (historical median 9.6, maximum 18.1 minutes) to every release.
   It now runs only when `integration-full.yml` is dispatched manually and is skipped on
   the release call (`if: ${{ !inputs.sha }}`; the release call always passes `sha`).
   The Hypothesis fuzz pass still gates the release, and `full-matrix-result` is
-  unchanged. `publish-pypi.yml` is unchanged. CI only; the dialect is unchanged.
+  unchanged. `publish-pypi.yml` is unchanged. CI only; the dialect is unchanged ([#805](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/805)) by @yeongseon.
 - **Offline tests run on the oldest and newest supported Python outside PRs (#734)** —
   in `ci.yml` the `offline-tests` matrix is chosen by event: pull requests keep the
   single representative Python 3.12 cell, while main pushes, the weekly schedule and
@@ -980,7 +980,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   95% coverage floor) on Python 3.11 and 3.14. Each cell uploads its own
   `coverage-report-py<version>` artifact, and `matrix-result` still fails when an
   offline cell fails, is cancelled or is unexpectedly skipped. CI only; the dialect
-  is unchanged.
+  is unchanged ([#756](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/756)) by @yeongseon.
 - **Extended main and compatibility validation consolidated (#737)** — `ci.yml` drops
   the `live-smoke` lane, whose `test_integration.py`/`test_regression.py` run on
   Python 3.12, CUBRID 11.4 and `cubrid+pycubrid://` is a subset of `make-integration`
@@ -993,7 +993,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   could cancel. Pull requests are unchanged. `docs/CI_POLICY.md` records the
   measured job counts, runner minutes and failure yield per event, the coverage
   ownership table and the expected before/after runner minutes. CI only; the
-  dialect is unchanged.
+  dialect is unchanged ([#760](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/760)) by @yeongseon.
 
 ### Documentation
 
