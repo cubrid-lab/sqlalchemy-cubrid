@@ -57,3 +57,31 @@ def test_only_the_requested_release_is_inspected() -> None:
     assert MODULE.violations(MODULE.release_section(changelog, "1.12.2"))
     with pytest.raises(ValueError, match="not found"):
         MODULE.release_section(changelog, "9.9.9")
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "### Fixed\n- Missing heading gap.\n",
+        "### Tests\n\n- Existing test.\n\n"
+        "Floating history text between list entries.\n\n- Next test.\n",
+    ],
+)
+def test_release_list_structure_errors_are_detected(bad: str) -> None:
+    assert MODULE.violations(bad)
+
+
+def test_all_published_release_sections_have_intact_markdown_structure() -> None:
+    changelog = (SCRIPT.parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    published = (
+        "1.12.2", "1.12.1", "1.12.0", "1.11.7", "1.11.6",
+        "1.11.5", "1.11.0", "1.10.0", "1.9.0", "1.8.0",
+        "1.7.1", "1.7.0", "1.6.0", "1.5.1", "1.5.0",
+        "1.4.3", "1.4.2", "1.4.1", "1.4.0", "1.3.0",
+        "1.2.3", "1.2.2", "1.2.1", "1.2.0", "1.1.0",
+        "1.0.0", "0.8.0", "0.7.1",
+    )
+    for version in published:
+        section = MODULE.release_section(changelog, version)
+        problems = MODULE.violations(section)
+        assert not problems, f"v{version} has malformed release Markdown: {problems}"
