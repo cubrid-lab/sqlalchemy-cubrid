@@ -103,7 +103,7 @@ This release improves the reliability and reporting of the development verificat
   only after the offline suite passed, also under `make -j`. `make test` stays offline; run
   `make check test` for the former offline-only `make verify`. The deprecated `CUBRID_PORT`
   fallback is unchanged. `make install` now also installs the `[pycubrid]` extra, so the live
-  lane can connect right after it. Development tooling only; the dialect API is unchanged.
+  lane can connect right after it. Development tooling only; the dialect API is unchanged by @yeongseon.
 
 ### Added
 
@@ -117,19 +117,19 @@ This release improves the reliability and reporting of the development verificat
   SIGTERM or SIGHUP sent to make to the running phase, so `make integration` still cleans up.
   The new `scripts/report_test_results.py aggregate` subcommand builds the summary, and
   `step-summary` renders it. `make verify` now clears `test-results/test/` and
-  `test-results/integration/` before it starts; `make -n verify` writes nothing.
+  `test-results/integration/` before it starts; `make -n verify` writes nothing by @yeongseon.
 
 ### CI
 
 - **The `make integration` CI jobs publish the live results summary (#1021)** — `make-integration`
   in `ci.yml` and `integration-full.yml` append `test-results/integration/summary.json` to the job
   summary with `if: always()`, so a failing or incomplete live lane shows its status and counts
-  next to the uploaded `pytest-logs-*` artifact. No permission, secret or test-selection change.
+  next to the uploaded `pytest-logs-*` artifact. No permission, secret or test-selection change by @yeongseon.
 - **Every new issue starts in `status: needs triage` (#1028)** — the issue forms add the
   label, `issue-triage.yml` adds it to every opened issue instead of only to issues with
   incomplete titles or labels, and the upstream canary adds it to the issues it files. The
   unused `scripts/check_issue_metadata.py` check is removed. Priority and size are still set
-  by a maintainer, who removes the label after triage.
+  by a maintainer, who removes the label after triage by @yeongseon.
 
 ## [1.11.7] - 2026-10-25
 
