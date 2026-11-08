@@ -26,6 +26,36 @@ Close with exactly one Full Changelog comparison link. Omit empty sections.
 Summaries and details must not claim that a database feature or driver is
 unsupported merely because a particular test run failed.
 
+## Reader-focused length
+
+Keep the standard headings above rather than adding separate `Highlights` or
+`Contributors` sections. For a primarily maintainer-led project, one clear
+summary and readable change entries are more useful than a second, separately
+maintained release-note format.
+
+- Start with one or two sentences about changes a user can notice or actions
+  they may need to take. Put compatibility, security, migration and breaking
+  behavior in the appropriate standard sections, especially Upgrade notes.
+- Lead each entry with the observable result, then explain why it matters.
+  Prefer a short paragraph over a list of implementation steps, internal
+  identifiers or every changed helper. Add essential limitations and commands
+  when users need them; do not enforce a fixed word or bullet limit.
+- Keep `Added`, `Changed`, `Fixed`, `Documentation`, `CI`, `Tests`
+  and the other established categories whenever they contain real changes.
+  Documentation and test contributors deserve the same accurate attribution
+  as runtime-code contributors.
+- Credit each verified human PR author or co-author **beside the change**,
+  retaining first-contribution markers when proven and direct PR/commit links.
+  Condensing duplicate changes must not drop a participating contributor.
+  A separate contributor list is not required.
+- For unusually large releases, retain important version-specific caveats,
+  upgrade instructions and traceable source references. Link supporting
+  technical details to their actual PRs or documentation, but do not bury
+  actionable warnings or replace release notes with raw commit logs.
+- Make the edited `CHANGELOG.md` section the single publication source.
+  Review rendered Markdown and cross-check its contributor credits and links
+  against the previous notes before editing an existing GitHub Release body.
+
 ## Changes and authors
 
 - State the observable change, affected component and user impact, not only
