@@ -1038,7 +1038,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   `docs/llms-full.txt` is regenerated. Docs only ([#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/759)) by @yeongseon.
 - **`charset` names pycubrid 1.9.0 (#479)** — `docs/CONNECTION.md` (+ ko) said the `charset`
   URL option needs a pycubrid release "newer than 1.8.0"; it now names 1.9.0, the release
-  that added it. Docs only by @yeongseon.
+  that added it. Docs only ([#800](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/800)) by @yeongseon.
 
 * **agents:** add support-claim review checklist ([#784](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/784)) ([a8ffc4b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a8ffc4bbd2ae41279f86ca125dfaba242ff2909e)) by @yeongseon.
 * **ci:** clarify SQLAlchemy pre-release canary coverage ([#788](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/788)) ([85817ca](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85817ca476e05604ba1347d6b99ff525da706489)) by @yeongseon.
