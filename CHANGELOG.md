@@ -478,12 +478,11 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
 
 ### Documentation
 
-- **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. `mkdocs.yml` now registers the `mermaid` SuperFences custom fence, so the documentation site renders the Mermaid diagrams on every page (they were shown as code listings before). Documentation only; no behavior change ([#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1016)).
+- **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. `mkdocs.yml` now registers the `mermaid` SuperFences custom fence, so the documentation site renders the Mermaid diagrams on every page (they were shown as code listings before). Documentation only; no behavior change ([#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1016)) by @yeongseon.
 
-* **agents:** require repository-local issue authoring checks ([#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012)) ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
+* **agents:** require repository-local issue authoring checks ([#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012)) ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781)) by @yeongseon.
 * **contributing:** fix single-test pytest node example ([c04a380](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c04a380f4b9a512fa8ecb892324fe6b59fde31b7)), refs [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881) ([#1029](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1029)) by @HarshRajSinghania
-* enforce repository-local issue drafting ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
-* **triage:** clarify PR overlap and execution precedence ([1d082cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1d082ccccb2010b2ab6db474eaeca770431a6b7e)), refs [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023)
+* **triage:** clarify PR overlap and execution precedence ([1d082cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1d082ccccb2010b2ab6db474eaeca770431a6b7e)), refs [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023) by @yeongseon.
 
 - **Two CUBRIDdb result differences are documented (#1003)** — CUBRIDdb binds values on the
   server, where pycubrid writes them into the SQL. With CUBRIDdb a `CASE` whose `THEN`/`ELSE`
@@ -492,23 +491,23 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   because the server does not treat the two copies as the same expression. The Driver
   Compatibility guide describes both with their workarounds (`cast(..., Integer)`; an
   argument position such as `aggregate_order_by(literal_column("1"))`), and the Feature
-  Support pages link to it. The dialect is unchanged.
+  Support pages link to it. The dialect is unchanged ([#1004](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1004)) by @yeongseon.
 
 - **Boolean expressions that still failed on CUBRID (#968)** — superseded by the #970 fix
   above: those forms now run, and the `docs/FEATURE_SUPPORT.md` note that listed them, with its
   `case()` workaround, is replaced. Do not use that workaround inside a window: CUBRID 11.4
   evaluates a `CASE` (or `if()`) in a window `ORDER BY` or `PARTITION BY` as a constant, so the
-  window ignores it ([#971](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/971)).
+  window ignores it ([#971](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/971)) by @yeongseon.
 
-- **The first-connection course has one page per lesson (#943)** — the rest of the course moves out of the Quick Start page into Lesson 3 (save a row and read it back through a separate connection, `save_row.py`), Lesson 4 (a transaction undone with `rollback()`, `rollback_row.py`, which shows the row count inside the transaction and can be rerun) and Lesson 5 (the owner- and comment-checked cleanup and removing the lab with `docker rm -f -v`), in English and Korean. The former single `first_saved_row.py` is split between Lessons 3 and 4; the table, its marker comment and the cleanup script are unchanged. The Quick Start page lists all five lessons, keeps the first-connection error table and next steps, and keeps its former "Step 3" and "Clean up" anchors as short "moved to" sections. Every command was rerun against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0, including reruns and the rollback before Lesson 3 ([#956](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/956)).
+- **The first-connection course has one page per lesson (#943)** — the rest of the course moves out of the Quick Start page into Lesson 3 (save a row and read it back through a separate connection, `save_row.py`), Lesson 4 (a transaction undone with `rollback()`, `rollback_row.py`, which shows the row count inside the transaction and can be rerun) and Lesson 5 (the owner- and comment-checked cleanup and removing the lab with `docker rm -f -v`), in English and Korean. The former single `first_saved_row.py` is split between Lessons 3 and 4; the table, its marker comment and the cleanup script are unchanged. The Quick Start page lists all five lessons, keeps the first-connection error table and next steps, and keeps its former "Step 3" and "Clean up" anchors as short "moved to" sections. Every command was rerun against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0, including reruns and the rollback before Lesson 3 ([#956](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/956)) by @yeongseon.
 
-- **The first-connection course starts with two lesson pages (#943)** — preparing CUBRID and Python (`docs/LESSON_PREPARE.md`: an existing database's values or the disposable Docker lab, and the virtual environment) and running the first query (`docs/LESSON_FIRST_QUERY.md`) are now separate pages, each with a goal, prerequisites, the commands, the real output and a next step, in English and Korean, listed under Start here. The Quick Start page is the course landing: it lists the lessons, keeps the save-a-row, cleanup and first-connection-errors sections, and keeps its former anchors as short "moved to" sections. The lab's readiness loop and the first script are wrapped to fit narrow screens, the site shows previous/next links at the bottom of each page, and the documentation home links the lab in Lesson 1. Every command was rerun as written against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0 ([#955](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/955)).
+- **The first-connection course starts with two lesson pages (#943)** — preparing CUBRID and Python (`docs/LESSON_PREPARE.md`: an existing database's values or the disposable Docker lab, and the virtual environment) and running the first query (`docs/LESSON_FIRST_QUERY.md`) are now separate pages, each with a goal, prerequisites, the commands, the real output and a next step, in English and Korean, listed under Start here. The Quick Start page is the course landing: it lists the lessons, keeps the save-a-row, cleanup and first-connection-errors sections, and keeps its former anchors as short "moved to" sections. The lab's readiness loop and the first script are wrapped to fit narrow screens, the site shows previous/next links at the bottom of each page, and the documentation home links the lab in Lesson 1. Every command was rerun as written against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0 ([#955](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/955)) by @yeongseon.
 
-- **The documentation site is organized by reader question (#943)** — the navigation (English and Korean) now has Start here (the first-connection course), How-to guides (connecting and configuring the driver, the ORM, Alembic, CUBRID-specific DML, isolation levels), Reference (types, feature support, support matrix, driver compatibility, including the supported CUBRIDdb C-extension driver), Help (troubleshooting, issues, private security reports) and Project and internals, instead of Getting Started/Usage/Reference/Operations/Project; the home pages list the same sections. No page moved and no URL changed. `docs/agents/documentation.md` records the page map with each page's reader, question and decision, and the lesson pattern for the upcoming first-connection lessons. Two paragraphs that a following `---` rule turned into accidental headings (in the Connection guide and Feature Support) are plain paragraphs again, so they no longer appear in the page tables of contents ([#954](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/954)).
+- **The documentation site is organized by reader question (#943)** — the navigation (English and Korean) now has Start here (the first-connection course), How-to guides (connecting and configuring the driver, the ORM, Alembic, CUBRID-specific DML, isolation levels), Reference (types, feature support, support matrix, driver compatibility, including the supported CUBRIDdb C-extension driver), Help (troubleshooting, issues, private security reports) and Project and internals, instead of Getting Started/Usage/Reference/Operations/Project; the home pages list the same sections. No page moved and no URL changed. `docs/agents/documentation.md` records the page map with each page's reader, question and decision, and the lesson pattern for the upcoming first-connection lessons. Two paragraphs that a following `---` rule turned into accidental headings (in the Connection guide and Feature Support) are plain paragraphs again, so they no longer appear in the page tables of contents ([#954](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/954)) by @yeongseon.
 
-- **The documentation says it is development documentation, and the runbook tells version states apart (#946)** — the site is built from `main` on every change, so it can describe unreleased changes, and `main`'s `__version__` can name a candidate or an abandoned version (it read 1.11.1, never published, while the newest release was 1.11.0). The English and Korean documentation home pages gain "About this documentation": development scope, the exact source commit (filled in at build time by a small MkDocs hook, `scripts/docs_provenance_hook.py`, from `GITHUB_SHA` or `git rev-parse HEAD`, never from PyPI), where published releases and their `docs/` at the tag are, and that each guide states its tested versions; the Quick Start now says its commands ran with the published 2026-10-15 PyPI releases. `RELEASING.md` gains a "Which state a version is in" table (candidate, publication in progress or partial, abandoned, published and verified; unknown when PyPI or the API cannot be read), corrects the bot-PR CI description (runs are created but wait as `action_required` or end with zero jobs, as observed on #910) with a table of CI states including stale heads, lists what the release maintainer records before merging, and adds an "After publication" step for completion evidence and support-statement review ([#951](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/951)).
+- **The documentation says it is development documentation, and the runbook tells version states apart (#946)** — the site is built from `main` on every change, so it can describe unreleased changes, and `main`'s `__version__` can name a candidate or an abandoned version (it read 1.11.1, never published, while the newest release was 1.11.0). The English and Korean documentation home pages gain "About this documentation": development scope, the exact source commit (filled in at build time by a small MkDocs hook, `scripts/docs_provenance_hook.py`, from `GITHUB_SHA` or `git rev-parse HEAD`, never from PyPI), where published releases and their `docs/` at the tag are, and that each guide states its tested versions; the Quick Start now says its commands ran with the published 2026-10-15 PyPI releases. `RELEASING.md` gains a "Which state a version is in" table (candidate, publication in progress or partial, abandoned, published and verified; unknown when PyPI or the API cannot be read), corrects the bot-PR CI description (runs are created but wait as `action_required` or end with zero jobs, as observed on #910) with a table of CI states including stale heads, lists what the release maintainer records before merging, and adds an "After publication" step for completion evidence and support-statement review ([#951](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/951)) by @yeongseon.
 
-- **The quickstart removes the lab's Docker volume too (#948)** — the `cubrid/cubrid` images keep their database in an anonymous volume (`/home/cubrid/CUBRID/databases` in 11.4), and `docker rm -f` without `-v` left that volume, with the tutorial's `testdb`, behind on every run. The Quick Start (English and Korean) now removes the lab with `docker rm -f -v sqlalchemy-cubrid-quickstart` and explains what `-v` deletes ([#949](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/949)).
+- **The quickstart removes the lab's Docker volume too (#948)** — the `cubrid/cubrid` images keep their database in an anonymous volume (`/home/cubrid/CUBRID/databases` in 11.4), and `docker rm -f` without `-v` left that volume, with the tutorial's `testdb`, behind on every run. The Quick Start (English and Korean) now removes the lab with `docker rm -f -v sqlalchemy-cubrid-quickstart` and explains what `-v` deletes ([#949](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/949)) by @yeongseon.
 
 - **The README async examples are complete programs (#941)** — the `Async` and `Async insert
   with PK retrieval` examples put `async with` and `await` at module level, a `SyntaxError`
@@ -521,7 +520,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   The Korean README carries the same programs, and the German, Hindi, Russian and Chinese
   READMEs the corrected query example. A new offline test compiles every async README
   example as a plain script and checks that the translations repeat the English programs;
-  the always-running lint job runs it, so README-only changes are checked too ([#944](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/944)).
+  the always-running lint job runs it, so README-only changes are checked too ([#944](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/944)) by @yeongseon.
 
 - **A first SQLAlchemy connection for CUBRID beginners (#940)** — the Quick Start guide
   (English and Korean) is now one recommended path: the roles of SQLAlchemy, the dialect,
@@ -534,7 +533,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   as next steps. The README and the documentation home start with a link to it, the README
   Quick Start states its `demodb` placeholder values, and the home page's minimal example
   uses the recommended `cubrid+pycubrid://` URL. The CUBRIDdb C-extension driver built from
-  source stays supported; only the `[cubrid]` and `[cubriddb]` extras are deprecated ([#942](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/942)).
+  source stays supported; only the `[cubrid]` and `[cubriddb]` extras are deprecated ([#942](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/942)) by @yeongseon.
 
 - **CAS error -4 is described as an interrupted statement (#873)** — pycubrid 1.13.0 reports
   -4 (`ER_INTERRUPTED`, a `KILL QUERY`) as `Interrupted` with SQLSTATE `HY008`. The Driver
@@ -542,14 +541,14 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   comment now say so, and note that earlier pycubrid releases reported it as a communication
   error (`08S01`). The dialect's behavior is unchanged: -4 remains a non-disconnect, as it
   has been since 1.9.0 (#572). The Driver Compatibility guide also cites the CUBRID source for why -671 (`ER_CSS_RECV_OR_SEND`) is not
-  a disconnect code: the CAS resets only for the four session-lost server codes ([#939](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/939)).
+  a disconnect code: the CAS resets only for the four session-lost server codes ([#939](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/939)) by @yeongseon.
 
 - **A maintainer's review is the standalone-agent alternative to Copilot (#926)** —
   `AGENTS.md` and `CONTRIBUTING.md` now say that a standalone agent PR waits for a
   substantive submitted GitHub Copilot review or a maintainer's review, recorded on the
   PR, instead of "another person's" review (maintainer decision, 2026-10-15). A reviewer
   agent run by the implementer does not count. The Korean contributor guide's review
-  process now states the same route instead of "at least one review" ([#927](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/927)).
+  process now states the same route instead of "at least one review" ([#927](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/927)) by @yeongseon.
 
 - **Agent guidance split into task guides (#907)** — the root `AGENTS.md` (618 lines,
   36,498 bytes) keeps the overview, commands, code conventions and every review, issue,
@@ -561,7 +560,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `scripts/check_agents_docs.py` checks the links, anchors, guide reachability, `make`
   targets, script paths and the `requires-python`/SQLAlchemy pins quoted in the root file
   against `pyproject.toml`, and with `--retained-from REF` that no line of an earlier
-  `AGENTS.md` was dropped. No code, CI or release behavior changes.
+  `AGENTS.md` was dropped. No code, CI or release behavior changes ([#918](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/918)) by @yeongseon.
 
 - **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
   SQLAlchemy 2.1 (2.1.0 to 2.1.4 checked) on CPython 3.15, the pool never cleans up a
@@ -572,9 +571,9 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   with a `ResourceWarning`, and the pool slot stays checked out. This affects every
   dialect, sync pools included. SQLAlchemy 2.0 and Python 3.14 and earlier are not
   affected, and the dialect's own terminate path is unchanged. The Connection Guide and
-  the Support Matrix describe the limitation ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/909)).
+  the Support Matrix describe the limitation ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/909)) by @yeongseon.
 
-* **contributing:** clarify good-first-issue access for human contributors ([#913](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/913)) ([7a2512f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a2512f4694ee5129081ad87a449cae8bb3d4a88))
+* **contributing:** clarify good-first-issue access for human contributors ([#913](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/913)) ([7a2512f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a2512f4694ee5129081ad87a449cae8bb3d4a88)) by @yeongseon.
 * correct the documented boolean expression positions ([#986](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/986)) ([7c7958b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7c7958be8e82fa49dd3fb56591ad5a5108e16e30)) by @SuellenQwQ (first contribution 🎉)
 * **types:** correct the namespace of reflected timezone types ([#973](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/973)) ([9480036](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9480036c1a184d6227c93562c67452ded57cfbc8)), refs [#882](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/882) by @CloudCorpRecords (first contribution 🎉)
 
@@ -582,14 +581,14 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   English README and its Korean, Chinese, Hindi, German and Russian translations open with the
   sqlalchemy-cubrid ORM icon, centered and without a caption, and the documentation site uses
   it as its header logo and favicon. All of them load the SVG from one immutable
-  [cubrid-lab/brand](https://github.com/cubrid-lab/brand) commit ([#900](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/900)).
+  [cubrid-lab/brand](https://github.com/cubrid-lab/brand) commit ([#900](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/900)) by @yeongseon.
 
 - **`ROADMAP.md` no longer presents shipped releases as plans (#833)** — the stale
   "Current Release Line — v1.8.x" heading is now "Current Focus", the Python 3.10
   retirement (shipped in 1.10.0) and Python 3.15 support (shipped in 1.11.0) moved
   to Completed with their release dates, and the Compatibility section and the
   header link to `CHANGELOG.md`, PyPI and `docs/SUPPORT_MATRIX.md` instead of
-  repeating version numbers. The 2026-10-02 decisions are kept as dated history ([#844](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/844)).
+  repeating version numbers. The 2026-10-02 decisions are kept as dated history ([#844](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/844)) by @yeongseon.
 
 - **`docs/PERFORMANCE.md` has a current same-CUBRID baseline (#830)** — raw
   pycubrid, SQLAlchemy Core and ORM measured on one CUBRID 11.4 server at `main`
@@ -603,7 +602,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   The section also records the feasibility of pycubrid's opt-in
   `executemany(prepared=True)`, which the dialect does not use. Historical
   figures are now dated. No dialect hotspot or regression was found; runtime
-  behavior is unchanged.
+  behavior is unchanged ([#843](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/843)) by @yeongseon.
 
 - **The dialect baseline now covers CUBRID 10.2, 11.0 and 11.2, CUBRIDdb, the async
   driver and concurrent connections (#830 follow-up)** — `docs/PERFORMANCE.md` (+
@@ -616,7 +615,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `benchmarks/2026-10-13-dialect-baseline-followup/`. Reads differ little between
   servers and drivers; pycubrid and the async driver scale with connections, while
   CUBRIDdb, whose C extension never releases the GIL, does not scale across threads.
-  Runtime behavior is unchanged.
+  Runtime behavior is unchanged ([#860](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/860)) by @yeongseon.
 
 - **The feature support table no longer marks CUBRID `BLOB` / `CLOB` as fully supported
   (#829)** — `docs/FEATURE_SUPPORT.md` (and its Korean page) shows ⚠️ in the CUBRID
@@ -624,12 +623,12 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   mapping, reflection, binding `bytes` / `str`, `NULL` round trips) from the ordinary
   Core/ORM read of a non-NULL value, which returns the driver's LOB locator on
   `cubrid://`, `cubrid+pycubrid://` and `cubrid+aiopycubrid://`. The note links Known
-  Issue 6 in `docs/DRIVER_COMPAT.md`. Documentation only; runtime behavior is unchanged ([#842](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/842)).
+  Issue 6 in `docs/DRIVER_COMPAT.md`. Documentation only; runtime behavior is unchanged ([#842](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/842)) by @yeongseon.
 
-* **agents:** correct stale entry points, integration commands and doc map in AGENTS.md ([#846](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/846)) ([340a587](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/340a587ae1cfe6f98123669f25555948f84255cd))
-* **i18n:** update the Python requirement in the German README ([#837](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/837)) ([fcdb443](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fcdb443891cef3a2109e9f419b5ba374434401b9)), refs [#698](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/698)
-* **i18n:** update the Python requirement in the Hindi README ([#839](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/839)) ([3f79d2d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3f79d2db34694417f31b46f0573f2038d6c2a0ee)), refs [#699](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/699)
-* **i18n:** update the Python requirement in the Russian README ([#840](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/840)) ([793b6ef](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/793b6ef8d6a5b7a764b8589bef6d77b90da84fbf)), refs [#700](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/700)
+* **agents:** correct stale entry points, integration commands and doc map in AGENTS.md ([#846](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/846)) ([340a587](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/340a587ae1cfe6f98123669f25555948f84255cd)) by @yeongseon.
+* **i18n:** update the Python requirement in the German README ([#837](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/837)) ([fcdb443](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fcdb443891cef3a2109e9f419b5ba374434401b9)), refs [#698](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/698) by @yeongseon.
+* **i18n:** update the Python requirement in the Hindi README ([#839](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/839)) ([3f79d2d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3f79d2db34694417f31b46f0573f2038d6c2a0ee)), refs [#699](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/699) by @yeongseon.
+* **i18n:** update the Python requirement in the Russian README ([#840](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/840)) ([793b6ef](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/793b6ef8d6a5b7a764b8589bef6d77b90da84fbf)), refs [#700](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/700) by @yeongseon.
 
 ### CI
 
