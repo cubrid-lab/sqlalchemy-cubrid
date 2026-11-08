@@ -1586,11 +1586,11 @@ This maintenance version updates documentation and samples, fixes CI references 
 
 ### Documentation
 
-- SECURITY.md: Added v0.2.x and v0.3.x to supported versions table.
+- `SECURITY.md`: Under the **former 1.x numbering scheme** present at this tag, the security-policy table listed `1.1.x` and `1.2.x` as supported; these values are preserved as recorded, not converted to the later `v0.3.1` tag scheme.
 
 - `docs/source/index.rst`: Replaced Sphinx quickstart boilerplate with proper project documentation.
 
-- `docs/source/conf.py`: Updated version to 0.3.0, added `viewcode` and `intersphinx` extensions.
+- `docs/source/conf.py`: Set the Sphinx `release` value to **`1.2.1`** (former version numbering), and added `viewcode` and `intersphinx` extensions; the historical setting is not the `v0.3.1` Git tag.
 
 - `docs/source/sqlalchemy_cubrid.rst`: Added `dml` and `alembic_impl` module autodoc sections.
 
