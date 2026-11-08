@@ -108,6 +108,10 @@ This release improves local verification and CI reporting. It changes developer 
 
 - **Corrected an outdated pytest test reference** — updated the development documentation so its example points to a current test rather than a stale pytest node. This is a documentation-only update; it does not change runtime behavior ([#1034](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1034), [#1033](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1033), [commit 003dca4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/003dca4d9bf79aeb1d67814c5fa8e92824216405)) by @WilliamK112.
 
+### CI
+
+- **Removed a temporary release-preparation override** — after v1.11.5 was successfully published, the repository removed the now-obsolete `last-release-sha` setting from `release-please-config.json`. This allows subsequent release preparation runs to resume normal tag-based discovery; it does not change the dialect's runtime behavior or rewrite previously published releases ([#1038](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1038)) by @yeongseon.
+
 ## [1.11.5] - 2026-10-24
 
 This release consolidates changes from versions 1.11.1–1.11.4, which were not published. Review the upgrade notes first; the detailed sections below retain the complete changes and references.
