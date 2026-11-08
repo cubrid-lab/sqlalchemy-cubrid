@@ -1550,17 +1550,25 @@ This documentation-only version reorganizes connection, type, migration, DML and
 ### Added
 
 - `docs/CONNECTION.md`: Connection guide — URL format, driver setup, troubleshooting ([commit 475d9d2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/475d9d27a500)) by @yeongseon.
+
 - `docs/TYPES.md`: Type mapping reference — standard types, CUBRID-specific types, collection types, boolean handling.
+
 - `docs/ISOLATION_LEVELS.md`: Isolation level guide — all 6 CUBRID levels, dual-granularity model, configuration.
+
 - `docs/DML_EXTENSIONS.md`: DML extensions reference — ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT, TRUNCATE, FOR UPDATE, index hints.
+
 - `docs/ALEMBIC.md`: Alembic migration guide — setup, configuration, limitations, batch workarounds.
+
 - `docs/DEVELOPMENT.md`: Development guide — setup, testing, Docker, coverage, CI/CD pipeline.
 
-### Changed
+### Documentation
 
 - `README.md`: Rewritten as a concise landing page (~80 lines); all detailed content moved to `docs/` files.
+
 - `docs/source/index.rst`: Added links to all new documentation files.
+
 - `docs/FEATURE_SUPPORT.md`: Updated version reference from v0.3.0 to v0.3.2.
+
 
 ## [0.3.1] - 2026-03-12
 
