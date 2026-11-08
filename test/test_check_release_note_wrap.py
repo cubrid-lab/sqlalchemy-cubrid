@@ -117,3 +117,29 @@ def test_all_published_release_sections_have_intact_markdown_structure() -> None
         section = MODULE.release_section(changelog, version)
         problems = MODULE.violations(section)
         assert not problems, f"v{version} has malformed release Markdown: {problems}"
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "0.1.0",
+        "0.2.0",
+        "0.3.0",
+        "0.3.1",
+        "0.3.2",
+        "0.4.0",
+        "0.5.0",
+        "0.6.0",
+        "0.7.0",
+    ],
+)
+def test_unpublished_historical_draft_sections_have_valid_markdown_and_provenance(
+    version: str,
+) -> None:
+    changelog = (SCRIPT.parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    section = MODULE.release_section(changelog, version)
+    assert not MODULE.violations(section), version
+    assert section.endswith("\n\n"), f"v{version} needs a blank line before the next version"
+    assert "by @yeongseon" in section
+    assert "https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/" in section
+    assert "by @sisyphus-dev-ai" not in section

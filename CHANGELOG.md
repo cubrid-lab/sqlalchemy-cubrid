@@ -2002,12 +2002,15 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 
 ## [0.7.0] - 2026-03-12
 
+This version adds a pure-Python pycubrid dialect, including driver registration, connection management and regression tests.
+
 ### Added
+
 - **pycubrid dialect variant**: New `PyCubridDialect` class (`cubrid+pycubrid://` URL scheme)
   for using the [pycubrid](https://github.com/cubrid-lab/pycubrid) pure Python DB-API 2.0
   driver. Subclasses `CubridDialect` — inherits all SQL compilation, type mapping, and schema
   reflection. Overrides only driver-specific methods: `import_dbapi()`, `create_connect_args()`,
-  `on_connect()`, `do_ping()`.
+  `on_connect()`, `do_ping()` ([commit 1fd8a1e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1fd8a1e4ef82)) by @yeongseon.
 - **`PyCubridExecutionContext`**: Execution context that uses pycubrid's native `cursor.lastrowid`
   (returns `int | None` directly) with SQL `LAST_INSERT_ID()` fallback.
 - **`cubrid.pycubrid` entry point**: Registered in `pyproject.toml` so SQLAlchemy auto-discovers
@@ -2019,13 +2022,17 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 - **Documentation**: Updated `docs/CONNECTION.md` and `README.md` with pycubrid driver information.
 
 ### Changed
+
 - Version bumped to 0.7.0.
 
 ## [0.6.0] - 2026-03-12
 
+This version adds CUBRID monetary and object-reference types and strengthens Alembic autogenerate support for collection types.
+
 ### Added
+
 - **`MONETARY` type class**: New `TypeEngine` subclass for CUBRID's monetary data type.
-  Stores monetary values with currency — internally represented as DOUBLE with currency code.
+  Stores monetary values with currency — internally represented as DOUBLE with currency code ([commit 9ce99b0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9ce99b03eb55)) by @yeongseon.
 - **`OBJECT` type class**: New `TypeEngine` subclass for CUBRID's OID reference type.
   Represents a reference to another CUBRID class instance.
 - **Alembic autogenerate support**: `CubridImpl` now implements `render_type()` and
@@ -2042,22 +2049,26 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
   Total: 396 offline tests, 99.45% coverage.
 
 ### Changed
+
 - `alembic_impl.py`: Expanded from 69 lines to 141 lines with full autogenerate support.
 - `types.py`: Added MONETARY and OBJECT classes (319 → 349 lines).
 - `__init__.py`: Exported MONETARY and OBJECT types.
 - Version bumped to 0.6.0.
 
 ### Investigated (Blocked)
-- **SQLAlchemy 2.1 compatibility**: SA 2.1 does not exist yet (latest: 2.0.48).
-  All 396 tests pass with SA 2.0.48 — readiness confirmed.
+
+- **SQLAlchemy 2.1 compatibility (historical status)**: SQLAlchemy 2.1.0b1 existed at the time of this tag, but the tested stable release was SQLAlchemy 2.0.48. All 396 tests passed against 2.0.48; this version did not establish 2.1 compatibility.
 - **Async DBAPI support**: CUBRID Python driver has no async support — blocked.
 
 ## [0.5.0] - 2026-03-12
 
+This version expands CUBRID-specific SQL support with REPLACE INTO, recursive CTEs, query tracing and additional regression tests.
+
 ### Added
+
 - **`REPLACE INTO` statement**: New `Replace` DML construct and `replace()` factory function.
   `replace(table).values(...)` generates `REPLACE INTO table (...) VALUES (...)` syntax.
-  Exported from `sqlalchemy_cubrid` top-level package.
+  Exported from `sqlalchemy_cubrid` top-level package ([commit 650bd49](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/650bd49cf291)) by @yeongseon.
 - **ODKU with subquery values**: `on_duplicate_key_update()` now accepts subquery and
   expression values (e.g., `val=(select(func.max(t.c.val)))`).
   Note: CUBRID does not support the `VALUES()` function in ODKU — use literal/subquery values.
@@ -2072,10 +2083,12 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
   ODKU subquery tests (2), `test_trace.py` (7), ODKU expression test (1), ODKU literal test (1).
 
 ### Investigated (Not Supported)
+
 - **Lateral joins**: CUBRID does not support `LATERAL` subqueries — syntax error in 11.2.
 - **Full-text search**: CUBRID has no `MATCH … AGAINST` syntax or full-text index support.
 
 ### Changed
+
 - `docs/FEATURE_SUPPORT.md`: Added recursive CTE, lateral joins, full-text search, query trace,
   and REPLACE INTO rows. Updated Known Limitations & Roadmap section.
 - `docs/DML_EXTENSIONS.md`: Added REPLACE INTO, ODKU subquery values, and Query Trace sections.
@@ -2083,9 +2096,12 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 
 ## [0.4.0] - 2026-03-12
 
+This version improves connection recovery and pool health checks while documenting the tested driver compatibility boundaries.
+
 ### Added
+
 - **Error code mapping**: `is_disconnect()` detects dropped connections via string-based message
-  matching (14 patterns) and numeric CUBRID CCI error codes (-21003, -21005, -10005, -10007).
+  matching (14 patterns) and numeric CUBRID CCI error codes (-21003, -21005, -10005, -10007) ([commit abeb09e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/abeb09e39f3e)) by @yeongseon.
 - **`_extract_error_code()`**: Extracts numeric error codes from CUBRID DBAPI exceptions
   (supports both integer args and string-embedded codes like "-21003 message").
 - **`do_ping()`**: Connection liveness check using CUBRID Python driver's native `ping()`
@@ -2101,13 +2117,17 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
   `postfetch_lastrowid` validation (5 tests), and disconnect message integrity (3 tests).
 
 ### Changed
+
 - CI integration test matrix expanded: Python {3.10, 3.12, 3.14} × CUBRID {11.4, 11.2, 11.0, 10.2}.
 - `pyproject.toml`: Added `Programming Language :: Python :: 3.14` classifier.
 
 ## [0.3.2] - 2026-03-12
 
+This documentation-only version reorganizes connection, type, migration, DML and development guides into dedicated reference files.
+
 ### Added
-- `docs/CONNECTION.md`: Connection guide — URL format, driver setup, troubleshooting.
+
+- `docs/CONNECTION.md`: Connection guide — URL format, driver setup, troubleshooting ([commit 475d9d2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/475d9d27a500)) by @yeongseon.
 - `docs/TYPES.md`: Type mapping reference — standard types, CUBRID-specific types, collection types, boolean handling.
 - `docs/ISOLATION_LEVELS.md`: Isolation level guide — all 6 CUBRID levels, dual-granularity model, configuration.
 - `docs/DML_EXTENSIONS.md`: DML extensions reference — ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT, TRUNCATE, FOR UPDATE, index hints.
@@ -2115,14 +2135,18 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 - `docs/DEVELOPMENT.md`: Development guide — setup, testing, Docker, coverage, CI/CD pipeline.
 
 ### Changed
+
 - `README.md`: Rewritten as a concise landing page (~80 lines); all detailed content moved to `docs/` files.
 - `docs/source/index.rst`: Added links to all new documentation files.
 - `docs/FEATURE_SUPPORT.md`: Updated version reference from v0.3.0 to v0.3.2.
 
 ## [0.3.1] - 2026-03-12
 
+This maintenance version updates documentation and samples, fixes CI references and removes packaging files superseded by pyproject.toml.
+
 ### Fixed
-- README: Fixed lint badge referencing deleted `pre-commit.yml` workflow — now points to `ci.yml`.
+
+- README: Fixed lint badge referencing deleted `pre-commit.yml` workflow — now points to `ci.yml` ([commit 833e514](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/833e514f5fbc)) by @yeongseon.
 - SECURITY.md: Added v0.2.x and v0.3.x to supported versions table.
 - `docs/source/index.rst`: Replaced Sphinx quickstart boilerplate with proper project documentation.
 - `docs/source/conf.py`: Updated version to 0.3.0, added `viewcode` and `intersphinx` extensions.
@@ -2132,23 +2156,32 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 - `samples/env.sample`: Replaced hardcoded external IP with `localhost`.
 
 ### Removed
-- Removed legacy files superseded by `pyproject.toml`: `setup.py`, `setup.cfg`, `CHANGES.rst`, `requirements.txt`, `requirements-dev.txt`, `install_cubrid_python.sh`.
+
+- Removed outdated packaging files superseded by `pyproject.toml`: `setup.py`, `setup.cfg`, `CHANGES.rst`, `requirements.txt`, `requirements-dev.txt`, `install_cubrid_python.sh`.
 - Removed duplicate `pre-commit.yml` GitHub Actions workflow (functionality covered by `ci.yml`).
+
 ## [0.3.0] - 2026-03-12
 
+This version introduces Alembic migration support and extends the offline SQLAlchemy compatibility tests.
+
 ### Added
+
 - Alembic migration support via `CubridImpl` (`alembic.ddl` entry-point).
-  Install with `pip install sqlalchemy-cubrid[alembic]`.
+  Install with `pip install sqlalchemy-cubrid[alembic]` ([commit 0f223e9](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/0f223e95b)) by @yeongseon.
 - `test/test_alembic.py`: 8 tests covering import, registry, entry-point, and import-error scenarios.
 
 ### Changed
+
 - Edge-case tests added for compiler.py, dml.py, and dialect.py — coverage raised from 97% to 99% (306 → 314 tests).
 - `docs/FEATURE_SUPPORT.md`: Alembic row updated from ❌ to ✅.
 
 ## [0.2.0] - 2026-03-12
 
+This version adds CUBRID-specific SQL compilation for DML, DDL, window functions and connection-independent query constructs.
+
 ### Added
-- `FOR UPDATE` clause support (`SELECT … FOR UPDATE [OF col1, col2]`).
+
+- `FOR UPDATE` clause support (`SELECT … FOR UPDATE [OF col1, col2]`) ([commit 1f9f59a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1f9f59aa5)) by @yeongseon.
 - `INSERT … DEFAULT VALUES` and empty INSERT support.
 - Window functions (`ROW_NUMBER`, `RANK`, `DENSE_RANK`, `NTILE`, `LAG`, `LEAD`, etc.) with `OVER()` clause.
 - `NULLS FIRST` / `NULLS LAST` ordering in ORDER BY.
@@ -2163,13 +2196,17 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 
 ## [0.1.0] - 2026-03-12
 
+This version rewrites the SQLAlchemy dialect for SQLAlchemy 2.0, updates supported Python versions and expands regression coverage.
+
 ### Changed
-- **BREAKING**: Minimum Python version raised from 3.6 to 3.10.
+
+- **BREAKING**: Minimum Python version raised from 3.6 to 3.10 ([commit 00eccac](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/00eccac300e8)) by @yeongseon.
 - **BREAKING**: Minimum SQLAlchemy version raised from 1.3 to 2.0.
 - Complete rewrite of all dialect modules for SQLAlchemy 2.0 compatibility.
 - Modernized project infrastructure (`pyproject.toml`, ruff linting, GitHub Actions CI).
 
 ### Fixed
+
 - `compiler.py`: Fixed `visit_cast` missing space before `AS` keyword (`CAST(exprAS type)` → `CAST(expr AS type)`).
 - `compiler.py`: Fixed `visit_CHAR` missing closing parenthesis.
 - `compiler.py`: Fixed `visit_list` using Python 2 `basestring` — crashes on Python 3.
@@ -2188,6 +2225,7 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 - All files: Modernized `super(ClassName, self).__init__()` to `super().__init__()`.
 
 ### Added
+
 - `dialect.py`: `import_dbapi()` classmethod (SA 2.0 API).
 - `dialect.py`: `supports_statement_cache = True` for SA 2.0 query caching.
 - `dialect.py`: `supports_comments`, `supports_is_distinct_from`, `insert_returning`, `update_returning`, `delete_returning` flags.
@@ -2209,6 +2247,7 @@ This patch fixes UTC timestamp compilation and schema inspection, improves state
 - `docs/FEATURE_SUPPORT.md`: Feature-by-feature comparison with MySQL, PostgreSQL, and SQLite.
 
 ### Removed
+
 - `.pre-commit-config.yaml`: Replaced by ruff configuration in `pyproject.toml`.
 
 ## [0.0.1] - 2022-01-01
