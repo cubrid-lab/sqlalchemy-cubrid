@@ -1076,7 +1076,7 @@ This release expands SQLAlchemy 2.1 compatibility and improves asynchronous test
 
 ### Performance
 
-- **Historical native-ping benchmark (feature shipped in v1.4.2; no new ping change)** — The [paired seven-trial ORM benchmark](https://github.com/cubrid-lab/cubrid-benchmark/tree/main/experiments/orm-overhead/runs/2026-04-22_native-ping-hotpath) (bootstrap 95% CI) measured `pool_pre_ping=True` with native `CHECK_CAS`: Core checkout/SELECT-by-PK throughput +108.2% [+107.8, +109.6] and ORM session/SELECT-by-PK +42.1% [+41.8, +43.9], with lower p50/p95 latency. These results concern short-lived checkouts, not long-lived connections. The measurement used sqlalchemy-cubrid 1.4.2, pycubrid 1.3.2, SQLAlchemy 2.0.48, CUBRID 11.2.9, and CPython 3.10.12; **v1.5.0 does not change ping behavior**.
+- **Historical native-ping benchmark (feature shipped in v1.4.2; no new ping change)** — The [paired seven-trial ORM benchmark](https://github.com/cubrid-lab/cubrid-benchmark/tree/main/experiments/orm-overhead/runs/2026-04-22_native-ping-hotpath) (bootstrap 95% CI) compared native `CHECK_CAS` against forced `SELECT 1` using the **same installed versions** and `pool_pre_ping=True` in both arms: Core checkout/SELECT-by-PK throughput +108.2% [+107.8, +109.6] and ORM session/SELECT-by-PK +42.1% [+41.8, +43.9], with lower p50/p95 latency. These results concern short-lived checkouts, not long-lived connections. The measurement used sqlalchemy-cubrid 1.4.2, pycubrid 1.3.2, SQLAlchemy 2.0.48, CUBRID 11.2.9, and CPython 3.10.12; **v1.5.0 does not change ping behavior**.
 
 ### CI
 
