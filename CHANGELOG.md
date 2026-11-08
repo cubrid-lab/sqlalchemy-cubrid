@@ -1584,18 +1584,23 @@ This maintenance version updates documentation and samples, fixes CI references 
 
 ## [0.3.0] - 2026-03-12
 
-This version introduces Alembic migration support and extends the offline SQLAlchemy compatibility tests.
+This version adds Alembic migration integration for CUBRID and expands **offline** dialect testing. The 99% coverage figure describes these tests, not proof of compatibility with every live database version.
 
 ### Added
 
 - Alembic migration support via `CubridImpl` (`alembic.ddl` entry-point).
   Install with `pip install sqlalchemy-cubrid[alembic]` ([commit 0f223e9](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/0f223e95b)) by @yeongseon.
+
 - `test/test_alembic.py`: 8 tests covering import, registry, entry-point, and import-error scenarios.
 
-### Changed
+### Documentation
+
+- `docs/FEATURE_SUPPORT.md`: Alembic row updated from ❌ to ✅.
+
+### Tests
 
 - Edge-case tests added for compiler.py, dml.py, and dialect.py — coverage raised from 97% to 99% (306 → 314 tests).
-- `docs/FEATURE_SUPPORT.md`: Alembic row updated from ❌ to ✅.
+
 
 ## [0.2.0] - 2026-03-12
 
