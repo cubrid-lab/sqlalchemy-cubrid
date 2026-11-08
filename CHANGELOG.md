@@ -222,7 +222,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   SQLAlchemy 2.1, `aggregate_order_by(func.group_concat(col).filter(cond), col)` raised a
   `CompileError` saying `aggregate_order_by()` works only for `GROUP_CONCAT`, although the call
   already was one. The error now says that CUBRID has no `FILTER (WHERE ...)` clause. It still
-  raises, and the rendered SQL of every other form is unchanged.
+  raises, and the rendered SQL of every other form is unchanged ([#996](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/996)) by @yeongseon.
 
 - **aggregate_order_by() no longer drops its ORDER BY (#991)** — on SQLAlchemy 2.1,
   `func.group_concat(col).aggregate_order_by(col.desc())` rendered `GROUP_CONCAT(col)` and
@@ -232,7 +232,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   with `aggregate_order_by()`, including `aggregate_strings()`, raises `CompileError`, because
   no other CUBRID aggregate takes an `ORDER BY` (verified for `JSON_ARRAYAGG`, `COUNT`, `MAX`,
   `SUM` and `MEDIAN`). `within_group()` and SQLAlchemy 2.0 are unchanged. Verified on
-  CUBRID 11.4; not verified on 10.2, 11.0 or 11.2 ([#994](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/994)).
+  CUBRID 11.4; not verified on 10.2, 11.0 or 11.2 ([#994](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/994)) by @yeongseon.
 
 - **GROUP_CONCAT DISTINCT, ORDER BY and SEPARATOR no longer fail (#990, #984)** — the
   `GROUP_CONCAT` visitor wrapped its arguments in a second pair of parentheses, which CUBRID
@@ -245,7 +245,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   compatible. `FEATURE_SUPPORT` now shows the supported forms and lists the unsupported ones:
   a separate `SEPARATOR` argument, more than one argument, and SQLAlchemy 2.1's
   `aggregate_strings()` (`aggregate_order_by()` is fixed by #991). Verified on CUBRID 11.4; not verified on
-  10.2, 11.0 or 11.2.
+  10.2, 11.0 or 11.2 ([#989](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/989)) by @yeongseon.
 
 - **EXISTS and AND/OR as a simple CASE value no longer fail (#987)** — CUBRID rejects a bare
   `a AND b`, `a OR b`, `NOT (...)` or `EXISTS (...)` as the value operand of a simple `CASE`
@@ -258,7 +258,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   pass `else_=`; that CUBRID 11.4 evaluates any `CASE` used as a window `ORDER BY` or
   `PARTITION BY` item as a constant, without an error; and that a `CASE` with a boolean value
   fails as a `GROUP BY` item (-493). Verified on CUBRID 11.4;
-  not verified on 10.2, 11.0 or 11.2 ([#988](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/988)).
+  not verified on 10.2, 11.0 or 11.2 ([#988](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/988)) by @yeongseon.
 
 - **EXISTS and AND/OR as a CASE THEN or ELSE value no longer fail (#982)** — CUBRID rejects a
   bare `a AND b`, `a OR b`, `NOT (...)` or `EXISTS (...)` as a `CASE` result value but accepts
@@ -267,7 +267,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `case((t.c.id > 0, and_(...)), else_=literal(False))` and
   `case((t.c.id > 0, exists()), else_=literal(False))` run. `CASE` `WHEN` conditions and
   every other rendering are unchanged. Verified on CUBRID 11.4; not verified on 10.2, 11.0 or
-  11.2 ([#985](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/985)).
+  11.2 ([#985](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/985)) by @yeongseon.
 
 - **EXISTS and AND/OR as a CAST or function argument anywhere, and as a window item, no longer
   fail (#970)** — CUBRID rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as
@@ -293,7 +293,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `order_by(exists())` now run. `WHERE`, `HAVING`, `ON`, `GROUP BY`, `CASE` conditions and
   window `ORDER BY` render as before. A boolean `GROUP BY` item stays unsupported: CUBRID
   rejects a search condition there even inside parentheses. Group by a SELECT-list label
-  instead (documented in `docs/FEATURE_SUPPORT.md`) ([#969](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/969)).
+  instead (documented in `docs/FEATURE_SUPPORT.md`) ([#969](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/969)) by @yeongseon.
 
 - **EXISTS and AND/OR as a SELECT-list item no longer fail (#966)** — CUBRID rejects a bare
   `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a SELECT-list item with a syntax
@@ -313,16 +313,16 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `Connection` masked the gap, because its rollback after the failed begin re-marked the
   connection; the dialect hook no longer relies on that. The prior commit or rollback still
   reports success and nothing is replayed. Applies to `cubrid+pycubrid://` and
-  `cubrid+aiopycubrid://` ([#947](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/947)).
+  `cubrid+aiopycubrid://` ([#947](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/947)) by @yeongseon.
 
-- **Server errors that share a legacy CAS code no longer invalidate connections (#916)** —
-  legacy CAS codes reach pycubrid as -1000 to -1200, the same numbers as some server errors.
+- **Server errors sharing a CAS error number no longer invalidate connections (#916)** —
+  CAS-origin error codes reach pycubrid as -1000 to -1200, the same numbers as some server errors.
   With pycubrid 1.13's `error_source == "server"`, `is_disconnect()` now reads such a code
   as the server's, sync and async. A server -1002 is not `CAS_ER_NO_MORE_MEMORY`, and server
   text such as `invalid json path naming [connection refused]` (-1200) no longer matches the
   disconnect patterns, which apply only to the server connect-failure codes. CAS-origin
   errors, errors without a source, and pycubrid before 1.13 are classified as before. The
-  supported pycubrid range is unchanged ([#938](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/938)).
+  supported pycubrid range is unchanged ([#938](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/938)) by @yeongseon.
 
 - **`bool` JSON path indices are rejected (#914)** — `bool` is an `int` subclass, so
   `json_col[True]` and `json_col[("items", False)]` rendered the paths `$[True]` and
@@ -332,7 +332,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `sqlalchemy.exc.StatementError` before any SQL is sent, and `literal_binds` rendering as
   `sqlalchemy.exc.CompileError`. Integer (including `0`, `1` and negative) and string
   components render byte for byte as before, on SQLAlchemy 2.0 and 2.1. The Types guide
-  lists the supported path component types ([#917](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/917)).
+  lists the supported path component types ([#917](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/917)) by @yeongseon.
 
 * **scripts:** dispose reflection probe engine on every exit path ([#977](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/977)) ([1303262](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/13032624148045302d0edcdfe245a28ce4c20f01)) by @CloudCorpRecords
 
@@ -344,7 +344,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   (...) WITH c AS (...) SELECT ...`, the order CUBRID accepts; recursive CTEs and bind
   order are unchanged. `TestIsolatedCTE849::test_insert_from_select` is no longer a
   strict xfail, and live INSERT, recursive INSERT and REPLACE cases pass on CUBRID 10.2
-  and 11.4 ([#899](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/899)).
+  and 11.4 ([#899](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/899)) by @yeongseon.
 
 - **Unique-constraint reflection fails closed on a catalog mismatch (#848)** —
   `get_unique_constraints()` took the unique index names from `db_index` and their
@@ -353,7 +353,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   absent, which Alembic autogenerate would read as a constraint to create. Such a
   mismatch now raises `InvalidRequestError` naming the unresolved and resolved indexes.
   A verified-empty catalog still returns `[]`. No such mismatch has been seen on a live
-  CUBRID server; this hardens the reflection invariant ([#896](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/896)).
+  CUBRID server; this hardens the reflection invariant ([#896](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/896)) by @yeongseon.
 
 - **Garbage-collected async connections are terminated (#872)** — the
   `cubrid+aiopycubrid://` adapter had no terminate support, so when a checked-out
@@ -363,7 +363,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   behavior): the garbage-collection path closes the socket synchronously and retires the
   pycubrid session, also when the connection's event loop has already closed, an
   invalidated connection closes with `CLOSE_DATABASE`, and the dialect sets
-  `has_terminate` ([#894](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/894)).
+  `has_terminate` ([#894](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/894)) by @yeongseon.
 
 - **`on_duplicate_key_update()` is cacheable (#871)** — `OnDuplicateClause` had no
   `_traverse_internals`, so the first `INSERT ... ON DUPLICATE KEY UPDATE` emitted
@@ -371,7 +371,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   such statement was compiled again on each execution. It now declares the column order
   and the update values as cache-key elements (the traversal of SQLAlchemy 2.1's MySQL
   construct), with the update values coerced to SQL expressions; a cached statement
-  binds each execution's own values, on SQLAlchemy 2.0 and 2.1 ([#893](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/893)).
+  binds each execution's own values, on SQLAlchemy 2.0 and 2.1 ([#893](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/893)) by @yeongseon.
 
 - **Reflection of names containing `:name`, collection type classes and join linting
   (#870)** — the `SHOW COLUMNS` / `SHOW INDEXES` / `SHOW CREATE TABLE` / `SHOW CREATE
@@ -381,7 +381,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   elsewhere) failed `create_all` with "_compiler_dispatch() missing ... 'visitor'";
   collection member classes are now instantiated. `visit_join` dropped `from_linter`, so
   SQLAlchemy reported a joined select as a cartesian product and missed a real one; the
-  join edges are now recorded as in the base compiler ([#891](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/891)).
+  join edges are now recorded as in the base compiler ([#891](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/891)) by @yeongseon.
 
 - **Expression, descending, filtered and prefix indexes reflect and autogenerate (#869)** —
   `get_indexes()` reported `CREATE INDEX ix ON t (LOWER(a))` as `column_names: [None]`
@@ -394,27 +394,27 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `cubrid_where` and `cubrid_length`, which were silently ignored before, and the
   Alembic implementation compares these keys after normalizing both sides (outside
   string literals), so autogenerate no longer proposes an unchanged index again;
-  detecting a changed sort order, filter or prefix length needs Alembic 1.12+ ([#885](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/885)).
+  detecting a changed sort order, filter or prefix length needs Alembic 1.12+ ([#885](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/885)) by @yeongseon.
 
 - **Alembic renders CUBRID collection member types with the dialect prefix (#868)** —
   `render_type` wrote every member type with `sa.`, so autogenerate produced
   `cubrid_types.MULTISET(sa.MONETARY())` or `cubrid_types.SEQUENCE(sa.BIT(length=8))`,
   which raised `AttributeError` when the migration file was loaded. Member types from
   `sqlalchemy_cubrid.types` now render as `cubrid_types.MONETARY()`,
-  `cubrid_types.BIT(length=8)` and so on; generic SQLAlchemy members keep `sa.` ([#884](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/884)).
+  `cubrid_types.BIT(length=8)` and so on; generic SQLAlchemy members keep `sa.` ([#884](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/884)) by @yeongseon.
 
 - **`Select.fetch()` renders as `LIMIT` (#867)** — there was no `fetch_clause`
   override, so `select(...).fetch(2)` and `.offset(1).fetch(2)` emitted the generic
   `OFFSET ... ROWS FETCH FIRST n ROWS ONLY`, which CUBRID rejects with -493. They now
   render as `LIMIT 2` and `LIMIT 1, 2`; `percent=True` and `with_ties=True` raise
-  `CompileError`, since CUBRID has no `LIMIT` form for them ([#880](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/880)).
+  `CompileError`, since CUBRID has no `LIMIT` form for them ([#880](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/880)) by @yeongseon.
 
 - **JSON path keys use JSON string escaping (#866)** — `col["key"]` and
   `col[("a", "b")]` doubled a `"` in the key, which CUBRID reads as a JSON string:
   `doc['a"b']` failed with -1200 "Invalid JSON path" and `doc['a\\b']` silently
   returned `None`. Keys are now built with `json.dumps()`, so `"` and `\` are
   backslash-escaped and non-ASCII characters become `\uXXXX` escapes that do not
-  depend on the connection charset ([#879](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/879)).
+  depend on the connection charset ([#879](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/879)) by @yeongseon.
 
 - **String and date server defaults reflect as quoted SQL literals (#865)** —
   `get_columns()` returned the `SHOW COLUMNS` default text, which drops a string's
@@ -425,7 +425,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   into `MODIFY`. Non-numeric defaults are now read from `SHOW CREATE TABLE` (one extra
   query per table that has one) and reflect as `'it''s'`, `''`, `'NULL'`, `date
   '01/02/2020'` or the function itself (a string column's `'5'` as `'5'`); numeric
-  defaults of numeric columns are unchanged ([#878](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/878)).
+  defaults of numeric columns are unchanged ([#878](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/878)) by @yeongseon.
 
 - **Alembic `alter_column` emits CUBRID-compatible SQL for nullability, dropped
   defaults and comments (#861)** — these changes went to Alembic's generic SQL, which
@@ -440,7 +440,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   nullable change, `DEFAULT NULL` for a dropped default and `COMMENT ''` for a removed
   comment; an existing column without a default no longer gets `DEFAULT NULL`. A
   UNIQUE `create_index` in offline `--sql` mode raises the documented "live
-  connection" `CompileError` instead of `NoInspectionAvailable` ([#877](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/877)).
+  connection" `CompileError` instead of `NoInspectionAvailable` ([#877](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/877)) by @yeongseon.
 
 - **`literal_binds` and other compile options reach CAST operands, ON DUPLICATE KEY
   UPDATE values and collection members (#862)** — the nested `process()` calls in
@@ -451,7 +451,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   VARCHAR(10))` and failed `create_all` with "wrong number of parameters", a
   functional `Index` over a `CAST` rendered a `?`, and Alembic `--sql` output
   contained placeholders. CUBRID itself still rejects `CAST` in a function-based
-  index on 10.2 and 11.4 ([#875](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/875)).
+  index on 10.2 and 11.4 ([#875](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/875)) by @yeongseon.
 
 - **`has_table()`, `get_table_names()` and `get_view_names()` see only the current
   owner's classes on CUBRID 11.2 and later (#864)** — `db_class` lists every owner's
@@ -460,7 +460,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   for `dba`, so `create_all()` skipped `dba.own_t` and the next `INSERT` failed with
   `Unknown class "dba.own_t"`; `MetaData.reflect()` aborted with `NoSuchTableError`;
   and two owners' same-named tables were listed twice. These methods now filter on
-  `owner_name = CURRENT_USER`. CUBRID 10.2 and 11.0 are unchanged ([#876](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/876)).
+  `owner_name = CURRENT_USER`. CUBRID 10.2 and 11.0 are unchanged ([#876](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/876)) by @yeongseon.
 
 
 ### Security
