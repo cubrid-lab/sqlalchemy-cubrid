@@ -1003,16 +1003,16 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   pre-release) and the `docs/PRD.md` CI matrix, success criteria and dependency rows, with
   their Korean copies, still described Python 3.10. They now give 3.11 as the minimum,
   3.11–3.14 as the tested range, as the full compatibility matrix runs them, and mark 3.10
-  as not supported from 1.10.0. Historical rows and measurements are unchanged. Docs only ([#803](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/803)).
+  as not supported from 1.10.0. Historical rows and measurements are unchanged. Docs only ([#803](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/803)) by @yeongseon.
 - **The compliance-lane pycubrid pin is labelled as the declared floor (#479)** —
   `docs/SUPPORT_MATRIX.md` (+ ko) listed the pycubrid compliance lanes as "pycubrid 1.8.0
   (recommended)", which read as a recommendation to install 1.8.0. The pin is the declared
   floor of `pycubrid>=1.8.0,<2.0`, kept on purpose; pycubrid is the recommended driver, and
-  the integration lanes test the latest release. Docs only ([#801](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/801)).
+  the integration lanes test the latest release. Docs only ([#801](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/801)) by @yeongseon.
 - **Private vulnerability reporting is the preferred security channel (#738)** — GitHub
   private vulnerability reporting is now enabled for the repository. `SECURITY.md` names it
   as the preferred private route and keeps the maintainer email as the fallback; `README.md`
-  and the translated READMEs say the same. Docs only ([#796](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/796)).
+  and the translated READMEs say the same. Docs only ([#796](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/796)) by @yeongseon.
 - **No more "nightly" full integration (#747)** — the PRD CI matrix (+ ko) listed a
   "Nightly" full integration run with Python 3.10. `integration-full.yml` has no
   schedule: it runs on manual dispatch and as the release gate, on Python
@@ -1020,7 +1020,7 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   and `test/version_differential/compare_snapshots.py` also referred to a nightly
   run; all now describe the current triggers, and the dogfood docstring names the
   CUBRID versions it actually runs on (10.2 and 11.4). `nightly` remains only as
-  the Hypothesis profile name. Docs and comments only ([#792](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/792)).
+  the Hypothesis profile name. Docs and comments only ([#792](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/792)) by @yeongseon.
 - **`AGENTS.md` no longer carries stale planning context (#736)** — the
   "Performance Loop System" snapshot (R3 phases, issues #68/#70 as current work) is
   replaced by a short performance-context statement pointing to
@@ -1028,27 +1028,27 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
   Volatile counts and inventories (module count, requirement-flag count, tested CUBRID
   versions, default Docker version, test file list including the nonexistent
   `test_dml.py`) are removed or point to their
-  canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only ([#757](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/757)).
+  canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only ([#757](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/757)) by @yeongseon.
 - **Stale facts removed from PRD and DEVELOPMENT docs (#758)** — the nonexistent
   `test_dml.py` is no longer listed in `docs/DEVELOPMENT.md` and `docs/PRD.md` (and
   their Korean counterparts); DML tests live in `test/test_compiler.py` (ODKU regressions also in
   `test/test_regression.py`). The unguarded
   "12 Python modules", "40+ properties", "314 offline tests" and "3 uncovered lines"
   counts in `docs/PRD.md` are replaced with descriptions or pointers to the source.
-  `docs/llms-full.txt` is regenerated. Docs only ([#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/759)).
+  `docs/llms-full.txt` is regenerated. Docs only ([#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/759)) by @yeongseon.
 - **`charset` names pycubrid 1.9.0 (#479)** — `docs/CONNECTION.md` (+ ko) said the `charset`
   URL option needs a pycubrid release "newer than 1.8.0"; it now names 1.9.0, the release
-  that added it. Docs only.
+  that added it. Docs only ([#800](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/800)) by @yeongseon.
 
-* **agents:** add support-claim review checklist ([#784](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/784)) ([a8ffc4b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a8ffc4bbd2ae41279f86ca125dfaba242ff2909e))
-* **ci:** clarify SQLAlchemy pre-release canary coverage ([#788](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/788)) ([85817ca](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85817ca476e05604ba1347d6b99ff525da706489))
-* correct the older closing-guard CHANGELOG notes ([#819](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/819)) ([a508694](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a508694d34ec8f66243c3a97f5f46adaf5c991bc))
-* **driver:** clarify CUBRIDdb support and deprecated extras ([#781](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/781)) ([d20a6b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d20a6b25cba37cc9d9a55aef330600242cd038e6))
+* **agents:** add support-claim review checklist ([#784](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/784)) ([a8ffc4b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a8ffc4bbd2ae41279f86ca125dfaba242ff2909e)) by @yeongseon.
+* **ci:** clarify SQLAlchemy pre-release canary coverage ([#788](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/788)) ([85817ca](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85817ca476e05604ba1347d6b99ff525da706489)) by @yeongseon.
+* correct the older closing-guard CHANGELOG notes ([#819](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/819)) ([a508694](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a508694d34ec8f66243c3a97f5f46adaf5c991bc)) by @yeongseon.
+* **driver:** distinguish the supported CUBRIDdb driver from optional installation extras ([#781](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/781)) ([d20a6b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d20a6b25cba37cc9d9a55aef330600242cd038e6)) by @yeongseon.
 * **i18n:** update the Python requirement in the Chinese README ([#825](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/825)) ([6430aad](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6430aad77013ce353245258192371477ed70ddc1)) by @Vieta100-omo (first contribution 🎉)
-* **release:** record live release-please evidence and candidate regeneration ([#817](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/817)) ([27134e0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/27134e081f2e7285f563e0fde54f301339ebb5a1))
-* **review:** distinguish agent review routes and dispositions ([#802](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/802)) ([24743d6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24743d604461fc681b84ecfadc0e4ec46b2c2668))
-* **support:** distinguish current guarantees from historical evidence ([#783](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/783)) ([92307cf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/92307cfcb856103827a488d5f4bf8895c02c192d))
-* **types:** identify pycubrid 1.9.0 collection binding ([#782](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/782)) ([81fc4ff](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/81fc4ff7744d5a200c2077183c601125e21f09f0))
+* **release:** record live release-please evidence and candidate regeneration ([#817](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/817)) ([27134e0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/27134e081f2e7285f563e0fde54f301339ebb5a1)) by @yeongseon.
+* **review:** distinguish agent review routes and dispositions ([#802](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/802)) ([24743d6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24743d604461fc681b84ecfadc0e4ec46b2c2668)) by @yeongseon.
+* **support:** distinguish current guarantees from historical evidence ([#783](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/783)) ([92307cf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/92307cfcb856103827a488d5f4bf8895c02c192d)) by @yeongseon.
+* **types:** identify pycubrid 1.9.0 collection binding ([#782](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/782)) ([81fc4ff](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/81fc4ff7744d5a200c2077183c601125e21f09f0)) by @yeongseon.
 
 ### CI
 
