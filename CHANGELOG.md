@@ -1682,8 +1682,8 @@ Applications that previously called `.returning()` without an immediate error mu
 
 ### Fixed
 
-- **Reject unsupported `RETURNING` statements** — insert, update, and delete statements using `.returning()` now raise `CompileError` rather than silently using an unrelated primary-key retrieval path. For generated primary keys, use `result.inserted_primary_key` where applicable ([#229](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/229)).
-- **Declare two-phase transactions unsupported** — the dialect explicitly disables two-phase commit support, allowing SQLAlchemy's compatibility tests to skip operations that CUBRID does not support through this dialect ([#230](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/230)).
+- **Reject unsupported `RETURNING` statements** — insert, update, and delete statements using `.returning()` now raise `CompileError` rather than silently using an unrelated primary-key retrieval path. For generated primary keys, use `result.inserted_primary_key` where applicable ([#229](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/229)) by @yeongseon.
+- **Declare two-phase transactions unsupported** — the dialect explicitly disables two-phase commit support, allowing SQLAlchemy's compatibility tests to skip operations that CUBRID does not support through this dialect ([#230](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/230)) by @yeongseon.
 
 
 
