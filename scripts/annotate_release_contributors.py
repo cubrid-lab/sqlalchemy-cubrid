@@ -22,6 +22,9 @@ COMMIT = re.compile(
 )
 CREDIT = re.compile(r"\bby @[-\w]+")
 FIRST = " (first contribution 🎉)"
+# Verified non-human agent identities that GitHub may report as type `User`.
+# Do not guess from an `-ai` suffix: a human account can use that name.
+NON_HUMAN_LOGINS = frozenset({"sisyphus-dev-ai"})
 
 
 def github_json(path: str) -> object:
@@ -48,6 +51,7 @@ def verified_credit(repo: str, sha: str, get: Callable[[str], object] = github_j
             or not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,37})", name)
             or user.get("type") == "Bot"
             or name.lower().endswith("[bot]")
+            or name.lower() in NON_HUMAN_LOGINS
         ):
             return None
         suffix = f" by @{name}"

@@ -39,7 +39,7 @@ unsupported merely because a particular test run failed.
   "by @username (first contribution 🎉)" if earlier merged PR history has
   been checked. Omit the celebration if the check is inconclusive.
 - Treat organization members and outside contributors alike for authorship.
-  Do not credit automation bot accounts as human contributors.
+  Reserve `by @username` and `(first contribution 🎉)` for verified **human** contributors. Exclude AI agents, automated assistants, service accounts, and bots even when their GitHub account type is `User`; never guess whether an ambiguous account is human. Human PR authors remain eligible when they use AI tools to assist their work. Keep AI/tool provenance in PR or commit metadata instead of listing the tool as a release-note author.
 - Do not add a separate Contributors or New Contributors heading. Credits
   belong beside the changes they explain. A release with no verifiable author
   credit remains valid.
