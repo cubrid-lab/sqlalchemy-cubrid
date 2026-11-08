@@ -2159,6 +2159,7 @@ This maintenance version updates documentation and samples, fixes CI references 
 
 - Removed outdated packaging files superseded by `pyproject.toml`: `setup.py`, `setup.cfg`, `CHANGES.rst`, `requirements.txt`, `requirements-dev.txt`, `install_cubrid_python.sh`.
 - Removed duplicate `pre-commit.yml` GitHub Actions workflow (functionality covered by `ci.yml`).
+
 ## [0.3.0] - 2026-03-12
 
 This version introduces Alembic migration support and extends the offline SQLAlchemy compatibility tests.
