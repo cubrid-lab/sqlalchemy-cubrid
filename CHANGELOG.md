@@ -2093,7 +2093,7 @@ This release improves schema reflection, SQL compilation, and Alembic migration 
 
 ### Changed
 - **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
-- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity
+- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity (documented requirement; the package metadata pin was raised to `>=1.2.0,<2.0` in 1.4.0, #143)
 - **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
 
 ### Fixed
