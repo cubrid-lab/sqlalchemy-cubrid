@@ -87,7 +87,7 @@ This release improves the reliability and reporting of the development verificat
 
 ### Upgrade notes
 
-- **`make verify` now runs the live integration lane (#1018, [#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1045))** — it runs `make check`, the
+- **`make verify` now runs the live integration lane (#1018)** — it runs `make check`, the
   complete offline `make test` and then the run-owned `make integration` lane (default
   `INTEGRATION_DRIVER=pycubrid`), so it needs Docker and takes as long as the live suite. It
   fails when CUBRID never becomes ready or every live test skips, and it starts the live lane
@@ -98,7 +98,7 @@ This release improves the reliability and reporting of the development verificat
 
 ### Added
 
-- **`make verify` writes `test-results/verify/` (#1020, [#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1047))** — after its phases, also after a
+- **`make verify` writes `test-results/verify/` (#1020)** — after its phases, also after a
   failure, `make verify` writes `summary.json` with the overall `PASS`/`FAIL`/`INCOMPLETE` status
   and one entry per phase (`check`, `test`, `integration`). A phase that never started is
   `NOT_RUN`, and a missing or unreadable lane summary or an all-skipped live lane is never
@@ -109,6 +109,9 @@ This release improves the reliability and reporting of the development verificat
   The new `scripts/report_test_results.py aggregate` subcommand builds the summary, and
   `step-summary` renders it. `make verify` now clears `test-results/test/` and
   `test-results/integration/` before it starts; `make -n verify` writes nothing.
+
+* **make:** run the live integration lane in make verify ([#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1045)) ([4d168ea](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4d168eaf4b382841fe4880ba25db3f103319636d))
+* **make:** write a verification summary under test-results/verify ([#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1047)) ([ac596a5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ac596a54429da7c60a023de3a6bd9967216053c8))
 
 ### CI
 
@@ -136,88 +139,819 @@ This release improves the reliability and reporting of the development verificat
 
 ## [1.11.5] - 2026-10-24
 
-This release consolidates changes from versions 1.11.1 to 1.11.4, which were not published. Review the upgrade notes first; the detailed sections below retain the complete changes and references.
+This release consolidates changes from versions 1.11.1–1.11.4, which were not published. Review the upgrade notes first; the detailed sections below retain the complete changes and references.
 
 ### Upgrade notes
 
-- **Unpublished versions 1.11.1 to 1.11.4 (#838, #910, #1005, #1011)** — 1.11.1, 1.11.2, 1.11.3 and 1.11.4 were never published because their release gates failed (1.11.1 on Python 3.15, 1.11.2 in the CUBRIDdb integration lanes, #1003, 1.11.3 in the cookbook candidate verification, 1.11.4 in the `make integration` lanes, #1035), so none of them has a tag, GitHub Release or PyPI version; upgrade from 1.11.0 directly to 1.11.5, which contains every 1.11.1 to 1.11.4 change.
-- **Makefile test and lint targets updated (#1009)** — `make test` now runs every offline test (the former `make test-offline`, covering fast and repository-tooling tests), while the former fast lane is `make test-fast`; `make lint` runs `ruff check` only, while `make format-check` (or `make check`) checks formatting; `make check` is now the complete non-test quality gate (lint, format-check, typecheck, security, check-docs-reason), and local scripts calling `make check-all` or `make test-offline` continue working through aliases.
-- **Docker test data retention and broker binding (#1008)** — `make docker-down` now preserves local test data volumes (running `docker compose down`), while the new `make docker-clean` deletes them (running `docker compose down -v`); scripts relying on starting from an empty database must call `make docker-clean`. `docker-compose.yml` publishes the broker as `127.0.0.1:${CUBRID_TEST_PORT}:33000` so it is no longer reachable from external hosts; `CUBRID_TEST_PORT` (default 33000) overrides the host port for `make docker-up`, `docker compose up` and `make integration`, while `make integration` still creates and removes its own run-owned project.
-- **Foreign table column keys in MERGE raise CompileError (#847)** — a MERGE assignment key that is a column of another table now raises `CompileError`, also when the target has a column of the same name, replacing former silent resolution to the target column; use the target's column (`target.c.name`) or the string `"name"`, while the column-list shorthand `when_not_matched_then_insert([source.c.id, ...])` remains unchanged.
+- **1.11.1, 1.11.2, 1.11.3 and 1.11.4 were never published (#838, #910, #1005, #1011).**
+  Their release gates failed (1.11.1 on Python 3.15, 1.11.2 in the CUBRIDdb integration
+  lanes, #1003, 1.11.3 in the cookbook candidate verification, 1.11.4 in the
+  `make integration` lanes, #1035), so none of them has a tag, GitHub Release or PyPI
+  version. 1.11.5 contains every 1.11.1 to 1.11.4 change below; upgrade from 1.11.0
+  directly to 1.11.5.
+
+- **`make test` now runs every offline test, and `make lint` no longer checks formatting
+  (#1009).** `make test` is the former `make test-offline` (fast and repository-tooling
+  tests); the former fast lane is `make test-fast`. `make lint` is `ruff check` only; run
+  `make format-check` (or `make check`) for the formatting check. `make check` is now the
+  complete non-test quality gate (lint, format-check, typecheck, security,
+  check-docs-reason), so local scripts that ran `make check-all` or `make test-offline`
+  keep working through the aliases below.
+
+- **`make docker-down` now keeps the local test data, `make docker-clean` deletes it, and
+  the broker listens on `127.0.0.1` only (#1008).** `make docker-down` runs
+  `docker compose down` (the data volumes are kept); the new `make docker-clean` runs
+  `docker compose down -v`, which `make docker-down` ran before. A script that relied on
+  `make docker-down` to start from an empty database must call `make docker-clean`.
+  `docker-compose.yml` publishes the broker as `127.0.0.1:${CUBRID_TEST_PORT}:33000`, so
+  it is no longer reachable from other hosts; `CUBRID_TEST_PORT` (default 33000) is the
+  host-port override for `make docker-up`, `docker compose up` and `make integration`;
+  when it is not given, `make docker-up` leaves the port to Compose (a `.env` value, or 33000).
+  `make integration` still creates and removes its own run-owned project.
+
+- **A MERGE assignment key that is a column of another table now raises `CompileError`
+  (#847)**, also when the target has a column of the same name. Such a key was silently
+  read as the target's column, as the MERGE documentation then described. Use the
+  target's column (`target.c.name`) or the string `"name"`; the column-list shorthand
+  `when_not_matched_then_insert([source.c.id, ...])` is unchanged.
 
 ### Added
 
-- **Machine-readable offline test results (#1019)** — `make test` writes `junit.xml`, `coverage.xml` and `summary.json` under `test-results/test/` via `scripts/report_test_results.py` with exit status reflecting suite status.
-- **Machine-readable integration test results (#1020)** — `make integration` writes `junit.xml`, `summary.json`, `environment.json` and on failure `service.log` under `test-results/integration/` with credential masking and status tracking.
+- **`make test` writes machine-readable results under `test-results/test/` (#1019)** —
+  `junit.xml` (pytest `--junitxml`), `coverage.xml` and `summary.json` (schema version,
+  `PASS`/`FAIL`/`INCOMPLETE` status, selected/passed/failed/errors/skipped/xfailed/xpassed
+  counts and the coverage percentage against the 95% threshold), written by the reusable
+  `scripts/report_test_results.py`. The last console line repeats the summary, a failing
+  suite still exits non-zero with `status: FAIL`, `test-results/` is gitignored and
+  `make clean` removes it. Test selection and the coverage floor are unchanged.
+
+- **`make integration` writes `junit.xml`, `summary.json`, `environment.json` and, after a
+  failure, `service.log` under `test-results/integration/` (#1020)** — through the same
+  `scripts/report_test_results.py` (new `environment` subcommand and `--require-executed`
+  option), written after `docker compose down -v` so a cleanup failure is `FAIL`; a run
+  whose JUnit file is missing or whose tests were all skipped is `INCOMPLETE` and exits 1;
+  a run refused before it owns its Compose project leaves a `FAIL` summary instead of a
+  stale `PASS`. `environment.json` holds Python, SQLAlchemy, driver and CUBRID versions,
+  platform and command (credentials in the command are masked); the CUBRID version is the
+  image tag Compose resolves, and the configured passwords are replaced with `***` in
+  `junit.xml` and `service.log`. `INTEGRATION_RESULTS` overrides the directory.
 
 ### Changed
 
-- **Makefile targets and integration execution (#1009)** — Makefile targets now have single responsibilities, `make integration` delegates to `scripts/run_integration.py` for driver validation, startup, readiness and cleanup, uncooperative Docker groups are terminated after `INTEGRATION_STOP_GRACE`, and new targets `test-fast`, `format-check` and `verify` are added.
-- **MERGE assignment keys require target lineage (#847, [#895](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/895))** — bound column keys in `when_matched_then_update()` and `when_not_matched_then_insert()` must have lineage to the target table or its alias, raising `CompileError` for foreign table columns, while string keys, unbound `sa.column()` keys and column-list shorthands continue resolving by name.
+- **Makefile targets have one meaning each, and `make integration` runs a script
+  (#1009)** — the `integration` recipe was about 90 lines of shell with four embedded
+  Python one-liners (`RUN_DETACHED`, `RUN_IN_NEW_GROUP`, `SIGNAL_AFTER`, `WAIT_GROUP`).
+  It is now one call to `scripts/run_integration.py`, which owns driver and project
+  validation, the ownership check, startup, readiness, signal handling, cleanup and the
+  exit status with the same guarantees; `test/test_make_integration.py` drives it through
+  `make` under sh and bash as before. A `docker compose up -d` group that ignores SIGTERM
+  after the grace period is now killed after another `INTEGRATION_STOP_GRACE` seconds
+  instead of blocking cleanup. New targets: `test-fast`, `format-check` and `verify`
+  (`check` + `test`, no Docker). `make doctor` exits non-zero, without its success line,
+  when Python is older than 3.11, a tool is missing or broken, or the Ruff/Mypy pins
+  drift. `make format` also runs `check-tool-versions`, every tool variable can be
+  overridden (`?=`) and runs through `$(PYTHON) -m <tool>`, and `make help` groups the
+  targets by purpose. CI lint and `tox -e lint` run `make lint` and `make format-check`.
+
+- **MERGE assignment keys must belong to the target (#847)** — `visit_merge()` resolved a
+  Column key by name, so `source.c.name` used as an UPDATE or INSERT key in
+  `when_matched_then_update()` / `when_not_matched_then_insert()` mappings or pairs was
+  accepted as `target.c.name`. A bound column key now has to have lineage to the target
+  (the target's own column or one of an alias of it); any other table's column raises
+  `CompileError` naming that table. String keys, unbound `sa.column()` keys and the
+  column-list shorthand still resolve by name, and the SQL and bind order of legitimate
+  statements are unchanged.
 
 ### Deprecated
 
-- **`make check-all` (#1009)** — deprecated alias of `make check` that prints a deprecation notice on stderr and will be removed after the next minor release, while `make test-offline` remains an alias of `make test`.
-- **`CUBRID_PORT` (#1008)** — deprecated in favor of `CUBRID_TEST_PORT`; still read when `CUBRID_TEST_PORT` is unset by `make docker-up`, `make integration` (which print a deprecation warning) and `docker-compose.yml`, while `CUBRID_TEST_PORT` takes precedence when both are set.
-- **Unused `display_width` and `values` type arguments (#870)** — passing `display_width` to `SMALLINT` / `BIGINT` or `values` to `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` / `STRING` now emits a `DeprecationWarning` and will be removed in a future major release; neither argument affected DDL or runtime behavior, and private helper `CubridTypeCompiler._get` is removed.
+- **`make check-all` (#1009)** — an alias of `make check` that prints a deprecation
+  notice on stderr; it will be removed after the next minor release. `make test-offline`
+  remains an alias of `make test`.
+
+- **`CUBRID_PORT` (#1008)** — the former name of `CUBRID_TEST_PORT`. It is still used
+  when `CUBRID_TEST_PORT` is unset, by `make docker-up` and `make integration` (which
+  then print a deprecation warning) and by `docker-compose.yml`; `CUBRID_TEST_PORT` wins
+  when both are set. Other targets ignore it, so a `CUBRID_PORT` exported for another
+  CUBRID tool does not make them warn.
+
+- **Unused `display_width` and `values` type arguments (#870)** — `SMALLINT` /
+  `BIGINT` accept `display_width` and `CHAR` / `VARCHAR` / `NCHAR` / `NVARCHAR` /
+  `STRING` accept `values`, but neither ever changed the DDL or any behavior. Passing
+  them now emits a `DeprecationWarning`; they are still accepted and ignored, and will
+  be removed in a future major release. The unused private `CubridTypeCompiler._get`
+  helper is gone.
 
 ### Fixed
 
-- **aggregate_order_by() error on filtered GROUP_CONCAT (#995)** — on SQLAlchemy 2.1, `aggregate_order_by()` on `func.group_concat().filter()` now explicitly raises `CompileError` stating CUBRID lacks a `FILTER (WHERE ...)` clause instead of claiming the call was not a `GROUP_CONCAT`.
-- **aggregate_order_by() retains ORDER BY clause (#991, [#994](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/994))** — on SQLAlchemy 2.1, `func.group_concat(col).aggregate_order_by(...)` renders `GROUP_CONCAT(col ORDER BY ...)`, including with `DISTINCT` and in `HAVING`, while calls on unsupported aggregates raise `CompileError`.
-- **GROUP_CONCAT with modifiers and boolean expressions (#990, #984)** — `GROUP_CONCAT` no longer wraps arguments in extra parentheses that CUBRID rejects (-493), allowing `DISTINCT`, `ORDER BY`, `SEPARATOR` literal columns and boolean arguments to execute correctly.
-- **EXISTS and AND/OR as simple CASE value operand (#987, [#988](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/988))** — the `value=` operand of simple `case()` is grouped inside parentheses when given boolean expressions such as `and_()`, `or_()`, `not_()` or `exists()`, preventing syntax errors on CUBRID.
-- **EXISTS and AND/OR as CASE THEN or ELSE results (#982, [#985](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/985))** — boolean expressions used as `THEN` or `ELSE` results in searched or simple `case()` constructs are grouped inside parentheses, preventing syntax errors on CUBRID.
-- **EXISTS and AND/OR in CAST, functions and window clauses (#970, [#972](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/972))** — boolean expressions are grouped when passed as arguments to `cast()`, SQL functions in any position, or window and `WITHIN GROUP` `ORDER BY` and `PARTITION BY` clauses.
-- **EXISTS and AND/OR in SELECT columns, CAST and ORDER BY (#968, [#969](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/969))** — boolean expressions and `exists()` constructs inside CAST, functions or `order_by()` are grouped to prevent syntax errors (-493) on CUBRID.
-- **EXISTS and AND/OR in SELECT list (#966, [#967](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/967))** — boolean expressions and `exists()` queries selected directly as columns or labeled elements are grouped in parentheses, preventing syntax errors (-493) in queries and ORM `session.query(q.exists()).scalar()` calls.
-- **Isolation level re-application persistence (#937, [#947](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/947))** — when restoring an isolation level fails at transaction begin on `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, the pending mark is retained so subsequent begin calls retry and raise until restoration succeeds.
-- **Disconnection classification for overlapping server error codes (#916, [#938](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/938))** — with pycubrid 1.13's `error_source == "server"`, `is_disconnect()` distinguishes server error codes (-1000 to -1200) from legacy CAS disconnect codes, preventing false connection invalidation on non-disconnect server errors.
-- **Boolean JSON path indices rejected (#914, [#917](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/917))** — boolean JSON path components now raise `TypeError` (reported as `StatementError` on execution or `CompileError` under `literal_binds`) instead of rendering invalid paths like `$[True]` that CUBRID rejects (-494).
-- **CTE placement in INSERT and REPLACE FROM SELECT (#897, [#899](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/899))** — the dialect now sets `cte_follows_insert` so that CTEs render after the column list (`INSERT INTO t (...) WITH ... SELECT ...`), matching CUBRID's accepted syntax instead of raising -493.
-- **Unique constraint reflection fails closed on catalog mismatch (#848, [#896](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/896))** — `get_unique_constraints()` now raises `InvalidRequestError` if a unique index listed in `db_index` cannot be resolved in `SHOW INDEXES`, preventing Alembic from proposing redundant constraint creations.
-- **Async connection termination on garbage collection (#872, [#894](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/894))** — `cubrid+aiopycubrid://` implements `AsyncAdapt_terminate` on SQLAlchemy 2.0.44+ to synchronously close sockets and retire sessions when pooled connections are garbage-collected.
-- **Cacheable ON DUPLICATE KEY UPDATE (#871, [#893](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/893))** — `OnDuplicateClause` now implements `_traverse_internals`, enabling SQL compilation caching for `INSERT ... ON DUPLICATE KEY UPDATE` statements on SQLAlchemy 2.0 and 2.1.
-- **Colons in reflected names, collection type classes and join linting (#870, [#891](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/891))** — colons in reflected table names are escaped to avoid bind parameter errors, collection member type classes like `SET(Integer)` are instantiated, and `visit_join` preserves `from_linter` to track cartesian products accurately.
-- **Reflection and autogeneration of functional, descending, filtered and prefix indexes (#869, [#885](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/885))** — `get_indexes()` reflects expressions, descending sorting, `cubrid_where` filters and `cubrid_length` prefix lengths from `SHOW INDEXES` and `db_index`, and Alembic autogenerate compares normalized definitions without spurious re-creations; detecting a changed sort order, filter or prefix length needs Alembic 1.12+.
-- **Alembic rendering of CUBRID collection member types (#868, [#884](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/884))** — Alembic migrations render dialect-specific collection member types with the `cubrid_types.` prefix instead of `sa.`, preventing `AttributeError` when loading migration files.
-- **Select.fetch() renders as LIMIT (#867, [#880](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/880))** — `Select.fetch()` and `.offset().fetch()` render as CUBRID-compatible `LIMIT` clauses, while unsupported `percent=True` and `with_ties=True` options raise `CompileError`.
-- **JSON path string escaping (#866, [#879](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/879))** — JSON path keys are encoded using `json.dumps()`, properly escaping quotes, backslashes and non-ASCII characters.
-- **Quoted SQL literals for reflected server defaults (#865, [#878](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/878))** — non-numeric server defaults are inspected via `SHOW CREATE TABLE`, reflecting string and date defaults as quoted SQL literals instead of unquoted identifiers.
-- **Alembic alter_column compatibility for nullability, defaults and comments (#861, [#877](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/877))** — `alter_column` operations emit CUBRID-compatible `MODIFY` / `CHANGE` and `ALTER COLUMN ... SET DEFAULT NULL` statements instead of generic syntax that CUBRID rejects.
-- **Propagation of compile options to CAST, ON DUPLICATE KEY UPDATE and collections (#862, [#875](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/875))** — compiler options including `literal_binds` reach nested operands in `visit_cast`, `ON DUPLICATE KEY UPDATE` values and collection member DDL.
-- **Table and view reflection scoped to current owner on CUBRID 11.2+ (#864, [#876](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/876))** — `has_table()`, `get_table_names()` and `get_view_names()` filter on `owner_name = CURRENT_USER` on CUBRID 11.2 and later, preventing duplicate names and false positives from other users' schemas.
-- **Reflected timezone types use dialect namespace ([#973](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/973), refs [#882](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/882))** — corrected the namespace of reflected timezone types.
+- **aggregate_order_by() on a filtered GROUP_CONCAT names FILTER in its error (#995)** — on
+  SQLAlchemy 2.1, `aggregate_order_by(func.group_concat(col).filter(cond), col)` raised a
+  `CompileError` saying `aggregate_order_by()` works only for `GROUP_CONCAT`, although the call
+  already was one. The error now says that CUBRID has no `FILTER (WHERE ...)` clause. It still
+  raises, and the rendered SQL of every other form is unchanged.
+
+- **aggregate_order_by() no longer drops its ORDER BY (#991)** — on SQLAlchemy 2.1,
+  `func.group_concat(col).aggregate_order_by(col.desc())` rendered `GROUP_CONCAT(col)` and
+  returned the values in an unspecified order without an error. It now renders
+  `GROUP_CONCAT(col ORDER BY col DESC)`, also with `DISTINCT` and in `HAVING`; a boolean
+  argument or `ORDER BY` item is grouped like any function argument (#970). Any other function
+  with `aggregate_order_by()`, including `aggregate_strings()`, raises `CompileError`, because
+  no other CUBRID aggregate takes an `ORDER BY` (verified for `JSON_ARRAYAGG`, `COUNT`, `MAX`,
+  `SUM` and `MEDIAN`). `within_group()` and SQLAlchemy 2.0 are unchanged. Verified on
+  CUBRID 11.4; not verified on 10.2, 11.0 or 11.2.
+
+- **GROUP_CONCAT DISTINCT, ORDER BY and SEPARATOR no longer fail (#990, #984)** — the
+  `GROUP_CONCAT` visitor wrapped its arguments in a second pair of parentheses, which CUBRID
+  rejects around its modifiers (-493). `func.group_concat(col.distinct())` and a
+  `literal_column("col ORDER BY col DESC SEPARATOR ';'")` argument now run. `GROUP_CONCAT`
+  renders with only its argument-list parentheses, so `GROUP_CONCAT((x))` becomes
+  `GROUP_CONCAT(x)`, as the documentation already showed. A boolean `EXISTS`, `NOT`, `AND` or
+  `OR` argument is grouped once, like any function argument (#970), instead of three times:
+  `GROUP_CONCAT((a = 1 AND b = 2))`. Values are unchanged; the change is otherwise
+  compatible. `FEATURE_SUPPORT` now shows the supported forms and lists the unsupported ones:
+  a separate `SEPARATOR` argument, more than one argument, and SQLAlchemy 2.1's
+  `aggregate_strings()` (`aggregate_order_by()` is fixed by #991). Verified on CUBRID 11.4; not verified on
+  10.2, 11.0 or 11.2.
+
+- **EXISTS and AND/OR as a simple CASE value no longer fail (#987)** — CUBRID rejects a bare
+  `a AND b`, `a OR b`, `NOT (...)` or `EXISTS (...)` as the value operand of a simple `CASE`
+  but accepts it inside parentheses. The `value=` operand of `case()` is now grouped like a
+  `THEN` or `ELSE` value (#982), so `case({True: 10}, value=and_(...), else_=20)` and
+  `case({True: 10}, value=exists(), else_=20)` run. A column, bind parameter, comparison or
+  other non-boolean value and every other rendering are unchanged. The documentation now also
+  states that CUBRID can reject a `CASE` whose results are boolean without a non-NULL `ELSE`
+  (for example one with a single `WHEN`; "semantic error", -495), with or without grouping, so
+  pass `else_=`; that CUBRID 11.4 evaluates any `CASE` used as a window `ORDER BY` or
+  `PARTITION BY` item as a constant, without an error; and that a `CASE` with a boolean value
+  fails as a `GROUP BY` item (-493). Verified on CUBRID 11.4;
+  not verified on 10.2, 11.0 or 11.2.
+
+- **EXISTS and AND/OR as a CASE THEN or ELSE value no longer fail (#982)** — CUBRID rejects a
+  bare `a AND b`, `a OR b`, `NOT (...)` or `EXISTS (...)` as a `CASE` result value but accepts
+  it inside parentheses. A `THEN` or `ELSE` value of a searched or simple (`value=`) `case()` is
+  now grouped like a CAST or function argument, so
+  `case((t.c.id > 0, and_(...)), else_=literal(False))` and
+  `case((t.c.id > 0, exists()), else_=literal(False))` run. `CASE` `WHEN` conditions and
+  every other rendering are unchanged. Verified on CUBRID 11.4; not verified on 10.2, 11.0 or
+  11.2.
+
+- **EXISTS and AND/OR as a CAST or function argument anywhere, and as a window item, no longer
+  fail (#970)** — CUBRID rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as
+  a CAST or function argument in every position, not only in the SELECT list and ORDER BY
+  (-493), and rejects a bare `EXISTS (...)` or `NOT (...)` as a window or `WITHIN GROUP`
+  `ORDER BY` / `PARTITION BY` item. A CAST or function now groups such an argument wherever it
+  appears, and those window items are grouped like ORDER BY items, so
+  `where(func.coalesce(and_(...), 0) == 1)`, `having(cast(and_(...), Integer) == 1)`, a join
+  `ON coalesce(...)`, `update().values(x=cast(and_(...), Integer))`,
+  `over(order_by=exists())`, `over(partition_by=exists())` and `within_group(~exists())` now
+  run. Bare `WHERE`/`HAVING`/`ON` conditions, `GROUP BY` items and `CASE` conditions render as
+  before. A CAST or function in `GROUP BY` now groups its argument too, but CUBRID still rejects
+  it ("search condition is not allowed as group by spec"). The `docs/FEATURE_SUPPORT.md` note
+  from #971 that listed these forms as unsupported is replaced.
+
+- **EXISTS and AND/OR inside a CAST, a function or ORDER BY no longer fail (#968)** — CUBRID
+  also rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a CAST or
+  function argument and as an ORDER BY item (-493). The compiler now groups such an expression
+  when the CAST or function is itself a SELECT column or ORDER BY item, also through
+  `type_coerce()`, labels and sort modifiers. `select(type_coerce(exists(), Boolean))`,
+  `select(cast(and_(...), Integer))`, `select(func.coalesce(exists(), False))`, a Boolean
+  `TypeDecorator` whose `column_expression()` wraps the column, `order_by(and_(...))` and
+  `order_by(exists())` now run. `WHERE`, `HAVING`, `ON`, `GROUP BY`, `CASE` conditions and
+  window `ORDER BY` render as before. A boolean `GROUP BY` item stays unsupported: CUBRID
+  rejects a search condition there even inside parentheses. Group by a SELECT-list label
+  instead (documented in `docs/FEATURE_SUPPORT.md`).
+
+- **EXISTS and AND/OR as a SELECT-list item no longer fail (#966)** — CUBRID rejects a bare
+  `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a SELECT-list item with a syntax
+  error (-493) but accepts each inside parentheses, so `select(exists().where(...))`,
+  `exists().select()`, `select(~exists()...)`, `select(and_(...))` and the ORM idiom
+  `session.query(q.exists()).scalar()` failed. The compiler now groups such an expression
+  when it is itself a column (or the element of its label), including inside subqueries and
+  CTEs. The same expressions in `WHERE`, `HAVING`, `ON` or a `CASE` condition render as
+  before.
+
+- **A failed isolation re-apply at transaction start stays pending (#937)** — when re-applying
+  the isolation level after a successful commit or rollback failed, `do_begin()` retried it
+  but removed the connection's pending mark before the retry ran. If the retry failed too, a
+  later begin on the same connection called directly through the dialect admitted work without
+  restoring the level. The mark now stays until a re-apply succeeds, so every begin retries
+  and raises until then, and setting a new level on the connection settles it. SQLAlchemy's
+  `Connection` masked the gap, because its rollback after the failed begin re-marked the
+  connection; the dialect hook no longer relies on that. The prior commit or rollback still
+  reports success and nothing is replayed. Applies to `cubrid+pycubrid://` and
+  `cubrid+aiopycubrid://`.
+
+- **Server errors that share a legacy CAS code no longer invalidate connections (#916)** —
+  legacy CAS codes reach pycubrid as -1000 to -1200, the same numbers as some server errors.
+  With pycubrid 1.13's `error_source == "server"`, `is_disconnect()` now reads such a code
+  as the server's, sync and async. A server -1002 is not `CAS_ER_NO_MORE_MEMORY`, and server
+  text such as `invalid json path naming [connection refused]` (-1200) no longer matches the
+  disconnect patterns, which apply only to the server connect-failure codes. CAS-origin
+  errors, errors without a source, and pycubrid before 1.13 are classified as before. The
+  supported pycubrid range is unchanged.
+
+- **`bool` JSON path indices are rejected (#914)** — `bool` is an `int` subclass, so
+  `json_col[True]` and `json_col[("items", False)]` rendered the paths `$[True]` and
+  `$."items"[False]`. CUBRID 10.2 and 11.4 reject these as invalid JSON paths (`-494`),
+  but the statement had already been sent. `JSONIndexType` and `JSONPathType` now raise
+  `TypeError` for a `bool` component. Execution reports it as
+  `sqlalchemy.exc.StatementError` before any SQL is sent, and `literal_binds` rendering as
+  `sqlalchemy.exc.CompileError`. Integer (including `0`, `1` and negative) and string
+  components render byte for byte as before, on SQLAlchemy 2.0 and 2.1. The Types guide
+  lists the supported path component types.
+
+* **agent-review:** do not count empty reply-only Copilot records as review rounds ([#936](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/936)) ([adb141e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/adb141ee26d27e0466b1772496ccbbdff06556ff)), refs [#933](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/933)
+* **compiler:** group a boolean expression used as a CASE THEN or ELSE value ([#985](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/985)) ([ffaf797](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ffaf797b0a6231190619fbd25ddb9c435c263c39)), refs [#982](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/982)
+* **compiler:** group a boolean simple-case value operand ([#988](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/988)) ([1c738f7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1c738f745ce54e2d331344d4fc33496fdbf6205f))
+* **compiler:** group boolean CAST and function arguments anywhere, and window items ([#972](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/972)) ([4042813](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/404281336d23086919d358dde3821e34fcef3483))
+* **compiler:** group boolean expressions inside a CAST, a function or ORDER BY ([#969](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/969)) ([d6f22da](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d6f22da698fa0e1f02bd52088dc43cb311985e05))
+* **compiler:** group EXISTS and AND/OR used as a SELECT-list item ([#967](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/967)) ([07f9de7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/07f9de7fd7a71f2695f41df97ab946c55f767a78)), refs [#966](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/966)
+* **compiler:** keep the ORDER BY of aggregate_order_by() ([#994](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/994)) ([a95cd80](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a95cd80e91c927baf7f4294dc105d393377d31c4))
+* **disconnect:** respect pycubrid error_source for overlapping CAS and server codes ([#938](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/938)) ([2f36731](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2f367311d4c5b321d61e9d93100b23d2f8008837)), refs [#916](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/916)
+* **docs:** close four parser gaps in the deterministic documentation check ([#922](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/922)) ([3584728](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3584728aa90e6258b8c1db531c168b32e44677b7))
+* **docs:** close the parser cases left by the second docs-check review ([#928](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/928)) ([245ef30](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/245ef30d389d3dddf7c75302ceb826bc5c2b4c29))
+* **docs:** follow the configured site slugifier and toc id rules in the docs-check parser ([#958](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/958)) ([8a70c48](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8a70c48de815270652cb0a5dd7d982746d1fed72)), refs [#957](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/957)
+* **docs:** port the shell substitution and quote fixes from pycubrid to the docs check ([#935](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/935)) ([0be57b5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/0be57b5b6dc6c26e2f3665a8b9e5189e331163d5))
+* **docs:** report issue-number lines in block quotes inside list items ([#930](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/930)) ([b2860a2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b2860a24e5c58de01fb1900d79e54747f5581d07))
+* **docs:** sync the docs-check shell scanner with pycubrid ([#960](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/960)) ([047100a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/047100acdfee034cfdd6a17ae5bb60ce899e5c06)), refs [#959](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/959)
+* **json:** reject boolean JSON path indices instead of rendering invalid array paths ([#917](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/917)) ([7744dd6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7744dd62e2477b25d2a904f115f3a8cce75f5f18))
+* **scripts:** dispose reflection probe engine on every exit path ([#977](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/977)) ([1303262](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/13032624148045302d0edcdfe245a28ce4c20f01))
+* **test:** keep the CUBRID 11.4 Docker test database in a named volume ([#1001](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1001)) ([85ec642](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85ec6427c7f10e0b082ff3371680f54385dbcbfa)), refs [#1000](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1000)
+* **test:** register the Docker test database for a stable host ([#998](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/998)) ([24759a9](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24759a92444c98d920787ac31c9ba35d0695465c))
+* **transactions:** retain pending isolation restoration after a failed begin retry ([#947](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/947)) ([2080f8b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2080f8bc71d48ce1e321d79d88429b52cced712c)), refs [#937](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/937)
+
+- **`INSERT` / `REPLACE ... FROM SELECT` over a CTE renders the `WITH` clause after the
+  column list (#897)** — SQLAlchemy put the CTE first (`WITH c AS (...) INSERT INTO t
+  (...) SELECT ...`), which CUBRID 10.2 and 11.4 reject with a -493 syntax error, so
+  `insert(t).from_select([...], select(cte))` and the dialect's `replace()` equivalent
+  always failed. The dialect now sets `cte_follows_insert`, rendering `INSERT INTO t
+  (...) WITH c AS (...) SELECT ...`, the order CUBRID accepts; recursive CTEs and bind
+  order are unchanged. `TestIsolatedCTE849::test_insert_from_select` is no longer a
+  strict xfail, and live INSERT, recursive INSERT and REPLACE cases pass on CUBRID 10.2
+  and 11.4.
+
+- **Unique-constraint reflection fails closed on a catalog mismatch (#848)** —
+  `get_unique_constraints()` took the unique index names from `db_index` and their
+  columns from `SHOW INDEXES`, and returned only the names `SHOW INDEXES` resolved. A
+  unique index the catalog listed but `SHOW INDEXES` omitted was therefore reported as
+  absent, which Alembic autogenerate would read as a constraint to create. Such a
+  mismatch now raises `InvalidRequestError` naming the unresolved and resolved indexes.
+  A verified-empty catalog still returns `[]`. No such mismatch has been seen on a live
+  CUBRID server; this hardens the reflection invariant.
+
+- **Garbage-collected async connections are terminated (#872)** — the
+  `cubrid+aiopycubrid://` adapter had no terminate support, so when a checked-out
+  connection was garbage-collected the pool logged "cannot be safely terminated" and
+  the unclosed stream raised a `ResourceWarning`. The adapter now uses SQLAlchemy's
+  `AsyncAdapt_terminate` (SQLAlchemy 2.0.44+; earlier 2.0 releases keep the old
+  behavior): the garbage-collection path closes the socket synchronously and retires the
+  pycubrid session, also when the connection's event loop has already closed, an
+  invalidated connection closes with `CLOSE_DATABASE`, and the dialect sets
+  `has_terminate`.
+
+- **`on_duplicate_key_update()` is cacheable (#871)** — `OnDuplicateClause` had no
+  `_traverse_internals`, so the first `INSERT ... ON DUPLICATE KEY UPDATE` emitted
+  SQLAlchemy's "will not make use of SQL compilation caching" `SAWarning` and every
+  such statement was compiled again on each execution. It now declares the column order
+  and the update values as cache-key elements (the traversal of SQLAlchemy 2.1's MySQL
+  construct), with the update values coerced to SQL expressions; a cached statement
+  binds each execution's own values, on SQLAlchemy 2.0 and 2.1.
+
+- **Reflection of names containing `:name`, collection type classes and join linting
+  (#870)** — the `SHOW COLUMNS` / `SHOW INDEXES` / `SHOW CREATE TABLE` / `SHOW CREATE
+  VIEW` statements were built with `text()`, so a table named `x :y` or `w (:z)` failed
+  with "A value is required for bind parameter 'y'"; colons are now escaped, and the
+  SQL sent is unchanged. `SET(Integer)` (a type class, which SQLAlchemy accepts
+  elsewhere) failed `create_all` with "_compiler_dispatch() missing ... 'visitor'";
+  collection member classes are now instantiated. `visit_join` dropped `from_linter`, so
+  SQLAlchemy reported a joined select as a cartesian product and missed a real one; the
+  join edges are now recorded as in the base compiler.
+
+- **Expression, descending, filtered and prefix indexes reflect and autogenerate (#869)** —
+  `get_indexes()` reported `CREATE INDEX ix ON t (LOWER(a))` as `column_names: [None]`
+  without `expressions`, so `Table` reflection warned "Skipping index" and dropped it
+  and autogenerate proposed it again on every run, and `b DESC`, `WHERE c > 3` and the
+  prefix `a(5)` reflected as plain columns. The `SHOW INDEXES` `Func`, `Collation` and
+  `Sub_part` columns and `db_index.filter_expression` now map to `expressions`,
+  `column_sorting` and the new `cubrid_where` / `cubrid_length` index options, with the
+  table qualifier CUBRID prints dropped (`lower([a])`, `c>3`). `CREATE INDEX` renders
+  `cubrid_where` and `cubrid_length`, which were silently ignored before, and the
+  Alembic implementation compares these keys after normalizing both sides (outside
+  string literals), so autogenerate no longer proposes an unchanged index again;
+  detecting a changed sort order, filter or prefix length needs Alembic 1.12+.
+
+- **Alembic renders CUBRID collection member types with the dialect prefix (#868)** —
+  `render_type` wrote every member type with `sa.`, so autogenerate produced
+  `cubrid_types.MULTISET(sa.MONETARY())` or `cubrid_types.SEQUENCE(sa.BIT(length=8))`,
+  which raised `AttributeError` when the migration file was loaded. Member types from
+  `sqlalchemy_cubrid.types` now render as `cubrid_types.MONETARY()`,
+  `cubrid_types.BIT(length=8)` and so on; generic SQLAlchemy members keep `sa.`.
+
+- **`Select.fetch()` renders as `LIMIT` (#867)** — there was no `fetch_clause`
+  override, so `select(...).fetch(2)` and `.offset(1).fetch(2)` emitted the generic
+  `OFFSET ... ROWS FETCH FIRST n ROWS ONLY`, which CUBRID rejects with -493. They now
+  render as `LIMIT 2` and `LIMIT 1, 2`; `percent=True` and `with_ties=True` raise
+  `CompileError`, since CUBRID has no `LIMIT` form for them.
+
+- **JSON path keys use JSON string escaping (#866)** — `col["key"]` and
+  `col[("a", "b")]` doubled a `"` in the key, which CUBRID reads as a JSON string:
+  `doc['a"b']` failed with -1200 "Invalid JSON path" and `doc['a\\b']` silently
+  returned `None`. Keys are now built with `json.dumps()`, so `"` and `\` are
+  backslash-escaped and non-ASCII characters become `\uXXXX` escapes that do not
+  depend on the connection charset.
+
+- **String and date server defaults reflect as quoted SQL literals (#865)** —
+  `get_columns()` returned the `SHOW COLUMNS` default text, which drops a string's
+  quotes: `DEFAULT 'it''s'` reflected as `it''s`, `''` as an empty string and the
+  string `'NULL'` as `NULL`, a date as `01/02/2020`, and `'CURRENT_USER'` the same as
+  the `USER` function. Reflecting and then emitting `CreateTable` produced `DEFAULT
+  it''s` and `DEFAULT ,`, and Alembic's `existing_server_default` carried the bad value
+  into `MODIFY`. Non-numeric defaults are now read from `SHOW CREATE TABLE` (one extra
+  query per table that has one) and reflect as `'it''s'`, `''`, `'NULL'`, `date
+  '01/02/2020'` or the function itself (a string column's `'5'` as `'5'`); numeric
+  defaults of numeric columns are unchanged.
+
+- **Alembic `alter_column` emits CUBRID-compatible SQL for nullability, dropped
+  defaults and comments (#861)** — these changes went to Alembic's generic SQL, which
+  CUBRID rejects: `nullable=` emitted `ALTER COLUMN c SET/DROP NOT NULL`,
+  `server_default=None` emitted `DROP DEFAULT` (both syntax errors), and `comment=`
+  raised "can't render element of type ColumnComment", so any autogenerated
+  nullability change failed at `upgrade`. Nullability and comment changes now go
+  through `MODIFY` / `CHANGE` (a missing `existing_type` raises `ValueError`), and a
+  dropped default emits `ALTER COLUMN c SET DEFAULT NULL`, or two `MODIFY` statements
+  for a `NOT NULL` column. Because CUBRID 10.2/11.0 reset an attribute that `MODIFY`
+  omits and 11.2+ keep it, the definition now states `NULL` for a NOT NULL to
+  nullable change, `DEFAULT NULL` for a dropped default and `COMMENT ''` for a removed
+  comment; an existing column without a default no longer gets `DEFAULT NULL`. A
+  UNIQUE `create_index` in offline `--sql` mode raises the documented "live
+  connection" `CompileError` instead of `NoInspectionAvailable`.
+
+- **`literal_binds` and other compile options reach CAST operands, ON DUPLICATE KEY
+  UPDATE values and collection members (#862)** — the nested `process()` calls in
+  four places (`visit_cast`, both ON DUPLICATE KEY UPDATE value paths and collection
+  member DDL) dropped the compile keyword arguments, so `CAST(t.name || ? AS VARCHAR(10))` and
+  `ON DUPLICATE KEY UPDATE name = ?` kept placeholders under `literal_binds`,
+  `server_default=cast(literal(5), String(10))` rendered `DEFAULT CAST(? AS
+  VARCHAR(10))` and failed `create_all` with "wrong number of parameters", a
+  functional `Index` over a `CAST` rendered a `?`, and Alembic `--sql` output
+  contained placeholders. CUBRID itself still rejects `CAST` in a function-based
+  index on 10.2 and 11.4.
+
+- **`has_table()`, `get_table_names()` and `get_view_names()` see only the current
+  owner's classes on CUBRID 11.2 and later (#864)** — `db_class` lists every owner's
+  classes the user may read, but an unqualified name resolves only in the current
+  user's schema. With another user's `own_t` present, `has_table("own_t")` was `True`
+  for `dba`, so `create_all()` skipped `dba.own_t` and the next `INSERT` failed with
+  `Unknown class "dba.own_t"`; `MetaData.reflect()` aborted with `NoSuchTableError`;
+  and two owners' same-named tables were listed twice. These methods now filter on
+  `owner_name = CURRENT_USER`. CUBRID 10.2 and 11.0 are unchanged.
+
+* **alembic:** emit CUBRID-compatible SQL for nullability, dropped defaults and comments in alter_column ([#877](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/877)) ([45fe81a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/45fe81a8321076a484e1800b53d2f682ab49e484))
+* **alembic:** render CUBRID collection member types with the dialect module prefix ([#884](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/884)) ([f3b00da](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f3b00daa8e9762320a7931360530c63e849dc8e4))
+* **async:** support terminating garbage-collected async connections ([#894](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/894)) ([fb11bbc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fb11bbca0ccae5d14e52d50f2647d55295280072))
+* **compiler:** escape rendered literals for the server's actual backslash mode ([#874](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/874)) ([8969586](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8969586e1b52f96d9d2a72612dbf63316bad14c7)), refs [#863](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/863)
+* **compiler:** forward compile options through CAST, ON DUPLICATE KEY UPDATE and collection members ([#875](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/875)) ([b3cc17b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b3cc17b070f46a99e23a35eca422cb157ca570cc))
+* **compiler:** make on_duplicate_key_update() cacheable ([#893](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/893)) ([39361db](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/39361db81aa519c3216977bc3be9e086f4b907ce))
+* **compiler:** reject foreign MERGE Column keys with colliding target names ([#895](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/895)) ([1a2379d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1a2379d1ed0610dde7ba0fa5225a7c658e367ff5)), refs [#847](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/847)
+* **compiler:** render a CTE after INSERT INTO for insert from a CTE select ([#899](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/899)) ([a14b31a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a14b31aa6f8ed702cfebb93b2ed5b4e6ab289d64)), refs [#897](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/897)
+* **compiler:** render Select.fetch() as LIMIT ([#880](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/880)) ([5edda8b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5edda8b09b6f90c60269da484b7afed80dc20c8a)), refs [#867](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/867)
+* **dialect:** handle colons in reflected names, type classes in collections and join linting ([#891](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/891)) ([97c44ce](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/97c44cebb50e613ba6fcd88a5fec9492622084bd))
+* **reflection:** fail closed on missing unique-index catalog reconciliation ([#896](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/896)) ([034eb34](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/034eb34bd98393af077a68f13c830ed3353da30c))
+* **reflection:** limit has_table and table listings to the current owner on CUBRID 11.2 and later ([#876](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/876)) ([5a33ba8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5a33ba8bb43feb6f749bd7d511d13504bed91329))
+* **reflection:** reflect expression, descending, filtered and prefix indexes ([#885](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/885)) ([64258de](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/64258de9e3e2ffc17d16388e40bcf772e95ef3b5))
+* **reflection:** reflect string server defaults as quoted literals ([#878](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/878)) ([14eeafa](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/14eeafa79fe2bbcdbb85973626faedcf0e8a8481))
+* **types:** escape JSON path keys with JSON string syntax ([#879](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/879)) ([ade2741](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ade2741e264376806c916b0dbc31c8e8bf0a8539)), refs [#866](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/866)
 
 ### Security
 
-- **Inline literals follow the server's backslash mode (#863, [#874](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/874))** — the dialect assumed `no_backslash_escapes=yes` unless told otherwise, so on a server with `no_backslash_escapes=no` the value `\' OR 1=1 -- ` rendered with `literal_binds` as `'\'' OR 1=1 -- '` and the compiled SQL matched every row. When `create_engine(no_backslash_escapes=...)` is not passed, the first connection now probes the server with `SELECT CHAR_LENGTH('\\')` and literal rendering doubles backslashes when the server treats them as escapes; an unexpected probe result fails the connection. Native `ENUM` labels now use the same escaping. An explicit option still pins the mode and skips the probe; a dialect that has not connected still assumes the server default.
+- **Inline literals follow the server's backslash mode (#863)** — the dialect assumed
+  `no_backslash_escapes=yes` unless told otherwise, so on a server with
+  `no_backslash_escapes=no` the value `\' OR 1=1 -- ` rendered with `literal_binds` as
+  `'\'' OR 1=1 -- '` and the compiled SQL matched every row. When
+  `create_engine(no_backslash_escapes=...)` is not passed, the first connection now
+  probes the server with `SELECT CHAR_LENGTH('\\')` and literal rendering doubles
+  backslashes when the server treats them as escapes; an unexpected probe result fails
+  the connection. Native `ENUM` labels now use the same escaping. An explicit option
+  still pins the mode and skips the probe; a dialect that has not connected still
+  assumes the server default.
 
 ### Documentation
 
-- **Python 3.15 limitation on garbage-collected connection cleanup (#872, [#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/909))** — with SQLAlchemy 2.1 (2.1.0 to 2.1.4 checked) on CPython 3.15, the pool never cleans up a pooled connection that Python's cycle collector reclaims, such as one lost while its autobegun transaction is still open. CPython 3.15 clears weak references later (python/cpython#136189), and SQLAlchemy 2.1's pool finalizer then returns early: the connection is not terminated, its socket closes only through Python's stream finalizer with a `ResourceWarning`, and the pool slot stays checked out. This affects every dialect, sync pools included. SQLAlchemy 2.0 and Python 3.14 and earlier are not affected, and the dialect's own terminate path is unchanged. The Connection Guide and the Support Matrix describe the limitation.
-- **Documented CUBRIDdb driver behavior differences (#1003)** — documented that with CUBRIDdb, which binds parameters on the server rather than in client SQL, a `CASE` whose `THEN`/`ELSE` values are all bound parameters returns strings rather than integers, and `GROUP_CONCAT` arguments or `aggregate_order_by()` items containing bound parameters fail with -494; workarounds (`cast(..., Integer)` and positional ordering) are documented in the Driver Compatibility guide.
-- **BLOB and CLOB value reads documented as partial (#829, [#842](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/842))** — `docs/FEATURE_SUPPORT.md` marks CUBRID `BLOB` and `CLOB` as partially supported, clarifying that while DDL, reflection, binding and NULL round trips work, reading non-NULL values returns the driver's LOB locator across `cubrid://`, `cubrid+pycubrid://` and `cubrid+aiopycubrid://` (Known Issue 6 in `docs/DRIVER_COMPAT.md`).
-- **CAS error -4 documented as interrupted statement (#873, [#939](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/939))** — updated Driver Compatibility, Connection and Troubleshooting guides to note pycubrid 1.13.0 reports -4 (`ER_INTERRUPTED`, `KILL QUERY`) as `Interrupted` with SQLSTATE `HY008` (previously `08S01`); dialect non-disconnect behavior is unchanged since 1.9.0 (#572).
-- **Architecture and brand diagrams (#1013, [#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1016), #886, [#900](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/900))** — added end-to-end driver communication architecture diagrams covering URL variants, Broker, CAS and CCI interactions in `docs/ARCHITECTURE.md`, enabled SuperFences Mermaid rendering, and displayed the repository icon across READMEs and docs (loading from [cubrid-lab/brand](https://github.com/cubrid-lab/brand)).
-- **Onboarding and first-connection course reorganization (#940, #941, [#942](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/942), #943, [#944](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/944), #948, [#949](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/949), [#954](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/954), [#955](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/955), [#956](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/956))** — restructured Quick Start into a 5-lesson first-connection tutorial with standalone runnable async examples, organized docs by reader question, added anonymous volume deletion (`docker rm -f -v`) to cleanup instructions, and updated boolean expression caveats (#968, [#971](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/971), [#986](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/986)).
-- **Documentation provenance, runbooks and performance baselines (#946, [#951](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/951), #830, #833, [#844](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/844))** — added "About this documentation" provenance notice to identify development docs, added release runbook version state tables in `RELEASING.md`, updated `ROADMAP.md` completed history, and recorded comprehensive performance baselines across CUBRID 10.2 to 11.4 and driver variants in `docs/PERFORMANCE.md`.
-- **Contributor guidance and translated documentation (#907, #926, [#927](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/927), [#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012), [#846](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/846), [#913](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/913), [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023), [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881), [#837](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/837), [#839](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/839), [#840](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/840), refs [#698](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/698), [#699](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/699), [#700](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/700))** — split `AGENTS.md` into modular task guides with link verification (`scripts/check_agents_docs.py`), clarified standalone agent review routes and good-first-issue policies, and synchronized Python version requirements across German, Hindi and Russian README translations.
+- **The architecture pages show the end-to-end driver communication flow (#1013)** — `docs/ARCHITECTURE.md` and `docs/ko/ARCHITECTURE.md` gain an "End-to-End Communication Architecture" section with a Mermaid component diagram that maps the three URL variants (`CubridDialect` with `CUBRIDdb` and CCI, `PyCubridDialect` with `pycubrid`, `PyCubridAsyncDialect` with `pycubrid.aio`) to the Broker, the CAS process and the database server, with the dialect's responsibilities, the meaning of CCI, CAS and the CAS wire protocol, and the connection lifecycle. The README architecture diagram links to it. `mkdocs.yml` now registers the `mermaid` SuperFences custom fence, so the documentation site renders the Mermaid diagrams on every page (they were shown as code listings before). Documentation only; no behavior change.
+
+* **agents:** require repository-local issue authoring checks ([#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012)) ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
+* **architecture:** show Broker, CAS and CCI in the end-to-end driver communication flow ([#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1016)) ([f8a9aa5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f8a9aa5d133835ce60455725259756550d50be64))
+* **contributing:** fix single-test pytest node example ([c04a380](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c04a380f4b9a512fa8ecb892324fe6b59fde31b7)), refs [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881)
+* enforce repository-local issue drafting ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
+* **triage:** clarify PR overlap and execution precedence ([1d082cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1d082ccccb2010b2ab6db474eaeca770431a6b7e)), refs [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023)
+
+- **Two CUBRIDdb result differences are documented (#1003)** — CUBRIDdb binds values on the
+  server, where pycubrid writes them into the SQL. With CUBRIDdb a `CASE` whose `THEN`/`ELSE`
+  values are all bound parameters returns a string (`'10'`, not `10`), and a `GROUP_CONCAT`
+  argument and `aggregate_order_by()` item that contain bound parameters fail with -494,
+  because the server does not treat the two copies as the same expression. The Driver
+  Compatibility guide describes both with their workarounds (`cast(..., Integer)`; an
+  argument position such as `aggregate_order_by(literal_column("1"))`), and the Feature
+  Support pages link to it. The dialect is unchanged.
+
+- **Boolean expressions that still failed on CUBRID (#968)** — superseded by the #970 fix
+  above: those forms now run, and the `docs/FEATURE_SUPPORT.md` note that listed them, with its
+  `case()` workaround, is replaced. Do not use that workaround inside a window: CUBRID 11.4
+  evaluates a `CASE` (or `if()`) in a window `ORDER BY` or `PARTITION BY` as a constant, so the
+  window ignores it.
+
+- **The first-connection course has one page per lesson (#943)** — the rest of the course moves out of the Quick Start page into Lesson 3 (save a row and read it back through a separate connection, `save_row.py`), Lesson 4 (a transaction undone with `rollback()`, `rollback_row.py`, which shows the row count inside the transaction and can be rerun) and Lesson 5 (the owner- and comment-checked cleanup and removing the lab with `docker rm -f -v`), in English and Korean. The former single `first_saved_row.py` is split between Lessons 3 and 4; the table, its marker comment and the cleanup script are unchanged. The Quick Start page lists all five lessons, keeps the first-connection error table and next steps, and keeps its former "Step 3" and "Clean up" anchors as short "moved to" sections. Every command was rerun against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0, including reruns and the rollback before Lesson 3.
+
+- **The first-connection course starts with two lesson pages (#943)** — preparing CUBRID and Python (`docs/LESSON_PREPARE.md`: an existing database's values or the disposable Docker lab, and the virtual environment) and running the first query (`docs/LESSON_FIRST_QUERY.md`) are now separate pages, each with a goal, prerequisites, the commands, the real output and a next step, in English and Korean, listed under Start here. The Quick Start page is the course landing: it lists the lessons, keeps the save-a-row, cleanup and first-connection-errors sections, and keeps its former anchors as short "moved to" sections. The lab's readiness loop and the first script are wrapped to fit narrow screens, the site shows previous/next links at the bottom of each page, and the documentation home links the lab in Lesson 1. Every command was rerun as written against `cubrid/cubrid:11.4` with the published SQLAlchemy 2.1.4, sqlalchemy-cubrid 1.11.0 and pycubrid 1.13.0.
+
+- **The documentation site is organized by reader question (#943)** — the navigation (English and Korean) now has Start here (the first-connection course), How-to guides (connecting and configuring the driver, the ORM, Alembic, CUBRID-specific DML, isolation levels), Reference (types, feature support, support matrix, driver compatibility, including the supported CUBRIDdb C-extension driver), Help (troubleshooting, issues, private security reports) and Project and internals, instead of Getting Started/Usage/Reference/Operations/Project; the home pages list the same sections. No page moved and no URL changed. `docs/agents/documentation.md` records the page map with each page's reader, question and decision, and the lesson pattern for the upcoming first-connection lessons. Two paragraphs that a following `---` rule turned into accidental headings (in the Connection guide and Feature Support) are plain paragraphs again, so they no longer appear in the page tables of contents.
+
+- **The documentation says it is development documentation, and the runbook tells version states apart (#946)** — the site is built from `main` on every change, so it can describe unreleased changes, and `main`'s `__version__` can name a candidate or an abandoned version (it read 1.11.1, never published, while the newest release was 1.11.0). The English and Korean documentation home pages gain "About this documentation": development scope, the exact source commit (filled in at build time by a small MkDocs hook, `scripts/docs_provenance_hook.py`, from `GITHUB_SHA` or `git rev-parse HEAD`, never from PyPI), where published releases and their `docs/` at the tag are, and that each guide states its tested versions; the Quick Start now says its commands ran with the published 2026-10-15 PyPI releases. `RELEASING.md` gains a "Which state a version is in" table (candidate, publication in progress or partial, abandoned, published and verified; unknown when PyPI or the API cannot be read), corrects the bot-PR CI description (runs are created but wait as `action_required` or end with zero jobs, as observed on #910) with a table of CI states including stale heads, lists what the release maintainer records before merging, and adds an "After publication" step for completion evidence and support-statement review.
+
+- **The quickstart removes the lab's Docker volume too (#948)** — the `cubrid/cubrid` images keep their database in an anonymous volume (`/home/cubrid/CUBRID/databases` in 11.4), and `docker rm -f` without `-v` left that volume, with the tutorial's `testdb`, behind on every run. The Quick Start (English and Korean) now removes the lab with `docker rm -f -v sqlalchemy-cubrid-quickstart` and explains what `-v` deletes.
+
+- **The README async examples are complete programs (#941)** — the `Async` and `Async insert
+  with PK retrieval` examples put `async with` and `await` at module level, a `SyntaxError`
+  in an ordinary script. Each is now a named script that runs `async def main()` through
+  `asyncio.run(main())`, creates its engine inside the event loop and always awaits
+  `engine.dispose()`. The query example prints `2`. The insert example creates its own
+  `sqlalchemy_async_example_notes` table instead of assuming a `users` table, refuses to
+  reuse an existing one, reads the flushed row back through a new session and drops the
+  table again, also after a failed statement or Ctrl+C. Both were run against CUBRID 11.4.
+  The Korean README carries the same programs, and the German, Hindi, Russian and Chinese
+  READMEs the corrected query example. A new offline test compiles every async README
+  example as a plain script and checks that the translations repeat the English programs;
+  the always-running lint job runs it, so README-only changes are checked too.
+
+- **A first SQLAlchemy connection for CUBRID beginners (#940)** — the Quick Start guide
+  (English and Korean) is now one recommended path: the roles of SQLAlchemy, the dialect,
+  the pycubrid driver and the CUBRID server, the five connection values for an existing
+  database or a disposable local Docker lab, `sqlalchemy-cubrid[pycubrid]` in a virtual
+  environment, a first `SELECT 1 + 1`, and a first committed row read back by a separate
+  connection with a rollback demonstration, followed by an owner- and comment-checked cleanup
+  script and the real first-connection error messages. Every command was run as written
+  against CUBRID 11.4. Alternative drivers, URL forms, the ORM, async code and Alembic follow
+  as next steps. The README and the documentation home start with a link to it, the README
+  Quick Start states its `demodb` placeholder values, and the home page's minimal example
+  uses the recommended `cubrid+pycubrid://` URL. The CUBRIDdb C-extension driver built from
+  source stays supported; only the `[cubrid]` and `[cubriddb]` extras are deprecated.
+
+- **CAS error -4 is described as an interrupted statement (#873)** — pycubrid 1.13.0 reports
+  -4 (`ER_INTERRUPTED`, a `KILL QUERY`) as `Interrupted` with SQLSTATE `HY008`. The Driver
+  Compatibility, Connection and Troubleshooting guides (English and Korean) and a dialect
+  comment now say so, and note that earlier pycubrid releases reported it as a communication
+  error (`08S01`). The dialect's behavior is unchanged: -4 remains a non-disconnect, as it
+  has been since 1.9.0 (#572). The Driver Compatibility guide also cites the CUBRID source for why -671 (`ER_CSS_RECV_OR_SEND`) is not
+  a disconnect code: the CAS resets only for the four session-lost server codes.
+
+- **A maintainer's review is the standalone-agent alternative to Copilot (#926)** —
+  `AGENTS.md` and `CONTRIBUTING.md` now say that a standalone agent PR waits for a
+  substantive submitted GitHub Copilot review or a maintainer's review, recorded on the
+  PR, instead of "another person's" review (maintainer decision, 2026-10-15). A reviewer
+  agent run by the implementer does not count. The Korean contributor guide's review
+  process now states the same route instead of "at least one review".
+
+- **Agent guidance split into task guides (#907)** — the root `AGENTS.md` (618 lines,
+  36,498 bytes) keeps the overview, commands, code conventions and every review, issue,
+  label, documentation, commit and release rule, and gains a task routing table for compiler
+  and DML, reflection and types, Alembic, drivers and async, tests and CI, documentation and
+  support claims, release and performance work. The architecture map, CUBRID-specific
+  dialect knowledge, test structure, CI/CD, documentation map and performance context moved
+  unchanged to `docs/agents/`. The root file is now 453 lines and 28,029 bytes.
+  `scripts/check_agents_docs.py` checks the links, anchors, guide reachability, `make`
+  targets, script paths and the `requires-python`/SQLAlchemy pins quoted in the root file
+  against `pyproject.toml`, and with `--retained-from REF` that no line of an earlier
+  `AGENTS.md` was dropped. No code, CI or release behavior changes.
+
+- **Python 3.15 limitation of garbage-collected connection cleanup (#872)** — with
+  SQLAlchemy 2.1 (2.1.0 to 2.1.4 checked) on CPython 3.15, the pool never cleans up a
+  pooled connection that Python's cycle collector reclaims, such as one lost while its
+  autobegun transaction is still open. CPython 3.15 clears weak references later
+  (python/cpython#136189), and SQLAlchemy 2.1's pool finalizer then returns early: the
+  connection is not terminated, its socket closes only through Python's stream finalizer
+  with a `ResourceWarning`, and the pool slot stays checked out. This affects every
+  dialect, sync pools included. SQLAlchemy 2.0 and Python 3.14 and earlier are not
+  affected, and the dialect's own terminate path is unchanged. The Connection Guide and
+  the Support Matrix describe the limitation.
+
+* **agents:** name a maintainer's review as the standalone-agent alternative to Copilot ([#927](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/927)) ([6b3793a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6b3793a9dfc0d41f3ae975a246e1f54d2a22a328)), refs [#926](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/926)
+* **async:** document the Python 3.15 limit of garbage-collected connection cleanup ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/909)) ([a0ec6a6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a0ec6a67043281262c1db6d499b2d2f1c9fc273f))
+* **async:** make README quickstart examples runnable as standalone Python scripts ([#944](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/944)) ([09d07bf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/09d07bffe8bd69f7d08e7bec8f6c470e1e8b8ae6))
+* **contributing:** clarify good-first-issue access for human contributors ([#913](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/913)) ([7a2512f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a2512f4694ee5129081ad87a449cae8bb3d4a88))
+* correct the documented boolean expression positions ([#986](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/986)) ([7c7958b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7c7958be8e82fa49dd3fb56591ad5a5108e16e30))
+* describe CAS error -4 as an interrupted statement ([#939](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/939)) ([2551c79](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2551c791676bf5bbdc374a118007dc023d2588bc))
+* **onboarding:** lead with one synchronous SQLAlchemy path for CUBRID beginners ([#942](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/942)) ([a3d4916](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a3d49164b532d2485138da1ab647ecc8a856214c))
+* **quickstart:** remove the lab container's anonymous volume with docker rm -f -v ([#949](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/949)) ([53d250a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/53d250ad18d04068ce66da7d429e9546480c6a94)), refs [#948](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/948)
+* **site:** keep wrapped lines that start with an issue number from rendering as headings ([#924](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/924)) ([b9b4ff5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b9b4ff5b2c36d547a10dee0c83d803c56bc7f5b3))
+* state the boolean expressions that still fail on CUBRID ([#971](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/971)) ([6dc4728](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6dc4728c7742917e551d64a39971ef1c366d5c57)), refs [#968](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/968)
+* **structure:** finish the first-connection course with lessons 3 to 5 ([#956](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/956)) ([a472087](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a472087cb1e9b956b7aa1b0c338794b2f91e2480))
+* **structure:** organize the site navigation by reader question ([#954](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/954)) ([a5c42a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a5c42a4287a9f0a6930b11ddc84614dbacc780f8)), refs [#943](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/943)
+* **structure:** split the first two first-connection lessons into their own pages ([#955](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/955)) ([6a85659](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6a8565987ebde18e367b2e60fffd5f21a2aade17))
+* **types:** correct the namespace of reflected timezone types ([#973](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/973)) ([9480036](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9480036c1a184d6227c93562c67452ded57cfbc8)), refs [#882](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/882)
+* **versioning:** identify development docs and distinguish candidate, abandoned and published versions ([#951](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/951)) ([7a0ba84](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a0ba84861786c4abae476bfbd67ab0b88fb0f7b))
+
+- **The README and the documentation site show the CUBRID Lab repository icon (#886)** — the
+  English README and its Korean, Chinese, Hindi, German and Russian translations open with the
+  sqlalchemy-cubrid ORM icon, centered and without a caption, and the documentation site uses
+  it as its header logo and favicon. All of them load the SVG from one immutable
+  [cubrid-lab/brand](https://github.com/cubrid-lab/brand) commit.
+
+- **`ROADMAP.md` no longer presents shipped releases as plans (#833)** — the stale
+  "Current Release Line — v1.8.x" heading is now "Current Focus", the Python 3.10
+  retirement (shipped in 1.10.0) and Python 3.15 support (shipped in 1.11.0) moved
+  to Completed with their release dates, and the Compatibility section and the
+  header link to `CHANGELOG.md`, PyPI and `docs/SUPPORT_MATRIX.md` instead of
+  repeating version numbers. The 2026-10-02 decisions are kept as dated history.
+
+- **`docs/PERFORMANCE.md` has a current same-CUBRID baseline (#830)** — raw
+  pycubrid, SQLAlchemy Core and ORM measured on one CUBRID 11.4 server at `main`
+  `a570ea4` (dialect source as in v1.11.0) with pycubrid 1.12.0, SQLAlchemy 2.1.4
+  and 2.0.54 and Python 3.12: single-row CRUD, fetch, the statement cache on and
+  off, 1,000-row `executemany` and bulk INSERT/UPDATE/DELETE, reflection and
+  offline compilation, 5 trials each with medians and interquartile ranges. The
+  new `scripts/bench_dialect_baseline.py` covers what the existing tools did not
+  (cache, batch DML, reflection, checked results); the raw files, the exact
+  commands and `summary.json` are in `benchmarks/2026-10-12-dialect-baseline/`.
+  The section also records the feasibility of pycubrid's opt-in
+  `executemany(prepared=True)`, which the dialect does not use. Historical
+  figures are now dated. No dialect hotspot or regression was found; runtime
+  behavior is unchanged.
+
+- **The dialect baseline now covers CUBRID 10.2, 11.0 and 11.2, CUBRIDdb, the async
+  driver and concurrent connections (#830 follow-up)** — `docs/PERFORMANCE.md` (+
+  Korean) adds a 2026-10-13 run of `scripts/bench_dialect_baseline.py` on CUBRID
+  10.2, 11.0, 11.2 and 11.4 through `cubrid+pycubrid://`, `cubrid://` (CUBRIDdb built
+  from cubrid-python v11.3.0.51) and `cubrid+aiopycubrid://`, 5 trials each. The
+  script gained a CUBRIDdb route, an async mode and a `--concurrency` workload
+  (one-row SELECTs and committed UPDATEs on 1, 4 and 8 connections); raw files,
+  commands and `summary.json` are in
+  `benchmarks/2026-10-13-dialect-baseline-followup/`. Reads differ little between
+  servers and drivers; pycubrid and the async driver scale with connections, while
+  CUBRIDdb, whose C extension never releases the GIL, does not scale across threads.
+  Runtime behavior is unchanged.
+
+- **The feature support table no longer marks CUBRID `BLOB` / `CLOB` as fully supported
+  (#829)** — `docs/FEATURE_SUPPORT.md` (and its Korean page) shows ⚠️ in the CUBRID
+  `BLOB` and `CLOB` cells, with a note that separates the supported parts (DDL and type
+  mapping, reflection, binding `bytes` / `str`, `NULL` round trips) from the ordinary
+  Core/ORM read of a non-NULL value, which returns the driver's LOB locator on
+  `cubrid://`, `cubrid+pycubrid://` and `cubrid+aiopycubrid://`. The note links Known
+  Issue 6 in `docs/DRIVER_COMPAT.md`. Documentation only; runtime behavior is unchanged.
+
+* **agents:** correct stale entry points, integration commands and doc map in AGENTS.md ([#846](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/846)) ([340a587](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/340a587ae1cfe6f98123669f25555948f84255cd))
+* **brand:** show the centered repository icon in the README and docs site ([#900](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/900)) ([db5ccdd](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/db5ccdd83787b3489cf61ed2f3b5fe641e171ca7)), refs [#886](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/886)
+* **i18n:** update the Python requirement in the German README ([#837](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/837)) ([fcdb443](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fcdb443891cef3a2109e9f419b5ba374434401b9)), refs [#698](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/698)
+* **i18n:** update the Python requirement in the Hindi README ([#839](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/839)) ([3f79d2d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3f79d2db34694417f31b46f0573f2038d6c2a0ee)), refs [#699](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/699)
+* **i18n:** update the Python requirement in the Russian README ([#840](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/840)) ([793b6ef](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/793b6ef8d6a5b7a764b8589bef6d77b90da84fbf)), refs [#700](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/700)
+* **roadmap:** move shipped 1.10.0 and 1.11.0 plans to completed history ([#844](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/844)) ([3d9dd99](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3d9dd99a33e79770d431172de8cb3de9950960c0))
+* **types:** mark CUBRID BLOB/CLOB value reads as partial in the feature table ([#842](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/842)) ([a570ea4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a570ea4d3aa7f222553a925677e0b324b8b39cde))
 
 ### CI
 
-- **CI test summary and artifact uploads (#1020, #1021)** — `ci.yml` offline test jobs upload JUnit, coverage and `summary.json` reports under `test-results/offline/`, append summaries to GitHub step summaries, and upload `test-results/integration/` for `make integration` jobs.
-- **Docker test database volume and host stability (#997, [#998](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/998), #1000, [#1001](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1001), cubrid-lab/pycubrid#1001, cubrid-lab/pycubrid#1004)** — `docker-compose.yml` mounts named volume `cubrid-databases` for CUBRID 11.4 database files and sets `CUBRID_DB_HOST: localhost` to ensure container re-creation preserves connections and data, with `make docker-fix-db-host` provided to migrate existing volumes.
-- **Workflow path filtering and release run optimizations (#737, #952, #964, #997, #760, #797)** — updated `ci.yml` path filters so `repo-tests`, `site` builds and Docker tests trigger when their inputs, agent evals or tooling modules change, and skipped redundant runtime test lanes on release commit pushes to `main`.
-- **Deterministic documentation checking (#908, #920, #921, [#922](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/922), #923, [#924](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/924), #925, [#928](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/928), [#930](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/930), #934, [#935](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/935), #957, [#958](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/958), #959, [#960](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/960), cubrid-lab/pycubrid#939, cubrid-lab/pycubrid#940, cubrid-lab/pycubrid#941, cubrid-lab/pycubrid#947, cubrid-lab/pycubrid#976, cubrid-lab/pycubrid#978, cubrid-lab/cubrid-cookbook-python#402, ex. - > #750)** — added fail-closed `docs-check` CI job validating link targets, anchors, code fences, shell syntax, heading allocations (treating &#10; as no line break) and make goals via `scripts/check_docs_links.py` and `scripts/_markdown.py`.
-- **Agent review gate and evaluation benchmarks (#905, #906, #933, [#936](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/936), Refs cubrid-lab/cubrid-mcp-server#341, cubrid-lab/cubrid-mcp-server#349, #929)** — added advisory `agent-review.yml` workflow checking PR review records, ignored reply-only empty Copilot records, and introduced offline agent benchmark evaluation tasks and grader in `agent-evals/`.
-- **Release automation and baseline tracking (#945, [#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006), [#1007](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1007), [#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037), refs #1011, #977)** — automated verification and retirement of `last-release-sha` baseline overrides for abandoned release candidates in release preparation workflows and disposed probe engine on exit paths.
+* **release:** restart release preparation after the abandoned 1.11.4 ([#1037](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1037)) ([3184d9b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3184d9b462bae6e2dd50d187e33abf83f44e5775)), refs [#1011](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1011)
+
+- **CI publishes the offline test summary and uploads results on success and failure
+  (#1021)** — the `offline-tests` and `offline-endpoints` jobs write JUnit, coverage and
+  `summary.json` under `test-results/offline/` with `scripts/report_test_results.py`, append
+  the summary to the job summary through its new `step-summary` subcommand and upload
+  `test-results/`; the integration jobs upload their pytest logs. Every one of those steps
+  runs with `if: always()`, so a failing run keeps its evidence. Test selection, the 95%
+  coverage floor and the permissions are unchanged. The summary of the live lanes follows #1020.
+
+- **The `make-integration` jobs also upload `test-results/integration/` (#1020)** — the
+  live results of `make integration` join `make-integration.log` in the existing
+  `pytest-logs-make-integration-*` artifact; nothing else in the workflows changes.
+
+- **A change to `docker-compose.yml` runs the test that pins it (#997)** — `test/test_make_integration.py` checks the Compose file's `CUBRID_DB_HOST`, but it is a repository-tooling module, which runs only in `repo-tests` when the `tooling` path filter matches, and that filter did not list `docker-compose.yml`. A pull request changing only that file ran none of the tests that check it. The filter now lists it; which tests each lane runs is unchanged.
+
+* **release:** verify against the current cookbook and restart after the abandoned 1.11.3 ([#1007](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1007)) ([72bf7be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/72bf7be9fa0ab27454401b21972a080edd796d13))
+
+* **release:** start release preparation after the abandoned 1.11.2 ([#1006](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1006)) ([b1a2dfe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b1a2dfe825c983a2114025b8cbaa82ff4da6c09d))
+
+- **The CUBRID 11.4 local Docker test database is kept in a named volume (#1000)** — `docker-compose.yml` mounted its named volume only at `/var/lib/cubrid`, where images up to 11.3 keep their databases; `cubrid/cubrid:11.4` keeps them in `/home/cubrid/CUBRID/databases`, so with `CUBRID_VERSION=11.4` the database lived in an anonymous volume, `docker compose down` lost it (`Unknown class "dba.keep_me"` after the next `up`) and left that volume dangling. A second named volume, `cubrid-databases`, now holds that path, `make docker-down` deletes both, and `make integration`'s ownership check also refuses a pre-existing `<project>_cubrid-databases`. Checked on CUBRID 10.2, 11.2 and 11.4: a table created before `down` is still there after `up`, and `make docker-down` leaves no volume behind. Opening a database created by another CUBRID version is not verified, so the guides say to reset before switching `CUBRID_VERSION`. The same fix landed in pycubrid (cubrid-lab/pycubrid#1004).
+
+- **The local Docker test database keeps working after its container is recreated (#997)** — the image registers the database in `databases.txt`, which images up to 11.3 keep on the `cubrid-data` volume (11.4: see #1000 above), for `CUBRID_DB_HOST`, or, when that is unset, for the creating container's hostname, its container ID. `docker-compose.yml` did not set it, and `docker compose down` keeps the volume, so after `make docker-up` or `docker compose up -d` recreated the container, every connection failed with -353 (`Failed to connect to database server, 'testdb', on the following host(s): <old container ID>`). `docker-compose.yml` now sets `CUBRID_DB_HOST: localhost`, which a recreated container resolves. A volume created before this change keeps the old ID: `make docker-fix-db-host` rewrites only `testdb`'s host field to `localhost`, keeps the data and saves the previous file as `databases.txt.before-fix-db-host` on its first run, and `make docker-down` (`docker compose down -v`) deletes the volume and its data. `make integration` was not affected (it uses a run-owned Compose project removed with `down -v`), though its fresh containers now also register `localhost`; CI (service containers) and the dialect are unchanged. The same fix landed in pycubrid (cubrid-lab/pycubrid#1001).
+
+- **Repository-tooling tests run when only their inputs change (#964)** — `repo`-marked tests run only in the `repo-tests` job, which starts when the `tooling` path filter matches, and the filter missed `agent-evals/**` and ten repository-tooling test modules (`test_agent_eval.py`, `test_bench_artifact.py`, `test_check_docs_translation.py`, `test_docs_provenance_hook.py`, `test_docs_reason.py`, `test_make_integration.py`, `test_release_detect.py`, `test_sqlalchemy_range.py`, `test_support_claims.py`, `test_verify_dist.py`). A pull request changing only an agent-evals task or one of those modules ran none of them. `ci.yml` now lists them and `test/conftest.py`, where `REPO_TOOLING_MODULES` is defined, and `test_workflow_path_impact.py` checks that every `REPO_TOOLING_MODULES` entry selects the tooling lane. `docs/CI_POLICY.md` (English and Korean) says so. No lane, marker or other filter changes.
+
+- **Manual agent runs are recorded and summarized as distributions (#906)** — `scripts/agent_eval.py` adds `prompt` (the task statement and the `report.json` format without the grading key: no fix commit, allowed files, docs decision or expected result), `record` (one run's agent and model identity, task revision and prompt digest, starting SHA, reported and observed commands, live checks reported as not run, changed files, optional wall-clock time, review findings, an optional exclusion reason for a run that is not a fair sample, and the rubric result) and `summarize` (per task revision and model: run count, verdict counts, criteria that did not pass, wall-clock range, excluded runs counted apart, and a 95% Wilson interval, never a bare pass percentage). `agent-evals/README.md` describes the manual-only protocol: an isolated clone without later history or a push remote, no publish credentials, and the grader run from the repository's own checkout. Nothing runs an agent in CI, and no score gates a pull request.
+
+- **Agent evaluation tasks for reflection and Alembic (#906)** — `agent-evals/` adds two tasks from documented fixes: `reflect-string-server-defaults` (#865, server defaults reflected against recorded catalog rows) and `alembic-alter-column-sql` (#861, Alembic `alter_column` SQL). Neither has recorded live evidence; the Alembic task is the deliberate case where the fix depends on server-version behavior, so a candidate passes only if it reports the live migration check as not run and says live behavior is not verified. Each task has evaluator-owned hidden tests of its contract (failing at the base SHA, passing at the fix; the reflection one answers by statement text, so it does not depend on query order), a reference fix and failure fixtures (tests and docs without the source fix, a false live claim, offline results reported as live, and for Alembic a missing *not verified* statement) whose dry-run results are real `run` output. No dialect source or CI lane changes.
+
+- **Offline agent evaluation tasks and grader (#906)** — `agent-evals/` adds a versioned task format for benchmarking coding agents on frozen historical fixes, and `scripts/agent_eval.py` grades a candidate's patch, test report and dry-run result: the task's offline tests and evaluator-owned hidden tests at its base SHA (a pytest run that skips every test is not a pass), the regression test, allowed files, affected documentation, the CHANGELOG section, and claims. A live CUBRID claim without a passing recorded live run (each clause is checked on its own), an unreported live check, compiled or bound SQL reported as live evidence, and calling the supported CUBRIDdb driver deprecated all fail; a candidate without a dry-run result is at best incomplete. The first task is the #914 JSON bool path fix, with recorded fixtures for each failure. `make agent-eval-check` re-grades them deterministically; it calls no model and needs no database, and its tests run in the existing `repo` lane. No agent score gates a pull request, and no other CI lane changes. See `agent-evals/README.md`.
+
+- **The documentation check's shell scanner matches pycubrid again (#959)** — `scripts/_markdown.py` takes pycubrid's final `_substitution_end()` byte for byte (cubrid-lab/pycubrid#978): `case` inside arithmetic is a variable name, `esac` closes an empty `case` but is a pattern after `(`, `|` or with a quoted suffix, `;&` and `;;&` end a clause, and a `#` comment inside a substitution changes nothing; the unused `_keyword_at()` is removed. The file now differs from pycubrid's only in its header line and one issue reference; pycubrid's regression cases are added to `test_adjacent_shell_operators_are_separate`. No other checker rule changes.
+
+- **The documentation check allocates site anchors as the site does (#957)** — `scripts/_markdown.py`, the parser shared with pycubrid and cubrid-cookbook-python, now reads this repository's `mkdocs.yml` and uses the slugifier it configures (`pymdownx.slugs`, as before; Python-Markdown's default for a site that sets none), and allocates site ids with the `toc` extension's rule: a heading with an empty slug gets `_1` instead of an empty id, and a taken `_N` id is incremented (`_1` then `_2`) instead of becoming `_N_1`. Ordinary headings keep their anchors. The change is the one merged in cubrid-lab/cubrid-cookbook-python#402 and cubrid-lab/pycubrid#976, so the shared functions stay identical; tests cover accented and Korean headings under both slugifiers, the `mkdocs.yml` detection and the collision rules.
+
+- **The site build runs when the MkDocs provenance hook changes (#952)** — `scripts/docs_provenance_hook.py`, which `mkdocs.yml` loads since #951, was not in `ci.yml`'s `site` path filter, so a pull request changing only the hook skipped `mkdocs build --strict` and a broken hook would first fail on `main`. It is now a site input; `docs/CI_POLICY.md` (English and Korean) lists it.
+
+- **Prepare release checks the `last-release-sha` baseline override (#945)** — the override set after abandoning 1.11.1 is meant to last only until the next release is published, but nothing enforced that, and a stale override makes a later recovery silently list commits that already shipped. The reconciliation step that runs before release-please now classifies the override: it is active only while it is the merge of a release PR on `main` with a recorded abandonment, no `autorelease: pending`/`tagged` label and no tag for its version; once a later release containing it passes the existing publication proof, it is obsolete and preparation stops with a request to remove it in a normal PR. A malformed, unrelated or unreadable override also stops preparation, and an API error is reported as unresolved rather than as absence. Nothing is edited automatically. `RELEASING.md` ("Baseline override lifecycle") and `AGENTS.md` describe the rule; the current 1.11.1 override is active.
+
+- **The documentation check handles shell substitutions as pycubrid does (#934)** —
+  `scripts/_markdown.py` takes the three shell fixes from cubrid-lab/pycubrid#947:
+  - a command or process substitution (`$(...)`, `<(...)`, `>(...)`) is part of its word, so
+    `make test ENV_FILE=<(true)` names only `test`, `make VAR=$(pwd) test` keeps the goal `test`,
+    and its body is checked as a command of its own;
+  - a `#` right after a substitution is not a comment;
+  - a quote the block never closes is prose, also before a final backslash.
+
+  This change's review adds three more shell fixes, which pycubrid receives next: a `case`
+  pattern's `)` does not close a substitution; a substitution inside double quotes is checked
+  (`echo "$(make removed)"`), but not one inside single quotes; and text that is not shell
+  names no goal, even from substitutions read before the error. Arithmetic expansion
+  (`$((make - removed))`) runs no command except the substitutions nested in it, `case` and
+  `esac` are keywords only at the start of a command, and an unquoted newline in a substitution
+  body separates commands.
+
+- **`agent-review` no longer counts empty reply-only Copilot records as review rounds
+  (#933)** — a Copilot record with no body and no thread-opening comment, such as a reply
+  to an existing thread, is now ignored like an error or quota notice instead of counting
+  as a summary-only round, which could put a PR past the two-round budget and reject valid
+  evidence. A record that opens a thread still counts. Ported unchanged from
+  cubrid-lab/cubrid-mcp-server#349, so the gate copies stay identical outside their
+  constants.
+
+- **Advisory `agent-review` check for review evidence (#905)** —
+  `.github/workflows/agent-review.yml` runs `scripts/agent_review_gate.py` from the base
+  branch with a read-only token on every pull request and review event, and reports
+  whether GitHub's own review records meet the review route of 2026-10-15: a substantive
+  Copilot review within the two-round AI review budget, or a maintainer's `APPROVED`
+  review, or a `COMMENTED` review that opens an inline thread. Changes to the compiler's
+  literal rendering, identifier quoting, the dialect connect and `is_disconnect` code, the
+  Alembic implementation, every workflow, `release-please-config.json`, the release and
+  lane-audit scripts and the gate itself need a maintainer's `APPROVED` review. Pending
+  requests, PR-body checkboxes, summary-only bot text, other people's reviews and stale
+  reviews never count; unresolved or author-resolved critical or security threads,
+  incomplete thread or commit identities and missing API data fail the check.
+  release-please PRs that change only release-please files, and Dependabot PRs, are
+  exempt. The gate is a copy of the cubrid-mcp-server gate (Refs
+  cubrid-lab/cubrid-mcp-server#341) with only its constants block changed. The check is
+  advisory: a pull request can publish a check with the same name, so it must not be made
+  a required check until it is posted from an identity a PR cannot impersonate (#929).
+  `CONTRIBUTING.md`, `AGENTS.md`, the PR template and `docs/CONTRIBUTING.ko.md` document
+  it.
+- **Issue-number lines in block quotes inside list items are reported (#925)** — the
+  `#<digit>` line check now accepts block quote markers after a list marker or after list
+  indentation (`- > #750`, a quote in a later paragraph of an item), where Python-Markdown also
+  renders a heading. Container prefixes are consumed one at a time, in any order, in linear time
+  (a backtracking pattern took seconds on a long run of list markers); the existing exclusions
+  (an indented continuation line, `1)`, two spaces after `>`) are unchanged.
+
+- **The documentation check takes link lines from the source and masks inline HTML (#923)** —
+  markdown-it's link and image rules now record each link's source tail, so the lines after a
+  link come from its own destination, title or reference label. A reference link no longer
+  takes an equal inline title's newlines, backticks in a title no longer hide its line, and a
+  reference label that spans lines counts its line. Before references are checked, only what
+  markdown-it parsed is masked, at its source positions: inline HTML (tags and comments),
+  autolinks and inline link tails. A link-like fragment in an attribute no longer hides an
+  undefined reference, a tag name in a destination no longer exposes the title, and text that
+  only looks like a link tail is checked. In a
+  shell block, `#` starts a comment only at the start of a word, so `echo x\ #note \`
+  still continues the line. `[site]( "See [foo][bar]")` stays reported: CommonMark does not
+  parse it as a link.
+
+- **The documentation check reports lines that the site renders as headings (#920)** — a
+  paragraph line under `docs/` that starts with `#` and a digit, such as a wrapped issue
+  number, is plain text on GitHub but an `<h1>` on the MkDocs site, where Python-Markdown
+  reads it as a heading. `scripts/check_docs_links.py` now reports such a line, as a list
+  item or in a block quote too, following Python-Markdown's list and quote rules, and asks
+  for `\#`. The 11 such lines on 7 pages (`docs/CI_POLICY.md`, `docs/DRIVER_COMPAT.md`,
+  `docs/RELEASE_PLEASE_VALIDATION.md` and four Korean pages) are escaped; they read the
+  same on GitHub.
+
+- **The documentation check closes its remaining parser gaps (#921)** — `scripts/_markdown.py`
+  and `scripts/check_docs_links.py` now match pycubrid's reviewed parser
+  (cubrid-lab/pycubrid#940), plus fixes for the three cases of cubrid-lab/pycubrid#941:
+  - findings keep their exact line after multi-line HTML tags and inline link or image
+    titles, counted from the source text (an `&#10;` entity is no line break, and an inline
+    title is not mistaken for a definition's); reference-link titles add no line;
+  - grouped (`a b:`) and double-colon Makefile rules declare every target, while `:=` and
+    `::=` assignments don't;
+  - an apostrophe in a bare link destination, or a malformed link tail, no longer hides a
+    later undefined reference, nor does a link-like fragment inside an HTML comment, and
+    `<...>` destinations keep their titles masked;
+  - continued shell lines are concatenated without an added space, only for a real
+    trailing backslash (not `\\`, not in single quotes, not in a comment), and a quote that
+    spans lines keeps its `make` lines quoted (a quote never closed in the block is prose);
+  - adjacent shell operators such as `;>` are separate, and `&>>` is one redirection;
+  - `<source src>` is checked.
+
+- **Deterministic documentation defects block the merge (#908)** — a new `docs-check` job
+  in `ci.yml` runs `scripts/check_docs_links.py` and `scripts/check_agents_docs.py` on every
+  tracked Markdown file when Markdown, `scripts/` or the `Makefile` change, and
+  `matrix-result` requires it then. It fails with `file:line` and a suggested fix on:
+  - a missing, absolute or out-of-repository Markdown or HTML link target;
+  - an anchor that is not a heading or `<a id>` of its target;
+  - an undefined reference link, or an unclosed code fence;
+  - a `make` goal or `scripts/` path in a command that does not exist.
+
+  Release history keeps its old commands. Markdown is parsed as CommonMark with
+  `markdown-it-py`, pinned in `.github/docs-requirements/requirements.txt`, the same parser
+  as pycubrid's gate, including its review follow-ups (cubrid-lab/pycubrid#939).
+  `check_agents_docs.py` now uses it too, so multi-backtick code spans are code and every
+  goal of a `make` command is checked. External links are never fetched,
+  `scripts/check_support_claims.py` stays the authority for support wording, and the shared
+  `doc-lint` workflow stays advisory; its measured findings are in `docs/CI_POLICY.md`.
+  `<!-- docs-check: ignore -->` marks a reviewed false positive.
+
+- **Release preparation starts after the abandoned 1.11.1** — 1.11.1 has no tag, so
+  release-please fell back to `bootstrap-sha` and proposed 1.12.0 with every commit since
+  1.8.0. `release-please-config.json` now sets `last-release-sha` to the 1.11.1 merge, so the
+  next candidate is computed from the commits after it, and RELEASING.md's abandoned-version
+  recovery documents setting that override and removing it after the next release is tagged.
+
+- **A release commit's `main` push no longer repeats the release's runtime lanes
+  (#737)** — `ci.yml` runs `scripts/release_detect.py --mode push`, the decision
+  `publish-pypi.yml` makes on the same SHA, and on a release commit skips
+  `typecheck`, `offline-tests`, `alembic-compat`, `packaging-smoke-test`,
+  `integration-tests` and `make-integration`, which `integration-full.yml` already
+  runs there behind the fail-closed `full-matrix-result`. Lint, documentation and
+  tooling checks still run. `integration-full.yml` gains the two endpoint-cell steps
+  it lacked (pycubrid sync integration and regression tests) on Python 3.11/CUBRID
+  10.2 and 3.14/11.4. On the 1.11.0 release commit this would have saved 14.1
+  runner minutes for about 1.4 added to the release. `docs/CI_POLICY.md` records
+  measured runner minutes after the #760 and #797 consolidation and the first
+  grouped Dependabot run.
 
 ### Tests
 
-- **Integration tests for async garbage collection and CUBRIDdb (#872, #1003, #1017, refs #987, #991)** — fixed `TestAsyncTerminateLive872` connection reuse assertions after broker localhost binding (#1017) and updated CASE and GROUP_CONCAT integration assertions to match CUBRIDdb results.
-- **Compliance and query cleanup regression coverage (#849, #854, #968)** — added `TestIsolatedCTE849` for isolated live CTE compliance verification across CUBRID 10.2 to 11.4, verified ORDER BY output against SQLAlchemy's clause compiler, and added offline tests for `SHOW TRACE` statement and trace result handle cleanup.
-- **Benchmark artifact manifests and provenance verification (#901, #903)** — added versioned `sqlalchemy-cubrid-benchmark-artifact` manifests (`scripts/bench_artifact.py`) and source verification (`scripts/bench_dialect_baseline.py`) to validate dialect source SHAs, package hashes and test environment metadata.
+- **The #872 live test of a garbage-collected async connection passes in `make integration`
+  again** — `TestAsyncTerminateLive872::test_garbage_collected_connection_is_terminated`
+  failed in every `make integration` lane after #1017 published the Compose broker on
+  `127.0.0.1` only, which stopped the 1.11.4 release matrix. On a host where `localhost`
+  resolves to `::1` first (GitHub runners), asyncio's `create_connection` keeps the refused
+  `::1` attempt's exception in a reference cycle, and the frames of that cycle kept the
+  test's connection alive until the cycle collector ran. The test now opens the pooled
+  connection before the leak and asserts that the leaked checkout reused it, so it still
+  requires the refcount-freed connection's socket to be terminated, with no ResourceWarning
+  and nothing checked out.
+
+- **The CASE value and GROUP_CONCAT ORDER BY live tests pass with CUBRIDdb (#1003)** — the
+  tests added for #987 and #991 asserted pycubrid's results, so the release matrix's
+  `make integration (cubriddb, …)` lanes failed on CUBRID 10.2 and 11.4 and 1.11.2 was not
+  published. They now pin the CUBRIDdb results above and keep the exact pycubrid
+  assertions.
+
+- **ORDER BY output matches SQLAlchemy's for plain items (#968)** — the dialect renders ORDER BY
+  one item at a time, so a guard test compares its output with SQLAlchemy's own
+  `order_by_clause` for ORDER BY items that need no grouping.
+
+- **SHOW TRACE read failures release both result handles (#854)** — `test/test_trace.py` gains
+  the missing offline test for `trace_query()`'s read path: when reading the `SHOW TRACE` rows
+  raises, the traced statement result and the `SHOW TRACE` result must both be closed,
+  `SET TRACE OFF` must still be attempted, and the read error must reach the caller instead of
+  being replaced by the cleanup statement's own failure. The trace is mocked, so the test is
+  offline and does not replace integration coverage on a real server. No production code
+  changes: the described behaviour already holds, so no failure could be demonstrated.
+
+- **#872 garbage-collection tests no longer depend on the cycle collector** — the live
+  async terminate test and the closed-event-loop test now commit before losing the
+  connection, so the pool's cleanup runs when the last reference goes and terminates the
+  connection on every supported Python, including 3.15, and they assert that the cleanup
+  chose terminate. The reference-cycle case is a separate test that probes the installed
+  SQLAlchemy and is an expected failure where the pool cannot clean such a connection up
+  (SQLAlchemy 2.1 on CPython 3.15). Both failed on all four Python 3.15 cells of the full
+  compatibility matrix.
+
+- **Benchmark artifacts verify the measured dialect and carry their provenance in the report
+  (#903)** — before measuring, `scripts/bench_dialect_baseline.py` now checks the installed
+  `sqlalchemy_cubrid` against `--source-sha`. An install from a local git checkout must have
+  that commit's `*.py` files, and a VCS install must record that commit; a mismatch stops the
+  run. The report records the package SHA-256, the verification method, and the image
+  digest, host label and comparable group, which are now benchmark arguments
+  (`--server-image-digest`, `--host-label`, `--comparable-group`) instead of `export`
+  arguments. Contract `sqlalchemy-cubrid-benchmark-artifact/2`: `export` rejects an
+  unverified install such as a PyPI wheel; `validate` rejects an in-place edit of those
+  fields, because it rebuilds them from the hashed report; and `validate`/`compare
+  --source-repo DIR` recompute the package hash from git. `/1` manifests, including the
+  first pinned pair, are rejected and kept unchanged; the re-recorded pair is in
+  `benchmarks/2026-10-14-artifact-pair-v2`. Benchmark tooling only.
+
+- **Versioned benchmark artifact manifests for external regression tracking (#901)** —
+  the new `scripts/bench_artifact.py` exports one complete
+  `scripts/bench_dialect_baseline.py` report as a `sqlalchemy-cubrid-benchmark-artifact/1`
+  manifest, validates a manifest against the files it lists and compares a baseline with a
+  candidate. The manifest records the exact environment (dialect source SHA, SQLAlchemy 2.0
+  or 2.1, driver, CUBRID server and image digest, Python, host, connection target without
+  the password, pool and `pool_pre_ping`),
+  the workload identity, every trial value and an advisory metric set that keeps raw
+  literal FC20, opt-in FC21 and Core insertmanyvalues apart (CUBRIDdb reports name that
+  driver's per-row path). Missing, corrupt or
+  mixed-revision inputs are rejected, and any difference other than the dialect makes a
+  comparison `not comparable`. The source SHA, image digest, host label and group are taken
+  as the operator supplies them; verifying them is tracked in #903. The baseline script now records its SHA-256, the connection target, `pool_pre_ping`,
+  autocommit, the insertmanyvalues settings and a completion status. A pinned pair (v1.11.0
+  against `main`, CUBRID 11.4) is in `benchmarks/2026-10-14-artifact-pair`; the #830 archives
+  are unchanged. Benchmark tooling only; no dialect change and no CI gate.
+
+- **Isolated live CTE coverage (#849)** — the 14 SQLAlchemy `CTETest` compliance nodes
+  are strict xfails because their fixture cleanup fails on CUBRID's per-row foreign-key
+  check, so they supplied no behavior evidence. `TestIsolatedCTE849` replays their
+  scenarios on fresh FK-safe tables against CUBRID 10.2 to 11.4. SELECT, recursive
+  SELECT, bound parameters, UPDATE and DELETE with a CTE scalar subquery and every values-via-CTE
+  variant pass; UPDATE/DELETE ... FROM are asserted as the documented limits; INSERT
+  FROM SELECT over a CTE passes since #897. The ledger entries are kept, with a
+  pointer to this evidence.
 
 ## [1.11.0] - 2026-10-12
 
@@ -225,264 +959,1035 @@ This release introduces Python 3.15 support and a broad set of compatibility, re
 
 ### Upgrade notes
 
-- **Python 3.15 is supported (#666)** — Standard GIL builds only. The pycubrid routes (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`) are covered with the pycubrid release that declares Python 3.15 (cubrid-lab/pycubrid#831); the `[pycubrid]` floor stays `pycubrid>=1.8.0,<2.0`. On 3.15, pycubrid 1.10.0 and earlier reject `?charset=ksc5601` because Python 3.15 maps that codec alias to CP949; use `?charset=euckr` or the newer pycubrid. Building the official CUBRIDdb driver with GCC 14 fails on Python 3.14 and 3.15 alike (the two versions compared); see `docs/DRIVER_COMPAT.md`.
-- **SQLAlchemy 2.2+ restriction (#774)** — `sqlalchemy-cubrid` no longer installs with SQLAlchemy 2.2 or newer. The package metadata now requires `sqlalchemy>=2.0,<2.2`, matching the supported range already documented (2.0 and 2.1). SQLAlchemy 2.2 is not released yet (PyPI latest 2.1.4), so no current install changes: 2.0.x and 2.1.x resolve exactly as before. Once 2.2 ships, `pip` keeps resolving SQLAlchemy 2.1.x for this package. SQLAlchemy 2.2 was never verified against the full compatibility matrix and is excluded until it ships and passes it; the cap is then lifted in a later release.
-- **Contributor dependency group migration (#765)** — The `dev` extra is gone; contributors install the `dev` dependency group. Use `pip install -e . --group dev` (pip 25.1 or later) or `make install` instead of `pip install -e ".[dev]"`, which now installs only the package and warns that the extra does not exist. End users are not affected: the runtime extras (`pycubrid`, `alembic`, `cubrid`, `cubriddb`) are unchanged.
+- **Python 3.15 is supported (#666).** Standard GIL builds only. The pycubrid routes
+  (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`) are covered with the pycubrid release
+  that declares Python 3.15 (cubrid-lab/pycubrid#831); the `[pycubrid]` floor stays
+  `pycubrid>=1.8.0,<2.0`. On 3.15, pycubrid 1.10.0 and earlier reject `?charset=ksc5601`
+  because Python 3.15 maps that codec alias to CP949; use `?charset=euckr` or the newer
+  pycubrid. Building the official CUBRIDdb driver with GCC 14 fails on Python 3.14 and
+  3.15 alike (the two versions compared); see `docs/DRIVER_COMPAT.md`.
+- **`sqlalchemy-cubrid` no longer installs with SQLAlchemy 2.2 or newer (#774).** The package
+  metadata now requires `sqlalchemy>=2.0,<2.2`, matching the supported range already
+  documented (2.0 and 2.1). SQLAlchemy 2.2 is not released yet (PyPI latest 2.1.4), so no
+  current install changes: 2.0.x and 2.1.x resolve exactly as before. Once 2.2 ships, `pip`
+  keeps resolving SQLAlchemy 2.1.x for this package. SQLAlchemy 2.2 was never verified
+  against the full compatibility matrix and is excluded until it ships and passes it; the
+  cap is then lifted in a later release.
+- **The `dev` extra is gone; contributors install the `dev` dependency group (#765).** Use
+  `pip install -e . --group dev` (pip 25.1 or later) or `make install` instead of
+  `pip install -e ".[dev]"`, which now installs only the package and warns that the extra
+  does not exist. End users are not affected: the runtime extras (`pycubrid`, `alembic`,
+  `cubrid`, `cubriddb`) are unchanged.
 
 ### Added
 
-- **Python 3.15 support (#666, [#807](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/807))** — Declared the Python 3.15 package classifier, added `py315` to tox, and expanded the full 20-cell compatibility matrix across Python 3.11 to 3.15 and CUBRID 10.2 to 11.4, keeping `requires-python` at `>=3.11` without free-threaded claims (#698, #701).
+- **Python 3.15 support (#666)** — the package declares the Python 3.15 classifier, tox
+  gains `py315`, and the full compatibility matrix runs Python 3.11–3.15 × CUBRID
+  10.2/11.0/11.2/11.4 (20 cells, with the CUBRIDdb, pycubrid sync/async, driver-differential,
+  transactional DDL and server-restart steps) on manual dispatch and every release.
+  `requires-python` stays `>=3.11`; no free-threaded claim. `docs/SUPPORT_MATRIX.md`
+  (+ ko) records the claim's scope: the pycubrid release it depends on, the CUBRIDdb GCC 14
+  build limitation, the SQLAlchemy compliance lanes that stay on 3.14/11.4 and 3.11/10.2,
+  and the C `_decimal` requirement for Decimal-subclass parameters. README (+ ko),
+  `DRIVER_COMPAT`, `CI_POLICY`, `DEVELOPMENT`, `PRD` (+ ko) and `ROADMAP` match. The
+  German, Hindi, Russian and Chinese READMEs are left to their open translation issues
+  (#698–#701).
+
+* **python:** declare Python 3.15 support ([#807](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/807)) ([92d79eb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/92d79eb051bf07076a8572c01e5b61a7056b831e))
 
 ### Changed
 
-- **PEP 735 contributor dependency groups (#765)** — Replaced the published `dev` extra with PEP 735 `[dependency-groups]` in `pyproject.toml` (`test`, `lint`, `typecheck`, `security`, `mutation`, `release`, `dev`) and updated tox and CI environments to install pinned groups without altering runtime extras.
+- **Contributor tooling moved out of the published metadata (#765)** — the single `dev`
+  extra, which shipped test, lint, type-check, security, mutation and release tools in the
+  package metadata, is replaced by PEP 735 `[dependency-groups]` in `pyproject.toml`:
+  `test`, `lint` (Ruff), `typecheck` (Mypy), `security` (Bandit), `mutation` (mutmut),
+  `release` (build, twine) and `dev`, which includes them all plus pre-commit and tox.
+  Each pin is declared once. `tox.ini` installs the groups through `dependency_groups`
+  (tox 4.22+) instead of repeating the test requirements in `deps` (the test environments
+  add `lint` and `typecheck`, because the suite checks the pinned Ruff and Mypy are installed); the CI type check
+  installs `.[alembic]` with the `typecheck` group; the other CI, canary and maintenance
+  installs use the `dev` group, and Bandit in `security.yml` and `maintenance.yml` now
+  comes from the pinned `security` group. `scripts/check_tool_versions.py` reads the Ruff
+  and Mypy pins from their groups and rejects a published `dev` extra, a tox test
+  environment that repeats the test requirements, and a CI type check without the
+  `typecheck` group. Docs tools stay in `.github/docs-requirements/requirements.txt`
+  (#761). The `dev` group resolves to the same 73 packages as the former extra. Packaging
+  metadata and contributor tooling only (release type: patch); no dialect code changes.
+- **SQLAlchemy is capped below 2.2 (#774)** — `sqlalchemy>=2.0,<2.3` became `>=2.0,<2.2` in
+  `dependencies` and in the `dev` and `pycubrid` extras, so package metadata matches
+  `docs/SUPPORT_MATRIX.md` (`≥ 2.2` unsupported). README, the translated READMEs,
+  `SUPPORT_MATRIX`, `SA_COMPAT`, `ARCHITECTURE`, `PRD` (English and Korean) and
+  `THIRD_PARTY_LICENSES.md` state the same range. The 2.2 forward-compat shims and the weekly
+  `--pre` canary stay: the canary installs SQLAlchemy in a separate explicit step
+  (`>=2.1.0b1,<2.3`), which is not bound by the package cap, so it still forward-tests 2.2
+  pre-releases. Packaging metadata only (release type: patch); no dialect code changes.
+- **Cookbook release verification pinned to the shared cookbook SHA** — the `verify-cookbook` call to `cubrid-cookbook-python`'s `smoke-test.yml` in `.github/workflows/publish-pypi.yml` is pinned to `bd6749093813d3a447f993fec72ac733adbeae63`, the same commit as the other two package repositories (pycubrid, sqlalchemy-cubrid, cubrid-mcp-server). Since the previous pin the cookbook adds the Python 3.11 cell on release calls (`Smoke Tests (CUBRID 11.4, Python 3.11)`), so the release verification report now needs all three cells (11.2/3.12, 11.4/3.12, 11.4/3.11). `RELEASING.md` lists the third job. CI only; the dialect is unchanged.
+- **Documentation site build on pull requests (#786)** — `ci.yml` gains a `docs-build` job
+  that runs the `docs.yml` build (install `.github/docs-requirements/requirements.txt`,
+  `scripts/generate_llms_full.py`, `mkdocs build --strict`) when `docs/**`, `mkdocs.yml`,
+  `scripts/generate_llms_full.py`, `.github/docs-requirements/**`, `docs.yml` or `ci.yml`
+  change. The new `site` path filter selects it, `matrix-result` expects it exactly when
+  selected, and it never uploads or deploys anything. Previously a broken strict build or
+  docs-tool pin bump only failed on `main`. CI only; the dialect is unchanged.
+- **Docs tools pinned, scan concurrency, pycubrid floor test and stale "nightly" wording (#761, #762, #764, #747)** —
+  `docs.yml` installs `mkdocs`, `mkdocs-material` and `pymdown-extensions` from the exact pins in
+  `.github/docs-requirements/requirements.txt`, which Dependabot now updates. `codeql.yml` and
+  `security.yml` cancel superseded pull-request runs only; every other event uses a unique
+  per-run group, since GitHub replaces a pending run within one group, so main and scheduled
+  runs are never cancelled or dropped. `test/test_workflow_hygiene.py` fails when the compliance lane's pinned pycubrid
+  differs from the `pycubrid>=` floor declared in `pyproject.toml`. The `integration-full.yml`
+  fuzz and mutation job names and a comment no longer say "nightly" although there is no
+  schedule; gating is unchanged (fuzz still gates the release). CI only; the dialect is unchanged.
+- **Mutation testing no longer delays releases (#747)** — `publish-pypi.yml`'s `build`
+  waits for the whole called `integration-full.yml`, so the non-gating `mutation-testing`
+  job added its run time (historical median 9.6, maximum 18.1 minutes) to every release.
+  It now runs only when `integration-full.yml` is dispatched manually and is skipped on
+  the release call (`if: ${{ !inputs.sha }}`; the release call always passes `sha`).
+  The Hypothesis fuzz pass still gates the release, and `full-matrix-result` is
+  unchanged. `publish-pypi.yml` is unchanged. CI only; the dialect is unchanged.
+- **Offline tests run on the oldest and newest supported Python outside PRs (#734)** —
+  in `ci.yml` the `offline-tests` matrix is chosen by event: pull requests keep the
+  single representative Python 3.12 cell, while main pushes, the weekly schedule and
+  manual dispatches run the full offline suite (`-m "not integration and not repo"`,
+  95% coverage floor) on Python 3.11 and 3.14. Each cell uploads its own
+  `coverage-report-py<version>` artifact, and `matrix-result` still fails when an
+  offline cell fails, is cancelled or is unexpectedly skipped. CI only; the dialect
+  is unchanged.
+- **Extended main and compatibility validation consolidated (#737)** — `ci.yml` drops
+  the `live-smoke` lane, whose `test_integration.py`/`test_regression.py` run on
+  Python 3.12, CUBRID 11.4 and `cubrid+pycubrid://` is a subset of `make-integration`
+  on the same SHA. The advisory SQLAlchemy pre-release canary and the oldest cell's
+  advisory CUBRIDdb compliance step move from every main push to the weekly
+  schedule and manual dispatches, and `upstream-canary.yml` moves from Monday to
+  Thursday 06:00 UTC. The release now runs the Python 3.11/3.14 offline cells itself
+  (`integration-full.yml` `offline-endpoints`, required by `full-matrix-result`)
+  instead of relying on a main push run that nothing required and a later merge
+  could cancel. Pull requests are unchanged. `docs/CI_POLICY.md` records the
+  measured job counts, runner minutes and failure yield per event, the coverage
+  ownership table and the expected before/after runner minutes. CI only; the
+  dialect is unchanged.
 
 ### Fixed
 
-- **SQLAlchemy requirement cap ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/777), refs [#774](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/774))** — Capped SQLAlchemy dependency metadata to `>=2.0,<2.2` in `pyproject.toml` and extras (`dev`, `pycubrid`) to match the documented support matrix.
+* **packaging:** cap SQLAlchemy below 2.2 to match the documented support matrix ([#777](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/777)) ([715349a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715349a58f207facfdc43520ead2456f72eddbe4)), refs [#774](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/774)
 
 ### Documentation
 
-- **Private vulnerability reporting (#738, [#796](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/796))** — Enabled GitHub private vulnerability reporting as the preferred channel for security disclosures, retaining maintainer email as fallback in `SECURITY.md`, `README.md`, and translated READMEs.
-- **Compatibility and driver documentation (#479, #697, [#781](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/781), [#782](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/782), [#783](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/783), [#801](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/801), [#803](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/803), [#825](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/825))** — Updated connection, driver compatibility, type mapping, and PRD docs across English and translations to reflect Python 3.11+ requirements, pycubrid 1.9.0 collection binding, the `[pycubrid]` 1.8.0 compliance floor, and CUBRIDdb driver limits.
-- **Contributor and maintenance documentation (#68, #70, #736, #747, #758, [#757](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/757), [#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/759), [#784](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/784), [#788](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/788), [#792](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/792), [#802](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/802), [#817](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/817), [#819](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/819))** — Replaced stale performance planning snapshots, nightly integration references, and obsolete file references with canonical pointers, while updating agent review, release-please, canary, and closing-guard documentation in `AGENTS.md`, `DEVELOPMENT.md`, and `RELEASING.md`.
+- **Connection, driver-compatibility and PRD docs state the Python 3.11+ requirement
+  (#697)** — after 1.10.0 raised `requires-python` to `>=3.11`, the `docs/CONNECTION.md`
+  prerequisite row, the `docs/DRIVER_COMPAT.md` Python table (3.10 as the minimum, 3.14 as
+  pre-release) and the `docs/PRD.md` CI matrix, success criteria and dependency rows, with
+  their Korean copies, still described Python 3.10. They now give 3.11 as the minimum,
+  3.11–3.14 as the tested range, as the full compatibility matrix runs them, and mark 3.10
+  as not supported from 1.10.0. Historical rows and measurements are unchanged. Docs only.
+- **The compliance-lane pycubrid pin is labelled as the declared floor (#479)** —
+  `docs/SUPPORT_MATRIX.md` (+ ko) listed the pycubrid compliance lanes as "pycubrid 1.8.0
+  (recommended)", which read as a recommendation to install 1.8.0. The pin is the declared
+  floor of `pycubrid>=1.8.0,<2.0`, kept on purpose; pycubrid is the recommended driver, and
+  the integration lanes test the latest release. Docs only.
+- **Private vulnerability reporting is the preferred security channel (#738)** — GitHub
+  private vulnerability reporting is now enabled for the repository. `SECURITY.md` names it
+  as the preferred private route and keeps the maintainer email as the fallback; `README.md`
+  and the translated READMEs say the same. Docs only.
+- **No more "nightly" full integration (#747)** — the PRD CI matrix (+ ko) listed a
+  "Nightly" full integration run with Python 3.10. `integration-full.yml` has no
+  schedule: it runs on manual dispatch and as the release gate, on Python
+  3.11–3.14. `docs/TYPES.md` (+ ko), the `test/test_dogfood_orm.py` docstring
+  and `test/version_differential/compare_snapshots.py` also referred to a nightly
+  run; all now describe the current triggers, and the dogfood docstring names the
+  CUBRID versions it actually runs on (10.2 and 11.4). `nightly` remains only as
+  the Hypothesis profile name. Docs and comments only.
+- **`AGENTS.md` no longer carries stale planning context (#736)** — the
+  "Performance Loop System" snapshot (R3 phases, issues #68/#70 as current work) is
+  replaced by a short performance-context statement pointing to
+  `docs/PERFORMANCE.md`, cubrid-benchmark, `ROADMAP.md` and the org project board.
+  Volatile counts and inventories (module count, requirement-flag count, tested CUBRID
+  versions, default Docker version, test file list including the nonexistent
+  `test_dml.py`) are removed or point to their
+  canonical source. CUBRID dialect and Alembic invariants are unchanged. Docs only.
+- **Stale facts removed from PRD and DEVELOPMENT docs (#758)** — the nonexistent
+  `test_dml.py` is no longer listed in `docs/DEVELOPMENT.md` and `docs/PRD.md` (and
+  their Korean counterparts); DML tests live in `test/test_compiler.py` (ODKU regressions also in
+  `test/test_regression.py`). The unguarded
+  "12 Python modules", "40+ properties", "314 offline tests" and "3 uncovered lines"
+  counts in `docs/PRD.md` are replaced with descriptions or pointers to the source.
+  `docs/llms-full.txt` is regenerated. Docs only.
+- **`charset` names pycubrid 1.9.0 (#479)** — `docs/CONNECTION.md` (+ ko) said the `charset`
+  URL option needs a pycubrid release "newer than 1.8.0"; it now names 1.9.0, the release
+  that added it. Docs only.
+
+* **agents:** add support-claim review checklist ([#784](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/784)) ([a8ffc4b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a8ffc4bbd2ae41279f86ca125dfaba242ff2909e))
+* **agents:** replace stale performance planning snapshot with pointers ([#757](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/757)) ([f2b838a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f2b838a4e7fc418c63c0343c572bde1c2daf9c54))
+* **ci:** clarify SQLAlchemy pre-release canary coverage ([#788](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/788)) ([85817ca](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85817ca476e05604ba1347d6b99ff525da706489))
+* correct the older closing-guard CHANGELOG notes ([#819](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/819)) ([a508694](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a508694d34ec8f66243c3a97f5f46adaf5c991bc))
+* **driver:** clarify CUBRIDdb support and deprecated extras ([#781](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/781)) ([d20a6b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d20a6b25cba37cc9d9a55aef330600242cd038e6))
+* drop the stale nightly full-integration wording ([#792](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/792)) ([b0e95b2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b0e95b27bb46ac90d505897e280f6037d41ea670))
+* **i18n:** update the Python requirement in the Chinese README ([#825](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/825)) ([6430aad](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6430aad77013ce353245258192371477ed70ddc1))
+* label the compliance-lane pycubrid pin as the declared floor ([#801](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/801)) ([ea9392e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ea9392e8e5efea626a3777db3fb923ca7200b6ad)), refs [#479](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/479)
+* name private vulnerability reporting as the preferred security channel ([#796](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/796)) ([98b746f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/98b746f00fa66268f3334088bca705f3fe786713))
+* **python:** state the Python 3.11+ requirement in connection, driver and PRD docs ([#803](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/803)) ([8a6fb60](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8a6fb60c77dfc1c8c2db144328d37bc5ae420cf9))
+* **release:** record live release-please evidence and candidate regeneration ([#817](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/817)) ([27134e0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/27134e081f2e7285f563e0fde54f301339ebb5a1))
+* remove stale test_dml.py and unguarded counts from PRD/DEVELOPMENT ([#759](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/759)) ([c59c7db](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c59c7db92fc49769abeb832f1dce47fe48ca78f7))
+* **review:** distinguish agent review routes and dispositions ([#802](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/802)) ([24743d6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24743d604461fc681b84ecfadc0e4ec46b2c2668))
+* **support:** distinguish current guarantees from historical evidence ([#783](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/783)) ([92307cf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/92307cfcb856103827a488d5f4bf8895c02c192d))
+* **types:** identify pycubrid 1.9.0 collection binding ([#782](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/782)) ([81fc4ff](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/81fc4ff7744d5a200c2077183c601125e21f09f0))
 
 ### CI
 
-- **PR title and closing guard hardening (cubrid-lab/pycubrid#845, cubrid-lab/pycubrid#849, cubrid-lab/cubrid-mcp-server#275, cubrid-lab/cubrid-mcp-server#276, cubrid-lab/cubrid-cookbook-python#293, cubrid-lab/cubrid-cookbook-python#294)** — Enhanced the PR title and body closing guard across PR titles, commit messages, link text, list continuations, raw HTML entities (`&#35;`), and underscore owners (`alice_acme/repo#N`), preventing foreign issue auto-closures.
-- **Validation and matrix consolidation (#479, #666, #734, #737, #747, #761, #762, #764, #786)** — Consolidated workflow validation by moving offline endpoints to Python 3.11 and 3.15 (#666, #734), running compliance lanes and restart tests on latest pycubrid in releases (#479, #737), adding a PR docs build job (#786), pinning docs requirements (#761), grouping Dependabot minor/patch updates (#737), and tuning run concurrency (#747, #762, #764).
-- **Release pipeline and verification (#704, #730, #747, #770, #821, cubrid-lab/cubrid-cookbook-python#240, cubrid-lab/cubrid-cookbook-python#274)** — Hardened release workflows by verifying built wheels with the cookbook smoke test before publishing (cubrid-lab/cubrid-cookbook-python#240, cubrid-lab/cubrid-cookbook-python#274), rewriting generated issue references to "refs" (#770, #821), adopting `hashlib.file_digest()` (#730), moving mutation testing out of release gates (#747), surfacing blocked release PRs (#704), enforcing Release title tags, and standardizing changelog linting.
+- **The closing guard catches a closing keyword used as link text** —
+  `[Closes](url) owner/repo#N` renders as "Closes owner/repo#N", but the gap after
+  the keyword stopped at `]`. The `PR title` check now crosses a link's `]`,
+  `](destination)` or `][label]`, and also a quoted continuation line, an image's
+  alt text and a link reference definition, including one whose destination and
+  title run on to later lines of the paragraph, each of which renders nothing
+  between the keyword and the reference. Scanning stays linear in the body length,
+  so adversarial link syntax at GitHub's 65,536-character limit stays well under the
+  tests' 5-second timeout. The fix came from Copilot's review of
+  cubrid-lab/pycubrid#849, and `pr-title.yml` is again byte-identical across
+  pycubrid, sqlalchemy-cubrid, cubrid-mcp-server and cubrid-cookbook-python.
+- **The release PR body also writes generated issue references as "refs"** — GitHub reads
+  release-please's `, closes [#N](…)` in the release PR body as a closing keyword, so merging
+  a release PR could close an issue that a commit only referenced. The **Prepare release**
+  workflow now rewrites those references in the PR body right after release-please updates
+  it, using the same rule as for `CHANGELOG.md`; no permission changes (#821).
+- **Generated release notes write issue references as "refs", not "closes"** — release-please
+  17.6.0 renders every issue trailer in a commit's final footer block as `, closes [#N](…)`,
+  so a commit that only said `Refs #479` was listed as closing that issue (#770).
+  `scripts/compose_release_changelog.py` now rewrites generated references to
+  `, refs [#N](…)` in `CHANGELOG.md`; curated entries and released history are unchanged.
+  `RELEASING.md` gives the freeze-label command as a JSON body, which also works with old
+  `gh` releases.
+- **The closing guard also checks the PR title and commit messages, and owners with
+  an underscore** — the PR title and the PR's commit messages make up the squash
+  commit, so the `PR title` check now reads them too, as plain text: Markdown code
+  does not hide a keyword there, and each commit message is checked on its own. The
+  job lists the commits with `gh api`, using a token that can only read pull
+  requests (the job has `pull-requests: read`; the workflow-level permissions stay
+  empty), and fails when a PR has 250 or more commits, because GitHub lists only
+  250. A test pins that step. Owners with an underscore, as Enterprise Managed Users
+  have (`alice_acme/repo#N`), are now matched in references and links. The job setup
+  and these checks come from pycubrid's guard (cubrid-lab/pycubrid#845); code-block
+  and comment handling of the PR body is unchanged; an underscore inside a word is
+  no longer read as emphasis, so underscore owners are matched there too.
+  cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#276) and cubrid-cookbook-python
+  (cubrid-lab/cubrid-cookbook-python#294) have the same change.
+- **The PR-body closing guard catches emphasized, linked, escaped and split
+  closures, and fails closed where Markdown structure is uncertain** — the
+  `PR title` check now rejects:
+  - emphasis or HTML around the keyword or the reference (`**Closes**`, `*Fixes*`,
+    `__Resolves__`, `Closes **owner/repo#N**`, `<b>Closes</b>`), a keyword split by
+    markup (`Close**s**`), and inline comments, processing instructions or CDATA
+    between the keyword and the reference;
+  - `http://`, `www.` and scheme-less `github.com/` issue URLs, autolinks, backslash
+    escapes (`\#`), HTML entities (`&#35;`, `&nbsp;`), a backslash line break,
+    leading zeros, and a foreign issue listed after another one
+    (`Closes #1, owner/repo#2`);
+  - a closing keyword followed by a link (`[text](…)`, `[text][label]`, `<a href>`)
+    when the body links any foreign issue, absolute or relative, since the link
+    text hides its target. This case has its own error message.
+
+  Only fenced and indented code blocks and HTML comment blocks are ignored. Inline
+  code and inline comments are scanned, because hiding them needs inline parsing
+  that link destinations, HTML attributes and autolinks can defeat. Once a fence
+  appears where its extent is unknown (in a list item, a block quote, after a list
+  marker, inside raw HTML, on an indented line, or as a line that only looks like a
+  fence), no later fence or comment is hidden, so a closing fence can never be
+  misread as an opener. Raw HTML blocks end where CommonMark ends them, and any
+  other line starting with a tag is treated as raw HTML until a blank line. Comments
+  after anything that may start an HTML tag are scanned, a comment also ends at
+  `--!>`, and after a raw-text element such as `<textarea>` or `<select>` the rest
+  of the body is scanned. Lines split only at CR and LF, a leading byte order mark
+  is dropped, and only spaces and tabs count as blank or indentation. A heading,
+  block quote, fence, thematic break or comment block directly under a list item now
+  ends the list, so indented code after it is ignored instead of blocking the PR.
+  Footnote text is treated like list text. A very long issue number is reported
+  instead of crashing the check, and long adversarial bodies stay fast at GitHub's
+  65,536-character limit. The same guard and regression cases are in
+  cubrid-mcp-server (cubrid-lab/cubrid-mcp-server#275) and cubrid-cookbook-python
+  (cubrid-lab/cubrid-cookbook-python#293); a test pins the block's SHA-256 so every
+  copy changes together.
+- **The PR-body closing guard checks list-continuation lines** — a line indented
+  by four spaces under a list item (`- item`, a blank line, then
+  `    Closes other/repo#N`) is ordinary paragraph text on GitHub, not an indented
+  code block, so the `PR title` check now scans it. Indented code outside a list
+  stays ignored. Real indented code inside a list item is scanned too, so it
+  may block a PR but never lets a closure through. Regression cases cover bullet,
+  numbered, nested and lazy-continuation list items.
+- **Repository-local issue closure in PRs** — the required `PR title` check
+  rejects direct cross-repository auto-closing keywords, while local `Closes #N` and
+  cross-repository `Refs owner/repo#N` remain valid. The PR body is inert
+  environment data; no checkout or token permissions are needed. (Superseded in part
+  by the entries above: the job now has a `pull-requests: read` token to list the
+  commit messages, and the PR title and commit messages are checked too.) The guard
+  is a best-effort line scanner, not a full Markdown parser: fenced and indented
+  code and HTML comments are ignored in one pass, so a comment opener inside a fence
+  cannot hide a later closure, and `Closes: owner/repo#N` is caught too. (Superseded
+  in part by the guard entry above: inline code and inline comments are now
+  scanned.) Fences inside block quotes or list items are not recognized. Regression
+  cases cover longer, mixed and mismatched fences, tab indentation, inline code and
+  unterminated comment openers.
+- **The cookbook verifies the built wheel before it is published
+  (cubrid-lab/cubrid-cookbook-python#240)** — `publish-pypi.yml` gains
+  `verify-candidate`, which calls the cookbook smoke test in candidate mode on the
+  `release-dist` wheel of the same run (exact file set and SHA-256 checked against
+  the `build` job's `sha256` output), and `require-candidate`, which requires
+  `status == success`, `evidence == candidate artifact`, installed == requested ==
+  the release version and the verified digest == the built wheel's digest, and
+  whose downloaded candidate report must name this package, request, run and
+  repository,
+  `release-dist`, the release commit and the build's file map. `publish` needs
+  `require-candidate` and now also checks `dist/` and
+  `release-meta/` against the `build` job outputs `sha256` and the new
+  `meta_sha256` (`scripts/verify_dist.py`) before tagging. The gate is never
+  skipped after a successful build, `resume` included: builds are not
+  reproducible, so every run that publishes verifies its own bytes (a
+  `gh run rerun --failed` of the same run keeps its earlier verification). A
+  `dry-run` dispatch now verifies the freshly built wheel instead of the
+  already-published version; the post-publication `verify-cookbook` is
+  unchanged. Both cookbook calls use one pin, moved to `98866c2`. pycubrid gets
+  the same change. The candidate's pycubrid dependency still comes from PyPI, so
+  a release that needs an unpublished pycubrid must wait until that pycubrid
+  release is published. No runtime change.
+- **The PyPI duplicate guard uses `hashlib.file_digest()` (#730)** —
+  `scripts/pypi_duplicate_guard.py` hashes `dist/` files with the Python 3.11 stdlib
+  helper instead of a hand-written chunked read loop; the digests are the same. The
+  pycubrid and cubrid-mcp-server copies get the same change, so the three stay
+  identical. No runtime change.
+- **Python 3.15 is the newest offline endpoint (#666)** — the `ci.yml` offline cells for
+  main pushes, the weekly schedule and manual dispatches, and the release
+  `offline-endpoints` cells, move from Python 3.11/3.14 to 3.11/3.15, as the existing
+  oldest/newest policy (#734) and its test require. Pull requests keep the Python 3.12
+  cell, and the representative live cells (3.14/11.4 and 3.11/10.2) and SQLAlchemy
+  compliance lanes are unchanged. The manual `python-canary.yml` lane is kept and renamed
+  "Python 3.15 Packaging Check", so it no longer says 3.15 is unsupported. The live
+  Decimal-subclass round trip in `test/test_integration.py` is skipped on a Python without
+  the C `_decimal` module (CI's 3.15.0), where pycubrid refuses Decimal subclasses by design.
+- **The cub_server restart tests run on the latest pycubrid again (#479)** — in
+  `ci.yml` `integration-tests`, the restart step ran after the gating compliance step
+  had downgraded the job to `pycubrid==1.8.0`, so it tested the floor instead of the
+  latest release the other integration steps use. The step now runs
+  `uv pip install --system --upgrade-package pycubrid -e ".[pycubrid]"` and reports
+  the driver versions before its tests (a plain `.[pycubrid]` reinstall would keep
+  1.8.0, which satisfies the range). It stays the last step, and the compliance steps
+  and their `integration-full.yml` `sqlalchemy-compliance` copies are unchanged.
+  `test/test_ci_policy.py` pins the order and the upgrade. `docs/CI_POLICY.md` (and
+  Korean) say so. CI only; the dialect is unchanged.
+- **The release runs the remaining `ci.yml` push lanes itself (#737)** — the release
+  path (`publish-pypi.yml` → `integration-full.yml`) used to rely on the release PR and
+  the `main` push run of `ci.yml` for SQLAlchemy compliance, type checking,
+  `alembic-compat` and the pycubrid-extra and Alembic parts of the packaging smoke test,
+  but nothing required that push run to succeed and a later merge could cancel it.
+  `integration-full.yml` now runs `typecheck`, `alembic-compat` and
+  `packaging-smoke-test` (copies of the `ci.yml` jobs: same matrix values and commands)
+  and `sqlalchemy-compliance`, the gating CUBRIDdb (3.14/11.4) and released-pycubrid
+  (3.14/11.4 and 3.11/10.2) compliance lanes, on the checked-out release SHA, on every
+  dispatch and release call. `full-matrix-result` needs all four and fails on any
+  non-success result, so a failed, cancelled or skipped lane blocks publication.
+  `publish-pypi.yml` is unchanged (option b; it stays identical across cubrid-lab
+  repositories). Workflow-structure tests pin the copies to their `ci.yml` sources and
+  the gate's `needs`; `docs/CI_POLICY.md` (and Korean) and `RELEASING.md` describe the
+  new release coverage. CI only; the dialect is unchanged.
+- **Dependabot groups minor and patch updates (#737)** — `.github/dependabot.yml`
+  groups minor and patch version updates into one PR per ecosystem and directory
+  (`dev-tools` for pip `/`, `docs-tools` for `/.github/docs-requirements`,
+  `github-actions`), so a weekly batch runs CI once per group instead of once per
+  package. Major updates, security updates (`applies-to: version-updates`) and the
+  compatibility-sensitive SQLAlchemy, pycubrid, Alembic and CUBRID-Python stay in
+  their own PRs. Majors are still held from auto-merge, and a grouped PR still needs
+  the required checks. `docs/CI_POLICY.md` (+ ko) documents it, and
+  `test/test_workflow_hygiene.py` pins the settings. No runtime change.
+- **"Prepare release" fails visibly when a merged release is blocked** —
+  `scripts/reconcile_release_labels.py` now classifies every merged
+  `autorelease: pending` release PR it cannot mark tagged by the `publish-pypi.yml`
+  runs at its merge SHA. Any queued or running publisher run at that SHA, or a merge
+  under 2 hours old with no run yet, emits a notice and stays green. A newest
+  completed run that concluded with anything but success, a successful run without
+  publication proof, or no run 2 hours after the merge emits an error with the PR,
+  merge SHA, run URL and conclusion (plus the rerun-failed-jobs command for failed,
+  cancelled or timed-out runs, and the manual-label path for recovery dispatched at
+  another SHA), writes it to the step summary and fails the run. Before, after the
+  1.10.0 cookbook failure (run 37871732934, PR #704), release-please only logged
+  "aborting" on every push and the run stayed green. The tagged transition and its
+  fail-closed proof are unchanged; nothing is relabelled, rerun or dispatched
+  automatically. See RELEASING.md, "When preparation is blocked". CI only; the
+  dialect is unchanged.
+- **Cookbook release verification pinned to the cookbook SHA with the PyPI wait** — the `verify-cookbook` call in `.github/workflows/publish-pypi.yml` is pinned to `32e80c6ea9ae78324f764d7b873ffb64b000ddcc` (cubrid-cookbook-python#274), the same commit in pycubrid, sqlalchemy-cubrid and cubrid-mcp-server. The cookbook now waits up to 10 minutes for PyPI to serve the exact requested version before installing, and reports what PyPI served if it times out; this fixes the 1.10.0 post-publish stale-CDN failure that blocked release-please. CI only; the dialect is unchanged.
+- **Shared fence-aware CHANGELOG lint and composer** — `scripts/lint_changelog.py` and
+  `scripts/compose_release_changelog.py` adopt the canonical versions shared with
+  pycubrid, cubrid-mcp-server and the cookbook. Lines inside a fenced code block are
+  entry content, never headings; a `## [` release header inside a fence and an unclosed
+  fence fail closed in both scripts. The lint gains the shared duplicate-`###` rule,
+  gated by `SECTION_POLICY_CUTOFF` like the section policy, so it applies to
+  `[Unreleased]` and releases after 1.10.0 while the historical duplicate headings in
+  1.9.0 and 1.7.1 stay byte-identical. `docs/DEVELOPMENT.md` (and Korean) document the
+  fence rules. CI only; the dialect is unchanged.
+- **GitHub Release naming and standard release-note sections** — `AGENTS.md` gains a
+  "GitHub Release Policy" section: a Release title is exactly its tag `vX.Y.Z`, drafts
+  included; tags are never moved or recreated to fix a title; stale drafts are
+  classified against the tag and PyPI history and changed only with maintainer
+  approval; release notes come from `CHANGELOG.md`. `publish-pypi.yml` keeps creating
+  Releases with `--title "$TAG"`, and on resume or recovery it now fails closed through
+  the new `scripts/check_release_title.py` when the existing Release has another
+  title, instead of reusing it; it never renames a Release.
+  `scripts/extract_release_notes.py` appends exactly one
+  `**Full Changelog**: …/compare/<previous>...<tag>` line after the unchanged CHANGELOG
+  section (none for the first release or when the section already has a compare
+  link). `scripts/lint_changelog.py` requires the standard `###` sections (Upgrade
+  notes, Added, Changed, Deprecated, Removed, Fixed, Security, Performance,
+  Documentation, CI, Tests), each once, with content and in that order, in
+  `[Unreleased]` and releases after 1.10.0; 1.10.0 and older keep their headings.
+  release-please `changelog-sections` map commit types to those headings with the same
+  hidden types as before, and `scripts/compose_release_changelog.py` merges generated
+  notes into the standard headings instead of a `### Conventional commits` block. The
+  release-please reproduction script in `docs/RELEASE_PLEASE_VALIDATION.md` now loads
+  the real manifest and config, checks the manifest against `__version__` and the
+  heading each commit type produces; the 17.6.0 fixture is regenerated with the new
+  mapping. CI and release tooling only; the dialect is unchanged.
 
 ### Tests
 
-- **Integration tests for driver error handling and cancellation (#479, cubrid-lab/pycubrid#492, cubrid-lab/pycubrid#493, cubrid-lab/pycubrid#512, cubrid-lab/pycubrid#542, cubrid-lab/pycubrid#543, cubrid-lab/pycubrid#554, cubrid-lab/pycubrid#556, cubrid-lab/pycubrid#687, cubrid-lab/pycubrid#744)** — Added sync and async integration tests verifying connection invalidation under query cancellation and deadlines, along with proper `DataError` and `IntegrityError` classification without connection loss.
-- **Value round trips and type handling (#86, #413, #479, #483, #517, #518, #519, #542, cubrid-lab/pycubrid#819)** — Expanded live value round-trip coverage across sync and async engines for `Decimal` scientific notation, timezone-aware datetimes, NULL collection decoding, historic dates, and UTF-8 multibyte characters.
-- **Workflow and dependency range test guards (#774, cubrid-lab/pycubrid#801)** — Added repository tests verifying SQLAlchemy dependency upper bounds against documentation (#774) and pinned ordered push and branch guards for `release-please.yml` (cubrid-lab/pycubrid#801).
+- **Async cancellation and driver deadlines discard the connection (#479)** —
+  `test/test_aio_integration.py::TestAsyncCancellationAndDeadline` runs `SELECT SLEEP(5)`
+  through `cubrid+aiopycubrid://` with a one-slot pool. Under
+  `asyncio.wait_for(..., timeout=0.2)` it raises the built-in `TimeoutError`; with the
+  `read_timeout=0.5` URL option it raises `sa.exc.OperationalError` with
+  `connection_invalidated=True`. In both cases SQLAlchemy invalidates the connection,
+  the next `engine.connect()` gets a different driver connection that answers
+  `SELECT 1`, and no pool slot leaks. Covers pycubrid's session retirement on
+  cancellation and deadline (cubrid-lab/pycubrid#554,
+  cubrid-lab/pycubrid#556, cubrid-lab/pycubrid#687, cubrid-lab/pycubrid#744); the tests pass
+  on the 1.8.0 floor as well, so they have no version gate. Tests only.
+- **pycubrid 1.9.0 error classification through SQLAlchemy (#479)** — live tests for two
+  driver changes the dialect relies on, sync (`cubrid+pycubrid://`) and async
+  (`cubrid+aiopycubrid://`), on CUBRID 10.2 and 11.4. A zero `DATE`/`DATETIME`
+  (`'0000-00-00'`) raises `sqlalchemy.exc.DataError`, the connection is not invalidated,
+  and the same DB-API connection runs the next query (cubrid-lab/pycubrid#492/#512/#543;
+  `TestCompleteReplyValueError` in `test/test_integration.py`,
+  `test_zero_date_is_data_error_and_keeps_connection` in `test/test_aio_integration.py`).
+  The integrity tables (`_INTEGRITY_VIOLATIONS`, `_ASYNC_INTEGRITY_VIOLATIONS`,
+  `_CONSTRAINT_VIOLATIONS`) gain a parent `DELETE`/`UPDATE` restricted by a foreign key
+  (-924) and a `TRUNCATE` of a referenced table (-1284 on CUBRID 11.2+, -924 on 10.2/11.0),
+  which raise `IntegrityError` (cubrid-lab/pycubrid#493). On pycubrid 1.8.x, the supported
+  floor, these cases are strict expected failures. The tests record two `CUBRIDdb`
+  differences, documented in `docs/DRIVER_COMPAT.md`: a zero date escapes as a bare
+  `SystemError`, and a -1284 `TRUNCATE` is `DatabaseError`. Tests and docs only; the
+  dialect is unchanged.
+- **Release-please push guards are pinned (cubrid-lab/pycubrid#801)** —
+  `test/test_release_workflows.py` now asserts the exact, ordered guards of
+  `release-please.yml`: the push is directly preceded by the stale-main `exit`
+  and the `autorelease: review` re-check, the compose step starts with
+  `set -euo pipefail`, the branch `case` guard runs before checkout and is
+  followed by the generation-time stale-main `exit`, the freeze step counts the
+  exact `autorelease: review` label, and the checkout keeps
+  `persist-credentials: false`. Removing or weakening any of them now fails a
+  test; before, these mutations passed. `RELEASING.md` gains the recovery row
+  for abandoning a merged release (remove `autorelease: pending`, never add
+  `autorelease: tagged`), and the blocked-preparation steps say to skip waiting
+  for a green publisher run in that case. Test and docs only; the dialect and
+  workflows are unchanged.
+- **Guard for the SQLAlchemy range (#774)** — `test/test_sqlalchemy_range.py` (a `repo` test) fails when the `sqlalchemy` upper bound in `pyproject.toml` (all extras) differs from the pin stated in the README, translated READMEs and docs, or when `SUPPORT_MATRIX` (English and Korean) does not list every minor below the cap as supported and the cap minor as unsupported.
+- **Live value round trips for pycubrid 1.9.0 fixes (#479)** — gaps 3, 5, 6, 8 and 9 of
+  the #479 inventory, through `cubrid+pycubrid://` in
+  `test/test_integration.py::TestPycubridValueRoundTrips` and through
+  `cubrid+aiopycubrid://` in `test/test_aio_integration.py::TestAsyncPycubridValueRoundTrips`:
+  `Decimal` values bound in plain notation (`1E-7`, `1.2345678901234567891E+20`) and `int` /
+  `Decimal` subclasses bound by value, all read back from `Numeric(38,10)` as `Decimal`
+  (cubrid-lab/pycubrid#517, #518); aware datetimes in `DateTime(timezone=True)` (`DATETIMETZ`)
+  and `TIMESTAMPTZ` columns, including the repeated hour at the end of US daylight saving
+  time, the `EST` abbreviation decoded with `fold=1`, and an unresolvable zone raising
+  `DataError` without invalidating the connection (pycubrid#413); `SELECT NULL` and a
+  NULL-typed `CASE` returning `None` and `EVALUATE 42` returning `42` (pycubrid#542);
+  `date(999, 1, 1)`, `date(99, 1, 2)` and `datetime` years 999 and 99 (pycubrid#519); a
+  `?charset=utf8` URL round trip of Korean and emoji text (pycubrid#86). `test_collection_roundtrip.py`
+  adds an all-`None` `SEQUENCE` row (`[None, None]`) for typed binding, and
+  `test_all_null_elements_are_decoded`, which seeds `SEQUENCE{NULL, NULL}`, `MULTISET{NULL}`
+  and `SET{NULL}` with SQL literals and so needs no typed binding: pycubrid 1.8.0 returned
+  those collections as raw bytes (pycubrid#483). The time zone cases resolve their
+  `ZoneInfo` inside the test and skip when the system has no IANA data for the zone, so
+  collecting `test_integration.py` no longer needs `tzdata`. Each case that fails on
+  pycubrid 1.8.0, the `[pycubrid]` floor, is a strict xfail there through the new
+  `test/_pycubrid_gate.py`. A ZoneInfo datetime in the repeated hour with `fold=1` is stored
+  one hour off, because pycubrid binds `DATETIMETZ'... America/New_York'` without the fold or
+  the abbreviation (cubrid-lab/pycubrid#819). `test_dst_end_second_occurrence_binds` is a
+  strict xfail while the installed pycubrid still renders that literal, and passes once it
+  names the occurrence. A version check cannot tell the fix apart, because pycubrid `main`
+  keeps the released version number until the next release. The `_NO_TYPED_COLLECTIONS_REASON` text and the module docstring
+  of `test_collection_roundtrip.py` now say typed collections shipped in pycubrid 1.9.0.
+  Tests only; the dialect is unchanged.
 
 ## [1.10.0] - 2026-10-08
 
 This release raises the minimum supported Python version to 3.11. Applications on Python 3.10 should remain on the compatible 1.9.x line until upgraded. Review the upgrade notes and detailed changes below.
 
 ### Upgrade notes
-
-- **Python 3.11 or newer is required (#686, #703)** — Python 3.10 reached upstream end of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10 `pip` keeps installing 1.9.x, the last line that supports it; only the latest release line receives fixes, so 1.9.x gets no further releases. Upgrade Python, recreate your virtual environment and validate your application before upgrading.
-
-### Changed
-
-- **Development tooling updated for Python 3.11 (#687, #688)** — Removed `py310` from tox `envlist` and re-targeted `typecheck-sa20` to Python 3.11 (#687); updated Ruff `target-version` and mypy `python_version` to 3.11 in `pyproject.toml` (#688).
+- **Python 3.11 or newer is required (#686).** Python 3.10 reached upstream end
+  of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10
+  `pip` keeps installing 1.9.x, the last line that supports it; only the latest
+  release line receives fixes, so 1.9.x gets no further releases. Upgrade Python,
+  recreate your virtual environment and validate your application before upgrading.
 
 ### Removed
+- **Python 3.10 support (#686)** — `requires-python` is `>=3.11` and the 3.10
+  classifier is gone. CI no longer tests 3.10: the oldest integration cell is
+  Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python
+  3.11–3.14 and the Alembic compatibility job runs on 3.11. Python 3.10 used to
+  select SQLAlchemy 2.0 by itself (SQLAlchemy 2.1 needs Python 3.11), so the
+  oldest CI cell and the Python 3.11 row of the full matrix now pin
+  `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary
+  integration tests on the minimum supported SQLAlchemy line. No dialect
+  behavior changes on Python 3.11 or newer.
 
-- **Python 3.10 support (#686, #703)** — `requires-python` is `>=3.11` and the 3.10 classifier is gone. CI no longer tests 3.10: the oldest integration cell is Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python 3.11-3.14 and the Alembic compatibility job runs on 3.11. Python 3.10 used to select SQLAlchemy 2.0 by itself (SQLAlchemy 2.1 needs Python 3.11), so the oldest CI cell and the Python 3.11 row of the full matrix now pin `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary integration tests on the minimum supported SQLAlchemy line. No dialect behavior changes on Python 3.11 or newer.
+### Changed
+- **tox no longer lists Python 3.10 (#687)** — `py310` is removed from
+  `envlist`, and `typecheck-sa20` type-checks SQLAlchemy 2.0.53 on Python 3.11
+  instead of 3.10. Local tooling only; CI and the dialect are unchanged.
+- **Ruff and mypy target Python 3.11 (#688)** — `target-version = "py311"` and
+  `python_version = "3.11"` in `pyproject.toml`, matching the minimum supported
+  version. The rule selection is unchanged and no source needed a fix.
 
 ### Documentation
+- **Reproducible third-party license inventory by install scope (#727)** —
+  `THIRD_PARTY_LICENSES.md` is regenerated from one fresh environment per scope
+  (default runtime, `[pycubrid]`, `[alembic]`, `[cubrid]`/`[cubriddb]`, `[dev]`) at
+  a recorded commit, Python and OS by the standard-library
+  `scripts/generate_third_party_licenses.py` (shared with pycubrid). The old
+  document covered only the runtime tree and listed SQLAlchemy 2.0 with greenlet;
+  SQLAlchemy 2.1 installs no greenlet by default, which the scope notes now
+  explain. MPL-2.0 packages (`certifi`, `hypothesis`, `pathspec`, `[dev]` only)
+  are classified separately from permissive licenses instead of under a blanket
+  "no copyleft" statement, GPL-family metadata is flagged for review (docutils is
+  resolved from its own `COPYING`), and the CUBRID-Python BSD variant stays
+  explicitly unresolved. The document separates dependency installation from
+  what the wheel and sdist distribute. `test/test_third_party_licenses.py` fails
+  when a declared dependency is missing from its scope, a recorded version falls
+  outside a declared range, a category disagrees with the generator, a reviewed
+  row loses its review, or the CUBRID-Python entry stops saying the variant is
+  unresolved (exact `==` pins are checked for presence only, so Dependabot pin
+  bumps need no inventory refresh); `ci.yml` now routes
+  `THIRD_PARTY_LICENSES.md` changes to the repository-tooling lane that runs it.
+  No runtime change.
+- **The README and quickstart state Python 3.11 or later (#695)** — the
+  requirement lines, the tested and supported ranges (3.11–3.14) and the FAQ
+  answer in `README.md` and `docs/README.ko.md`, and the prerequisites in
+  `docs/QUICKSTART.md` and `docs/ko/QUICKSTART.md`. The Python 3.10 retirement
+  notice in both READMEs now describes the requirement as in effect from 1.10.0.
+- **In-page links work on the documentation site (#721)** — the site used the default heading slugifier, which drops non-ASCII characters, so Korean headings got ids such as `_2` and every Korean table of contents entry was dead; English links written for GitHub's slugs missed as well (208 broken anchors). `mkdocs.yml` now uses the Unicode-aware slugifier from `pymdown-extensions`, the eight anchors that were still wrong are fixed (among them a misspelled Korean heading and links to repeated "Basic Usage" headings), and `validation.links.anchors: warn` makes the strict build fail on a new broken anchor.
+- **Korean pages reviewed against the English wording (#719)** — the structure check cannot see a missing sentence. `docs/ko/DRIVER_COMPAT.md` gains the paragraph on how the `cursor.lastrowid` fallback opens and closes its cursor, `docs/ko/FEATURE_SUPPORT.md` says that the dialect handles `stmt.inserted` references, and the Native Enum row of `docs/ko/SUPPORT_MATRIX.md` matches English. The four translations added in this release (`PRD`, `SA_COMPAT`, `RELEASE_PLEASE_VALIDATION`, the contribution guide) were reviewed sentence by sentence: no content was missing, a few meanings were corrected (for example "checks not run", not "could not run") and unreadable literal renderings were rewritten. The banner on every Korean page now says the structure is checked by CI. English is unchanged.
+- **The documentation home page states one SQLAlchemy range (#716)** — its ecosystem list said "SQLAlchemy 2.0–2.2" while its first line, the README and the support matrix say 2.0–2.1. Both languages now say 2.0–2.1; the dependency pin (`>=2.0,<2.3`) is unchanged.
+- **CI fails when a Korean document drifts from its English source (#710)** — `scripts/check_docs_translation.py` compares every `docs/<name>.md` with `docs/ko/<name>.md` and fails on a missing Korean file or a different number of headings (levels 2-4), fenced code blocks or table rows; the lint job runs it on every event. Until now only README drift was checked. Documents that are deliberately English-only are listed in the script with a reason. The check compares structure, not wording. Same script as cubrid-lab/pycubrid#721.
+- **SA_COMPAT, PRD and the release-please validation record are available in Korean (#709)** — `docs/ko/SA_COMPAT.md`, `docs/ko/PRD.md` and `docs/ko/RELEASE_PLEASE_VALIDATION.md` are added, and the three documents, which were not in the site navigation, are listed in both languages. With these, every document under `docs/` has a Korean counterpart.
+- **Korean contribution guide (#708)** — `docs/CONTRIBUTING.ko.md` translates the current `CONTRIBUTING.md`, keeping commands, English GitHub conventions, label names and title examples unchanged. It is linked from the Korean README and the Korean navigation. English stays the authoritative version.
+- **Korean documentation home page and one Korean navigation section (#707)** — `docs/ko/index.md` is the Korean landing page, linked from the English home page and back. The Korean guides sat three levels deep under "Project → Translations"; they are now one top-level "한국어" section grouped like the English navigation, and every Korean page is reachable from it.
+- **Korean support matrix, feature table and CI policy match the English documents (#706)** — `docs/ko/SUPPORT_MATRIX.md` shows the CI matrix as a table and loses a Korean-only closing section; `docs/ko/FEATURE_SUPPORT.md` drops a limitation row (`IS DISTINCT FROM`) that the English table does not list; `docs/ko/CI_POLICY.md` is a full translation instead of a summary. Both CI policy pages are in the site navigation. The English text is unchanged.
 
-- **Python 3.11 documentation updates (#685, #695, #696, #702, #718, #731, #740)** — Stated the Python 3.11+ requirement and 3.11-3.14 support range across README, quickstarts, contributor and CI guides, and the canonical index (#685, #695, #696, #702, #718, #731, #740).
-- **Korean translation expansion and synchronization (#706, #707, #708, #709, #710, #711, #712, #713, #714, #719, #720)** — Added Korean homepage and navigation (#707, #712), contribution guide (#708, #713), and translations for `SA_COMPAT`, `PRD`, and `RELEASE_PLEASE_VALIDATION` (#709, #714); aligned Korean matrices and feature tables with English (#706, #711, #719, #720); and added `scripts/check_docs_translation.py` in CI to detect drift (#710).
-- **Site navigation, anchors, and license inventory (#716, #717, #721, #722, #727, #733, #739, #755)** — Fixed documentation site heading anchors with Unicode-aware slugifier (#721, #722), aligned the homepage SQLAlchemy support range to 2.0-2.1 (#716, #717), added reproducible scope-based license inventory in `THIRD_PARTY_LICENSES.md` (#727, #755), and aligned contributor ownership guardrails (#733, #739).
+### Conventional commits
+
+#### Features
+
+* **python:** require Python 3.11 or later ([#703](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/703)) ([f764d27](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f764d27d2f20ece8b2f914b61c5dc1776313b04e)), closes [#686](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/686)
+
+
+#### Documentation
+
+* **agents:** align contributor ownership and good-first-issue guardrails ([#739](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/739)) ([41153c4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/41153c4d3d88cb7ce3beaf488ca508e40ab570ab)), closes [#733](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/733)
+* **i18n:** add a Korean contribution guide ([#713](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/713)) ([fcc94b4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fcc94b47d764b7fffdc327da701c99a1d7054b60)), closes [#708](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/708)
+* **i18n:** add the Korean documentation home page ([#712](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/712)) ([2966d51](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2966d5128c938f2ed32c8f173e226f2190bafa63)), closes [#707](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/707)
+* **i18n:** correct Korean sections that fell behind the English wording ([#720](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/720)) ([7578501](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/75785012c55e95181b0144b08a669cc43bdaa411)), closes [#719](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/719)
+* **i18n:** synchronize the Korean SUPPORT_MATRIX and FEATURE_SUPPORT and translate CI_POLICY in full ([#711](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/711)) ([6c3c7c8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6c3c7c88b3ab3ea3fc718daa23671074f6e10350)), closes [#706](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/706)
+* **i18n:** translate SA_COMPAT, PRD and RELEASE_PLEASE_VALIDATION into Korean ([#714](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/714)) ([ff2dbdb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ff2dbdb1813c452ab93b4380b9bc1ce932cb92d4)), closes [#709](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/709)
+* **licenses:** reproducible license inventory by install scope ([#755](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/755)) ([2c0390d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2c0390d41fef1891d0cc80b73c0eacdf2b70362a))
+* **llms:** update the Python requirement in the canonical index ([#740](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/740)) ([c67f6af](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c67f6af859f71d203c76a8fac3e678f907918f7f)), closes [#702](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/702) [#685](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/685)
+* **python:** state Python 3.11 or later in the README and quickstart ([#731](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/731)) ([4ee946d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4ee946dc8ab236bfe6ce0ae17e5358c52efd1b27)), closes [#695](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/695)
+* **python:** update contributor and CI docs for Python 3.11 ([#718](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/718)) ([f31ff01](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f31ff0158821aabf6b4cd77bcaeeeedb2a5936ca)), closes [#696](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/696)
+* **site:** generate heading anchors that match the links in the documents ([#722](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/722)) ([9c31e6a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9c31e6ad7b194d40046b5bde3b079f3da5aa96e4)), closes [#721](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/721)
+* state one SQLAlchemy range on the documentation home page ([#717](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/717)) ([56d606f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/56d606fe62c0575463ea691311515bd3720d3094)), closes [#716](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/716)
 
 ## [1.9.0] - 2026-10-04
 
 This release contains a substantial set of dialect and development improvements. Read the upgrade notes and compatibility guidance before upgrading; the detailed changes below preserve the full technical history.
 
+### Release tooling
+- Release preparation moves to SHA-pinned release-please in PR-only mode. Generated Conventional Commit notes are composed with curated Upgrade notes; reviewed candidates still use the existing guarded publisher. Maintainers freeze candidate edits and explicitly start final-head PR CI; see RELEASING.md.
+- **PyPI Trusted Publisher filename** — the sole guarded release orchestrator is renamed from `release.yml` back to `publish-pypi.yml` (environment `pypi`), the filename that published 1.8.0 and that the PyPI Trusted Publisher is bound to. Under `release.yml` the first publication would have been refused with `invalid-publisher`, as happened in pycubrid (cubrid-lab/pycubrid#681). Release, full-matrix, artifact, tag and cookbook gates are unchanged; recovery commands and the successful-publication label reconciliation use the new filename, and a run of the former publish-only workflow of the same name does not count as a completed release. No dialect behavior, version, dependency or support change.
+
 ### Added
-
-- **Collection binding with pycubrid typed collections (#484, #623)** — Bound `SET`, `MULTISET`, and `SEQUENCE` values using `pycubrid.types.Set`, `Multiset`, or `Sequence` on `cubrid+pycubrid://` and `cubrid+aiopycubrid://` when supported by pycubrid (#567), while raising `TypeError` for sets bound to ordered `SEQUENCE` columns.
-
-### Changed
-
-- **pycubrid 1.8.0 is now the minimum (#559)** — The `[pycubrid]` extra requires `pycubrid>=1.8.0,<2.0` (was `>=1.3.2,<2.0`), because contract tests require 1.8.0 fixes (NOT NULL / foreign-key `IntegrityError`, no silently truncated result after `commit()` / `rollback()`, `cursor.description` `null_ok`, and collection type codes) and 1.8.0 keeps the CAS session across `commit()` / `rollback()` and in autocommit mode. README and translations, `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md`, `docs/SUPPORT_MATRIX.md`, and `docs/DEVELOPMENT.md` (+ Korean) state the new range.
-- **`cubrid://` warns at first connect when CUBRIDdb is older than 11.3 (#585, #588)** — `CubridDialect.initialize()` reads the loaded driver's compiled-in version (`CUBRIDdb._cubrid.__version__`, `b'9.3.0.0001'` for the PyPI release) and emits a `SAWarning` naming the version, the recommended `cubrid+pycubrid://` driver, and the source-build path when its major.minor is below 11.3. It warns instead of raising `NotSupportedError` so that existing deployments keep connecting; filter the warning to `"error"` to fail fast, and the `ImportError` for missing CUBRIDdb no longer suggests `pip install CUBRID-Python`.
-- **Lazy Alembic registration via entry point (#595, #616)** — `pyproject.toml` registers `_sqlalchemy_cubrid_alembic` under `alembic.plugins` for Alembic 1.18+, eliminating immediate Alembic imports and log noise on dialect load while preserving direct import for Alembic 1.7.2-1.17 (#561).
-- **Reflection skips redundant DDL fallback (#610, #629, #673)** — `get_unique_constraints()` skips `SHOW CREATE TABLE` when catalog queries confirm no unique index exists on current-user tables, reducing inspection queries from 3 to 2.
-- **Dialect driver policy isolation (#596)** — Moved pycubrid-specific disconnect classification into `PyCubridDialect` and removed redundant `on_connect()` and `do_ping()` overrides in `PyCubridAsyncDialect` without altering behavior.
-- **Isolation level re-apply documentation (#559)** — Clarified that pycubrid 1.8.0 preserves isolation levels across commits and rollbacks but re-applies levels when CAS resets out-of-transaction, keeping idle pooled connections bound to configured levels.
-
-### Deprecated
-
-- **Python 3.10 support (#665)** — advance notice for the 1.9.x release. Python 3.10 reached upstream end of life on 2026-10-01 ([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)). The current 1.8.x line and 1.9.x retain Python 3.10 support. After this notice ships in 1.9.0, the following minor release (planned 1.10.0) will require Python >=3.11. Upgrade Python, recreate your virtual environment and validate your application before upgrading. Current package metadata, CI coverage and runtime behavior remain unchanged; see [support matrix](docs/SUPPORT_MATRIX.md) and [roadmap](ROADMAP.md).
-- **The `[cubrid]` and `[cubriddb]` extras (#585)** — both depend on an unbounded `CUBRID-Python`, and PyPI has no release newer than 9.3.0.2 (sdist only, 2015), so they install a driver this dialect has never tested: on CUBRID 11.4 it returns `BIGINT` as `str` (#583) and fails parts of the integration suite. A version floor would make the extras uninstallable and removing them would change what an existing `pip install "sqlalchemy-cubrid[cubriddb]"` resolves to, so they are kept unchanged for now and marked deprecated. The supported CUBRIDdb is built from cubrid-python v11.3.0.51 or later; `cubrid+pycubrid://` remains the recommended driver. README (+ Korean), `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md`, `docs/TROUBLESHOOTING.md`, `docs/SUPPORT_MATRIX.md`, `docs/QUICKSTART.md` (+ Korean) and `docs/llms.txt` now document that install path instead of `pip install CUBRID-Python`, and `docs/DRIVER_COMPAT.md`'s build recipe now clones with `--recurse-submodules` and its version check reads `CUBRIDdb._cubrid.__version__` (`CUBRIDdb.__version__` does not exist).
-
-### Fixed
-
-- **Alembic foreign key autogenerate matching (#624, #668)** — Autogenerate matches reflected and model foreign keys by columns and target table in addition to constraint name, preventing incorrect name-only pairings across different columns.
-- **Negative and zero type lengths rejected (#441, #476, #477, #478, #491, #662)** — VARCHAR, NVARCHAR, CHAR, NCHAR, BIT, BIT VARYING, BINARY, and VARBINARY reject explicit negative lengths with `CompileError` (#456, #491, #662), `CHAR(0)` and `NCHAR(0)` no longer compile to bare types (#476, #477), and `BIT(length=0)` raises `CompileError` instead of coercing to `BIT(1)` (#441, #478).
-- **Async read timeout connection invalidation (#624, #672)** — `is_disconnect()` recognizes `asyncio.TimeoutError` in the cause chain of pycubrid `OperationalError` on Python 3.10, properly retiring closed sessions.
-- **Disconnect phrase filtering in server errors (#624, #676)** — Prevented healthy pooled connections from being discarded when server error messages echo user data containing disconnect substrings, while preserving disconnection handling for -190, -191, and -368.
-- **Reflection DDL fallback on unknown server version (#624, #675)** — `get_unique_constraints()` retains `SHOW CREATE TABLE` fallback when `server_version_info` is unavailable, ensuring tables from other owners are not falsely reported as lacking unique constraints.
-- **pycubrid malformed-reply disconnect handling (#680, #681)** — Classified pycubrid `OperationalError("malformed response from broker")` as a disconnect condition so broken connections are recycled rather than reused.
-- **Collection domains and authorized ENUM reflection (#631, #635, #677)** — `get_columns()` queries `_db_domain.enumeration` for exact ordered ENUM labels, inspects `SET`/`MULTISET`/`SEQUENCE` collection member types through `db_attr_setdomain_elm`, and returns `NullType` on unauthorized access instead of fabricating labels.
-- **Whitespace accepted in numeric type parameters (#609, #615, #626)** — Column reflection accepts whitespace in numeric parameter lists (such as `NUMERIC(10, 2)`), correctly extracting precision and scale instead of falling back to `NullType`.
-- **Alembic autogenerate default RESTRICT preservation (#597, #622)** — `CubridImpl.correct_for_autogen_foreignkeys()` clears reflected default `RESTRICT` actions when the model specifies no action, preventing spurious drop and re-create operations.
-- **Disconnect error code parsing (#608, #620)** — Stopped treating leading numbers in error message text as disconnect error codes, reading codes strictly from integer `args[0]` and pycubrid `errno`.
-- **REPLACE statement compilation (#591, #600)** — `replace()` replaces only the statement verb in compiled SQL rather than replacing the first `INSERT INTO` substring, avoiding corruption in SQL prefixes, comments, or string literals.
-- **URL query options forwarded to pycubrid (#592, #599)** — `cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward connection parameters including `connect_timeout`, `read_timeout`, `fetch_size`, `ssl`, and `charset` (#377, #510) to pycubrid with validation.
-- **Constraint reflection exception propagation (#589)** — `get_foreign_keys()` and `get_unique_constraints()` propagate unexpected exceptions from `SHOW CREATE TABLE` instead of falsely reporting tables as having no constraints (#530).
-- **Catalog COUNT(*) coercion in object existence checks (#583, #584)** — `has_table()` and `has_index()` coerce catalog `COUNT(*)` results to `int`, preventing string `'0'` returned by PyPI `CUBRID-Python` from evaluating to `True`.
-- **CAS memory allocation disconnect detection (#578, #582)** — Added -10002 (`CAS_ER_NO_MORE_MEMORY`) and pycubrid legacy renumbered code -1002 to disconnect tables so memory exhaustion closes the connection immediately.
-- **Server crash and restart disconnect classification (#564, #565, #571)** — Added CUBRID server failure codes -111, -199, -224, and -677 as disconnects for both drivers, invalidating pooled connections when `cub_server` crashes or restarts.
-- **CUBRIDdb disconnect codes audited (#572, #577)** — Corrected CUBRIDdb disconnect codes by adding -20004, -10003, -20002, and -20016 for dead CAS connections and removing -4, -10005, -10007, -21003, and -21005 so interrupted queries no longer discard working connections.
-- **Reflection syntax errors propagate instead of raising NoSuchTableError (#454, #455)** — `get_columns()` and `get_indexes()` propagate native syntax errors (-493) instead of masking them behind `NoSuchTableError` by @UsmanGhias.
+- **Python 3.15 preview preparation** — add a manual-only Ubuntu/standard-GIL
+  offline and wheel/sdist installation lane at an immutable commit. Python 3.15
+  is not yet officially supported; final-runtime and live CUBRID evidence are
+  required before promotion. Routine PR test frequency and supported versions
+  remain unchanged.
+- **Driver-differential coverage extended to the last blocked DB-API contract area, and CI lanes now fail when every test they ran was skipped (#486)** — `test/test_driver_differential.py` gains `test_collection_roundtrip_agrees`, covering the one #479 contract area (`SET`/`MULTISET`/`SEQUENCE`) the module's header previously called out as still blocked: binding a collection parameter is rejected by released pycubrid (the typed-collection parameters of cubrid-lab/pycubrid#567 are on pycubrid main only), so the case writes the collection literal directly in SQL, which both drivers accept, then compares the values each driver reads back after normalizing away CUBRIDdb's always-`str` elements and pycubrid's native types (`?decode_collections=true`); a `NULL` collection is also compared. With #480–#484 all now closed, every #479 area except LOBs (#485, out of scope here) has a differential case; the module's stale "blocked upstream" comment is updated. Separately, a lane that silently skips every test it was meant to run exits `0` in plain pytest, hiding a misconfigured lane behind a green check — the way the required driver-differential and transactional-DDL/server-restart lanes already guard themselves with their own `CUBRID_REQUIRE_*` checks in `test/conftest.py`, but nothing generalized it to ordinary integration steps. New `scripts/check_not_all_skipped.py` parses a pytest run's final summary line(s) and fails unless at least one shows real execution (`passed`/`failed`/`error`/`xpassed`/`xfailed`); `--allow-all-skipped "<reason>"` explicitly allowlists a lane that is deliberately all-skip in a given cell. `ci.yml`'s `integration-tests` and `make-integration` jobs and `integration-full.yml`'s `integration-full` and `make-integration` jobs now `tee` each plain pytest/`make integration` invocation and run the check afterward; the already-guarded driver-differential, transactional-DDL, server-restart and `--dburi` compliance-suite steps are unchanged. `matrix-result` and `full-matrix-result` still depend on the same jobs as before: a step that now fails on an all-skipped run already fails its job, so no new dependency was needed. Verified locally on a fresh CUBRID 11.4 container with pycubrid 1.8.0 and CUBRIDdb built from source exactly as CI builds it: the collection case and the rest of `test/test_driver_differential.py` pass with both drivers, and `python -m scripts.check_not_all_skipped` correctly passes a real run and fails an all-skipped one (`CUBRID_TEST_URL` unset).
+- **Recorded supported-server `SHOW CREATE TABLE` output for constraint reflection (#611)** — foreign keys are reflected only by parsing `SHOW CREATE TABLE`, so `test/fixtures/show_create_table/cubrid-{10.2,11.0,11.2,11.4}.json` now record what CUBRID 10.2.18, 11.0.16, 11.2.9 and 11.4.6 print for a small schema (composite and self-referencing foreign keys, every supported action and the default, identifiers with spaces, commas and parentheses, a `UNIQUE` constraint and a `CREATE UNIQUE INDEX` with a `DESC` key part), together with the generating SQL, the server build and the tables' `db_index` and `SHOW INDEXES` rows; the files contain no credentials. `test/test_show_create_table_server_output.py` runs every recording through the real dialect parsers via the #590 adapter in `test/test_show_create_table.py`, checks that the catalog path and the DDL path report the same unique constraints (each also a unique index named by `duplicates_index`), and, as an integration test, recreates the schema on the server under test and fails with a diff when its normalized output or reflected constraints differ from the recording for its version; PR CI's pycubrid integration step runs it on 10.2 and 11.4, and the nightly / release `integration-full.yml` matrix on all four versions (Python 3.12 lane). `python -m test.test_show_create_table_server_output <url>` records a version. `docs/FEATURE_SUPPORT.md` (+ Korean) documents the output assumptions. No dialect change.
+- **`SET`, `MULTISET` and `SEQUENCE` values bind through pycubrid typed collections (#484)** — on `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, the collection types now have a bind processor that wraps a `list` or `tuple` value (and, for `SET` and `MULTISET`, a `set` or `frozenset`) in `pycubrid.types.Set`, `Multiset` or `Sequence` (matching the column type), which pycubrid sends as a `SET{...}` / `MULTISET{...}` / `SEQUENCE{...}` literal through ordinary `execute()` / `executemany()` (cubrid-lab/pycubrid#567). The feature is detected in the installed pycubrid: the typed classes are on pycubrid main but not in a release yet, and with released pycubrid 1.8.0 values reach the driver unchanged and a collection parameter still raises `ProgrammingError`. A `SEQUENCE` is ordered, so a `set` or `frozenset` bound to it raises `TypeError` ("SEQUENCE is ordered; pass a list or tuple") on the pycubrid drivers with every pycubrid version; it is never sorted. Non-`NULL` collection values cannot be rendered inline (`literal_binds` / `literal_execute` raise `CompileError`). `None`, an already typed value and any other value pass through unchanged; values read back are not converted (`frozenset` / `list` with `?decode_collections=true`). CUBRIDdb is unchanged: it binds every collection itself as a SET, so a MULTISET loses its duplicates and a SEQUENCE its order (Known Issue 11 in `docs/DRIVER_COMPAT.md`). New offline tests cover the processor with and without the pycubrid feature; the new live module `test/test_collection_roundtrip.py` covers Core and ORM, sync and async round trips (SET uniqueness, MULTISET duplicates, SEQUENCE order, Unicode, empty, NULL and NULL elements, executemany, predicates, updates), verified on CUBRID 10.2 and 11.4 with pycubrid main. On released pycubrid these cases are strict xfails; the upstream canary runs them against pycubrid main with `CUBRID_REQUIRE_TYPED_COLLECTIONS=1`. `docs/TYPES.md` ("Collection values"), `docs/DRIVER_COMPAT.md` (+ Korean) and `docs/llms.txt` document the value shapes per driver.
+- **Re-verified the BLOB/CLOB value contract on pycubrid 1.8.0 and pycubrid main, and moved it to a dedicated module (#485)** — the SQLAlchemy-facing `LargeBinary`/`BLOB`/`Text`/`CLOB` value contract first verified in #490 is moved out of `test_integration.py`/`test_aio_integration.py` into a new `test/test_lob_value_contract.py` (Core and ORM, sync and async, in one module, following the #484/`test_collection_roundtrip.py` pattern), and re-run against the pycubrid 1.8.0 floor, pycubrid main, and CUBRIDdb, on CUBRID 10.2 and 11.4. Binding `bytes`/`str` (and `NULL`) into these columns, and `Text`/`STRING` in general, is unaffected and asserted directly; selecting a non-`NULL` `BLOB`/`CLOB` still returns the driver's own LOB locator shape instead of the documented value on every driver tested (a `dict` handle on sync pycubrid, the bare `file_locator` string on `cubrid+aiopycubrid://`, and CUBRIDdb's `'file:...'` string), so those read cases stay strict xfails, named to the pycubrid feature that would resolve them (cubrid-lab/pycubrid#441) rather than to a pinned version: pycubrid main does not implement official LOB fetch for ordinary cursors yet either (cubrid-lab/pycubrid#441/#442 remain open upstream), so the same xfail applies to both the release and main, and `strict=True` turns a future fix into a failing XPASS instead of silently staying green. Values are still verified to reach the LOB intact via server-side `BLOB_TO_BIT`/`CLOB_TO_CHAR` conversion. `docs/DRIVER_COMPAT.md` Known Issue 6 and `docs/TYPES.md` (+ Korean) are corrected to the 1.8.0/main pin and the async locator's actual shape (a bare string, not a `dict`). CI runs the new module alongside `test_integration.py`/`test_aio_integration.py` in every PR CI lane that already ran those (CUBRIDdb, pycubrid sync, async) and in `integration-full.yml`'s nightly/release CUBRIDdb matrix; `make integration` already picked it up via its directory-wide `-m integration` run. Tests, CI and docs only; no dialect behavior change.
+- **Verified ordinary scalar execution never uses pycubrid's `compat.native` prepared core (#483)** — pycubrid#439 (closed) added an additive, opt-in sync prepared/typed scalar-binding cursor under `pycubrid.compat.native` (INT32, UTF-8 `CHAR` and SQL `NULL` only), already part of the released pycubrid 1.8.0 floor. Ordinary sync/async DB-API execution is unaffected: neither `cubrid+pycubrid://` nor `cubrid+aiopycubrid://` import or call `pycubrid.compat` anywhere, so SQLAlchemy cannot transparently gain typed FC3 binding merely because the installed driver now has it. New dedicated module `test/test_scalar_execution_contract.py` (Core and ORM, sync and async) verifies integer, UTF-8/CJK string, `NULL`, repeated execution of the same compiled statement, ordinary `executemany()`, Core inserts/updates, ORM flush, and a failed scalar bind (NOT NULL violation) followed by connection/session reuse, through the ordinary SQLAlchemy DB-API path only — none of it is blocked or xfailed, verified on CUBRID 10.2 and 11.4 with pycubrid 1.8.0, pycubrid main and CUBRIDdb. An offline test scans the dialect source for any `pycubrid.compat` reference, and a live test monkeypatches `pycubrid.compat.native.connect` to fail if called, then runs ordinary engine operations, to keep the "no dialect implementation change" claim from pycubrid#439's design verified rather than assumed. `docs/DRIVER_COMPAT.md` (+ Korean) documents this as Known Issue 12 (not a bug: a compatibility note). No dialect change.
 
 ### Documentation
 
-- **Driver recommendations and usage samples (#495, #498, #516)** — Updated Quick Start guides and sample scripts to use `cubrid+pycubrid://` as primary driver and documented CUBRID-Python 11.3 source builds (#495, #498, #516).
-- **Support claims, version matrices, and metadata refresh (#460, #461, #492, #499, #506, #579, #643)** — Replaced stale test counts and coverage stats with durable policy references (#461, #643); documented SQLAlchemy 2.1 as tested GA (#492, #506); corrected CUBRID capabilities in single-sourced `llms.txt` (#460, #579); and derived Sphinx release dynamically (#499).
-- **Alembic logging and contributor documentation (#181, #346, #374, #442, #497, #561, #562, #650, #663)** — Documented Alembic import log behavior under INFO logging (#561, #562); prepared demo recording script while deferring embed (#346, #374); updated type-mapping tables for timezone types (#181, #442); removed redundant dev install steps (#497, #663); and updated contributor issue specification guidance (#650).
+- Prepare an ORM/Alembic video recording script and defer the Quick Start embed until a verified MP4 is present (#374).
+- **Refreshed current support claims and removed stale test statistics (#461)** — README, AGENTS.md, ROADMAP.md, SECURITY.md, `docs/SUPPORT_MATRIX.md`, `docs/DEVELOPMENT.md`, `docs/TYPES.md` and `docs/PRD.md` (+ Korean where applicable) carried a hardcoded `619 offline tests` / `~98.26% coverage` snapshot in half a dozen places (several already disagreeing with each other, e.g. `603` in one and `619` in another), AGENTS.md still listed version `1.4.3.dev0`, ROADMAP.md still said the current line was `v1.6.x`, and SECURITY.md's supported-version table stopped at `1.4.x`. These are replaced with durable statements (the CI coverage gate is `--cov-fail-under=95`; run the `offline-tests` job or `make test` (`pytest --cov=sqlalchemy_cubrid --cov-report=term-missing`) locally for current counts) instead of another pinned snapshot that would go stale again. `docs/DEVELOPMENT.md` and `docs/SUPPORT_MATRIX.md` (+ Korean) also described the reduced PR integration matrix as a full `{3.10, 3.14} × {10.2, 11.0, 11.2, 11.4}` cross product (a `CI Matrix` checkmark table in `docs/DEVELOPMENT.md` literally marked all four CUBRID rows for both Python columns); it is corrected to the actual 2 combinations `ci.yml` runs (3.14×11.4, 3.10×10.2). README's Known Limitations and `docs/TYPES.md`/`docs/SUPPORT_MATRIX.md` (+ Korean) said CUBRID's `TIMESTAMPTZ`/`TIMESTAMPLTZ`/`DATETIMETZ`/`DATETIMELTZ` reflection was indistinguishable from plain `TIMESTAMP`/`DATETIME`; `dialect.py`'s `ischema_names` has reflected them as four distinct `timezone=True` dialect types since #181/#442, so the type-mapping tables now document them. SECURITY.md's supported-versions table is replaced with the project's actual policy (a single rolling release line on `main`, no parallel maintenance branches; only the latest release gets security fixes). The non-functional `codecov` badge (no upload step exists in any workflow) is removed from README and its translations rather than left pointing at a permanently "unknown" status. `docs/llms-full.txt`/`llms.txt` regenerated.
+- **Quick Start uses the recommended pycubrid driver (#495)** — English and Korean Quick Start docs now use `sqlalchemy-cubrid[pycubrid]` / `cubrid+pycubrid://` as the primary path and point C-extension users to the supported CUBRID-Python 11.3.0.51+ source-build path.
+- Contributor setup docs no longer list redundant `pip install` steps for tools included in the `[dev]` extra (#497).
+- **`llms.txt` capabilities corrected and the two entry points single-sourced (#460)** — the root `llms.txt` said CUBRID has no JSON support, advertised six isolation levels, described only two driver backends and linked to the retired `cubrid-cookbook/python` paths, while `docs/llms.txt` was a separately maintained, differing index. `docs/llms.txt` is now the only maintained index, checked against the code: native `JSON` (CUBRID 10.2+), the three MVCC isolation levels (4/5/6) plus `AUTOCOMMIT` with `CURSOR STABILITY` and the long `SCHEMA, INSTANCES` spellings as aliases only, the three driver variants (`cubrid+pycubrid://`, `cubrid+aiopycubrid://`, `cubrid://` / `cubrid+cubriddb://`) with their install extras, no driver in the bare install, single-schema reflection and `cubrid-cookbook-python` links. `scripts/generate_llms_full.py` copies it byte-for-byte to the root `llms.txt`, and the CI `lint` job now fails when either `docs/llms-full.txt` or `llms.txt` is stale. `CONTRIBUTING.md` documents the workflow.
 
-### CI
+### Changed
 
-- **Automated release workflow and publication guards (#540, #566, #576, #601, #605, #657)** — Unified release automation with sibling repositories using PR-only release-please (#657), automated release dispatch upon merging release PRs (#540, #601), cookbook smoke verification (#576, #605), PyPI duplicate file guard (#566), and publisher workflow renaming to `publish-pypi.yml` (pycubrid#681).
-- **CI matrix optimization and concurrency (#645, #659)** — Reduced routine PR CI to one representative offline lane with scheduled weekly full matrices, isolated CI workflow cancellation by event/ref, and aligned coverage badge sync (#645, #659).
-- **Tooling consistency and documentation reason checks (#429, #447, #558, #573, #587, #648, #649)** — Single-sourced Ruff/Mypy pre-commit hooks and tox environments from `pyproject.toml` dev pins (#558); synchronized docs-reason validation to reject empty captions (#429, #573, #648, #649); and updated Alembic safety checker to count actual DDL calls (#447, #587).
-- **Python 3.15 preview lane** — Added manual-only offline and packaging validation lane for upcoming Python 3.15 preview.
+- Omit unsupported coverage badges from badge-sync until a coverage feed exists (#645).
+- Reduce routine PR CI to one representative offline lane and targeted live checks;
+  move full compatibility matrices to explicit dispatch/releases and schedule representative checks weekly.
+- **KILL QUERY integration test selects only its own active database account (#634)** — the helper used to pick the one transaction that appeared after a timing snapshot and remained active half a second later, so another server session could be killed or make the test ambiguous. The test now creates one fresh `kq634_<16 hex>` account, opens its victim connection before the helper is ready, and the separate helper matches exact `Client_db_user` plus non-null `Query_start_time` in `SHOW TRANSACTION TABLES`. The victim URL explicitly clears any DBA password because the new account has none. Zero matches wait within a bounded deadline; missing columns, invalid indexes or multiple matches fail without KILL. The helper is stopped before the victim connection closes, then only the run-created account is removed with verified cleanup. KILL is not an atomic user-qualified operation, so the disruptive class stays serialized. Offline candidate regressions and live CUBRID 10.2/11.4 tests with both Python drivers preserve -4 and a usable same connection; a separate 11.4 run left an unrelated DBA slow query unharmed. No dialect runtime behavior changed; `docs/DEVELOPMENT.md` (+ Korean) describes the constraint.
+- **Alembic 1.18+ registers `CubridImpl` through the `alembic.plugins` entry point, so the dialect no longer imports Alembic (#595)** — `pyproject.toml` publishes `_sqlalchemy_cubrid_alembic` in the `alembic.plugins` group, which Alembic 1.18 and later load during `import alembic`; its `setup()` imports `sqlalchemy_cubrid.alembic_impl`. Loading a CUBRID dialect now leaves Alembic unimported on those versions: with Alembic 1.20.0, SQLAlchemy 2.0.54 and Python 3.10 the first `create_engine("cubrid+pycubrid://...")` takes about 18 ms instead of about 80 ms, the `sqlalchemy_cubrid.pycubrid_dialect` import about 147 ms instead of about 207 ms, and it no longer emits Alembic's seven `INFO` `setup plugin ...` lines (#561). `import alembic` logs one more line, `setup plugin sqlalchemy_cubrid`, and takes about 3 ms longer. The dialect decides from installed metadata (Alembic version and this entry point) and keeps the direct import for Alembic 1.7.2–1.17, when Alembic is already imported, or when the metadata cannot be read or does not belong to the importable `alembic` package, so a default `env.py` keeps working on every supported Alembic. Alembic 1.18–1.20 iterate the loaded entry point object although the Alembic documentation describes it as the plugin module, so the plugin module iterates to itself and works with either loader; the plugin is a top-level, standard-library-only module (`_sqlalchemy_cubrid_alembic`), so loading it never imports the `sqlalchemy_cubrid` package, and its `setup()` imports `alembic_impl` inside a `try` and warns instead of raising, so it cannot break `import alembic`. A new `alembic-compat` CI job runs the registration tests on Alembic 1.7.2, 1.17.2, 1.18.0 and the latest release. `docs/ALEMBIC.md` (+ Korean) replaces the #561 statement that no lazy hook exists.
+- **pycubrid driver policy isolated in the pycubrid dialects; redundant async overrides removed (#596)** — internal refactor, no behavior change on any supported driver path. The pycubrid part of disconnect classification moved from `CubridDialect.is_disconnect()` to `PyCubridDialect`: matching pycubrid's `errno` against the server-session codes (-111, -199, -224, -677) and the legacy-renumbered CAS code -1002, and its client-side messages (`connection lost`, `reconnecting failed`). `CubridDialect` keeps the shared layering (code, `OSError` cause, message) and reads only CUBRIDdb's error shape, an `int` code in `args[0]`, with its CCI/CAS codes; CUBRIDdb's exceptions carry no `errno` and neither CUBRIDdb, CCI nor the CUBRID 11.4 message catalog produces those two messages. `PyCubridAsyncDialect` no longer redefines `on_connect()` and `do_ping()`; it inherits the sync implementations, which reach `pycubrid.aio` through the adapter connection's `autocommit` setter and `ping()`. Verified by the offline suite on SQLAlchemy 2.0 and 2.1, live integration on CUBRID 11.4 for `cubrid://`, `cubrid+pycubrid://` and `cubrid+aiopycubrid://`, and a before/after dump of every dialect attribute plus 12,801 `is_disconnect()` probes: the pycubrid dialects classify every probe identically, and `CubridDialect` differs only for pycubrid-shaped errors. Contributors adding a pycubrid-specific error rule now extend `PyCubridDialect._has_disconnect_code()` or `_disconnect_messages`; `AGENTS.md` and `docs/ARCHITECTURE.md` (+ Korean) describe the split.
+- **`get_unique_constraints()` skips `SHOW CREATE TABLE` for a table whose catalog shows no unique index (#610)** — the `SHOW CREATE TABLE` fallback ran whenever the `db_index` catalog found no unique index, so reflecting an ordinary table with a primary key and no `UNIQUE` cost a third request and a DDL parse. The catalog query now reads every index of the table with its `is_unique` / PK / FK flags (still one query; on CUBRID 11.2+ it also selects `CURRENT_USER`), and returns `[]` without the fallback when it lists some index of the table but no unique one and the class is the current user's (before 11.2, where class names are global, any visible class). The fallback, and with it the previous result, is kept when the catalog lists no index of the table, and on 11.2+ when the name resolves to another owner's class: an unqualified `SHOW` resolves in the current user's schema, so a granted table of another owner, or for DBA a table only another user owns, still raises `NoSuchTableError` (and is left out of `get_multi_unique_constraints()`) as before. Measured against `main` with a `before_cursor_execute` listener and a fresh `Inspector` on CUBRID 10.2, 11.2 and 11.4 (42 cases, identical results), a current-user table with only a primary key or a foreign key takes 2 requests instead of 3 (median 4.3–5.2 ms → 3.9–4.8 ms per call over 200 calls, local Docker), as DBA and as a non-DBA owner, and so does another owner's table on 10.2; a table with no index (3), a unique constraint or unique index (3), a view (1), a missing table (1, `NoSuchTableError`) and, on 11.2 / 11.4, another owner's class (3, `NoSuchTableError`) are unchanged. A failing catalog query still raises; `duplicates_index` and the PK/FK filtering are unchanged. `test/test_unique_constraint_fallback.py` runs in CI's pycubrid integration step and in the full matrix. `docs/FEATURE_SUPPORT.md` (+ Korean) and `docs/PRD.md` describe the condition.
+- **Repository-tooling tests moved out of the fast offline run into a separate required lane (#594)** — `make test` (and tox's `py3xx` environments and CI's `offline-tests` job) now select `-m "not integration and not repo"`. `test/conftest.py` applies the new `repo` marker to every test in `REPO_TOOLING_MODULES`: `test_make_integration.py` (the Makefile `integration` recipe and its sh/bash signal handling), `test_docs_reason.py` and `test_release_detect.py`, which run the Makefile and repository scripts through subprocesses. Measured on Python 3.12 with SQLAlchemy 2.0 on the same host: the offline run went from 1,677 tests in 103.4 s (`test_make_integration.py` alone 66.9 s) to 1,495 tests in 22.0 s, with coverage unchanged at 97.32%; the 182 repository-tooling tests take about 95 s on their own. They stay required: the new `repo-tests` CI job runs `-m repo` on Python 3.10–3.14 and `matrix-result` fails unless it succeeds. New targets: `make test-repo` (`-m repo`) and `make test-offline` (both lanes, with coverage); tox gains a `repo` environment. `CONTRIBUTING.md`, `AGENTS.md` and `docs/DEVELOPMENT.md` (+ Korean) describe the lanes.
+- **Ruff/Mypy pre-commit hooks and tox lint/typecheck envs are single-sourced from
+  the `pyproject.toml` dev pin (#558)** — the Ruff and Mypy pre-commit hooks are
+  now `repo: local` / `language: system` hooks invoking `python3 -m ruff`/`python3
+  -m mypy` from the active `.[dev]` environment, instead of separately versioned
+  `ruff-pre-commit`/`mirrors-mypy` mirror repos with a `rev:` to keep in sync.
+  `tox -e lint` and `tox -e typecheck-sa20`/`typecheck-sa21` now install the
+  project's own `dev` extra (`extras = dev`) instead of a hardcoded
+  `ruff==`/`mypy==` version in `tox.ini`, and CI's `typecheck` job installs
+  `.[dev,alembic]` instead of a hardcoded `"mypy==2.3.1"`. `scripts/
+  check_tool_versions.py` was updated to match. This fixes Dependabot's routine
+  `pip`-ecosystem Ruff/Mypy bumps, which previously left `.pre-commit-config.yaml`
+  and `tox.ini` stale and failed the tooling consistency gate (#558).
+- **pycubrid 1.8.0 is now the minimum (#559)** — the `[pycubrid]` extra requires `pycubrid>=1.8.0,<2.0` (was `>=1.3.2,<2.0`), because the contract tests already require the 1.8.0 fixes (NOT NULL / foreign-key `IntegrityError`, no silently truncated result after `commit()` / `rollback()`, `cursor.description` `null_ok` and collection type codes) and 1.8.0 keeps the CAS session across `commit()` / `rollback()` and in autocommit mode. README (and translations, several of which still said `>=1.2.0`), `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md`, `docs/SUPPORT_MATRIX.md`, `docs/DEVELOPMENT.md` (+ Korean) and the workflow comments state the new range.
+- **pycubrid compliance lanes re-baselined on pycubrid 1.8.0 (#559)** — the `pycubrid@sa2.0` and `pycubrid@sa2.1` steps in `ci.yml` pin `pycubrid==1.8.0` (was 1.7.1). Re-captured on fresh CUBRID 10.2 and 11.4 databases, both lanes fail exactly the same tests as on 1.7.1 (54 on 10.2 for `pycubrid@sa2.0`; 58 / 51 on 11.4 / 10.2 for `pycubrid@sa2.1`), so `test/known_failures.txt` keeps every entry; its header and the CTETest note are updated (pycubrid 1.8.0 still raises the -924 foreign-key restriction as `DatabaseError`; cubrid-lab/pycubrid#390 fixed -631 and -922 only). `docs/SUPPORT_MATRIX.md` and `docs/DEVELOPMENT.md` (+ Korean) list the new pin.
+- **The pycubrid isolation-level re-apply is kept, and its documentation now describes pycubrid 1.8.0 (#559)** — pycubrid 1.8.0 no longer drops the level at every `commit()` / `rollback()`, but it still opens a new session at the server default level when the CAS itself went away out of transaction (a CAS restart after the transaction, a broker reset). Verified on CUBRID 11.4: when the CAS is killed right after `commit()`, the re-apply keeps SERIALIZABLE, and without it the level falls to READ COMMITTED. The re-apply's SQL `COMMIT` keeps the CAS bound to an idle pooled connection with a configured level (`CLIENT_WAIT` rather than `CLOSE_WAIT`), so if that CAS dies while idle the next statement fails as a disconnect instead of silently running at the default level; `pool_pre_ping=True` replaces such a connection at checkout. `docs/DRIVER_COMPAT.md` Known Issue 10 (renamed), `docs/ISOLATION_LEVELS.md` and `docs/TROUBLESHOOTING.md` (+ Korean) no longer claim that pycubrid reconnects after every commit, rollback or autocommitted statement. No code behavior change.
+- **`cubrid://` warns at first connect when CUBRIDdb is older than 11.3 (#585)** —
+  `CubridDialect.initialize()` reads the loaded driver's compiled-in version
+  (`CUBRIDdb._cubrid.__version__`, `b'9.3.0.0001'` for the PyPI release) and emits a
+  `SAWarning` naming the version, the recommended `cubrid+pycubrid://` driver and the
+  source-build path when its major.minor is below 11.3. Only major.minor is compared,
+  because a source build's fourth component is a git commit count (a shallow v11.3.0.51
+  clone reports `11.3.0.0001`). It warns instead of raising `NotSupportedError` so that
+  deployments that followed the old install instructions keep connecting; filter the
+  warning to `"error"` to fail fast. pycubrid engines and a driver whose version
+  cannot be read are not affected. The `ImportError` for a missing CUBRIDdb no longer
+  suggests `pip install CUBRID-Python`.
+- **`test_show_create_table.py`'s golden cases now run through the real dialect
+  parser instead of a mirror (#590)** — the FK and UNIQUE golden fixtures are
+  parsed by calling `CubridDialect._get_foreign_keys_from_ddl` /
+  `_get_unique_constraints_from_ddl` (the same entry points `get_foreign_keys`
+  / `get_unique_constraints` use, post-#598's `_get_show_create_table_ddl`)
+  through a stub connection, instead of a hand-maintained copy of the parsing
+  logic that had already drifted: it omitted the real parser's
+  `referred_schema` / `duplicates_index` fields and, for a table with more
+  than one foreign key, the real parser's sort-by-name ordering (#531) — the
+  `mixed_pk_fk_unique` fixture is corrected to that sorted order. Test-suite
+  only; no dialect behavior changed.
 
-### Tests
+### Deprecated
+- **Python 3.10 support** — advance notice for the 1.9.x release. Python
+  3.10 reached upstream end of life on 2026-10-01 ([PEP 619](https://peps.python.org/pep-0619/#310-lifespan)).
+  The current 1.8.x line and 1.9.x retain Python 3.10 support. After this notice
+  ships in 1.9.0, the following minor release (planned 1.10.0) will require
+  Python >=3.11. Upgrade Python, recreate your virtual environment and validate
+  your application before upgrading. Current package metadata, CI coverage and
+  runtime behavior remain unchanged; see [support matrix](docs/SUPPORT_MATRIX.md)
+  and [roadmap](ROADMAP.md).
+- **The `[cubrid]` and `[cubriddb]` extras (#585)** — both depend on an unbounded
+  `CUBRID-Python`, and PyPI has no release newer than 9.3.0.2 (sdist only, 2015), so
+  they install a driver this dialect has never tested: on CUBRID 11.4 it returns
+  `BIGINT` as `str` (#583) and fails parts of the integration suite. A version floor
+  would make the extras uninstallable and removing them would change what an existing
+  `pip install "sqlalchemy-cubrid[cubriddb]"` resolves to, so they are kept unchanged
+  for now and marked deprecated. The supported CUBRIDdb is built from cubrid-python
+  v11.3.0.51 or later; `cubrid+pycubrid://` remains the recommended driver.
+  README (+ Korean), `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md`,
+  `docs/TROUBLESHOOTING.md`, `docs/SUPPORT_MATRIX.md`, `docs/QUICKSTART.md` (+ Korean) and `docs/llms.txt`
+  now document that install path instead of `pip install CUBRID-Python`, and
+  `docs/DRIVER_COMPAT.md`'s build recipe now clones with `--recurse-submodules` and
+  its version check reads `CUBRIDdb._cubrid.__version__` (`CUBRIDdb.__version__`
+  does not exist).
 
-- **Integration runner reliability and Docker lifecycle (#446, #508, #567, #568, #574, #575, #581, #593)** — `make integration` waits for server readiness via `scripts/wait_for_cubrid.py` (#575, #581), uses isolated Compose project names to avoid removing external containers (#567), traps signals for clean container shutdown (#568, #574), guarantees cleanup on failure (#446, #508), and fails immediately with masked URLs when `CUBRID_TEST_URL` is unreachable (#593).
-- **Driver differential and contract test suites (#439, #479, #480, #483, #484, #485, #486, #490)** — Added collection round-trip differential tests and skip-detection via `scripts/check_not_all_skipped.py` (#486); dedicated modules verify LOB value contracts (#485, #490) and verify scalar DB-API execution without `compat.native` (#439, #483).
-- **Test suite organization, parser validation, and mutation testing (#390, #531, #559, #590, #594, #598, #604, #611, #628, #634, #647)** — Separated repository-tooling tests into an independent `-m repo` lane (#594, #647); re-baselined compliance suites on pycubrid 1.8.0 (#390, #559); recorded golden `SHOW CREATE TABLE` outputs across CUBRID 10.2-11.4 (#611); verified parser logic against real dialect methods (#531, #590, #598); isolated KILL QUERY test accounts (#634); and restored mutmut sandbox execution (#604, #628).
+### Fixed
+- **Alembic autogenerate no longer pairs a reflected foreign key with a same-named model foreign key on different columns (#624)** — the default-`RESTRICT` correction from #597 matched by name alone, so a reflected `fk_x(a)` was compared with a model `fk_x(b)` and its `RESTRICT` cleared even when the model foreign key on `a` named `RESTRICT` explicitly. A name match now also needs the same columns and target; otherwise the model foreign keys on the same columns are compared.
+- **Negative character and bit lengths now fail at compile time (#491)** — VARCHAR, NVARCHAR/NCHAR VARYING, CHAR, NCHAR, BIT, BIT VARYING, BINARY and VARBINARY reject explicit negative lengths with `CompileError`, matching the existing zero-length contract; omitted and positive lengths are unchanged.
+- **The nightly mutation-testing lane measures again instead of stopping at "failed to collect stats" (#628)** — `test/conftest.py` imports `scripts.integration_urls` inside its `pytest_collection_modifyitems` hook (added with the integration gate in #604), but `mutmut run` populates `mutants/` with `source_paths` (`sqlalchemy_cubrid`) plus a fixed list — `test/`, `tests/`, `setup.cfg`, `pyproject.toml`, the lock files — and nothing else unless `also_copy` names it. Inside that sandbox the hook raised `ModuleNotFoundError: No module named 'scripts'`; because it raised from a pytest hook rather than a test module, pytest reported an `INTERNALERROR` and exited 3, and mutmut stopped with `failed to collect stats. runner returned 3` before generating any result — reproduced locally on `main` (da752c4). The job's history pins the cause: #604 merged at 2026-09-30T11:46Z, the last passing run started at 2026-09-30T09:29Z (56d4d90) and the first failing one at 2026-09-30T13:21Z (5f1e07e), with every run since failing the same way. `setup.cfg [mutmut]` now sets `also_copy = scripts`; mutmut appends that to its built-in list rather than replacing it, so the sandbox keeps everything it copied before and can now import `scripts` as well. The lane completes and reports a score again (949 killed of 1340 mutants, 70.8%, on Python 3.12 with SQLAlchemy 2.1.1), which satisfies the workflow's total-greater-than-zero and killed-greater-than-zero checks; the job stays `continue-on-error` and non-gating. `test/test_mutmut_sandbox.py` guards the next occurrence: it parses the imports of `conftest.py` and of each module in `pytest_add_cli_args_test_selection`, and fails when a first-party top-level package is neither a `source_paths` entry nor listed in `also_copy`.
+- **An aiopycubrid read timeout invalidates the connection on Python 3.10 (#624)** — pycubrid's async driver retires the session and raises `OperationalError` from `asyncio.TimeoutError`, which is an `OSError` only from Python 3.11. On 3.10 `is_disconnect()` returned `False` for it, so the pool kept a connection the driver had already closed. An `asyncio.TimeoutError` in the explicit cause chain now counts as a transport failure on every supported Python.
+- **A server error whose text happens to contain a disconnect phrase no longer invalidates the connection (#624)** — CUBRID error messages echo application data, so `SELECT 1 FROM [connection refused]` (-493), a failed cast of the literal `'lost connection'` (-494) or `RAISE_APPLICATION_ERROR(1001, 'connection refused by policy')` (-889) matched the message fallback of `is_disconnect()` and the pool discarded a healthy connection. The fallback is now skipped for an error that carries a server error code, except -190, -191 and -368, whose own text reports a failed server connection. Disconnect codes, `OSError` causes and driver errors without a server code are classified as before. Recorded on CUBRID 11.4.6 with pycubrid.
+- **`get_unique_constraints()` no longer trusts an empty catalog result when the server version is unknown (#624)** — the owner check added in #610 applies from CUBRID 11.2, so with no `server_version_info` a table whose catalog rows might belong to another owner's class was reported as having no unique constraint. `SHOW CREATE TABLE` now decides in that case, as it did before #610. A connected engine always knows its server version, so ordinary reflection is unchanged.
+- **pycubrid's malformed-reply error invalidates the connection (#680)** — when a broker reply cannot be parsed, pycubrid closes the connection and raises `OperationalError("malformed response from broker")`. `is_disconnect()` did not recognize it, so the closed connection went back to the pool and the next statement failed with "connection is closed" before it was replaced. The message is now a disconnect pattern of the pycubrid dialects.
+- Isolate CI cancellation by event/ref; include the CI execution policy in generated
+  documentation and use a working policy URL in both LLM indices (PR #659 follow-up).
+- **Empty emphasized link captions no longer exempt documentation updates (#648)** — synchronize `scripts/check_docs_reason.py` with the reviewed pycubrid#573 helper so emphasis around an empty comment or image is not counted as a visible explanation. Regression tests retain all four pycubrid#429 case families and a populated emphasized-reason control; existing event-JSON tests and maintainer-label exceptions are unchanged.
+- **Collection domains and authorized ENUM values reflect without guessing (#631)** — `get_columns()` no longer overwrites a native ENUM with `NullType` or misses the server's `SET OF` / `MULTISET OF` / `SEQUENCE OF` forms. CUBRID prints ENUM labels without escaping, so a single label containing `', '` can look exactly like two labels; an authorized reader now gets exact ordered values from `_db_domain.enumeration` through SQL rows, while a specific non-DBA `-494` denial warns and returns `NullType` instead of inventing labels. Other catalog failures propagate. Collection members use the public `db_attr_setdomain_elm` view; incomplete or inconsistent member rows warn and return `NullType`; so does an OBJECT member whose class was dropped, or a member type the dialect cannot express, which no longer fails the rest of the table; and `MONETARY` members reflect as `MONETARY`; the catalog lookups read instance attributes only, and an ENUM or collection column whose name `SHOW COLUMNS` lists twice (a `CLASS ATTRIBUTE` of the same name) warns and returns `NullType`; on 11.2+ an OBJECT member of another owner than the table reflects as `owner.class`, and an `ENUM` member warns and returns `NullType`. Member collations are not reflected. An untyped collection uses `db_attribute` for its kind. The #611 recordings and `test/test_reflection_enum_collection.py` exercise the supported server outputs and authorized reflect→create round trips. Full ENUM reflection for non-DBA users remains unsupported pending an authorized public metadata source; see `docs/TYPES.md` (+ Korean).
+- **Column reflection accepts whitespace in numeric type parameters (#609)** — `get_columns()` stripped the parameter list from a `SHOW COLUMNS` type only when it had no spaces, so `NUMERIC(10, 2)` / `DECIMAL(10 , 2)` was looked up as an unknown type and reflected as `NullType` with a "Did not recognize type" warning, while `NUMERIC(10,2)` reflected as `NUMERIC(10, 2)`. Whitespace around the comma is now accepted for top-level columns and for `SET` / `MULTISET` / `SEQUENCE` members, and precision and scale are read from it. Only digit lists are stripped, so `CHAR` / `VARCHAR` lengths, `BIT` / `BIT VARYING`, collection splitting and the warning for unrecognized types are unchanged. This is parser robustness: on CUBRID 10.2, 11.0, 11.2 and 11.4, `SHOW COLUMNS` prints the compact form (`DECIMAL(10, 2)` is shown as `NUMERIC(10,2)`), so no supported-server regression was observed.
+- **Alembic autogenerate no longer drops and re-creates an unchanged foreign key declared without `ondelete` / `onupdate` (#597)** — CUBRID's default referential action is `RESTRICT` and `SHOW CREATE TABLE` always prints it, so `get_foreign_keys()` reflects such a key as `ondelete="RESTRICT"`, `onupdate="RESTRICT"`, and every `alembic revision --autogenerate` proposed `drop_constraint` + `create_foreign_key` for it. `CubridImpl.correct_for_autogen_foreignkeys()` now clears a reflected `RESTRICT` where the matching model foreign key has no action, the same Alembic hook its MySQL implementation uses for MySQL's defaults. Reflection is unchanged and still reports `RESTRICT`. Adding, removing or changing `CASCADE` / `SET NULL` is still detected; a reflected key is matched to the model by name first, and an unnamed one has its `RESTRICT` cleared only when every model key on the same columns and target has no action. `NO ACTION` versus no action stays undetected, as before (Alembic treats them as equal). Verified with a default `env.py` on CUBRID 11.4 and 10.2.
+- **`is_disconnect()` no longer reads an error code out of message text (#608)** — `_extract_error_code()` parsed the first token of any string `args[0]` as an integer, so a message that merely started with a number was classified by that number: `pycubrid.DataError("-20004 rows rejected by application validation", errno=-495)` was reported as a disconnect and SQLAlchemy invalidated a working pooled connection. Neither driver puts a code in its message (CUBRIDdb raises `(int code, message)`, pycubrid keeps the code in `errno`), so codes are now read only from an integer `args[0]` (not `bool`) and an integer pycubrid `errno`. The disconnect code tables, the `OSError` cause check and the message-pattern fallback are unchanged, so a CAS killed mid-transaction (CUBRIDdb -20004, pycubrid `connection lost during receive`) and a stopped `cub_server` (-190/-191 `Failed to connect to database server`) are still detected on `cubrid://`, `cubrid+pycubrid://` and `cubrid+aiopycubrid://`. `docs/CONNECTION.md` and `docs/DRIVER_COMPAT.md` (+ Korean) describe the rule.
+- **Integration tests fail instead of skipping when `CUBRID_TEST_URL` is set but its server is unreachable (#593)** — six live test modules (`test_integration.py`, `test_aio_integration.py`, `test_regression.py`, `test_dogfood_orm.py`, `test_stress_pool.py`, `test_uuid_contract.py`) probed the server at import time and marked themselves `skipif` when it did not answer, and `test/conftest.py` failed a `CI=true` run only when every selected integration test was skipped by such a marker. Against an unreachable URL, `pytest test/ -m integration` therefore reported 421 of its 447 tests as skipped, with `CI=true` or without it; only the 26 fuzz, metamorphic and capability-probe tests, which connect inside their fixtures, failed or errored. The import-time probes are gone. A single `pytest_runtest_setup` gate in `test/conftest.py` now skips `integration`-marked tests only when `CUBRID_TEST_URL` is unset, and when it is set, probes the server once per session with `SELECT 1` through the driver the URL selects (`cubrid+pycubrid://` or `cubrid://`) and errors every integration test with one message that names the URL with its password masked. `CUBRID_TEST_URL` must be a synchronous CUBRID URL (`cubrid://`, `cubrid+cubriddb://`, `cubrid+pycubrid://`) with a database, and a `CUBRID_TEST_AURL` override is probed as well, through `cubrid+aiopycubrid://`. The same run now reports 447 errors and exits 1. Under `CI=true`, selecting integration tests without `CUBRID_TEST_URL` exits 1 before any test runs (previously only when every one carried a skip marker). The URL parsing, masking and probe live in `scripts/integration_urls.py` and are shared with `scripts/wait_for_cubrid.py`, which no longer echoes an unparsable URL (credentials included) in its error. `--dburi` compliance runs are unaffected. The per-driver skips of the differential, transactional-DDL and server-restart tests still apply after the gate, with their own `CUBRID_REQUIRE_*` switches (#486). The upstream canary's offline step now deselects integration tests, and its async step uses a `cubrid+pycubrid://` URL because that job installs no CUBRIDdb. `test/test_integration.py`'s fixed table and user names are documented as requiring a dedicated database. `docs/DEVELOPMENT.md` (+ Korean) and `CONTRIBUTING.md` describe the switch.
+- **`replace()` emits `REPLACE` as the statement verb instead of rewriting the first `INSERT INTO` in the compiled SQL (#591)** — `visit_replace()` compiled the statement as an `INSERT` and replaced the first `INSERT INTO` substring. With `prefix_with()`, SQLAlchemy renders `INSERT <prefix> INTO`, so the substitution hit an `INSERT INTO` inside the prefix, a comment, a string literal (`literal()` / `literal_column()` / `literal_binds`) or a quoted identifier instead: the statement stayed a plain `INSERT` (a duplicate key raised `IntegrityError` instead of replacing the row) and the stored value became `'REPLACE INTO'`. The compiler now swaps only the verb SQLAlchemy writes first (after the `WITH` clause, if any), so `replace(t).prefix_with("/* c */")` renders `REPLACE /* c */ INTO t ...` and values, identifiers, comments, bind parameters and their order are left untouched, including multi-row `values()`, `executemany` and `from_select()`. An unexpected compiled form now raises `CompileError` instead of `NotImplementedError`. Verified on CUBRID 11.4 with SQLAlchemy 2.0 and 2.1.
+- **`cubrid+pycubrid://` and `cubrid+aiopycubrid://` forward URL query options to pycubrid (#592)** —
+  `create_connect_args()` read only the host, port, database, user and password, so
+  `?connect_timeout=5` or `?charset=euckr` connected without error and had no effect. Both
+  dialects now share one implementation that forwards `charset`, `connect_timeout`,
+  `read_timeout`, `fetch_size`, `ssl`, `decode_collections`, `no_backslash_escapes` and
+  `enable_timing`, converted to the type pycubrid expects (positive float seconds, integer
+  >= 1, boolean). An invalid or repeated value, an option that belongs in the URL itself (`host`,
+  `port`, `database`, `user`, `password`), `autocommit` and `json_deserializer` raise
+  `ArgumentError` from `create_engine()`; other keys are ignored with pycubrid's
+  `UnknownConnectionOptionWarning` and a spelling suggestion, as `pycubrid.connect()` reports
+  unknown keywords (cubrid-lab/pycubrid#377). `charset` needs a pycubrid release newer than
+  1.8.0 (cubrid-lab/pycubrid#510): with pycubrid 1.8.0 it raises `ArgumentError` naming the
+  installed version instead of a `TypeError` or a silently ignored option. The CUBRIDdb
+  `cubrid://` dialect is unchanged (CUBRIDdb's `connect()` takes no keyword options).
+  `docs/CONNECTION.md` (+ Korean) documents the URL query options.
+- **`get_foreign_keys()` and `get_unique_constraints()` no longer report a failed `SHOW CREATE TABLE` as "no constraints" (#589)** —
+  both methods (for `get_unique_constraints()`, only its `SHOW CREATE TABLE` fallback, taken when
+  `db_index` lists no unique index) caught every exception from `SHOW CREATE TABLE`, logged a
+  warning and returned `[]`, so a disconnect, an authorization error or a driver bug looked like a
+  table without foreign keys and Alembic autogenerate emitted `add_fk` for foreign keys that already
+  exist. **Behavior change:** `Unknown class` still raises `NoSuchTableError` (#530), and no
+  `SHOW CREATE TABLE` row for a table the catalog listed now raises `NoSuchTableError` too; every
+  other exception propagates unchanged (a disconnect keeps `connection_invalidated`), and the
+  `SHOW CREATE TABLE failed ...` warning is gone. `[]` now means the query succeeded and found no
+  constraint. No leniency is kept for non-DBA users: on CUBRID 10.2 and 11.4 a non-DBA user sees in
+  `db_class` only tables it holds `SELECT` on, and `SHOW CREATE TABLE` on such a table does not fail
+  with an authorization error (without `SELECT` the table is not listed and reflection raises
+  `NoSuchTableError` before running it), and no catalog view exposes the referenced table or columns of a foreign key. Views still
+  return `[]` without running `SHOW CREATE TABLE`. `docs/FEATURE_SUPPORT.md`,
+  `docs/TROUBLESHOOTING.md` and `docs/ALEMBIC.md` (+ Korean) describe the contract.
+- **The advisory Alembic safety checker now counts DDL calls, not attribute references (#447)** —
+  `scripts/alembic_safety_check.py` counted every `ast.Attribute` whose name was a DDL operation,
+  so `operations = [op.create_table, op.drop_table]` produced a two-DDL warning although nothing
+  was called, and its operation list lacked `create_unique_constraint`, `create_foreign_key`,
+  `create_check_constraint` and `create_primary_key`, so a revision with two constraint calls was
+  reported clean. It now counts only calls (`op.x(...)`, `batch_op.x(...)`) and includes those four
+  operations; `upgrade()` and `downgrade()` are still assessed separately and the checker stays
+  advisory. New offline tests in `test/test_alembic_safety_check.py`; the copied script in
+  `docs/ALEMBIC.md` (+ Korean) and `docs/llms-full.txt` are updated.
+- **`has_table()` / `has_index()` no longer report missing objects as existing
+  under `cubrid://` with the PyPI `CUBRID-Python` driver (#583)** — both methods
+  returned `bool(result.scalar())` on a catalog `COUNT(*)`, which is `BIGINT` in
+  CUBRID. The `CUBRID-Python` 9.3.x releases on PyPI fetch `BIGINT` as `str`, so
+  `bool('0')` was `True`: every missing table or index looked present,
+  `create_all(checkfirst=True)` silently skipped the `CREATE`, and
+  `drop_all(checkfirst=True)` failed with `-494 Unknown class`. The count is now
+  coerced with `int(...)` before the comparison, so `int`, `str`, `Decimal` and
+  `None` results all work. CUBRIDdb built from `cubrid-python` v11.3.0.51 (the
+  CI driver) and pycubrid return `int` and were not affected.
+- **Follow-ups from the #577 disconnect-code audit (#578)** — -10002
+  (`CAS_ER_NO_MORE_MEMORY`) is added to `_disconnect_error_codes`: `cas.c`'s
+  `process_request()` sends it when the CAS's read-buffer allocation fails and
+  then returns `FN_CLOSE_CONN`, closing the connection (CUBRID v11.4.6
+  `src/broker/cas.c`); before this, the disconnect was only caught one call
+  late, on the next statement's or the rollback's -20004. The `dialect.py`
+  comment on why pycubrid does not report the CAS/CCI codes above is
+  reworded: pycubrid does not negotiate CUBRID's renewed error-code protocol,
+  so the CAS answers it with the legacy, unprefixed codes instead (e.g. -4 for
+  `ER_INTERRUPTED`), which pycubrid keeps in `errno`. A CAS code specifically
+  (`cas_error.h`, sent with `CAS_ERROR_INDICATOR`) is instead legacy-renumbered
+  by the CAS itself (`CAS_CONV_ERROR_TO_OLD`, `src/broker/cas_protocol.h`:
+  `+9000`) before it reaches a driver that doesn't advertise understanding the
+  renewed protocol, so pycubrid actually receives -1002 for
+  `CAS_ER_NO_MORE_MEMORY`, not -10002; this was previously undetected (the
+  errno check only covered the four server-session codes from #565) and is now
+  matched too, in a new `_pycubrid_legacy_cas_codes`, with an offline test
+  (found in review). `docs/TROUBLESHOOTING.md`
+  (+ Korean)'s Interrupted Query (-4) section now shows the real, driver-specific
+  strings instead of an abbreviated one: CUBRIDdb's `(-4, 'ERROR: DBMS, -4, Has
+  been interrupted.[CAS INFO-...]')` and pycubrid's `Has been interrupted.
+  (errno=-4, description='Communication error', sqlstate='08S01')`, both
+  captured live on CUBRID 11.4. The `KILL QUERY` integration test helper
+  (`test/test_integration.py`) still identifies its victim by timing, not by
+  SQL text: CUBRID's `SHOW TRANSACTION TABLES` and `SHOW THREADS` expose
+  neither the running statement's text nor any field an application can tag
+  (verified live), so the slow query is now tagged with a unique SQL comment
+  for finding it by eye in a broker SQL log, and the helper's docstring and
+  the script now document that it identifies the victim by timing and is
+  reliable only when it is the sole session running a slow query against the
+  target instance, and that waiting on it through a pipe with `select()` is
+  POSIX-only. Offline tests cover -10002 alongside the other kept codes;
+  verified live on a dedicated CUBRID 11.4 container with both drivers (5
+  repeated runs each).
+- **`make integration` waits for the server, defaults to pycubrid and runs in CI (#575)** — the recipe slept a fixed 10 seconds after `docker compose up -d`, but a fresh CUBRID container needs about 20 seconds (over 40 on a loaded host) to create its database and start the broker. The first tests therefore failed with CCI -20004 (`Cannot communicate with server`), the capability probe reported native `ENUM` as unsupported, Hypothesis flagged the reflection fuzz tests as flaky, and the live test files that probe the server at import time skipped themselves: on `main` a run through `cubrid://` ended with 12 failed, 50 passed and 380 skipped. The same suite passes in full through both drivers against a server that is already up (CUBRID 10.2, 11.2 and 11.4; SQLAlchemy 2.0.53 and 2.1.1), so none of these failures was a dialect bug, a CUBRIDdb limitation or a test that assumes pycubrid, and `test/known_failures.txt` is unchanged. The fixed sleep is replaced by `scripts/wait_for_cubrid.py`, which retries `SELECT 1` through the selected driver (pycubrid attempts are bounded by 5-second socket timeouts) until it answers or `INTEGRATION_READY_TIMEOUT` seconds pass (default 180), and fails the run otherwise. `make integration` now uses the recommended `cubrid+pycubrid://` URL by default; `INTEGRATION_DRIVER=cubriddb` runs the same suite through the CUBRIDdb C extension (`cubrid://`), and any other value exits with status 2 before any Docker command. The ownership check, signal handling and cleanup from #567 and #568 are unchanged. CI's integration steps ran chosen files separately, so the single `-m integration` session that `make integration` runs, including the capability, fuzz, metamorphic, dogfood ORM, pool stress and UUID contract tests, ran nowhere with CUBRIDdb: a new `make integration (pycubrid, CUBRID 11.4)` job in `ci.yml` runs the default on every code PR and is required by `matrix-result`, and a `make integration` job in `integration-full.yml` runs both drivers on CUBRID 10.2 and 11.4 nightly and on tags (the CUBRIDdb cells need the C-extension build and a second full-suite run, so they are not per-PR). `integration-local` keeps using the caller's `CUBRID_TEST_URL`; its usage hint now shows the pycubrid URL. Stub-based regressions check both drivers' URLs, reject unknown drivers before any Docker command and pin the readiness command; offline tests cover the wait script. `docs/DEVELOPMENT.md` (+ Korean) and `CONTRIBUTING.md` document the switch, the wait and the CI coverage.
+- **The pool invalidates connections broken by a `cub_server` stop, restart or crash (#565)** — after `cub_server` goes away, a connection inside a transaction fails with -111 (`ER_TM_SERVER_DOWN_UNILATERALLY_ABORTED`) and then -224 (`ER_OBJ_NO_CONNECT`) on every statement until the transaction ends, even after the server is back, because the broker's CAS reconnects only then. `is_disconnect()` did not classify these codes, so SQLAlchemy kept the connection, and `pool_pre_ping` cannot catch it because the CAS still answers the ping. The dialect now treats the four codes for which the broker resets the CAS (`reset_flag` in CUBRID's `cas_error.c`) as disconnects on both drivers: -111, -199 (`ER_NET_SERVER_CRASHED`), -224 and -677 (`ER_BO_CONNECT_FAILED`). CUBRIDdb carries the code in `args[0]`; pycubrid carries it only in `errno`, which is now read for these four codes (the older code table is still not matched against pycubrid's `errno`, whose -4 is the server's `ER_INTERRUPTED`). pycubrid's `CAS did not answer CHECK_CAS out of transaction and reconnecting failed`, raised after it closes the connection, is also a disconnect. The message patterns are now matched against the driver's own message instead of pycubrid's `str()`, which appends a description of `errno`: a pycubrid error with errno -4 (the server's `ER_INTERRUPTED`, e.g. an interrupted query) or -671 read `Communication error` there and was wrongly treated as a disconnect (CUBRIDdb's -4 is tracked in #572). -671 (`ER_CSS_RECV_OR_SEND`) stays out, as evaluated in #564. The new `test/test_server_restart.py` stops and starts `cub_server` in the test container (`CUBRID_TEST_DOCKER_CONTAINER`) and checks, through both drivers and with and without `pool_pre_ping`, that the connection is invalidated and the pool recovers; it runs as the last step of the CI and nightly integration jobs. `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md` and `docs/TROUBLESHOOTING.md` (+ Korean) describe the codes, and `docs/DEVELOPMENT.md` (+ Korean) the test.
+- **An interrupted query no longer invalidates a CUBRIDdb connection, and a dead CAS now does (#572)** — the numeric disconnect code table matched against CUBRIDdb's `args[0]` was audited against CUBRID's `error_code.h`, `cas_error.h` and CCI's `cas_cci.h`. It listed -4, -10005, -10007, -21003 and -21005, none of them a disconnect for either driver: -4 is the server's `ER_INTERRUPTED` (a query interrupted by `KILL QUERY`), so CUBRIDdb connections were replaced although they still worked; -10005 and -10007 are `CAS_ER_TRAN_TYPE` and `CAS_ER_NUM_BIND`; -21003 and -21005 are CUBRID JDBC codes (`ER_COMMUNICATION`, `ER_TYPE_CONVERSION`) that neither Python driver raises. The table now holds the codes CUBRIDdb raises for a dead or unusable connection: -20004 (`CCI_ER_COMMUNICATION`) and -10003 (`CAS_ER_COMMUNICATION`), which CCI itself treats as communication errors, -20002 (`CCI_ER_CON_HANDLE`) and -20016 (`CCI_ER_CONNECT`). -20004 was missing: when the CAS died in a transaction, CUBRIDdb's `Cannot communicate with server` matched neither a code nor a message pattern, so the broken connection stayed in the pool. The four server-session codes from #565 are unchanged, and pycubrid's `errno` is still matched only against them. Offline tests pin every removed code as a non-disconnect and every kept code as a disconnect for CUBRIDdb-style and pycubrid errors; a new integration test interrupts a running query with `KILL QUERY` from a second process and checks, on whichever driver `CUBRID_TEST_URL` selects, that the error is -4 and the connection is kept. `docs/CONNECTION.md`, `docs/DRIVER_COMPAT.md` and `docs/TROUBLESHOOTING.md` (+ Korean) are updated.
+- **`CHAR(0)` / `NCHAR(0)` no longer silently compile to bare `CHAR` / `NCHAR` (#476)** — the type compiler still checked fixed-width lengths by truthiness after #456, so an explicit `length=0` was treated as unspecified. `length=None` still emits bare `CHAR` / `NCHAR`; an explicit zero now raises `CompileError`.
+- **`BIT(length=0)` is no longer silently coerced to `BIT(1)` (#441)** — `BIT.__init__` used `length or 1`, so an explicit zero became 1 before the compiler ran. Unspecified length still defaults to `BIT(1)`; `BIT VARYING` with no length is still unlimited. An explicit zero now raises `CompileError`.
+- **Reflection no longer reports a syntax error as a missing table (#454)** — `get_columns()` and `get_indexes()` raised `NoSuchTableError` for any `SHOW COLUMNS` / `SHOW INDEXES` failure with native code -493, SQLSTATE `42S02` or a `Table not found` message. CUBRID uses -493 for every parser error (pycubrid before 1.8.0 also reports SQLSTATE `42S02` with a `Table not found` description for all of them), so a syntax error, such as the one CUBRID 11.4 raises for a table name containing `]`, was hidden behind `NoSuchTableError`. Both methods now translate only the server's `Unknown class "<owner>.<name>"` error, like the other reflection methods since #530, and let any other error propagate unchanged. Missing tables still raise `NoSuchTableError`; a live test in `test/test_integration.py` covers both cases. `docs/TROUBLESHOOTING.md` (+ Korean) documents the rule. Thanks to @UsmanGhias for the fix and tests.
+- **`make integration` cleans up on `SIGINT`, `SIGTERM` and `SIGHUP` (#568)** — the recipe registered only an EXIT trap, and a shell killed by a signal it does not trap exits without running it, so Ctrl-C, `timeout` or `kill` could leave the test Compose stack running. The recipe now handles the three signals through the same cleanup path as a normal exit: long-running steps (`docker compose up -d`, the readiness wait and pytest) run as waited background jobs so a signal is handled at once, a running `docker compose up -d` is first left to finish for up to `INTEGRATION_STOP_GRACE` seconds (default 10), because the Docker daemon completes a container create even after the client is killed; local runs interrupted during startup otherwise left a container and a re-created, unlabeled volume behind after `down -v`. `up -d` runs as its own process-group leader, so a terminal Ctrl-C does not reach it, and after the grace period its whole group, including the Compose plugin process, is sent `SIGTERM` and awaited. The readiness wait and pytest are sent `SIGTERM` at once and killed after the same grace period if they ignore it, `docker compose -p <project> down -v` runs exactly once, and the command exits with status 128 + the signal number. Further signals are ignored while cleanup runs, and `down -v` runs in its own session so that a signal sent to the whole process group (Ctrl-C, a closed terminal, GNU `timeout`) cannot abort it halfway; a local `timeout -s TERM make integration` run left the project behind before this. Cleanup still only targets the run-owned project from #567. `SIGKILL` and host shutdown remain outside the guarantee; `SIGQUIT` (`Ctrl-\`) stops `make` without waiting for a hung `down -v`. pytest keeps the terminal's standard input (background jobs would otherwise read `/dev/null`), so `pytest --pdb` works. `integration-local` still never touches Docker. Stub-based subprocess regressions, run under both `/bin/sh` and bash, signal the recipe shell during startup, readiness waiting and tests, the whole process group (Ctrl-C) and `make` alone, check that an interrupted `up -d` finishes before `down -v`, that a startup helper process is stopped and awaited (also when it finishes slowly or ignores `SIGTERM`), that a step ignoring `SIGTERM` is killed, check pytest's standard input, and send more signals, to the shell or the whole group, during cleanup. `docs/DEVELOPMENT.md` (+ Korean) and `CONTRIBUTING.md` describe the behavior.
+- **`make integration` no longer removes a Compose project or volume it did not create (#567)** — since #446 the recipe ran `docker compose down -v` on every exit, including a failed `docker compose up -d`, against the default Compose project. If a stack of that project already existed (for example from `docker compose up -d` or `make docker-up`), a failed startup could delete its named `cubrid-data` volume. Each run now uses its own Compose project (`sqlalchemy-cubrid-it-<timestamp>-<pid>`, overridable with `INTEGRATION_PROJECT`, which must match `^[a-z0-9][a-z0-9_-]*$` and is validated before any Docker command), checks that the project has no containers, volumes, networks or `<project>_cubrid-data` volume, and refuses to run, starting and removing nothing, if it does; a failing probe (for example an unreachable daemon) also stops the run before startup, with an explicit "nothing was started" message. Two concurrent runs with the same fixed `INTEGRATION_PROJECT` are not supported. Cleanup is registered only after that check and runs `docker compose -p <project> down -v`. The original failure is still preserved when cleanup also fails, and `integration-local` still never touches Docker. `docker-compose.yml` and `make integration` accept `CUBRID_PORT` for the host port (default 33000). Stub-based subprocess regressions cover a pre-existing project or volume with successful and failed startup, each failing ownership probe, exact volume-name matching, setup and test failures, cleanup failure and success. `docs/DEVELOPMENT.md` (+ Korean) and `CONTRIBUTING.md` document the ownership boundary.
+- **Docker integration cleanup runs after failures (#446)** — `make integration` now registers shell-exit cleanup before starting Docker, so failed startup, readiness waiting and tests all attempt `docker compose down -v`. An original failure is preserved if cleanup also fails; cleanup-only failure is reported and returns a failing status. Offline subprocess regressions cover both test outcomes, cleanup failures, setup failures and the unchanged Docker-free `integration-local` target.
+
+### Documentation
+- **Alembic import log lines (#561)** — `docs/ALEMBIC.md` (+ Korean) explains that loading the dialect imports Alembic when it is installed (about 0.1 s), so Alembic 1.18+ logs seven `INFO` `setup plugin ...` lines under `INFO` root logging, and gives the application-side fix `logging.getLogger("alembic").setLevel(logging.WARNING)`. No supported Alembic hook defers the registration; no behavior change.
+- **SQLAlchemy 2.1 is documented as released and tested, not a pre-release (#492)** — `docs/SUPPORT_MATRIX.md` (+ Korean) listed 2.1.x as the "latest tested pre-release until GA"; it now says CI tests SQLAlchemy 2.1.1. `docs/SA_COMPAT.md` describes the non-blocking canary as what it is: a `--pre` install of `SQLAlchemy>=2.1.0b1,<2.3` that tracks upcoming SQLAlchemy pre-releases with `continue-on-error`.
+- **Samples use the recommended pycubrid driver (#498)** — `samples/create_engine.py` and `samples/cubrid_datatypes.py` connected with `cubrid://`, the CUBRID-Python C-extension dialect, which a plain install does not provide. They now use `cubrid+pycubrid://` and name the install command `pip install "sqlalchemy-cubrid[pycubrid]"` in their docstrings.
+
+### Changed
+- Earlier release workflow unification with the sibling repos: new `RELEASING.md`; `make release`
+  replaced by the read-only `make release-check VERSION=x.y.z`; `publish-pypi.yml` was
+  manual-dispatch only and then dispatched the cookbook smoke test after a successful
+  publish (replacing `notify-cookbook.yml`); CI lints `CHANGELOG.md`.
+- **PyPI publish fails closed on duplicate files (#566)** — `publish-pypi.yml` no longer
+  passes `skip-existing: true`. The new stdlib-only `scripts/pypi_duplicate_guard.py`
+  compares the SHA-256 of every verified file with the file PyPI already serves under the
+  same name: an identical file (a partial upload recovered with `gh run rerun --failed`)
+  is dropped from the upload, and a different hash or an unreachable PyPI fails the job.
+  `RELEASING.md` documents the bounded recovery; offline tests cover the guard.
+- **CI: releases happen automatically when a reviewed release PR is merged (#601)** —
+  `prepare-release.yml` opens the `chore: release vX.Y.Z` PR (moves `[Unreleased]` into a
+  dated section, bumps `__version__`, runs `make release-check`). On every push to `main`,
+  the guarded workflow introduced as `release.yml` decides from git facts only (`scripts/release_detect.py`: version
+  changed against the first parent, dated CHANGELOG section, tag absent or at the same
+  commit) and then runs, pinned to the merge SHA: release check, the full
+  `integration-full.yml` matrix (now also a `workflow_call` workflow, no longer run on tag
+  pushes), one build with SHA-256 hashes, the annotated tag, a draft GitHub Release with
+  SBOM, the PyPI upload through the duplicate guard, and the cookbook verification of that
+  exact version, with one run summary. The cookbook smoke test runs inside the release run
+  as a reusable workflow pinned to a cookbook commit, so it needs no cross-repository token
+  or secret; the release fails unless it reports the requested version installed (#605). `create-release.yml` and the manual
+  `publish-pypi.yml` were removed; a narrow recovery dispatch (`resume`, `verify-only`,
+  `dry-run`) remains. The guarded workflow now uses `publish-pypi.yml` to match the
+  PyPI publisher identity; the former manual publisher is not restored. Ported from
+  cubrid-lab/pycubrid#540.
+
+### Conventional commits
+
+#### Features
+
+* **types:** bind SET, MULTISET and SEQUENCE values through pycubrid typed collections ([#623](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/623)) ([f7abe8e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f7abe8e4fb907f8a18f0e917d322458bf1186176))
+
+
+#### Bug Fixes
+
+* address disconnect-code audit follow-ups ([#578](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/578)) ([#582](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/582)) ([761f6cb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/761f6cb5b6bf8afc6cc867106ce671145f711ad8))
+* **alembic:** count actual DDL calls in the safety checker ([#587](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/587)) ([99255be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/99255befeb9533bb890b5caf57e93cb7d22c0065)), closes [#447](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/447)
+* **alembic:** require matching columns for a foreign key name match ([#668](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/668)) ([147d201](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/147d201abd618d51144afec67f77e6454bf41a3c)), closes [#624](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/624)
+* **alembic:** treat CUBRID's reflected RESTRICT as the default referential action ([#622](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/622)) ([91a90ad](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/91a90adb3c9a36921edc105b038989970267215b))
+* **ci:** isolate scheduled runs and publish the CI policy ([5eb6c26](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5eb6c26403c360d19237bbad5fbaecf3258f75dd))
+* **ci:** synchronize the shared docs-reason empty-caption correction ([#649](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/649)) ([7432169](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7432169960f486040ac6ef23c3e355b9f4bea01e))
+* clean up Docker when integration tests fail ([#508](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/508)) ([a4dcd75](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a4dcd75ddb4cc9e199d6b5d286d504e9842ca8c0))
+* coerce catalog COUNT(*) in has_table()/has_index() ([#583](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/583)) ([#584](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/584)) ([b68e757](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b68e7574dc6a30a2b39401263665598eed2a8ced))
+* **compiler:** emit REPLACE without rewriting INSERT INTO text inside prefixes, literals and comments ([#600](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/600)) ([d5c4f60](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d5c4f60c990c72cb12583ac8c453fc7087f1f05c))
+* **compiler:** reject nonpositive explicit type lengths ([#662](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/662)) ([8b53e18](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8b53e1800e0022338c5234e4ac7c6fb2c9e9bd9f))
+* **dialect:** classify pycubrid's malformed-reply error as a disconnect ([#681](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/681)) ([b8c00a7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b8c00a756e35e481dfce160221902a3b12fff948))
+* **dialect:** forward URL query options such as charset and connect_timeout to pycubrid ([#599](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/599)) ([258cf00](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/258cf00d4961e2e65ca04b360df49372e4d58575))
+* **dialect:** ignore disconnect phrases in server error text ([#676](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/676)) ([fb4eccd](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fb4eccde05cb2f62ce365c27b083526ad93c6488))
+* **dialect:** stop treating arbitrary numeric message prefixes as disconnect codes ([#620](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/620)) ([8562fc3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8562fc3e46e4be9f7b91fbe2ce0814f461a46a9d))
+* **dialect:** treat an asyncio timeout cause as a disconnect ([#672](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/672)) ([caa3fbe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/caa3fbeec4d63f831192e967129acf98b9af5eea)), closes [#624](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/624)
+* **dialect:** warn when CUBRIDdb is older than the tested 11.3 line ([#588](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/588)) ([4dbfe43](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4dbfe43bb551258bd9ce477d0578b855934b7e0d)), closes [#585](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/585)
+* do not coerce BIT(length=0) to BIT(1) ([#478](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/478)) ([181f1f2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/181f1f261d64e652ae6149dbbc527bc07039a8fa))
+* drop non-disconnect codes from the CUBRIDdb disconnect code table ([#577](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/577)) ([d77e006](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d77e006e967e5c3401e7b096d40402b43a29f6f2))
+* invalidate pooled connections on CUBRID -111/-199/-224/-677 ([#571](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/571)) ([8aad4d6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8aad4d64a86d2a3d2524431a66e985b127326642))
+* isolate make integration cleanup ownership and handle termination signals ([#574](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/574)) ([6354821](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6354821c7ae26816f0cfb4cc19e0d8dc16938739))
+* make integration waits for CUBRID, defaults to pycubrid and runs in CI ([#581](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/581)) ([600482b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/600482bd2e256ede7df06b7506217db21b5a17bd))
+* **reflection:** accept whitespace in numeric type parameters ([#626](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/626)) ([11be5c9](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/11be5c90fe2771668aa7e9730d446fdd299c8b07)), closes [#615](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/615) [#609](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/609)
+* **reflection:** avoid fabricating ENUM and collection domains ([#635](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/635)) ([dd74cdb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/dd74cdb292ee8733862e662647985b744b8504c9)), closes [#631](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/631)
+* **reflection:** avoid false-empty constraints after DDL lookup failures ([09014a1](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/09014a14938712a346b9e4cc02181e8510dcafa7))
+* **reflection:** do not translate native -493 syntax errors into NoSuchTableError ([#454](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/454)) ([#455](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/455)) ([a581fa7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a581fa7aab3b5acfabfb6422cc37f4fe88a49cf4))
+* **reflection:** keep the DDL fallback when the server version is unknown ([#675](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/675)) ([cc4aa9a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/cc4aa9a4727e997fa7d5c19c51588786b0ac3fa2)), closes [#624](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/624)
+* reject explicit zero CHAR/NCHAR length ([#477](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/477)) ([2a792a2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2a792a2b9358b178df2512d5b0492de011d3c452))
+
+
+#### Performance Improvements
+
+* **alembic:** register CubridImpl through the alembic.plugins entry point ([#616](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/616)) ([acfb626](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/acfb6262c20413e73fed54cae969f5f6923c4f04))
+* **reflection:** avoid redundant DDL fallback for verified empty unique catalogs ([#629](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/629)) ([8f18ab5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/8f18ab5e942e6552688410069b7fb5e66e577d80)), closes [#610](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/610)
+
+
+#### Documentation
+
+* add MP4 demo tape + QUICKSTART video embed ([#346](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/346)) ([ed4893b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ed4893b2945d06bfd811278b105466c09b212889))
+* **alembic:** document Alembic import log lines on dialect load ([#561](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/561)) ([#562](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/562)) ([b96447e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b96447e9e11cb0781b43147460bba2e0e23edcd1))
+* **compat:** clarify SQLAlchemy 2.1 support and canary ([#506](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/506)) ([40a7c05](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/40a7c053040cadd38182645b42cbc8cc8dc9d9a5))
+* **contributing:** keep issue specifications current and assign owners ([#650](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/650)) ([7414fdb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7414fdbf6c513758b2f5590e55bcf7f3e361d68f))
+* correct llms.txt capabilities and single-source the two indexes ([#579](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/579)) ([a30ab0c](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a30ab0c90ae71407e3497e0529748ec7fd9a6d33))
+* **demo:** prepare ORM and Alembic recording; defer MP4 embed ([#374](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/374)) ([ed4893b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ed4893b2945d06bfd811278b105466c09b212889))
+* derive Sphinx release from package version ([#499](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/499)) ([3f5c4f5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3f5c4f5135bd3cc7f209905edc794419aa442e09))
+* **development:** avoid duplicate installs of dev dependencies ([#663](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/663)) ([9ef691b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9ef691b8e0a85b8227ee81e7d64de721e1a162f8))
+* make Quick Start use the recommended pycubrid driver ([#516](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/516)) ([20f0b23](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/20f0b23d2d992522e455c1eb587cd116bac9eb0e))
+* mention repository and full offline test lanes ([#647](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/647)) ([e4b90f0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e4b90f050324154a23306a8b8b88ec05f2a28423))
+* pin cookbook smoke-test fallback to the exact release ([#576](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/576)) ([ad47e3b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ad47e3bac6484d5dda4c8faa5b5736c58a363f21))
+* **python:** announce Python 3.10 support retirement ([#665](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/665)) ([4221b25](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4221b252fabf2aa67b6d1c02cab531fa02ba1597))
+* **reflection:** state when another owner's class reaches the DDL fallback ([#673](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/673)) ([7c676fa](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7c676fafe3bafcc7e85772328d22362cfae023ea))
+* refresh current support claims and remove stale test statistics ([#643](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/643)) ([dd9bb4e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/dd9bb4e8af6298ca686fcadac7b3379f89a16f5f))
+* **release:** document release-please review and recovery ([#657](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/657)) ([a01c338](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a01c3385ed4d8f4327c6dae55c13b386cc07cdef))
+* **types:** record the tested non-DBA ENUM reflection limitation ([#677](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/677)) ([112fde7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/112fde7d934b15a099ba9a044acc6429dd170e5d))
 
 ## [1.8.0] - 2026-09-29
 
-This release includes substantial dialect and integration changes. Review the upgrade notes and detailed sections below to assess compatibility and migration impact.
+This release includes substantial dialect and integration changes. Review the upgrade notes and the detailed sections below to assess compatibility and migration impact.
 
 ### Upgrade notes
-- **Alembic upgrades are atomic by default (#503)** — CUBRID DDL is transactional, so a failed multi-revision alembic upgrade now rolls back the whole run, including the alembic_version update. Set transaction_per_migration=True in context.configure() to keep per-revision commits (recommended for long or large-table migrations to prevent schema locks). Offline --sql scripts no longer contain BEGIN;; run them with csql --no-auto-commit --no-single-line so a failing statement stops script execution.
-- **Alembic registration and async migrations (#504)** — CubridImpl registers when the dialect loads, letting default env.py configurations run without importing sqlalchemy_cubrid.alembic_impl. The [alembic] and [dev] extras now require alembic>=1.7.2. Online migrations on cubrid+aiopycubrid:// require Alembic's async template (alembic init -t async).
-- **Reflection behavioral changes (#529, #530, #531, #533, #543, #544, #545, #549)** — Unique constraints reflect as unique indexes rather than duplicate constraints (#529). Non-DBA users get complete metadata from public catalog views (#549), missing tables or views raise NoSuchTableError (#530), and has_table() and has_index() match mixed-case names (#543). get_foreign_keys() sorts constraints by name (#531), BIT(n) and BIT VARYING(n) keep their lengths (#545), failing catalog queries raise instead of silently returning incomplete metadata (#533, #549), and Alembic autogenerate detects Text <-> String(n) changes (#544). Review your first Alembic autogenerate diff after upgrading.
-- **DDL and type compilation (#440, #465, #533, #534, #535, #540, #545)** — UnicodeText and TEXT compile to STRING (#534). BINARY(n) and VARBINARY(n) compile to BIT(n*8) and BIT VARYING(n*8), while UUID compiles to CHAR(32) (#545). Index.drop() and op.drop_index() emit DROP INDEX <name> ON <table>, requiring table_name in op.drop_index() (#533). if_exists=True on index drops (#533) and if_not_exists=True on index creates (#540) raise CompileError, as does explicit String(0) (#440). Boolean is_() and is_not() against a value render with <=> (#465), and JSON as_numeric(p, s) returns Decimal (#535).
-- **Transaction isolation and batch execution (#501, #502, #505)** — isolation_level="AUTOCOMMIT" works across all drivers, invalid levels raise ArgumentError, and dialect.on_connect() no longer applies isolation_level (hand-built pools must apply it) (#501). Engine- and connection-level isolation levels survive commit() and rollback() on pycubrid (#505). On cubrid://, executemany runs each parameter set separately: None values and rowcounts are correct, but large batches run slower (#502).
-- **Async connection accessor (#500, #520)** — driver_connection on cubrid+aiopycubrid:// now returns the underlying pycubrid.aio.AsyncConnection rather than the adapter; code expecting the adapter must use dbapi_connection (#520). Async LargeBinary and BLOB parameter binding is now supported (#500).
-- **Legacy SQLAlchemy 1.x hooks removed (#462)** — Removed unreachable SQLAlchemy 1.x hooks should_autocommit_text(), AUTOCOMMIT_REGEXP, and the legacy dbapi() classmethods (#462).
-- **Recommended pycubrid 1.8.0 driver (#480, #481, #482, #559)** — pycubrid 1.8.0 is recommended: it raises IntegrityError for NOT NULL and foreign-key violations, prevents silent result truncation after commit() or rollback(), reports correct null_ok and collection type codes in cursor.description, and keeps CAS sessions across transactions (docs/DRIVER_COMPAT.md Known Issue 10); contract tests require it (#480, #481, #482). The declared range stays pycubrid>=1.3.2,<2.0 (#559), preserving the isolation-level re-apply workaround as a safe no-op on pycubrid 1.8.0.
+Behavior changes you may notice (details in the entries below):
+- **Alembic upgrades are atomic by default (#503).** CUBRID DDL is transactional, so a failed multi-revision `alembic upgrade` now rolls back the whole run, including the `alembic_version` update. Set `transaction_per_migration=True` in `context.configure()` to keep per-revision commits (recommended for long or large-table migrations). Offline `--sql` scripts no longer contain `BEGIN;`; run them with `csql --no-auto-commit --no-single-line` so a failing statement stops the script.
+- **Alembic registration (#504).** `CubridImpl` is registered when the dialect loads, so a default `env.py` works without importing `sqlalchemy_cubrid.alembic_impl`. The `[alembic]` and `[dev]` extras now require `alembic>=1.7.2`; `cubrid+aiopycubrid://` online migrations need Alembic's async template (`alembic init -t async`).
+- **Reflection.** Unique constraints are no longer reported twice and reflect as unique indexes, as on MySQL (#529); non-DBA users get complete metadata from the public catalog views (#549); a missing table or view raises `NoSuchTableError` (#530); `has_table()` / `has_index()` match mixed-case names (#543); `get_foreign_keys()` is sorted by name (#531); `BIT(n)` / `BIT VARYING(n)` keep their length (#545); a failing catalog query raises instead of silently returning incomplete metadata (#533, #549). Autogenerate also detects `Text` ↔ `String(n)` changes (#544). Review the first Alembic autogenerate diff after upgrading.
+- **DDL and types.** `UnicodeText` and `TEXT` compile to `STRING` (#534); `BINARY(n)` / `VARBINARY(n)` compile to `BIT(n*8)` / `BIT VARYING(n*8)` and `UUID` to `CHAR(32)` (#545); `Index.drop()` and `op.drop_index()` emit `DROP INDEX <name> ON <table>`, so `op.drop_index()` needs `table_name` (#533); `if_exists=True` on index drops and `if_not_exists=True` on index creates raise `CompileError` (#533, #540), as does an explicit `String(0)` (#440); Boolean `is_()` / `is_not()` against a value render with `<=>` (#465); JSON `as_numeric(p, s)` returns `Decimal` (#535).
+- **Transactions.** `isolation_level="AUTOCOMMIT"` works on every driver, invalid levels raise `ArgumentError`, and `dialect.on_connect()` no longer applies `isolation_level` (a hand-built pool must apply it) (#501). Engine- and connection-level isolation levels survive `commit()` / `rollback()` on pycubrid (#505). On `cubrid://`, `executemany` runs each parameter set separately: `None` values and rowcounts are correct, large batches are slower (#502).
+- **Async.** `driver_connection` on `cubrid+aiopycubrid://` is now the `pycubrid.aio` connection; use `dbapi_connection` for the SQLAlchemy adapter (#520). Async `LargeBinary` / `BLOB` binding works (#500).
+- **Removed** the unreachable SQLAlchemy 1.x hooks `should_autocommit_text()`, `AUTOCOMMIT_REGEXP` and the `dbapi()` classmethods (#462).
+- **pycubrid 1.8.0 is recommended.** It raises `IntegrityError` for NOT NULL and foreign-key violations, raises instead of silently returning a truncated result after `commit()` / `rollback()`, reports correct `null_ok` and collection type codes in `cursor.description`, and keeps the CAS session across commits and rollbacks except when the CAS itself is restarted (`docs/DRIVER_COMPAT.md` Known Issue 10); the pycubrid contract tests require it (#480, #481, #482). The declared range stays `pycubrid>=1.3.2,<2.0` (raising it is tracked in #559), so the dialect's isolation-level re-apply workaround is kept for older pycubrid and is a harmless no-op on 1.8.0.
+
+### Added
+- **Upstream canary failures are reported as an issue (#521)** — `.github/workflows/upstream-canary.yml` keeps its canary jobs non-blocking (`continue-on-error`, schedule and manual dispatch only), so a failing run against `pycubrid@main` used to pass silently. A new `report` job runs after both canary jobs on scheduled and dispatched runs of the default branch (dispatches from feature branches never touch the shared issue, and cancelled runs are not reported): on failure it opens an issue titled "Upstream canary failing against pycubrid@main" with the `ci` label, or comments on the open one instead of creating a duplicate, listing each job's outcome, the run URL, the pycubrid commit tested and the sqlalchemy-cubrid ref and commit; once both jobs pass again it closes that issue with a comment. Each canary job now resolves `pycubrid@main` with `git ls-remote`, installs that exact commit and exposes it and its own status as job outputs, because job-level `continue-on-error` hides failures from `needs.<job>.result`. The workflow defaults to `contents: read`; only the report job has `issues: write`, and it uses the `gh` CLI with `GITHUB_TOKEN` (no third-party action), runs one at a time (`concurrency`), and has no `continue-on-error`, so a failure to report turns the run red. `docs/DEVELOPMENT.md` (+ Korean) describes the reporting.
+- **Blocking SQLAlchemy compliance lanes for released pycubrid (#463)** — the official SQLAlchemy compliance suite now gates merges for `cubrid+pycubrid://` as well as CUBRIDdb, as steps of the existing `integration-tests` cells (no new job or CUBRID service): lane `pycubrid@sa2.1` (pycubrid 1.7.1, SQLAlchemy 2.1.1) on Python 3.14 × CUBRID 11.4 and lane `pycubrid@sa2.0` (pycubrid 1.7.1, SQLAlchemy 2.0.53) on Python 3.10 × CUBRID 10.2, both pinned and both recording versions via `scripts/report_driver_versions.py`; the CUBRIDdb lane (`cubrid@sa2.0`, CUBRID 11.4) is unchanged. `test/known_failures.txt` is now keyed per lane: every entry names the `<driver>@sa<major.minor>` lanes (optionally `@cubrid<major.minor>` for a server-specific failure) it fails in and is strict-xfailed only there, so a failure baselined for one driver cannot hide a regression on the other. With `CUBRID_STRICT_KNOWN_FAILURES=1` a strict XPASS, a stale entry, a listed entry that is skipped instead of xfailed, a lane with no reviewed baseline, or a SQLAlchemy release other than the lane's pinned one fails the run; a malformed entry, a duplicated node id or a server-narrowed tag outside the (lane, server) pairs CI gates is a load error. The pycubrid compliance step runs even when the CUBRIDdb lane failed. A new offline `test/test_known_failures.py` validates the manifest format. `docs/DEVELOPMENT.md` and `docs/SUPPORT_MATRIX.md` (+ Korean) describe the lanes and the baseline update process.
+- **Required driver-differential lane with an all-skipped guard and version record (#486)** — the regular and full integration jobs now run `test/test_driver_differential.py` with pycubrid and CUBRIDdb and `CUBRID_REQUIRE_DRIVER_DIFFERENTIAL=1`; with that variable set, `test/conftest.py` fails the session when no comparison ran and passed, so a lane where every case skipped or none was collected no longer reports success. Local runs without the variable still skip cleanly. `scripts/report_driver_versions.py` records the exact Python, SQLAlchemy, pycubrid, CUBRIDdb and CUBRID server versions in the job log and the GitHub step summary. New differential cases cover Core `executemany` with integer, UTF-8/CJK and NULL values, textual `executemany` with integer and UTF-8/CJK values (CUBRIDdb 11.3.0.51 reuses the previous row's value for a NULL parameter there), scalar binds, textual-SQL result column names, and commit/rollback visibility; contract areas blocked upstream are tracked in #480–#484 (#480 and #481 have since added differential cases). `docs/DEVELOPMENT.md` now states that a specific pycubrid release candidate must pass the downstream contract suite before the `pycubrid>=1.3.2,<2.0` bound is widened, while the weekly `pycubrid@main` canary stays non-blocking. Tests and CI only; no dialect behavior change.
+- **Live BLOB/CLOB value-contract tests on released drivers (#485)** — `test_integration.py` (CUBRIDdb and `cubrid+pycubrid://` lanes) and `test_aio_integration.py` (`cubrid+aiopycubrid://`) now round-trip `LargeBinary`, `BLOB`, `CLOB` and `Text` through Core and ORM with small, Unicode/CJK, `NULL` and 256 KiB payloads (larger than pycubrid's ~80 KB `LOB_READ` chunk), and assert the returned value is `bytes`/`str`, never a driver LOB handle. Verified on CUBRID 10.2 and 11.4: writes store the full value and `NULL`/`Text` round-trip, but non-NULL `BLOB`/`CLOB` reads return a driver LOB locator (pycubrid `dict` handle, CUBRIDdb `'file:...'` string), and async `LargeBinary`/`BLOB` binding fails because the async DB-API adapter lacks `Binary`. Those cases are strict per-driver xfails; `docs/TYPES.md`, `docs/DRIVER_COMPAT.md` and `docs/SUPPORT_MATRIX.md` document the current behavior (reflection is unaffected), and the `CLOB` type row no longer lists `sqlalchemy.Text`, which compiles to `STRING`. No dialect behavior changes.
+- **Live tests that results are never silently truncated across commit or rollback (#481)** — `test_integration.py` (CUBRIDdb and `cubrid+pycubrid://` lanes) and `test_aio_integration.py` read a 500-row, 1000-byte-per-row result (more than pycubrid's 100-row FETCH batch; the broker's first response holds ~16 rows) with `fetchone()`, `fetchmany()` and `fetchall()` after `commit()`, `rollback()` or no boundary, and require every row or a DB-API error, never a successful partial `Result`. The driver-differential suite adds the rollback case for both drivers. Verified on CUBRID 10.2 and 11.4: CUBRIDdb 11.3.0.51 returns all rows after commit and raises `InterfaceError` after rollback; pycubrid `main` raises `InterfaceError`; released pycubrid 1.7.1 silently returns only the buffered rows on a warm connection (cubrid-lab/pycubrid#395), so those sync cases are strict xfails for pycubrid only via `test/pycubrid_upstream.py` (no-op under `CUBRID_PYCUBRID_UPSTREAM=1`, set by the `pycubrid@main` integration canary; see `docs/DEVELOPMENT.md`). Async results pass on every driver because `AsyncConnection.execute()` buffers the whole result. `docs/DRIVER_COMPAT.md` documents the per-driver behavior. Tests, CI and docs only; no dialect behavior change.
+- **Live `IntegrityError` contract tests for constraint violations (#480)** — `test_integration.py` (CUBRIDdb and `cubrid+pycubrid://` lanes), `test_aio_integration.py` (`cubrid+aiopycubrid://`) and the driver-differential suite now check through Core and ORM that NOT NULL, foreign-key and unique/primary-key (control) violations raise `sqlalchemy.exc.IntegrityError`, and that the same connection or `Session` runs new statements after `rollback()`. Verified on CUBRID 10.2 and 11.4: CUBRIDdb 11.3.0.51 and pycubrid `main` pass every case; released pycubrid 1.7.1 raises NOT NULL (-631) and foreign-key (-922) violations as `DatabaseError` (cubrid-lab/pycubrid#390), so those cases are strict xfails for the pycubrid drivers only. The new `test/pycubrid_upstream.py` helper applies such xfails unless `CUBRID_PYCUBRID_UPSTREAM=1`, which the weekly `pycubrid@main` integration canary sets; `docs/DEVELOPMENT.md` documents it and when to remove it. `docs/DRIVER_COMPAT.md` documents the per-driver exception classes. Tests, CI and docs only; no dialect behavior change.
+- **Stronger `IntegrityError` contract tests (#480)** — the Core, ORM, async and driver-differential constraint-violation tests now prove same-connection reuse: the error does not invalidate the connection, and after `rollback()` the same `Connection` (and, for the ORM, a `Session` bound to it) keeps the same DBAPI connection. Before the pycubrid-only xfail is applied, they also assert the native server error code (-631 NOT NULL, -922 foreign key, -670 unique; pycubrid `Error.code`, CUBRIDdb `args[0]`), and the class assertion also checks that `exc.orig` is the driver's `IntegrityError`. A patched `is_disconnect()` that always returns `True` now fails these tests. The `is_disconnect()` docstring no longer claims CUBRIDdb lacks `OperationalError`. Tests and docs only; no behavior change.
+- **Stronger result-completeness tests (#481)** — the sync test now asserts that CUBRIDdb raises `sqlalchemy.exc.InterfaceError` after rollback (and no error otherwise). It reads the FETCH batch size from pycubrid's `Connection` signature instead of hardcoding 100. Every fetched prefix must be in order with intact payloads before the pycubrid#395 xfail applies, and the marker now covers only the completeness assertion; an explicit error still turns into a strict XPASS on a fixed build. The driver-differential case also checks that pycubrid's first response does not hold the whole result. A new async case drives the lazily fetching `pycubrid.aio` cursor directly (execute, fetch one, commit or rollback, fetch the rest); released pycubrid 1.7.1 silently returns 16 of 500 rows there, so it is a strict xfail for pycubrid#395. `docs/DRIVER_COMPAT.md` Known Issue 8 (en/ko) records the raw async cursor behavior. Tests and docs only; no behavior change.
+- **Live `cursor.description` contract tests (#482)** — `test_integration.py` (CUBRIDdb and `cubrid+pycubrid://` lanes) and `test_aio_integration.py` (`cubrid+aiopycubrid://`) check the subset SQLAlchemy exposes: `Result.keys()` versus description names for `text()` aliases/expressions and Core `select()`, representative scalar type codes, `null_ok` for nullable and NOT NULL columns, `SET`/`MULTISET`/`SEQUENCE` type codes, reflected nullability, and sync/async pycubrid agreement; the driver-differential suite adds a scalar-description comparison. Verified on CUBRID 10.2 and 11.4: CUBRIDdb 11.3.0.51 and pycubrid `main` pass (CUBRIDdb reports collection columns with CCI composite codes such as 40 for `SET(INTEGER)`, recorded per driver); released pycubrid 1.7.1 reports `null_ok` inverted (cubrid-lab/pycubrid#431) and collection columns as their element type (cubrid-lab/pycubrid#430), so those cases are strict xfails for pycubrid only via `test/pycubrid_upstream.py` (no-op under `CUBRID_PYCUBRID_UPSTREAM=1`, set by the `pycubrid@main` integration canary; see `docs/DEVELOPMENT.md`). `docs/FEATURE_SUPPORT.md` documents that the dialect passes `cursor.description` through without normalization. Tests, CI and docs only; no dialect behavior change.
+- **Review follow-ups for the #480/#481 contract tests** — the result-completeness checks (sync, raw async cursor and driver-differential) now validate the order and payload of every returned row, including the one consumed by `fetchone()`, before the pycubrid#395 xfail applies. The driver-differential constraint-violation case now also asserts that `exc.orig` is the driver's own `IntegrityError` for CUBRIDdb and, behind the existing pycubrid#390 marker, for pycubrid. Tests only; no behavior change.
 
 ### Changed
-- **Transactional Alembic DDL migrations by default (#503)** — CubridImpl.transactional_ddl is now True. Because CUBRID DDL is fully transactional, ROLLBACK undoes table, view, index, serial, and rename operations without committing prior DML. A failed multi-revision alembic upgrade now rolls back all revisions in that run including the alembic_version update. Use context.configure(transaction_per_migration=True) to restore per-revision commits for long migrations. CubridImpl.emit_begin() emits nothing because CUBRID lacks a BEGIN statement, and offline --sql scripts end transactions with COMMIT;; execute them using csql --no-auto-commit --no-single-line.
-- **Pycubrid 1.8.0 contract test requirements (#480, #481, #482)** — Integration and differential suites now run contract checks unconditionally against pycubrid 1.8.0 or later, removing strict upstream xfail markers for cubrid-lab/pycubrid#390 (IntegrityError on NOT NULL and foreign-key violations), #395 (no silent result truncation), #430 (collection type codes in cursor.description), and #431 (inverted null_ok). test/pycubrid_upstream.py and the CUBRID_PYCUBRID_UPSTREAM canary switch are removed, while the declared pycubrid>=1.3.2,<2.0 dependency range remains unchanged.
+- **Contract tests now require the pycubrid 1.8.0 fixes (#480, #481, #482)** — the strict `xfail_unreleased_pycubrid_fix` markers for cubrid-lab/pycubrid#390 (NOT NULL / foreign-key violations raise `IntegrityError`), #395 (no silently truncated result after commit/rollback), #430 (collection `cursor.description` type codes) and #431 (`null_ok` not inverted) are removed from `test_integration.py`, `test_aio_integration.py` and `test_driver_differential.py`, so those assertions run unconditionally on the pycubrid lanes and require pycubrid 1.8.0 or later. `test/pycubrid_upstream.py` and the `CUBRID_PYCUBRID_UPSTREAM` switch in `upstream-canary.yml` are removed; `DRIVER_COMPAT.md` Known Issues 8 and 9 and `FEATURE_SUPPORT.md` now mark these pycubrid bugs as fixed in 1.8.0. The `pycubrid>=1.3.2,<2.0` dependency bound is unchanged.
+- **Alembic: CUBRID DDL is transactional, so the whole upgrade is now atomic by default (#503)** — `CubridImpl.transactional_ddl` is now `True` (was `False`). The docs and docstrings claimed CUBRID implicitly commits DDL; it does not. With client autocommit off, which the dialect always sets, `ROLLBACK` undoes `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, `TRUNCATE`, `CREATE INDEX` (including `WITH ONLINE [PARALLEL n]`), `CREATE VIEW`, `CREATE SERIAL` and `RENAME TABLE`, and DDL never commits pending DML; client autocommit is the only auto-commit behavior. **Behavior change:** a failed `alembic upgrade` now rolls back every revision of that run, including the `alembic_version` update, instead of keeping the revisions that finished before the failure (each revision was already atomic on its own, because Alembic's online mode wraps it in `connection.begin()`), and `context.is_transactional_ddl()` returns `True`. Set `transaction_per_migration=True` in `context.configure()` to keep per-revision commits; it is recommended for long or large-table migrations, because uncommitted DDL holds schema locks (other sessions wait on `SCH_S_LOCK`). `CubridImpl.emit_begin()` now emits nothing, because CUBRID has no `BEGIN` statement (csql rejects it), so offline `--sql` scripts contain no `BEGIN;` and end each transaction with `COMMIT;`; run them with `csql --no-auto-commit --no-single-line` (csql's default single-line mode continues past a failing statement, still runs the trailing `COMMIT;` and exits 0). New live tests in `test/test_transactional_ddl.py` (run in the PR and full integration matrices with `CUBRID_REQUIRE_TRANSACTIONAL_DDL=1`, which turns an unavailable driver, server or csql into a failure instead of a skip) prove, on CUBRID 10.2 and 11.4 with pycubrid and CUBRIDdb, that each of those statements rolls back, that DDL does not commit earlier DML and that `metadata.create_all()` rolls back; that a failing multi-revision Alembic upgrade leaves no partial schema and no version row, while `transaction_per_migration=True` keeps the completed revision; and that offline `--sql` output runs in csql. README (and translations), `docs/ALEMBIC.md`, `docs/TROUBLESHOOTING.md`, `docs/ISOLATION_LEVELS.md`, `docs/SUPPORT_MATRIX.md`, `docs/ARCHITECTURE.md`, `docs/ORM_COOKBOOK.md` (+ Korean), `docs/PRD.md`, AGENTS.md, `llms.txt` and `scripts/alembic_safety_check.py` no longer describe DDL as auto-committed or recommend one DDL operation per revision.
 
 ### Removed
-- **Legacy SQLAlchemy 1.x autocommit hooks and dbapi classmethods (#439, #462, #468)** — Removed dead SQLAlchemy 1.x should_autocommit_text(), AUTOCOMMIT_REGEXP, and dialect dbapi() classmethods (#462), retiring #439's request to add REPLACE to autocommit regex surfaced by @biggdawg320 in #468. Dialects resolve drivers directly via import_dbapi(), and SQL statements commit only through explicit transaction demarcation.
+- **Removed the dead SQLAlchemy 1.x `should_autocommit_text()` hook, its `AUTOCOMMIT_REGEXP`, and the legacy `dbapi()` classmethods (#462)** — SQLAlchemy 2.0 and 2.1 `DefaultExecutionContext` no longer define or call `should_autocommit_text()`, so the regex it consulted never affected a supported runtime (this also retires #439's request to add `REPLACE` to it, surfaced by @biggdawg320 in #468: there is no longer a regex to be inconsistent with the dialect's `REPLACE INTO` construct). `create_engine()` only falls back to a `dbapi()` classmethod when the dialect class does not define `import_dbapi()` itself, and `CubridDialect`, `PyCubridDialect` and `PyCubridAsyncDialect` all do, so the `dbapi()` wrappers were unreachable. Transactions are unchanged: DML and DDL text commits only via `conn.commit()`, `engine.begin()` or a `Session`. Added offline regression tests asserting the hooks stay gone, that engine creation resolves the DBAPI via `import_dbapi()` without a deprecation warning, and that `DELETE`/`REPLACE`/`CREATE` text is rolled back unless explicitly committed; `docs/CONNECTION.md`, `docs/FEATURE_SUPPORT.md`, `docs/DML_EXTENSIONS.md`, `docs/SUPPORT_MATRIX.md` (+ Korean) and `docs/PRD.md` no longer describe the non-existent statement-text autocommit detection.
 
 ### Fixed
-- **Alembic autogenerate detects Text to String column changes (#544)** — CubridImpl now matches the STRING dialect type by class instead of class name, allowing autogenerate to detect when a model column alters between Text and bounded String(n) while keeping unbounded string types clean.
-- **BINARY, VARBINARY, and UUID DDL compilation and reflection (#545)** — BINARY(n) compiles to BIT(n*8), VARBINARY(n) compiles to BIT VARYING(n*8) (zero length raises CompileError), and UUID compiles to CHAR(32). Reflection now preserves lengths for BIT(n) and BIT VARYING(n) columns to prevent false autogenerate diffs.
-- **Boolean IS and IS NOT predicate compilation (#465)** — Comparisons against boolean values like col.is_(True) now render with the null-safe equality operator <=> (a <=> b and (a <=> b) = 0) instead of invalid IS 1 or IS 0 syntax rejected by CUBRID.
-- **Reflection access for non-DBA users via public catalog views (#120, #426, #549)** — Reflection now queries public views db_index, db_index_key, and db_attribute instead of DBA-only _db_* tables, preventing authorization errors (-494) that dropped composite PK columns (#426) or misreported unique constraints and foreign keys (#120). Lookups respect owner precedence on CUBRID 11.2+, match mixed-case table names, and raise immediately on catalog failures instead of degrading.
-- **Mixed-case table and index name resolution (#444, #538, #543)** — has_table() and has_index() now match identifiers in lower-case form (IN (:name, LOWER(:name))), preventing checkfirst=True operations from silently skipping on mixed-case names (#543, #444, #538).
-- **CreateIndex if_not_exists validation (#540)** — Index creation with if_not_exists=True now raises CompileError pointing to inspect(conn).has_index() or Index.create(checkfirst=True) rather than emitting CREATE INDEX IF NOT EXISTS syntax rejected by CUBRID.
-- **NoSuchTableError raised for missing tables and views (#454, #530)** — get_foreign_keys(), get_unique_constraints(), get_table_comment(), and get_view_definition() now verify class existence via db_class first, raising NoSuchTableError for nonexistent objects rather than returning empty lists or escaping generic -493 errors (#454, #530).
-- **UnicodeText and TEXT compilation to STRING (#534)** — UnicodeText and generic sqlalchemy.TEXT now compile to CUBRID STRING instead of emitting nonexistent TEXT definitions (-494), and Alembic autogenerate compares them consistently.
-- **Duplicate unique constraints, view index reflection, and query entry leak (#529, #548)** — get_unique_constraints() marks reflected unique constraints with duplicates_index so reflection keeps only the unique index (#529). get_indexes() returns an empty list for views instead of leaking base table indexes, and single-row catalog queries use Result.first() to close results and prevent -830 query entry exhaustion (#548).
-- **Deterministic sorting for reflected foreign keys (#531)** — get_foreign_keys() and get_multi_foreign_keys() now return constraints sorted by constraint name, matching standard SQLAlchemy dialect behavior.
-- **Foreign keys and unique constraints on column names with parentheses (#532)** — SHOW CREATE TABLE regex parsing now handles bracketed column identifiers containing parentheses like [(3)], commas, or spaces without truncating column lists.
-- **Index drop DDL table qualification (#533)** — Index.drop() and op.drop_index() emit DROP INDEX <name> ON <table> (requiring table_name in op.drop_index()). Specifying if_exists=True raises CompileError because CUBRID lacks DROP INDEX IF EXISTS support, and has_index() results are now cached on the Inspector.
-- **JSON as_numeric precision and Decimal return type (#535)** — JSON .as_numeric(p, s) renders CAST(... AS NUMERIC(p,s)) when precision and scale are specified, returning exact Decimal instances rather than float values. Unscaled numeric casts continue using DOUBLE via as_float().
-- **AUTOCOMMIT isolation level support across all drivers (#501)** — Setting isolation_level="AUTOCOMMIT" toggles driver-level autocommit across cubrid://, cubrid+pycubrid://, and cubrid+aiopycubrid:// without raising ArgumentError or ValueError. Engine-level isolation levels are restored upon connection checkin, and invalid isolation levels raise ArgumentError consistently.
-- **Transaction isolation preservation on pycubrid (#468, #505)** — PyCubridDialect and PyCubridAsyncDialect re-apply configured isolation levels in do_commit() and do_rollback(), preventing transactions from resetting to the server default level when pycubrid reconnects broker sessions (cubrid-lab/pycubrid#468).
-- **Async driver_connection accessor (#520)** — Accessing driver_connection on cubrid+aiopycubrid:// returns the underlying pycubrid.aio.AsyncConnection rather than the internal adapter; applications that need the adapter should use dbapi_connection.
-- **Inspector has_table caching (#463)** — CubridDialect.has_table() is now decorated with @reflection.cache, ensuring inspect(engine).has_table() respects the inspector cache until clear_cache() is invoked.
-- **CUBRIDdb executemany parameter binding and rowcounts (#421, #502)** — CubridDialect.do_executemany executes each parameter set individually on cubrid:// to prevent CUBRIDdb from reusing previous row values for None and to correctly report total affected rowcounts across batched DML and bind_expression inserts (#421).
-- **Automatic Alembic CubridImpl registration on dialect import (#504)** — Importing sqlalchemy_cubrid automatically registers CubridImpl with Alembic's dialect registry when Alembic is installed, eliminating the need to import sqlalchemy_cubrid.alembic_impl manually in env.py.
-- **Async LargeBinary and BLOB parameter binding (#441, #485, #500)** — AsyncAdapt_pycubrid_dbapi now implements the full PEP 249 interface including Binary and type constructors, preventing AttributeError when binding binary data on async engines (#500) while LOB locator read limits remain documented (#441, #485).
-- **Explicit String(0) rejection (#440)** — Specifying String(0), VARCHAR(0), or NVARCHAR(0) now raises CompileError rather than silently falling back to the 4096-character default.
-- **Deterministic table and view reflection ordering (#443)** — get_table_names() and get_view_names() queries now sort results with ORDER BY class_name.
-- **Async installation extra includes greenlet bridge (#448)** — The [pycubrid] and [dev] package extras now require SQLAlchemy[asyncio], installing greenlet automatically for async engine support on SQLAlchemy 2.0 and 2.1.
-- **SQL fallback for last-insert-ID on SQLAlchemy 2.x (#458)** — Both execution contexts obtain a standard DBAPI cursor for SELECT LAST_INSERT_ID() queries instead of calling SQLAlchemy's unimplemented server-side cursor hook.
+- **Alembic autogenerate detects `Text` ↔ `String(n)` changes (#544)** — `CubridImpl` matched the reflected `VARCHAR(1073741823)` of a `STRING` column by upper-cased class name, and the dialect's `STRING` type shares that name with the generic `sa.String`, so a model column changed from `Text` to `String(10)` produced no diff and the migration that shrinks the column was never generated. The dialect's `STRING` is now matched by class; `Text`, `UnicodeText`, `CLOB` and a `String()` without a length still match a reflected `STRING` column, while `String(n)` goes through Alembic's normal length comparison. Live autogenerate tests on both drivers cover both directions (`Text` → `String(10)` and `String(10)` → `Text` are detected, applied, and compare clean afterwards) and the unbounded types that must not report a diff.
+- **`BINARY`, `VARBINARY` and `UUID` create columns CUBRID accepts (#545)** — `sqlalchemy.BINARY`, `VARBINARY` and `UUID` fell through to SQLAlchemy's generic `BINARY` / `VARBINARY` / `UUID` DDL, which CUBRID 10.2 and 11.4 reject, so a model using them could not be created. `BINARY(n)` now compiles to `BIT(n*8)` (`BINARY()` to `BIT(8)`) and `VARBINARY(n)` to `BIT VARYING(n*8)` (`VARBINARY()` to `BIT VARYING`); both drivers bind and return the values as `bytes`, and a zero length raises `CompileError`. `UUID` compiles to `CHAR(32)` like `Uuid`, with SQLAlchemy's non-native UUID handling for `as_uuid=True` and `False`. Reflection now keeps the length and `VARYING` of `BIT(n)` / `BIT VARYING(n)` columns (they reflected as `BIT(1)`), so these columns compile back to the same DDL and Alembic autogenerate reports no false type change. A new compiler test sweeps every generic SQLAlchemy type and fails if one compiles to a type name that CUBRID rejects in `CREATE TABLE` (list taken from live runs on 10.2 and 11.4) or to one not yet checked live. `docs/TYPES.md` (+ Korean) documents the mappings and fixes the `CHAR VARYING` reflection rows, which said `NVARCHAR` although it reflects as `VARCHAR`.
+- **Boolean `IS` / `IS NOT` predicates compile to SQL CUBRID accepts (#465)** — without a native BOOLEAN, SQLAlchemy renders `col.is_(True)`, `is_(False)`, `is_not(True)` and `is_not(False)` (also with `true()`/`false()`, a bound parameter, or any expression such as `(col == 5).is_(True)`) as `IS 1` / `IS 0` / `IS NOT 1` / `IS NOT 0`, which CUBRID rejects with a syntax error on 10.2 and 11.4: its `IS` accepts only `[NOT] NULL` and `[NOT] TRUE/FALSE`, and since 11.2 `IS TRUE` also needs a logical operand (`b IS TRUE` fails for a `SMALLINT` column), while `(x = 1) IS NOT TRUE` is rejected in a SELECT list. `CubridCompiler` now renders `IS` against a value with the null-safe equal operator, like `IS [NOT] DISTINCT FROM`: `a IS b` as `a <=> b` and `a IS NOT b` as `(a <=> b) = 0`, which keeps the SQL semantics exactly (`IS TRUE` is never `NULL`; `IS NOT TRUE` is its complement) in `WHERE` clauses and SELECT lists; `IS [NOT] NULL` is unchanged. `col == True`, `not_(col)`, `true()`/`false()` and `and_()`/`or_()` already compiled to valid SQL (`col = 1`, `col = 0`, `1 = 1`) and are unchanged; CUBRID itself rejects logical operators (`AND`, `OR`, `NOT`) in a SELECT list, which is documented. New compiler tests and a live truth-table test (stored 1, 0 and NULL; `WHERE` and projection) on CUBRID 10.2 and 11.4 with CUBRIDdb and pycubrid cover it; `docs/TYPES.md` and `docs/FEATURE_SUPPORT.md` (+ Korean) document the rendering and its semantics.
+- **Reflection works for non-DBA users: read the public catalog views instead of the DBA-only `_db_*` tables (#549)** — `_db_index`, `_db_index_key` and `_db_attribute` (and `_db_class`) are readable only by DBA on CUBRID 10.2, 11.0, 11.2 and 11.4; for any other user a query fails with `SELECT is not authorized on _db_index` (-494). The dialect swallowed that error, so reflection silently degraded: `get_indexes()` reported the primary-key index and the foreign-key auto-indexes as ordinary indexes (spurious Alembic autogenerate `drop_index`/`create_index` diffs, the #120 problem), `get_pk_constraint()` fell back to `SHOW COLUMNS` and lost the PK name and every column of a composite key after the first (#426), `get_unique_constraints()` fell back to `SHOW CREATE TABLE` parsing, `get_columns()` returned no column comments, and `has_index()` raised. `has_index()` keeps the name matching and owner preference from #543 on the public view. These methods now read the public `db_index`, `db_index_key` and `db_attribute` views, which every user can read (flags are `'YES'`/`'NO'` there). Since CUBRID 11.2 those views also list same-named classes of other owners that the user may read, so the rows are limited to the owner the cached `db_class` lookup from #529 prefers (the current user's class first); before 11.2 class names are global and the views have no `owner_name` column. This also stops a same-named class of another owner from adding its indexes or comments on 11.2+. The catalog lookups also match the table name as given or folded to lower case, like the `db_class` lookup and `SHOW ... IN <name>`: `get_indexes("Users")` used to report the PK and FK auto-indexes (and `get_pk_constraint()` lost composite columns, `get_columns()` the comments) even for DBA. A failing catalog query now raises instead of silently falling back to incomplete metadata; `get_pk_constraint()` still uses `SHOW COLUMNS` and `get_unique_constraints()` still parses `SHOW CREATE TABLE` when the catalog has no matching row, and `get_unique_constraints()` maps an `Unknown class` error from its `SHOW INDEXES` step to `NoSuchTableError`. A new live test reflects a table with a named composite PK, a foreign key, a unique constraint, an index and a column comment as DBA and as a newly created user, by its name and in upper case, on CUBRID 10.2 and 11.4 with both drivers (on 11.2+ with a same-named decoy table of the other user). `docs/FEATURE_SUPPORT.md`, `docs/ARCHITECTURE.md` (+ Korean) and `docs/PRD.md` describe the catalog sources.
+- **`has_table()` and `has_index()` find mixed-case names, so `checkfirst=True` no longer silently skips (#543)** — CUBRID stores identifiers in lower case, even quoted ones, but both methods compared the names exactly as passed in. For `Index("IX_Mixed543", Table("Users543", ...))`, `has_index()` returned `False`, so `Index.drop(checkfirst=True)` did nothing and the index stayed; `has_table()` had the same gap. Both now also match the lower-case form (`IN (:name, LOWER(:name))`), like `_get_class_type()` and the other reflection methods, and `has_index()` resolves the table with the same owner preference (the current user's own class first, which matters on CUBRID 11.2+ where owners can share a class name). `@reflection.cache` and error propagation (#444, #538) are unchanged. Live tests cover mixed-case `checkfirst` create and drop on CUBRID 10.2 and 11.4 with both drivers.
+- **`CreateIndex(..., if_not_exists=True)` raises `CompileError` instead of emitting `CREATE INDEX IF NOT EXISTS` (#540)** — CUBRID 10.2, 11.0, 11.2 and 11.4 reject `CREATE INDEX IF NOT EXISTS` (and `CREATE UNIQUE INDEX IF NOT EXISTS`) with a syntax error, but the DDL compiler emitted it for `Index(...)` / `CreateIndex(..., if_not_exists=True)` and Alembic `op.create_index(..., if_not_exists=True)`. `CubridDDLCompiler.visit_create_index` now refuses it with a `CompileError` that points to `inspect(conn).has_index()` and `Index.create(checkfirst=True)`, mirroring `DROP INDEX IF EXISTS` (#533). A plain `CREATE INDEX` is unchanged. `docs/ALEMBIC.md` and `docs/FEATURE_SUPPORT.md` (+ Korean) document the limitation.
+- **Reflecting a missing table or view raises `NoSuchTableError` (#530)** — `get_foreign_keys()` and `get_unique_constraints()` returned `[]` for an object that does not exist (the `SHOW CREATE TABLE` fallbacks swallowed the server's `Unknown class` error with a WARNING traceback), `get_table_comment()` returned `{"text": None}`, and `get_pk_constraint()` and `get_view_definition()` let the raw -493 `ProgrammingError` escape. Because SQLAlchemy's default `get_multi_*()` implementations leave out only the names whose single-object method raises `NoSuchTableError`, the multi variants also reported the missing object. `get_foreign_keys()` and `get_unique_constraints()` now look up the class type first (the cached, owner-aware `db_class` lookup from #529): no row raises `NoSuchTableError`, and a view (`VCLASS`) returns `[]` without running the table-only `SHOW CREATE TABLE`, which removes the WARNING traceback logged for every reflected view. `get_table_comment()` raises when `db_class` has no row, and matches the name like the class-type lookup (as given or lower-cased, the current user's class first). `get_pk_constraint()` (`SHOW COLUMNS` fallback), `get_view_definition()` (`SHOW CREATE VIEW`) and the `SHOW CREATE TABLE` fallbacks of `get_foreign_keys()` / `get_unique_constraints()` map an error to `NoSuchTableError` only when its message is CUBRID's `Unknown class`: pycubrid reports syntax errors, `<name> is not a class` and some permission errors with the same -493 / SQLSTATE 42S02 (#454), so a generic -493 still propagates (or, in the DDL fallbacks, keeps the logged empty result). `get_view_definition()` on a table (for which `SHOW CREATE VIEW` returns no row) now raises `NoSuchTableError` instead of returning `""`, as SQLAlchemy's suite expects. The 9 entries of the #530 group, including `test_get_multi_unique_constraints[True-ObjectKind.ANY-ObjectScope.ANY…]` that also needed #529, are removed from `test/known_failures.txt` for all three lanes; `docs/FEATURE_SUPPORT.md` (+ Korean) documents the behavior, and the per-lane counts in the `test/known_failures.txt` header and `docs/SUPPORT_MATRIX.md` (+ Korean) are updated (cubrid@sa2.0 68 / 61, pycubrid@sa2.0 54, pycubrid@sa2.1 58 / 51).
+- **`UnicodeText` creates a CUBRID `STRING` column instead of the non-existent `TEXT` (#534)** — `CubridTypeCompiler` overrode `visit_text` (`Text` → `STRING`) but not `visit_unicode_text` or `visit_TEXT`, so `UnicodeText` and `sqlalchemy.TEXT` fell through to SQLAlchemy's generic `TEXT`, and `CREATE TABLE` failed with "dba.TEXT is not defined" (-494) on every CUBRID version. Both now compile to `STRING`, like `Text`; CUBRID strings use the database charset, so there is no separate national text type. Alembic's `compare_type` now also treats `UnicodeText` like `Text` against a reflected `VARCHAR(1073741823)`, so autogenerate does not report a spurious type change for it. New compiler tests and a live `CREATE TABLE` + Korean/Japanese/Chinese/emoji round trip on CUBRIDdb and pycubrid cover it, and the six `UnicodeTextTest` compliance entries are removed from `test/known_failures.txt` for every lane. `docs/TYPES.md` (+ Korean) and `docs/PRD.md` now list `UnicodeText` as `STRING`, and `Unicode(n)` as the `VARCHAR(n)` it actually compiles to; `docs/TYPES.md` (+ Korean) also notes that no column-level `CHARSET`/`COLLATE` is rendered for string and text types (`collation=` is dropped) and that non-ASCII text needs a UTF-8 database. The per-lane known-failure counts in the `test/known_failures.txt` header and `docs/SUPPORT_MATRIX.md` (+ Korean) are updated (cubrid@sa2.0 77 / 70, pycubrid@sa2.0 63, pycubrid@sa2.1 67 / 60).
+- **Unique constraints are no longer reported twice, and views no longer reflect their base table's indexes (#529)** — CUBRID implements a `UNIQUE` constraint as a unique index and cannot tell it apart from `CREATE UNIQUE INDEX` (same `_db_index` flags; `SHOW CREATE TABLE` prints both as `UNIQUE KEY`), so `get_indexes()` and `get_unique_constraints()` both listed the same object, and `Table` reflection built both a unique `Index` and a `UniqueConstraint` for it. Following SQLAlchemy's MySQL dialect, every `get_unique_constraints()` entry (catalog and `SHOW CREATE TABLE` paths) now carries `"duplicates_index": <name>`, so `Table` reflection and Alembic autogenerate keep only the unique index, and `requirements.py` opens `unique_constraints_reflect_as_index` and `unique_index_reflect_as_unique_constraints`. `get_indexes()` on a view returned the base table's indexes, including its primary key, because `SHOW INDEXES IN <view>` lists them; it now checks `db_class.class_type` and returns `[]` for a view (`VCLASS`). That lookup matches the name as given or folded to lower case, prefers the current user's class over a same-named class of another owner (CUBRID 11.2+ allows one per owner; a DBA view `y_dup` granted to PUBLIC made user u2's `get_indexes("y_dup")` return `[]`), and is cached per `Inspector`. Reflection also no longer leaks server query entries (#548): the single-row lookups (`db_class` class type and table comment, `SHOW CREATE TABLE` for foreign keys and the unique-constraint fallback, `SHOW CREATE VIEW`) read their row with `Result.first()`, which closes the result, instead of `fetchone()`, which left it open. Each open result held one of the connection's 100 server query entries, so `MetaData.reflect()` of about 50–60 tables on one pycubrid connection failed with -830 "Cannot allocate query entry". An audit found no other unclosed single-row read in `dialect.py`, `base.py`, `pycubrid_dialect.py`, `alembic_impl.py` or `trace.py` (the raw-cursor `fetchone()` calls close their cursor in `finally`). New live tests reflect 150 tables on one connection (pycubrid on CUBRID 10.2 and 11.4, and CUBRIDdb) and reflect a u2 table that shares its name with a DBA view (CUBRID 11.2+). The 36 `ComponentReflectionTest` entries of the #529 group are removed from `test/known_failures.txt` for all three lanes; `docs/FEATURE_SUPPORT.md` (+ Korean) documents the behavior, and the per-lane counts in the `test/known_failures.txt` header and `docs/SUPPORT_MATRIX.md` (+ Korean) are updated (cubrid@sa2.0 83 / 76, pycubrid@sa2.0 69, pycubrid@sa2.1 73 / 66).
+- **`get_foreign_keys()` returns foreign keys sorted by name (#531)** — the constraints were returned in the order `SHOW CREATE TABLE` lists them, which is not name order, so the SQLAlchemy compliance suite's `ComponentReflectionTest::test_get_multi_foreign_keys` (which expects `fk_dingalings_id_user` before `zz_email_add_id_fg`) compared the wrong foreign keys even though each reflected constraint was correct. `get_foreign_keys()` (and therefore `get_multi_foreign_keys()`) now sorts by constraint name, like SQLAlchemy's built-in dialects. The 8 `test_get_multi_foreign_keys[False-…]` entries are removed from `test/known_failures.txt` for all three lanes; the per-lane counts in its header and in `docs/SUPPORT_MATRIX.md` (+ Korean) are updated (cubrid@sa2.0 119 / 112, pycubrid@sa2.0 105, pycubrid@sa2.1 109 / 102).
+- **Foreign keys and unique constraints on column names containing parentheses are reflected (#532)** — the `SHOW CREATE TABLE` parser matched a constraint's column list up to the first `)`, so a bracketed name such as `[(3)]` cut the list short: `REFERENCES [dba.p] ([(3)])` reflected `referred_columns: []`, and autoloading the child table raised `ArgumentError`. `_RE_FOREIGN_KEY` and `_RE_UNIQUE_KEY` now match the column list as a sequence of bracketed names (each optionally followed by `ASC`/`DESC`, with optional whitespace inside the parentheses), so names containing `(`, `)`, `,` or spaces parse correctly. New offline regex tests use DDL captured from CUBRID 11.4 for such names. The 6 `BizarroCharacterTest::test_fk_ref[…-(3)-…]` entries are removed from `test/known_failures.txt` for all three lanes; the per-lane counts in its header and in `docs/SUPPORT_MATRIX.md` (+ Korean) are updated (cubrid@sa2.0 127 / 120, pycubrid@sa2.0 113, pycubrid@sa2.1 117 / 110).
+- **`Index.drop()` and Alembic `op.drop_index()` emit `DROP INDEX <name> ON <table>` (#533)** — `CubridDDLCompiler` had no `visit_drop_index`, so SQLAlchemy's generic `DROP INDEX <name>` was emitted and CUBRID rejected it with a -493 syntax error (CUBRID scopes an index to its table). The compiler now emits `DROP INDEX <quoted name> ON <quoted table>`, including the table's schema when one is set. CUBRID 10.2, 11.0, 11.2 and 11.4 have no `DROP INDEX IF EXISTS` (all four answer a syntax error), so `DropIndex(..., if_exists=True)` and `op.drop_index(..., if_exists=True)` now raise `CompileError` instead of emitting SQL the server rejects; check `inspect(conn).has_index()` first, as `Index.drop(checkfirst=True)` does. An index not bound to a table also raises `CompileError`, and `op.drop_index()` without `table_name` (which Alembic binds to a placeholder table named `no_table`) raises `CompileError` asking for `table_name` instead of emitting `DROP INDEX <name> ON no_table`. `CubridDialect.has_index()` is now `@reflection.cache`d like `has_table()` and the `get_*` methods, so an `Inspector` answers `has_index()` from its cache until `clear_cache()` (calls without an `info_cache`, such as `Index.drop(checkfirst=True)`, still query the catalog each time); with the drop fixed this was the remaining `HasIndexTest::test_has_index[inspector]` failure. Because a cached answer lives as long as the `Inspector`, a failing catalog query in `has_index()` now raises instead of being swallowed as `False`; a missing table or index still returns `False`. The per-lane known-failure counts in the `test/known_failures.txt` header and `docs/SUPPORT_MATRIX.md` (+ Korean) are updated (cubrid@sa2.0 133 / 126, pycubrid@sa2.0 119, pycubrid@sa2.1 123 / 116). New compiler tests, an offline cache test, offline Alembic `--sql` tests and live `Index.drop()` / `op.drop_index()` tests cover it, and the `HasIndexTest::test_has_index[dialect|inspector]` compliance entries are removed from `test/known_failures.txt` for every lane. `docs/ALEMBIC.md` (+ Korean) documents the `ON <table>` form and the `if_exists` limitation.
+- **JSON `.as_numeric(p, s)` returns `Decimal` instead of `float` (#535)** — a JSON element cast with `as_numeric()` was rendered `CAST(JSON_EXTRACT(...) AS DOUBLE)`, so the driver returned a `float`, and because the dialect declares native decimal support no result processor converted it: `select(t.c.data["a"].as_numeric(10, 2))` returned `15.0` instead of `Decimal('15.00')` and lost precision, on SQLAlchemy 2.0 and 2.1 alike. A `Numeric` target with both precision and scale now renders `CAST(JSON_EXTRACT(...) AS NUMERIC(p,s))`, as SQLAlchemy's MySQL dialect renders `DECIMAL(p, s)`, and both drivers return a `Decimal` at scale `s` (JSON numbers, including exponent notation such as `1e3`, plain-decimal numeric strings such as `"15.5"`, and `true`/`false` cast; JSON `null` is still SQL `NULL`). CUBRID raises -181 ("Cannot coerce value of domain json to domain numeric") for a string in exponent notation (`"1e3"`) and for a non-numeric string such as `"abc"` or `""`, and -427 (data overflow) for a value that does not fit `NUMERIC(p,s)`. For exponent-notation strings and values outside `NUMERIC(p,s)`, use `as_float()`, which casts to `DOUBLE`. `as_float()` also raises -181 for a non-numeric string, so validate or filter such values before casting; with `asdecimal=False` the result is still converted to `float`. `as_float()` and any `Float` stay `DOUBLE`, and a `Numeric` without both precision and scale also stays `DOUBLE`, because a bare CUBRID `NUMERIC` means `NUMERIC(15,0)` and would truncate. Verified on CUBRID 10.2 and 11.4. New offline compiler tests and a live round trip in `test_integration.py` (CUBRIDdb and pycubrid, SQLAlchemy 2.0.53 and 2.1.1) cover it; the 18 `JSONTest::test_index_cross_casts[...-numeric]` entries are removed from `test/known_failures.txt` (lane `pycubrid@sa2.1`: 143 / 136 → 125 / 118), and `docs/FEATURE_SUPPORT.md` (+ Korean) lists `as_numeric()`.
+- **`isolation_level="AUTOCOMMIT"` works on every driver, and an engine-level isolation level survives a per-connection override (#501)** — `docs/TROUBLESHOOTING.md` recommended `execution_options(isolation_level="AUTOCOMMIT")`, but `get_isolation_level_values()` did not list it, so `execution_options()` raised `ArgumentError` and `create_engine(..., isolation_level="AUTOCOMMIT")` raised `ValueError` on first connect, on `cubrid://`, `cubrid+pycubrid://` and `cubrid+aiopycubrid://`. `CubridDialect` kept `isolation_level` to itself and applied it from its own `on_connect` hooks, bypassing SQLAlchemy's validation, and its `reset_isolation_level()` override always reset a checked-in connection to READ COMMITTED, dropping an engine-level level after a per-connection override. Following SQLAlchemy's mysqldb/psycopg pattern, `AUTOCOMMIT` is now a valid level: `set_isolation_level()` turns on the driver's `autocommit` (CUBRIDdb, pycubrid and the async adapter all expose the property), and any other level turns it off before `SET TRANSACTION ISOLATION LEVEL`. It toggles only when the mode changes, because on pycubrid each toggle ends the transaction and triggers a reconnect. `detect_autocommit_setting()` reads the same flag, so `create_engine(skip_autocommit_rollback=True)` works too. `isolation_level` is passed to `DefaultDialect`, which applies it on connect after the dialect disables autocommit and restores it on checkin; the `reset_isolation_level()` override and the `on_connect` isolation handling are removed. An engine-level alias is stored under its canonical name (for example `CURSOR STABILITY` becomes `READ COMMITTED`), so SQLAlchemy's checkin restore accepts it. Invalid levels now raise `ArgumentError` from `create_engine()`, `engine.execution_options()` and `conn.execution_options()` on every driver, and a non-string `isolation_level` raises it from the dialect constructor; calling `dialect.set_isolation_level()` directly still raises `ValueError`, and a DBAPI connection without an `autocommit` property now fails with `AttributeError` instead of being treated as non-autocommit. Behavior changes for code outside `create_engine()`: `on_connect()` no longer applies `isolation_level`, so a pool built by hand around `dialect.on_connect()` must apply it itself (or use `dialect._builtin_onconnect()` like `create_engine()`); and `dialect.isolation_level` now holds the canonical name (`CURSOR STABILITY` reads back as `READ COMMITTED`). On pycubrid, `AUTOCOMMIT` statements run at the server default level and reconnect the broker session each time (cubrid-lab/pycubrid#468); the docs recommend `skip_autocommit_rollback=True` with an engine-level `AUTOCOMMIT` there. New live tests on all three drivers cover each path: an AUTOCOMMIT row is visible to a second session before any commit and survives `rollback()`, the same pooled connection is transactional after checkin, the engine-level level (SERIALIZABLE or AUTOCOMMIT, sync and async) and an engine-level alias are restored on the same pooled connection after a per-connection override, `skip_autocommit_rollback=True` works with engine-level AUTOCOMMIT, and invalid levels raise `ArgumentError`. They fail without the fix. `docs/ISOLATION_LEVELS.md`, `docs/TROUBLESHOOTING.md` and `docs/FEATURE_SUPPORT.md` (+ Korean) document `AUTOCOMMIT` and the checkin restore.
+- **Engine- and connection-level `isolation_level` no longer falls back to READ COMMITTED on pycubrid after `commit()` / `rollback()` (#505)** — after the driver's `commit()` or `rollback()` the broker returns the CAS status byte as inactive (out of transaction), and pycubrid 1.7.1 (and `main`) then opens a new broker connection before the next request. The new session starts at the server default level, and pycubrid restores only `autocommit`, so `create_engine("cubrid+pycubrid://…", isolation_level="SERIALIZABLE")` already reported READ COMMITTED on the first checkout (SQLAlchemy rolls back after its first-connect checks), and a per-connection level was lost at the next commit. `CUBRIDdb` keeps the same session and was not affected; the driver bug is cubrid-lab/pycubrid#468. `PyCubridDialect` (and the async dialect) now remember the level they set on each DBAPI connection and re-apply it in `do_commit()` / `do_rollback()`. This costs one `SET TRANSACTION ISOLATION LEVEL` + `COMMIT` per commit/rollback, only on connections with a configured level; nothing runs per statement, and such a pooled connection holds a broker CAS while idle. A failed re-apply never turns a successful commit into an error or masks the exception that caused a rollback: it is logged and retried in `do_begin()` before the next transaction's first statement. On an engine without a configured level, checkin after a per-connection override stops the re-apply for that connection. Remove the workaround once a pycubrid release fixing pycubrid#468 is the minimum. New live tests on all three drivers check `get_isolation_level()` after commit, rollback, pool checkin (including the pool's reset-on-return rollback alone), `engine.begin()` and a `Session`, and fail without the fix on pycubrid; pycubrid-only live tests simulate a failed re-apply and check that the commit stands, the rollback's `IntegrityError` propagates and the next transaction runs at the configured level. `docs/DRIVER_COMPAT.md` Known Issue 10 and `docs/ISOLATION_LEVELS.md` (+ Korean) document the driver behavior and the re-apply. Resetting to the engine level after a per-connection override is tracked in #501.
+- **`driver_connection` on `cubrid+aiopycubrid://` is now the `pycubrid.aio` connection (#520)** — `PyCubridAsyncDialect` did not override `get_driver_connection()`, so `(await conn.get_raw_connection()).driver_connection` returned SQLAlchemy's `AsyncAdapt_pycubrid_connection` adapter instead of the driver's own connection. The dialect now returns the wrapped `pycubrid.aio.AsyncConnection`, as SQLAlchemy's asyncpg and aiomysql dialects do, so driver-specific async APIs (`ping()`, `cursor()`, ...) are reachable through the documented accessor. A unit test and a live async test cover it, and the async integration tests no longer reach the driver connection through `.dbapi_connection.driver_connection` or the adapter's `_connection`. Code that relied on `driver_connection` being the adapter should use `dbapi_connection` instead.
+- **The SQLAlchemy compliance suite no longer silently skips most of its tests (#463)** — every property in `sqlalchemy_cubrid/requirements.py` returned one shared `exclusions.open()` / `exclusions.closed()` object, and SQLAlchemy extends the first requirement of a stacked `@testing.requires` chain in place, so after collection every "open" requirement also carried the closed rule's skip. Each property now returns a new object (a regression test checks that stacking does not leak). About 300 more suite tests now run per lane (pycubrid, SQLAlchemy 2.0.53, CUBRID 11.4: 334 → 631 passed), and the baselines of all three lanes were recaptured on fresh CUBRID 10.2 and 11.4 databases and classified. The recapture also opens `reflects_pk_names` and `implicitly_named_constraints` (the suite reported unexpected successes), gates `unicode_ddl` on a UTF-8 database (the official Docker image creates ISO-8859-1 databases, where non-ASCII table names break both drivers' catalog decoding for every later test), and closes `precision_generic_float_type` (CUBRID `FLOAT` is single precision). Newly visible dialect bugs are listed as strict known failures, each linked to its follow-up issue: unique constraints reported twice and views reflecting their base table's indexes (#529), missing-object reflection not raising `NoSuchTableError` (#530), foreign keys returned in DDL order instead of sorted by name (#531), bracketed column names containing parentheses such as `[(3)]` not parsed in FK/UNIQUE DDL (#532), `Index.drop()` emitting `DROP INDEX` without `ON <table>` (#533), `UnicodeText` compiling to `TEXT` (#534), and JSON `.as_numeric()` returning `float` instead of `Decimal` (#535).
+- **`Inspector.has_table()` honors the inspector cache (#463)** — `CubridDialect.has_table()` was not decorated with `@reflection.cache`, so `inspect(engine).has_table()` queried the catalog on every call and reported a table created after the first call before `clear_cache()`, unlike SQLAlchemy's built-in dialects. Found by the SQLAlchemy 2.1 `HasTableTest::test_has_table_cache` in the new pycubrid compliance lane (SQLAlchemy 2.0's harness never reached it). Direct `dialect.has_table()` calls without an `info_cache` and `create_all(checkfirst=True)` are unaffected.
+- **`cubrid://` executemany no longer stores the previous row's value for `None` or reports a last-row rowcount (#502)** — CUBRIDdb 11.3.0.51 skips binding `None` and prepares `executemany` once, so a `None` parameter kept the previous row's value, and its `rowcount` counted only the last row. Through SQLAlchemy this silently corrupted `text()` and Core `UPDATE`/`DELETE` executemany and made batched ORM UPDATEs raise `StaleDataError`. `CubridDialect.do_executemany` now executes each parameter set and reports the summed rowcount, so `supports_sane_multi_rowcount` is accurate on both drivers. `cubrid+pycubrid://` and `cubrid+aiopycubrid://` keep the driver's prepare-once `executemany`, and a multi-row Core `insert()` that uses insertmanyvalues is unaffected. An INSERT into a table with a column whose type defines `bind_expression()` falls back to executemany (#421), so on `cubrid://` it uses the per-row guard. The textual executemany differential case now includes NULL, the CUBRIDdb `RowCountTest` multi-row entries are removed from `test/known_failures.txt`, `docs/DRIVER_COMPAT.md` (+ Korean) records the driver bug and when the guard will be removed, and `docs/SUPPORT_MATRIX.md` (+ Korean) documents executemany rowcount behavior and the guard's per-row cost.
+- **Alembic finds `CubridImpl` with a default `env.py` (#504)** — `alembic upgrade` against a `cubrid://`, `cubrid+pycubrid://` or `cubrid+aiopycubrid://` URL failed with `KeyError: 'cubrid'` unless `env.py` imported `sqlalchemy_cubrid.alembic_impl` by hand. The package declared an `alembic.ddl` entry point, but no Alembic release reads that group: Alembic looks the impl up in a registry keyed by `dialect.name` that `DefaultImpl` subclasses fill on import, and the `alembic.plugins` entry points it does read exist only from 1.18 onward. `sqlalchemy_cubrid/dialect.py` now imports `alembic_impl` when Alembic is installed and skips it when it is not, which is how other third-party dialects register their impl and works on every supported Alembic release; all dialect variants share `name = "cubrid"`. The dead `alembic.ddl` entry point is removed. The standard `alembic init` template works unchanged for the synchronous URLs; for `cubrid+aiopycubrid://` online migrations, `docs/ALEMBIC.md` now points to Alembic's async template (`alembic init -t async`), whose unmodified `env.py` was verified live on CUBRID 11.4 (the standard template's synchronous engine fails there with `MissingGreenlet`). The import never stops the dialect from loading: a missing Alembic is skipped silently, and an installed Alembic that fails to import (1.7.0/1.7.1 raise `NameError` on SQLAlchemy 2.x) only disables the integration with one `RuntimeWarning` naming the exception (logged via the `sqlalchemy_cubrid.dialect` logger instead if a warning filter turns it into an error). The `[alembic]`/`[dev]` extras, the pre-commit mypy hook and the docs now require `alembic>=1.7.2,<2.0`, the oldest release that imports on SQLAlchemy 2.x. A new `test/test_alembic_registration.py` runs the `alembic` CLI in a fresh interpreter on an unmodified `alembic init` project, offline (`--sql`) for all four URL forms and online against a live CUBRID; it fails on the previous code with the reported `KeyError`. The roundtrip tests no longer import `alembic_impl` themselves. README (and translations), `docs/ALEMBIC.md`, `docs/TROUBLESHOOTING.md`, `docs/SUPPORT_MATRIX.md`, `docs/ARCHITECTURE.md` (+ Korean), `docs/PRD.md`, `docs/FEATURE_SUPPORT.md`, AGENTS.md and the wheel smoke checks now describe and verify registration on dialect import.
+- **Async `LargeBinary` / `BLOB` binding no longer raises `AttributeError` (#500)** — `AsyncAdapt_pycubrid_dbapi` copied only `paramstyle`, the exception classes and the type objects from `pycubrid`, but SQLAlchemy's `LargeBinary` bind processor reads `dialect.dbapi.Binary` whenever the statement compiles, so every `cubrid+aiopycubrid://` INSERT/UPDATE touching a binary column failed, even with `None` or an unset ORM attribute. The adapter now copies the full PEP 249 module surface (`apilevel`, `threadsafety`, `paramstyle`, all exception classes, `Date`/`Time`/`Timestamp`, the `*FromTicks` constructors, `Binary` and the `STRING`/`BINARY`/`NUMBER`/`DATETIME`/`ROWID` type objects) from the sync module via one declared tuple. A unit test asserts every PEP 249 name on `pycubrid` is on the adapter; live async tests cover Core inserts of `None` and `bytes` into `LargeBinary`/`BLOB` and an ORM insert with an unset `LargeBinary`. The async binding xfails from #485 are removed, leaving only the strict LOB-read locator xfails (cubrid-lab/pycubrid#441); `docs/DRIVER_COMPAT.md` and `docs/TYPES.md` (+ Korean) no longer list the async `Binary` issue.
+- **`String(0)` / `VARCHAR(0)` / `NVARCHAR(0)` no longer silently compile to the 4096 default (#440)** — the type compiler checked the length by truthiness, so an explicit `length=0` was treated as "no length" and rendered `VARCHAR(4096)` (or `NCHAR VARYING(4096)`). `length=None` still gets the documented default; an explicit zero now raises `CompileError`, since `VARCHAR(0)` is not a valid CUBRID length.
+- **Reflection now returns table and view names in deterministic order (#443)** — added `ORDER BY class_name` to `get_table_names()` and `get_view_names()` catalog queries so reflection results no longer depend on database row order.
+- **Contributor workflow and docs exceptions clarified** — normal contributions use shared checks and matching docs; maintainers coordinate project-specific reviews, labels, translation deferrals and releases. Docs-not-needed body reasons require a populated standalone statement, with quoted/template examples excluded; executable doctests and real event/workflow regressions run locally and in docs-sync. Four existing reusable workflow callers are pinned to a verified upstream commit without changing their inputs or rollout settings.
+- **Pure-driver integration setup is explicit (#464)** — `tox -e integration` now requires a `cubrid+pycubrid://` test URL rather than the former bare `cubrid://` C-extension URL. A bounded sync/async `SELECT 1` preflight fails before pytest when the URL, driver or database is unavailable. Async and stress suites derive their endpoint from the selected URL, preserving authentication, port and query options; an explicit `CUBRID_TEST_AURL` remains supported. The formal C-extension compliance CI route is unchanged, and optional native-driver comparisons remain explicitly skipped when that driver is absent.
+- **Local tooling agrees with CI (#464)** — Ruff/mypy pre-commit revisions match the dev pins; the isolated mypy hook uses interpreter-compatible SQLAlchemy pins and existing Alembic dependencies without automatic stub installation. Tox covers Python 3.10–3.14, uses integration markers, retains 95% coverage, and matches CI's type-check cells. CLI/CI/tox share the Makefile's maintained Python source paths while hooks keep all tracked Python/pyi coverage. A deterministic consistency check rejects stale pins, missing interpreter branches, source omissions and runner drift. Two helper scripts received formatting-only changes with unchanged ASTs.
+- **Strict typing is enforced across SQLAlchemy 2.0 and 2.1 (#459)** — timezone constructor annotations retain their always-enabled timezone behavior; compiler overrides match upstream positional arguments with typed boundaries for unannotated framework hooks. UNIQUE-index FK collision checks now raise a clear `CompileError` when no live Alembic connection is available. `make typecheck` reports dependency versions, and two pinned CI cells must pass through the required `matrix-result` check. Runtime SQL compilation and the 95% offline coverage threshold remain unchanged.
+- **Async installation includes SQLAlchemy's required bridge (#448)** — the existing `[pycubrid]` and `[dev]` extras now request `SQLAlchemy[asyncio]`, which installs `greenlet` on both SQLAlchemy 2.0 and 2.1. The `[pycubrid]` extra intentionally supports sync and async URLs; bare installation keeps the same dependency contract. Fresh wheel smokes exercise async engine creation on 2.0.53 and 2.1.1 without a database or ambient packages. This is a patch-level installation bug fix.
+- **Installation guidance distinguishes the driver from the async bridge (#448)** — FAQs, connection and troubleshooting guides, and translations now consistently state that pycubrid itself needs no CUBRID native libraries, while the `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available.
+- **Last-insert-ID SQL fallback works on SQLAlchemy 2.x (#458)** — both execution contexts now obtain a regular cursor from the active DBAPI connection for `SELECT LAST_INSERT_ID()`, instead of calling SQLAlchemy's unimplemented server-side-cursor hook. Native driver IDs (including `None`) remain preferred, and the temporary cursor is closed even if execution, fetching, or integer conversion fails. This is a backward-compatible bug fix suitable for a patch release.
+- **Nightly mutation testing migrated to mutmut 3** — the `dev` extra now pins `mutmut>=3.8,<4` (was `>=2.5,<3`; supersedes #450). The nightly `mutation-testing` job used mutmut 2 CLI options (`run --paths-to-mutate`, `result-ids`) that mutmut 3 removed, and masked failures with `|| true`, so an upgrade would have printed a wrong score instead of failing. The `[mutmut]` section in `setup.cfg` now uses mutmut 3 keys (`source_paths`, `only_mutate`, pytest arguments, `forkserver` process isolation because two MERGE tests cannot run twice in one process), and the job reads the score from `mutmut export-cicd-stats`. A mutmut crash, failing clean test run, zero mutants or zero kills now fails the step; surviving mutants only lower the reported score, and the job remains non-gating (`continue-on-error`). mutmut 3 generates more mutants than mutmut 2, so scores are not comparable with the earlier 288/449 baseline. CI/dev tooling only; no runtime change.
 
-### Documentation
-- **Installation prerequisites and driver guidance (#448)** — Documentation across connection guides, troubleshooting, and FAQs clarifies that pycubrid requires no native CUBRID libraries, while the [pycubrid] async extra requires greenlet which may need C build tools when prebuilt wheels are unavailable.
-- **Contributor guides and documentation exception rules** — Added a repository contribution guide with Korean translations, documented the good first issue lifecycle in AGENTS.md, and clarified standalone format requirements for docs-not-needed PR body exemptions.
-
-### CI
-- **Upstream pycubrid canary issue reporting (#521)** — Configured scheduled and manual canary workflows against pycubrid@main to automatically open, comment on, or close a tracking issue titled "Upstream canary failing against pycubrid@main" using the GitHub CLI.
-- **Tooling, typing, and mutation testing alignment (#450, #459, #464)** — Aligned Ruff and mypy pre-commit hooks with development dependencies (#464), enforced strict typing across SQLAlchemy 2.0 and 2.1 via typed boundaries and CI check cells (#459), and upgraded nightly mutation testing to mutmut 3 with score reporting and strict failure handling (#450).
-
-### Tests
-- **SQLAlchemy compliance and driver-differential testing lanes (#463, #486)** — Added merge-gating compliance lanes for cubrid+pycubrid:// on Python 3.14/CUBRID 11.4 and Python 3.10/CUBRID 10.2 using lane-keyed test/known_failures.txt manifests, unskipping ~300 tests per lane (#463, #529, #530, #531, #532, #533, #534, #535). A required driver-differential suite now includes an all-skipped safety guard and driver version logging (#486).
-- **Live driver contract and constraint test suites (#464, #480, #481, #482, #484, #485)** — Added live integration tests across CUBRIDdb and pycubrid for BLOB/CLOB round trips (#485), verified that results are never silently truncated across commit or rollback boundaries (#481), asserted IntegrityError on constraint violations with connection reuse (#480, #484), checked cursor.description type codes and nullability (#482), and made pure-driver tox integration preflight checks explicit (#464).
+### Docs
+- Added a README "First contribution" guide (with Korean translation) pointing newcomers to the right sibling repo for their first PR, and documented the `good first issue` → `status: in progress` label lifecycle in AGENTS.md.
 
 ## [1.7.1] - 2026-09-18
 
-This maintenance release fixes multi-column primary-key reflection, numeric bind scale preservation, OFFSET without LIMIT, and IS DISTINCT FROM execution. It also improves executemany inserts with cast decorators, makes unsupported multi-row ON DUPLICATE KEY UPDATE expressions fail clearly, and expands dialect test coverage.
+This maintenance release contains fixes and supporting documentation and tests. The detailed sections below identify the affected behavior and related references.
+
+**Highlights**
+
+- **More accurate SQL execution** — fixes multi-column primary-key reflection, numeric bind handling, `OFFSET` without `LIMIT`, and `IS DISTINCT FROM` execution.
+- **Safer ORM behavior** — improves `executemany` inserts and makes unsupported multi-row `ON DUPLICATE KEY UPDATE` expressions fail with a clear error.
+- **Stronger regression coverage** — adds UUID round-trip, property-based, differential, and real-application ORM tests, and makes SQLAlchemy dialect compliance checks gate CI.
+- **Expanded documentation** — adds runnable examples and clarifies driver-specific numeric precision limitations.
+
+The detailed changes below preserve the original technical context and references.
 
 ### Added
-- **Runnable usage examples in public docstrings (#337)** — added live-verified usage examples to package and dialect docstrings for connection URL forms (cubrid+pycubrid://, cubrid+cubriddb://, async cubrid+aiopycubrid://), inspect(), and insert().on_duplicate_key_update().
-
-### Removed
-- **Dead implicit_returning dialect attribute removed (#396)** — removed the obsolete SQLAlchemy 1.x-era implicit_returning = False attribute; SQLAlchemy 2.x determines implicit RETURNING support solely from insert_returning (already False), and DefaultDialect no longer defines the attribute.
+- **Runnable usage examples in public docstrings (#337)** — added short, live-verified examples to the five main entry points: the connection URL forms (`cubrid+pycubrid://`, `cubrid+cubriddb://`, async `cubrid+aiopycubrid://`) in the package docstring, the `ON DUPLICATE KEY UPDATE` construct on `insert()`, and reflection via `inspect()` in the dialect module docstring (`REPLACE` and `MERGE` already had examples). Docstrings only — no behavior change; each example was executed against a live CUBRID 11.4.
+- **UUID type contract test matrix (#376)** — added `test/test_uuid_contract.py`, which pins the full round-trip contract for `sa.Uuid()` (Python `uuid.UUID` values) and `sa.Uuid(as_uuid=False)` (string values) across INSERT, SELECT, WHERE, UPDATE, and reflection, against a live CUBRID. CUBRID has no native UUID type; the dialect stores it as `CHAR(32)`, and these 8 `integration`-marked tests catch any regression in that CHAR-backed storage or the value coercion (verified: `sa.Uuid()` round-trips as `uuid.UUID`, `as_uuid=False` as `str`, WHERE/UPDATE by UUID work, and reflection reports `CHAR`). Wired into the nightly `integration-full` bug-hunt job.
+- **Mutation testing for `compiler.py` (stabilization Phase 8)** — added a `[mutmut]` configuration in `setup.cfg` (pinned `mutmut>=2.5,<3` in the `dev` extra) and a non-gating nightly `mutation-testing` job in `integration-full`. Mutation testing checks whether the offline suite actually *verifies* compiler logic rather than merely executing it: it mutates `compiler.py` and asserts the tests catch each change. The initial run scored 55.9% (251/449 mutants killed) and surfaced weak substring assertions — several tests asserted only `"JSON_EXTRACT" in sql`, `"LIMIT" in sql`, or `"GROUP_CONCAT" in sql` while letting the surrounding SQL structure mutate freely. Strengthening those to exact-match assertions on the full compiled output (JSON path extraction by type, `LIMIT`/`OFFSET` operand order and the offset-without-limit sentinel form, `UPDATE ... LIMIT`, and `GROUP_CONCAT`) raised the score to 64.1% (288/449). The job is `continue-on-error` because a score dip is a signal to strengthen a test, not a reason to block a release; the run needs no database.
+- **Real-application ORM dogfood corpus (stabilization Phase 9)** — added `test/test_dogfood_orm.py`, which models a realistic schema (users 1:N orders, orders N:M tags) and drives it the way an application would, asserting on returned data rather than generated SQL. Covers relationship loading strategies (lazy, `selectinload` eager, `joinedload` eager, many-to-many, `back_populates` navigation), complex queries (join+filter, `GROUP BY`/`HAVING`, aggregate scalars, correlated subquery, `LIMIT`/`OFFSET` pagination, `LEFT OUTER JOIN`), and transactions/mutations (rollback discards changes, commit persists across sessions, bulk `UPDATE`, cascade delete of orphaned orders, auto-increment PK populated after `flush()`). These combinations surface dialect bugs the single-construct unit tests miss. All 16 tests are `integration`-marked and run in the nightly `integration-full` bug-hunt job across every supported CUBRID version.
+- **CUBRID version-differential snapshot testing (stabilization Phase 6)** — added `test/version_differential/snapshot.py` and `test/version_differential/compare_snapshots.py`. The snapshot generator connects to one live CUBRID server and records a deterministic JSON of dialect-visible behavior: server capability probes (native ENUM, native BOOLEAN cast, `<=>`, CTE, window functions, `RETURNING`, `INTERSECT`/`EXCEPT`) and the dialect's own `get_columns()` reflection of a fixed battery of column types. The nightly `integration-full` matrix now generates one snapshot per supported CUBRID version (10.2/11.0/11.2/11.4) and a new `version-differential` job compares them, failing if any dialect-visible behavior diverges across versions without being declared in `KNOWN_DIFFERENCES`. This enforces the support claim that a program sees identical dialect behavior on every supported CUBRID version, and turns any undeclared portability difference into a red nightly build.
+- **Capability probe suite and driver-differential testing (stabilization Phases 5 & 7)** — added `test/capability/test_capability_probes.py`, which runs raw SQL against a live CUBRID and asserts the server's actual behavior matches what the dialect declares (`supports_native_enum`, `supports_native_boolean`, `supports_is_distinct_from`, `supports_multivalues_insert`, `supports_alter`, `supports_comments`, `insert_returning`, plus CTE/window/LIMIT-OFFSET), so a drift between a `supports_*` flag and reality is caught immediately instead of surfacing as a confusing downstream error. Added `test/test_driver_differential.py`, which runs the same Core operations on both the pycubrid and CUBRIDdb C-extension drivers and asserts they agree on SELECT round-trips, UPDATE/DELETE rowcount, aggregates, and NULL handling (skipping cleanly if the C-extension driver is not built). Both are `integration`-marked and run in the nightly `integration-full` bug-hunt job.
+- **Property-based fuzz + metamorphic testing with Hypothesis (stabilization Phases 1–4)** — added `test/test_fuzz_select.py`, `test/test_fuzz_insert.py`, `test/test_fuzz_reflection.py`, and `test/test_metamorphic.py`. The fuzzers generate SELECT/INSERT combinations and random tables the hand-written suite never enumerated (boundary values `0`, `±1`, `2^31`, `2^63-1`, empty/Unicode/reserved-word/backslash strings) and assert dialect invariants: compilation raises only `CompileError` (never an unexpected exception), the positional-placeholder count equals the bound-parameter count, single/executemany/multi-values inserts store identical data, DDL→reflection round-trips agree (columns, nullability, primary keys, unique constraints), and (metamorphic) Core vs ORM SELECT, bind vs literal, and SQL LIMIT/OFFSET vs a Python slice return identical rows. Hypothesis profiles (`dev`/`ci`/`nightly`) are registered in `conftest.py`; PR CI runs the fast profile, and the nightly `integration-full` workflow runs the 2000-examples profile against live CUBRID. This bug-hunt found and fixed #426.
 
 ### Fixed
-- **Reflection gaps and system view filtering (#387)** — fixed get_columns() to read comments from class_of.class_name, translated raw table-not-found errors to NoSuchTableError in get_columns() and get_indexes(), filtered out internal system views in get_view_names(), and set requires_name_normalize = False to skip incompatible case-normalization tests.
-- **Composite primary key reflection (#426)** — updated get_pk_constraint() to query _db_index and _db_index_key in key order with a SHOW COLUMNS fallback, preventing composite primary keys from losing columns after the first.
-- **Parameter count in executemany with bind expressions (#421)** — disabled insertmanyvalues row-expansion for INSERT statements targeting columns with type-decorator bind expressions (such as CAST), falling back to standard DBAPI executemany to avoid parameter-count mismatches.
-- **Identity column compilation and time precision limits (#388)** — compiled Identity() columns to AUTO_INCREMENT instead of plain INTEGER NOT NULL, and declared lack of microsecond support for DATETIME (millisecond only) and TIME in compliance requirements.
-- **Validation for multi-row ON DUPLICATE KEY UPDATE (#371)** — raised a clear CompileError when stmt.inserted.col is referenced in multi-row inline VALUES constructs because CUBRID lacks row-alias syntax, directing callers to executemany, single-row inserts, or MERGE.
-- **Sentinel row count for OFFSET without LIMIT (#414)** — replaced the 2^30-1 string-length cap with a 2^62 sentinel constant (_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT) to allow unbounded offsets without triggering addition-overflow errors at signed BIGINT max.
-- **Numeric bind parameter scaling and FROM-less queries (#386)** — rendered CAST(? AS NUMERIC(p,s)) for scaled numeric binds in arithmetic to prevent scale loss from CUBRID integer coercion, and added default_from() returning FROM db_root for FROM-less SELECT queries with WHERE clauses.
-- **Dialect capability flags updated (#381, #382)** — set supports_is_distinct_from and supports_native_enum to True to reflect implemented capabilities (IS DISTINCT FROM emulation via <=> from #345 and #377; native ENUM DDL), enabling compliance suite tests, and corrected ENUM docstrings regarding native_enum=False.
-- **IS DISTINCT FROM expression projection (#377)** — rendered null-safe negation as (a <=> b) = 0 instead of NOT (a <=> b) to ensure valid execution in SELECT projection lists on live CUBRID servers.
-- **Driver-specific numeric precision limitation documented (#386)** — documented in docs/DRIVER_COMPAT.md and docs/TYPES.md that the legacy CUBRIDdb C-extension driver truncates fractional parts of NUMERIC/DECIMAL values below the DBAPI layer, whereas pure-Python cubrid+pycubrid:// preserves Decimal scale correctly.
+- **Removed the dead `implicit_returning = False` dialect attribute (#396)** — this was a SQLAlchemy 1.x-era switch with a comment claiming it prevents a `ResourceClosedError` on server-default INSERTs. In SQLAlchemy 2.x the CRUD compiler decides implicit `INSERT ... RETURNING` from `insert_returning` (already `False`), not `implicit_returning`, and `DefaultDialect` no longer even defines the attribute. Verified live on CUBRID 11.4 that a server-default INSERT + ORM refresh behaves identically with the attribute removed (no `ResourceClosedError`), and added an offline regression test asserting `insert_returning`/`update_returning`/`delete_returning` are the real switches and that the dead attribute stays gone.
+- **`docs/TROUBLESHOOTING.md` LIMIT/OFFSET section no longer documents SQL the dialect never emits (#416)** — the section claimed the dialect generates `LIMIT n OFFSET m` and that CUBRID rejects the comma form; both were wrong. The dialect **only ever** emits CUBRID's comma form `LIMIT offset, count` (offset first), and offset-without-limit uses a sentinel count. `select(users).limit(10).offset(20)` compiles to `LIMIT 20, 10`, not `LIMIT 10 OFFSET 20` — a reader trusting the old doc would also read the two operands in the wrong order. Corrected in both the English and Korean (`docs/ko/TROUBLESHOOTING.md`) docs.
+- **`docs/llms-full.txt` regenerated and a drift-check added to CI (#383)** — the AI-facing doc bundle was stale relative to the corrected source docs (it still taught the pre-#356 `VALUES()` ODKU pattern). It is regenerated from source via `scripts/generate_llms_full.py`, and the `lint` CI job now fails if `llms-full.txt` drifts from its generating source (regenerate-and-diff), so it can no longer silently go stale.
+- **Reflection gaps fixed: column comments, missing-table `NoSuchTableError`, and system-view filtering (#387)** — three real reflection bugs that the compliance suite's `ComponentReflectionTest` exposed. (1) `get_columns()` never returned column comments because the `_db_attribute` catalog query filtered on `class_name` instead of `class_of.class_name` (a semantic error that was silently swallowed), so every reflected `comment` was `None`; it now uses the correct catalog column. (2) Reflecting a non-existent table via `get_columns()` / `get_indexes()` leaked the raw driver `ProgrammingError` (errno -493, SQLSTATE 42S02) instead of SQLAlchemy's `NoSuchTableError`, which the reflection contract requires; both now translate the "table not found" error. (3) `get_view_names()` returned CUBRID's internal system views (`db_class`, `db_index`, …) alongside user views; it now filters `is_system_class = 'NO'`, matching `get_table_names()`. Together these resolve 22 of the 25 baselined `ComponentReflectionTest` nodes. Also set `requires_name_normalize = False`: CUBRID folds identifiers to **lower** case, not the upper case SQLAlchemy's `denormalized_names` requirement assumes, so `NormalizedNameTest` is now correctly skipped rather than failing (schema case-insensitive matching is unaffected). The remaining 3 `ComponentReflectionTest` nodes (`test_get_noncol_index` ×2, `test_get_view_names[False]`) are SA-harness fixture limitations — the test's own views / non-column-index tables are never created on CUBRID — not dialect bugs.
+- **`get_pk_constraint()` no longer drops composite primary-key columns (#426)** — reflecting a table with `PRIMARY KEY (a, b)` returned only `constrained_columns: ['a']`, silently losing every PK column after the first (and giving no column order). Root cause: the reflection scanned `SHOW COLUMNS` for the `PRI` key flag, but CUBRID (MySQL-compatible) marks only the *first* column of a composite PK as `PRI`. The PK columns are now read, in key order, from the `_db_index` / `_db_index_key` system catalog, with a `SHOW COLUMNS` fallback if the catalog query fails. Fixes reflected multi-column-PK ORM mappings and Alembic autogenerate. Found by the new reflection round-trip fuzzer.
+- **`executemany` INSERT into a column with a `bind_expression()` CAST no longer sends the wrong parameter count (#421)** — SQLAlchemy's `insertmanyvalues` row-expansion miscounts bind parameters when a target column's type wraps its bind in a `bind_expression` (e.g. a `TypeDecorator` rendering `CAST(? AS VARCHAR(50))`): it emitted 4 placeholders but only 3 parameters (`INSERT ... VALUES (?, CAST(? AS ...)), (?, CAST(? AS ...))` with `(2, 3, 2)`), so the driver raised "wrong number of parameters". The dialect now drops the `insertmanyvalues` plan (in `visit_insert`) for INSERTs targeting such a column, falling back to ordinary DBAPI executemany; single-row inserts and the normal multi-row fast path (columns without a `bind_expression`) are untouched. Fixes the compliance suite's `CastTypeDecoratorTest::test_special_type`.
+- **`Identity()` columns now emit `AUTO_INCREMENT`, and DATETIME/TIME microsecond limits are declared to the test suite (#388)** — SQLAlchemy stores an `Identity()` as `column.server_default`, which made the DDL compiler skip its `AUTO_INCREMENT` branch and emit a plain `INTEGER NOT NULL` column, so inserts failed with `Missing value for attribute 'id'`. `Identity()` is now treated as CUBRID's `AUTO_INCREMENT` (its spelling of an identity/autoincrement column). Also declared `datetime_microseconds`/`time_microseconds` as unsupported in `requirements.py` (CUBRID `DATETIME` stores millisecond precision only and `TIME` has no fractional seconds — verified live on 11.4), so the SQLAlchemy compliance suite skips those tests via its own machinery instead of baselining them as xfail. Remaining `#388` triage entries (`DistinctOnTest`, `ReturningGuardsTest`, C-driver-specific `RowCountTest`) are kept as documented xfails with precise root-cause comments; the genuine `CastTypeDecoratorTest` `insertmanyvalues` parameter-count bug is split out to #421.
+- **Documented that the legacy `CUBRIDdb` C-extension driver loses `NUMERIC`/`DECIMAL` fractional precision (#386)** — the C-extension driver (bare `cubrid://`) truncates the fractional part of `NUMERIC`/`DECIMAL` values *below* the DBAPI layer, returning e.g. `15` for a stored `15.7563`. Because the data is already lost before SQLAlchemy sees it, no dialect result processor can recover it — this is an upstream C-driver limitation, not a dialect bug. The pure-Python `cubrid+pycubrid://` driver returns `Decimal` correctly (verified live on 11.4) and is the recommended driver. The affected `NumericTest` nodes stay baselined in `test/known_failures.txt` with this explanation, and `docs/DRIVER_COMPAT.md` / `docs/TYPES.md` now document the fidelity difference between the two drivers.
+- **`ON DUPLICATE KEY UPDATE` referencing `stmt.inserted.col` now fails clearly for inline multi-row `VALUES` instead of a confusing bind error (#371)** — CUBRID has no `VALUES(col)` / row-alias syntax, so the dialect re-emits the INSERT bind parameter to reference the inserted value. That works for a single-row `INSERT` and for executemany (each execution is logically single-row), but for an inline multi-row `insert(t).values([{...}, {...}])` there is no single value to bind per conflicting row — the previous code raised a misleading `cannot resolve INSERT bind parameter ... Ensure the column is included in the INSERT values` (the column *was* included). It now raises a clear `CompileError` naming the CUBRID limitation and pointing to executemany, single-row statements, a literal/expression update, or `MERGE`. Nested references (e.g. `func.coalesce(stmt.inserted.col, ...)`) are caught too; literal/expression updates that do not reference the inserted value keep compiling for multi-row inserts. Refusing to compile avoids the silent-corruption trap of binding one row's value for every conflicting row.
+- **`OFFSET` without `LIMIT` no longer silently caps result sets at ~1.07B rows (#414)** — a bare `.offset(n)` compiled to `LIMIT n, 1073741823`, reusing CUBRID's VARCHAR-length constant (2^30-1) as the row-count sentinel. That is a string-length bound, not a legal upper bound for a `LIMIT` row count, so a query with an offset and no limit was silently truncated at 1,073,741,823 rows (wrong results, no error) on tables past that size. The sentinel is now `2^62` (`4611686018427387904`) — effectively unbounded (~4.6×10^18 rows). It is deliberately **not** the signed BIGINT maximum (2^63-1): CUBRID computes `offset + row_count` internally and overflow-checks it, so a BIGINT-max sentinel raises `ERROR -458 (Overflow occurred in addition context)` for any positive offset (caught by the SQLAlchemy compliance suite's `FetchLimitOffsetTest`). 2^62 leaves ~4.6×10^18 rows of offset headroom before the sum can overflow. Named the value `_CUBRID_OFFSET_NO_LIMIT_ROW_COUNT` in `compiler.py`, and the regression test now asserts on the constant (and that the old 2^30-1 cap is gone) instead of the bare literal.
+- **Numeric bind parameters keep their scale in arithmetic, and FROM-less `SELECT ... WHERE` compiles (#386)** — CUBRID coerces a bound parameter in `NUMERIC(p,s) + ?` arithmetic to an integer, silently dropping the fractional scale (a SQL literal or an explicit CAST keeps it). Scaled `NUMERIC`/`DECIMAL` binds now render `CAST(? AS NUMERIC(p,s))` so the scale is preserved; unconstrained `Numeric()` binds are left untouched (CUBRID's bare `NUMERIC` is scale 0 — specify precision/scale for exact decimals). Also added a `default_from()` of ` FROM db_root` (CUBRID's `DUAL` equivalent) so a FROM-less `SELECT` carrying a `WHERE` clause no longer raises a syntax error.
+- **`supports_is_distinct_from` / `supports_native_enum` now report their real capabilities (#381, #382)** — both flags were `False`, which made SQLAlchemy's official suite skip `IsOrIsNotDistinctFromTest` and the native-enum tests even though both features are fully implemented (IS DISTINCT FROM emulation via `<=>` from #345/#377; native `ENUM(...)` DDL). Flipped both to `True`; the previously-skipped suite tests now run and pass live on CUBRID 11.4 (5 IS DISTINCT FROM + native-enum cases, zero regressions). Also corrected the `ENUM` docstring, which wrongly claimed `native_enum=False` is "ignored" — it correctly emits `VARCHAR(n)` per the SQLAlchemy contract (verified live).
+- **SQLAlchemy dialect compliance suite now gates CI (#380)** — the `test_suite.py` step ran with a trailing `|| true` and, worse, had no `[sqla_testing]` config, so the official SQLAlchemy suite crashed at session start (`configparser.NoSectionError`) and CI silently ignored it — the suite had never actually run. Added `setup.cfg` with the required `[sqla_testing]` section, removed `|| true`, and gated the suite on the representative Python 3.14 × CUBRID 11.4 cell. Added `has_temp_table`/`temp_table_reflection` requirement exclusions in `requirements.py` (CUBRID has no temp tables), which eliminated 732 setup errors. The remaining genuine failures are pinned as a strict-xfail baseline in `test/known_failures.txt` (loaded by `conftest.py`): any new failure fails CI, and fixing a baselined test forces its removal from the manifest. The baseline is SQLAlchemy-version-specific (suite parametrization changes between releases), so the gating cell pins `sqlalchemy==2.0.53` and `conftest.py` fails the gating run (`CUBRID_STRICT_KNOWN_FAILURES=1`) if any manifest entry no longer matches a collected test. Follow-up bug trackers: #385 (view DDL), #386 (Numeric/Decimal), #387 (reflection), #388 (misc).
+- **`IS DISTINCT FROM` live execution fixed (#377)** — live CUBRID rejects MySQL-style `NOT (a <=> b)` when the expression appears in a SELECT projection. The emulation now negates the NULL-safe `<=>` result as `(a <=> b) = 0`, which preserves the four-row SQL truth table and is valid CUBRID syntax. Added live truth-table coverage for both `IS DISTINCT FROM` and `IS NOT DISTINCT FROM`.
+- **create-release.yml: dropped `--target` from `gh release create`** — with an already-pushed tag (the normal tag-push trigger) `--verify-tag` already guarantees the tag exists, and passing `target_commitish` for an existing tag makes the Releases API return `422 Validation Failed`, so the first tag-triggered run of this workflow always failed. Verified live by the v0.4.0 tag attempt in cubrid-mcp-server.
 
-### Documentation
-- **Troubleshooting guide LIMIT/OFFSET correction (#416)** — corrected English and Korean troubleshooting docs to document CUBRID's native comma syntax LIMIT offset, count rather than the unsupported LIMIT n OFFSET m form.
-- **Documentation localization and site navigation (#341)** — completed Korean translations for 14 pages across batches 1 through 5 (including TROUBLESHOOTING, FEATURE_SUPPORT, and DEVELOPMENT), unified site navigation to a six-tab layout, and established translation synchronization tracking.
-- **Third-party licenses and provenance documentation (#333)** — added THIRD_PARTY_LICENSES.md documenting runtime dependencies and CUBRID-Python extra licensing, added a project NOTICE, documented implementation provenance in docs/ARCHITECTURE.md, and unified copyright notices.
+### Docs
+- **Demo GIF embedded in README** — auto-generated terminal demo showing create_engine → connect → execute → result.
+- **Korean/multi-language docs governance** — every `docs/README.<lang>.md` translation now carries a sync marker, and docs-sync gained a `translation-sync` job that fails a PR when `README.md` changes without any translation changing (escape hatch: the `translations-deferred` label).
+- **한국어 문서 페이지 — 배치 5 완결 (#341)** — TROUBLESHOOTING(1,325줄) 번역으로 14페이지 전체 완성.
+- **한국어 문서 페이지 — 배치 4 (#341)** — FEATURE_SUPPORT(기능 비교)·DEVELOPMENT(개발 가이드) 번역 추가. TROUBLESHOOTING만 남음.
+- **한국어 문서 페이지 — 배치 3 (#341)** — ALEMBIC(마이그레이션 가이드) 번역 추가. FEATURE·TROUBLE·DEV만 남음.
+- **한국어 문서 페이지 — 배치 2 완결 (#341)** — ORM_COOKBOOK·DML_EXTENSIONS 번역으로 Usage 축 완성. ALEMBIC·FEATURE·TROUBLE·DEV는 후속 배치.
+- **한국어 문서 페이지 — 배치 2 (Usage/Reference 1차, #341)** — TYPES·ARCHITECTURE 번역 추가. ORM_COOKBOOK·DML_EXTENSIONS·ALEMBIC·FEATURE·TROUBLE·DEV는 후속.
+- **한국어 문서 페이지 — 배치 1 (Getting Started/Ref/Ops 축, #341)** — QUICKSTART·CONNECTION·DRIVER_COMPAT·ISOLATION_LEVELS·SUPPORT_MATRIX·PERFORMANCE 6페이지 번역을 `docs/ko/`에 추가. Usage 축(ORM·DML·TYPES·ALEMBIC)과 FEATURE/ARCH/TROUBLE/DEV는 후속 배치.
+- **Docs site information architecture unified across the ecosystem** — nav reorganized to the shared six-tab skeleton (Home / Getting Started / Usage / Reference / Operations / Project), the five README translations (ko/de/hi/ru/zh) are now reachable via Project → Translations (previously URL-only), palette unified to blue with search-suggest, and the homepage gains an Ecosystem section linking the three sibling sites.
+- **CUBRID-Python BSD basis documented, server-license line added, NOTICE created, copyright unified (#333)** — `THIRD_PARTY_LICENSES.md` now records that the optional CUBRID-Python extra's `BSD` claim rests on PyPI metadata and setup.py (the upstream repository ships no LICENSE file or headers; 2- vs 3-Clause unspecified), and carries the verified CUBRID server licensing statement (engine Apache-2.0, APIs/connectors BSD per upstream `COPYING` — GPL v2+ is outdated). Added a two-line `NOTICE` (independent implementation, no third-party code). LICENSE copyright unified to `Yeongseon Choe, Gyeongjun Paik` (2021-2026).
 
-### CI
-- **AI documentation bundle and drift detection (#383)** — regenerated docs/llms-full.txt from source to remove outdated VALUES() references (#356), and added a CI lint step that fails on documentation drift.
-- **SQLAlchemy dialect compliance suite gating (#380)** — configured setup.cfg with [sqla_testing] and gated CI on Python 3.14 with CUBRID 11.4 and sqlalchemy==2.0.53, establishing strict-xfail baselines in test/known_failures.txt with tracking issues (#385, #386, #387, #388).
-- **Release workflow tag creation fix** — dropped the redundant --target flag from gh release create in create-release.yml to avoid 422 Validation Failed errors when tags are already pushed.
-
-### Tests
-- **Comprehensive dialect test suite additions (#376)** — added integration test suites including a UUID type round-trip contract matrix (#376), real-application ORM dogfooding scenarios, CUBRID version-differential snapshots across 10.2 through 11.4, live capability probe suites, Hypothesis property-based fuzzers, and mutmut mutation testing for compiler.py.
+### Docs
+- **Added `THIRD_PARTY_LICENSES.md` and a Provenance section in `docs/ARCHITECTURE.md`** — the license inventory covers the default runtime tree (SQLAlchemy, greenlet, typing_extensions) and the optional `[alembic]`/`[cubrid]` extras; the provenance note states that this dialect is an independent implementation, not a port of the legacy `CUBRID-Python`-bundled dialect. Documentation only.
 
 ## [1.7.0] - 2026-09-02
 
-This release adds native ENUM support, null-safe distinct comparisons, and native Alembic column alterations. It fixes literal backslash doubling, schema reflection, isolation-level handling, and connection pool disconnect detection while adding the explicit cubrid+cubriddb:// URL.
+This release contains multiple dialect improvements and compatibility changes. Review the detailed sections below for the affected features and upgrade considerations.
+
+**Highlights**
+
+- **More reliable SQL and schema handling** — adds native ENUM support, null-safe distinct comparisons, and safer handling of unsupported SQL constructs.
+- **Improved reflection and migrations** — fixes schema-name handling, isolation-level round trips, and support for column alterations through Alembic.
+- **More dependable connection recovery** — recognizes additional pycubrid disconnect errors so SQLAlchemy can invalidate broken pooled connections.
+- **Driver and compatibility guidance** — documents the explicit `cubrid+cubriddb://` connection URL and aligns SQLAlchemy support guidance with versions 2.0–2.1.
+
+The detailed changes below include the original issue references and CI/documentation updates.
+
+### Docs
+- **Documented that CUBRID's `LIST` collection type is a synonym for `SEQUENCE`** — CUBRID accepts `LIST(type)` in DDL but normalizes it to `SEQUENCE` at parse time, so a `LIST(INTEGER)` column is stored and reflected as `SEQUENCE OF INTEGER` (verified on live CUBRID 11.2). Clarified in `docs/TYPES.md` and via a code comment in `ischema_names` why the dialect exposes only the canonical `SEQUENCE` type and deliberately omits a `LIST` type/reflection entry (a type compiling to `LIST(...)` would produce spurious Alembic autogenerate diffs against the reflected `SEQUENCE(...)`). No behavior change.
+- **Documented canonical isolation-level names on read-back (#293)** — clarified that `get_isolation_level()` returns the *canonical* name for a level, which may differ from the alias passed to `set_isolation_level()` (CUBRID accepts several aliases per numeric level). Added a note to `docs/ISOLATION_LEVELS.md` and the `get_isolation_level()` docstring. Behavior is unchanged; the reverse mapping was already correct.
+- **Aligned the `Documentation` project URL with the README docs badge (#294)** — `pyproject.toml` pointed `Documentation` at the repo tree (`.../tree/main/docs`) while the README badge pointed at the published site `https://cubrid-lab.github.io/sqlalchemy-cubrid/`. Both now use the published site so PyPI metadata and the README agree.
+- **Documented the `[cubrid]` install extra in the README (#295)** — the optional `cubrid = ["CUBRID-Python"]` extra (the legacy C-extension driver used by the bare `cubrid://` URL) was declared in `pyproject.toml` but undocumented. Added a README installation note explaining what it installs and clarifying that the pure-Python `[pycubrid]` driver remains the recommended driver for new projects.
+- **Realigned the SQLAlchemy version-support narrative from "2.0–2.2" to "2.0–2.1" (#312)** — README (+5 locale docs), `docs/index.md`, `docs/ARCHITECTURE.md`, `docs/QUICKSTART.md`, `docs/PRD.md`, `docs/FEATURE_SUPPORT.md`, `docs/CONNECTION.md`, `docs/SA_COMPAT.md`, and `ROADMAP.md` claimed support for a non-existent SQLAlchemy 2.2 line, contradicting `docs/SUPPORT_MATRIX.md` (which correctly lists 2.1.x as the latest tested version and ≥2.2 as unsupported). SQLAlchemy's next feature line is 2.1, not 2.2 — PyPI ships only `2.1.0b1/b2/b3` pre-releases. Historical CHANGELOG entries are left intact as an accurate record.
+### Changed
+- **`is_disconnect()` hardened against pycubrid error-message wording drift (#314)** — connection-pool invalidation detection now anchors first on stable numeric error codes and then on an `OSError` in the exception's explicit `__cause__` chain (cycle-guarded), demoting substring matching of error *messages* to a last-resort fallback. Previously detection was primarily message-based, so a change to pycubrid's wording of a socket/transport failure could silently stop a dead connection from being recycled (stale connection served to the next checkout). Added pycubrid's `-4` (`ER_COMMUNICATION` / SQLSTATE `08S01`) to the known disconnect codes alongside the existing `-21003/-21005/-10005/-10007`. Detection stays conservative to avoid false-positive pool invalidation: only the *explicit* `raise ... from` cause chain is followed (implicit `__context__` is ignored, so an unrelated in-flight `OSError` does not invalidate a live connection), and a bare `OperationalError`/`InterfaceError` with no disconnect code, no `OSError` cause, and a non-disconnect message (e.g. `"invalid isolation level"`, a closed-cursor misuse) is *not* treated as a disconnect. The legacy string-match list is retained as the fallback for the CUBRIDdb C-extension driver (which lacks `OperationalError`) and for pycubrid's client-side string-only errors (e.g. `"connection lost during receive"`, which carries neither a code nor an `OSError` cause). Added offline regression tests covering the `-4` code, explicit-cause `OSError` detection, implicit-`__context__` non-detection, non-`OSError`-cause message fallback, and non-disconnect `OperationalError`/`InterfaceError` cases.
+- **Ruff lint rule selection now declared explicitly (#271)** — `pyproject.toml` configured ruff but never set `[tool.ruff.lint] select`, so `ruff check` inherited ruff's implicit defaults. Ruff expanded that default set in 0.16 (59 → 413 rules against this repo's config), which is why #267 (`0.15.21 → 0.16.2`) failed lint with 151 errors in untouched code. Pinning the ruff *version* in #252 stopped unpinned installs from drifting, but could not survive the bump itself — the rule set is now pinned too, via `select = ["E4", "E7", "E9", "F"]`, which is exactly what ruff selected by default through 0.15.x (same 59 rules under both versions).
 
 ### Added
-- **Native ENUM type support (#343)** — added native ENUM DDL via sqlalchemy_cubrid.ENUM and mapped plain sa.Enum to native ENUM with element-list reflection from SHOW COLUMNS across CUBRID 10.2, 11.0, and 11.4.
-- **IS [NOT] DISTINCT FROM emulation (#344)** — emulated SQL-standard distinct comparisons using CUBRID's null-safe equal operator <=> as NOT (a <=> b) and a <=> b.
-- **Explicit CUBRIDdb URL and install extra (#276)** — added the explicit cubrid+cubriddb:// URL and matching cubriddb = ["CUBRID-Python"] install extra for the legacy C-extension driver, keeping bare cubrid:// unchanged while recommending cubrid+pycubrid:// for new projects.
-- **Native Alembic column migrations (#305)** — implemented native ALTER TABLE MODIFY for type changes, RENAME COLUMN for renames, and CHANGE for combined operations in CubridImpl.alter_column(), avoiding batch_alter_table recreations subject to alter_table_change_type_strict.
-
-### Changed
-- **Hardened connection pool disconnect detection (#314)** — prioritized stable numeric error codes (adding pycubrid code -4 / ER_COMMUNICATION / SQLSTATE 08S01 alongside -21003, -21005, -10005, and -10007) and explicit-cause OSError inspection over substring matching in is_disconnect().
-
-### Removed
-- **Obsolete pre-MVCC isolation levels removed (#307)** — removed pre-MVCC isolation levels 1, 2, and 3 (REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES; READ COMMITTED SCHEMA, READ COMMITTED INSTANCES; READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES) from _ISOLATION_LEVEL_MAP and _ISOLATION_LEVEL_REVERSE, raising ValueError on use while retaining the three supported MVCC levels (READ COMMITTED, REPEATABLE READ, SERIALIZABLE) and valid aliases.
+- **Native ENUM type support (#343)** — `sqlalchemy_cubrid.ENUM` renders `ENUM('a', 'b', ...)` DDL. Plain `sa.Enum` maps to native ENUM via colspecs. Reflection parses the element list from `SHOW COLUMNS`. Verified live on CUBRID 10.2, 11.0, 11.4 (the docs previously and wrongly claimed CUBRID has no ENUM).
+- **`IS [NOT] DISTINCT FROM` emulation (#344)** — CUBRID lacks the SQL-standard syntax but supports the null-safe equal `<=>`. The dialect now renders `NOT (a <=> b)` / `a <=> b` — the same approach the MySQL dialect uses.
+- **New explicit `cubrid+cubriddb://` URL and `[cubriddb]` install extra for the legacy CUBRIDdb driver (#276)** — the legacy `CUBRIDdb` C-extension driver (the driver bound to the bare `cubrid://` URL) can now be selected unambiguously via the explicit `cubrid+cubriddb://` URL, backed by a matching `cubriddb = ["CUBRID-Python"]` install extra. The bare `cubrid://` URL continues to bind CUBRIDdb — no behavior change to any existing URL. For new projects the pure-Python `pycubrid` driver is the recommended choice: install `sqlalchemy-cubrid[pycubrid]` and use `cubrid+pycubrid://` (installs with pip alone, no C toolchain).
+- **Native Alembic `ALTER COLUMN` type changes and column renames (#305)** — `CubridImpl.alter_column()` previously raised `NotImplementedError` for column type changes and renames, forcing every such migration through `batch_alter_table` (full table recreate). CUBRID in fact supports MySQL-compatible `ALTER TABLE ... MODIFY`, `CHANGE`, and `RENAME COLUMN`, so the dialect now emits native DDL: a type change compiles to `MODIFY`, a rename to `RENAME COLUMN ... TO ...`, and a combined rename + type change to a single `CHANGE`. Type conversions are governed by the server's `alter_table_change_type_strict` system parameter (incompatible/truncating conversions error when `yes`, may silently truncate when `no`); `batch_alter_table` remains available as a fallback for genuinely lossy conversions. Added SQL-emission tests covering all three DDL forms.
 
 ### Fixed
-- **Preserved literal backslashes by default (#313)** — stopped unconditionally doubling backslashes in literal rendering since CUBRID defaults to no_backslash_escapes=yes, preventing data corruption in DML literals, JSON path literals, and DDL comments; added CubridDialect(no_backslash_escapes=False) for servers configured with no_backslash_escapes=no. Migration note: databases written by an affected version may contain unintended doubled backslashes in literal-rendered data, so audit such rows if you relied on inline literals.
-- **Connection pool cleanup for clean-EOF disconnects (#322)** — added the substring "connection lost" to _disconnect_messages so pycubrid client-side EOF errors without numeric codes or OSError causes correctly invalidate broken connections.
-- **Default schema name handling (#290)** — updated _get_default_schema_name() to return None instead of the string "None" when SELECT SCHEMA() yields SQL NULL, ensuring get_schema_names() returns an empty list instead of a fake schema name.
-- **Schema validation on object-detail reflection (#291)** — added _raise_if_non_default_schema() to get_columns(), get_pk_constraint(), get_foreign_keys(), get_indexes(), get_unique_constraints(), get_view_definition(), and get_table_comment() to raise NoSuchTableError for non-default schemas.
-- **Case-insensitive default schema matching (#292)** — normalized schema names with self.normalize_name() in _schema_is_default(), allowing case-mismatched names like "dba" and "DBA" to match while preserving case for explicitly quoted identifiers.
-- **Single-schema reflection consistency (#280)** — aligned get_schema_names() to return [default_schema_name] and enforced uniform schema filtering across get_table_names(), get_view_names(), has_table(), and has_index().
-- **Symmetric isolation level round-trips (#281)** — updated _ISOLATION_LEVEL_REVERSE to return canonical short names for READ COMMITTED, REPEATABLE READ, and SERIALIZABLE, ensuring pool return and reset comparisons succeed across input aliases.
-
-### Documentation
-- **SQLAlchemy version support narrative realigned (#312)** — aligned documentation across all locales and ROADMAP.md to state support for SQLAlchemy versions 2.0 to 2.1 rather than an unreleased 2.2 line.
-- **Documented legacy CUBRIDdb install extra (#295)** — added README installation notes for the optional cubrid = ["CUBRID-Python"] extra while recommending the pure-Python pycubrid driver for new projects.
-- **Documentation and metadata updates (#293, #294)** — documented that CUBRID treats LIST as a synonym for SEQUENCE in docs/TYPES.md, noted canonical isolation level return names in docs/ISOLATION_LEVELS.md (#293), and pointed the pyproject.toml Documentation URL to the published site https://cubrid-lab.github.io/sqlalchemy-cubrid/ matching the README badge (#294).
+- **`is_disconnect()` now actually recognizes pycubrid's `"connection lost during receive"` message (#322)** — the #314 hardening documented (in both the CHANGELOG and the `is_disconnect()` docstring) that pycubrid's client-side `"connection lost during receive"` string was covered by the message fallback, but the pattern was never added to `_disconnect_messages`. pycubrid raises this on a clean-EOF receive (`connection.py` sync path) with **no** numeric error code and **no** `OSError` cause, so all three detection layers missed it and SQLAlchemy failed to invalidate the dead connection — a stale connection could be served to the next pool checkout. Added the substring `"connection lost"` to `_disconnect_messages` so the message fallback matches. Added an offline regression test asserting `is_disconnect()` returns `True` for a bare driver error carrying only that message.
+- **`SELECT SCHEMA()` returning NULL no longer leaks the fake schema `"None"` (#290)** — `_get_default_schema_name()` did `str(connection.execute(text("SELECT SCHEMA()")).scalar())`, so when `SCHEMA()` returned SQL NULL the Python `None` was stringified to the literal `"None"`. Because `get_schema_names()` and `_schema_is_default()` test the value against the `None` object (not the string), that fake name leaked through as a real schema (`get_schema_names()` → `["None"]`). `_get_default_schema_name()` now returns `Optional[str]` — `None` when `SCHEMA()` is NULL, otherwise the real name — so `get_schema_names()` correctly returns `[]` with no default schema. This pins the default-schema contract used by the follow-up schema-guard fixes.
+- **Literal rendering no longer doubles backslashes, silently corrupting data on a default CUBRID (#313)** — `CubridSQLCompiler.render_literal_value()` unconditionally did `rendered.replace("\\", "\\\\")`, doubling every backslash in inline SQL literals. This is correct for MySQL but **wrong for CUBRID**, whose `no_backslash_escapes` system parameter defaults to `yes` — a backslash is a literal character, not an escape. On a default server this silently corrupted any backslash-bearing literal rendered via `literal_binds=True` (e.g. `C:\temp` was stored/compared as two backslashes), affecting DML literals, JSON inline path literals (`types.py`), and DDL `COMMENT` clauses (table/column comments, Alembic column comments). Verified empirically on live CUBRID 11.2 and against the official docs (default `no_backslash_escapes=yes`), and consistent with sibling driver pycubrid, which negotiates this per-connection. The compiler now preserves backslashes by default. A new `CubridDialect(no_backslash_escapes=False)` option restores the legacy doubling for the rare server explicitly configured with `no_backslash_escapes=no` (backslash-as-escape); it is a static dialect option because `literal_binds` compilation may run offline with no live connection. **Migration note:** databases written by an affected version may already contain unintended doubled backslashes in literal-rendered data — audit such rows if you relied on inline literals. Added compiler, JSON, DDL-comment, and live-roundtrip regression tests.
+- **Object-detail reflection now raises `NoSuchTableError` for a non-default schema (#291)** — the shared `_schema_is_default()` guard was only applied to list/existence methods (`get_table_names`, `get_view_names`, `has_table`, `has_index`), so object-detail methods (`get_columns`, `get_pk_constraint`, `get_foreign_keys`, `get_indexes`, `get_unique_constraints`, `get_view_definition`, `get_table_comment`) silently ignored `schema=` and returned metadata from the default schema — masking the fact that CUBRID exposes a single effective schema per connection. Those seven methods now call a new `_raise_if_non_default_schema()` helper that raises `NoSuchTableError("<schema>.<object>")` when `schema=` is not the default, matching SQLite's behaviour and preventing a real "object not found" from being hidden behind empty metadata. List/existence methods keep returning empty/false via `_schema_is_default()`.
+- **Schema-default comparison is now case-insensitive (#292)** — `_schema_is_default()` compared `schema == self.default_schema_name` with a plain, case-sensitive `==`. CUBRID reports catalog names uppercased (`DBA`) while SQLAlchemy normalizes to lower case, so `MetaData.reflect(schema="dba")` (or any case-mismatched schema argument) failed the guard and was treated as a foreign schema — yielding no reflection or a spurious `NoSuchTableError`. The guard now normalizes both sides via `self.normalize_name()` (the dialect's own identifier rules), so `"dba"`, `"DBA"`, and the reported default all compare equal. Names the user explicitly quoted (`quoted_name` with `quote=True`) are still compared case-sensitively, honouring the intent to preserve case.
+- **Schema reflection is now internally consistent (#280)** — `get_schema_names()` previously returned `[]` with the docstring "CUBRID does not support schemas", directly contradicting `_get_default_schema_name()` (which returns a real schema via `SELECT SCHEMA()`), and the `schema=` argument was handled differently per method: `get_table_names` returned `[]` for a non-default schema while `get_view_names`/`has_table`/`has_index` ignored the argument entirely — so `MetaData.reflect(schema=<x>)` produced a contradictory "0 tables + all views". The dialect now operates in a consistent single-schema mode: `get_schema_names()` returns `[default_schema_name]`, and a shared `_schema_is_default()` guard makes `get_table_names`, `get_view_names`, `has_table`, and `has_index` honour `schema=` uniformly (the default schema is reflected; any other schema yields nothing). Owner-qualified cross-schema reflection is intentionally not attempted. Verified against live CUBRID 11.2.
+- **Isolation-level `set` → `get` round-trip is now symmetric (#281)** — `get_isolation_level()` previously returned only the long granular spelling per code (setting `"REPEATABLE READ"` came back as `"REPEATABLE READ SCHEMA, REPEATABLE READ INSTANCES"`; `"READ COMMITTED"` / `"CURSOR STABILITY"` came back as the long form), so the short standard names a user passes in were never returned — a mismatch SQLAlchemy compares on pool return/reset. `_ISOLATION_LEVEL_REVERSE` now returns one canonical name per integer code: the short standard names for `READ COMMITTED` (4), `REPEATABLE READ` (5), and `SERIALIZABLE` (6), and the granular spelling for levels 1–3 (which have no short name). Aliases still collapse onto their canonical code, so `set` → `get` round-trips to the same level for every accepted input name. `reset_isolation_level()` and the `None`-row fallback now use the canonical `"READ COMMITTED"`. Added offline round-trip tests plus live CUBRID verification.
+- **Obsolete pre-MVCC isolation levels (1–3) removed from the accepted set (#307)** — the dialect's `_ISOLATION_LEVEL_MAP` and `get_isolation_level_values()` still advertised the four legacy granular levels that CUBRID's MVCC engine (10.0+) removed. On a modern server (verified against live CUBRID 11.2.9) `SET TRANSACTION ISOLATION LEVEL 1|2|3` is rejected with *"Isolation level value in MVCC must be 'read committed', 'repeatable read' or 'serializable'"*, so any name resolving to codes 1–3 could only ever fail at the server. Those three names (`REPEATABLE READ SCHEMA, READ UNCOMMITTED INSTANCES`, `READ COMMITTED SCHEMA, READ COMMITTED INSTANCES`, `READ COMMITTED SCHEMA, READ UNCOMMITTED INSTANCES`) now raise a clear client-side `ValueError` instead. The dialect keeps the three supported MVCC levels — `READ COMMITTED` (4), `REPEATABLE READ` (5), `SERIALIZABLE` (6) — plus the still-valid aliases (`CURSOR STABILITY` and the two long spellings that map to 4/5). `_ISOLATION_LEVEL_REVERSE` drops the dead 1–3 entries while `get_isolation_level()` stays tolerant of any unexpected server value via its string fallback. `docs/ISOLATION_LEVELS.md` rewritten to document the three MVCC levels and the historical removal.
+- **Lint job red on `main` (#268)** — `#257` removed the only use of `re` in `test/test_packaging.py` but left `import re` behind, so `ruff check sqlalchemy_cubrid/ test/` failed with `F401` and took `matrix-result` down with it. Removed the orphaned import.
 
 ### CI
-- **Integration dependencies and upstream canaries (#318, #323)** — installed pycubrid using the declared [pycubrid] extra (pycubrid>=1.3.2,<2.0) in async integration jobs (#318), added live CUBRID 11.4 integration runs against pycubrid@main in upstream-canary, and hardened Alembic autogenerate test patching for alembic>=1.14 with bounds tightened to >=1.7,<2.0 (#319, #323).
-- **SQLAlchemy canary retargeted to 2.1 (#312)** — retargeted and renamed the experimental canary job from 2.2 to --pre "SQLAlchemy>=2.1.0b1,<2.3" to track available pre-releases (#206, #231, #312).
-- **Pinned Ruff lint rules and resolved import warnings (#271, #268)** — declared explicit ruff rule selection select = ["E4", "E7", "E9", "F"] to prevent lint failures from expanded default sets (#252, #267, #271), and removed an unused re import in test/test_packaging.py (#257, #268).
+- **Async integration jobs now install pycubrid via the declared `[pycubrid]` extra instead of an unpinned bare `pip install pycubrid` (#318)** — `ci.yml` and `integration-full.yml` installed pycubrid for the async integration step with a bare `pip install pycubrid`, which ignored the project's declared support range (`[pycubrid]` extra = `pycubrid>=1.3.2,<2.0`) and could silently pull an out-of-range release (e.g. a future `2.0`). Both steps now run `pip install -e ".[pycubrid]"`, honoring the constraint (the redundant `pytest-asyncio` install was also dropped — it already ships in the `[dev]` extra installed earlier in the job). Clarified intent in-workflow: these jobs are **release verification** (validate against a supported *released* driver); cross-package testing against pycubrid@main (HEAD) remains the dedicated job in `upstream-canary.yml`. CI-only change; no runtime or packaging behavior change.
+- **`sqlalchemy-22-canary` pin was unsatisfiable; retargeted to SA 2.1 and renamed (#312)** — the canary installed `--pre "sqlalchemy>=2.2.0b1,<2.3"`, but no `2.2.x` release exists on PyPI (SQLAlchemy's next line is 2.1, latest stable `2.0.52`), so the job failed at the install step on every PR and `main` and never actually ran. It now installs `--pre "SQLAlchemy>=2.1.0b1,<2.3"` and the job is renamed `sqlalchemy-21-canary`. It remains `continue-on-error: true` (non-gating). This reverts the incorrect #231 "bump" (which assumed `2.1.0b1` was no longer a pre-release) and restores the intent of #206.
+- **`upstream-canary` now exercises the online/integration suite against `pycubrid@main`, and the Alembic autogenerate patch target is version-robust (#323)** — despite #319, no CI path actually ran the *integration* tests against pycubrid git HEAD: `ci.yml` and `integration-full.yml` install the released `[pycubrid]` range, and `upstream-canary.yml` pinned HEAD but ran offline tests only. Cross-stack fixes landing in pycubrid `main` were therefore never exercised end-to-end. Added a second `upstream-canary-integration` job that spins up a CUBRID 11.4 service, installs `pycubrid@main`, and runs `test_integration.py` + `test_aio_integration.py` (both `continue-on-error: true`, non-gating). Separately, `test/test_alembic.py` and `test/test_alembic_roundtrip.py` patched `alembic.autogenerate.compare.schema.inspect`, but in alembic ≥1.14 `compare` is a module (not a package) with `inspect` bound at module level, raising `ModuleNotFoundError` (4 local failures). The patch target is now resolved at runtime against the installed alembic layout, and the `alembic` constraint is tightened to `>=1.7,<2.0` to bound future API drift. CI/test-only change; no runtime or packaging behavior change.
 
 ## [1.6.0] - 2026-07-18
 
 This release strengthens schema reflection and SQLAlchemy compatibility. Primary-key and unique-constraint metadata are more reliable, with additional safeguards for changes to SQLAlchemy internals.
 
-### Changed
-- **FK reflection code extracted into testable helper (#120)** — `_get_foreign_keys_from_ddl()` is now a standalone method. CUBRID system catalog views do not expose FK referenced-table/column metadata, so DDL parsing remains the sole FK reflection path. The extraction improves unit test isolation.
-
 ### Fixed
 - **`bind_with_type` private API insulation (#231)** — `bind_with_type()` in `_compat.py` called `element._clone()` without a guard. If SQLAlchemy renames or removes `_clone()` in a future release (e.g. 2.2+), the dialect would crash with `AttributeError`. Added `try/except AttributeError` fallback that constructs a fresh `BindParameter` with the same key, value, type, and unique flag. This path only fires if SA changes the private API; the existing `_clone()` path remains the primary code path for SA 2.0–2.1.
 - **PK constraint name reflection fixed (#120)** — `get_pk_constraint()` queried the non-existent `db_constraint` system view (CUBRID has no such view in any version), causing the PK constraint name to always be `None` in production. The query now targets `_db_index` (`is_primary_key = 1`), the authoritative system catalog for index metadata. Constraint names like `pk_users` are now correctly reflected.
 - **Unique constraint reflection hardened via system catalog (#120)** — `get_unique_constraints()` now queries `_db_index` (`is_unique = 1`, excluding PK/FK auto-indexes) and resolves column names via `SHOW INDEXES` as the primary path, with the DDL regex as a fallback. This eliminates brittle regex parsing when the system catalog is available, matching the proven pattern already used by `get_indexes()`.
+
+### Changed
+- **FK reflection code extracted into testable helper (#120)** — `_get_foreign_keys_from_ddl()` is now a standalone method. CUBRID system catalog views do not expose FK referenced-table/column metadata, so DDL parsing remains the sole FK reflection path. The extraction improves unit test isolation.
 
 ### CI
 - **SA 2.2 canary bumped (#231)** — the `sqlalchemy-22-canary` CI job now installs `sqlalchemy>=2.2.0b1` (was `>=2.1.0b1`, which is no longer a pre-release). Added `continue-on-error: true` so canary failures warn but don't gate PRs — pre-release breakage is expected and shouldn't block development.
@@ -509,15 +2014,13 @@ This release expands SQLAlchemy 2.1 compatibility and improves asynchronous test
 
 ### Added
 - **SQLAlchemy 2.1 / forward-compat shims for SA 2.2 (#206)** — dependency upper bound bumped to `<2.3` (now `sqlalchemy>=2.0,<2.3`), enabling installation on SA 2.1 and future 2.2 releases. New `CubridCompiler.update_post_criteria_clause` override routes the existing `cubrid_limit` LIMIT rendering through the SA 2.1 hook that replaced `update_limit_clause`. `_render_json_extract_from_binary` now recognises `Float` as a numeric affinity since SA 2.1 split it out of `Numeric`, restoring `CAST(... AS DOUBLE)` emission for `JSON[...].as_float()`. `AsyncAdapt_pycubrid_connection.await_` is redeclared as a class-level staticmethod because SA 2.1 dropped the inherited attribute on `AsyncAdapt_dbapi_connection`. Cross-version offline test suite (639 tests) green on both SA 2.0.49 and SA 2.1.0b2.
-
-### Performance
-- **Native pycubrid ping causally validated** — Tier 2 ORM benchmark in [cubrid-benchmark`2026-04-22_native-ping-hotpath`](https://github.com/cubrid-lab/cubrid-benchmark/tree/main/experiments/orm-overhead/runs/2026-04-22_native-ping-hotpath) (paired same-version A/B, 7 trials, bootstrap 95% CI) confirms `do_ping()` native CHECK_CAS path delivers a practical pre-ping hot-path win: SQLAlchemy Core `checkout_select_by_pk` +108.2% throughput [+107.8, +109.6], ORM `session_select_by_pk` +42.1% [+41.8, +43.9], with p50/p95 latency also reduced. Effect applies to short-lived checkout/session workloads with `pool_pre_ping=True` (typical web request pattern); steady-state long-connection workloads are unaffected.
-
-### CI
 - **`sqlalchemy-22-canary` CI job promoted to gating (#206)** — previously `continue-on-error: true` against a non-existent `sqlalchemy>=2.2.0b1`. Now installs `--pre "sqlalchemy>=2.1.0b1,<2.3"` so the job actually exercises the latest available SA pre-release and fails the build on regressions.
 
-### Tests
+### Fixed
 - **Async integration stability for issue #208** — `test/test_aio_integration.py` now seeds per-test data instead of relying on module-shared CRUD state, adds live `pool_pre_ping=True` recovery coverage after an internal async transport drop, and verifies async SQLAlchemy INSERT returns `lastrowid` without adding a new `AsyncAdapt_pycubrid_connection.get_last_insert_id()` passthrough because async pycubrid already populates `cursor.lastrowid` and the dialect retains SQL fallback.
+
+### Validated
+- **Native pycubrid ping causally validated** — Tier 2 ORM benchmark in [cubrid-benchmark`2026-04-22_native-ping-hotpath`](https://github.com/cubrid-lab/cubrid-benchmark/tree/main/experiments/orm-overhead/runs/2026-04-22_native-ping-hotpath) (paired same-version A/B, 7 trials, bootstrap 95% CI) confirms `do_ping()` native CHECK_CAS path delivers a practical pre-ping hot-path win: SQLAlchemy Core `checkout_select_by_pk` +108.2% throughput [+107.8, +109.6], ORM `session_select_by_pk` +42.1% [+41.8, +43.9], with p50/p95 latency also reduced. Effect applies to short-lived checkout/session workloads with `pool_pre_ping=True` (typical web request pattern); steady-state long-connection workloads are unaffected.
 
 ## [1.4.3] - 2026-05-13
 
@@ -564,16 +2067,17 @@ This documentation-only patch clarifies supported behavior and keeps translated 
 This release adds SQLAlchemy compatibility safeguards, Alembic migration guidance, and connection-pool stress coverage. It also updates the optional pycubrid dependency requirement.
 
 ### Added
-- **SQLAlchemy 2.2 compatibility shim** — `sqlalchemy_cubrid/_compat.py` insulates compiler from SA private API changes (`is_literal_value`, `bind_with_type`, `for_update_arg`, `limit_clause`, `offset_clause`). `bind_with_type` now preserves `expanding`/`literal_execute`/`isoutparam` flags; `is_literal_value` handles `visitors.Visitable` instances (Oracle post-review fixes) (#142). SQLAlchemy 2.2 remains unsupported: the dependency stays pinned to `<2.2`, and the shim prepares the codebase for a future bump without lifting the pin.
+- **SQLAlchemy 2.2 compatibility shim** — `sqlalchemy_cubrid/_compat.py` insulates compiler from SA private API changes (`is_literal_value`, `bind_with_type`, `for_update_arg`, `limit_clause`, `offset_clause`). `bind_with_type` now preserves `expanding`/`literal_execute`/`isoutparam` flags; `is_literal_value` handles `visitors.Visitable` instances (Oracle post-review fixes) (#142)
 - **Alembic safety checklist + advisory CLI** — `docs/ALEMBIC.md` adds Pre-Migration Checklist, Pre-Deploy Sequence, and Rollback Template; `scripts/alembic_safety_check.py` provides advisory detection for non-transactional DDL risks (#144)
 - **Compiler benchmark baseline** — `scripts/bench_compile.py` per-construct timing baseline. Baselines: SELECT+LIMIT ~178µs, INSERT ~129µs, INSERT ON DUPLICATE KEY UPDATE ~234µs (1.8× simple INSERT due to `replacement_traverse` overhead), SELECT FOR UPDATE ~153µs (#145)
+- **QueuePool concurrency stress tests** — 6 tests covering sync concurrent checkouts within `pool_size`, overflow burst absorption with barrier sync, `pool_timeout` exhaustion, `pool_recycle` aged-connection replacement, async `gather` within `pool_size`, async overflow burst
 
 ### Fixed
 - **pycubrid dependency pin** — `pycubrid>=1.2.0,<2.0` (was missing upper bound) (#143)
-
-### Tests
-- **QueuePool concurrency stress tests** — 6 tests covering sync concurrent checkouts within `pool_size`, overflow burst absorption with barrier sync, `pool_timeout` exhaustion, `pool_recycle` aged-connection replacement, async `gather` within `pool_size`, async overflow burst
 - **F401 lint regression** — removed unused `CubridDialect` import in `test/test_logging.py`
+
+### Deferred
+- **SA 2.2 compatibility** — remains pinned to `<2.2` per existing limitation; the compat shim prepares the codebase for the future bump but does not lift the pin
 
 ## [1.3.0] - 2026-04-19
 
@@ -585,51 +2089,46 @@ This release improves schema reflection, SQL compilation, and Alembic migration 
 - **FULL OUTER JOIN / LATERAL rejection** — raises `CompileError` for unsupported join types instead of generating invalid SQL (#138)
 - **`get_check_constraints()`** — returns empty list with documentation that CUBRID parses but ignores CHECK constraints (#139)
 - **Alembic `alter_column` guardrails** — `CubridImpl.alter_column()` rejects `type_`/`new_column_name` with clear error, allows `nullable`/`server_default` (#136)
+- **Distribution smoke test** — CI validates sdist/wheel build (#122)
+- **Entry point verification test** — importlib.metadata check for dialect registration (#123)
+- **Release consistency CI** — automated tag/version/changelog alignment checks (#124)
+- **SHOW CREATE TABLE golden tests** — parsing fixture corpus for DDL reflection (#125)
+- **Alembic autogenerate regression tests** — false-positive diff detection (#126)
 - **Reflection fallback logging** — silent errors in dialect.py now logged (#127)
-
-### Changed
-- **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
-- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity
-- **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
+- **Async integration tests in CI** — promoted from optional to regular (#130)
+- **CUBRID version-specific reflection snapshots** — DDL output tests across versions (#134)
+- **SA_COMPAT.md** — documents SQLAlchemy private API dependencies and 2.2 readiness plan (#132)
 
 ### Fixed
 - **`has_index()` bug** — now filters by `class_of.class_name` to avoid cross-table false positives
 - **`reset_isolation_level()`** — uses canonical isolation level name instead of alias
 - **`get_isolation_level()` fallback** — returns canonical `"READ COMMITTED"` instead of driver-specific alias (#140)
 
-### Documentation
+### Changed
+- **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
 - **README consolidation** — authoritative support contract with async status and known limitations (#128)
 - **ARCHITECTURE.md / DEVELOPMENT.md refresh** — updated to reflect current module structure (#129)
 - **Reflection diagnostic guide** — troubleshooting for Alembic autogenerate issues (#131)
-- **SA_COMPAT.md** — documents SQLAlchemy private API dependencies and 2.2 readiness plan (#132)
-
-### CI
-- **Distribution smoke test** — CI validates sdist/wheel build (#122)
-- **Release consistency CI** — automated tag/version/changelog alignment checks (#124)
-- **Async integration tests in CI** — promoted from optional to regular (#130)
-
-### Tests
-- **Entry point verification test** — importlib.metadata check for dialect registration (#123)
-- **SHOW CREATE TABLE golden tests** — parsing fixture corpus for DDL reflection (#125)
-- **Alembic autogenerate regression tests** — false-positive diff detection (#126)
-- **CUBRID version-specific reflection snapshots** — DDL output tests across versions (#134)
+- **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
+- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity
 
 ## [1.2.3] - 2026-04-19
 
-This corrective release ships the 1.2.2 changes that the PyPI 1.2.2 artifact is missing. Install 1.2.3 or later instead of 1.2.2.
+This corrective release replaces the yanked PyPI 1.2.2 distribution. Install 1.2.3 to obtain the intended Alembic fixes and async dialect entry points.
 
 ### Fixed
 
-- **Re-release of 1.2.2** from current `main` HEAD. The PyPI 1.2.2 artifact was
-  built from an older commit (pre-async-dialect, pre-#120 fix), so it shipped
-  without the #120 fix and without the `cubrid.pycubrid` and `cubrid.aiopycubrid`
-  entry points. PyPI 1.2.2 is not yanked; do not pin `==1.2.2`.
+- **Re-release of 1.2.2** from current `main` HEAD. The `v1.2.2` git tag
+  unintentionally pointed to an older commit (pre-async-dialect, pre-#120 fix),
+  so the PyPI 1.2.2 artifact shipped without the #120 fix and was missing the
+  `cubrid.pycubrid` and `cubrid.aiopycubrid` entry points. **PyPI 1.2.2 has been
+  yanked**; please upgrade to 1.2.3.
 - No source code changes vs. `main` — same fixes as listed under [1.2.2] below,
   now actually shipped to PyPI.
 
 ## [1.2.2] - 2026-04-19
 
-The intended source changes fix Alembic autogenerate reflection, but the published PyPI 1.2.2 artifact was built from an older commit: it lacks the #120 fix and the `cubrid.pycubrid` / `cubrid.aiopycubrid` entry points. **Install 1.2.3 instead.**
+The intended source changes fix Alembic autogenerate reflection, but the published PyPI 1.2.2 artifact was built from an older commit and was yanked. **Install 1.2.3 instead.**
 
 ### Fixed
 
@@ -666,13 +2165,10 @@ This patch fixes asynchronous engine creation and JSON column inserts, and expan
   attributes in `CubridDialect.__init__()` — ORM `JSON` column inserts no
   longer raise `AttributeError` (#117)
 
-### Documentation
-
-- Async usage sample (`samples/async_basic.py`)
-
-### Tests
+### Added
 
 - 16 async E2E integration tests (`test/test_aio_integration.py`)
+- Async usage sample (`samples/async_basic.py`)
 
 ## [1.2.0] - 2026-04-18
 
@@ -718,20 +2214,29 @@ This release introduces the asynchronous pycubrid dialect through the `cubrid+ai
 
 This release establishes the 1.x compatibility contract and documents the supported Python, CUBRID, SQLAlchemy, and Alembic versions alongside known limitations.
 
-### Upgrade notes
+### Compatibility Policy
 
-- **Compatibility policy** — this release established the 1.x compatibility contract: the
-  public API follows semantic versioning, and breaking changes were to occur only in major
-  version bumps (2.0+). This policy was later revised: individually reviewed
-  dialect-specific convenience APIs may change in a later 1.x MINOR; core SQLAlchemy and
-  database semantics remain protected (#1115, see
-  [the 1.x API policy](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md#public-api-compatibility-in-1x)).
-- **Supported environments** — Python 3.10, 3.11, 3.12, 3.13, 3.14; CUBRID 10.2, 11.0, 11.2,
-  11.4; SQLAlchemy 2.0–2.1 (`>=2.0,<2.2`); Alembic >=1.7.
-- **Known limitations** — `RETURNING` clauses not supported (CUBRID limitation); no
-  `Sequence` support (CUBRID uses `AUTO_INCREMENT`); native `BOOLEAN` not available (mapped
-  to `SMALLINT`); lateral joins and writable CTEs not supported; `RELEASE SAVEPOINT` is a
-  no-op.
+This release establishes the 1.x compatibility contract: the public API follows semantic versioning,
+and breaking changes will only occur in major version bumps (2.0+).
+
+### Supported Environments
+
+- **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
+- **CUBRID**: 10.2, 11.0, 11.2, 11.4
+- **SQLAlchemy**: 2.0–2.1 (`>=2.0,<2.2`)
+- **Alembic**: >=1.7
+
+### Known Limitations
+
+- `RETURNING` clauses not supported (CUBRID limitation)
+- No `Sequence` support (CUBRID uses `AUTO_INCREMENT`)
+- Native `BOOLEAN` not available (mapped to `SMALLINT`)
+- Lateral joins and writable CTEs not supported
+- `RELEASE SAVEPOINT` is a no-op
+
+### Fixed
+- `visit_join` signature: added missing `from_linter` parameter to match SQLAlchemy base class
+- `sqlalchemy.sql.util.warn`: replaced with correct `sqlalchemy.util.warn` API
 
 ### Added
 - Full type annotations across all 8 source modules (mypy errors: 280 → 0)
@@ -742,10 +2247,6 @@ This release establishes the 1.x compatibility contract and documents the suppor
 - pycubrid optional dependency updated from `>=0.6.0` to `>=1.0,<2.0`
 - All documentation updated to explicitly state "SQLAlchemy 2.0–2.1" support
 - Version bumped to 1.0.0
-
-### Fixed
-- `visit_join` signature: added missing `from_linter` parameter to match SQLAlchemy base class
-- `sqlalchemy.sql.util.warn`: replaced with correct `sqlalchemy.util.warn` API
 
 ## [0.8.0] - 2026-04-04
 
