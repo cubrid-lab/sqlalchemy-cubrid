@@ -8,7 +8,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 
 - [Installation Issues](#installation-issues)
   - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
-  - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
+  - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
   - [Missing greenlet for async engines](#missing-greenlet-for-async-engines)
 - [Connection Issues](#connection-issues)
@@ -110,12 +110,12 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 ---
 
-### ImportError: No module named 'pycubrid'
+### ModuleNotFoundError: No module named 'pycubrid'
 
 **Symptom:**
 
 ```
-ImportError: No module named 'pycubrid'
+ModuleNotFoundError: No module named 'pycubrid'
 ```
 
 **Fix:**
@@ -260,20 +260,24 @@ database. Use it only for a volume whose data you do not need.
 
 ### Authentication Failed
 
-**Symptom:**
+**Symptom:** Depending on driver and SQLAlchemy's exception wrapper, the
+underlying CUBRID error can contain either of these messages:
 
-```
-OperationalError: Authentication failed
+```text
+User "..." is invalid
+Incorrect or missing password
 ```
 
-**Fix:** CUBRID's default `dba` user has **no password**:
+**Fix:** Check the username, database and password in the URL. The **local
+disposable Docker lab** creates a `dba` user without a password; do not
+assume that a production server allows an empty DBA password:
 
 ```python
-# Correct — no password
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+# Disposable local lab only — empty password
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
-# Correct — with password (if set)
-engine = create_engine("cubrid://dba:mypassword@localhost:33000/testdb")
+# Server with an explicitly configured password
+engine = create_engine("cubrid+pycubrid://dba:mypassword@localhost:33000/testdb")
 ```
 
 ---

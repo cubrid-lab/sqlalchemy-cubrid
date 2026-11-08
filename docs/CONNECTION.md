@@ -386,7 +386,7 @@ The result (e.g., `11.2.0.0374`) is parsed into a tuple `(11, 2, 0, 374)` for in
 
 ### Common Connection Errors
 
-#### `ImportError: No module named 'CUBRIDdb'`
+#### `ImportError: Could not import CUBRIDdb`
 
 The CUBRIDdb C-extension driver that the `cubrid://` URL uses is not installed. Switch
 to the recommended pure-Python driver:
