@@ -57,7 +57,12 @@ def test_existing_contributor_has_plain_credit() -> None:
         [{}],
         [{"merged_at": None}],
         [{"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "bot[bot]", "type": "Bot"}}],
-        [{"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "sisyphus-dev-ai", "type": "User"}}],
+        [
+            {
+                "merged_at": "2026-10-30T04:41:38Z",
+                "user": {"login": "sisyphus-dev-ai", "type": "User"},
+            }
+        ],
         [
             {"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "a", "type": "User"}},
             {"merged_at": "2026-10-30T04:41:38Z", "user": {"login": "b", "type": "User"}},
