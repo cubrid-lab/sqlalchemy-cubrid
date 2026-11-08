@@ -1421,25 +1421,87 @@ This release raises the minimum supported Python version to 3.11. Applications o
 
 ### Upgrade notes
 
-- **Python 3.11 or newer is required (#686, #703)** — Python 3.10 reached upstream end of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10 `pip` keeps installing 1.9.x, the last line that supports it; only the latest release line receives fixes, so 1.9.x gets no further releases. Upgrade Python, recreate your virtual environment and validate your application before upgrading.
+- **Python 3.11 or newer is required (#686).** Python 3.10 reached upstream end
+  of life on 2026-10-01 and its retirement was announced in 1.9.0. On Python 3.10
+  `pip` keeps installing 1.9.x, the last line that supports it; only the latest
+  release line receives fixes, so 1.9.x gets no further releases. Upgrade Python,
+  recreate your virtual environment and validate your application before upgrading.
+
+### Added
+
+* **python:** require Python 3.11 or later ([#703](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/703)) ([f764d27](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f764d27d2f20ece8b2f914b61c5dc1776313b04e)), closes [#686](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/686)
 
 ### Changed
 
-- **Development tooling updated for Python 3.11 (#687, #688)** — Removed `py310` from tox `envlist` and re-targeted `typecheck-sa20` to Python 3.11 (#687); updated Ruff `target-version` and mypy `python_version` to 3.11 in `pyproject.toml` (#688).
-- **Disconnect detection drops the Python 3.10 timeout case** — `CubridDialect._has_oserror_cause` now checks `OSError` directly: from Python 3.11, `asyncio.TimeoutError` is the built-in `TimeoutError`, an `OSError` subclass, so the separate check was obsolete after #686. A `TimeoutError` cause is still treated as a disconnect ([#732](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/732), closes #689) by @UsmanGhias.
+- **tox no longer lists Python 3.10 (#687)** — `py310` is removed from
+  `envlist`, and `typecheck-sa20` type-checks SQLAlchemy 2.0.53 on Python 3.11
+  instead of 3.10. Local tooling only; CI and the dialect are unchanged.
+- **Ruff and mypy target Python 3.11 (#688)** — `target-version = "py311"` and
+  `python_version = "3.11"` in `pyproject.toml`, matching the minimum supported
+  version. The rule selection is unchanged and no source needed a fix.
+
+- **Disconnect detection drops the Python 3.10 timeout case (#689)** — `CubridDialect._has_oserror_cause` now checks `OSError` directly: from Python 3.11, `asyncio.TimeoutError` is the built-in `TimeoutError`, an `OSError` subclass, so the separate check was obsolete after #686. A `TimeoutError` cause is still treated as a disconnect ([#732](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/732)) by @UsmanGhias.
 
 ### Removed
 
-- **Python 3.10 support (#686, #703)** — `requires-python` is `>=3.11` and the 3.10 classifier is gone. CI no longer tests 3.10: the oldest integration cell is Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python 3.11–3.14 and the Alembic compatibility job runs on 3.11. Python 3.10 used to select SQLAlchemy 2.0 by itself (SQLAlchemy 2.1 needs Python 3.11), so the oldest CI cell and the Python 3.11 row of the full matrix now pin `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary integration tests on the minimum supported SQLAlchemy line. No dialect behavior changes on Python 3.11 or newer.
+- **Python 3.10 support (#686)** — `requires-python` is `>=3.11` and the 3.10
+  classifier is gone. CI no longer tests 3.10: the oldest integration cell is
+  Python 3.11 × CUBRID 10.2 × SQLAlchemy 2.0.53, the full matrix covers Python
+  3.11–3.14 and the Alembic compatibility job runs on 3.11. Python 3.10 used to
+  select SQLAlchemy 2.0 by itself (SQLAlchemy 2.1 needs Python 3.11), so the
+  oldest CI cell and the Python 3.11 row of the full matrix now pin
+  `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary
+  integration tests on the minimum supported SQLAlchemy line. No dialect
+  behavior changes on Python 3.11 or newer.
 
 ### Documentation
 
-- **Python 3.11 documentation updates (#695, #731)** — Stated the Python 3.11+ requirement and 3.11–3.14 support range across README and quickstarts (#695, #731).
-- **Contributor and CI guides state Python 3.11** — updated the contributor and CI documentation for the Python 3.11 minimum ([#718](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/718), closes #696) by @kragent66-glitch (first contribution 🎉).
-- **Canonical index states Python 3.11** — updated the Python requirement in the canonical `llms` index ([#740](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/740), closes #702, refs #685) by @anush-933 (first contribution 🎉).
-- **Korean translation expansion and synchronization (#706, #707, #708, #709, #710, #711, #712, #713, #714, #719, #720)** — Added Korean homepage and navigation (#707, #712), contribution guide (#708, #713), and translations for `SA_COMPAT`, `PRD`, and `RELEASE_PLEASE_VALIDATION` (#709, #714); aligned Korean matrices and feature tables with English (#706, #711, #719, #720); and added `scripts/check_docs_translation.py` in CI to detect drift (#710).
-- **Site navigation and anchors (#716, #717, #721, #722, #733, #739)** — Fixed documentation site heading anchors with Unicode-aware slugifier (#721, #722), aligned the homepage SQLAlchemy support range to 2.0–2.1 (#716, #717), and aligned contributor ownership guardrails (#733, #739).
-- **Third-party license inventory by install scope (#727, [#755](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/755))** — `THIRD_PARTY_LICENSES.md` is regenerated from one fresh environment per scope (default runtime, `[pycubrid]`, `[alembic]`, `[cubrid]`/`[cubriddb]`, `[dev]`) at a recorded commit, Python and OS by `scripts/generate_third_party_licenses.py`. MPL-2.0 packages (`certifi`, `hypothesis`, `pathspec`, `[dev]` only) are classified separately from permissive licenses instead of under a blanket "no copyleft" statement, GPL-family metadata is flagged for review (docutils is resolved from its own `COPYING`), and the CUBRID-Python BSD variant stays explicitly unresolved. The document separates dependency installation from what the wheel and sdist distribute, and notes that SQLAlchemy 2.1 installs no greenlet by default. `test/test_third_party_licenses.py` guards the inventory. No runtime change.
+- **Reproducible third-party license inventory by install scope (#727)** —
+  `THIRD_PARTY_LICENSES.md` is regenerated from one fresh environment per scope
+  (default runtime, `[pycubrid]`, `[alembic]`, `[cubrid]`/`[cubriddb]`, `[dev]`) at
+  a recorded commit, Python and OS by the standard-library
+  `scripts/generate_third_party_licenses.py` (shared with pycubrid). The old
+  document covered only the runtime tree and listed SQLAlchemy 2.0 with greenlet;
+  SQLAlchemy 2.1 installs no greenlet by default, which the scope notes now
+  explain. MPL-2.0 packages (`certifi`, `hypothesis`, `pathspec`, `[dev]` only)
+  are classified separately from permissive licenses instead of under a blanket
+  "no copyleft" statement, GPL-family metadata is flagged for review (docutils is
+  resolved from its own `COPYING`), and the CUBRID-Python BSD variant stays
+  explicitly unresolved. The document separates dependency installation from
+  what the wheel and sdist distribute. `test/test_third_party_licenses.py` fails
+  when a declared dependency is missing from its scope, a recorded version falls
+  outside a declared range, a category disagrees with the generator, a reviewed
+  row loses its review, or the CUBRID-Python entry stops saying the variant is
+  unresolved (exact `==` pins are checked for presence only, so Dependabot pin
+  bumps need no inventory refresh); `ci.yml` now routes
+  `THIRD_PARTY_LICENSES.md` changes to the repository-tooling lane that runs it.
+  No runtime change.
+- **The README and quickstart state Python 3.11 or later (#695)** — the
+  requirement lines, the tested and supported ranges (3.11–3.14) and the FAQ
+  answer in `README.md` and `docs/README.ko.md`, and the prerequisites in
+  `docs/QUICKSTART.md` and `docs/ko/QUICKSTART.md`. The Python 3.10 retirement
+  notice in both READMEs now describes the requirement as in effect from 1.10.0.
+- **In-page links work on the documentation site (#721)** — the site used the default heading slugifier, which drops non-ASCII characters, so Korean headings got ids such as `_2` and every Korean table of contents entry was dead; English links written for GitHub's slugs missed as well (208 broken anchors). `mkdocs.yml` now uses the Unicode-aware slugifier from `pymdown-extensions`, the eight anchors that were still wrong are fixed (among them a misspelled Korean heading and links to repeated "Basic Usage" headings), and `validation.links.anchors: warn` makes the strict build fail on a new broken anchor.
+- **Korean pages reviewed against the English wording (#719)** — the structure check cannot see a missing sentence. `docs/ko/DRIVER_COMPAT.md` gains the paragraph on how the `cursor.lastrowid` fallback opens and closes its cursor, `docs/ko/FEATURE_SUPPORT.md` says that the dialect handles `stmt.inserted` references, and the Native Enum row of `docs/ko/SUPPORT_MATRIX.md` matches English. The four translations added in this release (`PRD`, `SA_COMPAT`, `RELEASE_PLEASE_VALIDATION`, the contribution guide) were reviewed sentence by sentence: no content was missing, a few meanings were corrected (for example "checks not run", not "could not run") and unreadable literal renderings were rewritten. The banner on every Korean page now says the structure is checked by CI. English is unchanged.
+- **The documentation home page states one SQLAlchemy range (#716)** — its ecosystem list said "SQLAlchemy 2.0–2.2" while its first line, the README and the support matrix say 2.0–2.1. Both languages now say 2.0–2.1; the dependency pin (`>=2.0,<2.3`) is unchanged.
+- **CI fails when a Korean document drifts from its English source (#710)** — `scripts/check_docs_translation.py` compares every `docs/<name>.md` with `docs/ko/<name>.md` and fails on a missing Korean file or a different number of headings (levels 2-4), fenced code blocks or table rows; the lint job runs it on every event. Until now only README drift was checked. Documents that are deliberately English-only are listed in the script with a reason. The check compares structure, not wording. Same script as cubrid-lab/pycubrid#721.
+- **SA_COMPAT, PRD and the release-please validation record are available in Korean (#709)** — `docs/ko/SA_COMPAT.md`, `docs/ko/PRD.md` and `docs/ko/RELEASE_PLEASE_VALIDATION.md` are added, and the three documents, which were not in the site navigation, are listed in both languages. With these, every document under `docs/` has a Korean counterpart.
+- **Korean contribution guide (#708)** — `docs/CONTRIBUTING.ko.md` translates the current `CONTRIBUTING.md`, keeping commands, English GitHub conventions, label names and title examples unchanged. It is linked from the Korean README and the Korean navigation. English stays the authoritative version.
+- **Korean documentation home page and one Korean navigation section (#707)** — `docs/ko/index.md` is the Korean landing page, linked from the English home page and back. The Korean guides sat three levels deep under "Project → Translations"; they are now one top-level "한국어" section grouped like the English navigation, and every Korean page is reachable from it.
+- **Korean support matrix, feature table and CI policy match the English documents (#706)** — `docs/ko/SUPPORT_MATRIX.md` shows the CI matrix as a table and loses a Korean-only closing section; `docs/ko/FEATURE_SUPPORT.md` drops a limitation row (`IS DISTINCT FROM`) that the English table does not list; `docs/ko/CI_POLICY.md` is a full translation instead of a summary. Both CI policy pages are in the site navigation. The English text is unchanged.
+
+* **agents:** align contributor ownership and good-first-issue guardrails ([#739](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/739)) ([41153c4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/41153c4d3d88cb7ce3beaf488ca508e40ab570ab)), closes [#733](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/733)
+* **i18n:** add a Korean contribution guide ([#713](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/713)) ([fcc94b4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fcc94b47d764b7fffdc327da701c99a1d7054b60)), closes [#708](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/708)
+* **i18n:** add the Korean documentation home page ([#712](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/712)) ([2966d51](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2966d5128c938f2ed32c8f173e226f2190bafa63)), closes [#707](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/707)
+* **i18n:** correct Korean sections that fell behind the English wording ([#720](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/720)) ([7578501](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/75785012c55e95181b0144b08a669cc43bdaa411)), closes [#719](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/719)
+* **i18n:** synchronize the Korean SUPPORT_MATRIX and FEATURE_SUPPORT and translate CI_POLICY in full ([#711](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/711)) ([6c3c7c8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6c3c7c88b3ab3ea3fc718daa23671074f6e10350)), closes [#706](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/706)
+* **i18n:** translate SA_COMPAT, PRD and RELEASE_PLEASE_VALIDATION into Korean ([#714](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/714)) ([ff2dbdb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ff2dbdb1813c452ab93b4380b9bc1ce932cb92d4)), closes [#709](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/709)
+* **licenses:** reproducible license inventory by install scope ([#755](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/755)) ([2c0390d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2c0390d41fef1891d0cc80b73c0eacdf2b70362a))
+* **llms:** update the Python requirement in the canonical index ([#740](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/740)) ([c67f6af](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c67f6af859f71d203c76a8fac3e678f907918f7f)), closes [#702](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/702) [#685](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/685) by @anush-933 (first contribution 🎉)
+* **python:** state Python 3.11 or later in the README and quickstart ([#731](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/731)) ([4ee946d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4ee946dc8ab236bfe6ce0ae17e5358c52efd1b27)), closes [#695](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/695)
+* **python:** update contributor and CI docs for Python 3.11 ([#718](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/718)) ([f31ff01](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f31ff0158821aabf6b4cd77bcaeeeedb2a5936ca)), closes [#696](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/696) by @kragent66-glitch (first contribution 🎉)
+* **site:** generate heading anchors that match the links in the documents ([#722](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/722)) ([9c31e6a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9c31e6ad7b194d40046b5bde3b079f3da5aa96e4)), closes [#721](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/721)
+* state one SQLAlchemy range on the documentation home page ([#717](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/717)) ([56d606f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/56d606fe62c0575463ea691311515bd3720d3094)), closes [#716](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/716)
 
 ## [1.9.0] - 2026-10-04
 
@@ -1953,13 +2015,15 @@ This release expands SQLAlchemy 2.1 compatibility and improves asynchronous test
 
 ### Added
 - **SQLAlchemy 2.1 / forward-compat shims for SA 2.2 (#206)** — dependency upper bound bumped to `<2.3` (now `sqlalchemy>=2.0,<2.3`), enabling installation on SA 2.1 and future 2.2 releases. New `CubridCompiler.update_post_criteria_clause` override routes the existing `cubrid_limit` LIMIT rendering through the SA 2.1 hook that replaced `update_limit_clause`. `_render_json_extract_from_binary` now recognises `Float` as a numeric affinity since SA 2.1 split it out of `Numeric`, restoring `CAST(... AS DOUBLE)` emission for `JSON[...].as_float()`. `AsyncAdapt_pycubrid_connection.await_` is redeclared as a class-level staticmethod because SA 2.1 dropped the inherited attribute on `AsyncAdapt_dbapi_connection`. Cross-version offline test suite (639 tests) green on both SA 2.0.49 and SA 2.1.0b2.
+
+### Performance
+- **Historical validation of the 1.4.2 native pycubrid ping (no change in this release)** — Tier 2 ORM benchmark in [cubrid-benchmark`2026-04-22_native-ping-hotpath`](https://github.com/cubrid-lab/cubrid-benchmark/tree/main/experiments/orm-overhead/runs/2026-04-22_native-ping-hotpath) (paired same-version A/B, 7 trials, bootstrap 95% CI) confirms `do_ping()` native CHECK_CAS path delivers a practical pre-ping hot-path win: SQLAlchemy Core `checkout_select_by_pk` +108.2% throughput [+107.8, +109.6], ORM `session_select_by_pk` +42.1% [+41.8, +43.9], with p50/p95 latency also reduced. Effect applies to short-lived checkout/session workloads with `pool_pre_ping=True` (typical web request pattern); steady-state long-connection workloads are unaffected. Measured on sqlalchemy-cubrid 1.4.2 (where the native ping shipped) with pycubrid 1.3.2, SQLAlchemy 2.0.48, CUBRID 11.2.9 and CPython 3.10.12; this release adds no ping change.
+
+### CI
 - **`sqlalchemy-22-canary` CI job promoted to gating (#206)** — previously `continue-on-error: true` against a non-existent `sqlalchemy>=2.2.0b1`. Now installs `--pre "sqlalchemy>=2.1.0b1,<2.3"` so the job actually exercises the latest available SA pre-release and fails the build on regressions.
 
-### Fixed
+### Tests
 - **Async integration stability for issue #208** — `test/test_aio_integration.py` now seeds per-test data instead of relying on module-shared CRUD state, adds live `pool_pre_ping=True` recovery coverage after an internal async transport drop, and verifies async SQLAlchemy INSERT returns `lastrowid` without adding a new `AsyncAdapt_pycubrid_connection.get_last_insert_id()` passthrough because async pycubrid already populates `cursor.lastrowid` and the dialect retains SQL fallback.
-
-### Validated
-- **Native pycubrid ping causally validated** — Tier 2 ORM benchmark in [cubrid-benchmark`2026-04-22_native-ping-hotpath`](https://github.com/cubrid-lab/cubrid-benchmark/tree/main/experiments/orm-overhead/runs/2026-04-22_native-ping-hotpath) (paired same-version A/B, 7 trials, bootstrap 95% CI) confirms `do_ping()` native CHECK_CAS path delivers a practical pre-ping hot-path win: SQLAlchemy Core `checkout_select_by_pk` +108.2% throughput [+107.8, +109.6], ORM `session_select_by_pk` +42.1% [+41.8, +43.9], with p50/p95 latency also reduced. Effect applies to short-lived checkout/session workloads with `pool_pre_ping=True` (typical web request pattern); steady-state long-connection workloads are unaffected.
 
 ## [1.4.3] - 2026-05-13
 
@@ -2028,42 +2092,48 @@ This release improves schema reflection, SQL compilation, and Alembic migration 
 - **FULL OUTER JOIN / LATERAL rejection** — raises `CompileError` for unsupported join types instead of generating invalid SQL (#138)
 - **`get_check_constraints()`** — returns empty list with documentation that CUBRID parses but ignores CHECK constraints (#139)
 - **Alembic `alter_column` guardrails** — `CubridImpl.alter_column()` rejects `type_`/`new_column_name` with clear error, allows `nullable`/`server_default` (#136)
-- **Distribution smoke test** — CI validates sdist/wheel build (#122)
-- **Entry point verification test** — importlib.metadata check for dialect registration (#123)
-- **Release consistency CI** — automated tag/version/changelog alignment checks (#124)
-- **SHOW CREATE TABLE golden tests** — parsing fixture corpus for DDL reflection (#125)
-- **Alembic autogenerate regression tests** — false-positive diff detection (#126)
 - **Reflection fallback logging** — silent errors in dialect.py now logged (#127)
-- **Async integration tests in CI** — promoted from optional to regular (#130)
-- **CUBRID version-specific reflection snapshots** — DDL output tests across versions (#134)
-- **SA_COMPAT.md** — documents SQLAlchemy private API dependencies and 2.2 readiness plan (#132)
+
+### Changed
+- **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
+- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity (documented requirement; the package metadata pin was raised to `>=1.2.0,<2.0` in 1.4.0, #143)
+- **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
 
 ### Fixed
 - **`has_index()` bug** — now filters by `class_of.class_name` to avoid cross-table false positives
 - **`reset_isolation_level()`** — uses canonical isolation level name instead of alias
 - **`get_isolation_level()` fallback** — returns canonical `"READ COMMITTED"` instead of driver-specific alias (#140)
 
-### Changed
-- **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
+### Documentation
 - **README consolidation** — authoritative support contract with async status and known limitations (#128)
 - **ARCHITECTURE.md / DEVELOPMENT.md refresh** — updated to reflect current module structure (#129)
 - **Reflection diagnostic guide** — troubleshooting for Alembic autogenerate issues (#131)
-- **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
-- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity
+- **SA_COMPAT.md** — documents SQLAlchemy private API dependencies and 2.2 readiness plan (#132)
+
+### CI
+- **Distribution smoke test** — CI validates sdist/wheel build (#122)
+- **Release consistency CI** — automated tag/version/changelog alignment checks (#124)
+- **Async integration tests in CI** — promoted from optional to regular (#130)
+
+### Tests
+- **Entry point verification test** — importlib.metadata check for dialect registration (#123)
+- **SHOW CREATE TABLE golden tests** — parsing fixture corpus for DDL reflection (#125)
+- **Alembic autogenerate regression tests** — false-positive diff detection (#126)
+- **CUBRID version-specific reflection snapshots** — DDL output tests across versions (#134)
 
 ## [1.2.3] - 2026-04-19
 
-This corrective release replaces the yanked PyPI 1.2.2 distribution. Install 1.2.3 to obtain the intended Alembic fixes and async dialect entry points.
+This corrective release ships the 1.2.2 changes that the PyPI 1.2.2 artifact is missing. Install 1.2.3 or later instead of 1.2.2.
 
 ### Fixed
 
-- **Re-release of 1.2.2** from current `main` HEAD. The `v1.2.2` git tag
-  unintentionally pointed to an older commit (pre-async-dialect, pre-#120 fix),
-  so the PyPI 1.2.2 artifact shipped without the #120 fix and was missing the
-  `cubrid.pycubrid` and `cubrid.aiopycubrid` entry points. **PyPI 1.2.2 has been
-  yanked**; please upgrade to 1.2.3.
-- No source code changes vs. `main` — same fixes as listed under [1.2.2] below,
-  now actually shipped to PyPI.
+- **Corrected 1.2.2 artifact** — the `v1.2.2` tag points to the #120 merge
+  (`6c956da`), but the PyPI 1.2.2 artifact was built from an older commit
+  (pre-async-dialect, pre-#120 fix), so it shipped without the #120 fix and
+  without the `cubrid.pycubrid` and `cubrid.aiopycubrid` entry points. PyPI 1.2.2
+  is not yanked; install 1.2.3 or later.
+- The `v1.2.3` tag (`c46833f`) is the `v1.2.2` tag commit plus the version bump
+  only, so 1.2.3 ships exactly the fixes listed under [1.2.2] below.
 
 ## [1.2.2] - 2026-04-19
 
@@ -2153,29 +2223,22 @@ This release introduces the asynchronous pycubrid dialect through the `cubrid+ai
 
 This release establishes the 1.x compatibility contract and documents the supported Python, CUBRID, SQLAlchemy, and Alembic versions alongside known limitations.
 
-### Compatibility Policy
+### Upgrade notes
 
-This release establishes the 1.x compatibility contract: the public API follows semantic versioning,
-and breaking changes will only occur in major version bumps (2.0+).
+- **Compatibility Policy** — This release establishes the 1.x compatibility contract: the public API follows semantic versioning, and breaking changes will only occur in major version bumps (2.0+).
+- **Supported Environments**
+  - **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
+  - **CUBRID**: 10.2, 11.0, 11.2, 11.4
+  - **SQLAlchemy**: 2.0–2.1 (`>=2.0,<2.2`)
+  - **Alembic**: >=1.7
+- **Known Limitations**
+  - `RETURNING` clauses not supported (CUBRID limitation)
+  - No `Sequence` support (CUBRID uses `AUTO_INCREMENT`)
+  - Native `BOOLEAN` not available (mapped to `SMALLINT`)
+  - Lateral joins and writable CTEs not supported
+  - `RELEASE SAVEPOINT` is a no-op
 
-### Supported Environments
-
-- **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
-- **CUBRID**: 10.2, 11.0, 11.2, 11.4
-- **SQLAlchemy**: 2.0–2.1 (`>=2.0,<2.2`)
-- **Alembic**: >=1.7
-
-### Known Limitations
-
-- `RETURNING` clauses not supported (CUBRID limitation)
-- No `Sequence` support (CUBRID uses `AUTO_INCREMENT`)
-- Native `BOOLEAN` not available (mapped to `SMALLINT`)
-- Lateral joins and writable CTEs not supported
-- `RELEASE SAVEPOINT` is a no-op
-
-### Fixed
-- `visit_join` signature: added missing `from_linter` parameter to match SQLAlchemy base class
-- `sqlalchemy.sql.util.warn`: replaced with correct `sqlalchemy.util.warn` API
+> **Later update, not part of v1.0.0:** the 1.x compatibility policy above was revised after this release by [#1115](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1115); the current policy is in [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md#public-api-compatibility-in-1x).
 
 ### Added
 - Full type annotations across all 8 source modules (mypy errors: 280 → 0)
@@ -2186,6 +2249,10 @@ and breaking changes will only occur in major version bumps (2.0+).
 - pycubrid optional dependency updated from `>=0.6.0` to `>=1.0,<2.0`
 - All documentation updated to explicitly state "SQLAlchemy 2.0–2.1" support
 - Version bumped to 1.0.0
+
+### Fixed
+- `visit_join` signature: added missing `from_linter` parameter to match SQLAlchemy base class
+- `sqlalchemy.sql.util.warn`: replaced with correct `sqlalchemy.util.warn` API
 
 ## [0.8.0] - 2026-04-04
 
