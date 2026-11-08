@@ -78,44 +78,23 @@ This maintenance release improves documentation, test coverage, and CI tooling. 
 
 ## [1.12.0] - 2026-10-25
 
-This release improves the reliability and reporting of the development verification workflow. It changes developer commands and test reporting, not the dialect's runtime API.
+This release improves local verification and CI reporting. It changes developer workflows and issue intake, not the published dialect's runtime API.
 
 ### Upgrade notes
 
-- **`make verify` now runs the live integration lane (#1018, [#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1045))** — it runs `make check`, the
-  complete offline `make test` and then the run-owned `make integration` lane (default
-  `INTEGRATION_DRIVER=pycubrid`), so it needs Docker and takes as long as the live suite. It
-  fails when CUBRID never becomes ready or every live test skips, and it starts the live lane
-  only after the offline suite passed, also under `make -j`. `make test` stays offline; run
-  `make check test` for the former offline-only `make verify`. The deprecated `CUBRID_PORT`
-  fallback is unchanged. `make install` now also installs the `[pycubrid]` extra, so the live
-  lane can connect right after it. Development tooling only; the dialect API is unchanged by @yeongseon.
+- **`make verify` now includes live integration tests** — the command runs `make check`, the complete offline `make test`, then `make integration` in sequence, even with `make -j`. The live phase uses `pycubrid` by default, requires Docker, and fails when the test database never becomes ready or all live tests are skipped. `make test` remains offline; use `make check test` for the former offline-only verification. `make install` now installs the optional `[pycubrid]` driver as part of the development setup. The existing `CUBRID_PORT` fallback is unchanged ([#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1045), [#1018](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1018)) by @yeongseon.
 
 ### Added
 
-- **`make verify` writes `test-results/verify/` (#1020, [#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1047))** — after its phases, also after a
-  failure, `make verify` writes `summary.json` with the overall `PASS`/`FAIL`/`INCOMPLETE` status
-  and one entry per phase (`check`, `test`, `integration`). A phase that never started is
-  `NOT_RUN`, and a missing or unreadable lane summary or an all-skipped live lane is never
-  `PASS`. It also copies each lane's JUnit file to `junit/` and the live lane's redacted
-  `environment.json`, with configured passwords masked, and a file it cannot copy keeps the
-  summary from `PASS`. The new `scripts/run_verify.py` runs the phases and forwards a SIGINT,
-  SIGTERM or SIGHUP sent to make to the running phase, so `make integration` still cleans up.
-  The new `scripts/report_test_results.py aggregate` subcommand builds the summary, and
-  `step-summary` renders it. `make verify` now clears `test-results/test/` and
-  `test-results/integration/` before it starts; `make -n verify` writes nothing by @yeongseon.
+- **Verification results are written to `test-results/verify/`** — `make verify` now writes an aggregate `summary.json` with overall `PASS`, `FAIL`, or `INCOMPLETE` status and a record for each phase. Phases that never started are `NOT_RUN`; missing summaries and all-skipped live tests cannot produce `PASS`. Where available, lane JUnit files and redacted live environment metadata are copied into the verification results. The runner handles interruption signals and writes a summary even when a phase fails. It clears previous test and integration results before running, while `make -n verify` does not write files ([#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1047), [#1020](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1020)) by @yeongseon.
+
+### Changed
+
+- **New issues now enter maintainer triage** — issue templates, the issue-opening workflow, and issues created by the upstream canary apply `status: needs triage` without automatically deciding priority or size. The previous issue-metadata checking script was removed ([#1030](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1030), [#1028](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1028)) by @yeongseon.
 
 ### CI
 
-- **The `make integration` CI jobs publish the live results summary (#1021)** — `make-integration`
-  in `ci.yml` and `integration-full.yml` append `test-results/integration/summary.json` to the job
-  summary with `if: always()`, so a failing or incomplete live lane shows its status and counts
-  next to the uploaded `pytest-logs-*` artifact. No permission, secret or test-selection change by @yeongseon.
-- **Every new issue starts in `status: needs triage` (#1028)** — the issue forms add the
-  label, `issue-triage.yml` adds it to every opened issue instead of only to issues with
-  incomplete titles or labels, and the upstream canary adds it to the issues it files. The
-  unused `scripts/check_issue_metadata.py` check is removed. Priority and size are still set
-  by a maintainer, who removes the label after triage by @yeongseon.
+- **Live integration jobs now publish a results summary** — the `make-integration` jobs in `ci.yml` and `integration-full.yml` add `test-results/integration/summary.json` to the GitHub Actions job summary even when a test fails. Existing test selection, permissions, and log artifact uploads are unchanged ([#1048](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1048), [#1021](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1021)) by @yeongseon.
 
 ## [1.11.7] - 2026-10-25
 
