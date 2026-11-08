@@ -2216,18 +2216,21 @@ This release establishes the 1.x compatibility contract and documents the suppor
 
 ### Upgrade notes
 
-- **Compatibility policy** — this release established the 1.x compatibility contract: the
-  public API follows semantic versioning, and breaking changes were to occur only in major
-  version bumps (2.0+). This policy was later revised: individually reviewed
-  dialect-specific convenience APIs may change in a later 1.x MINOR; core SQLAlchemy and
-  database semantics remain protected (#1115, see
-  [the 1.x API policy](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md#public-api-compatibility-in-1x)).
-- **Supported environments** — Python 3.10, 3.11, 3.12, 3.13, 3.14; CUBRID 10.2, 11.0, 11.2,
-  11.4; SQLAlchemy 2.0–2.1 (`>=2.0,<2.2`); Alembic >=1.7.
-- **Known limitations** — `RETURNING` clauses not supported (CUBRID limitation); no
-  `Sequence` support (CUBRID uses `AUTO_INCREMENT`); native `BOOLEAN` not available (mapped
-  to `SMALLINT`); lateral joins and writable CTEs not supported; `RELEASE SAVEPOINT` is a
-  no-op.
+- **Compatibility Policy** — This release establishes the 1.x compatibility contract: the public API follows semantic versioning,
+  and breaking changes will only occur in major version bumps (2.0+).
+- **Supported Environments**
+  - **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
+  - **CUBRID**: 10.2, 11.0, 11.2, 11.4
+  - **SQLAlchemy**: 2.0–2.1 (`>=2.0,<2.2`)
+  - **Alembic**: >=1.7
+- **Known Limitations**
+  - `RETURNING` clauses not supported (CUBRID limitation)
+  - No `Sequence` support (CUBRID uses `AUTO_INCREMENT`)
+  - Native `BOOLEAN` not available (mapped to `SMALLINT`)
+  - Lateral joins and writable CTEs not supported
+  - `RELEASE SAVEPOINT` is a no-op
+
+> **Later update, not part of v1.0.0:** the 1.x compatibility policy above was revised after this release by [#1115](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1115); the current policy is in [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md#public-api-compatibility-in-1x).
 
 ### Added
 - Full type annotations across all 8 source modules (mypy errors: 280 → 0)
