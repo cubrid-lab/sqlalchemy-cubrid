@@ -59,25 +59,22 @@ This release improves documentation, examples, and contribution guidance. Runtim
 
 ## [1.12.1] - 2026-10-27
 
-This maintenance release improves documentation branding, contributor guidance, and test reliability. **There are no runtime behavior changes.**
+This maintenance release improves documentation, test coverage, and CI tooling. It does not change the dialect's SQL generation, schema reflection, connection handling, or ORM behavior.
 
 ### Documentation
 
-- **Updated documentation branding** — the README, its five translations, and the documentation site's logo and favicon now use the revised Python Yellow ORM icon. The updates progressively aligned the icon with the cube-shaped organization emblem and white role markings. These are documentation asset changes only ([#1050](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1050), [#1054](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1054), [#1063](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1063), [#1066](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1066)) by @yeongseon.
-  - **Branding revision PRs and commits** — [#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1051) ([7159590](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/715959028dcab9915eaab7478dca2228bc0345a5)),
-    [#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1055) ([f166be7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f166be7df70599af34bd353110075f9b092ee327)),
-    [#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1064) ([c5fd64d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c5fd64d8d64ff8d31edd4db292ebb47dd8c6f250)), and [#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1067) ([e1ae6a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e1ae6a4d1bc1d91bbb7028b07d344499b6997179)).
-- **Clarified contributor communication guidance** — added guidance encouraging clear, human-readable communication from coding agents ([#1056](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1056), [commit 74afeb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/74afeb36fe5cba4503b2b860dafdd0b19903af7b)) by @yeongseon.
+- **Updated the ORM brand icon** — the README, its five translations, and the documentation site's logo and favicon now point to the final Python Yellow cube icon with white role markings. Four successive icon-pin updates are presented here as one documentation change, not four separate product features ([#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1051), [#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1055), [#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1064), [#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1067)) by @yeongseon.
+- **Clarified contributor communication** — repository guidance now asks coding agents and contributors to use descriptive, human-readable wording in issues, PRs, reviews, and release notes, without changing runtime behavior ([#1056](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1056)) by @yeongseon.
 
 ### CI
 
-- **Run pycubrid-dependent tests in CI** — the `repo-tests` job now installs the `[pycubrid]` extra, preventing benchmark-script tests from being skipped solely because the dependency is absent. Optional-import guards remain for minimal installations ([#1049](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1049)) by @yeongseon.
+- **Execute driver-dependent tests in `repo-tests`** — CI now installs the optional `[pycubrid]` extra so benchmark-helper tests run rather than skipping solely because the driver was not installed. Minimal local installations still use the optional-import skip guard ([#1052](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1052), [#1049](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1049)) by @yeongseon.
+- **Updated CI actions and development dependencies** — bumped Ruff from 0.17.1 to 0.17.2, `actions/setup-python` from 7.0.0 to 7.1.0, `astral-sh/setup-uv` from 10.3.0 to 10.3.2, and `pypa/gh-action-pypi-publish` from 1.14.2 to 1.14.3; refreshed the pinned cookbook smoke-test workflow. These updates affect development/release automation rather than the published dialect's runtime dependencies ([#1057](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1057), [#1058](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1058), [#1059](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1059)); automated dependency PRs, with a verified human co-author @yeongseon on #1058.
 
 ### Tests
 
-- **Prevent resource warnings from interrupted-query tests** — the KILL QUERY test helper now closes its stdout/stderr pipes and clears leftover garbage before warning collection, preventing unrelated failures in the cubriddb compatibility lane ([#1061](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1061)) by @yeongseon.
-
-- **Benchmark baseline helpers covered by offline tests** — `test/test_bench_dialect_baseline.py` covers the benchmark baseline helpers ([#856](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/856), [#1039](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1039)) by @Nandankumarjv (first contribution 🎉), co-authored by @yeongseon.
+- **Added offline coverage for benchmark helpers** — new tests exercise the benchmark baseline's summary statistics, timing conversion, and test-order rotation. They skip when the optional `pycubrid` driver is unavailable ([#1039](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1039)) by @Nandankumarjv (first contribution 🎉), co-authored by @yeongseon.
+- **Isolated interrupted-query warnings** — the KILL QUERY test helper closes subprocess output pipes, and the async warning test collects earlier garbage before recording warnings. This prevents unrelated `ResourceWarning` failures in the CUBRIDdb compatibility lane ([#1062](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1062), fixes [#1061](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1061)) by @yeongseon.
 
 ## [1.12.0] - 2026-10-25
 
