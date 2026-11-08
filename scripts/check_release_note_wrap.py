@@ -35,7 +35,9 @@ def violations(text: str) -> list[str]:
     errors: list[str] = []
     prose: list[tuple[int, str]] = []
     fence: str | None = None
-    for n, line in enumerate(text.splitlines(), start=1):
+    section_has_bullet = False
+    lines = text.splitlines()
+    for n, line in enumerate(lines, start=1):
         content = line.lstrip()
         marker = content[:1] if content.startswith((chr(96) * 3, "~" * 3)) else None
         if marker is not None:
@@ -43,6 +45,19 @@ def violations(text: str) -> list[str]:
             continue
         if fence is not None:
             continue
+        if line.startswith("### "):
+            section_has_bullet = False
+            if n < len(lines) and lines[n].strip():
+                errors.append(f"line {n}: add a blank line after the section heading")
+        elif line.startswith(("- ", "* ")):
+            section_has_bullet = True
+        elif (
+            section_has_bullet
+            and line
+            and not line[0].isspace()
+            and not line.startswith(("#", ">", "|", "---"))
+        ):
+            errors.append(f"line {n}: unindented prose interrupts a release-note list")
         if ISSUE_LINE.match(line):
             errors.append(f"line {n}: issue reference at line start may render as a heading")
         if BYLINE.match(line):
