@@ -2204,7 +2204,7 @@ This release adds JSON columns, JSON path expressions, and typed JSON access for
 
 ### Added
 
-- **JSON type support** (CUBRID 10.2+, PR #115)
+- **JSON type support** (CUBRID 10.2+, PR #115) by @yeongseon
   - `JSON` type class subclassing `sqltypes.JSON`
   - `JSONIndexType` and `JSONPathType` for path expression formatting
     (with embedded-quote escaping per CUBRID JSON path grammar: `"` → `""`)
