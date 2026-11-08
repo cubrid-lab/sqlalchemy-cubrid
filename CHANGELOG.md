@@ -2089,28 +2089,34 @@ This release improves schema reflection, SQL compilation, and Alembic migration 
 - **FULL OUTER JOIN / LATERAL rejection** — raises `CompileError` for unsupported join types instead of generating invalid SQL (#138)
 - **`get_check_constraints()`** — returns empty list with documentation that CUBRID parses but ignores CHECK constraints (#139)
 - **Alembic `alter_column` guardrails** — `CubridImpl.alter_column()` rejects `type_`/`new_column_name` with clear error, allows `nullable`/`server_default` (#136)
-- **Distribution smoke test** — CI validates sdist/wheel build (#122)
-- **Entry point verification test** — importlib.metadata check for dialect registration (#123)
-- **Release consistency CI** — automated tag/version/changelog alignment checks (#124)
-- **SHOW CREATE TABLE golden tests** — parsing fixture corpus for DDL reflection (#125)
-- **Alembic autogenerate regression tests** — false-positive diff detection (#126)
 - **Reflection fallback logging** — silent errors in dialect.py now logged (#127)
-- **Async integration tests in CI** — promoted from optional to regular (#130)
-- **CUBRID version-specific reflection snapshots** — DDL output tests across versions (#134)
-- **SA_COMPAT.md** — documents SQLAlchemy private API dependencies and 2.2 readiness plan (#132)
+
+### Changed
+- **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
+- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity (documented requirement; the package metadata pin was raised to `>=1.2.0,<2.0` in 1.4.0, #143)
+- **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
 
 ### Fixed
 - **`has_index()` bug** — now filters by `class_of.class_name` to avoid cross-table false positives
 - **`reset_isolation_level()`** — uses canonical isolation level name instead of alias
 - **`get_isolation_level()` fallback** — returns canonical `"READ COMMITTED"` instead of driver-specific alias (#140)
 
-### Changed
-- **Status: Beta** — README, classifiers, and documentation now consistently use Beta messaging; removed "stable", "production-ready", "frozen" language
+### Documentation
 - **README consolidation** — authoritative support contract with async status and known limitations (#128)
 - **ARCHITECTURE.md / DEVELOPMENT.md refresh** — updated to reflect current module structure (#129)
 - **Reflection diagnostic guide** — troubleshooting for Alembic autogenerate issues (#131)
-- **Compiler DML helper extraction** — cleaner `visit_on_duplicate_key_update`/`visit_merge` (#133)
-- **pycubrid (sync) compatibility** — now requires `>=1.2.0` for full feature parity
+- **SA_COMPAT.md** — documents SQLAlchemy private API dependencies and 2.2 readiness plan (#132)
+
+### CI
+- **Distribution smoke test** — CI validates sdist/wheel build (#122)
+- **Release consistency CI** — automated tag/version/changelog alignment checks (#124)
+- **Async integration tests in CI** — promoted from optional to regular (#130)
+
+### Tests
+- **Entry point verification test** — importlib.metadata check for dialect registration (#123)
+- **SHOW CREATE TABLE golden tests** — parsing fixture corpus for DDL reflection (#125)
+- **Alembic autogenerate regression tests** — false-positive diff detection (#126)
+- **CUBRID version-specific reflection snapshots** — DDL output tests across versions (#134)
 
 ## [1.2.3] - 2026-04-19
 
