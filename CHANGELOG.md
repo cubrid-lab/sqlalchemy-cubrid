@@ -2228,6 +2228,11 @@ This release adds JSON columns, JSON path expressions, and typed JSON access for
 
 This release introduces the asynchronous pycubrid dialect through the `cubrid+aiopycubrid://` connection URL.
 
+### Upgrade notes
+
+- **Requirements for the async dialect** — pycubrid >= 1.1.0 (with the `pycubrid.aio` module) and SQLAlchemy 2.0–2.1. The pycubrid version is the documented requirement; the `[pycubrid]` extra metadata at this tag still allows `pycubrid>=1.0,<2.0`.
+- **Usage** — `create_async_engine("cubrid+aiopycubrid://dba:password@localhost:33000/demodb")` with `AsyncSession` for native asyncio.
+
 ### Added
 
 - **Async dialect** via `cubrid+aiopycubrid://` URL scheme
