@@ -59,16 +59,26 @@ def test_only_the_requested_release_is_inspected() -> None:
         MODULE.release_section(changelog, "9.9.9")
 
 
-@pytest.mark.parametrize(
-    "bad",
-    [
-        "### Fixed\n- Missing heading gap.\n",
-        "### Tests\n\n- Existing test.\n\n"
-        "Floating history text between list entries.\n\n- Next test.\n",
-    ],
-)
-def test_release_list_structure_errors_are_detected(bad: str) -> None:
-    assert MODULE.violations(bad)
+def test_heading_requires_a_blank_line_before_its_content() -> None:
+    assert MODULE.violations("### Fixed\\n- Missing heading gap.\\n")
+
+
+def test_valid_lazy_list_wrapping_and_following_prose_are_allowed() -> None:
+    notes = (
+        "### Tests\\n\\n- Valid bullet content\\n"
+        "continues on a lazy-wrapped line.\\n\\n"
+        "A separate explanatory paragraph is allowed.\\n"
+    )
+    assert MODULE.violations(notes) == []
+
+
+def test_branding_revision_history_stays_in_the_documentation_section() -> None:
+    changelog = (SCRIPT.parent.parent / "CHANGELOG.md").read_text(encoding="utf-8")
+    notes = MODULE.release_section(changelog, "1.12.1")
+    documentation = notes.split("### Documentation", 1)[1].split("### CI", 1)[0]
+    tests = notes.split("### Tests", 1)[1]
+    assert "Branding revision PRs and commits" in documentation
+    assert "Branding change history:" not in tests
 
 
 def test_all_published_release_sections_have_intact_markdown_structure() -> None:
