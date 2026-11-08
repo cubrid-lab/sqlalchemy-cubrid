@@ -1585,21 +1585,34 @@ This documentation-only version reorganizes connection, type, migration, DML and
 
 This maintenance version updates documentation and samples, fixes CI references and removes packaging files superseded by pyproject.toml.
 
-### Fixed
+### Changed
 
-- README: Fixed lint badge referencing deleted `pre-commit.yml` workflow — now points to `ci.yml` ([commit 833e514](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/833e514f5fbc)) by @yeongseon.
-- SECURITY.md: Added v0.2.x and v0.3.x to supported versions table.
-- `docs/source/index.rst`: Replaced Sphinx quickstart boilerplate with proper project documentation.
-- `docs/source/conf.py`: Updated version to 0.3.0, added `viewcode` and `intersphinx` extensions.
-- `docs/source/sqlalchemy_cubrid.rst`: Added `dml` and `alembic_impl` module autodoc sections.
 - `samples/create_engine.py`: Modernized to SA 2.0 API (`text()`, context manager).
+
 - `samples/cubrid_datatypes.py`: Modernized to SA 2.0 API (`metadata.create_all`, CUBRID types).
+
 - `samples/env.sample`: Replaced hardcoded external IP with `localhost`.
 
 ### Removed
 
 - Removed outdated packaging files superseded by `pyproject.toml`: `setup.py`, `setup.cfg`, `CHANGES.rst`, `requirements.txt`, `requirements-dev.txt`, `install_cubrid_python.sh`.
+
 - Removed duplicate `pre-commit.yml` GitHub Actions workflow (functionality covered by `ci.yml`).
+
+### Fixed
+
+- README: Fixed lint badge referencing deleted `pre-commit.yml` workflow — now points to `ci.yml` ([commit 833e514](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/833e514f5fbc)) by @yeongseon.
+
+### Documentation
+
+- `SECURITY.md`: Under the **former 1.x numbering scheme** present at this tag, the security-policy table listed `1.1.x` and `1.2.x` as supported; these values are preserved as recorded, not converted to the later `v0.3.1` tag scheme.
+
+- `docs/source/index.rst`: Replaced Sphinx quickstart boilerplate with proper project documentation.
+
+- `docs/source/conf.py`: Set the Sphinx `release` value to **`1.2.1`** (former version numbering), and added `viewcode` and `intersphinx` extensions; the historical setting is not the `v0.3.1` Git tag.
+
+- `docs/source/sqlalchemy_cubrid.rst`: Added `dml` and `alembic_impl` module autodoc sections.
+
 
 ## [0.3.0] - 2026-03-12
 
