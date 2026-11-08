@@ -60,14 +60,14 @@ def test_only_the_requested_release_is_inspected() -> None:
 
 
 def test_heading_requires_a_blank_line_before_its_content() -> None:
-    assert MODULE.violations("### Fixed\\n- Missing heading gap.\\n")
+    assert MODULE.violations("### Fixed\n- Missing heading gap.\n")
 
 
 def test_valid_lazy_list_wrapping_and_following_prose_are_allowed() -> None:
     notes = (
-        "### Tests\\n\\n- Valid bullet content\\n"
-        "continues on a lazy-wrapped line.\\n\\n"
-        "A separate explanatory paragraph is allowed.\\n"
+        "### Tests\n\n- Valid bullet content\n"
+        "continues on a lazy-wrapped line.\n\n"
+        "A separate explanatory paragraph is allowed.\n"
     )
     assert MODULE.violations(notes) == []
 
