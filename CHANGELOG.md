@@ -2114,15 +2114,14 @@ This release improves schema reflection, SQL compilation, and Alembic migration 
 
 ## [1.2.3] - 2026-04-19
 
-This corrective release replaces the yanked PyPI 1.2.2 distribution. Install 1.2.3 to obtain the intended Alembic fixes and async dialect entry points.
+This corrective release ships the 1.2.2 changes that the PyPI 1.2.2 artifact is missing. Install 1.2.3 or later instead of 1.2.2.
 
 ### Fixed
 
-- **Re-release of 1.2.2** from current `main` HEAD. The `v1.2.2` git tag
-  unintentionally pointed to an older commit (pre-async-dialect, pre-#120 fix),
-  so the PyPI 1.2.2 artifact shipped without the #120 fix and was missing the
-  `cubrid.pycubrid` and `cubrid.aiopycubrid` entry points. **PyPI 1.2.2 has been
-  yanked**; please upgrade to 1.2.3.
+- **Re-release of 1.2.2** from current `main` HEAD. The PyPI 1.2.2 artifact was
+  built from an older commit (pre-async-dialect, pre-#120 fix), so it shipped
+  without the #120 fix and without the `cubrid.pycubrid` and `cubrid.aiopycubrid`
+  entry points. PyPI 1.2.2 is not yanked; install 1.2.3 or later.
 - No source code changes vs. `main` — same fixes as listed under [1.2.2] below,
   now actually shipped to PyPI.
 
