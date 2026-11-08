@@ -33,6 +33,7 @@ jobs:
         env:
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           PR_COMMIT_COUNT: ${{ github.event.pull_request.commits }}
           GH_TOKEN: ${{ github.token }}
@@ -107,6 +108,14 @@ jobs:
           if any(ch.isalpha() and not ch.isascii() for ch in title):
               errors.append("Write the title in English (ASCII letters only).")
 
+
+          # Dependabot's upstream release notes are quoted third-party text,
+          # not a contributor's closing request. Only GitHub's verified author
+          # identity earns this narrow body-only exception: a normal contributor
+          # cannot set PR_AUTHOR. Title and commit-message guards stay active.
+          # Keep this outside the byte-identical shared closing guard below.
+          if os.environ.get("PR_AUTHOR") == "dependabot[bot]":
+              os.environ["PR_BODY"] = ""
 
           # BEGIN cross-repo-closing-guard
           # No checkout or execution of untrusted PR-body text is needed.

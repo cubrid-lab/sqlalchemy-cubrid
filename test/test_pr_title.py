@@ -98,12 +98,17 @@ def _validator() -> str:
 
 
 def _run(
-    title: str, body: str = "", commits: str | None = None, timeout: float | None = None
+    title: str,
+    body: str = "",
+    commits: str | None = None,
+    timeout: float | None = None,
+    author: str = "contributor",
 ) -> subprocess.CompletedProcess[str]:
     env = {
         **os.environ,
         "PR_TITLE": title,
         "PR_BODY": body,
+        "PR_AUTHOR": author,
         "GITHUB_REPOSITORY": "cubrid-lab/sqlalchemy-cubrid",
     }
     env.pop("PR_COMMITS_FILE", None)
@@ -173,6 +178,7 @@ class PrTitleValidatorTest(unittest.TestCase):
         self.assertNotIn("actions/checkout", text)
         self.assertIn("PR_TITLE: ${{ github.event.pull_request.title }}", text)
         self.assertIn("PR_BODY: ${{ github.event.pull_request.body }}", text)
+        self.assertIn("PR_AUTHOR: ${{ github.event.pull_request.user.login }}", text)
         self.assertRegex(text, r"\n    name: PR title\n")
         run_block = text.split("run: |", 1)[1]
         self.assertNotIn("${{", run_block)
@@ -219,6 +225,42 @@ class PrTitleValidatorTest(unittest.TestCase):
             "Closes github.com/another-org/another-repo/issues/43",
             "Closes <https://github.com/another-org/another-repo/issues/43>",
         )
+
+    def test_dependabot_generated_upstream_body_is_not_an_issue_closure(self) -> None:
+        upstream_notes = (
+            "Upstream ruff release notes:\n\n"
+            "closes [#29470](https://github.com/astral-sh/ruff/issues/29470)"
+        )
+        bot = _run(
+            "chore(deps): bump ruff from 0.16.8 to 0.16.9",
+            upstream_notes,
+            author="dependabot[bot]",
+        )
+        self.assertEqual(bot.returncode, 0, bot.stdout + bot.stderr)
+        for author in ("contributor", "dependabot", "dependabot-bot"):
+            human = _run(
+                "chore(deps): bump ruff from 0.16.8 to 0.16.9", upstream_notes, author=author
+            )
+            self.assertEqual(human.returncode, 1, human.stdout + human.stderr)
+            self.assertIn("Cross-repository issue closure", human.stdout)
+
+        # Dependabot's verified author exempts its generated PR BODY only.
+        commit = _run(
+            "chore(deps): bump ruff from 0.16.8 to 0.16.9",
+            upstream_notes,
+            "chore: deps\n\nCloses astral-sh/ruff#29470\n",
+            author="dependabot[bot]",
+        )
+        self.assertEqual(commit.returncode, 1, commit.stdout + commit.stderr)
+        self.assertIn("in a commit message", commit.stdout)
+
+        title = _run(
+            "fix: closes astral-sh/ruff#29470",
+            upstream_notes,
+            author="dependabot[bot]",
+        )
+        self.assertEqual(title.returncode, 1, title.stdout + title.stderr)
+        self.assertIn("in a PR title", title.stdout)
 
     def test_sibling_repository_closures_fail(self) -> None:
         # The realistic accident: closing a sibling cubrid-lab repository's issue.
