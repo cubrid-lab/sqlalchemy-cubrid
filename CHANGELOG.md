@@ -2291,7 +2291,7 @@ This stabilization release documents the supported environments and compatibilit
 
 ## [0.7.1] - 2026-03-13
 
-This patch fixes UTC timestamp compilation and schema inspection, and improves statement compilation caching and index-reflection performance. The changes below preserve the fixes and performance work recorded in the original published Release and verified against `v0.7.0...v0.7.1`.
+This patch fixes UTC timestamp compilation and schema inspection, improves statement compilation caching, and reduces index-reflection overhead.
 
 ### Changed
 - **Package metadata** — Updated PyPI classifiers and the project Changelog link ([#75](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/75), [commit e682336](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e682336b45)).
