@@ -2214,29 +2214,22 @@ This release introduces the asynchronous pycubrid dialect through the `cubrid+ai
 
 This release establishes the 1.x compatibility contract and documents the supported Python, CUBRID, SQLAlchemy, and Alembic versions alongside known limitations.
 
-### Compatibility Policy
+### Upgrade notes
 
-This release establishes the 1.x compatibility contract: the public API follows semantic versioning,
-and breaking changes will only occur in major version bumps (2.0+).
+- **Compatibility Policy** — This release establishes the 1.x compatibility contract: the public API follows semantic versioning, and breaking changes will only occur in major version bumps (2.0+).
+- **Supported Environments**
+  - **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
+  - **CUBRID**: 10.2, 11.0, 11.2, 11.4
+  - **SQLAlchemy**: 2.0–2.1 (`>=2.0,<2.2`)
+  - **Alembic**: >=1.7
+- **Known Limitations**
+  - `RETURNING` clauses not supported (CUBRID limitation)
+  - No `Sequence` support (CUBRID uses `AUTO_INCREMENT`)
+  - Native `BOOLEAN` not available (mapped to `SMALLINT`)
+  - Lateral joins and writable CTEs not supported
+  - `RELEASE SAVEPOINT` is a no-op
 
-### Supported Environments
-
-- **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
-- **CUBRID**: 10.2, 11.0, 11.2, 11.4
-- **SQLAlchemy**: 2.0–2.1 (`>=2.0,<2.2`)
-- **Alembic**: >=1.7
-
-### Known Limitations
-
-- `RETURNING` clauses not supported (CUBRID limitation)
-- No `Sequence` support (CUBRID uses `AUTO_INCREMENT`)
-- Native `BOOLEAN` not available (mapped to `SMALLINT`)
-- Lateral joins and writable CTEs not supported
-- `RELEASE SAVEPOINT` is a no-op
-
-### Fixed
-- `visit_join` signature: added missing `from_linter` parameter to match SQLAlchemy base class
-- `sqlalchemy.sql.util.warn`: replaced with correct `sqlalchemy.util.warn` API
+> **Later update, not part of v1.0.0:** the 1.x compatibility policy above was revised after this release by [#1115](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1115); the current policy is in [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md#public-api-compatibility-in-1x).
 
 ### Added
 - Full type annotations across all 8 source modules (mypy errors: 280 → 0)
@@ -2247,6 +2240,10 @@ and breaking changes will only occur in major version bumps (2.0+).
 - pycubrid optional dependency updated from `>=0.6.0` to `>=1.0,<2.0`
 - All documentation updated to explicitly state "SQLAlchemy 2.0–2.1" support
 - Version bumped to 1.0.0
+
+### Fixed
+- `visit_join` signature: added missing `from_linter` parameter to match SQLAlchemy base class
+- `sqlalchemy.sql.util.warn`: replaced with correct `sqlalchemy.util.warn` API
 
 ## [0.8.0] - 2026-04-04
 
