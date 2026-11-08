@@ -66,15 +66,15 @@ This maintenance release improves documentation, test coverage, and CI tooling. 
 - **Updated the ORM brand icon** — the README, its five translations, and the documentation site's logo and favicon now point to the final Python Yellow cube icon with white role markings. Four successive icon-pin updates are presented here as one documentation change, not four separate product features ([#1051](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1051), [#1055](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1055), [#1064](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1064), [#1067](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1067)) by @yeongseon.
 - **Clarified contributor communication** — repository guidance now asks coding agents and contributors to use descriptive, human-readable wording in issues, PRs, reviews, and release notes, without changing runtime behavior ([#1056](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1056)) by @yeongseon.
 
+### CI
+
+- **Execute driver-dependent tests in `repo-tests`** — CI now installs the optional `[pycubrid]` extra so benchmark-helper tests run rather than skipping solely because the driver was not installed. Minimal local installations still use the optional-import skip guard ([#1052](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1052), [#1049](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1049)) by @yeongseon.
+- **Updated CI actions and development dependencies** — bumped Ruff from 0.17.1 to 0.17.2, `actions/setup-python` from 7.0.0 to 7.1.0, `astral-sh/setup-uv` from 10.3.0 to 10.3.2, and `pypa/gh-action-pypi-publish` from 1.14.2 to 1.14.3; refreshed the pinned cookbook smoke-test workflow. These updates affect development/release automation rather than the published dialect's runtime dependencies ([#1057](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1057), [#1058](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1058), [#1059](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1059)); automated dependency PRs, with a verified human co-author @yeongseon on #1058.
+
 ### Tests
 
 - **Added offline coverage for benchmark helpers** — new tests exercise the benchmark baseline's summary statistics, timing conversion, and test-order rotation. They skip when the optional `pycubrid` driver is unavailable ([#1039](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1039)) by @Nandankumarjv (first contribution 🎉), co-authored by @yeongseon.
 - **Isolated interrupted-query warnings** — the KILL QUERY test helper closes subprocess output pipes, and the async warning test collects earlier garbage before recording warnings. This prevents unrelated `ResourceWarning` failures in the CUBRIDdb compatibility lane ([#1062](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1062), fixes [#1061](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1061)) by @yeongseon.
-
-### CI and development tooling
-
-- **Execute driver-dependent tests in `repo-tests`** — CI now installs the optional `[pycubrid]` extra so benchmark-helper tests run rather than skipping solely because the driver was not installed. Minimal local installations still use the optional-import skip guard ([#1052](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1052), [#1049](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1049)) by @yeongseon.
-- **Updated CI actions and development dependencies** — bumped Ruff from 0.17.1 to 0.17.2, `actions/setup-python` from 7.0.0 to 7.1.0, `astral-sh/setup-uv` from 10.3.0 to 10.3.2, and `pypa/gh-action-pypi-publish` from 1.14.2 to 1.14.3; refreshed the pinned cookbook smoke-test workflow. These updates affect development/release automation rather than the published dialect's runtime dependencies ([#1057](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1057), [#1058](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1058), [#1059](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1059)); automated dependency PRs, with a verified human co-author @yeongseon on #1058.
 
 ## [1.12.0] - 2026-10-25
 
