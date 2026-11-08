@@ -48,7 +48,6 @@ def test_first_release_has_no_link(tmp_path: Path) -> None:
     assert notes(tmp_path) == "### Added\n\n- First.\n"
 
 
-
 def test_first_tagged_historical_release_omits_untagged_v0_0_1_compare(tmp_path: Path) -> None:
     """v0.0.1 has a CHANGELOG entry, but no Git tag; never make a broken compare."""
     changelog = (
