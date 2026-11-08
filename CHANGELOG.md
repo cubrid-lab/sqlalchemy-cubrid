@@ -2216,8 +2216,7 @@ This release establishes the 1.x compatibility contract and documents the suppor
 
 ### Upgrade notes
 
-- **Compatibility Policy** — This release establishes the 1.x compatibility contract: the public API follows semantic versioning,
-  and breaking changes will only occur in major version bumps (2.0+).
+- **Compatibility Policy** — This release establishes the 1.x compatibility contract: the public API follows semantic versioning, and breaking changes will only occur in major version bumps (2.0+).
 - **Supported Environments**
   - **Python**: 3.10, 3.11, 3.12, 3.13, 3.14
   - **CUBRID**: 10.2, 11.0, 11.2, 11.4
