@@ -2293,8 +2293,12 @@ This stabilization release documents the supported environments and compatibilit
 
 This patch fixes UTC timestamp compilation and schema inspection, improves statement compilation caching, and reduces index-reflection overhead.
 
+### Upgrade notes
+- **First non-development PyPI release** — the only earlier PyPI uploads are `0.0.1.dev0` and `0.0.1.dev1` (2022). The optional `[pycubrid]` extra requires `pycubrid>=0.6.0` ([#72](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/72), [commit c598b07](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c598b07466)).
+
 ### Changed
 - **Package metadata** — Updated PyPI classifiers and the project Changelog link ([#75](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/75), [commit e682336](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e682336b45)).
+- **Version scheme** — Re-versioned the project to 0.x for the pre-1.0 development phase ([commit f6171f1](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f6171f1f)).
 
 ### Fixed
 - **`visit_utc_timestamp_func`** — Compile `func.utc_timestamp()` to `UTC_TIMESTAMP()` instead of `UTC_TIME()`, returning a full datetime value instead of time-only (#53).
