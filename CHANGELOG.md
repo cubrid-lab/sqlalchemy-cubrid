@@ -1524,24 +1524,32 @@ This version improves connection recovery and pool health checks while documenti
 
 - **Error code mapping**: `is_disconnect()` detects dropped connections via string-based message
   matching (14 patterns) and numeric CUBRID CCI error codes (-21003, -21005, -10005, -10007) ([commit abeb09e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/abeb09e39f3e)) by @yeongseon.
+
 - **`_extract_error_code()`**: Extracts numeric error codes from CUBRID DBAPI exceptions
   (supports both integer args and string-embedded codes like "-21003 message").
+
 - **`do_ping()`**: Connection liveness check using CUBRID Python driver's native `ping()`
   method — enables SQLAlchemy's `pool_pre_ping` feature.
+
+### Documentation
+
 - **Connection pool tuning guide**: `docs/CONNECTION.md` expanded with pool configuration
   recommendations (`pool_size`, `pool_recycle`, `pool_pre_ping`), CUBRID broker timeout
   interaction, disconnect detection, and error code mapping documentation.
+
 - **CUBRID-Python driver compatibility matrix**: `docs/DRIVER_COMPAT.md` documenting tested
   driver versions, CUBRID server compatibility, and known issues.
-- **Python 3.14 support**: Added to CI matrix and `pyproject.toml` classifiers.
+
+### CI
+
+- **Python 3.14 and CUBRID compatibility CI**: Python 3.14 was added to the package classifiers in `pyproject.toml`, and integration CI expanded to Python {3.10, 3.12, 3.14} × CUBRID {11.4, 11.2, 11.0, 10.2}. These are tag-time CI and packaging changes, not a claim about every later driver/server combination.
+
+### Tests
+
 - **44 new offline tests**: Comprehensive coverage for `is_disconnect()` (14 message patterns,
   4 error codes, edge cases), `_extract_error_code()` (7 tests), `do_ping()` (2 tests),
   `postfetch_lastrowid` validation (5 tests), and disconnect message integrity (3 tests).
 
-### Changed
-
-- CI integration test matrix expanded: Python {3.10, 3.12, 3.14} × CUBRID {11.4, 11.2, 11.0, 10.2}.
-- `pyproject.toml`: Added `Programming Language :: Python :: 3.14` classifier.
 
 ## [0.3.2] - 2026-03-12
 
