@@ -312,7 +312,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   run. Bare `WHERE`/`HAVING`/`ON` conditions, `GROUP BY` items and `CASE` conditions render as
   before. A CAST or function in `GROUP BY` now groups its argument too, but CUBRID still rejects
   it ("search condition is not allowed as group by spec"). The `docs/FEATURE_SUPPORT.md` note
-  from #971 that listed these forms as unsupported is replaced ([#972](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/972)) by @paikend ([#972](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/972)).
+  from #971 that listed these forms as unsupported is replaced ([#972](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/972)) by @paikend.
 
 - **EXISTS and AND/OR inside a CAST, a function or ORDER BY no longer fail (#968)** — CUBRID
   also rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a CAST or
@@ -333,7 +333,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `session.query(q.exists()).scalar()` failed. The compiler now groups such an expression
   when it is itself a column (or the element of its label), including inside subqueries and
   CTEs. The same expressions in `WHERE`, `HAVING`, `ON` or a `CASE` condition render as
-  before ([#967](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/967)) by @paikend ([#967](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/967)).
+  before ([#967](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/967)) by @paikend.
 
 - **A failed isolation re-apply at transaction start stays pending (#937)** — when re-applying
   the isolation level after a successful commit or rollback failed, `do_begin()` retried it
