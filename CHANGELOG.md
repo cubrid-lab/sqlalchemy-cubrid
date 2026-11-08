@@ -306,7 +306,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   run. Bare `WHERE`/`HAVING`/`ON` conditions, `GROUP BY` items and `CASE` conditions render as
   before. A CAST or function in `GROUP BY` now groups its argument too, but CUBRID still rejects
   it ("search condition is not allowed as group by spec"). The `docs/FEATURE_SUPPORT.md` note
-  from #971 that listed these forms as unsupported is replaced.
+  from #971 that listed these forms as unsupported is replaced ([#972](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/972)) by @paikend.
 
 - **EXISTS and AND/OR inside a CAST, a function or ORDER BY no longer fail (#968)** — CUBRID
   also rejects a bare `EXISTS (...)`, `NOT (...)` or `a AND b` / `a OR b` as a CAST or
@@ -327,7 +327,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `session.query(q.exists()).scalar()` failed. The compiler now groups such an expression
   when it is itself a column (or the element of its label), including inside subqueries and
   CTEs. The same expressions in `WHERE`, `HAVING`, `ON` or a `CASE` condition render as
-  before.
+  before ([#967](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/967)) by @paikend.
 
 - **A failed isolation re-apply at transaction start stays pending (#937)** — when re-applying
   the isolation level after a successful commit or rollback failed, `do_begin()` retried it
@@ -374,7 +374,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
 * **docs:** report issue-number lines in block quotes inside list items ([#930](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/930)) ([b2860a2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b2860a24e5c58de01fb1900d79e54747f5581d07))
 * **docs:** sync the docs-check shell scanner with pycubrid ([#960](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/960)) ([047100a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/047100acdfee034cfdd6a17ae5bb60ce899e5c06)), refs [#959](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/959)
 * **json:** reject boolean JSON path indices instead of rendering invalid array paths ([#917](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/917)) ([7744dd6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7744dd62e2477b25d2a904f115f3a8cce75f5f18))
-* **scripts:** dispose reflection probe engine on every exit path ([#977](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/977)) ([1303262](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/13032624148045302d0edcdfe245a28ce4c20f01))
+* **scripts:** dispose reflection probe engine on every exit path ([#977](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/977)) ([1303262](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/13032624148045302d0edcdfe245a28ce4c20f01)) by @CloudCorpRecords
 * **test:** keep the CUBRID 11.4 Docker test database in a named volume ([#1001](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1001)) ([85ec642](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/85ec6427c7f10e0b082ff3371680f54385dbcbfa)), refs [#1000](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1000)
 * **test:** register the Docker test database for a stable host ([#998](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/998)) ([24759a9](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24759a92444c98d920787ac31c9ba35d0695465c))
 * **transactions:** retain pending isolation restoration after a failed begin retry ([#947](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/947)) ([2080f8b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2080f8bc71d48ce1e321d79d88429b52cced712c)), refs [#937](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/937)
@@ -540,7 +540,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
 
 * **agents:** require repository-local issue authoring checks ([#1012](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1012)) ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
 * **architecture:** show Broker, CAS and CCI in the end-to-end driver communication flow ([#1016](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1016)) ([f8a9aa5](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f8a9aa5d133835ce60455725259756550d50be64))
-* **contributing:** fix single-test pytest node example ([c04a380](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c04a380f4b9a512fa8ecb892324fe6b59fde31b7)), refs [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881)
+* **contributing:** fix single-test pytest node example ([c04a380](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c04a380f4b9a512fa8ecb892324fe6b59fde31b7)), refs [#881](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/881) ([#1029](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1029)) by @HarshRajSinghania
 * enforce repository-local issue drafting ([7a15ad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a15ad76d2fb0e98e8026f0fae9c1324463db781))
 * **triage:** clarify PR overlap and execution precedence ([1d082cc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1d082ccccb2010b2ab6db474eaeca770431a6b7e)), refs [#1023](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1023)
 
@@ -637,7 +637,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
 * **async:** document the Python 3.15 limit of garbage-collected connection cleanup ([#909](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/909)) ([a0ec6a6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a0ec6a67043281262c1db6d499b2d2f1c9fc273f))
 * **async:** make README quickstart examples runnable as standalone Python scripts ([#944](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/944)) ([09d07bf](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/09d07bffe8bd69f7d08e7bec8f6c470e1e8b8ae6))
 * **contributing:** clarify good-first-issue access for human contributors ([#913](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/913)) ([7a2512f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a2512f4694ee5129081ad87a449cae8bb3d4a88))
-* correct the documented boolean expression positions ([#986](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/986)) ([7c7958b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7c7958be8e82fa49dd3fb56591ad5a5108e16e30))
+* correct the documented boolean expression positions ([#986](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/986)) ([7c7958b](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7c7958be8e82fa49dd3fb56591ad5a5108e16e30)) by @SuellenQwQ (first contribution 🎉)
 * describe CAS error -4 as an interrupted statement ([#939](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/939)) ([2551c79](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2551c791676bf5bbdc374a118007dc023d2588bc))
 * **onboarding:** lead with one synchronous SQLAlchemy path for CUBRID beginners ([#942](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/942)) ([a3d4916](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a3d49164b532d2485138da1ab647ecc8a856214c))
 * **quickstart:** remove the lab container's anonymous volume with docker rm -f -v ([#949](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/949)) ([53d250a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/53d250ad18d04068ce66da7d429e9546480c6a94)), refs [#948](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/948)
@@ -646,7 +646,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
 * **structure:** finish the first-connection course with lessons 3 to 5 ([#956](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/956)) ([a472087](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a472087cb1e9b956b7aa1b0c338794b2f91e2480))
 * **structure:** organize the site navigation by reader question ([#954](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/954)) ([a5c42a4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a5c42a4287a9f0a6930b11ddc84614dbacc780f8)), refs [#943](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/943)
 * **structure:** split the first two first-connection lessons into their own pages ([#955](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/955)) ([6a85659](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6a8565987ebde18e367b2e60fffd5f21a2aade17))
-* **types:** correct the namespace of reflected timezone types ([#973](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/973)) ([9480036](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9480036c1a184d6227c93562c67452ded57cfbc8)), refs [#882](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/882)
+* **types:** correct the namespace of reflected timezone types ([#973](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/973)) ([9480036](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/9480036c1a184d6227c93562c67452ded57cfbc8)), refs [#882](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/882) by @CloudCorpRecords (first contribution 🎉)
 * **versioning:** identify development docs and distinguish candidate, abandoned and published versions ([#951](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/951)) ([7a0ba84](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7a0ba84861786c4abae476bfbd67ab0b88fb0f7b))
 
 - **The README and the documentation site show the CUBRID Lab repository icon (#886)** — the
@@ -902,7 +902,7 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   `SET TRACE OFF` must still be attempted, and the read error must reach the caller instead of
   being replaced by the cleanup statement's own failure. The trace is mocked, so the test is
   offline and does not replace integration coverage on a real server. No production code
-  changes: the described behaviour already holds, so no failure could be demonstrated.
+  changes: the described behaviour already holds, so no failure could be demonstrated ([#931](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/931)) by @tnalbant (first contribution 🎉).
 
 - **#872 garbage-collection tests no longer depend on the cycle collector** — the live
   async terminate test and the closed-event-loop test now commit before losing the
@@ -952,6 +952,10 @@ This release consolidates changes from versions 1.11.1–1.11.4, which were not 
   variant pass; UPDATE/DELETE ... FROM are asserted as the documented limits; INSERT
   FROM SELECT over a CTE passes since #897. The ledger entries are kept, with a
   pointer to this evidence.
+
+- **Offline tests for identifier quoting, preflight engine disposal and the reflection probe report (#859, #858, #857)** — `test/test_base.py` covers escaped and reserved identifier quoting, `test/test_check_integration_connection.py` pins disposal of the preflight sync engine on success and on errors, and `test/test_reflection_probe_shape.py` pins the `reflection_probe` report shape with a fake inspector ([#978](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/978), [#979](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/979), [#981](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/981)) by @CloudCorpRecords.
+
+- **Offline tests for select attribute accessors, compile benchmark iterations and version-report fallbacks (#855, #850, #851)** — `test/test_compiler.py` covers select attribute accessors, `scripts/bench_compile.py` validates its iteration count (`test/test_bench_compile.py`), and `test/test_report_driver_versions.py` covers the version report fallbacks ([#1025](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1025), [#1026](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1026), [#1031](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1031)) by @WilliamK112 (first contribution 🎉).
 
 ## [1.11.0] - 2026-10-12
 
