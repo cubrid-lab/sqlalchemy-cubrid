@@ -87,7 +87,7 @@ This release improves the reliability and reporting of the development verificat
 
 ### Upgrade notes
 
-- **`make verify` now runs the live integration lane (#1018, [#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1045))** — it runs `make check`, the
+- **`make verify` now runs the live integration lane (#1018, [#1045](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1045))** — it runs `make check`, the
   complete offline `make test` and then the run-owned `make integration` lane (default
   `INTEGRATION_DRIVER=pycubrid`), so it needs Docker and takes as long as the live suite. It
   fails when CUBRID never becomes ready or every live test skips, and it starts the live lane
@@ -98,7 +98,7 @@ This release improves the reliability and reporting of the development verificat
 
 ### Added
 
-- **`make verify` writes `test-results/verify/` (#1020, [#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1047))** — after its phases, also after a
+- **`make verify` writes `test-results/verify/` (#1020, [#1047](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1047))** — after its phases, also after a
   failure, `make verify` writes `summary.json` with the overall `PASS`/`FAIL`/`INCOMPLETE` status
   and one entry per phase (`check`, `test`, `integration`). A phase that never started is
   `NOT_RUN`, and a missing or unreadable lane summary or an all-skipped live lane is never
