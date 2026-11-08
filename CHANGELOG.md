@@ -1599,22 +1599,36 @@ This version introduces Alembic migration support and extends the offline SQLAlc
 
 ## [0.2.0] - 2026-03-12
 
-This version adds CUBRID-specific SQL compilation for DML, DDL, window functions and connection-independent query constructs.
+This version adds SQLAlchemy compilation for CUBRID-specific DML and DDL, window functions and schema comments. Dialect-specific INSERT and MERGE operations use the documented `sqlalchemy_cubrid` helpers.
 
 ### Added
 
 - `FOR UPDATE` clause support (`SELECT … FOR UPDATE [OF col1, col2]`) ([commit 1f9f59a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1f9f59aa5)) by @yeongseon.
+
 - `INSERT … DEFAULT VALUES` and empty INSERT support.
+
 - Window functions (`ROW_NUMBER`, `RANK`, `DENSE_RANK`, `NTILE`, `LAG`, `LEAD`, etc.) with `OVER()` clause.
+
 - `NULLS FIRST` / `NULLS LAST` ordering in ORDER BY.
+
 - Table and column `COMMENT` support — inline DDL, `ALTER` statements, and schema reflection.
+
 - `IF NOT EXISTS` / `IF EXISTS` DDL support for `CREATE TABLE` and `DROP TABLE`.
+
 - `ON DUPLICATE KEY UPDATE` via CUBRID-specific `sqlalchemy_cubrid.insert()` construct (MySQL-compatible syntax).
+
 - `MERGE` statement via `sqlalchemy_cubrid.merge()` with full `WHEN MATCHED` / `WHEN NOT MATCHED` clause support.
+
 - `GROUP_CONCAT` aggregate function compilation.
+
 - `TRUNCATE TABLE` autocommit detection.
+
+### Documentation
+
 - Index hint documentation (`USING INDEX`, `USE INDEX`, `FORCE INDEX`, `IGNORE INDEX` via SQLAlchemy’s built-in `with_hint()` / `suffix_with()`).
+
 - `docs/FEATURE_SUPPORT.md`: Comprehensive feature support matrix updated with all new capabilities.
+
 
 ## [0.1.0] - 2026-03-12
 
