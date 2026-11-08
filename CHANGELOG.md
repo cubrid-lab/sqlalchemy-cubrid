@@ -2172,10 +2172,13 @@ This patch fixes asynchronous engine creation and JSON column inserts, and expan
   attributes in `CubridDialect.__init__()` — ORM `JSON` column inserts no
   longer raise `AttributeError` (#117)
 
-### Added
+### Documentation
+
+- Async usage sample (`samples/async_basic.py`)
+
+### Tests
 
 - 16 async E2E integration tests (`test/test_aio_integration.py`)
-- Async usage sample (`samples/async_basic.py`)
 
 ## [1.2.0] - 2026-04-18
 
