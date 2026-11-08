@@ -1427,10 +1427,6 @@ This release raises the minimum supported Python version to 3.11. Applications o
   release line receives fixes, so 1.9.x gets no further releases. Upgrade Python,
   recreate your virtual environment and validate your application before upgrading.
 
-### Added
-
-* **python:** require Python 3.11 or later ([#703](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/703)) ([f764d27](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f764d27d2f20ece8b2f914b61c5dc1776313b04e)), closes [#686](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/686)
-
 ### Changed
 
 - **tox no longer lists Python 3.10 (#687)** — `py310` is removed from
@@ -1453,6 +1449,8 @@ This release raises the minimum supported Python version to 3.11. Applications o
   `sqlalchemy>=2.0,<2.1`; without the pin no live lane would run the ordinary
   integration tests on the minimum supported SQLAlchemy line. No dialect
   behavior changes on Python 3.11 or newer.
+
+* **python:** require Python 3.11 or later ([#703](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/703)) ([f764d27](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f764d27d2f20ece8b2f914b61c5dc1776313b04e)), closes [#686](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/686)
 
 ### Documentation
 
