@@ -8164,7 +8164,7 @@ explicit `include = ["*.py", "*.pyi"]` and the matching hook types keep CLI, CI
 and hooks on Python sources rather than rewriting documentation snippets.
 
 The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
-demos, samples and `docs/source` Python configuration. CI and tox invoke
+demos and samples. CI and tox invoke
 `make lint` and `make format-check`; the hooks keep checking all tracked Python/pyi files. The drift
 checker rejects omitted maintained directories or a runner that bypasses this
 shared target.
