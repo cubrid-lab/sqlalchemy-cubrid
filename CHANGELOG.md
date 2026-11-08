@@ -1566,21 +1566,34 @@ This documentation-only version reorganizes connection, type, migration, DML and
 
 This maintenance version updates documentation and samples, fixes CI references and removes packaging files superseded by pyproject.toml.
 
-### Fixed
+### Changed
 
-- README: Fixed lint badge referencing deleted `pre-commit.yml` workflow — now points to `ci.yml` ([commit 833e514](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/833e514f5fbc)) by @yeongseon.
-- SECURITY.md: Added v0.2.x and v0.3.x to supported versions table.
-- `docs/source/index.rst`: Replaced Sphinx quickstart boilerplate with proper project documentation.
-- `docs/source/conf.py`: Updated version to 0.3.0, added `viewcode` and `intersphinx` extensions.
-- `docs/source/sqlalchemy_cubrid.rst`: Added `dml` and `alembic_impl` module autodoc sections.
 - `samples/create_engine.py`: Modernized to SA 2.0 API (`text()`, context manager).
+
 - `samples/cubrid_datatypes.py`: Modernized to SA 2.0 API (`metadata.create_all`, CUBRID types).
+
 - `samples/env.sample`: Replaced hardcoded external IP with `localhost`.
 
 ### Removed
 
 - Removed outdated packaging files superseded by `pyproject.toml`: `setup.py`, `setup.cfg`, `CHANGES.rst`, `requirements.txt`, `requirements-dev.txt`, `install_cubrid_python.sh`.
+
 - Removed duplicate `pre-commit.yml` GitHub Actions workflow (functionality covered by `ci.yml`).
+
+### Fixed
+
+- README: Fixed lint badge referencing deleted `pre-commit.yml` workflow — now points to `ci.yml` ([commit 833e514](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/833e514f5fbc)) by @yeongseon.
+
+### Documentation
+
+- SECURITY.md: Added v0.2.x and v0.3.x to supported versions table.
+
+- `docs/source/index.rst`: Replaced Sphinx quickstart boilerplate with proper project documentation.
+
+- `docs/source/conf.py`: Updated version to 0.3.0, added `viewcode` and `intersphinx` extensions.
+
+- `docs/source/sqlalchemy_cubrid.rst`: Added `dml` and `alembic_impl` module autodoc sections.
+
 
 ## [0.3.0] - 2026-03-12
 
