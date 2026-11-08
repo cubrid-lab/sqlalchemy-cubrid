@@ -2293,10 +2293,27 @@ This stabilization release documents the supported environments and compatibilit
 
 This patch corrects UTC timestamp compilation, primary-key index filtering, and view detection in schema inspection.
 
+### Upgrade notes
+
+- First non-development release on PyPI (the only earlier uploads are `0.0.1.dev0`/`0.0.1.dev1` from 2022); the optional `[pycubrid]` extra requires `pycubrid>=0.6.0`.
+
+### Changed
+
+- Improve PyPI metadata classifiers (OS Independent, Python 3 Only, SQL, Database topics)
+- Add Changelog URL to project URLs
+- Version scheme: 0.x (pre-1.0 development phase)
+
 ### Fixed
+
 - **`visit_utc_timestamp_func`**: Compile `func.utc_timestamp()` to `UTC_TIMESTAMP()` instead of `UTC_TIME()`, returning a full datetime value instead of time-only (#53).
 - **`get_indexes()`**: Fix PK index filtering — read `is_primary_key` from column 0 of the single-column query result instead of unreachable column 6, so primary-key indexes are properly excluded (#54).
 - **`has_table()`**: Recognize views as existing objects by accepting `class_type IN ('CLASS', 'VCLASS')` instead of only `'CLASS'` (#55).
+
+### Performance
+
+- Enable statement caching on `Insert` and `Replace` (`inherit_cache = True`)
+- Eliminate N+1 queries in `get_indexes()` with batch PK catalog query
+- Pre-compile regex patterns at module level for `get_columns()` reflection
 
 ## [0.7.0] - 2026-03-12
 
