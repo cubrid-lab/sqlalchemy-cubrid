@@ -48,6 +48,20 @@ def test_first_release_has_no_link(tmp_path: Path) -> None:
     assert notes(tmp_path) == "### Added\n\n- First.\n"
 
 
+def test_first_tagged_historical_release_omits_untagged_v0_0_1_compare(tmp_path: Path) -> None:
+    """v0.0.1 has a CHANGELOG entry, but no Git tag; never make a broken compare."""
+    changelog = (
+        "# Changelog\n\n"
+        "## [0.1.0] - 2026-03-12\n\n"
+        "### Added\n\n- First tagged version.\n\n"
+        "## [0.0.1] - 2022-01-01\n\n"
+        "### Added\n\n- Original untagged entry.\n"
+    )
+    assert extract(tmp_path, changelog, "v0.1.0").returncode == 0
+    assert notes(tmp_path) == "### Added\n\n- First tagged version.\n"
+    assert "/compare/v0.0.1..." not in notes(tmp_path)
+
+
 def test_existing_compare_link_is_not_duplicated(tmp_path: Path) -> None:
     linked = (
         SECTION + "\nSee https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.1.0...v1.2.0\n"

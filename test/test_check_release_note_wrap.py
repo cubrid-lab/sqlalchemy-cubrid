@@ -77,7 +77,7 @@ def test_branding_revision_history_stays_in_the_documentation_section() -> None:
     notes = MODULE.release_section(changelog, "1.12.1")
     documentation = notes.split("### Documentation", 1)[1].split("### CI", 1)[0]
     tests = notes.split("### Tests", 1)[1]
-    assert "Branding revision PRs and commits" in documentation
+    assert "**Documentation icons**" in documentation
     assert "Branding change history:" not in tests
 
 
