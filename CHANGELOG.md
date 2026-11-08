@@ -1834,18 +1834,18 @@ This patch fixes asynchronous engine creation and JSON column inserts, and expan
 ### Fixed
 
 - **Async dialect**: Add missing `get_pool_class()` override returning
-  `AsyncAdaptedQueuePool` — `create_async_engine()` now works correctly (#116)
+  `AsyncAdaptedQueuePool` — `create_async_engine()` now works correctly (#116) by @yeongseon
 - **JSON serialization**: Initialize `_json_serializer` / `_json_deserializer`
   attributes in `CubridDialect.__init__()` — ORM `JSON` column inserts no
-  longer raise `AttributeError` (#117)
+  longer raise `AttributeError` (#117) by @yeongseon
 
 ### Documentation
 
-- Async usage sample (`samples/async_basic.py`)
+- Async usage sample (`samples/async_basic.py`) by @yeongseon
 
 ### Tests
 
-- 16 async E2E integration tests (`test/test_aio_integration.py`)
+- 16 async E2E integration tests (`test/test_aio_integration.py`) by @yeongseon
 
 ## [1.2.0] - 2026-04-18
 
