@@ -276,7 +276,6 @@ stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Al
 
 इस परियोजना की दिशा और अगले milestones के लिए [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md) देखें।
 
-पूरे ecosystem के दृष्टिकोण के लिए [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md) देखें।
 
 ## योगदान
 

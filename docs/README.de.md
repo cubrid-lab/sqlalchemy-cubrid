@@ -278,7 +278,6 @@ Ja. Verwenden Sie `create_async_engine("cubrid+aiopycubrid://...")` mit dem pycu
 
 Siehe [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md) für die Ausrichtung des Projekts und die nächsten Meilensteine.
 
-Für die Ökosystem-Perspektive siehe die [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md).
 
 ## Mitwirken
 
