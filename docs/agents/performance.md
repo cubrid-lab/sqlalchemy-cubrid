@@ -9,6 +9,4 @@ sqlalchemy-cubrid provides ORM-level validation that pycubrid driver improvement
 the application layer. Current benchmark results and methodology live in
 [docs/PERFORMANCE.md](../PERFORMANCE.md) and
 [cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark); current priorities live
-in [ROADMAP.md](../../ROADMAP.md) (public) and the
-[CUBRID Ecosystem Roadmap](https://github.com/orgs/cubrid-lab/projects/2) board (org
-members only), not here.
+in [ROADMAP.md](../../ROADMAP.md), not here.
