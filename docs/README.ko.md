@@ -389,7 +389,6 @@ stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Al
 
 이 프로젝트의 방향과 다음 마일스톤은 [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md)를 참고하세요.
 
-생태계 전체 관점은 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)를 참고하세요.
 
 ## 기여하기
 
