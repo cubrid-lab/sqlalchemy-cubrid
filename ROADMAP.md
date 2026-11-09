@@ -7,14 +7,10 @@
 > latest release on [PyPI](https://pypi.org/project/sqlalchemy-cubrid/); supported Python, SQLAlchemy,
 > CUBRID and driver versions are kept in
 > [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md), which this page does not repeat.
-> For the ecosystem-wide view, see the
-> [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md).
 
 ## Links
 
 - 📋 [GitHub Milestones](https://github.com/cubrid-lab/sqlalchemy-cubrid/milestones)
-- 🗂️ [Org Project Board](https://github.com/orgs/cubrid-lab/projects/2)
-- 🌐 [Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)
 
 ## Current Focus — Stable Maintenance & Polish
 
