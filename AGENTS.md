@@ -1,8 +1,8 @@
 # AGENTS.md
 
-## Organization-wide writing standard
+## Issue, PR, and commit writing (sqlalchemy-cubrid)
 
-Issue titles use **type only** (such as `feat: ...`, `bug: ...`), with no required module scope. Explain a clear human-readable problem or goal and verifiable acceptance criteria; separate verified observations from assumptions and omit personal comments/internal IDs. Triage evaluates validity, duplication, scope, priority and size; PRs/commits follow local Conventional Commits and existing PR validation gates. See [cubrid-lab's writing standard](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md).
+Issue titles use **type only** (such as `feat: ...`, `bug: ...`), with no required module scope. Explain a clear human-readable problem or goal and verifiable acceptance criteria; separate verified observations from assumptions and omit personal comments/internal IDs. Triage evaluates validity, duplication, scope, priority and size; PRs/commits follow local Conventional Commits and existing PR validation gates. Follow the local [contribution guide](CONTRIBUTING.md) and issue templates.
 
 Project knowledge base for AI coding agents.
 
@@ -317,7 +317,7 @@ canonical labels. Outside reporters do not need label-write permission: they can
 describe urgency and effort, but those descriptions help triage and do not
 themselves assign a label.
 
-Issue titles use `type: description` without a module scope (see [organization standard](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md)).
+Issue titles use `type: description` without a module scope, as described in [CONTRIBUTING.md](CONTRIBUTING.md) and the issue templates.
 `.github/workflows/issue-triage.yml` marks externally opened issues with
 `status: needs triage` without guessing priority/size. Authorized agents and
 workflows using `GITHUB_TOKEN` must include that label at issue creation;
@@ -576,17 +576,16 @@ documentation, presentations, and other maintainer-facing writing.
   wording rather than adding redundant follow-up comments.
 
 Source comments, docstrings, test names, examples, PR descriptions and review
-replies follow the organization's canonical rule,
-[Explanations in code, tests, reviews and agent-written text](https://github.com/cubrid-lab/.github/blob/main/docs/ISSUE_PR_COMMIT_STANDARD.md#6-explanations-in-code-tests-reviews-and-agent-written-text).
+replies follow the local explanation rule below.
 State the SQL behavior, why the dialect handles it that way, and the CUBRID
 limitation or invariant involved before an issue link such as `(#591)`; the
 link stays afterwards for traceability. Do not rename tests, fixtures,
 compatibility-suite requirements or exact SQL examples to satisfy this rule,
 and revise existing comments only where a new reader would be confused.
 
-This is a shared writing convention, not a new CI check, reviewer approval,
-or merge gate. This repository's dialect compatibility, test, security and
-release rules keep precedence over it.
+These are repository-local writing expectations, not a new CI check, reviewer approval,
+or merge gate. This project's dialect compatibility, test, security and
+release requirements remain authoritative.
 
 ## Local design and evidence authority
 
