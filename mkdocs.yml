@@ -60,6 +60,9 @@ nav:
       - Driver Compatibility: DRIVER_COMPAT.md
   - Help:
       - Troubleshooting: TROUBLESHOOTING.md
+      - "Ask a Question": https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions
+      - "Report a Bug": https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new/choose
+      - "Report a Vulnerability": https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md
   - Project and internals:
       - Architecture: ARCHITECTURE.md
       - SQLAlchemy Internal API Compatibility: SA_COMPAT.md
