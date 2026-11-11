@@ -485,7 +485,15 @@ cookbook smoke test called as a pinned reusable workflow, no token) → summary 
 Freeze release PRs with `autorelease: review` before editing candidate notes; wait
 for preparation to finish and start required PR CI on the final head. Curated
 main Unreleased notes are preserved during regeneration; branch-only edits
-require the freeze.
+require the freeze. Freeze only when the maintainer starts reviewing that
+candidate for release (at the planned cadence or for an urgent fix), not days
+ahead: a frozen candidate is not regenerated, so every later merge to `main`
+leaves its notes and final-head CI short of `main`, and removing the label lets
+regeneration discard the branch-only edits. Between releases, leave the
+candidate unfrozen and merge ordinary PRs normally; once the review starts, hold
+ordinary merges until the release PR merges or the review is dropped. Agents may
+regenerate, freeze, curate and validate a candidate, but never merge a release
+PR: merging publishes to PyPI, which is the maintainer's decision.
 Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
 tags or publish by hand; the only manual entry point is the narrow recovery
 dispatch of `publish-pypi.yml`. A `last-release-sha` override is temporary:
