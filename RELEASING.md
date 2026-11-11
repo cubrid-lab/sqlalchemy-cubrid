@@ -195,6 +195,14 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
   regeneration. Edits made only on the candidate branch require the freeze
   label. Removing that label permits upstream regeneration and may overwrite
   those branch-only edits; first move essential text to main if needed.
+- Freeze only when the maintainer starts reviewing that candidate for release
+  (see [Release cadence](#release-cadence)), not days ahead. A frozen candidate
+  is not regenerated, so each later merge to `main` leaves its notes and
+  final-head CI short of `main`. Between releases, keep it unfrozen and merge
+  ordinary PRs normally; once the review starts, hold ordinary merges until the
+  release PR merges or the review is dropped. An agent may regenerate, freeze,
+  curate and validate a candidate, but merging the release PR, which publishes,
+  is the maintainer's decision.
 - The workflow uses `GITHUB_TOKEN`. When it creates or updates the release PR,
   GitHub does create `pull_request` runs for the new head, but as
   `github-actions[bot]` they start no jobs: they wait with conclusion
