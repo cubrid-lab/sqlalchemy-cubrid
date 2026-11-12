@@ -400,27 +400,42 @@ class CubridExecutionContext(default.DefaultExecutionContext):
     def get_result_processor(
         self, type_: Any, colname: str, coltype: Any
     ) -> Optional[Callable[[Any], Any]]:
-        """Convert BIGINT values that CUBRIDdb older than 11.3 returns as ``str``.
+        """Convert numbers that CUBRIDdb older than 11.3 returns as ``str``.
 
         Those releases fetch BIGINT, ``COUNT(*)`` and ``ROWNUM`` values as
         decimal strings (``'5'``), while CUBRIDdb 11.3 and pycubrid return
         ``int`` (#1145). Only a ``str`` value in a column that the driver
         reports as BIGINT and that SQLAlchemy types as an integer or leaves
         untyped is converted, before the type's own result processor runs.
-        Text from any other column or type is never parsed, and DDL, casts and
-        bind processing are unaffected.
+
+        They also fetch columns without a fixed type (CCI type code 0, such as
+        ``PERCENTILE_DISC(...) WITHIN GROUP (ORDER BY <condition>)``) as
+        ``str``, and ``Boolean``'s processor would turn ``'0'`` into ``True``.
+        CUBRID has no BOOLEAN type, so a Boolean value is always a number: a
+        ``str`` in a Boolean-typed column of any type code is converted with
+        ``float()``, which also reads the ``'0.5000000000000000'`` of a
+        ``PERCENTILE_CONT`` the way pycubrid's ``0.5`` is read, and non-numeric
+        text raises ``ValueError`` instead of becoming ``True`` (#1143). Text
+        from any other column or type is never parsed, and DDL, casts and bind
+        processing are unaffected.
         """
         processor = super().get_result_processor(type_, colname, coltype)
-        if not (
-            getattr(self.dialect, "_bigint_results_as_str", False)
-            and coltype == _CUBRIDDB_BIGINT_TYPE_CODE
-            and type_._type_affinity in (sqltypes.Integer, sqltypes.NullType)
+        if not getattr(self.dialect, "_bigint_results_as_str", False):
+            return processor
+        affinity = type_._type_affinity
+        if affinity is sqltypes.Boolean:
+            convert: Callable[[str], Any] = float
+        elif coltype == _CUBRIDDB_BIGINT_TYPE_CODE and affinity in (
+            sqltypes.Integer,
+            sqltypes.NullType,
         ):
+            convert = int
+        else:
             return processor
 
         def process(value: Any) -> Any:
             if isinstance(value, str):
-                value = int(value)
+                value = convert(value)
             return processor(value) if processor is not None else value
 
         return process

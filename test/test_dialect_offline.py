@@ -495,6 +495,64 @@ class TestBigintStringResultsFromOldCubriddb:
         assert seen == [(True, True)]
 
 
+class TestBooleanStringResultsFromOldCubriddb:
+    """CUBRIDdb older than 11.3 fetches columns without a fixed type (CCI type
+    code 0), such as ``PERCENTILE_DISC(...) WITHIN GROUP (ORDER BY <condition>)``,
+    as ``str``, and ``Boolean``'s result processor would turn ``'0'`` into
+    ``True``. For those drivers only, a ``str`` in a Boolean-typed column is
+    read as a number first; non-numeric text raises instead of becoming
+    ``True``, and other drivers keep SQLAlchemy's own processor (#1143)."""
+
+    UNTYPED_CODE = 0
+    SMALLINT_CODE = 9
+
+    _processor = staticmethod(TestBigintStringResultsFromOldCubriddb._processor)
+
+    @pytest.mark.parametrize("coltype", [UNTYPED_CODE, SMALLINT_CODE], ids=["untyped", "SMALLINT"])
+    def test_old_driver_boolean_strings_are_numbers(self, coltype: int) -> None:
+        process = self._processor(sa.Boolean(), True, coltype)
+        assert process("0") is False
+        assert process("1") is True
+        assert process(0) is False
+        assert process(1) is True
+        assert process(None) is None
+
+    def test_old_driver_reads_fractions_like_pycubrid(self) -> None:
+        # PERCENTILE_CONT over a condition: pycubrid returns 0.5, CUBRIDdb 9.3 a string.
+        process = self._processor(sa.Boolean(), True, self.UNTYPED_CODE)
+        assert process("0.5000000000000000") is True
+        assert process("0.0000000000000000") is False
+
+    def test_old_driver_rejects_non_numeric_text(self) -> None:
+        process = self._processor(sa.Boolean(), True, self.UNTYPED_CODE)
+        with pytest.raises(ValueError):
+            process("true")
+
+    def test_other_drivers_keep_sqlalchemy_processor(self) -> None:
+        process = self._processor(sa.Boolean(), False, self.UNTYPED_CODE)
+        dialect = CubridDialect()
+        assert process is sa.Boolean().result_processor(dialect, self.UNTYPED_CODE)
+        assert process(0) is False
+        assert process(1) is True
+        assert process(None) is None
+
+    def test_type_processor_runs_after_conversion(self) -> None:
+        class Flipped(sa.types.TypeDecorator[bool]):
+            impl = sa.Boolean
+            cache_ok = True
+
+            def process_result_value(self, value: Any, dialect: Any) -> Any:
+                return None if value is None else not value
+
+        assert self._processor(Flipped(), True, self.UNTYPED_CODE)("0") is True
+
+    @pytest.mark.parametrize("type_", [sa.Integer(), sqltypes.NULLTYPE], ids=["Integer", "untyped"])
+    def test_untyped_non_boolean_columns_are_untouched(self, type_: Any) -> None:
+        # SQLAlchemy types PERCENTILE_CONT over an integer column as Integer, but
+        # CUBRID returns a fraction such as '1.5000000000000000', so int() would fail.
+        assert self._processor(type_, True, self.UNTYPED_CODE) is None
+
+
 class TestLimitLiteralsForStringBindingDrivers:
     """CUBRIDdb older than 11.3 binds every parameter as a string, and CUBRID
     then applies a bound two-value ``LIMIT ?, ?`` incorrectly (four rows for
