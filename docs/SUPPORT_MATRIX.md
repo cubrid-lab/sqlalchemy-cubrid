@@ -113,7 +113,7 @@ not verified. Driver versions below are Python driver versions, not CUBRID serve
 
 | Driver line | Verified combinations | Known limitations |
 |---|---|---|
-| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not run in CI. Building it on Python 3.11 or later is not verified. One earlier run (2026-09, driver `9.3.0.1`, CUBRID 11.4, Python 3.10) connected | That run returned `BIGINT` values as `str` (#583) and failed 25 integration tests (#585); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
+| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not run in CI. It builds on Python 3.12, but the integration suite does not succeed with it: a local run (2026-11-12, driver `9.3.0.1`, CUBRID 11.4, Python 3.12) had 100 failures and 2 errors out of 677 tests (#1143). Other CUBRID and Python versions are not verified | `BIGINT` values are returned as `str` (#583, #1145), bound parameters are sent as strings so `LIMIT ?, ?` can return the wrong rows, and `Binary` and `ping()` are missing (#585, #1143); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
 | CUBRIDdb, built from cubrid-python v11.3.0.51 | SQLAlchemy compliance lane on CUBRID 11.4 in PR CI; integration tests on CUBRID 10.2–11.4 in the full matrix (manual dispatch and every release); see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 | pycubrid (sync and async) | Integration and SQLAlchemy compliance lanes in PR and main CI; integration tests on CUBRID 10.2–11.4 in the full matrix; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 

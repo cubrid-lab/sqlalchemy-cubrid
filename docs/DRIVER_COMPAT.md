@@ -107,7 +107,8 @@ CUBRIDdb limitations below.
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ Tested |
-| `main` (2026-09-29) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.10 | ⚠️ One earlier run, not in CI: connected; `BIGINT` returned as `str` and 25 integration failures ([known limitations](#pypi-cubrid-python-93x-known-limitations)). Python 3.11+ not verified |
+| `main` (2026-09-29) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.10 | ⚠️ One earlier run, not in CI: connected; `BIGINT` returned as `str` and 25 integration failures ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
+| `main` (2026-11-12) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.12 | ❌ Local run, not in CI: builds and connects; 100 of 677 integration tests failed and 2 errored (#1143, [known limitations](#pypi-cubrid-python-93x-known-limitations)) |
 
 ### CUBRID Server Version Support
 
@@ -559,16 +560,25 @@ discards that archive as inconsistent and installs the 2014 `9.3.0.0001` archive
 `[cubriddb]` extras depend on `CUBRID-Python` without a version bound, so they install that
 same driver. Both extras are maintained installation options for a supported driver line.
 
-This driver line is not run in CI, and building it on Python 3.11 or later has not been
-verified. One earlier run (2026-09, driver `9.3.0.1`, CUBRID 11.4, Python 3.10) connected
-but found these limitations. They are results of that run, not a current full-matrix run:
+This driver line is not run in CI. A local run (2026-11-12, driver `9.3.0.1` built on
+Python 3.12, CUBRID 11.4, `make integration INTEGRATION_DRIVER=cubriddb`) built and
+connected, but 100 of the 677 integration tests failed and 2 errored (#1143). An earlier
+run (2026-09, Python 3.10) failed 25 tests before stopping (#585). Other CUBRID and Python
+versions are not verified. The driver behaviour behind those failures, checked directly
+against the same server:
 
-- `BIGINT` values, including `COUNT(*)`, were returned as `str` (#583). The dialect
-  converts its own catalog counts with `int()` (#584), so `has_table()` and `has_index()`
-  do not depend on the driver's `BIGINT` result type; how other `BIGINT` results behave
-  with this driver line has not been verified (#1145).
-- 25 integration tests failed (#585), in autocommit, large-object round-trips, fetch
-  shapes, ping and recursive CTEs.
+- `BIGINT` values, including `COUNT(*)` and `ROWNUM`, are returned as `str` (#583, #1145).
+  The dialect converts its own catalog counts with `int()` (#584), so `has_table()` and
+  `has_index()` do not depend on it, but application `BIGINT` columns and aggregates do.
+- Bound parameters are sent to the server as strings. A bound `LIMIT ?, ?` with `(1, 2)`
+  returned four rows instead of two, and the dialect compiles `.limit()`, `.offset()` and
+  `.fetch()` to bound `LIMIT` parameters, so paged queries can return **wrong rows** without
+  an error. Recursive CTEs and `SET` binds fail with server errors -456 and -494.
+- The module has no `Binary`, so `LargeBinary` and `BLOB` writes raise `AttributeError`.
+- Connections have no `ping()`, so `pool_pre_ping` treats every checkout as disconnected
+  and reconnects.
+- Rows are returned as `list` rather than `tuple`, and `SELECT LAST_INSERT_ID()` returns
+  `NULL`.
 - At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
   driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
   older than 11.3. It warns rather than refusing to connect. To fail fast instead, turn the
