@@ -578,6 +578,10 @@ class CubridDialect(default.DefaultDialect):
     # parameter as a string; the compiler then renders the integers of a
     # LIMIT offset, count clause inline (#1299).
     _limit_values_as_literals = False
+    # Set at first connect for the same drivers, which return BIGINT values as
+    # str; CubridExecutionContext then converts integer and untyped BIGINT
+    # result columns to int (#1145).
+    _bigint_results_as_str = False
 
     # Compiler classes
     statement_compiler = CubridCompiler
@@ -756,14 +760,18 @@ class CubridDialect(default.DefaultDialect):
         return args, {}
 
     def initialize(self, connection: Any) -> None:
-        """Run SQLAlchemy's first-connect setup, then the CUBRID checks.
+        """Check the CUBRIDdb version, then run SQLAlchemy's first-connect setup.
 
-        Warns when CUBRIDdb is older than the tested 11.3 line (CUBRIDdb
-        drivers only) and, unless ``no_backslash_escapes`` was passed to
-        :func:`~sqlalchemy.create_engine`, probes the server's backslash mode.
+        For a CUBRIDdb older than the tested 11.3 line (CUBRIDdb drivers only)
+        this warns and turns on inline LIMIT values and BIGINT string
+        conversion. Unless ``no_backslash_escapes`` was passed to
+        :func:`~sqlalchemy.create_engine`, it then probes the server's
+        backslash mode.
         """
-        super().initialize(connection)
+        # Before the base initialize: its queries already cache result
+        # processors and compiled SQL, which depend on these driver flags.
         self._warn_if_untested_cubriddb()
+        super().initialize(connection)
         if not self._no_backslash_escapes_explicit:
             self.no_backslash_escapes = self._detect_no_backslash_escapes(connection)
         log.debug(
@@ -800,7 +808,8 @@ class CubridDialect(default.DefaultDialect):
         release. The pycubrid variants inherit :meth:`initialize` and skip this.
         For those older releases it also makes the compiler render plain integer
         ``LIMIT offset, count`` values inline, because they bind parameters as
-        strings (#1299).
+        strings (#1299), and converts the BIGINT values they return as strings
+        to ``int`` (#1145).
         """
         if self.driver != "cubrid":
             return
@@ -814,6 +823,7 @@ class CubridDialect(default.DefaultDialect):
         # These releases bind every parameter as a string, which makes a bound
         # LIMIT ?, ? return the wrong rows; render plain integers inline (#1299).
         self._limit_values_as_literals = True
+        self._bigint_results_as_str = True
         util.warn(
             f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "
             "sqlalchemy-cubrid is tested with. The CUBRID-Python releases on "
