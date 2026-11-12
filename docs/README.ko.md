@@ -89,7 +89,7 @@ flowchart TD
 
 - Python 3.11 이상
 - SQLAlchemy 2.0 – 2.1
-- [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상에서 빌드한 공식 CUBRIDdb C 확장
+- [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** PyPI(`CUBRID-Python` 9.3.0)에서 설치하거나 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스 릴리스에서 빌드한 공식 CUBRIDdb C 확장
 
 ## 설치
 
@@ -113,15 +113,22 @@ Alembic 지원 포함:
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-CUBRIDdb C 확장 드라이버(`cubrid://` URL)를 쓰려면 [cubrid-python](https://github.com/CUBRID/cubrid-python)
-v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko/DRIVER_COMPAT.md#소스에서-cubriddb-빌드)을 참고하세요.
+CUBRIDdb C 확장 드라이버(`cubrid://` URL, 명시적으로 선택하려면 `cubrid+cubriddb://`)를 쓰려면
+지원되는 두 가지 설치 방법 중 하나를 고르세요:
 
-> **`[cubrid]`와 `[cubriddb]` extra는 폐기 예정(deprecated)입니다.** 이 extra는 PyPI의
-> `CUBRID-Python` 패키지를 설치하는데, 최신 릴리스가 9.3.x(2015년)입니다. 이 릴리스는 이 방언과
-> 함께 테스트되지 않았습니다. `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패합니다. 방언은
-> 첫 연결 시 11.3보다 오래된 CUBRIDdb를 발견하면 경고(`SAWarning`)를 냅니다. 새 프로젝트에는
-> 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요. CUBRIDdb C 확장
-> 드라이버를 명시적으로 선택하려면 `cubrid+cubriddb://` URL을 사용하세요.
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"   # PyPI CUBRID-Python 9.3.0 ([cubrid]도 동일)
+```
+
+또는 CI에서 테스트하는 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스
+릴리스에서 CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](ko/DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요.
+
+> **PyPI 9.3.0 드라이버에는 알려진 제약이 있습니다.** CI에서 실행하지 않으며, CUBRID 11.4와
+> Python 3.12에서의 로컬 실행에서 통합 테스트 일부가 실패했습니다. `BIGINT` 값을 `str`로 반환하고,
+> 바인딩 매개변수를 문자열로 보내며, `bytes`를 바인딩할 수 없습니다. 방언은 첫 연결 시 11.3보다
+> 오래된 CUBRIDdb를 발견하면 경고(`SAWarning`)를 냅니다.
+> [알려진 제약](ko/DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약)을 참고하세요.
+> 새 프로젝트에는 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요.
 
 <img src="https://raw.githubusercontent.com/cubrid-lab/sqlalchemy-cubrid/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>
 

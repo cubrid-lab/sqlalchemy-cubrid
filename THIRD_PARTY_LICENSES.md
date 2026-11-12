@@ -14,7 +14,7 @@ own table below:
 | Default runtime | `pip install sqlalchemy-cubrid` | Always installed |
 | `[pycubrid]` | `pip install "sqlalchemy-cubrid[pycubrid]"` | Pure-Python driver (recommended) |
 | `[alembic]` | `pip install "sqlalchemy-cubrid[alembic]"` | Alembic migrations |
-| `[cubrid]` / `[cubriddb]` | `pip install "sqlalchemy-cubrid[cubrid]"` | Legacy C-extension driver CUBRID-Python |
+| `[cubrid]` / `[cubriddb]` | `pip install "sqlalchemy-cubrid[cubrid]"` | CUBRIDdb C-extension driver (PyPI CUBRID-Python 9.3.0) |
 | `dev` dependency group | `pip install -e . --group dev` (pip >= 25.1) | Contributors' development and test toolchain |
 
 None of the extras is installed by default. The `dev` dependency group (PEP 735)
