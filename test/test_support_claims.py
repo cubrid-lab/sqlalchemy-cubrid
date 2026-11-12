@@ -33,15 +33,88 @@ def test_current_python_minimum_conflict_is_rejected() -> None:
     )
 
 
-def test_deprecated_extra_is_allowed_but_deprecated_driver_is_rejected() -> None:
-    assert check_claims(METADATA, README, MATRIX) == []
-    matrix = MATRIX.replace("✅ Supported C-extension driver", "✅ Deprecated C-extension driver")
+POLICY_ROW = "| CUBRIDdb (CCI) |"
+PYPI_ROW = "| CUBRIDdb, PyPI `CUBRID-Python` 9.3"
+SOURCE_ROW = "| CUBRIDdb, built from cubrid-python v11.3.0.51"
+
+
+def _row(prefix: str) -> str:
+    rows = [line for line in MATRIX.splitlines() if line.startswith(prefix)]
+    assert len(rows) == 1, f"support matrix fixture changed: {prefix}"
+    return rows[0]
+
+
+def _set_row(prefix: str, replacement: str) -> str:
+    """Return the support matrix with the row starting with ``prefix`` replaced."""
+    row = _row(prefix)
+    assert replacement != row, f"mutation did not change the row: {prefix}"
+    return MATRIX.replace(row, replacement, 1)
+
+
+def _set_cell(prefix: str, index: int, value: str) -> str:
+    """Return the support matrix with one cell (0-based, after the row start) replaced."""
+    cells = _row(prefix).split("|")
+    cells[index + 1] = f" {value} "
+    return _set_row(prefix, "|".join(cells))
+
+
+def _edit_row(prefix: str, old: str, new: str) -> str:
+    row = _row(prefix)
+    assert old in row, f"support matrix fixture changed: {old}"
+    return _set_row(prefix, row.replace(old, new, 1))
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        ("[cubrid]", "CUBRIDdb install guidance needs both driver lines"),
+        ("[cubriddb]", "CUBRIDdb install guidance needs both driver lines"),
+        ("9.3.0", "CUBRIDdb install guidance needs both driver lines"),
+        ("v11.3.0.51", "CUBRIDdb install guidance needs both driver lines"),
+    ],
+)
+def test_cubriddb_policy_row_must_name_both_driver_lines(token: str, expected: str) -> None:
+    """Removing either maintained installation option fails the check (#1144)."""
+    install = _row(POLICY_ROW).split("|")[2]
+    assert token in install, f"support matrix fixture changed: {token}"
+    matrix = _set_cell(POLICY_ROW, 1, install.replace(token, "").strip())
+    assert f"docs/SUPPORT_MATRIX.md: {expected}" in check_claims(METADATA, README, matrix)
+
+
+@pytest.mark.parametrize(
+    "wording",
+    ["deprecated", "Legacy", "obsolete", "discontinued", "unsupported", "not supported"],
+)
+def test_maintained_extras_cannot_be_called_discontinued(wording: str) -> None:
+    """The extras are maintained installation options, not a removal path (#1139)."""
+    matrix = _edit_row(POLICY_ROW, "Two maintained installation options", f"Two {wording} options")
+    assert (
+        "docs/SUPPORT_MATRIX.md: maintained CUBRIDdb installation extras are misclassified"
+        in check_claims(METADATA, README, matrix)
+    )
+
+
+@pytest.mark.parametrize(
+    "status",
+    [
+        "✅ Deprecated C-extension driver",
+        "Untested driver",
+        "✅ Supported C-extension driver (v11.3.0.51 only)",
+        "✅ Supported C-extension driver; 9.3.0 no longer maintained",
+    ],
+)
+def test_supported_cubriddb_driver_cannot_be_misclassified(status: str) -> None:
+    matrix = _set_cell(POLICY_ROW, 3, status)
     assert "docs/SUPPORT_MATRIX.md: supported CUBRIDdb driver is misclassified" in check_claims(
         METADATA, README, matrix
     )
+
+
+def test_legacy_cubriddb_driver_in_readme_is_rejected() -> None:
     readme = README.replace(
         "With the CUBRIDdb C-extension driver", "With the legacy CUBRIDdb C-extension driver"
     )
+    assert readme != README
     assert "README.md: supported CUBRIDdb driver is misclassified" in check_claims(
         METADATA, readme, MATRIX
     )
@@ -52,31 +125,58 @@ def test_deprecated_extra_is_allowed_but_deprecated_driver_is_rejected() -> None
     [
         ("missing", "CUBRIDdb driver row is missing"),
         ("malformed", "CUBRIDdb driver row is malformed"),
-        ("no-source", "CUBRIDdb source and extras need distinct install guidance"),
-        ("no-cubrid-extra", "CUBRIDdb source and extras need distinct install guidance"),
-        ("no-cubriddb-extra", "CUBRIDdb source and extras need distinct install guidance"),
-        ("no-deprecation", "deprecated installation extras are not identified"),
     ],
 )
-def test_cubriddb_driver_support_row_errors_are_reported(change: str, expected: str) -> None:
-    """Corrupt one supported CUBRIDdb source/extra claim at a time (#1072)."""
-    row = next(line for line in MATRIX.splitlines() if line.startswith("| CUBRIDdb (CCI) |"))
-    if change == "missing":
-        replacement = ""
-    elif change == "malformed":
-        replacement = row + " extra |"
+def test_cubriddb_policy_row_errors_are_reported(change: str, expected: str) -> None:
+    matrix = _set_row(POLICY_ROW, "" if change == "missing" else _row(POLICY_ROW) + " extra |")
+    assert f"docs/SUPPORT_MATRIX.md: {expected}" in check_claims(METADATA, README, matrix)
+
+
+def test_pypi_driver_line_cannot_be_reported_as_verified() -> None:
+    """A passing 9.3.x claim needs reviewed evidence and a coordinated check update."""
+    for verified in (
+        "✅ Tested in CI",
+        "Passed on CUBRID 11.4",
+        "Not run in CI. ✔ Passed all integration tests on Python 3.12 / CUBRID 11.4",
+        "Not run in CI; verified on Python 3.12",
+    ):
+        matrix = _set_cell(PYPI_ROW, 1, verified)
+        assert (
+            "docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x is reported as verified"
+            in check_claims(METADATA, README, matrix)
+        )
+
+
+def test_pypi_driver_line_keeps_known_limitations() -> None:
+    matrix = _edit_row(PYPI_ROW, "#585, ", "")
+    assert (
+        "docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x known limitations are missing"
+        in check_claims(METADATA, README, matrix)
+    )
+
+
+@pytest.mark.parametrize(
+    ("change", "expected"),
+    [
+        ("no-table", "driver verification table is missing"),
+        ("no-pypi-row", "a CUBRIDdb driver line lacks a verification row"),
+        ("no-source-row", "a CUBRIDdb driver line lacks a verification row"),
+        ("malformed", "CUBRIDdb verification row is malformed"),
+        ("duplicate", "PyPI CUBRID-Python 9.3.x has several rows"),
+    ],
+)
+def test_driver_verification_table_errors_are_reported(change: str, expected: str) -> None:
+    if change == "no-table":
+        assert MATRIX.count("#### Driver verification\n") == 1
+        matrix = MATRIX.replace("#### Driver verification\n", "#### Driver notes\n")
+    elif change == "no-pypi-row":
+        matrix = _set_row(PYPI_ROW, "")
+    elif change == "no-source-row":
+        matrix = _set_row(SOURCE_ROW, "")
+    elif change == "duplicate":
+        matrix = _set_row(PYPI_ROW, _row(PYPI_ROW) + "\n" + _row(PYPI_ROW).replace("#583", "#1"))
     else:
-        source, removed = {
-            "no-source": ("v11.3.0.51+", ""),
-            "no-cubrid-extra": ("[cubrid]", ""),
-            "no-cubriddb-extra": ("[cubriddb]", ""),
-            "no-deprecation": ("extras are deprecated and", "extras"),
-        }[change]
-        assert source in row, f"support matrix fixture changed: {source}"
-        replacement = row.replace(source, removed, 1)
-    assert replacement != row, f"mutation did not change the CUBRIDdb row: {change}"
-    assert MATRIX.count(row) == 1
-    matrix = MATRIX.replace(row, replacement, 1)
+        matrix = _set_row(PYPI_ROW, _row(PYPI_ROW) + " extra |")
     assert f"docs/SUPPORT_MATRIX.md: {expected}" in check_claims(METADATA, README, matrix)
 
 
@@ -139,11 +239,28 @@ def test_coordinated_pycubrid_floor_change_is_allowed() -> None:
     assert check_claims(metadata, readme, matrix) == []
 
 
-def test_deprecated_extras_must_keep_pypi_driver_package() -> None:
+def test_maintained_extras_must_keep_pypi_driver_package() -> None:
     metadata = METADATA.replace('"CUBRID-Python"', '"pycubrid"')
     problems = check_claims(metadata, README, MATRIX)
-    assert "pyproject.toml: deprecated cubrid extra must install CUBRID-Python" in problems
-    assert "pyproject.toml: deprecated cubriddb extra must install CUBRID-Python" in problems
+    assert "pyproject.toml: cubrid extra must install CUBRID-Python" in problems
+    assert "pyproject.toml: cubriddb extra must install CUBRID-Python" in problems
+
+
+def test_removed_extra_is_reported() -> None:
+    start = METADATA.index("cubriddb = [")
+    end = METADATA.index("]", start) + 1
+    metadata = METADATA[:start] + METADATA[end:]
+    assert "pyproject.toml: cubriddb extra must install CUBRID-Python" in check_claims(
+        metadata, README, MATRIX
+    )
+
+
+def test_extras_must_admit_the_pypi_release() -> None:
+    assert METADATA.count('"CUBRID-Python"') == 2
+    metadata = METADATA.replace('"CUBRID-Python"', '"CUBRID-Python>=11.3"')
+    problems = check_claims(metadata, README, MATRIX)
+    assert "pyproject.toml: cubrid extra must admit CUBRID-Python 9.3.0.1" in problems
+    assert "pyproject.toml: cubriddb extra must admit CUBRID-Python 9.3.0.1" in problems
 
 
 def test_readme_requirements_sqlalchemy_range_must_match_metadata() -> None:
