@@ -25,6 +25,10 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 
 - **Missing-CUBRIDdb error** — the `Could not import CUBRIDdb` error for `cubrid://` and `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver legacy or the PyPI `CUBRID-Python` releases untested. It lists both installation paths (`sqlalchemy-cubrid[cubriddb]` or an official CUBRID/cubrid-python source build) and the pure-Python `cubrid+pycubrid://` alternative. The message prefix and the chained original `ImportError` are unchanged ([#1150](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1150)) by @yeongseon.
 
+### Removed
+
+- **`make check-all`** — the alias of `make check`, deprecated in 1.11.5 and announced for removal after the next minor release (1.12.0), is removed. Run `make check` instead; `make test-offline` remains an alias of `make test` ([#1313](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1313)) by @yeongseon.
+
 ### Fixed
 
 - **Paged queries with the PyPI CUBRIDdb 9.3 driver** — this driver sends every bound parameter as a string, and CUBRID then applied a bound `LIMIT ?, ?` incorrectly: `.offset(1).fetch(2)` returned four rows instead of two, with no error. When the connected CUBRIDdb is older than 11.3, the plain integers of a query with an offset (`LIMIT offset, count`) are now written into the SQL at execution time; such a statement cannot run through `executemany()`. A limit without an offset, pycubrid and CUBRIDdb 11.3 or later still use bound parameters ([#1299](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1299)) by @yeongseon.

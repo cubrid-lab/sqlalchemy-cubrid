@@ -216,9 +216,6 @@ make check
 make doctor
 ```
 
-`make check-all`은 한 마이너 릴리스 동안 `make check`의 폐기 예정 별칭으로 계속
-동작하며 stderr에 폐기 예정 안내를 출력합니다.
-
 ### Pre-commit 훅
 
 pre-commit 훅을 설치했다면 이 검사들은 `git commit` 시 자동으로 실행됩니다.
@@ -302,9 +299,9 @@ PR은 PR 설명이나 도구 옆에 다음을 적습니다.
   `scripts/sync_historical_release.py`, `scripts/sync_verified_historical_releases.py`)는
   #1182에서 제거 대상으로 추적됩니다. 릴리스 게시와 기여자 표기 검증이 끝날 때까지
   유지되며 아직 제거되지 않았습니다.
-- 지원 중단된 `make check-all` 별칭은 전체 주기를 보여 줍니다. 1.11.5의 지원 중단
-  안내가 제거 시점(다음 마이너 릴리스 이후)을 명시했고, 1.12.0 출시 후 호출자를 확인한
-  제거가 PR #1314로 제안되었습니다.
+- `make check`의 예전 Make 별칭 `check-all`은 전체 주기를 보여 줍니다. 1.11.5의 지원
+  중단 안내가 제거 시점(다음 마이너 릴리스 이후)을 명시했고, 1.12.0 출시 후 호출자를
+  확인한 뒤 PR #1314에서 제거되었습니다.
 
 ### 검토 절차
 
