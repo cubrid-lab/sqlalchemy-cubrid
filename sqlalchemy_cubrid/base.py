@@ -413,7 +413,10 @@ class CubridExecutionContext(default.DefaultExecutionContext):
         try:
             cursor.execute("SELECT LAST_INSERT_ID()")
             row = cursor.fetchone()
-            if row:
+            # LAST_INSERT_ID() is NULL until the connection has inserted into an
+            # AUTO_INCREMENT column. SQLAlchemy asks for lastrowid after every
+            # single-row INSERT, including tables without one (#1302).
+            if row and row[0] is not None:
                 return int(row[0])
         finally:
             cursor.close()

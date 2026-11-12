@@ -51,6 +51,10 @@ See CONTRIBUTING.md#pull-request-and-commit-titles.
 <!-- Maintain independent review for protected compiler/dialect/Alembic,
      CI permissions, and release/publishing changes. AI is advisory. -->
 
+<!-- Optional: if this PR adds a temporary script, probe, or repair tool, note its purpose,
+     local owner/issue, removal trigger, evidence location and next review point
+     (see CONTRIBUTING.md#temporary-scripts-and-repair-tools). Otherwise ignore. -->
+
 ## Validation
 
 <!-- Commands actually executed, results, and checks not run with reasons. -->

@@ -98,9 +98,24 @@ scope of the claim:
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported C-extension driver (v11.3.0.51+ only) |
+| CUBRIDdb (CCI) | Two maintained installation options: the `[cubrid]` / `[cubriddb]` extras install the PyPI `CUBRID-Python` 9.3.0 release, or build cubrid-python v11.3.0.51 from source ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)) | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported C-extension driver (both driver lines; see verification below) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
+
+pycubrid is recommended for new projects: it needs no CUBRID native libraries and avoids
+the CUBRIDdb limitations in [Driver Compatibility](DRIVER_COMPAT.md#known-issues).
+
+#### Driver verification
+
+Support policy (the table above) and verification (this table) are separate. A supported
+driver line can still lack a recorded passing run; such a combination is supported but
+not verified. Driver versions below are Python driver versions, not CUBRID server versions.
+
+| Driver line | Verified combinations | Known limitations |
+|---|---|---|
+| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not run in CI. It builds on Python 3.12, but the integration suite does not succeed with it: a local run (2026-11-12, driver `9.3.0.1`, CUBRID 11.4, Python 3.12) had 100 failures and 2 errors out of 677 tests (#1143). Other CUBRID and Python versions are not verified | `BIGINT` values are returned as `str` (#583, #1145), bound parameters are sent as strings so `LIMIT ?, ?` can return the wrong rows, and `Binary` and `ping()` are missing (#585, #1143); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
+| CUBRIDdb, built from cubrid-python v11.3.0.51 | SQLAlchemy compliance lane on CUBRID 11.4 in PR CI; integration tests on CUBRID 10.2–11.4 in the full matrix (manual dispatch and every release); see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
+| pycubrid (sync and async) | Integration and SQLAlchemy compliance lanes in PR and main CI; integration tests on CUBRID 10.2–11.4 in the full matrix; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 
 ---
 
