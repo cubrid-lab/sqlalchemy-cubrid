@@ -64,21 +64,25 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 The official CUBRIDdb C-extension driver from
 [cubrid-python](https://github.com/CUBRID/cubrid-python) is the driver bound to the bare
-`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. The
-supported way to install it is to build cubrid-python v11.3.0.51 or later from source,
-see [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
-then install the dialect on its own:
+`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. It has
+two maintained installation options:
+
+- `pip install "sqlalchemy-cubrid[cubrid]"` (or the identical `[cubriddb]` extra) installs
+  the PyPI `CUBRID-Python` 9.3.0 release. PyPI has only source archives for it, so pip
+  builds it locally.
+- Build cubrid-python v11.3.0.51 from source, see
+  [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
+  then install the dialect on its own:
 
 ```bash
 pip install sqlalchemy-cubrid
 ```
 
-> **Warning**: do not install the driver from PyPI (`pip install CUBRID-Python`, or the
-> deprecated `[cubrid]` / `[cubriddb]` extras). PyPI only has `CUBRID-Python` 9.3.x, which
-> is untested with this dialect: it returns `BIGINT` as `str` and fails parts of the
-> integration suite. A `cubrid://` engine emits a `SAWarning` at its first connection
-> when the loaded CUBRIDdb is older than 11.3. See
-> [PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
+> **Note**: CI tests the v11.3.0.51 build. The PyPI 9.3.0 release is supported but not
+> verified on Python 3.11 or later; an earlier run on CUBRID 11.4 returned `BIGINT` as
+> `str` and failed parts of the integration suite. A `cubrid://` engine emits a
+> `SAWarning` at its first connection when the loaded CUBRIDdb is older than 11.3. See
+> [PyPI `CUBRID-Python` 9.3.x known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
 ---
 
 ## Connection String Format

@@ -98,9 +98,24 @@ scope of the claim:
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported C-extension driver (v11.3.0.51+ only) |
+| CUBRIDdb (CCI) | Two maintained installation options: the `[cubrid]` / `[cubriddb]` extras install the PyPI `CUBRID-Python` 9.3.0 release, or build cubrid-python v11.3.0.51 from source ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)) | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported C-extension driver (both driver lines; see verification below) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
+
+pycubrid is recommended for new projects: it needs no CUBRID native libraries and avoids
+the CUBRIDdb limitations in [Driver Compatibility](DRIVER_COMPAT.md#known-issues).
+
+#### Driver verification
+
+Support policy (the table above) and verification (this table) are separate. A supported
+driver line can still lack a recorded passing run; such a combination is supported but
+not verified. Driver versions below are Python driver versions, not CUBRID server versions.
+
+| Driver line | Verified combinations | Known limitations |
+|---|---|---|
+| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not run in CI. Building it on Python 3.11 or later is not verified. One earlier run (2026-09, driver `9.3.0.1`, CUBRID 11.4, Python 3.10) connected | That run returned `BIGINT` values as `str` (#583) and failed 25 integration tests (#585); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
+| CUBRIDdb, built from cubrid-python v11.3.0.51 | CI integration and compliance lanes, CUBRID 10.2–11.4; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
+| pycubrid (sync and async) | CI integration and compliance lanes, CUBRID 10.2–11.4; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 
 ---
 
