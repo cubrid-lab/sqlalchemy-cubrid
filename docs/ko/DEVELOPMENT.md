@@ -338,7 +338,12 @@ pytest는 종료 코드 1로 끝납니다. 의도적으로 건너뛰려면 `CUBR
 `test/test_server_restart.py`(#565)는
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"`로
 `cub_server`를 중지·시작하고, 두 드라이버 모두에서 `pool_pre_ping` 사용 여부와
-무관하게 풀이 망가진 연결을 무효화하고 회복하는지 확인합니다.
+무관하게 풀이 망가진 연결을 무효화하고 회복하는지 확인합니다. 브로커 테스트(#1151)는
+pycubrid `QueuePool` 아래에서 `cubrid broker restart`를 실행합니다. 유휴 풀 연결은 안전하게
+재사용되어야 하고, 중단된 작업은 저장되거나 재실행되지 않고 연결 끊김으로 실패해야 하며,
+동시 쓰기 요청은 테이블과 대조해 감사합니다(실패로 보고된 id는 COMMIT 자체의 응답이
+유실된 경우에만 저장될 수 있습니다). JUnit 보고서에 그 테스트의 요청, 실패, 불확실(in-doubt),
+무효화 횟수가 기록됩니다.
 `CUBRID_TEST_DOCKER_CONTAINER`가 `CUBRID_TEST_URL`을 제공하는 컨테이너를 가리키지
 않으면 건너뜁니다. 테스트가 데이터베이스를 내리므로 버려도 되는 컨테이너를
 지정하세요:
