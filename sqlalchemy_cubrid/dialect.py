@@ -557,7 +557,8 @@ class CubridDialect(default.DefaultDialect):
     # SA 2.0 statement caching
     supports_statement_cache = True
     # Set at first connect for CUBRIDdb older than 11.3, which binds every
-    # parameter as a string; the compiler then renders LIMIT integers inline (#1143).
+    # parameter as a string; the compiler then renders the integers of a
+    # LIMIT offset, count clause inline (#1299).
     _limit_values_as_literals = False
 
     # Compiler classes
@@ -774,7 +775,8 @@ class CubridDialect(default.DefaultDialect):
         refusing to connect would break existing deployments in a minor
         release. The pycubrid variants inherit :meth:`initialize` and skip this.
         For those older releases it also makes the compiler render plain integer
-        ``LIMIT`` values inline, because they bind parameters as strings (#1143).
+        ``LIMIT offset, count`` values inline, because they bind parameters as
+        strings (#1299).
         """
         if self.driver != "cubrid":
             return
@@ -786,7 +788,7 @@ class CubridDialect(default.DefaultDialect):
         if major_minor >= _MIN_TESTED_CUBRIDDB:
             return
         # These releases bind every parameter as a string, which makes a bound
-        # LIMIT ?, ? return the wrong rows; render plain integers inline (#1143).
+        # LIMIT ?, ? return the wrong rows; render plain integers inline (#1299).
         self._limit_values_as_literals = True
         util.warn(
             f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "

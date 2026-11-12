@@ -559,7 +559,7 @@ class CubridCompiler(compiler.SQLCompiler):
         offset_clause = get_offset_clause(select)
         if limit_clause is None and offset_clause is None:
             return ""
-        literal = self._limit_values_as_literals()
+        literal = offset_clause is not None and self._limit_values_as_literals()
 
         def render(clause: Any) -> str:
             if literal and select._simple_int_clause(clause):
@@ -574,14 +574,17 @@ class CubridCompiler(compiler.SQLCompiler):
         return " \n LIMIT %s" % (render(limit_clause),)
 
     def _limit_values_as_literals(self) -> bool:
-        """True when plain integer ``LIMIT`` values must be rendered inline.
+        """True when plain integer ``LIMIT offset, count`` values must be inlined.
 
         CUBRIDdb releases older than 11.3 (the PyPI ``CUBRID-Python`` 9.3.x line)
         send every bound parameter to the server as a string, and CUBRID then
-        applies a bound ``LIMIT ?, ?`` incorrectly: ``(1, 2)`` returned four rows
-        instead of two, with no error. Rendering the integers into the SQL at
-        execution time (``render_literal_execute``) avoids the bound form. The
-        dialect sets the flag at first connect for those drivers only (#1143).
+        applies a bound two-value ``LIMIT ?, ?`` incorrectly: ``(1, 2)`` returned
+        four rows instead of two, with no error. A single bound ``LIMIT ?``
+        returned the right rows, so only the two-value form, rendered whenever an
+        offset is present, has its integers written into the SQL at execution time
+        (``render_literal_execute``). Such a statement cannot run through
+        ``executemany()``. The dialect sets the flag at first connect for those
+        drivers only (#1299).
         """
         return bool(getattr(self.dialect, "_limit_values_as_literals", False))
 
@@ -608,13 +611,16 @@ class CubridCompiler(compiler.SQLCompiler):
         if options.get("with_ties"):
             raise CompileError("CUBRID does not support FETCH FIRST ... WITH TIES")
 
+        offset_clause = select._offset_clause
+        literal = use_literal_execute_for_simple_int or (
+            offset_clause is not None and self._limit_values_as_literals()
+        )
+
         def render(clause: Any) -> str:
-            literal = use_literal_execute_for_simple_int or self._limit_values_as_literals()
             if literal and select._simple_int_clause(clause):
                 clause = clause.render_literal_execute()
             return str(self.process(clause, **kw))
 
-        offset_clause = select._offset_clause
         if fetch_clause is None:
             if offset_clause is None:
                 return ""

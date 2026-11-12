@@ -27,7 +27,7 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 
 ### Fixed
 
-- **Paged queries with the PyPI CUBRIDdb 9.3 driver** — this driver sends every bound parameter as a string, and CUBRID then applied a bound `LIMIT ?, ?` incorrectly: `.offset(1).fetch(2)` returned four rows instead of two, with no error. When the connected CUBRIDdb is older than 11.3, plain integer `.limit()`, `.offset()` and `.fetch()` values are now written into the SQL at execution time. pycubrid and CUBRIDdb 11.3 or later still bind them as parameters ([#1299](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1299)) by @yeongseon.
+- **Paged queries with the PyPI CUBRIDdb 9.3 driver** — this driver sends every bound parameter as a string, and CUBRID then applied a bound `LIMIT ?, ?` incorrectly: `.offset(1).fetch(2)` returned four rows instead of two, with no error. When the connected CUBRIDdb is older than 11.3, the plain integers of a query with an offset (`LIMIT offset, count`) are now written into the SQL at execution time; such a statement cannot run through `executemany()`. A limit without an offset, pycubrid and CUBRIDdb 11.3 or later still use bound parameters ([#1299](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1299)) by @yeongseon.
 
 ### Documentation
 
