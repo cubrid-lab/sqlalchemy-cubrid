@@ -311,7 +311,8 @@ def _fake_cubriddb(version: object) -> types.ModuleType:
 
 
 class TestCubriddbVersionGuard:
-    """Warn at first connect when CUBRIDdb is older than the tested 11.3 line (#585)."""
+    """At first connect, adapt to CUBRIDdb older than 11.3 and warn once about the
+    limitations the dialect cannot adapt; the driver line stays supported (#585, #1142)."""
 
     @pytest.mark.parametrize(
         "version",
@@ -328,11 +329,17 @@ class TestCubriddbVersionGuard:
         dialect.dbapi = _fake_cubriddb(version)
         raw = version.decode() if isinstance(version, bytes) else version
 
-        with pytest.warns(SAWarning, match=r"CUBRIDdb .* is older than the CUBRIDdb 11\.3") as rec:
-            dialect._warn_if_untested_cubriddb()
+        # The documented filter (docs/DRIVER_COMPAT.md) matches "CUBRIDdb .* is older".
+        with pytest.warns(SAWarning, match=r"CUBRIDdb .* is older than 11\.3") as rec:
+            dialect._adapt_to_cubriddb_version()
 
         message = str(rec[0].message)
         assert raw in message
+        assert "is supported" in message
+        for limitation in ("bytes", "IntegrityError", "recursive CTEs"):
+            assert limitation in message
+        for wording in ("untested", "unsupported", "deprecated", "legacy", "BIGINT"):
+            assert wording not in message
         assert "cubrid+pycubrid://" in message
         assert "v11.3.0.51" in message
         assert dialect._limit_values_as_literals is True
@@ -346,7 +353,7 @@ class TestCubriddbVersionGuard:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            dialect._warn_if_untested_cubriddb()
+            dialect._adapt_to_cubriddb_version()
         assert dialect._limit_values_as_literals is False
 
     @pytest.mark.parametrize("version", [None, b"unknown", "", 11])
@@ -356,7 +363,7 @@ class TestCubriddbVersionGuard:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            dialect._warn_if_untested_cubriddb()
+            dialect._adapt_to_cubriddb_version()
 
     def test_module_without_extension_does_not_warn(self) -> None:
         dialect = CubridDialect()
@@ -364,7 +371,7 @@ class TestCubriddbVersionGuard:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            dialect._warn_if_untested_cubriddb()
+            dialect._adapt_to_cubriddb_version()
 
     def test_pycubrid_dialect_skips_check(self) -> None:
         from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
@@ -374,7 +381,7 @@ class TestCubriddbVersionGuard:
 
         with warnings.catch_warnings():
             warnings.simplefilter("error")
-            dialect._warn_if_untested_cubriddb()
+            dialect._adapt_to_cubriddb_version()
         assert dialect._limit_values_as_literals is False
 
     def test_initialize_runs_the_check(self) -> None:

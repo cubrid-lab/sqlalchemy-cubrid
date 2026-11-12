@@ -24,6 +24,7 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 ### Changed
 
 - **Missing-CUBRIDdb error** — the `Could not import CUBRIDdb` error for `cubrid://` and `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver legacy or the PyPI `CUBRID-Python` releases untested. It lists both installation paths (`sqlalchemy-cubrid[cubriddb]` or an official CUBRID/cubrid-python source build) and the pure-Python `cubrid+pycubrid://` alternative. The message prefix and the chained original `ImportError` are unchanged ([#1150](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1150)) by @yeongseon.
+- **First-connect warning for the PyPI CUBRIDdb 9.3 driver** — the `SAWarning` emitted when the loaded CUBRIDdb is older than 11.3 no longer calls this supported driver line untested or tells users to switch away. It now names the limitations the dialect cannot work around, as observed with CUBRID 11.4: `bytes` values cannot be bound, constraint violations are raised as `DatabaseError` instead of `IntegrityError`, and the server rejects string-bound parameters in recursive CTEs and `SET` values. It also points to pycubrid and the v11.3.0.51 source build as alternatives. The warning still fires once per engine, the connection is unchanged, and the documented `message="CUBRIDdb .* is older"` filter still matches ([#1142](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1142)) by @yeongseon.
 
 ### Removed
 
