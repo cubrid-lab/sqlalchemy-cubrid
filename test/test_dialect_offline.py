@@ -2783,6 +2783,27 @@ class TestDoPing:
         result = dialect.do_ping(dbapi_conn)
         assert result is False
 
+    def test_connection_without_ping_runs_select_one(self):
+        """CUBRIDdb 9.3 has no ping(); a working connection still counts as alive (#1304)."""
+        dialect = CubridDialect()
+        cursor = MagicMock()
+        dbapi_conn = MagicMock(spec=["cursor"])
+        dbapi_conn.cursor.return_value = cursor
+
+        assert dialect.do_ping(dbapi_conn) is True
+        cursor.execute.assert_called_once_with("SELECT 1")
+        cursor.close.assert_called_once_with()
+
+    def test_connection_without_ping_reports_failed_select(self):
+        dialect = CubridDialect()
+        cursor = MagicMock()
+        cursor.execute.side_effect = RuntimeError("connection lost")
+        dbapi_conn = MagicMock(spec=["cursor"])
+        dbapi_conn.cursor.return_value = cursor
+
+        assert dialect.do_ping(dbapi_conn) is False
+        cursor.close.assert_called_once_with()
+
 
 class TestPostfetchLastRowId:
     """Tests for postfetch_lastrowid flag and get_lastrowid behavior."""
