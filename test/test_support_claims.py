@@ -274,3 +274,107 @@ def test_readme_requirements_sqlalchemy_range_must_match_metadata() -> None:
     assert "README.md: SQLAlchemy support matrix bound differs" in check_claims(
         METADATA, readme, MATRIX
     )
+
+
+KO_MATRIX = (ROOT / "docs/ko/SUPPORT_MATRIX.md").read_text(encoding="utf-8")
+KO_POLICY_ROW = "| CUBRIDdb (CCI) |"
+
+
+def _ko_line(prefix: str) -> str:
+    return next(line for line in KO_MATRIX.splitlines() if line.startswith(prefix))
+
+
+def _ko_edit(prefix: str, old: str, new: str) -> str:
+    line = _ko_line(prefix)
+    assert old in line
+    return KO_MATRIX.replace(line, line.replace(old, new, 1), 1)
+
+
+def test_korean_matrix_keeps_the_cubriddb_policy() -> None:
+    from scripts.check_support_claims import check_korean_cubriddb_policy
+
+    assert check_korean_cubriddb_policy(KO_MATRIX) == []
+
+
+@pytest.mark.parametrize(
+    ("matrix", "expected"),
+    [
+        (
+            _ko_edit(KO_POLICY_ROW, "유지되는 두 가지 설치 방법", "폐기 예정인 설치 방법"),
+            "supported CUBRIDdb driver is misclassified",
+        ),
+        (
+            _ko_edit(KO_POLICY_ROW, "v11.3.0.51", "v11.3"),
+            "CUBRIDdb install guidance needs both driver lines",
+        ),
+        (
+            _ko_edit(KO_POLICY_ROW, "[cubriddb]", "[pycubrid]"),
+            "CUBRIDdb install guidance needs both driver lines",
+        ),
+        (
+            KO_MATRIX.replace(_ko_line(KO_POLICY_ROW), "| CUBRIDdb (CCI) | 설치 |", 1),
+            "CUBRIDdb driver row is missing or malformed",
+        ),
+        (
+            _ko_edit(PYPI_ROW, "CI에서 실행하지 않음", "✅ CI에서 테스트됨"),
+            "PyPI CUBRID-Python 9.3.x is reported as verified",
+        ),
+        (
+            _ko_edit(PYPI_ROW, "#585", "#999"),
+            "PyPI CUBRID-Python 9.3.x known limitations are missing",
+        ),
+        (
+            KO_MATRIX.replace("#### 드라이버 검증 현황\n", "#### 드라이버 참고\n", 1),
+            "driver verification table is missing",
+        ),
+        (
+            KO_MATRIX.replace(_ko_line(PYPI_ROW), _ko_line(PYPI_ROW) + "\n" + _ko_line(PYPI_ROW)),
+            "PyPI CUBRID-Python 9.3.x needs exactly one verification row",
+        ),
+        (
+            KO_MATRIX.replace(_ko_line(PYPI_ROW), "| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 | x |"),
+            "CUBRIDdb verification row is malformed",
+        ),
+    ],
+)
+def test_korean_matrix_policy_errors_are_reported(matrix: str, expected: str) -> None:
+    from scripts.check_support_claims import check_korean_cubriddb_policy
+
+    assert f"docs/ko/SUPPORT_MATRIX.md: {expected}" in check_korean_cubriddb_policy(matrix)
+
+
+def test_korean_status_must_say_supported() -> None:
+    from scripts.check_support_claims import check_korean_cubriddb_policy
+
+    line = _ko_line(KO_POLICY_ROW)
+    cells = line.split("|")
+    cells[4] = " C 확장 드라이버 "
+    matrix = KO_MATRIX.replace(line, "|".join(cells), 1)
+    assert "docs/ko/SUPPORT_MATRIX.md: supported CUBRIDdb driver is misclassified" in (
+        check_korean_cubriddb_policy(matrix)
+    )
+
+
+def test_main_checks_the_korean_matrix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import scripts.check_support_claims as checker
+
+    for name in (
+        "pyproject.toml",
+        "README.md",
+        "docs/SUPPORT_MATRIX.md",
+        "docs/ko/SUPPORT_MATRIX.md",
+    ):
+        target = tmp_path / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text((ROOT / name).read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(checker, "ROOT", tmp_path)
+    assert checker.main() == 0
+
+    ko = tmp_path / "docs/ko/SUPPORT_MATRIX.md"
+    ko.write_text(KO_MATRIX.replace("#### 드라이버 검증 현황\n", "", 1), encoding="utf-8")
+    assert checker.main() == 1
+    assert "docs/ko/SUPPORT_MATRIX.md: driver verification table is missing" in (
+        capsys.readouterr().err
+    )
