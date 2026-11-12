@@ -2345,12 +2345,23 @@ class CubridDialect(default.DefaultDialect):
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:
         """Ping the server to check connection liveness.
 
-        Used by SQLAlchemy's ``pool_pre_ping`` feature.  The CUBRID
-        Python driver exposes a ``ping()`` method on the connection
-        that delegates to the C-level CCI ping.
+        Used by SQLAlchemy's ``pool_pre_ping`` feature.  CUBRIDdb 11.3
+        exposes a ``ping()`` method on the connection that delegates to the
+        C-level CCI ping.  The PyPI CUBRIDdb 9.3 release has no ``ping()``;
+        reporting every such connection as dead made ``pool_pre_ping``
+        discard and reopen it on each checkout, so those connections are
+        checked with ``SELECT 1`` instead (#1304).
         """
         try:
-            dbapi_connection.ping()
+            ping = getattr(dbapi_connection, "ping", None)
+            if ping is None:
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("SELECT 1")
+                finally:
+                    cursor.close()
+            else:
+                ping()
             return True
         except Exception:
             return False
