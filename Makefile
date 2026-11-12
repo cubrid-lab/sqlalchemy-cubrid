@@ -223,9 +223,6 @@ docker-fix-db-host: ## Repair a running container's volume that registers testdb
 
 ##@ Maintenance
 
-changelog: ## Generate changelog with git-cliff
-	git-cliff --output CHANGELOG.md
-
 clean: ## Remove build artifacts and caches
 	rm -rf build/ dist/ *.egg-info .pytest_cache/ .coverage .ruff_cache/ __pycache__/ test-results/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
