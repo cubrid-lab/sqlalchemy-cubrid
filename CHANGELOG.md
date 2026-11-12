@@ -28,6 +28,7 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 ### Fixed
 
 - **Paged queries with the PyPI CUBRIDdb 9.3 driver** — this driver sends every bound parameter as a string, and CUBRID then applied a bound `LIMIT ?, ?` incorrectly: `.offset(1).fetch(2)` returned four rows instead of two, with no error. When the connected CUBRIDdb is older than 11.3, the plain integers of a query with an offset (`LIMIT offset, count`) are now written into the SQL at execution time; such a statement cannot run through `executemany()`. A limit without an offset, pycubrid and CUBRIDdb 11.3 or later still use bound parameters ([#1299](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1299)) by @yeongseon.
+- **INSERT with a driver that lacks `get_last_insert_id()`** — with the PyPI CUBRIDdb 9.3 driver, a single-row INSERT on a connection that had not yet inserted into an `AUTO_INCREMENT` column failed with `TypeError: int() argument must be ... not 'NoneType'`, even though the row was stored; Alembic's `alembic_version` insert was one example. A NULL `SELECT LAST_INSERT_ID()` now means no generated key ([#1302](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1302)) by @yeongseon.
 
 ### Documentation
 
