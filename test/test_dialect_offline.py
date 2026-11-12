@@ -335,6 +335,7 @@ class TestCubriddbVersionGuard:
         assert raw in message
         assert "cubrid+pycubrid://" in message
         assert "v11.3.0.51" in message
+        assert dialect._limit_values_as_literals is True
 
     @pytest.mark.parametrize(
         "version", [b"11.3.0.0001", "11.3.0.0051", b"11.4.0.0001", "12.0.0.0001"]
@@ -346,6 +347,7 @@ class TestCubriddbVersionGuard:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             dialect._warn_if_untested_cubriddb()
+        assert dialect._limit_values_as_literals is False
 
     @pytest.mark.parametrize("version", [None, b"unknown", "", 11])
     def test_unknown_version_does_not_warn(self, version: object) -> None:
@@ -373,6 +375,7 @@ class TestCubriddbVersionGuard:
         with warnings.catch_warnings():
             warnings.simplefilter("error")
             dialect._warn_if_untested_cubriddb()
+        assert dialect._limit_values_as_literals is False
 
     def test_initialize_runs_the_check(self) -> None:
         dialect = CubridDialect()
@@ -384,6 +387,61 @@ class TestCubriddbVersionGuard:
         with patch("sqlalchemy.engine.default.DefaultDialect.initialize"):
             with pytest.warns(SAWarning, match="CUBRIDdb 9.3.0.0001 is older"):
                 dialect.initialize(connection)
+
+
+class TestLimitLiteralsForStringBindingDrivers:
+    """CUBRIDdb older than 11.3 binds every parameter as a string, and CUBRID
+    then applies a bound ``LIMIT ?, ?`` incorrectly (four rows for ``(1, 2)``).
+    For those drivers the dialect renders plain integer LIMIT values inline at
+    execution time; every other driver keeps bound LIMIT parameters (#1143)."""
+
+    _T = sa.table("t", sa.column("n"))
+
+    @staticmethod
+    def _dialect(literal: bool) -> CubridDialect:
+        dialect = CubridDialect()
+        dialect._limit_values_as_literals = literal
+        return dialect
+
+    @pytest.mark.parametrize(
+        ("build", "expected"),
+        [
+            (lambda s: s.limit(2), "LIMIT 2"),
+            (lambda s: s.limit(2).offset(1), "LIMIT 1, 2"),
+            (lambda s: s.offset(3), "LIMIT 3, 4611686018427387904"),
+            (lambda s: s.fetch(2), "LIMIT 2"),
+            (lambda s: s.offset(1).fetch(2), "LIMIT 1, 2"),
+            (lambda s: s.offset(3).fetch(5), "LIMIT 3, 5"),
+        ],
+    )
+    def test_old_cubriddb_renders_integers_inline(self, build: Any, expected: str) -> None:
+        stmt = build(sa.select(self._T.c.n).order_by(self._T.c.n))
+        compiled = stmt.compile(dialect=self._dialect(True))
+        assert "?" not in str(compiled).split("LIMIT", 1)[1]
+        rendered = stmt.compile(
+            dialect=self._dialect(True), compile_kwargs={"render_postcompile": True}
+        )
+        assert str(rendered).endswith(expected)
+
+    @pytest.mark.parametrize(
+        "build",
+        [
+            lambda s: s.limit(2).offset(1),
+            lambda s: s.offset(1).fetch(2),
+            lambda s: s.limit(2),
+        ],
+    )
+    def test_other_drivers_keep_bound_limits(self, build: Any) -> None:
+        stmt = build(sa.select(self._T.c.n).order_by(self._T.c.n))
+        compiled = stmt.compile(dialect=self._dialect(False))
+        limit_sql = str(compiled).split("LIMIT", 1)[1]
+        assert "?" in limit_sql
+        assert "POSTCOMPILE" not in limit_sql
+
+    def test_expression_limit_stays_bound(self) -> None:
+        stmt = sa.select(self._T.c.n).limit(sa.bindparam("n", type_=sa.Integer))
+        compiled = stmt.compile(dialect=self._dialect(True))
+        assert str(compiled).split("LIMIT", 1)[1].strip() == "?"
 
 
 class TestIsolationLevelMethods:

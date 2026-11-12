@@ -14,7 +14,7 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
-This maintenance release revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. SQL generation, reflection and connection behavior are unchanged.
+This maintenance release revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. It also fixes paged queries that could return the wrong rows with the PyPI CUBRIDdb 9.3 driver. SQL generation for other drivers, reflection and connection behavior are unchanged.
 
 ### Upgrade notes
 
@@ -24,6 +24,10 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 ### Changed
 
 - **Missing-CUBRIDdb error** — the `Could not import CUBRIDdb` error for `cubrid://` and `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver legacy or the PyPI `CUBRID-Python` releases untested. It lists both installation paths (`sqlalchemy-cubrid[cubriddb]` or an official CUBRID/cubrid-python source build) and the pure-Python `cubrid+pycubrid://` alternative. The message prefix and the chained original `ImportError` are unchanged ([#1150](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1150)) by @yeongseon.
+
+### Fixed
+
+- **Paged queries with the PyPI CUBRIDdb 9.3 driver** — this driver sends every bound parameter as a string, and CUBRID then applied a bound `LIMIT ?, ?` incorrectly: `.offset(1).fetch(2)` returned four rows instead of two, with no error. When the connected CUBRIDdb is older than 11.3, plain integer `.limit()`, `.offset()` and `.fetch()` values are now written into the SQL at execution time. pycubrid and CUBRIDdb 11.3 or later still bind them as parameters ([#1299](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1299)) by @yeongseon.
 
 ### Documentation
 
