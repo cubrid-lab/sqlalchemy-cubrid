@@ -372,6 +372,34 @@ CUBRID_TEST_DOCKER_CONTAINER=<container> \
 CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
 which turns every skip into a failure.
 
+`test/test_pool_soak.py` (#1151) is a bounded mixed request workload on one sync
+pycubrid engine with a `QueuePool` (`pool_size=4`, `max_overflow=2`,
+`pool_timeout=30`, `pool_pre_ping=True`). Six worker threads act as requests:
+short reads, write transactions that commit or roll back, and idle gaps that leave
+pooled connections unused before reuse. It counts successful, failed and in-doubt
+requests by kind and stage, the pool's connect, checkout, checkin and invalidate
+events, latency percentiles, and samples the process RSS, open file descriptors
+and sockets. At the end each write is audited against the table: an acknowledged
+commit is stored once, a rolled-back write is never stored, and a failed write may
+be stored only when its COMMIT lost the reply. By default it runs for 3 seconds
+inside every `make integration`, a small regression that expects no failures and
+no invalidations against a healthy server. The longer run with a broker restart is
+manual and not part of any CI lane; point it at a disposable container:
+
+```bash
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+CUBRID_SOAK_SECONDS=300 CUBRID_SOAK_BROKER_RESTART=1 \
+CUBRID_SOAK_REPORT=test-results/soak-report.json \
+  pytest test/test_pool_soak.py -v -rs --junitxml=test-results/soak-junit.xml
+```
+
+`CUBRID_SOAK_BROKER_RESTART=1` runs `cubrid broker restart` 40% into the run and
+fails without `CUBRID_TEST_DOCKER_CONTAINER`; requests that start after the broker
+is back must all succeed. `CUBRID_SOAK_REPORT` writes a JSON report with the
+counts, resource samples and the exact Python, SQLAlchemy, dialect, pycubrid and
+server versions; the main counts are also in the JUnit properties.
+
 ### Full SA Test Suite
 
 ```bash
