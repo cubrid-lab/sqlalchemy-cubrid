@@ -14,7 +14,7 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
-This maintenance release revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. It also fixes paged queries that could return the wrong rows with the PyPI CUBRIDdb 9.3 driver. SQL generation for other drivers, reflection and connection behavior are unchanged.
+This maintenance release revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. It also fixes paged queries that could return the wrong rows, and `BIGINT` results returned as strings, with the PyPI CUBRIDdb 9.3 driver. SQL generation for other drivers, reflection and connection behavior are unchanged.
 
 ### Upgrade notes
 
@@ -24,6 +24,7 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 ### Changed
 
 - **Missing-CUBRIDdb error** — the `Could not import CUBRIDdb` error for `cubrid://` and `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver legacy or the PyPI `CUBRID-Python` releases untested. It lists both installation paths (`sqlalchemy-cubrid[cubriddb]` or an official CUBRID/cubrid-python source build) and the pure-Python `cubrid+pycubrid://` alternative. The message prefix and the chained original `ImportError` are unchanged ([#1150](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1150)) by @yeongseon.
+- **First-connect warning for the PyPI CUBRIDdb 9.3 driver** — the `SAWarning` emitted when the loaded CUBRIDdb is older than 11.3 no longer calls this supported driver line untested or tells users to switch away. It now names the limitations the dialect cannot work around, as observed with CUBRID 11.4: `bytes` values cannot be bound, constraint violations are raised as `DatabaseError` instead of `IntegrityError`, and the server rejects string-bound parameters in recursive CTEs and `SET` values. It also points to pycubrid and the v11.3.0.51 source build as alternatives. The warning still fires once per engine, the connection is unchanged, and the documented `message="CUBRIDdb .* is older"` filter still matches ([#1142](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1142)) by @yeongseon.
 
 ### Removed
 
@@ -32,6 +33,7 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 ### Fixed
 
 - **Paged queries with the PyPI CUBRIDdb 9.3 driver** — this driver sends every bound parameter as a string, and CUBRID then applied a bound `LIMIT ?, ?` incorrectly: `.offset(1).fetch(2)` returned four rows instead of two, with no error. When the connected CUBRIDdb is older than 11.3, the plain integers of a query with an offset (`LIMIT offset, count`) are now written into the SQL at execution time; such a statement cannot run through `executemany()`. A limit without an offset, pycubrid and CUBRIDdb 11.3 or later still use bound parameters ([#1299](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1299)) by @yeongseon.
+- **`BIGINT` results with the PyPI CUBRIDdb 9.3 driver** — this driver returns `BIGINT` values, including `COUNT(*)` and `ROWNUM`, as strings (`'5'`). When the connected CUBRIDdb is older than 11.3, integer-typed and untyped (`text()`) result columns that the driver reports as `BIGINT` now return `int`. Other column types are never parsed, and pycubrid and CUBRIDdb 11.3 or later are unchanged ([#1145](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1145)) by @yeongseon.
 - **INSERT with a driver that lacks `get_last_insert_id()`** — with the PyPI CUBRIDdb 9.3 driver, a single-row INSERT on a connection that had not yet inserted into an `AUTO_INCREMENT` column failed with `TypeError: int() argument must be ... not 'NoneType'`, even though the row was stored; Alembic's `alembic_version` insert was one example. A NULL `SELECT LAST_INSERT_ID()` now means no generated key ([#1302](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1302)) by @yeongseon.
 - **`pool_pre_ping` with the PyPI CUBRIDdb 9.3 driver** — this driver has no `Connection.ping()`, so every ping failed and `pool_pre_ping=True` discarded and reopened a pooled connection on each checkout. Connections without `ping()` are now checked with `SELECT 1`; CUBRIDdb 11.3 and pycubrid are unchanged ([#1304](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1304)) by @yeongseon.
 
