@@ -107,14 +107,21 @@ def _q(conn: Any, sql: str) -> list[Any] | None:
         cur.close()
 
 
-def _scalar(conn: Any, sql: str) -> Any:
+def _count(conn: Any, sql: str) -> int:
+    """Run a ``SELECT COUNT(*)`` probe and return the count as ``int``.
+
+    ``COUNT(*)`` is a BIGINT, and the PyPI CUBRIDdb 9.3 driver returns BIGINT
+    values as ``str`` (docs/DRIVER_COMPAT.md). Comparing the raw ``'1'`` with
+    ``1`` made every existence probe report the wrong answer with that driver,
+    so the probe converts the value before any comparison (#1143).
+    """
     rows = _q(conn, sql)
     assert rows
-    return rows[0][0]
+    return int(rows[0][0])
 
 
 def _class_exists(conn: Any, name: str) -> bool:
-    return _scalar(conn, f"SELECT COUNT(*) FROM db_class WHERE class_name = '{name}'") == 1
+    return _count(conn, f"SELECT COUNT(*) FROM db_class WHERE class_name = '{name}'") == 1
 
 
 def _columns(conn: Any, table: str) -> list[str]:
@@ -126,15 +133,15 @@ def _columns(conn: Any, table: str) -> list[str]:
 
 
 def _index_exists(conn: Any, name: str) -> bool:
-    return _scalar(conn, f"SELECT COUNT(*) FROM db_index WHERE index_name = '{name}'") == 1
+    return _count(conn, f"SELECT COUNT(*) FROM db_index WHERE index_name = '{name}'") == 1
 
 
 def _serial_exists(conn: Any, name: str) -> bool:
-    return _scalar(conn, f"SELECT COUNT(*) FROM db_serial WHERE name = '{name}'") == 1
+    return _count(conn, f"SELECT COUNT(*) FROM db_serial WHERE name = '{name}'") == 1
 
 
 def _row_count(conn: Any, table: str) -> int:
-    return int(_scalar(conn, f"SELECT COUNT(*) FROM {table}"))
+    return _count(conn, f"SELECT COUNT(*) FROM {table}")
 
 
 _T = f"{_PREFIX}t"
