@@ -106,6 +106,10 @@ RELEASE_CHANGELOG.md unchanged. It decorates an ephemeral copy of generated
 entries using the commit-to-merged-PR GitHub API and a query for earlier merged
 PRs, then composes CHANGELOG.md. An unverified or ambiguous author is omitted,
 not invented. Human-reviewed curated entries can include a byline directly.
+The composer drops a generated entry whose pull request or referenced issue a
+curated entry already cites, unless it credits a contributor the curated entry
+does not. A change curated under an issue whose generated entry carries only an
+unrelated pull request number cannot be matched automatically.
 A maintainer still reviews the resulting release PR for duplicate entries,
 accuracy, migration guidance, author and co-author credits, and actual first
 contribution evidence. No release may be published just to exercise formatting.
