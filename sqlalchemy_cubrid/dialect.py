@@ -128,46 +128,6 @@ _MIN_TESTED_CUBRIDDB = (11, 3)
 _BACKSLASH_PROBE_SQL = "SELECT CHAR_LENGTH('\\\\')"
 
 
-# DB-API type code CUBRIDdb reports in cursor.description for a BIGINT column
-# (CUBRIDdb.FIELD_TYPE.BIGINT, the CCI U_TYPE_BIGINT value).
-_CUBRIDDB_BIGINT_TYPE_CODE = 21
-
-
-def _bigint_str_processor(dialect: Any, coltype: Any) -> Optional[Callable[[Any], Any]]:
-    """Convert BIGINT values that CUBRIDdb older than 11.3 returns as ``str``.
-
-    Those releases fetch BIGINT, ``COUNT(*)`` and ``ROWNUM`` values as decimal
-    strings (``'5'``), while CUBRIDdb 11.3 and pycubrid return ``int`` (#1145).
-    Only columns the driver itself reports as BIGINT are converted, and only
-    ``str`` values; text from any other column type is never parsed.
-    """
-    if not getattr(dialect, "_bigint_results_as_str", False):
-        return None
-    if coltype != _CUBRIDDB_BIGINT_TYPE_CODE:
-        return None
-
-    def process(value: Any) -> Any:
-        if isinstance(value, str):
-            return int(value)
-        return value
-
-    return process
-
-
-class _CubridIntegerResult(sqltypes.Integer):
-    """Result-processing impl for integer types (#1145); renders and binds as Integer."""
-
-    def result_processor(self, dialect: Any, coltype: Any) -> Any:
-        return _bigint_str_processor(dialect, coltype)
-
-
-class _CubridUntypedResult(sqltypes.NullType):
-    """Result-processing impl for untyped columns such as ``text()`` results (#1145)."""
-
-    def result_processor(self, dialect: Any, coltype: Any) -> Any:
-        return _bigint_str_processor(dialect, coltype)
-
-
 def _cubriddb_version(dbapi: Any) -> tuple[str, tuple[int, int]] | None:
     """Return the loaded CUBRIDdb C extension's version string and (major, minor).
 
@@ -526,9 +486,6 @@ def _column_defaults_from_ddl(ddl: str) -> dict[str, str]:
 # -----------------------------------------------------------------------
 
 colspecs = {
-    # Result processing only: convert CUBRIDdb 9.3's string BIGINT values (#1145).
-    sqltypes.Integer: _CubridIntegerResult,
-    sqltypes.NullType: _CubridUntypedResult,
     sqltypes.Enum: ENUM,
     sqltypes.Numeric: NUMERIC,
     sqltypes.Float: FLOAT,
@@ -622,7 +579,8 @@ class CubridDialect(default.DefaultDialect):
     # LIMIT offset, count clause inline (#1299).
     _limit_values_as_literals = False
     # Set at first connect for the same drivers, which return BIGINT values as
-    # str; integer and untyped result columns then convert them to int (#1145).
+    # str; CubridExecutionContext then converts integer and untyped BIGINT
+    # result columns to int (#1145).
     _bigint_results_as_str = False
 
     # Compiler classes
