@@ -63,7 +63,7 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 [cubrid-python](https://github.com/CUBRID/cubrid-python)의 공식 CUBRIDdb C 확장 드라이버는 `cubrid://` URL에 묶여 있으며, `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택할 수 있습니다. 유지되는 설치 방법은 두 가지입니다:
 
-- `pip install "sqlalchemy-cubrid[cubrid]"`(또는 동일한 `[cubriddb]` extra)는 PyPI `CUBRID-Python` 9.3.0 릴리스를 설치합니다. PyPI에는 소스 압축 파일만 있으므로 pip가 로컬에서 빌드합니다.
+- `pip install "sqlalchemy-cubrid[cubrid]"`(또는 동일한 `[cubriddb]` extra)는 PyPI `CUBRID-Python` 9.3.0 릴리스를 설치합니다(pip는 `9.3.0.1`로 해석). PyPI에는 소스 압축 파일만 있으므로 pip가 로컬에서 빌드합니다.
 - cubrid-python v11.3.0.51을 소스에서 빌드합니다. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고한 뒤 방언만 설치하세요:
 
   ```bash

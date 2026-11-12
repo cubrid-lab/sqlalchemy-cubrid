@@ -68,8 +68,8 @@ The official CUBRIDdb C-extension driver from
 two maintained installation options:
 
 - `pip install "sqlalchemy-cubrid[cubrid]"` (or the identical `[cubriddb]` extra) installs
-  the PyPI `CUBRID-Python` 9.3.0 release. PyPI has only source archives for it, so pip
-  builds it locally.
+  the PyPI `CUBRID-Python` 9.3.0 release (pip resolves it as `9.3.0.1`). PyPI has only
+  source archives for it, so pip builds it locally.
 - Build cubrid-python v11.3.0.51 from source, see
   [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
   then install the dialect on its own:

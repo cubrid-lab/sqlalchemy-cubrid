@@ -259,8 +259,8 @@ def test_extras_must_admit_the_pypi_release() -> None:
     assert METADATA.count('"CUBRID-Python"') == 2
     metadata = METADATA.replace('"CUBRID-Python"', '"CUBRID-Python>=11.3"')
     problems = check_claims(metadata, README, MATRIX)
-    assert "pyproject.toml: cubrid extra must admit CUBRID-Python 9.3.0" in problems
-    assert "pyproject.toml: cubriddb extra must admit CUBRID-Python 9.3.0" in problems
+    assert "pyproject.toml: cubrid extra must admit CUBRID-Python 9.3.0.1" in problems
+    assert "pyproject.toml: cubriddb extra must admit CUBRID-Python 9.3.0.1" in problems
 
 
 def test_readme_requirements_sqlalchemy_range_must_match_metadata() -> None:

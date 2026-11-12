@@ -552,9 +552,12 @@ but `greenlet` may require build tools when no compatible wheel is available.
 
 The newest `CUBRID-Python` release on PyPI is 9.3.0, with two source archives
 (`9.3.0.0001` from 2014 and `9.3.0.0002` from 2015) and no wheels. There is no 11.x
-release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on `CUBRID-Python` without
-a version bound, so they install 9.3.0. Both extras are maintained installation options
-for a supported driver line.
+release on PyPI. pip reads the version from the archive name, so it sees `9.3.0.1` and
+`9.3.0.2`, but the `9.3.0.0002` archive's own metadata declares `9.3.0.1`. Current pip
+discards that archive as inconsistent and installs the 2014 `9.3.0.0001` archive as
+`CUBRID-Python 9.3.0.1` (its `_cubrid.__version__` is `b'9.3.0.0001'`). The `[cubrid]` and
+`[cubriddb]` extras depend on `CUBRID-Python` without a version bound, so they install that
+same driver. Both extras are maintained installation options for a supported driver line.
 
 This driver line is not run in CI, and building it on Python 3.11 or later has not been
 verified. One earlier run (2026-09, driver `9.3.0.1`, CUBRID 11.4, Python 3.10) connected

@@ -58,9 +58,11 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
     for group in ("cubrid", "cubriddb"):
         if len(requirements[group]) != 1 or requirements[group][0].name.lower() != "cubrid-python":
             problems.append(f"pyproject.toml: {group} extra must install CUBRID-Python")
-        elif not requirements[group][0].specifier.contains(Version("9.3.0")):
-            # The docs promise that these extras install the PyPI 9.3.0 release (#1139).
-            problems.append(f"pyproject.toml: {group} extra must admit CUBRID-Python 9.3.0")
+        elif not requirements[group][0].specifier.contains(Version("9.3.0.1")):
+            # The docs promise that these extras install the PyPI 9.3.0 release, which
+            # pip resolves as 9.3.0.1 because the 9.3.0.0002 archive's metadata also
+            # declares 9.3.0.1 (#1139).
+            problems.append(f"pyproject.toml: {group} extra must admit CUBRID-Python 9.3.0.1")
     pycubrid = [item for item in requirements["pycubrid"] if item.name.lower() == "pycubrid"]
     if len(pycubrid) != 1:
         problems.append("pyproject.toml: pycubrid extra needs one driver requirement")
