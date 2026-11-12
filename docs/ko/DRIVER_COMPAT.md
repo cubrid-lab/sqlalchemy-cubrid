@@ -369,6 +369,13 @@ pip는 압축 파일 이름에서 버전을 읽어 `9.3.0.1`과 `9.3.0.2`를 보
 - `COUNT(*)`와 `ROWNUM`을 포함한 `BIGINT` 값을 `str`로 반환합니다(#583, #1145). 방언은 자체
   카탈로그 카운트를 `int()`로 변환하므로(#584) `has_table()`과 `has_index()`는 영향을 받지
   않지만, 애플리케이션의 `BIGINT` 컬럼과 집계 결과는 영향을 받습니다.
+- 고정 타입이 없는 결과 컬럼(`cursor.description`의 타입 코드 0), 예를 들어
+  `PERCENTILE_DISC(...) WITHIN GROUP (...)`, `PERCENTILE_CONT`, `MEDIAN`도 `str`
+  (`'0'`, `'1.5000000000000000'`)로 반환합니다. pycubrid는 숫자를 반환합니다. SQLAlchemy의
+  `Boolean` 결과 처리기는 `'0'`을 `True`로 읽으므로, 이 드라이버에서 방언은 `Boolean` 결과 컬럼의
+  문자열을 먼저 숫자로 읽고, 숫자가 아닌 텍스트는 `ValueError`를 냅니다(#1143). 다른 타입은
+  문자열 그대로 둡니다. `Integer` 타입의 `percentile_disc()`는 `'1'`을 반환합니다. `CASE`,
+  `COALESCE`, `NVL`, `IF`는 고정 타입이 있어 숫자를 반환합니다.
 - 바인딩 매개변수를 문자열로 서버에 보냅니다. `(1, 2)`를 바인딩한 `LIMIT ?, ?`가 두 행 대신 네
   행을 반환했고, 방언은 `.limit()`, `.offset()`, `.fetch()`를 바인딩된 `LIMIT` 매개변수로
   컴파일하므로 페이지 쿼리가 오류 없이 **잘못된 행**을 반환할 수 있습니다. 재귀 CTE와 `SET`

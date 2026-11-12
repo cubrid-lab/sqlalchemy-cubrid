@@ -9796,6 +9796,13 @@ against the same server:
 - `BIGINT` values, including `COUNT(*)` and `ROWNUM`, are returned as `str` (#583, #1145).
   The dialect converts its own catalog counts with `int()` (#584), so `has_table()` and
   `has_index()` do not depend on it, but application `BIGINT` columns and aggregates do.
+- Result columns without a fixed type (type code 0 in `cursor.description`), such as
+  `PERCENTILE_DISC(...) WITHIN GROUP (...)`, `PERCENTILE_CONT` and `MEDIAN`, are also returned
+  as `str` (`'0'`, `'1.5000000000000000'`); pycubrid returns numbers. SQLAlchemy's `Boolean`
+  result processor would read `'0'` as `True`, so with this driver the dialect reads a string
+  in a `Boolean` result column as a number first, and non-numeric text raises `ValueError`
+  (#1143). Other types are left as strings: an `Integer`-typed `percentile_disc()` returns
+  `'1'`. `CASE`, `COALESCE`, `NVL` and `IF` have a fixed type and return numbers.
 - Bound parameters are sent to the server as strings. A bound `LIMIT ?, ?` with `(1, 2)`
   returned four rows instead of two, and the dialect compiles `.limit()`, `.offset()` and
   `.fetch()` to bound `LIMIT` parameters, so paged queries can return **wrong rows** without
