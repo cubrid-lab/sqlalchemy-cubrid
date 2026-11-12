@@ -200,14 +200,20 @@ _GET_MARKER = text("SELECT @sa_pool_session")
 
 
 def _session_marker(conn: Connection) -> int | None:
-    """Return the marker of this connection's server session, or None in a new session."""
+    """Return the marker of this connection's server session, or None in a new session.
+
+    A session variable has no fixed column type, and the PyPI CUBRIDdb 9.3
+    driver returns such values as ``str`` (docs/DRIVER_COMPAT.md), so the
+    marker is converted to ``int`` before the tests compare it (#1143).
+    """
     try:
-        return conn.execute(_GET_MARKER).scalar()
+        value = conn.execute(_GET_MARKER).scalar()
     except DBAPIError as exc:
         # -1070: "Session variable '@sa_pool_session' not defined."
         if "-1070" not in str(exc.orig):
             raise
         return None
+    return None if value is None else int(value)
 
 
 class TestQueuePoolLifecycle:
