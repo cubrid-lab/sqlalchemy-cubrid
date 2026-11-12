@@ -72,6 +72,7 @@ class Insert(StandardInsert):
 
     @util.memoized_property
     def inserted_alias(self) -> NamedFromClause:
+        """The INSERT's table aliased as ``inserted``, behind :attr:`inserted`."""
         return alias(self.table, name="inserted")
 
     @_generative
@@ -87,6 +88,12 @@ class Insert(StandardInsert):
 
         :param **kw: Column keys linked to UPDATE values.
         :param *args: A dictionary or list of 2-tuples as a single positional argument.
+        :raises sqlalchemy.exc.ArgumentError: If keyword and positional arguments
+          are mixed or more than one positional argument is passed.
+        :raises sqlalchemy.exc.InvalidRequestError: If this INSERT already has an
+          ON DUPLICATE KEY clause.
+        :raises ValueError: If the update values are empty or not a dictionary,
+          list of 2-tuples or column collection.
         """
         arg_values = list(args)
         values: _UpdateArg = dict(kw)
@@ -138,6 +145,8 @@ class Replace(StandardInsert):
 
 
 class OnDuplicateClause(ClauseElement):
+    """The ON DUPLICATE KEY UPDATE clause built by :meth:`Insert.on_duplicate_key_update`."""
+
     __visit_name__ = "on_duplicate_key_update"
 
     _parameter_ordering: Optional[List[str]] = None
@@ -200,6 +209,15 @@ def merge(target: _DMLTableArgument) -> Merge:
 
 
 class Merge(Executable, ClauseElement, Generative):
+    """CUBRID-specific MERGE statement, built by :func:`merge`.
+
+    The builder methods return a new statement. ``using()``, ``on()`` and at
+    least one of ``when_matched_then_update()`` or
+    ``when_not_matched_then_insert()`` are required; a missing piece raises
+    :class:`~sqlalchemy.exc.CompileError` when the statement is compiled, not
+    when it is built. See docs/DML_EXTENSIONS.md for column key resolution.
+    """
+
     __visit_name__ = "merge"
     stringify_dialect = "cubrid"
     inherit_cache = True
@@ -219,16 +237,19 @@ class Merge(Executable, ClauseElement, Generative):
 
     @_generative
     def into(self, target_table: _DMLTableArgument) -> Self:
+        """Replace the target table given to :func:`merge`."""
         self._target = target_table
         return self
 
     @_generative
     def using(self, source: Any) -> Self:
+        """Set the USING source: a table or a subquery."""
         self._using_source = source
         return self
 
     @_generative
     def on(self, condition: ClauseElement) -> Self:
+        """Set the ON condition that matches source rows to target rows."""
         self._on_condition = condition
         return self
 
@@ -239,6 +260,20 @@ class Merge(Executable, ClauseElement, Generative):
         where: Optional[ClauseElement] = None,
         delete_where: Optional[ClauseElement] = None,
     ) -> Self:
+        """Add the WHEN MATCHED THEN UPDATE SET clause.
+
+        Calling it again replaces the earlier SET values and WHERE filter. A
+        ``delete_where`` set earlier (by this method or by
+        :meth:`when_matched_then_delete`) is kept unless a new one is passed.
+
+        :param values_dict: Target column to new value, as a dictionary or a
+          list of 2-tuples. String keys name target columns.
+        :param where: Optional filter rendered as ``WHERE`` after the SET list.
+        :param delete_where: Optional condition rendered as ``DELETE WHERE``;
+          matched rows satisfying it are deleted.
+        :raises ValueError: If *values_dict* is empty or not a dictionary or
+          list of 2-tuples.
+        """
         values = self._normalize_key_value_pairs(values_dict, argument_name="values_dict")
         existing_delete_where = (
             self._when_matched.get("delete_where") if self._when_matched is not None else None
@@ -252,6 +287,13 @@ class Merge(Executable, ClauseElement, Generative):
 
     @_generative
     def when_matched_then_delete(self, where: Optional[ClauseElement] = None) -> Self:
+        """Set the ``DELETE WHERE`` condition of the WHEN MATCHED clause.
+
+        :param where: Condition for deleting matched rows. With ``None`` the
+          clause renders no ``DELETE WHERE``, and any earlier one is removed.
+        :raises ValueError: If :meth:`when_matched_then_update` has not been
+          called yet.
+        """
         if self._when_matched is None:
             raise ValueError("WHEN MATCHED UPDATE clause must be specified before DELETE WHERE")
 
@@ -274,6 +316,15 @@ class Merge(Executable, ClauseElement, Generative):
         ],
         where: Optional[ClauseElement] = None,
     ) -> Self:
+        """Add the WHEN NOT MATCHED THEN INSERT clause.
+
+        :param values_dict_or_column_list: Either target column to value, as a
+          dictionary or a list of 2-tuples, or a non-empty list of columns
+          (usually source columns) that are inserted into the target columns
+          of the same name.
+        :param where: Optional filter rendered as ``WHERE`` after ``VALUES``.
+        :raises ValueError: If the argument is empty or of an unsupported type.
+        """
         columns: List[Any]
         values: List[Any]
         # The column-list shorthand inserts each source column into the target

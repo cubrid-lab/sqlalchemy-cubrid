@@ -257,6 +257,49 @@ pre-commit run --all-files
 - Update documentation if your change affects the public API.
 - Update `CHANGELOG.md` with a summary of your change.
 
+### Temporary scripts and repair tools
+
+A one-off script, probe, dataset, workflow or manual repair tool is acceptable
+when a bounded task needs it (for example a one-time data repair or a profiling
+run) and nothing permanent already covers it. Keep it small and remove it when
+the task is done. A PR that adds one states, in the PR description or next to
+the tool:
+
+- why it exists and why existing tools do not cover it;
+- the local owner and the repository issue that tracks it;
+- the removal trigger, the specific event that ends its use;
+- where the evidence it must produce will be recorded (usually that issue);
+- the next review point. An unknown expiry is not permission to keep it
+  indefinitely: name the event that reopens the decision.
+
+Run it locally or manually by default. Add a CI job or tests only in proportion
+to how risky and hard to reverse its effects are, and explain what protection
+they add that existing checks do not.
+
+At the trigger, the owner reviews the tool in the tracking issue and either
+removes it or records a concrete remaining caller and a new review point. Having
+no search hits does not prove nobody uses it. Before removing it, map its callers,
+tests and fixtures, Makefile targets, CI path filters, packaging and release
+consumers, docs, dependency declarations and compatibility promises. Delete only
+what is confirmed irrelevant, and keep independent product regression tests. The
+removal PR lists each path with a remove or retain reason and the validation run
+on its final head.
+
+Permanent release automation (for example `publish-pypi.yml` and its scripts) and
+supported older-driver compatibility paths (for example the CUBRIDdb workarounds)
+are not temporary tooling; they follow the release and compatibility rules instead.
+
+Examples from this repository:
+
+- The one-time historical release sync helpers (`scripts/audit_historical_releases.py`,
+  `scripts/sync_historical_release.py` and `scripts/sync_verified_historical_releases.py`)
+  are tracked for removal in #1182. They stay until the release publication and
+  credit checks finish; removal has not happened yet.
+- The deprecated `make check-all` alias shows the full cycle: its 1.11.5
+  deprecation notice named the trigger (removal after the next minor release),
+  and after 1.12.0 shipped its removal was proposed in PR #1314 with the callers
+  checked.
+
 ### Review Process
 
 - The same review and merge policy applies to human-authored and AI-assisted

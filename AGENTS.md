@@ -382,10 +382,15 @@ follow-up. Korean-required checks and other-language advisory checks remain inta
 
 Do not mark work complete until code, tests, and documentation are consistent.
 
-Driver terminology: CUBRIDdb built from cubrid-python v11.3.0.51+ is the
-supported official C-extension driver. Recommend pycubrid for new projects,
-but describe the `[cubrid]` / `[cubriddb]` installation extras (which select an
-untested old PyPI package) as deprecated, not the supported driver itself.
+Driver terminology: the official CUBRIDdb C-extension driver is supported in
+both maintained lines, the PyPI `CUBRID-Python` 9.3.0 release installed by the
+`[cubrid]` / `[cubriddb]` extras and a build of the cubrid-python v11.3.0.51
+source release. Recommend pycubrid for new projects, but never describe a
+supported driver line or its extras as deprecated, legacy or unsupported.
+Report verification separately: CI tests the v11.3.0.51 build, while the 9.3.0
+line is supported but not verified on current Python versions, with its known
+limitations recorded in `docs/DRIVER_COMPAT.md`. Keep driver versions distinct
+from CUBRID server versions.
 Keep valid historical uses of “legacy,” such as CAS error-code formats.
 
 For README, support/driver/connection guides, PRD, packaging and release-note

@@ -36,10 +36,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Deprecated (#585): PyPI only has CUBRID-Python 9.3.x, which this dialect does
-# not test or support. Kept so existing installs keep resolving; the supported
-# CUBRIDdb is built from cubrid-python v11.3.0.51+ (docs/DRIVER_COMPAT.md), and
-# CubridDialect warns at first connect when it finds an older CUBRIDdb.
+# Maintained installation options for the CUBRIDdb C-extension driver (#1139,
+# #1141). Both install the newest CUBRID-Python release on PyPI, 9.3.0 (pip
+# reports it as 9.3.0.1). The other supported CUBRIDdb line is a build of the
+# cubrid-python v11.3.0.51 source release, which is not on PyPI. Known 9.3.x
+# limitations are in docs/DRIVER_COMPAT.md; pycubrid is recommended for new projects.
 cubrid = [
     "CUBRID-Python",
 ]
