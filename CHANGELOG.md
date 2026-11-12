@@ -34,6 +34,10 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 - **Published pages** — fixed links from the documentation site and the PyPI README to repository files, made the PyPI demo render, and removed the unused Sphinx scaffold ([#1123](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1123), [#1132](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1132), [#1138](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1138)) by @yeongseon.
 - **Historical release notes** — earlier `CHANGELOG.md` sections now use the standard headings, credit verified human contributors (#1214), restore merged changes and published details they had omitted, and correct factual errors such as the PyPI 1.2.2 statement; all 28 published GitHub Release pages were updated to match and re-verified ([#1153](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1153)) by @yeongseon.
 
+### Tests
+
+- **Pool recovery across CUBRID broker restarts** — live tests in `test/test_server_restart.py` run `cubrid broker restart` under a pycubrid `QueuePool`. They check that idle pooled connections are reused safely, that work interrupted by the restart fails as a disconnect and is neither stored nor replayed, and that concurrent write requests stay consistent with the table, where a request reported as failed may be stored only when its COMMIT reply was lost. Verified on CUBRID 10.2 and 11.4 with pycubrid 1.17.0 ([#1151](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1151)) by @yeongseon.
+
 ## [1.12.2] - 2026-11-05
 
 This release clarifies setup and troubleshooting instructions, refreshes the documentation design, and expands development-tool tests. Application runtime behavior is unchanged.
