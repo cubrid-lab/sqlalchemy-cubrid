@@ -373,7 +373,12 @@ pip는 압축 파일 이름에서 버전을 읽어 `9.3.0.1`과 `9.3.0.2`를 보
   행을 반환했고, 방언은 `.limit()`, `.offset()`, `.fetch()`를 바인딩된 `LIMIT` 매개변수로
   컴파일하므로 페이지 쿼리가 오류 없이 **잘못된 행**을 반환할 수 있습니다. 재귀 CTE와 `SET`
   바인딩은 서버 오류 -456, -494로 실패합니다.
-- 모듈에 `Binary`가 없어 `LargeBinary`와 `BLOB` 쓰기가 `AttributeError`를 냅니다.
+- `bytes` 매개변수를 바인딩할 수 없습니다. 모든 매개변수를 UTF-8로 디코딩하므로 임의의 바이트를
+  `BLOB`이나 `BIT VARYING` 컬럼에 바인딩하면 `UnicodeDecodeError`가 납니다. 모듈에 `Binary`도
+  없어 SQLAlchemy `LargeBinary`와 `BLOB` 쓰기는 그보다 먼저 `AttributeError`로 실패합니다.
+  이 드라이버로는 바이너리 데이터를 쓸 수 없습니다.
+- 제약 조건 위반(`NOT NULL`, 유일, 외래 키)이 `IntegrityError`가 아닌 `DatabaseError`로 발생하므로
+  SQLAlchemy는 이를 `sqlalchemy.exc.DatabaseError`로 보고합니다.
 - 연결에 `ping()`이 없어 `pool_pre_ping`이 모든 체크아웃을 끊긴 연결로 보고 다시 연결합니다.
 - 행을 `tuple`이 아닌 `list`로 반환하고, `SELECT LAST_INSERT_ID()`는 `NULL`을 반환합니다.
 - `cubrid://` 또는 `cubrid+cubriddb://` 엔진은 첫 연결 시 로드된 드라이버의 버전

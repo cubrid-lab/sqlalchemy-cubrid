@@ -9762,7 +9762,12 @@ against the same server:
   returned four rows instead of two, and the dialect compiles `.limit()`, `.offset()` and
   `.fetch()` to bound `LIMIT` parameters, so paged queries can return **wrong rows** without
   an error. Recursive CTEs and `SET` binds fail with server errors -456 and -494.
-- The module has no `Binary`, so `LargeBinary` and `BLOB` writes raise `AttributeError`.
+- It cannot bind `bytes` parameters: it decodes every parameter as UTF-8, so binding
+  arbitrary bytes to a `BLOB` or `BIT VARYING` column raises `UnicodeDecodeError`. The module
+  also has no `Binary`, so SQLAlchemy `LargeBinary` and `BLOB` writes fail earlier with
+  `AttributeError`. Binary data cannot be written through this driver.
+- Constraint violations (`NOT NULL`, unique, foreign key) raise `DatabaseError`, not
+  `IntegrityError`, so SQLAlchemy reports them as `sqlalchemy.exc.DatabaseError`.
 - Connections have no `ping()`, so `pool_pre_ping` treats every checkout as disconnected
   and reconnects.
 - Rows are returned as `list` rather than `tuple`, and `SELECT LAST_INSERT_ID()` returns
