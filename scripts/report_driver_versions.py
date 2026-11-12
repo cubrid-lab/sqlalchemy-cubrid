@@ -9,6 +9,7 @@ with the pytest guard in ``test/conftest.py``.
 
 from __future__ import annotations
 
+import importlib
 import os
 import platform
 import sys
@@ -34,6 +35,22 @@ def _package_version(dist: str) -> str:
         return "not installed"
 
 
+def _cubrid_build_version() -> str:
+    """Return the compiled-in CUBRIDdb version, ``_cubrid.__version__`` (#1146).
+
+    The distribution version alone does not tell the driver lines apart: the PyPI
+    9.3.0 release installs as ``9.3.0.1`` with ``b'9.3.0.0001'`` compiled in, and a
+    v11.3.0.51 source build reports ``b'11.3.0.0001'``.
+    """
+    try:
+        raw = importlib.import_module("_cubrid").__version__
+    except ImportError:
+        return "not installed"
+    except AttributeError:
+        return "unknown"
+    return raw.decode("ascii", "replace") if isinstance(raw, bytes) else str(raw)
+
+
 def _server_version(url: str, drivername: str) -> str:
     try:
         engine = create_engine(make_url(url).set(drivername=drivername))
@@ -51,6 +68,7 @@ def _server_version(url: str, drivername: str) -> str:
 def collect() -> list[tuple[str, str]]:
     rows = [("Python", f"{platform.python_version()} ({platform.python_implementation()})")]
     rows += [(label, _package_version(dist)) for label, dist in _PACKAGES]
+    rows.append(("CUBRIDdb _cubrid.__version__", _cubrid_build_version()))
     source_ref = os.environ.get("CUBRIDDB_SOURCE_REF")
     if source_ref:  # the cubrid-python git tag CI built CUBRIDdb from
         rows.append(("CUBRIDdb source ref", source_ref))

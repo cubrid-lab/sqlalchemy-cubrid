@@ -35,6 +35,7 @@ def test_collect_reports_missing_package_and_unset_url_without_database(
 
     monkeypatch.setattr(report_driver_versions, "version", package_version)
     monkeypatch.setattr(report_driver_versions, "create_engine", unexpected_create_engine)
+    monkeypatch.setattr(report_driver_versions, "_cubrid_build_version", lambda: "11.3.0.0001")
     monkeypatch.delenv("CUBRID_TEST_URL", raising=False)
     monkeypatch.setenv("CUBRIDDB_SOURCE_REF", "v0.0.0-test")
 
@@ -45,6 +46,7 @@ def test_collect_reports_missing_package_and_unset_url_without_database(
         ("SQLAlchemy", "2.1.1"),
         ("pycubrid", "not installed"),
         ("CUBRIDdb (cubrid_python)", "11.3.0.51"),
+        ("CUBRIDdb _cubrid.__version__", "11.3.0.0001"),
         ("CUBRIDdb source ref", "v0.0.0-test"),
         ("CUBRID server via pycubrid", "CUBRID_TEST_URL not set"),
         ("CUBRID server via CUBRIDdb", "CUBRID_TEST_URL not set"),
@@ -136,3 +138,28 @@ def test_main_appends_readable_step_summary(
         "| Python | `3.12.0 (CPython)` |\n"
         "| CUBRID server via pycubrid | `unavailable (ProbeError)` |\n\n"
     )
+
+
+@pytest.mark.parametrize(
+    ("module", "expected"),
+    [
+        (type("Ext", (), {"__version__": b"9.3.0.0001"}), "9.3.0.0001"),
+        (type("Ext", (), {"__version__": "11.3.0.0001"}), "11.3.0.0001"),
+        (type("Ext", (), {}), "unknown"),
+        (None, "not installed"),
+    ],
+    ids=["pypi-bytes", "source-str", "no-version", "missing"],
+)
+def test_cubrid_build_version_tells_the_driver_lines_apart(
+    monkeypatch: pytest.MonkeyPatch, module: object, expected: str
+) -> None:
+    """The PyPI 9.3.0 release and a v11.3.0.51 build differ in _cubrid.__version__ (#1146)."""
+
+    def import_module(name: str) -> object:
+        assert name == "_cubrid"
+        if module is None:
+            raise ImportError(name)
+        return module
+
+    monkeypatch.setattr(report_driver_versions.importlib, "import_module", import_module)
+    assert report_driver_versions._cubrid_build_version() == expected
