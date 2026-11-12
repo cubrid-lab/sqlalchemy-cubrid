@@ -64,7 +64,7 @@ with objects; it builds on the same engine and connection ideas.
 - [README Usage](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md#quick-start): short Core, ORM and async examples.
 - [ORM Cookbook](ORM_COOKBOOK.md): models, relationships and common ORM patterns.
 - [Connection Guide](CONNECTION.md): every URL form, connection options and the async `cubrid+aiopycubrid://` driver.
-- [Driver Compatibility](DRIVER_COMPAT.md): the supported CUBRIDdb C-extension driver, built from source, and what differs between drivers.
+- [Driver Compatibility](DRIVER_COMPAT.md): the two installation options for the CUBRIDdb C-extension driver (the PyPI 9.3.0 release or a v11.3.0.51 source build), and what differs between drivers.
 - [Alembic Migrations](ALEMBIC.md), [Type Mapping](TYPES.md) and [Feature Support](FEATURE_SUPPORT.md), including CUBRID's limits such as no `RETURNING` clause.
 
 ---

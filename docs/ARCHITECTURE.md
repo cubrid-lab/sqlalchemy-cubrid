@@ -14,10 +14,12 @@ sqlalchemy-cubrid is designed to provide a robust, modern interface between SQLA
 
 sqlalchemy-cubrid is an independent implementation written for SQLAlchemy 2.0. It
 contains no code from, and is not a port of, the legacy CUBRID SQLAlchemy dialect
-that shipped inside the old `CUBRID-Python` driver distribution. The optional
-`[cubrid]`/`[cubriddb]` extras install an old, untested PyPI driver package;
-the supported CUBRIDdb C extension is built from cubrid-python v11.3.0.51 or
-later. No source from the former dialect or driver is included or derived.
+that shipped inside the old `CUBRID-Python` driver distribution. The CUBRIDdb
+C-extension driver is a separate, supported runtime dependency with two installation
+options: the optional `[cubrid]`/`[cubriddb]` extras install the PyPI `CUBRID-Python`
+9.3.0 release, or it is built from the cubrid-python v11.3.0.51 source release
+(see [Driver Compatibility](DRIVER_COMPAT.md)). No source from the former dialect or
+driver is included or derived.
 
 ## High-Level Flow
 
