@@ -654,6 +654,8 @@ Alembic.
 
 This guide covers how to install the CUBRID Python driver, configure SQLAlchemy connection strings, and understand the connection lifecycle.
 
+The CUBRID database server, the Python drivers (CUBRIDdb and pycubrid), their package names and this dialect are versioned independently: a driver release number is not a server version, and an installation extra does not choose the URL. See [Server, driver, and distribution versions](DRIVER_COMPAT.md#server-driver-and-distribution-versions) for the names, a connection-path diagram and how to check each version.
+
 ---
 
 ## Table of Contents
