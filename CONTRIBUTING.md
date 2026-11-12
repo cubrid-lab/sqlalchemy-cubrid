@@ -292,9 +292,9 @@ Examples from this repository:
   `scripts/sync_historical_release.py` and `scripts/sync_verified_historical_releases.py`)
   are tracked for removal in #1182. They stay until the release publication and
   credit checks finish; removal has not happened yet.
-- The deprecated `make check-all` alias shows the full cycle: its 1.11.5
-  deprecation notice named the trigger (removal after the next minor release),
-  and after 1.12.0 shipped its removal was proposed in PR #1314 with the callers
+- The former `check-all` Make alias of `make check` shows the full cycle: its
+  1.11.5 deprecation notice named the trigger (removal after the next minor
+  release), and after 1.12.0 shipped it was removed in PR #1314 with its callers
   checked.
 
 ### Review Process
