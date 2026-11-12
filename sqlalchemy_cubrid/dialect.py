@@ -549,13 +549,35 @@ ischema_names = {
 
 
 class CubridDialect(default.DefaultDialect):
-    """SQLAlchemy dialect for CUBRID."""
+    """SQLAlchemy dialect for CUBRID.
+
+    These keyword arguments can be passed to :func:`~sqlalchemy.create_engine`:
+
+    :param isolation_level: Engine-level isolation level: one of the names in
+      :meth:`get_isolation_level_values`, matched case-insensitively with ``_``
+      accepted for a space. A value that is not a string raises
+      :class:`~sqlalchemy.exc.ArgumentError`. An alias is stored under its
+      canonical name (see :meth:`get_isolation_level`).
+    :param json_serializer: Callable the JSON type uses to serialize values;
+      ``json.dumps`` when omitted.
+    :param json_deserializer: Callable the JSON type uses to deserialize
+      result values; ``json.loads`` when omitted.
+    :param no_backslash_escapes: ``True`` when the server treats a backslash as
+      a literal character (the CUBRID default), ``False`` when it is an escape
+      character that inline literals must double. When omitted, the mode is
+      probed on the first connection, and a probe with an unexpected result
+      raises :class:`~sqlalchemy.exc.InvalidRequestError`.
+    """
 
     name = "cubrid"
     driver = "cubrid"
 
     # SA 2.0 statement caching
     supports_statement_cache = True
+    # Set at first connect for CUBRIDdb older than 11.3, which binds every
+    # parameter as a string; the compiler then renders the integers of a
+    # LIMIT offset, count clause inline (#1299).
+    _limit_values_as_literals = False
 
     # Compiler classes
     statement_compiler = CubridCompiler
@@ -734,6 +756,12 @@ class CubridDialect(default.DefaultDialect):
         return args, {}
 
     def initialize(self, connection: Any) -> None:
+        """Run SQLAlchemy's first-connect setup, then the CUBRID checks.
+
+        Warns when CUBRIDdb is older than the tested 11.3 line (CUBRIDdb
+        drivers only) and, unless ``no_backslash_escapes`` was passed to
+        :func:`~sqlalchemy.create_engine`, probes the server's backslash mode.
+        """
         super().initialize(connection)
         self._warn_if_untested_cubriddb()
         if not self._no_backslash_escapes_explicit:
@@ -770,6 +798,9 @@ class CubridDialect(default.DefaultDialect):
         ``[cubriddb]`` extras have always installed the PyPI 9.3.x release, so
         refusing to connect would break existing deployments in a minor
         release. The pycubrid variants inherit :meth:`initialize` and skip this.
+        For those older releases it also makes the compiler render plain integer
+        ``LIMIT offset, count`` values inline, because they bind parameters as
+        strings (#1299).
         """
         if self.driver != "cubrid":
             return
@@ -780,6 +811,9 @@ class CubridDialect(default.DefaultDialect):
         raw, major_minor = found
         if major_minor >= _MIN_TESTED_CUBRIDDB:
             return
+        # These releases bind every parameter as a string, which makes a bound
+        # LIMIT ?, ? return the wrong rows; render plain integers inline (#1299).
+        self._limit_values_as_literals = True
         util.warn(
             f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "
             "sqlalchemy-cubrid is tested with. The CUBRID-Python releases on "
@@ -2052,12 +2086,17 @@ class CubridDialect(default.DefaultDialect):
         dbapi_connection: DBAPIConnection,
         level: str,
     ) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
-        """Set the isolation level for *dbapi_conn*.
+        """Set the isolation level for *dbapi_connection*.
 
         ``AUTOCOMMIT`` turns on the driver's autocommit mode. Any other level
-        turns it off (if on) and runs ``SET TRANSACTION ISOLATION LEVEL``.
+        turns it off (if on), runs ``SET TRANSACTION ISOLATION LEVEL`` and then
+        ``COMMIT``, which ends any transaction already open on the connection.
         All three drivers (CUBRIDdb, pycubrid and the async adapter) expose an
         ``autocommit`` property.
+
+        :param level: One of :meth:`get_isolation_level_values`, matched
+          case-insensitively.
+        :raises ValueError: If *level* is not a known isolation level.
         """
         if level.upper() == "AUTOCOMMIT":
             if not dbapi_connection.autocommit:  # pyright: ignore[reportAttributeAccessIssue]
