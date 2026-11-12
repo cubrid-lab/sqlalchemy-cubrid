@@ -216,9 +216,6 @@ make check
 make doctor
 ```
 
-`make check-all`은 한 마이너 릴리스 동안 `make check`의 폐기 예정 별칭으로 계속
-동작하며 stderr에 폐기 예정 안내를 출력합니다.
-
 ### Pre-commit 훅
 
 pre-commit 훅을 설치했다면 이 검사들은 `git commit` 시 자동으로 실행됩니다.

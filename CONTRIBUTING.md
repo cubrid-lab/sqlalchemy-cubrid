@@ -206,9 +206,6 @@ make check
 make doctor
 ```
 
-`make check-all` still works as a deprecated alias of `make check` for one minor
-release and prints a deprecation notice on stderr.
-
 ### Pre-commit Hooks
 
 If you installed pre-commit hooks, these checks run automatically on `git commit`.
