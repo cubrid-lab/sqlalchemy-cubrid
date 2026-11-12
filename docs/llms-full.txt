@@ -7804,7 +7804,12 @@ be reused safely, interrupted work must fail as a disconnect without being store
 or replayed, and concurrent write requests are audited against the table (an id
 reported as failed may be stored only when the COMMIT itself lost its reply). The
 JUnit report records that test's request, failure, in-doubt and invalidation counts.
-It skips unless
+The async broker tests repeat the idle-reuse and interrupted-transaction checks
+with a `cubrid+aiopycubrid` engine and its `AsyncAdaptedQueuePool`, so the async
+path has its own evidence. The pool lifecycle checks that need no restart
+(`pool_recycle`, checkout timeout, rollback on checkin) are in
+`test/test_stress_pool.py` and run in every `make integration`.
+`test/test_server_restart.py` skips unless
 `CUBRID_TEST_DOCKER_CONTAINER` names the container that serves `CUBRID_TEST_URL`;
 point it at a disposable container, since the tests take the database down:
 

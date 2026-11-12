@@ -41,6 +41,7 @@ from typing import Any, NoReturn
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 pytestmark = pytest.mark.integration
 
@@ -551,3 +552,103 @@ def test_concurrent_requests_across_broker_restart_are_audited(
         assert engine.pool.checkedout() == 0
     finally:
         engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Broker (CAS) restarts under an AsyncAdaptedQueuePool, with aiopycubrid (#1151)
+# ---------------------------------------------------------------------------
+#
+# The same broker-restart contract for the supported async engine path,
+# ``cubrid+aiopycubrid`` (pycubrid.aio), whose default pool is
+# ``AsyncAdaptedQueuePool``. Evidence is kept separate from the sync tests
+# above: the async adapter has its own socket and reconnect code in the driver.
+
+
+@pytest.fixture
+def aio_url(pycubrid_url: sa.engine.URL) -> sa.engine.URL:
+    """The async URL for the same server; readiness is still probed through sync pycubrid."""
+    try:
+        import greenlet  # noqa: F401 - SQLAlchemy's asyncio extension needs it
+    except ImportError:
+        _unavailable("greenlet is not installed (pip install 'sqlalchemy[asyncio]')")
+    return pycubrid_url.set(drivername="cubrid+aiopycubrid")
+
+
+async def _driver_connection(conn: AsyncConnection) -> Any:
+    return (await conn.get_raw_connection()).driver_connection
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pre_ping", [False, True], ids=["no_pre_ping", "pre_ping"])
+async def test_async_broker_restart_while_idle_reuses_pool_safely(
+    server: _Server, aio_url: sa.engine.URL, pre_ping: bool
+) -> None:
+    """Idle async pooled connections survive a broker restart; every checkout works."""
+    engine = create_async_engine(
+        aio_url, pool_size=3, max_overflow=0, pool_pre_ping=pre_ping, pool_timeout=30
+    )
+    try:
+        conns = [await engine.connect() for _ in range(3)]
+        for conn in conns:
+            assert (await conn.execute(_SELECT_1)).scalar() == 1
+            await conn.close()
+        _restart_broker(server)
+
+        conns = [await engine.connect() for _ in range(3)]
+        try:
+            for conn in conns:
+                assert (await conn.execute(_SELECT_1)).scalar() == 1
+        finally:
+            for conn in conns:
+                await conn.close()
+        pool = engine.sync_engine.pool
+        assert isinstance(pool, sa.pool.AsyncAdaptedQueuePool)
+        assert pool.checkedout() == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("step", ["commit", "statement"])
+async def test_async_broker_restart_mid_transaction_fails_without_replay(
+    server: _Server,
+    aio_url: sa.engine.URL,
+    pycubrid_url: sa.engine.URL,
+    audit_table: sa.Table,
+    step: str,
+) -> None:
+    """Async work interrupted by a broker restart fails as a disconnect and is not stored.
+
+    The steps match the sync test: ``commit`` runs the INSERT before the restart
+    and the COMMIT after it; ``statement`` begins the transaction before the
+    restart and runs the INSERT after it. The connection is invalidated, the row
+    is not committed or replayed, and a fresh checkout stores the next request.
+    """
+    engine = create_async_engine(aio_url, pool_size=1, max_overflow=0, pool_timeout=30)
+    try:
+        conn = await engine.connect()
+        try:
+            if step == "commit":
+                await conn.execute(audit_table.insert().values(id=1))
+            else:
+                await conn.execute(_SELECT_1)
+            old = await _driver_connection(conn)
+            _restart_broker(server)
+
+            with pytest.raises(DBAPIError) as info:
+                if step == "statement":
+                    await conn.execute(audit_table.insert().values(id=1))
+                await conn.commit()
+            assert info.value.connection_invalidated
+            await conn.rollback()
+        finally:
+            await conn.close()
+
+        assert _ids(pycubrid_url, audit_table) == []
+        async with engine.begin() as conn:
+            assert await _driver_connection(conn) is not old
+            await conn.execute(audit_table.insert().values(id=2))
+        assert _ids(pycubrid_url, audit_table) == [2]
+        assert engine.sync_engine.pool.checkedout() == 0
+    finally:
+        await engine.dispose()
