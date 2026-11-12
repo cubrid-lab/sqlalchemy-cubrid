@@ -344,6 +344,11 @@ pycubrid `QueuePool` 아래에서 `cubrid broker restart`를 실행합니다. �
 동시 쓰기 요청은 테이블과 대조해 감사합니다(실패로 보고된 id는 COMMIT 자체의 응답이
 유실된 경우에만 저장될 수 있습니다). JUnit 보고서에 그 테스트의 요청, 실패, 불확실(in-doubt),
 무효화 횟수가 기록됩니다.
+비동기 브로커 테스트는 `cubrid+aiopycubrid` 엔진과 그 `AsyncAdaptedQueuePool`로 유휴
+재사용과 중단된 트랜잭션 검사를 반복하므로, 비동기 경로는 별도의 근거를 갖습니다. 재시작이
+필요 없는 풀 수명 주기 검사(`pool_recycle`, 체크아웃 타임아웃, 반환 시 롤백)는
+`test/test_stress_pool.py`에 있으며 모든 `make integration`에서 실행됩니다.
+`test/test_server_restart.py`는
 `CUBRID_TEST_DOCKER_CONTAINER`가 `CUBRID_TEST_URL`을 제공하는 컨테이너를 가리키지
 않으면 건너뜁니다. 테스트가 데이터베이스를 내리므로 버려도 되는 컨테이너를
 지정하세요:
