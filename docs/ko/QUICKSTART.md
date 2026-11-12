@@ -61,7 +61,7 @@ SQLAlchemy의
 - [README 사용법](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/README.ko.md#빠른-시작): 짧은 Core, ORM, 비동기 예제.
 - [ORM 쿡북](ORM_COOKBOOK.md): 모델, 관계, 일반적인 ORM 패턴.
 - [연결 가이드](CONNECTION.md): 모든 URL 형식, 연결 옵션, 비동기 `cubrid+aiopycubrid://` 드라이버.
-- [드라이버 호환성](DRIVER_COMPAT.md): 소스에서 빌드하는 지원 CUBRIDdb C 확장 드라이버와 드라이버 간 차이.
+- [드라이버 호환성](DRIVER_COMPAT.md): CUBRIDdb C 확장 드라이버의 두 가지 설치 방법(PyPI 9.3.0 릴리스 또는 v11.3.0.51 소스 빌드)과 드라이버 간 차이.
 - [Alembic 마이그레이션](ALEMBIC.md), [타입 매핑](TYPES.md), [기능 지원](FEATURE_SUPPORT.md)(`RETURNING` 절 미지원 같은 CUBRID의 제약 포함).
 
 ---

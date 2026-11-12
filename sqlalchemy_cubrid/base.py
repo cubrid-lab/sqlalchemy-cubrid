@@ -10,8 +10,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable, Optional
 
+from sqlalchemy import types as sqltypes
 from sqlalchemy.engine import default
 from sqlalchemy.sql import compiler
 
@@ -388,8 +389,41 @@ class CubridIdentifierPreparer(compiler.IdentifierPreparer):
         super().__init__(dialect, initial_quote, final_quote, escape_quote, omit_schema)
 
 
+# DB-API type code CUBRIDdb reports in cursor.description for a BIGINT column
+# (CUBRIDdb.FIELD_TYPE.BIGINT, the CCI U_TYPE_BIGINT value).
+_CUBRIDDB_BIGINT_TYPE_CODE = 21
+
+
 class CubridExecutionContext(default.DefaultExecutionContext):
     """Execution context for CUBRID connections."""
+
+    def get_result_processor(
+        self, type_: Any, colname: str, coltype: Any
+    ) -> Optional[Callable[[Any], Any]]:
+        """Convert BIGINT values that CUBRIDdb older than 11.3 returns as ``str``.
+
+        Those releases fetch BIGINT, ``COUNT(*)`` and ``ROWNUM`` values as
+        decimal strings (``'5'``), while CUBRIDdb 11.3 and pycubrid return
+        ``int`` (#1145). Only a ``str`` value in a column that the driver
+        reports as BIGINT and that SQLAlchemy types as an integer or leaves
+        untyped is converted, before the type's own result processor runs.
+        Text from any other column or type is never parsed, and DDL, casts and
+        bind processing are unaffected.
+        """
+        processor = super().get_result_processor(type_, colname, coltype)
+        if not (
+            getattr(self.dialect, "_bigint_results_as_str", False)
+            and coltype == _CUBRIDDB_BIGINT_TYPE_CODE
+            and type_._type_affinity in (sqltypes.Integer, sqltypes.NullType)
+        ):
+            return processor
+
+        def process(value: Any) -> Any:
+            if isinstance(value, str):
+                value = int(value)
+            return processor(value) if processor is not None else value
+
+        return process
 
     def get_lastrowid(self) -> int | None:  # type: ignore[override]
         """Return the last inserted row ID.

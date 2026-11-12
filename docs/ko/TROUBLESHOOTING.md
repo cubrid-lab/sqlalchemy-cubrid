@@ -1394,7 +1394,7 @@ flowchart TD
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
-    i1 -->|CUBRIDdb| i2[Build CUBRIDdb from cubrid-python v11.3.0.51+ or switch to cubrid+pycubrid]
+    i1 -->|CUBRIDdb| i2["sqlalchemy-cubrid[cubriddb] 설치, cubrid-python v11.3.0.51에서 CUBRIDdb 빌드, 또는 cubrid+pycubrid로 전환"]
     i1 -->|pycubrid| i3[Install pycubrid and use cubrid+pycubrid URL]
 
     conn --> c1{Broker reachable?}
