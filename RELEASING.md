@@ -173,12 +173,13 @@ trailer in a commit's final footer block into a reference and renders every
 reference as `, closes [#N](…)`, which is false for `Refs`. `RELEASE_CHANGELOG.md`
 keeps the raw generator output; `CHANGELOG.md`, the publication source, has the
 rewritten form. A generated entry is dropped when a curated entry already cites
-its squash-merge pull request number or one of its `refs` issue numbers (as a
-link to this repository or a `(#N)` group) and credits every contributor the
-generated entry credits, so each change is listed once (#1100). A bare `#N`
-mention in curated prose does not count, and entries without such a reference
-are kept. It preserves released history and one empty
-Unreleased section. An unknown generated or curated heading fails closed.
+its squash-merge pull request number or one of its `refs` issue numbers (as a link
+to this repository or a `(#N)` group) and credits every contributor the generated
+entry credits, so each change is listed once (#1100). A bare `#N` mention in
+curated prose does not count, and entries without such a reference are kept. Each
+dropped entry is printed in the release-please workflow log so the reviewer can
+check what was condensed. It preserves released history and one empty Unreleased
+section. An unknown generated or curated heading fails closed.
 Stale main runs fail before generation and before pushing composed notes. The
 candidate must pass `make release-check VERSION=X.Y.Z`.
 

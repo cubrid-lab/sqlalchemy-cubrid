@@ -363,7 +363,9 @@ def _entry(subject: str, sha: str, pr: int | None = None, refs: int | None = Non
     return f"* {subject} {pr_link}([{sha}]({REPO}/commit/{sha}0000)){closes}"
 
 
-def test_generated_entry_for_a_curated_pull_request_is_listed_once() -> None:
+def test_generated_entry_for_a_curated_pull_request_is_listed_once(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
     """The same change is curated under its PR and generated under its squash PR (#1100)."""
     generated = _generated(
         _entry("explain the import error", "38170c2", pr=1150)
@@ -382,6 +384,11 @@ def test_generated_entry_for_a_curated_pull_request_is_listed_once() -> None:
     assert "### Fixed\n\n* unrelated fix ([#1300]" in candidate
     assert "\n* " not in candidate.split("### Documentation")[1]
     assert actual[actual.index("## [1.8.0]") :] == DEDUP_BASE[DEDUP_BASE.index("## [1.8.0]") :]
+    # Each drop is logged so the release-please run shows what was condensed.
+    log = capsys.readouterr().err
+    assert "dropped generated entry already curated (#1150): explain the import error" in log
+    assert "dropped generated entry already curated (#1205): align troubleshooting" in log
+    assert "unrelated fix" not in log
 
 
 def test_generated_entry_referencing_a_curated_issue_is_listed_once() -> None:

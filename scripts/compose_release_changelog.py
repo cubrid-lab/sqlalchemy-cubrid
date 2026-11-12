@@ -195,6 +195,13 @@ def _drop_curated_duplicates(body: str, cited: dict[int, set[str]]) -> str:
             matched = numbers & cited.keys()
             credited = set().union(*(cited[n] for n in matched)) if matched else set()
             if matched and set(CREDIT.findall(text, tail.start())) <= credited:
+                # Log each drop so the release-please run shows what was condensed.
+                refs = ", ".join(f"#{n}" for n in sorted(matched))
+                subject = text.splitlines()[0][2:].strip()
+                print(
+                    f"dropped generated entry already curated ({refs}): {subject}",
+                    file=sys.stderr,
+                )
                 dropped = True
                 continue
         kept.append(text)
