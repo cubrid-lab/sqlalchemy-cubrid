@@ -78,7 +78,7 @@ else:
 | Property | Value |
 |---|---|
 | Installation options | The PyPI `CUBRID-Python` 9.3.0 release, installed by the `[cubrid]` / `[cubriddb]` extras, or a build of [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 from source ([how](#building-cubriddb-from-source)) |
-| PyPI package | `CUBRID-Python` 9.3.0, the only release on PyPI (source archives from 2014 and 2015): **supported, not verified** on current Python versions ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
+| PyPI package | `CUBRID-Python` 9.3.0, the newest release on PyPI (source archives from 2014 and 2015): **supported, not verified** on current Python versions ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
 | Import name | `CUBRIDdb` |
 | Type | C extension (CPython only) |
 | DBAPI level | DB-API 2.0 (PEP 249) |
@@ -550,7 +550,7 @@ but `greenlet` may require build tools when no compatible wheel is available.
 
 ### PyPI `CUBRID-Python` 9.3.x known limitations
 
-PyPI lists one `CUBRID-Python` release, 9.3.0, with two source archives
+The newest `CUBRID-Python` release on PyPI is 9.3.0, with two source archives
 (`9.3.0.0001` from 2014 and `9.3.0.0002` from 2015) and no wheels. There is no 11.x
 release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on `CUBRID-Python` without
 a version bound, so they install 9.3.0. Both extras are maintained installation options
@@ -561,8 +561,9 @@ verified. One earlier run (2026-09, driver `9.3.0.1`, CUBRID 11.4, Python 3.10) 
 but found these limitations. They are results of that run, not a current full-matrix run:
 
 - `BIGINT` values, including `COUNT(*)`, were returned as `str` (#583). The dialect
-  converts its own catalog counts, so `has_table()` and `has_index()` are correct; how
-  other `BIGINT` results behave with this driver line has not been verified (#1145).
+  converts its own catalog counts with `int()` (#584), so `has_table()` and `has_index()`
+  do not depend on the driver's `BIGINT` result type; how other `BIGINT` results behave
+  with this driver line has not been verified (#1145).
 - 25 integration tests failed (#585), in autocommit, large-object round-trips, fetch
   shapes, ping and recursive CTEs.
 - At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded

@@ -25,7 +25,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.11+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (supported C extension) |
+| CUBRID Python Driver | pycubrid (recommended) or the supported CUBRIDdb C extension (PyPI `CUBRID-Python` 9.3.0 through the `[cubrid]` / `[cubriddb]` extras, or built from cubrid-python v11.3.0.51) |
 
 ---
 
@@ -74,15 +74,16 @@ two maintained installation options:
   [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
   then install the dialect on its own:
 
-```bash
-pip install sqlalchemy-cubrid
-```
+  ```bash
+  pip install sqlalchemy-cubrid
+  ```
 
 > **Note**: CI tests the v11.3.0.51 build. The PyPI 9.3.0 release is supported but not
 > verified on Python 3.11 or later; an earlier run on CUBRID 11.4 returned `BIGINT` as
 > `str` and failed parts of the integration suite. A `cubrid://` engine emits a
 > `SAWarning` at its first connection when the loaded CUBRIDdb is older than 11.3. See
 > [PyPI `CUBRID-Python` 9.3.x known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
+
 ---
 
 ## Connection String Format
@@ -171,7 +172,7 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, either line of it; to select it explicitly use `cubrid+cubriddb://`.
 
 ---
 
@@ -399,9 +400,12 @@ to the recommended pure-Python driver:
 pip install "sqlalchemy-cubrid[pycubrid]"   # then use cubrid+pycubrid://
 ```
 
-or build CUBRIDdb from cubrid-python v11.3.0.51 or later, see
-[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The
-`CUBRID-Python` 9.3.x release on PyPI is untested with this dialect.
+or install CUBRIDdb with `pip install "sqlalchemy-cubrid[cubriddb]"` or build it from
+cubrid-python v11.3.0.51, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The PyPI
+`CUBRID-Python` 9.3.x release that the extra installs is supported but not verified on
+Python 3.11 or later; see its
+[known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
 
 #### `Connection refused` on port 33000
 

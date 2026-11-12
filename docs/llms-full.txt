@@ -677,7 +677,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.11+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (supported C extension) |
+| CUBRID Python Driver | pycubrid (recommended) or the supported CUBRIDdb C extension (PyPI `CUBRID-Python` 9.3.0 through the `[cubrid]` / `[cubriddb]` extras, or built from cubrid-python v11.3.0.51) |
 
 ---
 
@@ -726,15 +726,16 @@ two maintained installation options:
   [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
   then install the dialect on its own:
 
-```bash
-pip install sqlalchemy-cubrid
-```
+  ```bash
+  pip install sqlalchemy-cubrid
+  ```
 
 > **Note**: CI tests the v11.3.0.51 build. The PyPI 9.3.0 release is supported but not
 > verified on Python 3.11 or later; an earlier run on CUBRID 11.4 returned `BIGINT` as
 > `str` and failed parts of the integration suite. A `cubrid://` engine emits a
 > `SAWarning` at its first connection when the loaded CUBRIDdb is older than 11.3. See
 > [PyPI `CUBRID-Python` 9.3.x known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
+
 ---
 
 ## Connection String Format
@@ -823,7 +824,7 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, either line of it; to select it explicitly use `cubrid+cubriddb://`.
 
 ---
 
@@ -1051,9 +1052,12 @@ to the recommended pure-Python driver:
 pip install "sqlalchemy-cubrid[pycubrid]"   # then use cubrid+pycubrid://
 ```
 
-or build CUBRIDdb from cubrid-python v11.3.0.51 or later, see
-[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The
-`CUBRID-Python` 9.3.x release on PyPI is untested with this dialect.
+or install CUBRIDdb with `pip install "sqlalchemy-cubrid[cubriddb]"` or build it from
+cubrid-python v11.3.0.51, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The PyPI
+`CUBRID-Python` 9.3.x release that the extra installs is supported but not verified on
+Python 3.11 or later; see its
+[known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
 
 #### `Connection refused` on port 33000
 
@@ -4818,8 +4822,8 @@ not verified. Driver versions below are Python driver versions, not CUBRID serve
 | Driver line | Verified combinations | Known limitations |
 |---|---|---|
 | CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not run in CI. Building it on Python 3.11 or later is not verified. One earlier run (2026-09, driver `9.3.0.1`, CUBRID 11.4, Python 3.10) connected | That run returned `BIGINT` values as `str` (#583) and failed 25 integration tests (#585); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
-| CUBRIDdb, built from cubrid-python v11.3.0.51 | CI integration and compliance lanes, CUBRID 10.2–11.4; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
-| pycubrid (sync and async) | CI integration and compliance lanes, CUBRID 10.2–11.4; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
+| CUBRIDdb, built from cubrid-python v11.3.0.51 | SQLAlchemy compliance lane on CUBRID 11.4 in PR CI; integration tests on CUBRID 10.2–11.4 in the full matrix (manual dispatch and every release); see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
+| pycubrid (sync and async) | Integration and SQLAlchemy compliance lanes in PR and main CI; integration tests on CUBRID 10.2–11.4 in the full matrix; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 
 ---
 
@@ -9262,7 +9266,7 @@ else:
 | Property | Value |
 |---|---|
 | Installation options | The PyPI `CUBRID-Python` 9.3.0 release, installed by the `[cubrid]` / `[cubriddb]` extras, or a build of [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 from source ([how](#building-cubriddb-from-source)) |
-| PyPI package | `CUBRID-Python` 9.3.0, the only release on PyPI (source archives from 2014 and 2015): **supported, not verified** on current Python versions ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
+| PyPI package | `CUBRID-Python` 9.3.0, the newest release on PyPI (source archives from 2014 and 2015): **supported, not verified** on current Python versions ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
 | Import name | `CUBRIDdb` |
 | Type | C extension (CPython only) |
 | DBAPI level | DB-API 2.0 (PEP 249) |
@@ -9734,7 +9738,7 @@ but `greenlet` may require build tools when no compatible wheel is available.
 
 ### PyPI `CUBRID-Python` 9.3.x known limitations
 
-PyPI lists one `CUBRID-Python` release, 9.3.0, with two source archives
+The newest `CUBRID-Python` release on PyPI is 9.3.0, with two source archives
 (`9.3.0.0001` from 2014 and `9.3.0.0002` from 2015) and no wheels. There is no 11.x
 release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on `CUBRID-Python` without
 a version bound, so they install 9.3.0. Both extras are maintained installation options
@@ -9745,8 +9749,9 @@ verified. One earlier run (2026-09, driver `9.3.0.1`, CUBRID 11.4, Python 3.10) 
 but found these limitations. They are results of that run, not a current full-matrix run:
 
 - `BIGINT` values, including `COUNT(*)`, were returned as `str` (#583). The dialect
-  converts its own catalog counts, so `has_table()` and `has_index()` are correct; how
-  other `BIGINT` results behave with this driver line has not been verified (#1145).
+  converts its own catalog counts with `int()` (#584), so `has_table()` and `has_index()`
+  do not depend on the driver's `BIGINT` result type; how other `BIGINT` results behave
+  with this driver line has not been verified (#1145).
 - 25 integration tests failed (#585), in autocommit, large-object round-trips, fetch
   shapes, ping and recursive CTEs.
 - At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded

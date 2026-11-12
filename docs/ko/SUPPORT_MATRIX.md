@@ -113,8 +113,8 @@ wheel/sdist의 새 환경 설치를 확인합니다. 지원 범위:
 | 드라이버 계열 | 검증된 조합 | 알려진 제약 |
 |---|---|---|
 | CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (소스 압축 파일 `9.3.0.0001` / `9.3.0.0002`) | CI에서 실행하지 않음. Python 3.11 이상에서의 빌드는 검증되지 않음. 이전 실행 한 건(2026-09, 드라이버 `9.3.0.1`, CUBRID 11.4, Python 3.10)에서 연결은 성공 | 그 실행에서 `BIGINT` 값을 `str`로 반환했고(#583) 통합 테스트 25개가 실패함(#585). [드라이버 호환성](DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약) 참고 |
-| CUBRIDdb, cubrid-python v11.3.0.51 소스 빌드 | CI 통합 및 호환성(compliance) 레인, CUBRID 10.2–11.4. [CI 매트릭스](#ci-매트릭스) 참고 | [드라이버 호환성, 알려진 문제](DRIVER_COMPAT.md#알려진-문제) |
-| pycubrid (동기 및 비동기) | CI 통합 및 호환성(compliance) 레인, CUBRID 10.2–11.4. [CI 매트릭스](#ci-매트릭스) 참고 | [드라이버 호환성, 알려진 문제](DRIVER_COMPAT.md#알려진-문제) |
+| CUBRIDdb, cubrid-python v11.3.0.51 소스 빌드 | PR CI에서 CUBRID 11.4 SQLAlchemy 호환성(compliance) 레인, 전체 매트릭스(수동 실행과 모든 릴리스)에서 CUBRID 10.2–11.4 통합 테스트. [CI 매트릭스](#ci-매트릭스) 참고 | [드라이버 호환성, 알려진 문제](DRIVER_COMPAT.md#알려진-문제) |
+| pycubrid (동기 및 비동기) | PR과 main CI의 통합 및 SQLAlchemy 호환성(compliance) 레인, 전체 매트릭스에서 CUBRID 10.2–11.4 통합 테스트. [CI 매트릭스](#ci-매트릭스) 참고 | [드라이버 호환성, 알려진 문제](DRIVER_COMPAT.md#알려진-문제) |
 
 ---
 

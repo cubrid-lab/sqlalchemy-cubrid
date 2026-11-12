@@ -13,6 +13,7 @@ import tomllib
 from pathlib import Path
 
 from packaging.requirements import Requirement
+from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,13 +51,16 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
             "project": project["dependencies"],
             "test": test_group,
             "pycubrid": extras["pycubrid"],
-            "cubrid": extras["cubrid"],
-            "cubriddb": extras["cubriddb"],
+            "cubrid": extras.get("cubrid", []),
+            "cubriddb": extras.get("cubriddb", []),
         }.items()
     }
     for group in ("cubrid", "cubriddb"):
         if len(requirements[group]) != 1 or requirements[group][0].name.lower() != "cubrid-python":
             problems.append(f"pyproject.toml: {group} extra must install CUBRID-Python")
+        elif not requirements[group][0].specifier.contains(Version("9.3.0")):
+            # The docs promise that these extras install the PyPI 9.3.0 release (#1139).
+            problems.append(f"pyproject.toml: {group} extra must admit CUBRID-Python 9.3.0")
     pycubrid = [item for item in requirements["pycubrid"] if item.name.lower() == "pycubrid"]
     if len(pycubrid) != 1:
         problems.append("pyproject.toml: pycubrid extra needs one driver requirement")
@@ -179,8 +183,14 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
 # Words that would declare a supported driver line or a maintained extra out of
 # support. Known limitations belong in the verification table instead (#1139).
 _DISCONTINUED = re.compile(
-    r"deprecat|legacy|obsolete|discontinu|unsupported|not supported|untested", re.I
+    r"deprecat|legacy|obsolete|discontinu|unsupported|not supported|untested|no longer"
+    r"|end[- ]of[- ]life|\bEOL\b|\bdropped\b",
+    re.I,
 )
+# A status limited to one driver line ("v11.3.0.51 only") drops the other one.
+_ONE_LINE_ONLY = re.compile(r"\bonly\b", re.I)
+# Pass claims that a reviewed 9.3.x run must exist for before they are allowed.
+_PASS_CLAIM = re.compile(r"[✅✔✓]|\bpass(?:ed|es|ing)?\b|tested in CI|(?<!not )\bverified\b", re.I)
 
 
 def _row(rows: str, prefix: str) -> list[str] | None:
@@ -216,7 +226,11 @@ def _check_cubriddb_policy(driver_rows: str) -> list[str]:
             problems.append(
                 "docs/SUPPORT_MATRIX.md: maintained CUBRIDdb installation extras are misclassified"
             )
-        if "Supported" not in status or _DISCONTINUED.search(status):
+        if (
+            "Supported" not in status
+            or _DISCONTINUED.search(status)
+            or _ONE_LINE_ONLY.search(status)
+        ):
             problems.append("docs/SUPPORT_MATRIX.md: supported CUBRIDdb driver is misclassified")
 
     verification = re.search(r"(?ms)^#### Driver verification\n(.*)", driver_rows)
@@ -224,7 +238,11 @@ def _check_cubriddb_policy(driver_rows: str) -> list[str]:
         problems.append("docs/SUPPORT_MATRIX.md: driver verification table is missing")
         return problems
     rows = verification.group(1)
-    pypi = _row(rows, "| CUBRIDdb, PyPI `CUBRID-Python` 9.3")
+    pypi_prefix = "| CUBRIDdb, PyPI `CUBRID-Python` 9.3"
+    if len(re.findall(rf"^{re.escape(pypi_prefix)}", rows, re.M)) > 1:
+        problems.append("docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x has several rows")
+        return problems
+    pypi = _row(rows, pypi_prefix)
     source = _row(rows, "| CUBRIDdb, built from cubrid-python v11.3.0.51")
     if pypi is None or source is None:
         problems.append("docs/SUPPORT_MATRIX.md: a CUBRIDdb driver line lacks a verification row")
@@ -232,7 +250,9 @@ def _check_cubriddb_policy(driver_rows: str) -> list[str]:
         problems.append("docs/SUPPORT_MATRIX.md: CUBRIDdb verification row is malformed")
     else:
         verified, limitations = pypi[1], pypi[2]
-        if "✅" in verified or not re.search(r"\bnot (?:run|verified)\b", verified, re.I):
+        if _PASS_CLAIM.search(verified) or not re.search(
+            r"\bnot (?:run|verified)\b", verified, re.I
+        ):
             problems.append(
                 "docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x is reported as verified"
             )

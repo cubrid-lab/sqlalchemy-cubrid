@@ -79,7 +79,7 @@ else:
 | 속성 | 값 |
 |---|---|
 | 설치 방법 | `[cubrid]` / `[cubriddb]` extra가 설치하는 PyPI `CUBRID-Python` 9.3.0 릴리스, 또는 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스 빌드 ([방법](#소스에서-cubriddb-빌드)) |
-| PyPI 패키지 | `CUBRID-Python` 9.3.0, PyPI의 유일한 릴리스(2014년과 2015년의 소스 압축 파일): **지원하지만 현재 Python 버전에서는 검증되지 않음** ([알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
+| PyPI 패키지 | `CUBRID-Python` 9.3.0, PyPI의 최신 릴리스(2014년과 2015년의 소스 압축 파일): **지원하지만 현재 Python 버전에서는 검증되지 않음** ([알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
 | 임포트 이름 | `CUBRIDdb` |
 | 타입 | C 확장 (CPython 전용) |
 | DBAPI 수준 | DB-API 2.0 (PEP 249) |
@@ -351,7 +351,7 @@ pycubrid는 바인딩한 값을 SQL 문자열에 써 넣은 뒤 보내고, CUBRI
 
 ### PyPI `CUBRID-Python` 9.3.x의 알려진 제약
 
-PyPI에는 `CUBRID-Python` 릴리스가 9.3.0 하나뿐이며, 소스 압축 파일 두 개(2014년의
+PyPI의 최신 `CUBRID-Python` 릴리스는 9.3.0이며, 소스 압축 파일 두 개(2014년의
 `9.3.0.0001`, 2015년의 `9.3.0.0002`)만 있고 wheel은 없습니다. PyPI에는 11.x 릴리스가 없습니다.
 `[cubrid]`와 `[cubriddb]` extra는 버전 제한 없이 `CUBRID-Python`에 의존하므로 9.3.0을
 설치합니다. 두 extra는 지원되는 드라이버 계열을 위한, 유지되는 설치 방법입니다.
@@ -361,8 +361,9 @@ PyPI에는 `CUBRID-Python` 릴리스가 9.3.0 하나뿐이며, 소스 압축 파
 다음 제약이 확인되었습니다. 이는 그 실행의 결과이며, 현재 전체 매트릭스를 실행한 결과가 아닙니다:
 
 - `COUNT(*)`를 포함한 `BIGINT` 값을 `str`로 반환했습니다(#583). 방언은 자체 카탈로그
-  카운트를 변환하므로 `has_table()`과 `has_index()`는 올바르게 동작하지만, 그 밖의 `BIGINT`
-  결과가 이 드라이버 계열에서 어떻게 동작하는지는 검증되지 않았습니다(#1145).
+  카운트를 `int()`로 변환하므로(#584) `has_table()`과 `has_index()`는 드라이버의 `BIGINT`
+  결과 타입에 의존하지 않습니다. 그 밖의 `BIGINT` 결과가 이 드라이버 계열에서 어떻게
+  동작하는지는 검증되지 않았습니다(#1145).
 - 통합 테스트 25개가 실패했습니다(#585): autocommit, 대용량 객체 왕복, fetch 결과 형태,
   ping, 재귀 CTE.
 - `cubrid://` 또는 `cubrid+cubriddb://` 엔진은 첫 연결 시 로드된 드라이버의 버전
