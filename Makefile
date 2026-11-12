@@ -1,4 +1,4 @@
-.PHONY: help install doctor check-tool-versions lint format-check format typecheck security check-docs-reason check check-all agent-eval-check verify test test-fast test-repo test-offline test-all integration integration-local docker-up docker-down docker-clean docker-fix-db-host clean clean-all release-check
+.PHONY: help install doctor check-tool-versions lint format-check format typecheck security check-docs-reason check agent-eval-check verify test test-fast test-repo test-offline test-all integration integration-local docker-up docker-down docker-clean docker-fix-db-host clean clean-all release-check
 
 # Every tool runs through the same interpreter, and each can be overridden from the
 # command line or the environment, e.g. `make check PYTHON=.venv/bin/python`.
@@ -101,8 +101,6 @@ check-docs-reason: ## Check docs reasons and real event/workflow regressions
 check: lint format-check typecheck security check-docs-reason ## Complete non-test quality gate: lint, format-check, typecheck, security, check-docs-reason
 
 # Deprecated alias of `check`, kept for one minor release (#1009).
-check-all: check ## Deprecated alias of check (removed after the next minor release)
-	@echo "WARNING: 'make check-all' is deprecated and will be removed after the next minor release; use 'make check'." >&2
 
 agent-eval-check: ## Validate the agent-evals tasks and re-grade their fixtures (offline; no model, no DB)
 	$(PYTHON) scripts/agent_eval.py validate
@@ -224,6 +222,9 @@ docker-fix-db-host: ## Repair a running container's volume that registers testdb
 		grep "^testdb[[:space:]]" "$$f"'
 
 ##@ Maintenance
+
+changelog: ## Generate changelog with git-cliff
+	git-cliff --output CHANGELOG.md
 
 clean: ## Remove build artifacts and caches
 	rm -rf build/ dist/ *.egg-info .pytest_cache/ .coverage .ruff_cache/ __pycache__/ test-results/

@@ -115,12 +115,12 @@ def _count_is_positive(count: Any) -> bool:
     return int(count or 0) > 0
 
 
-# Oldest CUBRIDdb release line the dialect is tested with: CI builds
-# cubrid-python v11.3.0.51 from source. PyPI only has CUBRID-Python 9.3.x and
-# older, which fetches BIGINT as str and fails parts of the integration suite
-# (#583, #585). Only (major, minor) is compared: a source build's fourth
-# component is a git commit count, not the release tag.
-_MIN_TESTED_CUBRIDDB = (11, 3)
+# CUBRIDdb releases before 11.3 (the PyPI CUBRID-Python 9.3.x line, a supported
+# driver line) send every bound parameter as a string and fetch BIGINT values as
+# str; the dialect adapts to that at first connect (#1145, #1299). Only (major,
+# minor) is compared: a source build's fourth component is a git commit count,
+# not the release tag.
+_CUBRIDDB_STRING_VALUES_BELOW = (11, 3)
 
 # The SQL literal '\\' (two backslashes): its length is 2 when the server
 # treats a backslash literally and 1 when it is an escape character (#863).
@@ -549,13 +549,39 @@ ischema_names = {
 
 
 class CubridDialect(default.DefaultDialect):
-    """SQLAlchemy dialect for CUBRID."""
+    """SQLAlchemy dialect for CUBRID.
+
+    These keyword arguments can be passed to :func:`~sqlalchemy.create_engine`:
+
+    :param isolation_level: Engine-level isolation level: one of the names in
+      :meth:`get_isolation_level_values`, matched case-insensitively with ``_``
+      accepted for a space. A value that is not a string raises
+      :class:`~sqlalchemy.exc.ArgumentError`. An alias is stored under its
+      canonical name (see :meth:`get_isolation_level`).
+    :param json_serializer: Callable the JSON type uses to serialize values;
+      ``json.dumps`` when omitted.
+    :param json_deserializer: Callable the JSON type uses to deserialize
+      result values; ``json.loads`` when omitted.
+    :param no_backslash_escapes: ``True`` when the server treats a backslash as
+      a literal character (the CUBRID default), ``False`` when it is an escape
+      character that inline literals must double. When omitted, the mode is
+      probed on the first connection, and a probe with an unexpected result
+      raises :class:`~sqlalchemy.exc.InvalidRequestError`.
+    """
 
     name = "cubrid"
     driver = "cubrid"
 
     # SA 2.0 statement caching
     supports_statement_cache = True
+    # Set at first connect for CUBRIDdb older than 11.3, which binds every
+    # parameter as a string; the compiler then renders the integers of a
+    # LIMIT offset, count clause inline (#1299).
+    _limit_values_as_literals = False
+    # Set at first connect for the same drivers, which return BIGINT values as
+    # str; CubridExecutionContext then converts integer and untyped BIGINT
+    # result columns to int (#1145).
+    _bigint_results_as_str = False
 
     # Compiler classes
     statement_compiler = CubridCompiler
@@ -734,8 +760,18 @@ class CubridDialect(default.DefaultDialect):
         return args, {}
 
     def initialize(self, connection: Any) -> None:
+        """Check the CUBRIDdb version, then run SQLAlchemy's first-connect setup.
+
+        For a CUBRIDdb older than 11.3, such as the PyPI 9.3 release (CUBRIDdb
+        drivers only), this turns on inline LIMIT values and BIGINT string
+        conversion and warns about the remaining driver limitations. Unless ``no_backslash_escapes`` was passed to
+        :func:`~sqlalchemy.create_engine`, it then probes the server's
+        backslash mode.
+        """
+        # Before the base initialize: its queries already cache result
+        # processors and compiled SQL, which depend on these driver flags.
+        self._adapt_to_cubriddb_version()
         super().initialize(connection)
-        self._warn_if_untested_cubriddb()
         if not self._no_backslash_escapes_explicit:
             self.no_backslash_escapes = self._detect_no_backslash_escapes(connection)
         log.debug(
@@ -763,13 +799,18 @@ class CubridDialect(default.DefaultDialect):
             "create_engine(..., no_backslash_escapes=True or False) to set it explicitly."
         )
 
-    def _warn_if_untested_cubriddb(self) -> None:
-        """Warn once per engine when CUBRIDdb is older than the tested line (#585).
+    def _adapt_to_cubriddb_version(self) -> None:
+        """Adapt to a CUBRIDdb release older than 11.3 and name its limitations.
 
-        A warning rather than ``NotSupportedError``: the ``[cubrid]`` /
-        ``[cubriddb]`` extras have always installed the PyPI 9.3.x release, so
-        refusing to connect would break existing deployments in a minor
-        release. The pycubrid variants inherit :meth:`initialize` and skip this.
+        Those releases (the PyPI ``CUBRID-Python`` 9.3.x line, installed by the
+        ``[cubrid]`` / ``[cubriddb]`` extras) are a supported driver line. They
+        bind every parameter as a string and return BIGINT values as ``str``, so
+        the compiler renders plain integer ``LIMIT offset, count`` values inline
+        (#1299) and the execution context converts BIGINT results to ``int``
+        (#1145). Behaviour the dialect cannot adapt, observed with driver
+        9.3.0.1 on CUBRID 11.4 and Python 3.12 (#1143), is reported once per
+        engine as an ``SAWarning``; the connection proceeds normally (#1142).
+        The pycubrid variants inherit :meth:`initialize` and skip this.
         """
         if self.driver != "cubrid":
             return
@@ -778,16 +819,18 @@ class CubridDialect(default.DefaultDialect):
             log.debug("CUBRIDdb version could not be determined; skipping version check")
             return
         raw, major_minor = found
-        if major_minor >= _MIN_TESTED_CUBRIDDB:
+        if major_minor >= _CUBRIDDB_STRING_VALUES_BELOW:
             return
+        self._limit_values_as_literals = True
+        self._bigint_results_as_str = True
         util.warn(
-            f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "
-            "sqlalchemy-cubrid is tested with. The CUBRID-Python releases on "
-            "PyPI (9.3.x, installed by the [cubrid] and [cubriddb] extras) are "
-            "untested: they return BIGINT as str and fail parts of the "
-            "integration suite. Use the recommended cubrid+pycubrid:// URL "
-            '(pip install "sqlalchemy-cubrid[pycubrid]"), or build CUBRIDdb '
-            "from cubrid-python v11.3.0.51 or later; see "
+            f"CUBRIDdb {raw} is older than 11.3. This driver line is supported, but "
+            "it cannot bind bytes values (LargeBinary and BLOB writes fail), it "
+            "raises constraint violations as DatabaseError rather than "
+            "IntegrityError, and it sends parameters as strings, which the server "
+            "rejects in recursive CTEs and SET values (observed with CUBRID 11.4). "
+            "pycubrid (cubrid+pycubrid://) and CUBRIDdb built from cubrid-python "
+            "v11.3.0.51 do not have these limitations; see "
             "https://cubrid-lab.github.io/sqlalchemy-cubrid/DRIVER_COMPAT/"
         )
 
@@ -2052,12 +2095,17 @@ class CubridDialect(default.DefaultDialect):
         dbapi_connection: DBAPIConnection,
         level: str,
     ) -> None:  # pyright: ignore[reportIncompatibleMethodOverride]
-        """Set the isolation level for *dbapi_conn*.
+        """Set the isolation level for *dbapi_connection*.
 
         ``AUTOCOMMIT`` turns on the driver's autocommit mode. Any other level
-        turns it off (if on) and runs ``SET TRANSACTION ISOLATION LEVEL``.
+        turns it off (if on), runs ``SET TRANSACTION ISOLATION LEVEL`` and then
+        ``COMMIT``, which ends any transaction already open on the connection.
         All three drivers (CUBRIDdb, pycubrid and the async adapter) expose an
         ``autocommit`` property.
+
+        :param level: One of :meth:`get_isolation_level_values`, matched
+          case-insensitively.
+        :raises ValueError: If *level* is not a known isolation level.
         """
         if level.upper() == "AUTOCOMMIT":
             if not dbapi_connection.autocommit:  # pyright: ignore[reportAttributeAccessIssue]
@@ -2306,12 +2354,23 @@ class CubridDialect(default.DefaultDialect):
     def do_ping(self, dbapi_connection: DBAPIConnection) -> bool:
         """Ping the server to check connection liveness.
 
-        Used by SQLAlchemy's ``pool_pre_ping`` feature.  The CUBRID
-        Python driver exposes a ``ping()`` method on the connection
-        that delegates to the C-level CCI ping.
+        Used by SQLAlchemy's ``pool_pre_ping`` feature.  CUBRIDdb 11.3
+        exposes a ``ping()`` method on the connection that delegates to the
+        C-level CCI ping.  The PyPI CUBRIDdb 9.3 release has no ``ping()``;
+        reporting every such connection as dead made ``pool_pre_ping``
+        discard and reopen it on each checkout, so those connections are
+        checked with ``SELECT 1`` instead (#1304).
         """
         try:
-            dbapi_connection.ping()
+            ping = getattr(dbapi_connection, "ping", None)
+            if ping is None:
+                cursor = dbapi_connection.cursor()
+                try:
+                    cursor.execute("SELECT 1")
+                finally:
+                    cursor.close()
+            else:
+                ping()
             return True
         except Exception:
             return False

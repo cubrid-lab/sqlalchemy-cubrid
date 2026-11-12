@@ -77,7 +77,7 @@ flowchart TD
 - Python 3.11 或更高版本
 - SQLAlchemy 2.0 – 2.1
 - **推荐：**[pycubrid](https://github.com/cubrid-lab/pycubrid)（纯 Python，同步及异步；`cubrid+pycubrid://`）
-- **可选：**从 [cubrid-python v11.3.0.51+](https://github.com/CUBRID/cubrid-python) 源码构建 CUBRIDdb C 扩展（`cubrid://`）。PyPI 上的 `CUBRID-Python` 9.3.x **未经测试**，`[cubrid]`/`[cubriddb]` extras 已弃用（参阅[驱动兼容性说明](DRIVER_COMPAT.md)）。
+- **可选：**CUBRIDdb C 扩展（`cubrid://`），有两种受支持的安装方式：`pip install "sqlalchemy-cubrid[cubriddb]"`（或 `[cubrid]`）安装 PyPI 上的 `CUBRID-Python` 9.3.0，或从 CI 中测试的 [cubrid-python v11.3.0.51](https://github.com/CUBRID/cubrid-python) 源码发布版构建。PyPI 9.3.0 未在 CI 中运行，且有已知限制（参阅[驱动兼容性说明](DRIVER_COMPAT.md)）。
 
 ## 安装
 

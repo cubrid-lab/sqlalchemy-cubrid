@@ -13,6 +13,7 @@ import tomllib
 from pathlib import Path
 
 from packaging.requirements import Requirement
+from packaging.version import Version
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -50,13 +51,18 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
             "project": project["dependencies"],
             "test": test_group,
             "pycubrid": extras["pycubrid"],
-            "cubrid": extras["cubrid"],
-            "cubriddb": extras["cubriddb"],
+            "cubrid": extras.get("cubrid", []),
+            "cubriddb": extras.get("cubriddb", []),
         }.items()
     }
     for group in ("cubrid", "cubriddb"):
         if len(requirements[group]) != 1 or requirements[group][0].name.lower() != "cubrid-python":
-            problems.append(f"pyproject.toml: deprecated {group} extra must install CUBRID-Python")
+            problems.append(f"pyproject.toml: {group} extra must install CUBRID-Python")
+        elif not requirements[group][0].specifier.contains(Version("9.3.0.1")):
+            # The docs promise that these extras install the PyPI 9.3.0 release, which
+            # pip resolves as 9.3.0.1 because the 9.3.0.0002 archive's metadata also
+            # declares 9.3.0.1 (#1139).
+            problems.append(f"pyproject.toml: {group} extra must admit CUBRID-Python 9.3.0.1")
     pycubrid = [item for item in requirements["pycubrid"] if item.name.lower() == "pycubrid"]
     if len(pycubrid) != 1:
         problems.append("pyproject.toml: pycubrid extra needs one driver requirement")
@@ -172,28 +178,143 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
     ):
         problems.append("README.md: supported CUBRIDdb driver is misclassified")
 
-    driver_rows = _section(matrix, "Drivers")
-    driver = re.search(r"^\| CUBRIDdb \(CCI\) \|([^\n]+)$", driver_rows, re.M)
-    if driver is None:
+    problems.extend(_check_cubriddb_policy(_section(matrix, "Drivers")))
+    return problems
+
+
+# Words that would declare a supported driver line or a maintained extra out of
+# support. Known limitations belong in the verification table instead (#1139).
+_DISCONTINUED = re.compile(
+    r"deprecat|legacy|obsolete|discontinu|unsupported|not supported|untested|no longer"
+    r"|end[- ]of[- ]life|\bEOL\b|\bdropped\b",
+    re.I,
+)
+# A status limited to one driver line ("v11.3.0.51 only") drops the other one.
+_ONE_LINE_ONLY = re.compile(r"\bonly\b", re.I)
+# Pass claims that a reviewed 9.3.x run must exist for before they are allowed.
+_PASS_CLAIM = re.compile(r"[✅✔✓]|\bpass(?:ed|es|ing)?\b|tested in CI|(?<!not )\bverified\b", re.I)
+
+
+def _row(rows: str, prefix: str) -> list[str] | None:
+    match = re.search(rf"^{re.escape(prefix)}[^\n]*$", rows, re.M)
+    if match is None:
+        return None
+    return [cell.strip() for cell in match.group(0).strip().strip("|").split("|")]
+
+
+def _check_cubriddb_policy(driver_rows: str) -> list[str]:
+    """Both CUBRIDdb lines stay supported, and verification is reported apart (#1144).
+
+    The policy row must name both maintained installation options (the PyPI
+    9.3.0 release behind the ``[cubrid]`` / ``[cubriddb]`` extras and the
+    v11.3.0.51 source build) without calling either one discontinued. The
+    verification table must keep the PyPI 9.3.x line marked as not verified
+    until a reviewed passing run exists; changing that is a policy change that
+    updates this check and its tests together.
+    """
+    problems: list[str] = []
+    policy = _row(driver_rows, "| CUBRIDdb (CCI) |")
+    if policy is None:
         problems.append("docs/SUPPORT_MATRIX.md: CUBRIDdb driver row is missing")
+    elif len(policy) != 4:
+        problems.append("docs/SUPPORT_MATRIX.md: CUBRIDdb driver row is malformed")
     else:
-        cells = [cell.strip() for cell in driver.group(0).strip("|").split("|")]
-        if len(cells) != 4:
-            problems.append("docs/SUPPORT_MATRIX.md: CUBRIDdb driver row is malformed")
-        else:
-            install, status = cells[1], cells[3]
-            if not all(token in install for token in ("v11.3.0.51+", "[cubrid]", "[cubriddb]")):
-                problems.append(
-                    "docs/SUPPORT_MATRIX.md: CUBRIDdb source and extras need distinct install guidance"
-                )
-            if "deprecated" not in install.lower():
-                problems.append(
-                    "docs/SUPPORT_MATRIX.md: deprecated installation extras are not identified"
-                )
-            if "Supported" not in status or re.search(r"deprecated|legacy|obsolete", status, re.I):
-                problems.append(
-                    "docs/SUPPORT_MATRIX.md: supported CUBRIDdb driver is misclassified"
-                )
+        install, status = policy[1], policy[3]
+        if not all(token in install for token in ("[cubrid]", "[cubriddb]", "9.3.0", "v11.3.0.51")):
+            problems.append(
+                "docs/SUPPORT_MATRIX.md: CUBRIDdb install guidance needs both driver lines"
+            )
+        if _DISCONTINUED.search(install):
+            problems.append(
+                "docs/SUPPORT_MATRIX.md: maintained CUBRIDdb installation extras are misclassified"
+            )
+        if (
+            "Supported" not in status
+            or _DISCONTINUED.search(status)
+            or _ONE_LINE_ONLY.search(status)
+        ):
+            problems.append("docs/SUPPORT_MATRIX.md: supported CUBRIDdb driver is misclassified")
+
+    verification = re.search(r"(?ms)^#### Driver verification\n(.*)", driver_rows)
+    if verification is None:
+        problems.append("docs/SUPPORT_MATRIX.md: driver verification table is missing")
+        return problems
+    rows = verification.group(1)
+    pypi_prefix = "| CUBRIDdb, PyPI `CUBRID-Python` 9.3"
+    if len(re.findall(rf"^{re.escape(pypi_prefix)}", rows, re.M)) > 1:
+        problems.append("docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x has several rows")
+        return problems
+    pypi = _row(rows, pypi_prefix)
+    source = _row(rows, "| CUBRIDdb, built from cubrid-python v11.3.0.51")
+    if pypi is None or source is None:
+        problems.append("docs/SUPPORT_MATRIX.md: a CUBRIDdb driver line lacks a verification row")
+    elif len(pypi) != 3 or len(source) != 3:
+        problems.append("docs/SUPPORT_MATRIX.md: CUBRIDdb verification row is malformed")
+    else:
+        verified, limitations = pypi[1], pypi[2]
+        if _PASS_CLAIM.search(verified) or not re.search(
+            r"\bnot (?:run|verified)\b", verified, re.I
+        ):
+            problems.append(
+                "docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x is reported as verified"
+            )
+        if not all(issue in limitations for issue in ("#583", "#585")):
+            problems.append(
+                "docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x known limitations are missing"
+            )
+    return problems
+
+
+# Korean wording that would classify a maintained driver line as discontinued.
+_KO_DISCONTINUED = re.compile(
+    r"폐기|레거시|지원되지 않|지원하지 않|지원 중단|더 이상|테스트되지 않|deprecat|legacy|unsupported",
+    re.I,
+)
+
+
+def check_korean_cubriddb_policy(ko_matrix: str) -> list[str]:
+    """Keep the Korean support matrix on the same CUBRIDdb policy as English (#1148).
+
+    The Korean page is a translation, so this checks the policy facts rather
+    than wording: the CUBRIDdb row names both installation options and calls
+    neither discontinued, and the verification table keeps exactly one PyPI
+    9.3.x row that is not reported as tested and cites #583 and #585.
+    """
+    where = "docs/ko/SUPPORT_MATRIX.md"
+    problems: list[str] = []
+    policy = _row(ko_matrix, "| CUBRIDdb (CCI) |")
+    if policy is None or len(policy) != 4:
+        problems.append(f"{where}: CUBRIDdb driver row is missing or malformed")
+    else:
+        install, status = policy[1], policy[3]
+        if not all(token in install for token in ("[cubrid]", "[cubriddb]", "9.3.0", "v11.3.0.51")):
+            problems.append(f"{where}: CUBRIDdb install guidance needs both driver lines")
+        if _KO_DISCONTINUED.search(install) or _KO_DISCONTINUED.search(status):
+            problems.append(f"{where}: supported CUBRIDdb driver is misclassified")
+        if "지원" not in status:
+            problems.append(f"{where}: supported CUBRIDdb driver is misclassified")
+
+    verification = re.search(r"(?ms)^#### 드라이버 검증 현황\n(.*)", ko_matrix)
+    if verification is None:
+        problems.append(f"{where}: driver verification table is missing")
+        return problems
+    rows = verification.group(1)
+    pypi_prefix = "| CUBRIDdb, PyPI `CUBRID-Python` 9.3"
+    if len(re.findall(rf"^{re.escape(pypi_prefix)}", rows, re.M)) != 1:
+        problems.append(f"{where}: PyPI CUBRID-Python 9.3.x needs exactly one verification row")
+        return problems
+    pypi = _row(rows, pypi_prefix)
+    assert pypi is not None
+    if len(pypi) != 3:
+        problems.append(f"{where}: CUBRIDdb verification row is malformed")
+        return problems
+    verified, limitations = pypi[1], pypi[2]
+    if re.search(r"[✅✔✓]|CI에서 테스트", verified) or not re.search(
+        r"실행하지 않음|검증되지 않음", verified
+    ):
+        problems.append(f"{where}: PyPI CUBRID-Python 9.3.x is reported as verified")
+    if not all(issue in limitations for issue in ("#583", "#585")):
+        problems.append(f"{where}: PyPI CUBRID-Python 9.3.x known limitations are missing")
     return problems
 
 
@@ -202,6 +323,11 @@ def main() -> int:
         (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
         (ROOT / "README.md").read_text(encoding="utf-8"),
         (ROOT / "docs/SUPPORT_MATRIX.md").read_text(encoding="utf-8"),
+    )
+    problems.extend(
+        check_korean_cubriddb_policy(
+            (ROOT / "docs/ko/SUPPORT_MATRIX.md").read_text(encoding="utf-8")
+        )
     )
     for problem in problems:
         print(problem, file=sys.stderr)

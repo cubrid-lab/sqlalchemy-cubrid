@@ -334,3 +334,108 @@ def test_release_pr_body_cli_writes_a_patch_payload_only_on_change(tmp_path: Pat
         MODULE.main(["--pr-body", str(pr_json)])
     with pytest.raises(SystemExit):
         MODULE.main(["--pr-body", str(pr_json), "--output", str(out), "--version", "1.9.0"])
+
+
+REPO = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
+DEDUP_BASE = (
+    "# Changelog\n\n## [Unreleased]\n\n"
+    "### Changed\n\n"
+    f"- **Curated PR change** — described once ([#1150]({REPO}/pull/1150)) by @alice.\n"
+    "- **Curated issue change (#892)** — the warning text changed.\n\n"
+    "### Documentation\n\n"
+    f"- **Docs** — first proposed in #1110 ([#1205]({REPO}/pull/1205), [#1206]({REPO}/pull/1206))"
+    " by @alice.\n\n"
+    "## [1.8.0] - 2026-09-01\n\nOld history.\n"
+)
+
+
+def _generated(fixed: str, docs: str) -> str:
+    return (
+        "# Changelog\n\n## [1.9.0](https://github.com/example/compare/v1.8.0...v1.9.0) (2026-10-03)"
+        f"\n\n### Fixed\n\n{fixed}\n\n### Documentation\n\n{docs}\n"
+    )
+
+
+def _entry(subject: str, sha: str, pr: int | None = None, refs: int | None = None) -> str:
+    """One release-please 17.6.0 entry: optional PR link, commit link, optional issue."""
+    pr_link = f"([#{pr}]({REPO}/issues/{pr})) " if pr else ""
+    closes = f", closes [#{refs}]({REPO}/issues/{refs})" if refs else ""
+    return f"* {subject} {pr_link}([{sha}]({REPO}/commit/{sha}0000)){closes}"
+
+
+def test_generated_entry_for_a_curated_pull_request_is_listed_once(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The same change is curated under its PR and generated under its squash PR (#1100)."""
+    generated = _generated(
+        _entry("explain the import error", "38170c2", pr=1150)
+        + " by @alice\n"
+        + _entry("unrelated fix", "aaaaaaa", pr=1300)
+        + " by @bob",
+        _entry("align troubleshooting", "57c4ff5", pr=1205) + " by @alice",
+    )
+    actual = compose(DEDUP_BASE, generated, "1.9.0")
+    candidate = actual[actual.index("## [1.9.0]") : actual.index("## [1.8.0]")]
+    assert "explain the import error" not in candidate
+    assert "align troubleshooting" not in candidate
+    assert candidate.count("described once") == 1
+    # The unrelated generated entry stays, and the emptied Documentation section
+    # keeps only the curated entry.
+    assert "### Fixed\n\n* unrelated fix ([#1300]" in candidate
+    assert "\n* " not in candidate.split("### Documentation")[1]
+    assert actual[actual.index("## [1.8.0]") :] == DEDUP_BASE[DEDUP_BASE.index("## [1.8.0]") :]
+    # Each drop is logged so the release-please run shows what was condensed.
+    log = capsys.readouterr().err
+    assert "dropped generated entry already curated (#1150): explain the import error" in log
+    assert "dropped generated entry already curated (#1205): align troubleshooting" in log
+    assert "unrelated fix" not in log
+
+
+def test_generated_entry_referencing_a_curated_issue_is_listed_once() -> None:
+    generated = _generated(
+        _entry("revise the warning", "c6cd853", refs=892)
+        + "\n"
+        + _entry("other issue", "bbbbbbb", refs=900),
+        _entry("docs only", "ccccccc"),
+    )
+    candidate = compose(DEDUP_BASE, generated, "1.9.0")
+    assert "revise the warning" not in candidate
+    assert "other issue" in candidate and "docs only" in candidate
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        # A plain "#N" mention in curated prose is not a reference to the change.
+        _entry("proposed earlier", "ddddddd", pr=1110),
+        # A "#N" in the commit subject is not a release-please reference.
+        _entry("follow up on (#1150)", "eeeeeee"),
+        # A contributor the curated entry does not credit must not be dropped.
+        _entry("co-authored docs", "fffffff", pr=1206) + " by @carol",
+    ],
+)
+def test_generated_entry_without_matching_reference_or_credit_is_kept(entry: str) -> None:
+    candidate = compose(DEDUP_BASE, _generated(entry, "* generated docs"), "1.9.0")
+    assert entry in candidate
+
+
+def test_all_generated_entries_duplicated_still_composes() -> None:
+    generated = _generated(
+        _entry("explain the import error", "38170c2", pr=1150),
+        _entry("align troubleshooting", "57c4ff5", pr=1205),
+    )
+    actual = compose(DEDUP_BASE, generated, "1.9.0")
+    candidate = actual[actual.index("## [1.9.0]") : actual.index("## [1.8.0]")]
+    assert "### Fixed" not in candidate
+    assert "\n* " not in candidate
+    assert candidate.count("### ") == 2
+
+
+def test_dropping_an_entry_leaves_no_double_blank_lines() -> None:
+    generated = _generated(
+        "* keep one\n\n" + _entry("dup", "38170c2", pr=1150) + "\n\n* keep two",
+        "* generated docs",
+    )
+    candidate = compose(DEDUP_BASE, generated, "1.9.0")
+    assert "* keep one\n\n* keep two" in candidate
+    assert "\n\n\n" not in candidate

@@ -136,6 +136,7 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 | CUBRID version differential | `integration-full.yml` `version-differential` | Dispatch and release |
 | Fuzz and metamorphic | `dev` profile inside `make integration`; `nightly` profile in `integration-full.yml` `fuzz-bug-hunt` | Non-PR code; dispatch and release |
 | Mutation testing (non-gating) | `integration-full.yml` `mutation-testing` | Dispatch only; skipped on the release call (#747) |
+| CUBRIDdb PyPI 9.3 driver line (evidence, not gating) | `cubriddb-pypi.yml` `cubriddb-pypi` (`make integration`, Python 3.12, CUBRID 11.4) | Dispatch only (#1146) |
 
 ### Consolidation
 
@@ -337,7 +338,7 @@ adds no detection.
 | Changed workflow | PR validation |
 | --- | --- |
 | `ci.yml` | All lanes it defines, plus tooling and the offline suite |
-| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
+| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml`, `cubriddb-pypi.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
 | `publish-pypi.yml`, `release-please.yml` | Tooling and offline suite (release workflow tests) |
 | Other workflows | Tooling and offline suite; `pr-title.yml`, `docs-sync.yml`, `codeql.yml` and `security.yml` also run themselves on the PR |
 
@@ -371,6 +372,33 @@ three copies of the recipe must stay identical. A hit is never treated as eviden
 run installs the wheel, imports `CUBRIDdb`, and the readiness step connects to the
 live server before any suite runs. `test/test_workflow_cubriddb_cache.py` enforces
 the key components and that the build is skipped only on a hit.
+
+## CUBRIDdb PyPI 9.3 lane
+
+Both CUBRIDdb driver lines are supported (see [Support Matrix](SUPPORT_MATRIX.md)),
+but every lane above builds CUBRIDdb from the cubrid-python v11.3.0.51 source release.
+`cubriddb-pypi.yml` gives the PyPI `CUBRID-Python` 9.3.x line one repeatable evidence
+path (#1146) without multiplying the Python × CUBRID matrix:
+
+- It installs the project with `uv pip install -e ".[cubriddb,pycubrid]"`, the same
+  resolution as the `[cubriddb]` extra. PyPI 9.3.0 has two source archives; uv and pip
+  currently discard `9.3.0.0002`, whose metadata contradicts its file name, and install
+  `9.3.0.0001` as 9.3.0.1. A failed driver build fails the install step, so an
+  uninstallable driver is reported, not skipped.
+- It records the distribution version and the compiled-in `_cubrid.__version__` in
+  the job summary. Both archives report the same two values, so the summary cannot
+  tell which one was built; the install log shows the resolution.
+- It runs `make integration INTEGRATION_DRIVER=cubriddb` on one representative cell,
+  Python 3.12 and CUBRID 11.4, without the default `--maxfail=25`, so the summary
+  and the uploaded JUnit report list every failing test. pycubrid is installed too,
+  so the driver-differential tests compare the two drivers. The all-skipped guard
+  (#486) applies.
+
+The lane is manual-only and is evidence, not a gate: it is not a required check and
+`publish-pypi.yml` does not call it. Known 9.3.x driver limitations make it fail
+today ([Driver Compatibility](DRIVER_COMPAT.md), #1143); a failure stays a failure.
+Promote it to a required check only after a maintainer reviews a green baseline,
+and record that decision here.
 
 ## Job timeouts
 
