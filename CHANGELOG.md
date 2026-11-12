@@ -34,6 +34,10 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 - **Published pages** — fixed links from the documentation site and the PyPI README to repository files, made the PyPI demo render, and removed the unused Sphinx scaffold ([#1123](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1123), [#1132](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1132), [#1138](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1138)) by @yeongseon.
 - **Historical release notes** — earlier `CHANGELOG.md` sections now use the standard headings, credit verified human contributors (#1214), restore merged changes and published details they had omitted, and correct factual errors such as the PyPI 1.2.2 statement; all 28 published GitHub Release pages were updated to match and re-verified ([#1153](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1153)) by @yeongseon.
 
+### CI
+
+- **Each change is listed once in release candidates** — when a curated `[Unreleased]` entry already cites a pull request or issue, the release changelog composer now drops the release-please entry generated for the same pull request or referenced issue, instead of listing the change twice. Generated entries without a matching reference, or crediting a contributor the curated entry does not credit, are kept, and released sections are unchanged ([#1100](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1100)) by @yeongseon.
+
 ## [1.12.2] - 2026-11-05
 
 This release clarifies setup and troubleshooting instructions, refreshes the documentation design, and expands development-tool tests. Application runtime behavior is unchanged.
