@@ -1,7 +1,8 @@
 """Connection pool concurrency stress tests against a live CUBRID instance.
 
 Exercises QueuePool concurrent checkouts (threading + asyncio), pool
-overflow under burst load, and pool_recycle behavior.
+overflow under burst load, and pool_recycle, checkout timeout and checkin
+reset behavior.
 
 Skipped when ``CUBRID_TEST_URL`` is unset; an unreachable server errors
 instead (the shared gate in ``test/conftest.py``, #593).
@@ -17,7 +18,8 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
-from sqlalchemy import create_engine, text
+from sqlalchemy import Connection, create_engine, event, text
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.exc import TimeoutError as SATimeoutError
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import QueuePool
@@ -185,6 +187,150 @@ class TestQueuePoolConcurrency:
                 conn.execute(text("SELECT 1"))
 
             assert first_raw is not second_raw
+        finally:
+            engine.dispose()
+
+
+# A CUBRID session variable lives in the server session behind one connection.
+# Setting it on one checkout and reading it on the next tells whether the pool
+# handed back the same server session or opened a new one, without relying on
+# Python object identity.
+_SET_MARKER = text("SET @sa_pool_session = 1151")
+_GET_MARKER = text("SELECT @sa_pool_session")
+
+
+def _session_marker(conn: Connection) -> int | None:
+    """Return the marker of this connection's server session, or None in a new session."""
+    try:
+        return conn.execute(_GET_MARKER).scalar()
+    except DBAPIError as exc:
+        # -1070: "Session variable '@sa_pool_session' not defined."
+        if "-1070" not in str(exc.orig):
+            raise
+        return None
+
+
+class TestQueuePoolLifecycle:
+    """Pool recycle, checkout timeout and checkin reset on a live server (#1151).
+
+    These checks need no timing upper bound: a recycled connection is detected
+    by its server session, and the timeout test only bounds how long the
+    failing checkout may take.
+    """
+
+    @pytest.mark.parametrize(
+        ("recycle", "replaced"), [(1, True), (3600, False)], ids=["older", "younger"]
+    )
+    def test_pool_recycle_replaces_only_connections_older_than_the_limit(
+        self, recycle: int, replaced: bool
+    ) -> None:
+        engine = create_engine(
+            _sync_url(),
+            poolclass=QueuePool,
+            pool_size=1,
+            max_overflow=0,
+            pool_recycle=recycle,
+            pool_pre_ping=False,
+        )
+        connects: list[object] = []
+        closes: list[object] = []
+        event.listen(engine, "connect", lambda dbapi_conn, _record: connects.append(dbapi_conn))
+        event.listen(engine, "close", lambda dbapi_conn, _record: closes.append(dbapi_conn))
+        try:
+            with engine.connect() as conn:
+                conn.execute(_SET_MARKER)
+                first = conn.connection.dbapi_connection
+                conn.commit()
+
+            # Longer than the 1 s limit; far below the 3600 s one.
+            time.sleep(1.5)
+
+            with engine.connect() as conn:
+                marker = _session_marker(conn)
+                second = conn.connection.dbapi_connection
+            if replaced:
+                assert marker is None, "the recycled checkout kept the old server session"
+                assert second is not first
+                assert connects == [first, second]
+                assert closes == [first], "the expired connection was not closed"
+            else:
+                assert marker == 1151, "a connection younger than pool_recycle was replaced"
+                assert second is first
+                assert connects == [first]
+                assert closes == []
+            assert engine.pool.checkedout() == 0
+        finally:
+            engine.dispose()
+
+    def test_checkout_times_out_when_pool_and_overflow_are_saturated(self) -> None:
+        engine = create_engine(
+            _sync_url(),
+            poolclass=QueuePool,
+            pool_size=2,
+            max_overflow=1,
+            pool_timeout=1,
+        )
+        held = []
+        try:
+            held = [engine.connect() for _ in range(3)]
+            for conn in held:
+                assert conn.execute(text("SELECT 1")).scalar() == 1
+            assert engine.pool.checkedout() == 3
+            assert engine.pool.overflow() == 1
+
+            started = time.monotonic()
+            with pytest.raises(SATimeoutError):
+                engine.connect()
+            waited = time.monotonic() - started
+            # The checkout waits for pool_timeout, then fails; generous upper bound.
+            assert 0.9 <= waited < 10, waited
+            assert engine.pool.checkedout() == 3
+
+            # Returning one connection lets the next checkout through.
+            held.pop().close()
+            with engine.connect() as conn:
+                assert conn.execute(text("SELECT 1")).scalar() == 1
+        finally:
+            for conn in held:
+                conn.close()
+            assert engine.pool.checkedout() == 0
+            engine.dispose()
+
+    def test_checkin_rolls_back_and_keeps_the_session(self, shared_table: str) -> None:
+        """Uncommitted work is rolled back on return; the pooled session stays usable.
+
+        The same server session would see its own uncommitted row, so a count of
+        zero on the next checkout of that session proves the rollback.
+        """
+        engine = create_engine(
+            _sync_url(), poolclass=QueuePool, pool_size=1, max_overflow=0, pool_timeout=5
+        )
+        insert = text(f"INSERT INTO {shared_table} (worker, n) VALUES (1, 0)")
+        count = text(f"SELECT COUNT(*) FROM {shared_table}")
+        try:
+            # Closed with the INSERT neither committed nor rolled back.
+            with engine.connect() as conn:
+                conn.execute(_SET_MARKER)
+                conn.execute(insert)
+                assert conn.execute(count).scalar_one() == 1
+
+            # Explicit rollback, then return.
+            with engine.connect() as conn:
+                assert _session_marker(conn) == 1151
+                assert conn.execute(count).scalar_one() == 0
+                conn.execute(insert)
+                conn.rollback()
+                assert not conn.in_transaction()
+
+            with engine.begin() as conn:
+                assert _session_marker(conn) == 1151
+                assert conn.execute(count).scalar_one() == 0
+                conn.execute(insert)
+
+            with engine.connect() as conn:
+                assert conn.execute(count).scalar_one() == 1
+            assert engine.pool.checkedout() == 0
+            assert engine.pool.checkedin() == 1
         finally:
             engine.dispose()
 
