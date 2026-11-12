@@ -148,7 +148,7 @@ def test_pypi_driver_line_cannot_be_reported_as_verified() -> None:
 
 
 def test_pypi_driver_line_keeps_known_limitations() -> None:
-    matrix = _edit_row(PYPI_ROW, "(#585)", "")
+    matrix = _edit_row(PYPI_ROW, "#585, ", "")
     assert (
         "docs/SUPPORT_MATRIX.md: PyPI CUBRID-Python 9.3.x known limitations are missing"
         in check_claims(METADATA, README, matrix)
