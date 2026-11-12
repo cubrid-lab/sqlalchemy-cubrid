@@ -265,11 +265,69 @@ def _check_cubriddb_policy(driver_rows: str) -> list[str]:
     return problems
 
 
+# Korean wording that would classify a maintained driver line as discontinued.
+_KO_DISCONTINUED = re.compile(
+    r"폐기|레거시|지원되지 않|지원하지 않|지원 중단|더 이상|테스트되지 않|deprecat|legacy|unsupported",
+    re.I,
+)
+
+
+def check_korean_cubriddb_policy(ko_matrix: str) -> list[str]:
+    """Keep the Korean support matrix on the same CUBRIDdb policy as English (#1148).
+
+    The Korean page is a translation, so this checks the policy facts rather
+    than wording: the CUBRIDdb row names both installation options and calls
+    neither discontinued, and the verification table keeps exactly one PyPI
+    9.3.x row that is not reported as tested and cites #583 and #585.
+    """
+    where = "docs/ko/SUPPORT_MATRIX.md"
+    problems: list[str] = []
+    policy = _row(ko_matrix, "| CUBRIDdb (CCI) |")
+    if policy is None or len(policy) != 4:
+        problems.append(f"{where}: CUBRIDdb driver row is missing or malformed")
+    else:
+        install, status = policy[1], policy[3]
+        if not all(token in install for token in ("[cubrid]", "[cubriddb]", "9.3.0", "v11.3.0.51")):
+            problems.append(f"{where}: CUBRIDdb install guidance needs both driver lines")
+        if _KO_DISCONTINUED.search(install) or _KO_DISCONTINUED.search(status):
+            problems.append(f"{where}: supported CUBRIDdb driver is misclassified")
+        if "지원" not in status:
+            problems.append(f"{where}: supported CUBRIDdb driver is misclassified")
+
+    verification = re.search(r"(?ms)^#### 드라이버 검증 현황\n(.*)", ko_matrix)
+    if verification is None:
+        problems.append(f"{where}: driver verification table is missing")
+        return problems
+    rows = verification.group(1)
+    pypi_prefix = "| CUBRIDdb, PyPI `CUBRID-Python` 9.3"
+    if len(re.findall(rf"^{re.escape(pypi_prefix)}", rows, re.M)) != 1:
+        problems.append(f"{where}: PyPI CUBRID-Python 9.3.x needs exactly one verification row")
+        return problems
+    pypi = _row(rows, pypi_prefix)
+    assert pypi is not None
+    if len(pypi) != 3:
+        problems.append(f"{where}: CUBRIDdb verification row is malformed")
+        return problems
+    verified, limitations = pypi[1], pypi[2]
+    if re.search(r"[✅✔✓]|CI에서 테스트", verified) or not re.search(
+        r"실행하지 않음|검증되지 않음", verified
+    ):
+        problems.append(f"{where}: PyPI CUBRID-Python 9.3.x is reported as verified")
+    if not all(issue in limitations for issue in ("#583", "#585")):
+        problems.append(f"{where}: PyPI CUBRID-Python 9.3.x known limitations are missing")
+    return problems
+
+
 def main() -> int:
     problems = check_claims(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8"),
         (ROOT / "README.md").read_text(encoding="utf-8"),
         (ROOT / "docs/SUPPORT_MATRIX.md").read_text(encoding="utf-8"),
+    )
+    problems.extend(
+        check_korean_cubriddb_policy(
+            (ROOT / "docs/ko/SUPPORT_MATRIX.md").read_text(encoding="utf-8")
+        )
     )
     for problem in problems:
         print(problem, file=sys.stderr)

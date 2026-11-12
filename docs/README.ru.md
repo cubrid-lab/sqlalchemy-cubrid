@@ -80,7 +80,7 @@ flowchart TD
 - Python 3.11 или новее
 - SQLAlchemy 2.0 – 2.1
 - **Рекомендуется:** [pycubrid](https://github.com/cubrid-lab/pycubrid) (чистый Python, синхронный/асинхронный; `cubrid+pycubrid://`)
-- **Альтернатива:** соберите расширение CUBRIDdb из исходников [cubrid-python v11.3.0.51+](https://github.com/CUBRID/cubrid-python) (`cubrid://`). Выпуск `CUBRID-Python` 9.3.x на PyPI **не тестировался**; extras `[cubrid]`/`[cubriddb]` устарели ([совместимость драйверов](DRIVER_COMPAT.md)).
+- **Альтернатива:** расширение CUBRIDdb (`cubrid://`) с одним из двух поддерживаемых способов установки: `pip install "sqlalchemy-cubrid[cubriddb]"` (или `[cubrid]`) устанавливает выпуск `CUBRID-Python` 9.3.0 с PyPI, либо соберите его из исходного выпуска [cubrid-python v11.3.0.51](https://github.com/CUBRID/cubrid-python), который проверяется в CI. Выпуск 9.3.0 с PyPI не запускается в CI и имеет известные ограничения ([совместимость драйверов](DRIVER_COMPAT.md)).
 
 ## Установка
 
