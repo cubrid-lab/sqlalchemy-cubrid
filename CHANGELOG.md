@@ -25,6 +25,10 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 
 - **Missing-CUBRIDdb error** — the `Could not import CUBRIDdb` error for `cubrid://` and `cubrid+cubriddb://` URLs no longer calls the CUBRIDdb C-extension driver legacy or the PyPI `CUBRID-Python` releases untested. It lists both installation paths (`sqlalchemy-cubrid[cubriddb]` or an official CUBRID/cubrid-python source build) and the pure-Python `cubrid+pycubrid://` alternative. The message prefix and the chained original `ImportError` are unchanged ([#1150](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1150)) by @yeongseon.
 
+### Fixed
+
+- **INSERT with a driver that lacks `get_last_insert_id()`** — with the PyPI CUBRIDdb 9.3 driver, a single-row INSERT on a connection that had not yet inserted into an `AUTO_INCREMENT` column failed with `TypeError: int() argument must be ... not 'NoneType'`, even though the row was stored; Alembic's `alembic_version` insert was one example. A NULL `SELECT LAST_INSERT_ID()` now means no generated key ([#1302](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1302)) by @yeongseon.
+
 ### Documentation
 
 - **First connection and troubleshooting** — troubleshooting now shows the actual missing-pycubrid and authentication error messages, explains missing `greenlet` errors for async engines and broker readiness, and adds Windows virtual-environment setup to the first-connection lesson and Apple silicon options for the CUBRID lab. Translated READMEs guide readers to their first connection with `cubrid+pycubrid://` URLs and no longer overstate live CI coverage ([#1116](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1116), [#1118](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1118), [#1124](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1124), [#1126](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1126), [#1127](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1127), [#1131](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1131), [#1134](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1134), [#1137](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1137)) by @yeongseon.
