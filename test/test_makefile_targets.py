@@ -5,7 +5,7 @@ quality gate, ``make verify`` those two and then the live ``make integration`` l
 (#1018), and only ``make format``
 modifies files. ``make docker-down`` keeps the local test data and only
 ``make docker-clean`` deletes it (#1008). Most checks use ``make -n`` (print, do not run); the ``doctor`` and
-``check-all`` checks run the targets with every tool replaced by ``true`` or
+``check-all`` removal checks run the targets with every tool replaced by ``true`` or
 ``false``, so nothing is installed, linted or modified.
 """
 
@@ -287,13 +287,15 @@ def test_deprecated_port_warning_is_limited_to_targets_that_use_the_port(target)
     assert "deprecated" not in result.stderr
 
 
-def test_check_all_is_a_deprecated_alias_of_check():
-    assert _prerequisites("check-all") == ["check"]
+def test_check_all_alias_was_removed():
+    # Deprecated in 1.11.5 (#1009) and removed after the next minor release, 1.12.0
+    # (#1313); `make check` is the target.
     stubs = [f"{name}=true" for name in ("PYTHON", *TOOLS)]
     result = _make("check-all", *stubs)
-    assert result.returncode == 0, result.stderr
-    assert "'make check-all' is deprecated" in result.stderr
-    assert "deprecated" not in result.stdout
+    assert result.returncode != 0
+    assert "No rule to make target" in result.stderr
+    assert not re.search(r"^check-all\s*:", MAKEFILE, re.M)
+    assert "check-all" not in MAKEFILE
 
 
 def test_doctor_passes_when_every_tool_answers():
@@ -337,7 +339,7 @@ def test_help_groups_targets_by_purpose():
 def test_ci_calls_only_canonical_targets():
     # Deprecated aliases are kept for contributors, never for CI (#1009).
     targets = set(re.findall(r"^([a-zA-Z_-]+):", MAKEFILE, re.M))
-    deprecated = {"check-all", "test-offline"}
+    deprecated = {"test-offline"}
     calls = []
     for workflow in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
         for job in yaml.safe_load(workflow.read_text(encoding="utf-8"))["jobs"].values():

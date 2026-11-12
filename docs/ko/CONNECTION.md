@@ -27,7 +27,7 @@
 | Python             | 3.11+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID 서버        | 10.2 – 11.4     |
-| CUBRID Python 드라이버 | pycubrid (권장) 또는 cubrid-python v11.3.0.51+에서 빌드한 CUBRIDdb (지원되는 C 확장) |
+| CUBRID Python 드라이버 | pycubrid (권장) 또는 지원되는 CUBRIDdb C 확장 (`[cubrid]` / `[cubriddb]` extra로 설치하는 PyPI `CUBRID-Python` 9.3.0, 또는 cubrid-python v11.3.0.51 소스 빌드) |
 
 ---
 
@@ -61,13 +61,16 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 ### CUBRIDdb C 확장 드라이버
 
-[cubrid-python](https://github.com/CUBRID/cubrid-python)의 공식 CUBRIDdb C 확장 드라이버는 `cubrid://` URL에 묶여 있으며, `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택할 수 있습니다. 지원되는 설치 방법은 cubrid-python v11.3.0.51 이상을 소스에서 빌드하는 것입니다. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고한 뒤 방언만 설치하세요:
+[cubrid-python](https://github.com/CUBRID/cubrid-python)의 공식 CUBRIDdb C 확장 드라이버는 `cubrid://` URL에 묶여 있으며, `cubrid+cubriddb://` URL 스킴으로 명시적으로 선택할 수 있습니다. 유지되는 설치 방법은 두 가지입니다:
 
-```bash
-pip install sqlalchemy-cubrid
-```
+- `pip install "sqlalchemy-cubrid[cubrid]"`(또는 동일한 `[cubriddb]` extra)는 PyPI `CUBRID-Python` 9.3.0 릴리스를 설치합니다(pip는 `9.3.0.1`로 해석). PyPI에는 소스 압축 파일만 있으므로 pip가 로컬에서 빌드합니다.
+- cubrid-python v11.3.0.51을 소스에서 빌드합니다. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고한 뒤 방언만 설치하세요:
 
-> **경고**: 드라이버를 PyPI에서 설치하지 마세요(`pip install CUBRID-Python` 또는 폐기 예정인 `[cubrid]` / `[cubriddb]` extra). PyPI에는 `CUBRID-Python` 9.3.x만 있으며, 이 방언과 함께 테스트되지 않았습니다. `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패합니다. `cubrid://` 엔진은 로드된 CUBRIDdb가 11.3보다 오래되었으면 첫 연결 시 `SAWarning`을 냅니다. [PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
+  ```bash
+  pip install sqlalchemy-cubrid
+  ```
+
+> **참고**: CI는 v11.3.0.51 빌드를 테스트합니다. PyPI 9.3.0 릴리스는 지원하지만 Python 3.11 이상에서는 검증되지 않았습니다. CUBRID 11.4에서의 이전 실행에서는 `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패했습니다. `cubrid://` 엔진은 로드된 CUBRIDdb가 11.3보다 오래되었으면 첫 연결 시 `SAWarning`을 냅니다. [PyPI `CUBRID-Python` 9.3.x의 알려진 제약](DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약)을 참고하세요.
 
 ---
 
@@ -155,7 +158,7 @@ CUBRIDdb의 `connect(url, user, password)`는 키워드 옵션을 받지 않으�
 | `cubrid+pycubrid://` | pycubrid    | 순수 Python 드라이버 (CUBRID 네이티브 라이브러리 불필요) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | 비동기 순수 Python 드라이버        |
 
-새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 cubrid-python v11.3.0.51 이상에서 빌드한 지원되는 CUBRIDdb C 확장 드라이버에 묶입니다. 명시적으로 선택하려면 `cubrid+cubriddb://`를 사용하세요.
+새 프로젝트는 `cubrid+pycubrid://`를 권장합니다 (순수 Python 드라이버, CUBRID 네이티브 라이브러리 불필요). `[pycubrid]` extra의 `greenlet` 의존성은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다. `cubrid://` URL은 지원되는 CUBRIDdb C 확장 드라이버(두 계열 중 어느 것이든)에 묶입니다. 명시적으로 선택하려면 `cubrid+cubriddb://`를 사용하세요.
 
 ---
 
@@ -345,7 +348,7 @@ SELECT VERSION()
 pip install "sqlalchemy-cubrid[pycubrid]"   # 이후 cubrid+pycubrid:// 사용
 ```
 
-또는 cubrid-python v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요. PyPI의 `CUBRID-Python` 9.3.x 릴리스는 이 방언과 함께 테스트되지 않았습니다.
+또는 `pip install "sqlalchemy-cubrid[cubriddb]"`로 CUBRIDdb를 설치하거나 cubrid-python v11.3.0.51에서 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요. 이 extra가 설치하는 PyPI `CUBRID-Python` 9.3.x 릴리스는 지원하지만 Python 3.11 이상에서는 검증되지 않았습니다. [알려진 제약](DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약)을 참고하세요.
 
 #### 포트 33000에서 `Connection refused`
 
