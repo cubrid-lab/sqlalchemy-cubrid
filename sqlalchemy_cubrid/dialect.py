@@ -128,6 +128,46 @@ _MIN_TESTED_CUBRIDDB = (11, 3)
 _BACKSLASH_PROBE_SQL = "SELECT CHAR_LENGTH('\\\\')"
 
 
+# DB-API type code CUBRIDdb reports in cursor.description for a BIGINT column
+# (CUBRIDdb.FIELD_TYPE.BIGINT, the CCI U_TYPE_BIGINT value).
+_CUBRIDDB_BIGINT_TYPE_CODE = 21
+
+
+def _bigint_str_processor(dialect: Any, coltype: Any) -> Optional[Callable[[Any], Any]]:
+    """Convert BIGINT values that CUBRIDdb older than 11.3 returns as ``str``.
+
+    Those releases fetch BIGINT, ``COUNT(*)`` and ``ROWNUM`` values as decimal
+    strings (``'5'``), while CUBRIDdb 11.3 and pycubrid return ``int`` (#1145).
+    Only columns the driver itself reports as BIGINT are converted, and only
+    ``str`` values; text from any other column type is never parsed.
+    """
+    if not getattr(dialect, "_bigint_results_as_str", False):
+        return None
+    if coltype != _CUBRIDDB_BIGINT_TYPE_CODE:
+        return None
+
+    def process(value: Any) -> Any:
+        if isinstance(value, str):
+            return int(value)
+        return value
+
+    return process
+
+
+class _CubridIntegerResult(sqltypes.Integer):
+    """Result-processing impl for integer types (#1145); renders and binds as Integer."""
+
+    def result_processor(self, dialect: Any, coltype: Any) -> Any:
+        return _bigint_str_processor(dialect, coltype)
+
+
+class _CubridUntypedResult(sqltypes.NullType):
+    """Result-processing impl for untyped columns such as ``text()`` results (#1145)."""
+
+    def result_processor(self, dialect: Any, coltype: Any) -> Any:
+        return _bigint_str_processor(dialect, coltype)
+
+
 def _cubriddb_version(dbapi: Any) -> tuple[str, tuple[int, int]] | None:
     """Return the loaded CUBRIDdb C extension's version string and (major, minor).
 
@@ -486,6 +526,9 @@ def _column_defaults_from_ddl(ddl: str) -> dict[str, str]:
 # -----------------------------------------------------------------------
 
 colspecs = {
+    # Result processing only: convert CUBRIDdb 9.3's string BIGINT values (#1145).
+    sqltypes.Integer: _CubridIntegerResult,
+    sqltypes.NullType: _CubridUntypedResult,
     sqltypes.Enum: ENUM,
     sqltypes.Numeric: NUMERIC,
     sqltypes.Float: FLOAT,
@@ -578,6 +621,9 @@ class CubridDialect(default.DefaultDialect):
     # parameter as a string; the compiler then renders the integers of a
     # LIMIT offset, count clause inline (#1299).
     _limit_values_as_literals = False
+    # Set at first connect for the same drivers, which return BIGINT values as
+    # str; integer and untyped result columns then convert them to int (#1145).
+    _bigint_results_as_str = False
 
     # Compiler classes
     statement_compiler = CubridCompiler
@@ -756,14 +802,18 @@ class CubridDialect(default.DefaultDialect):
         return args, {}
 
     def initialize(self, connection: Any) -> None:
-        """Run SQLAlchemy's first-connect setup, then the CUBRID checks.
+        """Check the CUBRIDdb version, then run SQLAlchemy's first-connect setup.
 
-        Warns when CUBRIDdb is older than the tested 11.3 line (CUBRIDdb
-        drivers only) and, unless ``no_backslash_escapes`` was passed to
-        :func:`~sqlalchemy.create_engine`, probes the server's backslash mode.
+        For a CUBRIDdb older than the tested 11.3 line (CUBRIDdb drivers only)
+        this warns and turns on inline LIMIT values and BIGINT string
+        conversion. Unless ``no_backslash_escapes`` was passed to
+        :func:`~sqlalchemy.create_engine`, it then probes the server's
+        backslash mode.
         """
-        super().initialize(connection)
+        # Before the base initialize: its queries already cache result
+        # processors and compiled SQL, which depend on these driver flags.
         self._warn_if_untested_cubriddb()
+        super().initialize(connection)
         if not self._no_backslash_escapes_explicit:
             self.no_backslash_escapes = self._detect_no_backslash_escapes(connection)
         log.debug(
@@ -800,7 +850,8 @@ class CubridDialect(default.DefaultDialect):
         release. The pycubrid variants inherit :meth:`initialize` and skip this.
         For those older releases it also makes the compiler render plain integer
         ``LIMIT offset, count`` values inline, because they bind parameters as
-        strings (#1299).
+        strings (#1299), and converts the BIGINT values they return as strings
+        to ``int`` (#1145).
         """
         if self.driver != "cubrid":
             return
@@ -814,6 +865,7 @@ class CubridDialect(default.DefaultDialect):
         # These releases bind every parameter as a string, which makes a bound
         # LIMIT ?, ? return the wrong rows; render plain integers inline (#1299).
         self._limit_values_as_literals = True
+        self._bigint_results_as_str = True
         util.warn(
             f"CUBRIDdb {raw} is older than the CUBRIDdb 11.3 line that "
             "sqlalchemy-cubrid is tested with. The CUBRID-Python releases on "

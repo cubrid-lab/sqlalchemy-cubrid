@@ -389,6 +389,67 @@ class TestCubriddbVersionGuard:
                 dialect.initialize(connection)
 
 
+class TestBigintStringResultsFromOldCubriddb:
+    """CUBRIDdb older than 11.3 fetches BIGINT, COUNT(*) and ROWNUM values as
+    decimal strings. For those drivers only, integer-typed and untyped result
+    columns that the driver reports as BIGINT (type code 21) are converted to
+    ``int``; other column types and other drivers are left alone (#1145)."""
+
+    BIGINT_CODE = 21
+    VARCHAR_CODE = 2
+
+    @staticmethod
+    def _processor(type_: Any, flag: bool, coltype: int) -> Any:
+        dialect = CubridDialect()
+        dialect._bigint_results_as_str = flag
+        return dialect.type_descriptor(type_).result_processor(dialect, coltype)
+
+    @pytest.mark.parametrize(
+        "type_",
+        [sa.Integer(), sa.BigInteger(), sa.SmallInteger(), sqltypes.NULLTYPE],
+        ids=["Integer", "BigInteger", "SmallInteger", "untyped"],
+    )
+    def test_old_driver_bigint_strings_become_int(self, type_: Any) -> None:
+        process = self._processor(type_, True, self.BIGINT_CODE)
+        assert process("5") == 5
+        assert process("-9223372036854775808") == -9223372036854775808
+        assert process("1099511627776") == 1099511627776
+        assert process(7) == 7
+        assert process(None) is None
+
+    def test_cubrid_bigint_type_is_converted(self) -> None:
+        from sqlalchemy_cubrid.types import BIGINT
+
+        process = self._processor(BIGINT(), True, self.BIGINT_CODE)
+        assert process("20") == 20
+
+    @pytest.mark.parametrize("type_", [sa.Integer(), sqltypes.NULLTYPE], ids=["Integer", "untyped"])
+    def test_non_bigint_driver_columns_are_untouched(self, type_: Any) -> None:
+        assert self._processor(type_, True, self.VARCHAR_CODE) is None
+
+    @pytest.mark.parametrize("type_", [sa.Integer(), sqltypes.NULLTYPE], ids=["Integer", "untyped"])
+    def test_other_drivers_have_no_processor(self, type_: Any) -> None:
+        assert self._processor(type_, False, self.BIGINT_CODE) is None
+
+    def test_string_types_are_never_parsed(self) -> None:
+        assert self._processor(sa.String(), True, self.BIGINT_CODE) is None
+
+    def test_initialize_sets_flags_before_base_initialize(self) -> None:
+        dialect = CubridDialect()
+        dialect.dbapi = _fake_cubriddb(b"9.3.0.0001")
+        seen: list[tuple[bool, bool]] = []
+
+        def base_initialize(self: Any, connection: Any) -> None:
+            seen.append((self._bigint_results_as_str, self._limit_values_as_literals))
+
+        connection = MagicMock()
+        connection.exec_driver_sql.return_value.scalar.return_value = 2
+        with patch("sqlalchemy.engine.default.DefaultDialect.initialize", base_initialize):
+            with pytest.warns(SAWarning):
+                dialect.initialize(connection)
+        assert seen == [(True, True)]
+
+
 class TestLimitLiteralsForStringBindingDrivers:
     """CUBRIDdb older than 11.3 binds every parameter as a string, and CUBRID
     then applies a bound two-value ``LIMIT ?, ?`` incorrectly (four rows for
