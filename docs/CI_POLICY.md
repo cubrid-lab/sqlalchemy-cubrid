@@ -381,11 +381,13 @@ but every lane above builds CUBRIDdb from the cubrid-python v11.3.0.51 source re
 path (#1146) without multiplying the Python × CUBRID matrix:
 
 - It installs the project with `uv pip install -e ".[cubriddb,pycubrid]"`, the same
-  resolution as the `[cubriddb]` extra (the PyPI 9.3.0 source archive `9.3.0.0001`,
-  installed as 9.3.0.1). A failed driver build fails the install step, so an
+  resolution as the `[cubriddb]` extra. PyPI 9.3.0 has two source archives; uv and pip
+  currently discard `9.3.0.0002`, whose metadata contradicts its file name, and install
+  `9.3.0.0001` as 9.3.0.1. A failed driver build fails the install step, so an
   uninstallable driver is reported, not skipped.
 - It records the distribution version and the compiled-in `_cubrid.__version__` in
-  the job summary.
+  the job summary. Both archives report the same two values, so the summary cannot
+  tell which one was built; the install log shows the resolution.
 - It runs `make integration INTEGRATION_DRIVER=cubriddb` on one representative cell,
   Python 3.12 and CUBRID 11.4, without the default `--maxfail=25`, so the summary
   and the uploaded JUnit report list every failing test. pycubrid is installed too,
