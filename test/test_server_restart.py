@@ -332,12 +332,12 @@ def test_stop_after_commit_invalidates(
 # ---------------------------------------------------------------------------
 #
 # ``cubrid broker restart`` replaces every CAS process while cub_server keeps
-# running. These tests cover the SQLAlchemy pool side of that event with the
-# recommended pycubrid driver: idle pooled connections are reused safely, work
-# in flight fails as a disconnect instead of being reported as committed or
-# silently replayed, and fresh requests succeed once the broker is back. The
-# CUBRIDdb driver is intentionally not exercised here (#1151 starts with the
-# pycubrid sync path); its cub_server stop/start behaviour is covered above.
+# running. These tests cover the SQLAlchemy pool side of that event: idle
+# pooled connections are reused safely, work in flight fails as a disconnect
+# instead of being reported as committed or silently replayed, and fresh
+# requests succeed once the broker is back. The idle-reuse and mid-transaction
+# tests run with both drivers through ``driver_url``; the concurrent audited
+# workload runs with pycubrid.
 
 
 def _restart_broker(server: _Server) -> None:
@@ -387,16 +387,17 @@ def _ids(url: sa.engine.URL, table: sa.Table) -> list[int]:
 
 @pytest.mark.parametrize("pre_ping", [False, True], ids=["no_pre_ping", "pre_ping"])
 def test_broker_restart_while_idle_reuses_pool_safely(
-    server: _Server, pycubrid_url: sa.engine.URL, pre_ping: bool
+    server: _Server, driver_url: sa.engine.URL, pre_ping: bool
 ) -> None:
     """Idle pooled connections survive a broker restart; every checkout works.
 
-    Observed with pycubrid 1.17.0 on CUBRID 11.4 and 10.2: the first statement
-    on each pooled connection succeeds after the restart, with and without
+    Observed with pycubrid 1.17.0 on CUBRID 11.4 and 10.2, and with CUBRIDdb
+    v11.3.0.51 and the PyPI 9.3 release on CUBRID 11.4: the first statement on
+    each pooled connection succeeds after the restart, with and without
     ``pool_pre_ping``.
     """
     engine = sa.create_engine(
-        pycubrid_url, pool_size=3, max_overflow=0, pool_pre_ping=pre_ping, pool_timeout=30
+        driver_url, pool_size=3, max_overflow=0, pool_pre_ping=pre_ping, pool_timeout=30
     )
     try:
         conns = [engine.connect() for _ in range(3)]
@@ -420,16 +421,23 @@ def test_broker_restart_while_idle_reuses_pool_safely(
 
 @pytest.mark.parametrize("step", ["commit", "statement"])
 def test_broker_restart_mid_transaction_fails_without_replay(
-    server: _Server, pycubrid_url: sa.engine.URL, audit_table: sa.Table, step: str
+    server: _Server,
+    driver_url: sa.engine.URL,
+    pycubrid_url: sa.engine.URL,
+    audit_table: sa.Table,
+    step: str,
 ) -> None:
     """Work interrupted by a broker restart fails as a disconnect and is not stored.
 
     ``commit``: the INSERT ran before the restart and the COMMIT after it.
     ``statement``: the transaction began before the restart and the INSERT ran
     after it. Either way the error invalidates the connection, the row is not
-    committed, nothing replays it, and the next request succeeds.
+    committed, nothing replays it, and the next request succeeds. CUBRIDdb
+    reports the lost CAS as ``InterfaceError`` -20004 ("Cannot communicate with
+    server"), which the dialect classifies as a disconnect. The table is read
+    back through pycubrid, independently of the driver under test.
     """
-    engine = sa.create_engine(pycubrid_url, pool_size=1, max_overflow=0)
+    engine = sa.create_engine(driver_url, pool_size=1, max_overflow=0)
     try:
         conn = engine.connect()
         try:
