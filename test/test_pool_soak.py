@@ -18,9 +18,9 @@ rolled-back write is never stored, nothing appears that was never attempted,
 and a failed write may be stored only when its COMMIT lost the reply (in doubt).
 
 The workload runs twice, with separate evidence: worker threads on a sync
-``cubrid+pycubrid`` engine and its ``QueuePool``, and asyncio tasks on an async
-``cubrid+aiopycubrid`` engine and its ``AsyncAdaptedQueuePool``, whose driver has
-its own socket and reconnect code.
+engine and its ``QueuePool`` (``cubrid+pycubrid`` by default), and asyncio tasks
+on an async ``cubrid+aiopycubrid`` engine and its ``AsyncAdaptedQueuePool``,
+whose driver has its own socket and reconnect code.
 
 Environment:
 
@@ -29,6 +29,9 @@ Environment:
   ``make integration``; the multi-minute run is manual (docs/DEVELOPMENT.md).
 * ``CUBRID_SOAK_BROKER_RESTART=1``: run ``cubrid broker restart`` once, 40% into
   the run. Needs ``CUBRID_TEST_DOCKER_CONTAINER`` and fails without it.
+* ``CUBRID_SOAK_DRIVER`` (default ``pycubrid``): the sync run's driver,
+  ``pycubrid`` or ``CUBRIDdb`` (``cubrid://``). The async run always uses
+  aiopycubrid. Rows are read back through the same driver.
 * ``CUBRID_SOAK_REPORT``: path of a JSON report with the counts, resource
   samples and exact environment; the async run writes ``<name>-async.<ext>``
   next to it. Key counts also go to the JUnit report.
@@ -71,6 +74,7 @@ pytestmark = pytest.mark.integration
 _SECONDS_ENV = "CUBRID_SOAK_SECONDS"
 _RESTART_ENV = "CUBRID_SOAK_BROKER_RESTART"
 _REPORT_ENV = "CUBRID_SOAK_REPORT"
+_DRIVER_ENV = "CUBRID_SOAK_DRIVER"
 _SEED = 1151
 _WORKERS = 6
 _POOL = {"pool_size": 4, "max_overflow": 2, "pool_timeout": 30, "pool_pre_ping": True}
@@ -275,6 +279,7 @@ class _Workload:
                 "sqlalchemy": sa.__version__,
                 "sqlalchemy_cubrid": _version("sqlalchemy-cubrid"),
                 "pycubrid": _version("pycubrid"),
+                "cubriddb": _cubriddb_version(),
                 "cubrid_server": server_version,
                 "url": url.render_as_string(hide_password=True),
                 "pool": {"class": self.pool_class, **_POOL},
@@ -354,14 +359,31 @@ class _Workload:
             assert pool_events["invalidate"] == 0
 
 
-def _prepare() -> tuple[float, bool, sa.engine.URL, _Server | None]:
+def _cubriddb_version() -> str | None:
+    """The loaded CUBRIDdb extension's own version, e.g. ``9.3.0.0001``, if installed."""
+    try:
+        import _cubrid  # type: ignore[import-not-found]  # C extension without stubs
+    except ImportError:
+        return None
+    raw = getattr(_cubrid, "__version__", None)
+    return raw.decode() if isinstance(raw, bytes) else raw
+
+
+def _sync_driver() -> str:
+    driver = os.environ.get(_DRIVER_ENV, "pycubrid")
+    if driver not in _DRIVERS:
+        pytest.fail(f"{_DRIVER_ENV}={driver!r} is not one of {sorted(_DRIVERS)}", pytrace=False)
+    return driver
+
+
+def _prepare(driver: str = "pycubrid") -> tuple[float, bool, sa.engine.URL, _Server | None]:
     seconds = _seconds()
     restart = os.environ.get(_RESTART_ENV) == "1"
     if restart and not os.environ.get(_CONTAINER_ENV):
         pytest.fail(f"{_RESTART_ENV}=1 needs {_CONTAINER_ENV}", pytrace=False)
-    url = _base_url().set(drivername=_DRIVERS["pycubrid"])
+    url = _base_url().set(drivername=_DRIVERS[driver])
     if not _can_connect(url):
-        pytest.skip(f"pycubrid cannot connect to {url.render_as_string()}")
+        pytest.skip(f"{driver} cannot connect to {url.render_as_string()}")
     server = _Server(_container(), _base_url()) if restart else None
     if server is not None:
         server.ready_url = url
@@ -389,8 +411,8 @@ def _stored_ids(admin: sa.Engine, table: sa.Table) -> list[int]:
 def test_mixed_request_workload_is_audited(
     record_property: Callable[[str, object], None],
 ) -> None:
-    """Worker threads on a sync pycubrid engine and its ``QueuePool``."""
-    seconds, restart, url, server = _prepare()
+    """Worker threads on a sync engine and its ``QueuePool`` (``CUBRID_SOAK_DRIVER``)."""
+    seconds, restart, url, server = _prepare(_sync_driver())
     table, admin, server_version = _create_table(url)
 
     baseline = _resources()

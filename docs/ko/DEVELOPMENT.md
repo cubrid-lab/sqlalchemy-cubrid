@@ -389,7 +389,9 @@ CUBRID_SOAK_REPORT=test-results/soak-report.json \
 요청은 모두 성공해야 합니다. `CUBRID_SOAK_REPORT`는 횟수, 자원 샘플, 정확한 Python,
 SQLAlchemy, 방언, pycubrid, 서버 버전을 담은 JSON 보고서를 쓰며, 비동기 실행은 파일 이름에
 `-async`를 붙인 별도 보고서(`soak-report-async.json`)를 같은 위치에 씁니다. 주요 횟수는 JUnit
-속성에도 기록됩니다.
+속성에도 기록됩니다. `CUBRID_SOAK_DRIVER=CUBRIDdb`를 지정하면 동기 워크로드를 pycubrid 대신
+CUBRIDdb 드라이버(`cubrid://`)로 실행합니다. 비동기 실행은 항상 aiopycubrid를 쓰며, 보고서에는
+로드된 CUBRIDdb 버전이 기록됩니다.
 
 ### 전체 SA 테스트 스위트
 
