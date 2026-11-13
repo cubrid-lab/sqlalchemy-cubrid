@@ -28,6 +28,7 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 
 ### Removed
 
+- **Unused repository files (#1182)** — a stray `uv.lock` (nothing runs `uv sync`/`uv lock`; CI uses `uv pip install --group`), `codecov.yml` (no workflow uploads to Codecov), the unreferenced `docs/javascripts/mermaid-init.js` (diagrams render through `pymdownx.superfences`), the placeholder `test/fixtures/README.md`, the VHS script `demos/orm-demo.tape` (the published `docs/demo.gif` is rendered by `demos/render_gif.py` from `demos/orm-demo.json`) and the never-published MP4 recording kit (`demos/orm-demo-mp4.tape`, `demos/orm_alembic_video.py`, `demos/VIDEO_RECORDING.md`, `docs/assets/videos/.gitkeep`) are removed. No installed package code or supported behavior changes; refs [#1182](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1182).
 - **`make check-all`** — the alias of `make check`, deprecated in 1.11.5 and announced for removal after the next minor release (1.12.0), is removed. Run `make check` instead; `make test-offline` remains an alias of `make test` ([#1313](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1313)) by @yeongseon.
 
 ### Fixed
