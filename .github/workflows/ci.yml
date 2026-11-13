@@ -77,7 +77,6 @@ jobs:
               - '.github/workflows/ci.yml'
             release_tooling:
               - 'scripts/annotate_release_contributors.py'
-              - 'scripts/audit_historical_releases.py'
               - 'scripts/check_release_note_wrap.py'
               - 'scripts/compose_release_changelog.py'
               - 'scripts/lint_changelog.py'
@@ -89,7 +88,6 @@ jobs:
               - 'scripts/release_summary.py'
               - '.github/workflows/release-please.yml'
               - 'test/test_annotate_release_contributors.py'
-              - 'test/test_audit_historical_releases.py'
               - 'test/test_check_release_note_wrap.py'
               - 'test/test_compose_release_changelog.py'
               - 'test/test_lint_changelog_sections.py'
@@ -102,7 +100,7 @@ jobs:
               - 'test/test_release_workflows.py'
               - 'test/test_release_please_config.py'
             code:
-              - '!{docs/**,*.md,**/*.md,LICENSE,LICENSE.*,NOTICE,llms.txt,.gitignore,.gitattributes,scripts/annotate_release_contributors.py,scripts/audit_historical_releases.py,scripts/check_release_note_wrap.py,scripts/compose_release_changelog.py,scripts/lint_changelog.py,scripts/check_release_title.py,scripts/extract_release_notes.py,scripts/prepare_release.py,scripts/reconcile_release_labels.py,scripts/release_detect.py,scripts/release_summary.py,.github/workflows/release-please.yml,test/test_annotate_release_contributors.py,test/test_audit_historical_releases.py,test/test_check_release_note_wrap.py,test/test_compose_release_changelog.py,test/test_lint_changelog_sections.py,test/test_check_release_title.py,test/test_extract_release_notes.py,test/test_prepare_release.py,test/test_reconcile_release_labels.py,test/test_release_detect.py,test/test_release_summary.py,test/test_release_workflows.py,test/test_release_please_config.py}'
+              - '!{docs/**,*.md,**/*.md,LICENSE,LICENSE.*,NOTICE,llms.txt,.gitignore,.gitattributes,scripts/annotate_release_contributors.py,scripts/check_release_note_wrap.py,scripts/compose_release_changelog.py,scripts/lint_changelog.py,scripts/check_release_title.py,scripts/extract_release_notes.py,scripts/prepare_release.py,scripts/reconcile_release_labels.py,scripts/release_detect.py,scripts/release_summary.py,.github/workflows/release-please.yml,test/test_annotate_release_contributors.py,test/test_check_release_note_wrap.py,test/test_compose_release_changelog.py,test/test_lint_changelog_sections.py,test/test_check_release_title.py,test/test_extract_release_notes.py,test/test_prepare_release.py,test/test_reconcile_release_labels.py,test/test_release_detect.py,test/test_release_summary.py,test/test_release_workflows.py,test/test_release_please_config.py}'
             risk:
               - 'sqlalchemy_cubrid/dialect.py'
               - 'sqlalchemy_cubrid/base.py'
@@ -161,9 +159,6 @@ jobs:
               - 'test/test_generate_llms_full.py'
               - 'test/test_annotate_release_contributors.py'
               - 'test/test_check_release_note_wrap.py'
-              - 'test/test_audit_historical_releases.py'
-              - 'test/test_sync_historical_release.py'
-              - 'test/test_sync_verified_historical_releases.py'
               - 'test/test_make_integration.py'
               - 'test/test_makefile_targets.py'
               - 'test/test_reflection_probe.py'
