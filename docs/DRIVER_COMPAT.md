@@ -626,6 +626,11 @@ against the same server, and what the dialect does about it:
   avoids the error but leaks broker sessions: in a test on CUBRID 11.4, each pooled
   connection discarded that way kept a CAS process busy after garbage collection (20 busy
   sessions after five rounds of four connections), while explicit closing left none.
+- Process memory grows steadily under a pooled workload. In a 5-minute run of
+  `test/test_pool_soak.py` with `CUBRID_SOAK_DRIVER=CUBRIDdb` on CUBRID 11.4 (about 2,600
+  requests on a `QueuePool`), the RSS grew from 64 MB to 84 MB, about 7 KiB per request,
+  while the same run with CUBRIDdb v11.3.0.51 stayed within 1 MB. The cause inside the driver
+  was not investigated; long-running applications should watch their memory (#1151).
 - At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
   driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
   older than 11.3. It warns rather than refusing to connect. To fail fast instead, turn the
