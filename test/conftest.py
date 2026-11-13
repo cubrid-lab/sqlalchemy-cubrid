@@ -2,7 +2,7 @@
 
 The SA testing plugin (pytestplugin) is only loaded when running the full
 SA test suite against a live CUBRID instance via ``--dburi``.  Offline tests
-(test_dialects, test_compiler, test_types) work without it.
+(test_dialect_offline, test_compiler, test_types) work without it.
 
 When the compliance suite runs, a strict xfail is applied to every node id
 listed in ``test/known_failures.txt`` for the current lane (driver from the
