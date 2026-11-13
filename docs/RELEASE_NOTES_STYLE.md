@@ -114,6 +114,28 @@ A maintainer still reviews the resulting release PR for duplicate entries,
 accuracy, migration guidance, author and co-author credits, and actual first
 contribution evidence. No release may be published just to exercise formatting.
 
+## Credit review checklist
+
+Check these points on every release candidate, and on any change to a released
+section. They come from the 2026-11 audit of all published notes (#1220).
+
+1. Map each change entry to the pull request or commit that implements it, and
+   credit that PR's human author. An issue number is not a PR: find the PR that
+   closed the issue.
+2. Credit a co-author only for a verified human account with a substantive
+   commit. A commit that only merges `main`, resolves a `CHANGELOG.md` conflict
+   or reformats does not make its author a co-author.
+3. Never credit an agent or bot, including agent co-author trailers and agent
+   commit accounts. When an agent wrote every commit on a branch, credit the
+   human who opened and drove the PR.
+4. Upgrade notes and highlights that summarize credited entries stay
+   uncredited, and so do automated dependency updates.
+5. Add `(first contribution 🎉)` only after checking the author's earlier merged
+   PRs in this repository.
+6. Check that every implementing commit is inside the release's tag range on
+   GitHub, not only in a local tag, which can be stale. An entry whose change
+   shipped in another version belongs in that version's section.
+
 ## Historical releases
 
 One-time retrospective formatting is allowed only as a separately reviewed
