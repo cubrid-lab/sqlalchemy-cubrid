@@ -104,6 +104,7 @@ else:
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ 테스트됨 |
 | `main` (2026-09-29) | PyPI `CUBRID-Python` 9.3.x (드라이버 `9.3.0.1`) | 11.4 | 3.10 | ⚠️ CI가 아닌 이전 실행 한 건: 연결 성공, `BIGINT`를 `str`로 반환, 통합 테스트 25개 실패 ([알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
 | `main` (2026-11-12) | PyPI `CUBRID-Python` 9.3.x (드라이버 `9.3.0.1`) | 11.4 | 3.12 | ❌ CI가 아닌 로컬 실행: 빌드와 연결 성공, 통합 테스트 677개 중 100개 실패, 2개 오류 (#1143, [알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
+| `main` (2026-11-13) | PyPI `CUBRID-Python` 9.3.x (드라이버 `9.3.0.1`) | 11.4 | 3.12 | ❌ 수동 실행 lane, 필수 검사 아님: 방언 수정 후 통합 테스트 691개 중 55개 실패, 오류 없음 ([실행 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850), #1143, [알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
 
 ### CUBRID 서버 버전 지원
 
@@ -360,15 +361,21 @@ pip는 압축 파일 이름에서 버전을 읽어 `9.3.0.1`과 `9.3.0.2`를 보
 `b'9.3.0.0001'`). `[cubrid]`와 `[cubriddb]` extra는 버전 제한 없이 `CUBRID-Python`에 의존하므로
 같은 드라이버를 설치합니다. 두 extra는 지원되는 드라이버 계열을 위한, 유지되는 설치 방법입니다.
 
-이 드라이버 계열은 CI에서 실행하지 않습니다. 로컬 실행(2026-11-12, Python 3.12에서 빌드한
-드라이버 `9.3.0.1`, CUBRID 11.4, `make integration INTEGRATION_DRIVER=cubriddb`)에서 빌드와
-연결은 성공했지만 통합 테스트 677개 중 100개가 실패하고 2개가 오류였습니다(#1143). 이전 실행
-(2026-09, Python 3.10)은 25개 실패 후 중단되었습니다(#585). 다른 CUBRID 및 Python 버전은 검증되지
-않았습니다. 같은 서버에서 직접 확인한, 실패의 원인이 되는 드라이버 동작은 다음과 같습니다:
+이 드라이버 계열은 필수 CI에 포함되지 않습니다. 수동으로 실행하는
+`CUBRIDdb PyPI 9.3 Lane`(`.github/workflows/cubriddb-pypi.yml`)이 extra와 같은 방식으로 이 드라이버를
+설치하고 Python 3.12, CUBRID 11.4에서 전체 통합 테스트를 실행합니다. 그 결과는 근거 자료이지 머지
+조건이 아닙니다. `main`의 `c80d6e4`에서(2026-11-13,
+[실행 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850)) 선택된
+테스트 691개 중 55개가 실패했고 오류는 없었습니다(#1143). 아래 방언 변경 전의 첫 로컬 실행
+(2026-11-12)에서는 677개 중 100개가 실패하고 2개가 오류였으며, 이전 실행(2026-09, Python 3.10)은
+25개 실패 후 중단되었습니다(#585). 다른 CUBRID 및 Python 버전은 검증되지 않았습니다. 같은 서버에서
+직접 확인한, 실패의 원인이 되는 드라이버 동작과 방언의 처리는 다음과 같습니다:
 
-- `COUNT(*)`와 `ROWNUM`을 포함한 `BIGINT` 값을 `str`로 반환합니다(#583, #1145). 방언은 자체
-  카탈로그 카운트를 `int()`로 변환하므로(#584) `has_table()`과 `has_index()`는 영향을 받지
-  않지만, 애플리케이션의 `BIGINT` 컬럼과 집계 결과는 영향을 받습니다.
+- `COUNT(*)`와 `ROWNUM`을 포함한 `BIGINT` 값을 `str`로 반환합니다(#583). 연결된 CUBRIDdb가
+  11.3보다 오래되었으면, 방언은 드라이버가 `BIGINT`로 보고하는 정수 타입 및 타입 없는(`text()`)
+  결과 컬럼을 `int`로 변환합니다(#1145). `String` 같은 다른 타입의 컬럼은 해석하지 않으며, DB-API
+  커서에서 직접 읽은 행은 변환하지 않습니다. 방언 자체의 카탈로그 카운트는 이전부터 `int()`로
+  변환했습니다(#584).
 - 고정 타입이 없는 결과 컬럼(`cursor.description`의 타입 코드 0), 예를 들어
   `PERCENTILE_DISC(...) WITHIN GROUP (...)`, `PERCENTILE_CONT`, `MEDIAN`도 `str`
   (`'0'`, `'1.5000000000000000'`)로 반환합니다. pycubrid는 숫자를 반환합니다. SQLAlchemy의
@@ -377,17 +384,29 @@ pip는 압축 파일 이름에서 버전을 읽어 `9.3.0.1`과 `9.3.0.2`를 보
   문자열 그대로 둡니다. `Integer` 타입의 `percentile_disc()`는 `'1'`을 반환합니다. `CASE`,
   `COALESCE`, `NVL`, `IF`는 고정 타입이 있어 숫자를 반환합니다.
 - 바인딩 매개변수를 문자열로 서버에 보냅니다. `(1, 2)`를 바인딩한 `LIMIT ?, ?`가 두 행 대신 네
-  행을 반환했고, 방언은 `.limit()`, `.offset()`, `.fetch()`를 바인딩된 `LIMIT` 매개변수로
-  컴파일하므로 페이지 쿼리가 오류 없이 **잘못된 행**을 반환할 수 있습니다. 재귀 CTE와 `SET`
-  바인딩은 서버 오류 -456, -494로 실패합니다.
+  행을 반환했습니다. 연결된 CUBRIDdb가 11.3보다 오래되었으면, 방언은 `LIMIT offset, count`의
+  정수를 바인딩하지 않고 SQL에 직접 써 넣으므로(#1299) `.offset()`과 함께 쓴 `.limit()` /
+  `.fetch()`가 올바른 행을 반환합니다. 이런 문장은 `executemany()`로 실행할 수 없습니다. offset이
+  없는 limit은 그대로 바인딩합니다. CTE의 `VALUES` 목록처럼 바인딩한 값을 다시 조회하면 문자열로
+  반환됩니다. 재귀 CTE와 `SET` 바인딩은 서버 오류 -456, -494로 실패하며, 방언은 이를 우회하지
+  않습니다.
 - `bytes` 매개변수를 바인딩할 수 없습니다. 모든 매개변수를 UTF-8로 디코딩하므로 임의의 바이트를
   `BLOB`이나 `BIT VARYING` 컬럼에 바인딩하면 `UnicodeDecodeError`가 납니다. 모듈에 `Binary`도
   없어 SQLAlchemy `LargeBinary`와 `BLOB` 쓰기는 그보다 먼저 `AttributeError`로 실패합니다.
   이 드라이버로는 바이너리 데이터를 쓸 수 없습니다.
-- 제약 조건 위반(`NOT NULL`, 유일, 외래 키)이 `IntegrityError`가 아닌 `DatabaseError`로 발생하므로
-  SQLAlchemy는 이를 `sqlalchemy.exc.DatabaseError`로 보고합니다.
-- 연결에 `ping()`이 없어 `pool_pre_ping`이 모든 체크아웃을 끊긴 연결로 보고 다시 연결합니다.
-- 행을 `tuple`이 아닌 `list`로 반환하고, `SELECT LAST_INSERT_ID()`는 `NULL`을 반환합니다.
+- 서버 오류를 `DatabaseError`로 냅니다. 제약 조건 위반(`NOT NULL`, 유일, 외래 키)은
+  `IntegrityError`가 아니고 구문 오류(-493)는 `ProgrammingError`가 아니므로, SQLAlchemy는 이를
+  `sqlalchemy.exc.DatabaseError`로 보고합니다.
+- `cursor.description`의 `null_ok`가 반대로 보고됩니다. `NOT NULL` 컬럼은 `True`, NULL 허용 컬럼은
+  `False`입니다. 리플렉션은 카탈로그에서 NULL 허용 여부를 읽으므로 영향을 받지 않습니다.
+- 연결에 `ping()`이 없습니다. 방언은 `pool_pre_ping`에서 대신 `SELECT 1`로 확인하므로 살아 있는
+  풀 연결이 유지됩니다(#1304).
+- 행을 `tuple`이 아닌 `list`로 반환합니다. `SELECT LAST_INSERT_ID()`는 연결이 `AUTO_INCREMENT`
+  컬럼에 삽입하기 전까지 `NULL`을 반환하며, 방언은 이를 생성된 키가 없다는 뜻으로 읽습니다(#1302).
+- 이미 닫힌 연결을 다시 닫으면(풀이 닫은 연결이 나중에 가비지 컬렉션될 때 일어납니다) 드라이버
+  안에 Python 예외가 설정된 채로 남습니다. 그러면 같은 스레드의 관련 없는 이후 호출에서
+  `SystemError`가 날 수 있으며, `test/test_stress_pool.py`의 `engine.dispose()`에서 확인되었습니다.
+  방언은 아직 이를 우회하지 않습니다(#1320).
 - `cubrid://` 또는 `cubrid+cubriddb://` 엔진은 첫 연결 시 로드된 드라이버의 버전
   (`_cubrid.__version__`)을 읽고, 11.3보다 오래되었으면 `sqlalchemy.exc.SAWarning`을 냅니다.
   연결을 거부하지 않고 경고만 합니다. 즉시 실패하게 하려면 경고를 오류로 바꾸세요:

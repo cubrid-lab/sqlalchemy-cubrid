@@ -133,11 +133,13 @@ or build CUBRIDdb from the [cubrid-python](https://github.com/CUBRID/cubrid-pyth
 v11.3.0.51 source release, which CI tests; see
 [Building CUBRIDdb from source](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md#building-cubriddb-from-source).
 
-> **The PyPI 9.3.0 driver has known limitations.** It is not run in CI, and a local run
-> on CUBRID 11.4 and Python 3.12 failed part of the integration suite: it returns
-> `BIGINT` values as `str`, sends bound parameters as strings and cannot bind `bytes`.
-> The dialect warns (`SAWarning`) at the first connection when it finds a CUBRIDdb
-> older than 11.3. See the
+> **The PyPI 9.3.0 driver has known limitations.** It is not part of the required CI,
+> and a manually dispatched lane on CUBRID 11.4 and Python 3.12 still fails part of the
+> integration suite: the driver cannot bind `bytes`, raises constraint violations as
+> `DatabaseError` and sends bound parameters as strings, which the server rejects in
+> recursive CTEs and `SET` values. The dialect converts its `BIGINT` results to `int`
+> and writes paged `LIMIT` values into the SQL. It warns (`SAWarning`) at the first
+> connection when it finds a CUBRIDdb older than 11.3. See the
 > [known limitations](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
 > For new projects, use the recommended pure-Python `[pycubrid]` driver
 > (the `cubrid+pycubrid://` URL).
