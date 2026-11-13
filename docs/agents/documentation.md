@@ -23,13 +23,12 @@
 | `docs/SA_COMPAT.md` | SQLAlchemy internal APIs used by the dialect and their verified range |
 | `docs/QUICKSTART.md` | Start here: the first-connection course (one synchronous `cubrid+pycubrid://` path) |
 | `docs/LESSON_*.md` | Start here lessons 1–5: prepare, first query, save a row, rollback, clean up |
-| `benchmarks/` | Dated benchmark records with environment and exact commands |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security vulnerability reporting |
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
 | `docs/SUPPORT_MATRIX.md` | Supported Python, SQLAlchemy, CUBRID and driver versions |
 | `docs/CI_POLICY.md` | CI tiers, selected cells and gate requirements |
-| `docs/PERFORMANCE.md` | Performance measurements and benchmark pointers |
+| `docs/PERFORMANCE.md` | Performance guidance, known limitations and how to run the local measurement scripts |
 | `ROADMAP.md` | Current roadmap (public) |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 

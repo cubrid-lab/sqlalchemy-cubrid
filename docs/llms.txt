@@ -67,7 +67,7 @@ Key facts:
 
 ## Optional
 
-- [Performance Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/PERFORMANCE/): Benchmarks, performance characteristics, optimization tips
+- [Performance Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/PERFORMANCE/): Performance characteristics, optimization tips, known limitations, local measurement scripts
 - [Troubleshooting](https://cubrid-lab.github.io/sqlalchemy-cubrid/TROUBLESHOOTING/): Common errors by area and debugging techniques
 - [Development Guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/DEVELOPMENT/): Dev setup, tests, Docker integration, CI
 - [Full documentation in one file](https://cubrid-lab.github.io/sqlalchemy-cubrid/llms-full.txt): All user docs concatenated for LLM context

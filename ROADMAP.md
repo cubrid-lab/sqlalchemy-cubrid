@@ -20,9 +20,10 @@
 
 ## Next — Performance & Ecosystem
 
-- Performance work driven by measurements: the same-CUBRID baseline of 2026-10-12 in
-  [docs/PERFORMANCE.md](docs/PERFORMANCE.md#current-baseline-2026-10-12) is the reference
-  for later comparisons (#830)
+- Performance work driven by measurements: the local scripts in
+  [docs/PERFORMANCE.md](docs/PERFORMANCE.md#measuring-locally) measure the dialect, and
+  [cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark) owns reproducible
+  cross-driver experiments (#830, #1290)
 - Ecosystem examples and cookbook expansion
 - SQLAlchemy 2.1 is released and tested (CI pins 2.1.1); forward-compatibility investigation continues for SA 2.2+ pre-releases via the non-gating canary CI job
 
