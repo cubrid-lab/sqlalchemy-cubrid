@@ -9870,10 +9870,25 @@ against the same server, and what the dialect does about it:
   until the connection inserts into an `AUTO_INCREMENT` column; the dialect reads that as no
   generated key (#1302).
 - Closing a connection that is already closed, as happens when the pool closes a connection
-  that is later garbage-collected, leaves a Python exception set inside the driver. A later,
-  unrelated call in the same thread can then raise `SystemError`; this was seen during
-  `engine.dispose()` in `test/test_stress_pool.py`. The dialect does not work around it yet
-  (#1320).
+  that is later garbage-collected, leaves a Python exception set inside the driver: its
+  deallocator closes the connection a second time, the second disconnect fails with
+  `InterfaceError(-20002)`, and the error is never cleared. A later, unrelated call in the
+  same thread can then raise `SystemError`; this was seen during `engine.dispose()` in
+  `test/test_stress_pool.py` (#1320). Reproduction with the driver alone:
+
+  ```python
+  import threading, CUBRIDdb
+  conn = CUBRIDdb.connect("CUBRID:localhost:33000:testdb:::", "dba", "")
+  conn.close()
+  del conn                  # the deallocator closes it again
+  with threading.RLock():   # SystemError, caused by InterfaceError(-20002)
+      pass
+  ```
+
+  The dialect keeps closing connections explicitly. Leaving the close to the deallocator
+  avoids the error but leaks broker sessions: in a test on CUBRID 11.4, each pooled
+  connection discarded that way kept a CAS process busy after garbage collection (20 busy
+  sessions after five rounds of four connections), while explicit closing left none.
 - At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
   driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
   older than 11.3. It warns rather than refusing to connect. To fail fast instead, turn the
