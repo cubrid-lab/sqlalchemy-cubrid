@@ -372,9 +372,11 @@ CUBRID_TEST_DOCKER_CONTAINER=<container> \
 CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
 which turns every skip into a failure.
 
-`test/test_pool_soak.py` (#1151) is a bounded mixed request workload on one sync
-pycubrid engine with a `QueuePool` (`pool_size=4`, `max_overflow=2`,
-`pool_timeout=30`, `pool_pre_ping=True`). Six worker threads act as requests:
+`test/test_pool_soak.py` (#1151) is a bounded mixed request workload on a pycubrid
+pool (`pool_size=4`, `max_overflow=2`, `pool_timeout=30`, `pool_pre_ping=True`). It
+runs twice, with separate results: six worker threads on a sync `cubrid+pycubrid`
+engine with a `QueuePool`, and six asyncio tasks on an async `cubrid+aiopycubrid`
+engine with an `AsyncAdaptedQueuePool`. The requests are
 short reads, write transactions that commit or roll back, and idle gaps that leave
 pooled connections unused before reuse. It counts successful, failed and in-doubt
 requests by kind and stage, the pool's connect, checkout, checkin and invalidate
@@ -398,7 +400,9 @@ CUBRID_SOAK_REPORT=test-results/soak-report.json \
 fails without `CUBRID_TEST_DOCKER_CONTAINER`; requests that start after the broker
 is back must all succeed. `CUBRID_SOAK_REPORT` writes a JSON report with the
 counts, resource samples and the exact Python, SQLAlchemy, dialect, pycubrid and
-server versions; the main counts are also in the JUnit properties.
+server versions, and the async run writes its own report next to it with `-async`
+added to the file name (`soak-report-async.json`); the main counts are also in the
+JUnit properties.
 
 ### Full SA Test Suite
 
