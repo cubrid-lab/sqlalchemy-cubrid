@@ -362,9 +362,11 @@ CUBRID_TEST_DOCKER_CONTAINER=<container> \
 CI는 각 통합 잡의 마지막 단계에서 `CUBRID_REQUIRE_SERVER_RESTART=1`로 실행하며,
 이 변수는 모든 건너뛰기를 실패로 바꿉니다.
 
-`test/test_pool_soak.py`(#1151)는 `QueuePool`(`pool_size=4`, `max_overflow=2`,
-`pool_timeout=30`, `pool_pre_ping=True`)을 쓰는 동기 pycubrid 엔진 하나에서 혼합 요청
-워크로드를 제한된 시간 동안 실행합니다. 워커 스레드 6개가 요청 역할을 합니다. 짧은 읽기,
+`test/test_pool_soak.py`(#1151)는 pycubrid 풀(`pool_size=4`, `max_overflow=2`,
+`pool_timeout=30`, `pool_pre_ping=True`)에서 혼합 요청 워크로드를 제한된 시간 동안
+실행합니다. 결과를 따로 내는 두 번의 실행으로, 동기 `cubrid+pycubrid` 엔진과 `QueuePool`에서
+워커 스레드 6개가, 비동기 `cubrid+aiopycubrid` 엔진과 `AsyncAdaptedQueuePool`에서 asyncio
+태스크 6개가 요청 역할을 합니다. 요청은 짧은 읽기,
 커밋하거나 롤백하는 쓰기 트랜잭션, 그리고 풀 연결을 재사용 전까지 쉬게 하는 유휴 구간입니다.
 요청 종류와 단계별 성공, 실패, 불확실(in-doubt) 횟수, 풀의 connect, checkout, checkin,
 invalidate 이벤트, 지연 시간 백분위수를 세고, 프로세스 RSS, 열린 파일 디스크립터와 소켓
@@ -385,7 +387,8 @@ CUBRID_SOAK_REPORT=test-results/soak-report.json \
 `CUBRID_SOAK_BROKER_RESTART=1`은 실행 시간의 40% 지점에서 `cubrid broker restart`를
 실행하며, `CUBRID_TEST_DOCKER_CONTAINER`가 없으면 실패합니다. 브로커가 돌아온 뒤 시작한
 요청은 모두 성공해야 합니다. `CUBRID_SOAK_REPORT`는 횟수, 자원 샘플, 정확한 Python,
-SQLAlchemy, 방언, pycubrid, 서버 버전을 담은 JSON 보고서를 씁니다. 주요 횟수는 JUnit
+SQLAlchemy, 방언, pycubrid, 서버 버전을 담은 JSON 보고서를 쓰며, 비동기 실행은 파일 이름에
+`-async`를 붙인 별도 보고서(`soak-report-async.json`)를 같은 위치에 씁니다. 주요 횟수는 JUnit
 속성에도 기록됩니다.
 
 ### 전체 SA 테스트 스위트
