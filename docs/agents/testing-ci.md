@@ -11,7 +11,11 @@ including repository-tooling, fuzz, differential and Alembic tests):
 ```
 test/
 ├── conftest.py              # Fixtures: mock dialect, engine, connection
-├── test_compiler.py         # SQL compilation (SELECT, JOIN, CAST, LIMIT, DML extensions)
+├── _compiler_helpers.py     # Shared _compile/_norm helpers and users table for test_compiler*.py
+├── test_compiler.py         # SQL compilation (SELECT, JOIN, CTE, CAST, LIMIT, bind order)
+├── test_compiler_dml.py     # DML compilation (INSERT/UPDATE, ON DUPLICATE KEY UPDATE, REPLACE, MERGE)
+├── test_compiler_ddl.py     # DDL compilation (CREATE/DROP TABLE and INDEX, comments, TRUNCATE)
+├── test_compiler_types.py   # Type compiler output, types CUBRID rejects, native ENUM DDL
 ├── test_types.py            # Type system (all type compilations, reflection)
 ├── test_dialect_offline.py  # Dialect (reflection stubs, connection, isolation)
 ├── test_base.py             # ExecutionContext, IdentifierPreparer

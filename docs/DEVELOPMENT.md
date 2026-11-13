@@ -120,7 +120,10 @@ graph TD
     pkg --> alembic["alembic_impl.py - Alembic migration support"]
     pkg --> typed["py.typed - PEP 561 marker"]
 
-    tests --> tcomp["test_compiler.py - SQL compilation and DML construct tests"]
+    tests --> tcomp["test_compiler.py - SELECT and cross-statement compilation tests"]
+    tests --> tcompdml["test_compiler_dml.py - DML construct compilation tests"]
+    tests --> tcompddl["test_compiler_ddl.py - DDL compilation tests"]
+    tests --> tcomptypes["test_compiler_types.py - Type compilation tests"]
     tests --> ttypes["test_types.py - Type system tests"]
     tests --> tdialect["test_dialect_offline.py - Dialect tests (no DB)"]
     tests --> tbase["test_base.py - Base module tests"]
