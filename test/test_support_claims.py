@@ -316,7 +316,7 @@ def test_korean_matrix_keeps_the_cubriddb_policy() -> None:
             "CUBRIDdb driver row is missing or malformed",
         ),
         (
-            _ko_edit(PYPI_ROW, "CI에서 실행하지 않음", "✅ CI에서 테스트됨"),
+            _ko_edit(PYPI_ROW, "검증되지 않음", "✅ CI에서 테스트됨"),
             "PyPI CUBRID-Python 9.3.x is reported as verified",
         ),
         (

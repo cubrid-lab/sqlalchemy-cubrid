@@ -4823,7 +4823,7 @@ not verified. Driver versions below are Python driver versions, not CUBRID serve
 
 | Driver line | Verified combinations | Known limitations |
 |---|---|---|
-| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not run in CI. It builds on Python 3.12, but the integration suite does not succeed with it: a local run (2026-11-12, driver `9.3.0.1`, CUBRID 11.4, Python 3.12) had 100 failures and 2 errors out of 677 tests (#1143). Other CUBRID and Python versions are not verified | `BIGINT` values are returned as `str` (#583, #1145), bound parameters are sent as strings so `LIMIT ?, ?` can return the wrong rows, and `Binary` and `ping()` are missing (#585, #1143); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
+| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not verified: the integration suite does not succeed with it. In the manually dispatched `cubriddb-pypi.yml` lane (2026-11-13, driver `9.3.0.1`, CUBRID 11.4, Python 3.12), 55 of 691 tests failed after the dialect changes; the first local run (2026-11-12) had 100 failures and 2 errors in 677 tests (#1143). Other CUBRID and Python versions are not verified | `BIGINT` values are returned as `str` and bound parameters are sent as strings; the dialect converts `BIGINT` results and writes `LIMIT offset, count` values into the SQL (#583, #1145, #1299). `bytes` cannot be bound, constraint violations raise `DatabaseError`, recursive CTE and `SET` binds fail, and closing a closed connection can leave a `SystemError` (#585, #1143, #1320); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
 | CUBRIDdb, built from cubrid-python v11.3.0.51 | SQLAlchemy compliance lane on CUBRID 11.4 in PR CI; integration tests on CUBRID 10.2–11.4 in the full matrix (manual dispatch and every release); see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 | pycubrid (sync and async) | Integration and SQLAlchemy compliance lanes in PR and main CI; integration tests on CUBRID 10.2–11.4 in the full matrix; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 
@@ -9368,6 +9368,7 @@ CUBRIDdb limitations below.
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ Tested |
 | `main` (2026-09-29) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.10 | ⚠️ One earlier run, not in CI: connected; `BIGINT` returned as `str` and 25 integration failures ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
 | `main` (2026-11-12) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.12 | ❌ Local run, not in CI: builds and connects; 100 of 677 integration tests failed and 2 errored (#1143, [known limitations](#pypi-cubrid-python-93x-known-limitations)) |
+| `main` (2026-11-13) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.12 | ❌ Manually dispatched lane, not a required check: after the dialect changes, 55 of 691 integration tests failed, no errors ([run 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850), #1143, [known limitations](#pypi-cubrid-python-93x-known-limitations)) |
 
 ### CUBRID Server Version Support
 
@@ -9819,16 +9820,22 @@ discards that archive as inconsistent and installs the 2014 `9.3.0.0001` archive
 `[cubriddb]` extras depend on `CUBRID-Python` without a version bound, so they install that
 same driver. Both extras are maintained installation options for a supported driver line.
 
-This driver line is not run in CI. A local run (2026-11-12, driver `9.3.0.1` built on
-Python 3.12, CUBRID 11.4, `make integration INTEGRATION_DRIVER=cubriddb`) built and
-connected, but 100 of the 677 integration tests failed and 2 errored (#1143). An earlier
+This driver line is not part of the required CI. The manually dispatched
+`CUBRIDdb PyPI 9.3 Lane` (`.github/workflows/cubriddb-pypi.yml`) installs it the way the
+extras do and runs the whole integration suite on Python 3.12 and CUBRID 11.4. Its result is
+evidence, not a merge gate. On `main` at `c80d6e4` (2026-11-13,
+[run 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850)),
+55 of the 691 selected tests failed, with no errors (#1143). The first local run (2026-11-12),
+before the dialect changes below, had 100 failures and 2 errors in 677 tests, and an earlier
 run (2026-09, Python 3.10) failed 25 tests before stopping (#585). Other CUBRID and Python
 versions are not verified. The driver behaviour behind those failures, checked directly
-against the same server:
+against the same server, and what the dialect does about it:
 
-- `BIGINT` values, including `COUNT(*)` and `ROWNUM`, are returned as `str` (#583, #1145).
-  The dialect converts its own catalog counts with `int()` (#584), so `has_table()` and
-  `has_index()` do not depend on it, but application `BIGINT` columns and aggregates do.
+- `BIGINT` values, including `COUNT(*)` and `ROWNUM`, are returned as `str` (#583). When the
+  connected CUBRIDdb is older than 11.3, the dialect converts integer-typed and untyped
+  (`text()`) result columns that the driver reports as `BIGINT` to `int` (#1145). Columns of
+  other types, such as `String`, are never parsed, and rows read from a raw DB-API cursor are
+  not converted. The dialect's own catalog counts were already converted with `int()` (#584).
 - Result columns without a fixed type (type code 0 in `cursor.description`), such as
   `PERCENTILE_DISC(...) WITHIN GROUP (...)`, `PERCENTILE_CONT` and `MEDIAN`, are also returned
   as `str` (`'0'`, `'1.5000000000000000'`); pycubrid returns numbers. SQLAlchemy's `Boolean`
@@ -9837,19 +9844,28 @@ against the same server:
   (#1143). Other types are left as strings: an `Integer`-typed `percentile_disc()` returns
   `'1'`. `CASE`, `COALESCE`, `NVL` and `IF` have a fixed type and return numbers.
 - Bound parameters are sent to the server as strings. A bound `LIMIT ?, ?` with `(1, 2)`
-  returned four rows instead of two, and the dialect compiles `.limit()`, `.offset()` and
-  `.fetch()` to bound `LIMIT` parameters, so paged queries can return **wrong rows** without
-  an error. Recursive CTEs and `SET` binds fail with server errors -456 and -494.
+  returned four rows instead of two. When the connected CUBRIDdb is older than 11.3, the
+  dialect writes the plain integers of a `LIMIT offset, count` clause into the SQL instead of
+  binding them (#1299), so `.limit()` / `.fetch()` with `.offset()` return the right rows;
+  such a statement cannot run through `executemany()`. A limit without an offset is still
+  bound. Recursive CTEs and `SET` binds fail with server errors -456 and -494; the dialect
+  does not work around these.
 - It cannot bind `bytes` parameters: it decodes every parameter as UTF-8, so binding
   arbitrary bytes to a `BLOB` or `BIT VARYING` column raises `UnicodeDecodeError`. The module
   also has no `Binary`, so SQLAlchemy `LargeBinary` and `BLOB` writes fail earlier with
   `AttributeError`. Binary data cannot be written through this driver.
 - Constraint violations (`NOT NULL`, unique, foreign key) raise `DatabaseError`, not
   `IntegrityError`, so SQLAlchemy reports them as `sqlalchemy.exc.DatabaseError`.
-- Connections have no `ping()`, so `pool_pre_ping` treats every checkout as disconnected
-  and reconnects.
-- Rows are returned as `list` rather than `tuple`, and `SELECT LAST_INSERT_ID()` returns
-  `NULL`.
+- Connections have no `ping()`. For `pool_pre_ping` the dialect checks them with `SELECT 1`
+  instead, so a live pooled connection is kept (#1304).
+- Rows are returned as `list` rather than `tuple`. `SELECT LAST_INSERT_ID()` returns `NULL`
+  until the connection inserts into an `AUTO_INCREMENT` column; the dialect reads that as no
+  generated key (#1302).
+- Closing a connection that is already closed, as happens when the pool closes a connection
+  that is later garbage-collected, leaves a Python exception set inside the driver. A later,
+  unrelated call in the same thread can then raise `SystemError`; this was seen during
+  `engine.dispose()` in `test/test_stress_pool.py`. The dialect does not work around it yet
+  (#1320).
 - At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
   driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
   older than 11.3. It warns rather than refusing to connect. To fail fast instead, turn the

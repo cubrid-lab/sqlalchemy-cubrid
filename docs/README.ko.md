@@ -123,10 +123,12 @@ pip install "sqlalchemy-cubrid[cubriddb]"   # PyPI CUBRID-Python 9.3.0 ([cubrid]
 또는 CI에서 테스트하는 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스
 릴리스에서 CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](ko/DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요.
 
-> **PyPI 9.3.0 드라이버에는 알려진 제약이 있습니다.** CI에서 실행하지 않으며, CUBRID 11.4와
-> Python 3.12에서의 로컬 실행에서 통합 테스트 일부가 실패했습니다. `BIGINT` 값을 `str`로 반환하고,
-> 바인딩 매개변수를 문자열로 보내며, `bytes`를 바인딩할 수 없습니다. 방언은 첫 연결 시 11.3보다
-> 오래된 CUBRIDdb를 발견하면 경고(`SAWarning`)를 냅니다.
+> **PyPI 9.3.0 드라이버에는 알려진 제약이 있습니다.** 필수 CI에 포함되지 않으며, CUBRID 11.4와
+> Python 3.12에서 수동으로 실행하는 lane에서 통합 테스트 일부가 여전히 실패합니다. 드라이버는
+> `bytes`를 바인딩할 수 없고, 제약 조건 위반을 `DatabaseError`로 내며, 바인딩 매개변수를 문자열로
+> 보내 서버가 재귀 CTE와 `SET` 값에서 이를 거부합니다. 방언은 `BIGINT` 결과를 `int`로 변환하고
+> 페이지 쿼리의 `LIMIT` 값을 SQL에 직접 씁니다. 첫 연결 시 11.3보다 오래된 CUBRIDdb를 발견하면
+> 경고(`SAWarning`)를 냅니다.
 > [알려진 제약](ko/DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약)을 참고하세요.
 > 새 프로젝트에는 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요.
 
