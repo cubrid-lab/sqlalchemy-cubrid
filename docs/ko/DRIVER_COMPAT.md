@@ -404,9 +404,24 @@ pip는 압축 파일 이름에서 버전을 읽어 `9.3.0.1`과 `9.3.0.2`를 보
 - 행을 `tuple`이 아닌 `list`로 반환합니다. `SELECT LAST_INSERT_ID()`는 연결이 `AUTO_INCREMENT`
   컬럼에 삽입하기 전까지 `NULL`을 반환하며, 방언은 이를 생성된 키가 없다는 뜻으로 읽습니다(#1302).
 - 이미 닫힌 연결을 다시 닫으면(풀이 닫은 연결이 나중에 가비지 컬렉션될 때 일어납니다) 드라이버
-  안에 Python 예외가 설정된 채로 남습니다. 그러면 같은 스레드의 관련 없는 이후 호출에서
-  `SystemError`가 날 수 있으며, `test/test_stress_pool.py`의 `engine.dispose()`에서 확인되었습니다.
-  방언은 아직 이를 우회하지 않습니다(#1320).
+  안에 Python 예외가 설정된 채로 남습니다. 해제 함수가 연결을 한 번 더 닫고, 두 번째 연결 해제가
+  `InterfaceError(-20002)`로 실패하지만 그 오류를 지우지 않기 때문입니다. 그러면 같은 스레드의
+  관련 없는 이후 호출에서 `SystemError`가 날 수 있으며, `test/test_stress_pool.py`의
+  `engine.dispose()`에서 확인되었습니다(#1320). 드라이버만으로 재현하는 방법:
+
+  ```python
+  import threading, CUBRIDdb
+  conn = CUBRIDdb.connect("CUBRID:localhost:33000:testdb:::", "dba", "")
+  conn.close()
+  del conn                  # 해제 함수가 한 번 더 닫음
+  with threading.RLock():   # InterfaceError(-20002)로 인한 SystemError
+      pass
+  ```
+
+  방언은 계속 연결을 명시적으로 닫습니다. 닫기를 해제 함수에 맡기면 이 오류는 피하지만 브로커
+  세션이 누수됩니다. CUBRID 11.4에서 시험한 결과, 그렇게 버린 풀 연결마다 가비지 컬렉션 후에도
+  CAS 프로세스가 사용 중으로 남았고(연결 4개씩 5회 반복 후 20개), 명시적으로 닫으면 하나도 남지
+  않았습니다.
 - `cubrid://` 또는 `cubrid+cubriddb://` 엔진은 첫 연결 시 로드된 드라이버의 버전
   (`_cubrid.__version__`)을 읽고, 11.3보다 오래되었으면 `sqlalchemy.exc.SAWarning`을 냅니다.
   연결을 거부하지 않고 경고만 합니다. 즉시 실패하게 하려면 경고를 오류로 바꾸세요:
