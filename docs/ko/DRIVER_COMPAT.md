@@ -387,14 +387,18 @@ pip는 압축 파일 이름에서 버전을 읽어 `9.3.0.1`과 `9.3.0.2`를 보
   행을 반환했습니다. 연결된 CUBRIDdb가 11.3보다 오래되었으면, 방언은 `LIMIT offset, count`의
   정수를 바인딩하지 않고 SQL에 직접 써 넣으므로(#1299) `.offset()`과 함께 쓴 `.limit()` /
   `.fetch()`가 올바른 행을 반환합니다. 이런 문장은 `executemany()`로 실행할 수 없습니다. offset이
-  없는 limit은 그대로 바인딩합니다. 재귀 CTE와 `SET` 바인딩은 서버 오류 -456, -494로 실패하며,
-  방언은 이를 우회하지 않습니다.
+  없는 limit은 그대로 바인딩합니다. CTE의 `VALUES` 목록처럼 바인딩한 값을 다시 조회하면 문자열로
+  반환됩니다. 재귀 CTE와 `SET` 바인딩은 서버 오류 -456, -494로 실패하며, 방언은 이를 우회하지
+  않습니다.
 - `bytes` 매개변수를 바인딩할 수 없습니다. 모든 매개변수를 UTF-8로 디코딩하므로 임의의 바이트를
   `BLOB`이나 `BIT VARYING` 컬럼에 바인딩하면 `UnicodeDecodeError`가 납니다. 모듈에 `Binary`도
   없어 SQLAlchemy `LargeBinary`와 `BLOB` 쓰기는 그보다 먼저 `AttributeError`로 실패합니다.
   이 드라이버로는 바이너리 데이터를 쓸 수 없습니다.
-- 제약 조건 위반(`NOT NULL`, 유일, 외래 키)이 `IntegrityError`가 아닌 `DatabaseError`로 발생하므로
-  SQLAlchemy는 이를 `sqlalchemy.exc.DatabaseError`로 보고합니다.
+- 서버 오류를 `DatabaseError`로 냅니다. 제약 조건 위반(`NOT NULL`, 유일, 외래 키)은
+  `IntegrityError`가 아니고 구문 오류(-493)는 `ProgrammingError`가 아니므로, SQLAlchemy는 이를
+  `sqlalchemy.exc.DatabaseError`로 보고합니다.
+- `cursor.description`의 `null_ok`가 반대로 보고됩니다. `NOT NULL` 컬럼은 `True`, NULL 허용 컬럼은
+  `False`입니다. 리플렉션은 카탈로그에서 NULL 허용 여부를 읽으므로 영향을 받지 않습니다.
 - 연결에 `ping()`이 없습니다. 방언은 `pool_pre_ping`에서 대신 `SELECT 1`로 확인하므로 살아 있는
   풀 연결이 유지됩니다(#1304).
 - 행을 `tuple`이 아닌 `list`로 반환합니다. `SELECT LAST_INSERT_ID()`는 연결이 `AUTO_INCREMENT`

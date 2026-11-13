@@ -9848,14 +9848,18 @@ against the same server, and what the dialect does about it:
   dialect writes the plain integers of a `LIMIT offset, count` clause into the SQL instead of
   binding them (#1299), so `.limit()` / `.fetch()` with `.offset()` return the right rows;
   such a statement cannot run through `executemany()`. A limit without an offset is still
-  bound. Recursive CTEs and `SET` binds fail with server errors -456 and -494; the dialect
-  does not work around these.
+  bound. A bound value that is selected back, such as a `VALUES` list in a CTE, is returned
+  as a string. Recursive CTEs and `SET` binds fail with server errors -456 and -494; the
+  dialect does not work around these.
 - It cannot bind `bytes` parameters: it decodes every parameter as UTF-8, so binding
   arbitrary bytes to a `BLOB` or `BIT VARYING` column raises `UnicodeDecodeError`. The module
   also has no `Binary`, so SQLAlchemy `LargeBinary` and `BLOB` writes fail earlier with
   `AttributeError`. Binary data cannot be written through this driver.
-- Constraint violations (`NOT NULL`, unique, foreign key) raise `DatabaseError`, not
-  `IntegrityError`, so SQLAlchemy reports them as `sqlalchemy.exc.DatabaseError`.
+- Server errors are raised as `DatabaseError`: constraint violations (`NOT NULL`, unique,
+  foreign key) are not `IntegrityError`, and a syntax error (-493) is not `ProgrammingError`,
+  so SQLAlchemy reports them as `sqlalchemy.exc.DatabaseError`.
+- `cursor.description` reports `null_ok` inverted: `True` for `NOT NULL` columns and `False`
+  for nullable ones. Reflection reads nullability from the catalog and is not affected.
 - Connections have no `ping()`. For `pool_pre_ping` the dialect checks them with `SELECT 1`
   instead, so a live pooled connection is kept (#1304).
 - Rows are returned as `list` rather than `tuple`. `SELECT LAST_INSERT_ID()` returns `NULL`
