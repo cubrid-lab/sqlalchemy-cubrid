@@ -288,10 +288,10 @@ are not temporary tooling; they follow the release and compatibility rules inste
 
 Examples from this repository:
 
-- The one-time historical release sync helpers (`scripts/audit_historical_releases.py`,
-  `scripts/sync_historical_release.py` and `scripts/sync_verified_historical_releases.py`)
-  are tracked for removal in #1182. They stay until the release publication and
-  credit checks finish; removal has not happened yet.
+- The one-time historical release sync helpers (three scripts with their tests and
+  an audit record) were tracked in #1182 with the removal trigger "after the release
+  publication and credit checks finish". Once #1220 verified every published Release
+  body, they were removed with their CI path filters checked.
 - The former `check-all` Make alias of `make check` shows the full cycle: its
   1.11.5 deprecation notice named the trigger (removal after the next minor
   release), and after 1.12.0 shipped it was removed in PR #1314 with its callers
