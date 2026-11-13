@@ -275,7 +275,7 @@ stmt = (
 
 오프라인 스위트는 `test/test_compiler.py`, `test_types.py`,
 `test_requirements.py`, `test_dialect_offline.py`, `test_base.py`,
-`test_alembic*.py`, `test_dialects.py`, `test_trace.py`와
+`test_alembic*.py`, `test_trace.py`와
 리플렉션, 컬렉션, Alembic 플러그인 등록, 드라이버 계약, 저장소 도구를 다루는
 그 밖의 많은 모듈에 걸쳐 있습니다. 파일별 및 전체 테스트 수는 거의 모든 PR마다
 바뀌므로, 여기에 고정된 스냅숏을 두는 대신 `pytest test/ -m "not integration and

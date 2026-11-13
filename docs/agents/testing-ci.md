@@ -17,7 +17,6 @@ test/
 ├── test_base.py             # ExecutionContext, IdentifierPreparer
 ├── test_requirements.py     # SA requirement flags (parametrized)
 ├── test_alembic.py          # Alembic CubridImpl import/registry
-├── test_dialects.py         # Edge cases
 ├── test_pycubrid_dialect.py # PyCubridDialect (pure Python driver variant)
 ├── test_integration.py      # Live DB tests (skipped offline)
 └── test_suite.py            # SA test suite runner (skipped offline)

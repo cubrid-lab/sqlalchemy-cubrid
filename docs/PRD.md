@@ -273,7 +273,7 @@ stmt = (
 
 The offline suite spans `test/test_compiler.py`, `test_types.py`,
 `test_requirements.py`, `test_dialect_offline.py`, `test_base.py`,
-`test_alembic*.py`, `test_dialects.py`, `test_trace.py`, and
+`test_alembic*.py`, `test_trace.py`, and
 many more modules covering reflection, collections, Alembic plugin
 registration, driver contracts and repository tooling. Per-file and total test
 counts shift with nearly every PR; run `pytest test/ -m "not integration and
