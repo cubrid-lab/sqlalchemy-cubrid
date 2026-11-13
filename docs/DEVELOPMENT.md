@@ -402,7 +402,9 @@ is back must all succeed. `CUBRID_SOAK_REPORT` writes a JSON report with the
 counts, resource samples and the exact Python, SQLAlchemy, dialect, pycubrid and
 server versions, and the async run writes its own report next to it with `-async`
 added to the file name (`soak-report-async.json`); the main counts are also in the
-JUnit properties.
+JUnit properties. `CUBRID_SOAK_DRIVER=CUBRIDdb` runs the sync workload with the
+CUBRIDdb driver (`cubrid://`) instead of pycubrid; the async run always uses
+aiopycubrid, and the report records the loaded CUBRIDdb version.
 
 ### Full SA Test Suite
 
