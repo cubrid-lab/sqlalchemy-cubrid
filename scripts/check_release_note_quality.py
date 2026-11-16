@@ -21,9 +21,9 @@ LINK_URL = re.compile(r"\]\(https?://[^\s)]+\)")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
 LENGTH_EXCEPTION = re.compile(
-    r"<!-- release-note-length-exception: version=(\\d+\\.\\d+\\.\\d+); "
-    r"issue=(https://github\\.com/cubrid-lab/sqlalchemy-cubrid/issues/\\d+); "
-    r"reason=([^<>\\n]{40,}) -->"
+    r"<!-- release-note-length-exception: version=(\d+\.\d+\.\d+); "
+    r"issue=(https://github\.com/cubrid-lab/sqlalchemy-cubrid/issues/\d+); "
+    r"reason=([^<>\n]{40,}) -->"
 )
 
 MAX_SUMMARY_CHARS = 900
