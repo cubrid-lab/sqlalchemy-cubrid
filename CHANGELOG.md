@@ -150,11 +150,15 @@ This release improves the contributor verification workflow and its test reports
 
 ## [1.11.7] - 2026-10-25
 
+This documentation-only patch removes obsolete agent- and tool-specific commit-message footer instructions. It does not change SQLAlchemy dialect behavior, package installation, or supported APIs.
+
 ### Documentation
 
 - **Simplified the agent commit-message example** — removed the agent-specific and tool-specific footer guidance from the repository's commit example. This is a documentation-only update; it does not change the dialect or runtime behavior ([#1043](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1043), [commit b51b29f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b51b29fa793d12d4ec54d9ef65adb3c43cd2ae5f)) by @yeongseon.
 
 ## [1.11.6] - 2026-10-24
+
+This maintenance release corrects a stale development-test reference and removes a temporary release-preparation override after v1.11.5 was published. Runtime SQLAlchemy dialect behavior is unchanged.
 
 ### Documentation
 
