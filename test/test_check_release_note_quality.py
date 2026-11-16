@@ -79,6 +79,29 @@ def test_large_body_requires_consolidation_even_when_each_entry_is_short() -> No
     assert any("release body" in p for p in problems), problems
 
 
+def test_large_number_of_entries_does_not_bypass_total_length_gate() -> None:
+    notes = "This release corrects many SQL compilation edge cases.\\n\\n### Fixed\\n\\n"
+    notes += "".join(
+        f"- **Compiler case {n}** — " + "Corrected operator compilation. " * 18 + "\\n"
+        for n in range(70)
+    )
+    problems = MODULE.violations(notes)
+    assert any("release body" in p and "30000" in p for p in problems), problems
+
+
+def test_publisher_and_candidate_ci_keep_strict_quality_review() -> None:
+    publish = (ROOT / ".github/workflows/publish-pypi.yml").read_text()
+    prepare = (ROOT / ".github/workflows/release-please.yml").read_text()
+    ci = (ROOT / ".github/workflows/ci.yml").read_text()
+    makefile = (ROOT / "Makefile").read_text()
+    assert 'run: make release-check VERSION="$VERSION"' in publish
+    assert "RELEASE_NOTES_ADVISORY" not in publish
+    assert 'RELEASE_NOTES_ADVISORY=1' in prepare
+    assert "Reject uncurated release candidate notes" in ci
+    assert "python3 scripts/check_release_note_quality.py" in ci
+    assert "$(PYTHON) scripts/check_release_note_quality.py --version $(VERSION)" in makefile
+
+
 def test_link_urls_do_not_count_as_visible_prose() -> None:
     huge_url = "https://example.org/" + "a" * 1500
     notes = GOOD.replace("https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1356", huge_url)
