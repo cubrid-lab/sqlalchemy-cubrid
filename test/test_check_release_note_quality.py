@@ -86,10 +86,7 @@ def test_link_urls_do_not_count_as_visible_prose() -> None:
 
 
 def test_markdown_code_block_cannot_be_mistaken_for_generated_changes() -> None:
-    notes = (
-        GOOD
-        + "\n  ```text\n  * raw example in a code block\n  ```\n"
-    )
+    notes = GOOD + "\n  ```text\n  * raw example in a code block\n  ```\n"
     assert MODULE.violations(notes) == []
 
 
