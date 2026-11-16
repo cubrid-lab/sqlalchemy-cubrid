@@ -79,6 +79,18 @@ The checker requires:
   link supporting PRs and documentation; **do not remove essential warnings or
   verified human credits just to make the gate green**.
 
+An exceptional release with material migration or compatibility details that cannot
+be shortened safely can use one reviewed, version-specific HTML comment **before
+the first section**:
+
+`<!-- release-note-length-exception: version=1.12.3; issue=https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1356; reason=Independent maintainer review confirms these unusual migration details must remain. -->`
+
+The version, linked repository issue and substantive rationale are mandatory.
+The exception relaxes **only length limits**, never missing summaries, raw
+generated entries, duplicates, invalid sections or Markdown errors. The
+independent reviewer must verify the exception and its evidence. Do not use
+`--advisory` or `RELEASE_NOTES_ADVISORY=1` as a publication exception.
+
 These are objective tripwires, not automatic approval of technical accuracy or
 permission to omit meaningful changes. A short release is expected to be short;
 a large release may have many meaningful entries. The generator uses the
