@@ -113,6 +113,44 @@ def test_markdown_code_block_cannot_be_mistaken_for_generated_changes() -> None:
     assert MODULE.violations(notes) == []
 
 
+def test_nested_fences_do_not_hide_raw_release_notes() -> None:
+    notes = (
+        "This patch improves error reporting.\\n\\n### Fixed\\n\\n"
+        "- **Examples** — Preserve a literal marker.\\n\\n"
+        "  ````text\\n"
+        "  ~~~\\n"
+        "  ```\\n"
+        "  ````\\n"
+        "* raw release-please commit subject\\n"
+    )
+    assert any("uncurated" in p for p in MODULE.violations(notes))
+
+
+def test_reviewed_length_exception_is_explicit_and_version_scoped() -> None:
+    annotation = (
+        "<!-- release-note-length-exception: version=1.12.3; "
+        "issue=https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1356; "
+        "reason=Independent maintainer review preserves unusual SQL migration details. -->"
+    )
+    notes = (
+        "This version corrects several compatibility issues.\\n"
+        + annotation
+        + "\\n\\n### Fixed\\n\\n"
+        + "- **Compilation** — "
+        + "Preserves complex but necessary upgrade guidance. " * 33
+        + "\\n"
+    )
+    assert MODULE.violations(notes, version="1.12.3") == []
+    invalid = MODULE.violations(notes, version="1.12.4")
+    assert any("wrong-version" in p for p in invalid), invalid
+    raw = notes.replace("- **Compilation** — ", "* compiler: ")
+    assert any("uncurated" in p for p in MODULE.violations(raw, version="1.12.3"))
+    missing_summary = notes.replace(
+        "This version corrects several compatibility issues.\\n", ""
+    )
+    assert any("missing introductory" in p for p in MODULE.violations(missing_summary, version="1.12.3"))
+
+
 def test_only_targeted_release_is_checked() -> None:
     changelog = (
         "# Changelog\n\n## [Unreleased]\n\n"
