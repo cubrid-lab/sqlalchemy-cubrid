@@ -72,7 +72,7 @@ def test_objective_regressions(notes: str, message: str) -> None:
 def test_large_body_requires_consolidation_even_when_each_entry_is_short() -> None:
     notes = "This version improves diagnostic messages.\n\n### Fixed\n\n"
     notes += "".join(
-        f"- **Diagnostic {n}** — " + "Reworded a single error message. " * 22 + "\n"
+        f"- **Diagnostic {n}** — " + "Reworded a single error message. " * 28 + "\n"
         for n in range(20)
     )
     problems = MODULE.violations(notes)
