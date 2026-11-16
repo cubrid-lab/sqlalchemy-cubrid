@@ -72,8 +72,10 @@ def violations(section: str, version: str | None = None) -> list[str]:
             or match.group(1) != version.removeprefix("v")
             or (first_heading >= 0 and match.start() > first_heading)
         ):
-            issues.append("invalid or wrong-version release-note-length-exception; "
-                          "specify version, linked issue and a substantive review reason")
+            issues.append(
+                "invalid or wrong-version release-note-length-exception; "
+                "specify version, linked issue and a substantive review reason"
+            )
         else:
             reviewed_length = True
 
