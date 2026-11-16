@@ -72,7 +72,7 @@ The checker requires:
   not the raw `* commit subject (hash)` emitted by release-please.
 - No exact duplicate entries, no entry longer than 1,100 visible characters,
   and a proportional overall readability budget of 850 visible characters per
-  entry (at least 6,000 characters for a short release). URLs and invisible
+  entry (at least 6,000 and at most 30,000 characters overall). URLs and invisible
   HTML comments do not count as reader-facing characters.
 - All compatibility, deprecation, security, migration and support boundaries
   remain technically correct. Split long explanations by user-relevant topic or
