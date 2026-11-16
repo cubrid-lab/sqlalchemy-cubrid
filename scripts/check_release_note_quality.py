@@ -24,6 +24,7 @@ MAX_SUMMARY_CHARS = 900
 MAX_ENTRY_CHARS = 1100
 CHARS_PER_ENTRY = 850
 MIN_BODY_BUDGET = 6000
+MAX_BODY_CHARS = 30000
 
 
 def release_section(changelog: str, version: str) -> str:
@@ -117,7 +118,7 @@ def violations(section: str) -> list[str]:
         else:
             seen[key] = line_no
     body_chars = len(_readable(section))
-    budget = max(MIN_BODY_BUDGET, CHARS_PER_ENTRY * len(entries))
+    budget = min(MAX_BODY_CHARS, max(MIN_BODY_BUDGET, CHARS_PER_ENTRY * len(entries)))
     if body_chars > budget:
         issues.append(
             f"release body is {body_chars} readable characters for {len(entries)} entries "
