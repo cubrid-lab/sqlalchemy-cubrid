@@ -94,7 +94,9 @@ jobs:
           python /tmp/compose-release.py --base-changelog /tmp/base-changelog.md --generated-changelog /tmp/release-changelog-attributed.md --version "$version"
           python /tmp/check-release-note-wrap.py --input CHANGELOG.md --version "$version"
           python -m pip install build twine packaging
-          make release-check VERSION="$version"
+          # Generation must remain possible before the human curates the candidate.
+          # Final-head PR CI and the guarded publisher always use strict validation.
+          make release-check VERSION="$version" RELEASE_NOTES_ADVISORY=1
           rm -rf dist build ./*.egg-info
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'

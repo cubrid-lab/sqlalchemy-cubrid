@@ -237,6 +237,9 @@ release-check: ## Read-only release consistency gate (run by release-please.yml 
 		if [ "$$ACTUAL" != "$(VERSION)" ]; then echo "ERROR: $(SRC).__version__ is $$ACTUAL, expected $(VERSION)"; exit 1; fi; \
 		echo "OK: $(SRC).__version__ == $(VERSION)"
 	$(PYTHON) scripts/lint_changelog.py
+	# Only the release generator may use advisory mode to prepare a reviewable PR.
+	# The publisher and final-head CI use the strict default and fail closed.
+	$(PYTHON) scripts/check_release_note_quality.py --version $(VERSION) $(if $(filter 1,$(RELEASE_NOTES_ADVISORY)),--advisory,)
 	$(PYTHON) scripts/extract_release_notes.py v$(VERSION)
 	rm -f RELEASE_NOTES.md
 	rm -rf dist

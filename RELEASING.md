@@ -106,6 +106,24 @@ and versioned through the existing Conventional Commit/`Release-As` procedure;
 do not use a normal PATCH or bypass any review, tests or publish safeguards.
 This policy does not depend on or govern the independent `pycubrid` repository.
 
+## Release-note quality and publication block
+
+In addition to headings, Markdown wrapping, author evidence and package
+consistency, `make release-check VERSION=X.Y.Z` runs the strict reader-quality
+gate from `scripts/check_release_note_quality.py` on the **candidate version
+only**. The `lint` PR job checks release-please candidate heads before merge.
+The guarded PyPI publisher also invokes `make release-check` without
+`RELEASE_NOTES_ADVISORY`; a failure blocks tagging and publishing.
+
+The preparation workflow uses `RELEASE_NOTES_ADVISORY=1` only to let the bot
+compose and push a candidate that may still contain generated entries. An
+advisory warning is **not** a passed release review. The maintainer freezes the
+candidate using the existing `autorelease: review` procedure, curates the
+generated entries in the canonical `CHANGELOG.md` and validates the final
+head. Follow `docs/RELEASE_NOTES_STYLE.md` and retain contributor credits and
+upgrade warnings. This editorial gate does not change version selection,
+release cadence or the existing approval/publisher permissions.
+
 ## Normal flow
 
 `release-please.yml` → reviewed release PR → squash merge → `publish-pypi.yml`.
