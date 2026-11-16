@@ -19,6 +19,12 @@ HEADING = re.compile(r"^### ")
 CURATED = re.compile(r"^- \*\*([^*]+)\*\*\s+—\s+\S")
 LINK_URL = re.compile(r"\]\(https?://[^\s)]+\)")
 HTML_COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
+FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+LENGTH_EXCEPTION = re.compile(
+    r"<!-- release-note-length-exception: version=(\\d+\\.\\d+\\.\\d+); "
+    r"issue=(https://github\\.com/cubrid-lab/sqlalchemy-cubrid/issues/\\d+); "
+    r"reason=([^<>\\n]{40,}) -->"
+)
 
 MAX_SUMMARY_CHARS = 900
 MAX_ENTRY_CHARS = 1100
@@ -45,24 +51,48 @@ def _readable(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def violations(section: str) -> list[str]:
+def violations(section: str, version: str | None = None) -> list[str]:
     """Find deterministic editorial regressions in a single release candidate."""
     issues: list[str] = []
     summary: list[str] = []
     entries: list[tuple[int, str]] = []
     current_line = 0
     current_parts: list[str] = []
-    in_fence = False
+    fence: tuple[str, int] | None = None
     in_sections = False
+    reviewed_length = False
+    exception_count = section.count("release-note-length-exception")
+    if exception_count:
+        match = LENGTH_EXCEPTION.search(section)
+        first_heading = section.find("### ")
+        if (
+            exception_count != 1
+            or match is None
+            or version is None
+            or match.group(1) != version.removeprefix("v")
+            or (first_heading >= 0 and match.start() > first_heading)
+        ):
+            issues.append("invalid or wrong-version release-note-length-exception; "
+                          "specify version, linked issue and a substantive review reason")
+        else:
+            reviewed_length = True
 
     def finish_entry() -> None:
         if current_parts:
             entries.append((current_line, "\n".join(current_parts)))
 
     for number, line in enumerate(section.splitlines(), 1):
-        if line.lstrip().startswith((chr(96) * 3, "~" * 3)):
-            in_fence = not in_fence
-        if in_fence:
+        marker = FENCE.match(line)
+        if marker:
+            token = marker.group(1)
+            if fence is None:
+                fence = (token[0], len(token))
+            elif token[0] == fence[0] and len(token) >= fence[1] and line.strip() == token:
+                fence = None
+            if current_parts:
+                current_parts.append(line)
+            continue
+        if fence is not None:
             if current_parts:
                 current_parts.append(line)
             continue
@@ -85,10 +115,12 @@ def violations(section: str) -> list[str]:
             issues.append(f"line {number}: orphan text outside a change entry")
 
     finish_entry()
+    if fence is not None:
+        issues.append("unclosed Markdown code fence in release notes")
     lead = _readable("\n".join(summary))
     if not lead:
         issues.append("missing introductory user-impact summary before the first ### heading")
-    elif len(lead) > MAX_SUMMARY_CHARS:
+    elif len(lead) > MAX_SUMMARY_CHARS and not reviewed_length:
         issues.append(
             f"introductory summary is {len(lead)} characters (max {MAX_SUMMARY_CHARS}); "
             "move details to the appropriate entries"
@@ -107,7 +139,7 @@ def violations(section: str) -> list[str]:
                 "instead of a raw release-please commit subject"
             )
         prose = _readable(entry)
-        if len(prose) > MAX_ENTRY_CHARS:
+        if len(prose) > MAX_ENTRY_CHARS and not reviewed_length:
             issues.append(
                 f"line {line_no}: change entry is {len(prose)} readable characters "
                 f"(max {MAX_ENTRY_CHARS}); shorten or link to technical details"
@@ -119,7 +151,7 @@ def violations(section: str) -> list[str]:
             seen[key] = line_no
     body_chars = len(_readable(section))
     budget = min(MAX_BODY_CHARS, max(MIN_BODY_BUDGET, CHARS_PER_ENTRY * len(entries)))
-    if body_chars > budget:
+    if body_chars > budget and not reviewed_length:
         issues.append(
             f"release body is {body_chars} readable characters for {len(entries)} entries "
             f"(review budget {budget}); group implementation details and link to PRs"
@@ -142,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"::error::{exc}", file=sys.stderr)
         return 1  # Even advisory mode cannot pass a missing or unreadable release.
-    problems = violations(section)
+    problems = violations(section, version=args.version)
     for problem in problems:
         kind = "warning" if args.advisory else "error"
         print(f"::{kind}::{args.version}: {problem}", file=sys.stderr)
