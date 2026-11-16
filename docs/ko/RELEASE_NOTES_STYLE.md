@@ -67,6 +67,16 @@ Markdown 구조 검사와 GitHub Release 및 CHANGELOG의 일치 여부만으로
   긴 내용은 사용자 관점에서 나누거나 PR·문서를 연결합니다. **검사를 통과하려고
   반드시 필요한 경고 또는 확인된 사람의 기여를 삭제하면 안 됩니다.**
 
+특수한 마이그레이션·호환성 안내를 안전하게 줄일 수 없는 경우에는 첫 번째 섹션
+앞에 버전별 리뷰 근거를 담은 HTML 주석을 정확히 하나 기록할 수 있습니다.
+
+`<!-- release-note-length-exception: version=1.12.3; issue=https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1356; reason=Independent maintainer review confirms these unusual migration details must remain. -->`
+
+버전, 해당 저장소 이슈 링크, 충분한 사유를 모두 적어야 합니다. 예외는 **분량 제한에만**
+적용되며 누락된 요약, 자동 생성 원문, 중복, 잘못된 섹션 및 Markdown 오류는
+계속 차단합니다. 독립 리뷰어가 예외 사유와 근거를 확인해야 하며,
+`--advisory`나 `RELEASE_NOTES_ADVISORY=1`을 발행 예외로 사용할 수 없습니다.
+
 이 검사는 객관적으로 판별할 수 있는 오류만 차단하며 기술적 정확성과 누락 여부까지
 자동 승인하지 않습니다. 변경이 적은 릴리즈는 간결하게 작성하고, 변경이 많은 버전은
 필요한 항목을 충분히 남깁니다. 릴리즈 준비 단계에서는 `RELEASE_NOTES_ADVISORY=1`을
