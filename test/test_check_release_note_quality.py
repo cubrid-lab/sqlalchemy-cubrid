@@ -80,9 +80,9 @@ def test_large_body_requires_consolidation_even_when_each_entry_is_short() -> No
 
 
 def test_large_number_of_entries_does_not_bypass_total_length_gate() -> None:
-    notes = "This release corrects many SQL compilation edge cases.\\n\\n### Fixed\\n\\n"
+    notes = "This release corrects many SQL compilation edge cases.\n\n### Fixed\n\n"
     notes += "".join(
-        f"- **Compiler case {n}** — " + "Corrected operator compilation. " * 18 + "\\n"
+        f"- **Compiler case {n}** — " + "Corrected operator compilation. " * 18 + "\n"
         for n in range(70)
     )
     problems = MODULE.violations(notes)
@@ -96,7 +96,7 @@ def test_publisher_and_candidate_ci_keep_strict_quality_review() -> None:
     makefile = (ROOT / "Makefile").read_text()
     assert 'run: make release-check VERSION="$VERSION"' in publish
     assert "RELEASE_NOTES_ADVISORY" not in publish
-    assert 'RELEASE_NOTES_ADVISORY=1' in prepare
+    assert "RELEASE_NOTES_ADVISORY=1" in prepare
     assert "Reject uncurated release candidate notes" in ci
     assert "python3 scripts/check_release_note_quality.py" in ci
     assert "$(PYTHON) scripts/check_release_note_quality.py --version $(VERSION)" in makefile
@@ -115,13 +115,13 @@ def test_markdown_code_block_cannot_be_mistaken_for_generated_changes() -> None:
 
 def test_nested_fences_do_not_hide_raw_release_notes() -> None:
     notes = (
-        "This patch improves error reporting.\\n\\n### Fixed\\n\\n"
-        "- **Examples** — Preserve a literal marker.\\n\\n"
-        "  ````text\\n"
-        "  ~~~\\n"
-        "  ```\\n"
-        "  ````\\n"
-        "* raw release-please commit subject\\n"
+        "This patch improves error reporting.\n\n### Fixed\n\n"
+        "- **Examples** — Preserve a literal marker.\n\n"
+        "  ````text\n"
+        "  ~~~\n"
+        "  ```\n"
+        "  ````\n"
+        "* raw release-please commit subject\n"
     )
     assert any("uncurated" in p for p in MODULE.violations(notes))
 
@@ -133,22 +133,22 @@ def test_reviewed_length_exception_is_explicit_and_version_scoped() -> None:
         "reason=Independent maintainer review preserves unusual SQL migration details. -->"
     )
     notes = (
-        "This version corrects several compatibility issues.\\n"
+        "This version corrects several compatibility issues.\n"
         + annotation
-        + "\\n\\n### Fixed\\n\\n"
+        + "\n\n### Fixed\n\n"
         + "- **Compilation** — "
         + "Preserves complex but necessary upgrade guidance. " * 33
-        + "\\n"
+        + "\n"
     )
     assert MODULE.violations(notes, version="1.12.3") == []
     invalid = MODULE.violations(notes, version="1.12.4")
     assert any("wrong-version" in p for p in invalid), invalid
     raw = notes.replace("- **Compilation** — ", "* compiler: ")
     assert any("uncurated" in p for p in MODULE.violations(raw, version="1.12.3"))
-    missing_summary = notes.replace(
-        "This version corrects several compatibility issues.\\n", ""
+    missing_summary = notes.replace("This version corrects several compatibility issues.\n", "")
+    assert any(
+        "missing introductory" in p for p in MODULE.violations(missing_summary, version="1.12.3")
     )
-    assert any("missing introductory" in p for p in MODULE.violations(missing_summary, version="1.12.3"))
 
 
 def test_only_targeted_release_is_checked() -> None:
