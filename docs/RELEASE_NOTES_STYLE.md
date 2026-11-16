@@ -56,6 +56,47 @@ maintained release-note format.
   Review rendered Markdown and cross-check its contributor credits and links
   against the previous notes before editing an existing GitHub Release body.
 
+## Pre-publication quality gate
+
+A Markdown parser and a GitHub Release/CHANGELOG equality check do not establish
+editorial quality. The `scripts/check_release_note_quality.py` gate checks **only
+the candidate version** and must pass on the final release PR head and in the
+`publish-pypi.yml` release consistency job. Existing historical notes are
+reviewed separately; unrelated changes must not rewrite their factual record.
+
+The checker requires:
+
+- A reader-facing introductory summary before the first `###` heading (no
+  more than 900 visible characters).
+- Each change presented as `- **Affected area** — observable outcome ...`,
+  not the raw `* commit subject (hash)` emitted by release-please.
+- No exact duplicate entries, no entry longer than 1,100 visible characters,
+  and a proportional overall readability budget of 850 visible characters per
+  entry (at least 6,000 characters for a short release). URLs and invisible
+  HTML comments do not count as reader-facing characters.
+- All compatibility, deprecation, security, migration and support boundaries
+  remain technically correct. Split long explanations by user-relevant topic or
+  link supporting PRs and documentation; **do not remove essential warnings or
+  verified human credits just to make the gate green**.
+
+These are objective tripwires, not automatic approval of technical accuracy or
+permission to omit meaningful changes. A short release is expected to be short;
+a large release may have many meaningful entries. The generator uses the
+`RELEASE_NOTES_ADVISORY=1` **preparation-only** option so its uncurated
+candidate can be opened and reviewed. The PR CI and publisher do not use that
+option and reject an uncurated release. The release maintainer must inspect
+the final rendered notes and links independently before merging the release PR.
+
+## Historical editorial reconciliation
+
+When correcting an existing published Release, record its original body and
+metadata, correct the canonical `CHANGELOG.md` section through independent
+review, then synchronize the approved body with concurrency checks and a fresh
+GitHub API readback. Audit coverage should name every currently published
+version and separately report editorial quality, source/body synchronization,
+verified contributor attribution and publication state. A count of matching
+bodies alone is **not** evidence of readable, complete release notes.
+
 ## Changes and authors
 
 - State the observable change, affected component and user impact, not only
