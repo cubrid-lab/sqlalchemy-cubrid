@@ -276,7 +276,7 @@ jobs:
       - name: Lint CHANGELOG structure
         run: python scripts/lint_changelog.py
       - name: Reject uncurated release candidate notes
-        if: github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--branches--main')
+        if: (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-please--branches--main')) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref_name, 'release-please--branches--main'))
         run: |
           version=$(python3 -c 'import json; print(json.load(open(".release-please-manifest.json"))["."])')
           python3 scripts/check_release_note_quality.py --version "$version"
