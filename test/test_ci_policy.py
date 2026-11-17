@@ -740,3 +740,16 @@ def test_upstream_canary_created_issue_enters_triage() -> None:
     # Priority and size are maintainer triage decisions, never set by the bot.
     assert "priority:" not in create_command
     assert "size:" not in create_command
+
+
+def test_dependabot_auto_merge_guard_does_not_rest_on_the_actor_alone() -> None:
+    # pull_request_target hands the job a write token: the PR author must be
+    # Dependabot too, and the write permissions belong to the job only.
+    workflow = yaml.safe_load((ROOT / ".github/workflows/dependabot-auto-merge.yml").read_text())
+    assert workflow["permissions"] == {}
+    job = workflow["jobs"]["auto-merge"]
+    assert " ".join(job["if"].split()) == (
+        "github.actor == 'dependabot[bot]' && "
+        "github.event.pull_request.user.login == 'dependabot[bot]'"
+    )
+    assert job["permissions"] == {"contents": "write", "pull-requests": "write"}
