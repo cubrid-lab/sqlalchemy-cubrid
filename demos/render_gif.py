@@ -172,7 +172,8 @@ def render(script_path, output_path):
         elif st == "python":
             code = step["code"]
             result = step.get("result", "")
-            lines = lines + [">>> " + code]
+            # "prompt" lets a script show the REPL continuation prompt ("... ").
+            lines = lines + [step.get("prompt", ">>> ") + code]
             frames.append(_draw(lines, cursor=len(lines) - 1))
             ms += step_ms
             if result:
