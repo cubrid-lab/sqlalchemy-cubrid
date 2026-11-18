@@ -43,8 +43,6 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 - **INSERT with a driver that lacks `get_last_insert_id()`** — with the PyPI CUBRIDdb 9.3 driver, a single-row INSERT on a connection that had not yet inserted into an `AUTO_INCREMENT` column failed with `TypeError: int() argument must be ... not 'NoneType'`, even though the row was stored; Alembic's `alembic_version` insert was one example. A NULL `SELECT LAST_INSERT_ID()` now means no generated key ([#1302](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1302)) by @yeongseon.
 - **`pool_pre_ping` with the PyPI CUBRIDdb 9.3 driver** — this driver has no `Connection.ping()`, so every ping failed and `pool_pre_ping=True` discarded and reopened a pooled connection on each checkout. Connections without `ping()` are now checked with `SELECT 1`; CUBRIDdb 11.3 and pycubrid are unchanged ([#1304](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1304)) by @yeongseon.
 
-* verify published release body with a fresh GitHub API read ([a41616d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a41616df4407d1545871969a4e2c17ce38ed8a8f)) by @yeongseon
-
 ### Documentation
 
 - **Release-note credit review checklist** — `docs/RELEASE_NOTES_STYLE.md` and its Korean version add a six-point checklist from the audit of all published release notes: map entries to the implementing PR, credit co-authors only for substantive human commits, never credit agents or bots, leave summaries and dependency updates uncredited, verify first contributions, and check that each change is inside the release's tag range ([#1220](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1220)) by @yeongseon.
@@ -69,47 +67,6 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 - **Contributor guidance and project policy** — the contributor guidance now keeps SQLAlchemy dialect contribution rules and issue and pull request evidence ownership in this repository, defines the issue handoff and development states, removes the contest deadline from the Korean README sync guidance and the organization roadmap and project-board references, says when a scoped `# type: ignore` is acceptable, and says release candidates are frozen only when their review starts; the 1.8.0 PRD is labelled a historical snapshot ([#1096](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1096), [#1101](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1101), [#1160](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1160), [#1166](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1166), [#1284](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1284), [#1286](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1286), [#1295](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1295), [#1326](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1326), [#1327](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1327)) by @yeongseon.
 - **Dialect options and `MERGE` documentation** — the dialect options, the `merge()` builder and the string type arguments are documented ([#1292](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1292), [#1315](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1315)) by @yeongseon.
 - **Help menu support links** — added direct links to Discussions, the issue chooser and SECURITY.md from the documentation site's Help menu ([#1294](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1294), [#1297](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1297)) by @aashnayadav (first contribution 🎉).
-
-* add concise reader summaries to 14 published historical releases ([7dd2e3a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7dd2e3acd0d4095577a9af51e16c571b4fb095c4)) by @yeongseon
-* add concrete user-facing highlights to v1.7.0 and v1.7.1 ([80e4026](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/80e4026a667fc506aa64c01b292c579daa6edae4)) by @yeongseon
-* add reader-focused introductions to seven oversized historical releases ([1a4087c](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1a4087c738c0df87cc81d53e490649e5b1dc34b0)) by @yeongseon
-* apply valid Copilot review corrections to release note layout ([11a5179](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/11a51797d82d85f3c94ed9bb6aec00957c3685b7)) by @yeongseon
-* attribute v1.12.0 release changes to verified PR author ([4219029](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4219029ff27b00a10277e77d34eaac58a2d366eb)) by @yeongseon
-* clarify issue handoff and work states ([35c1c8c](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/35c1c8cddd10785e1d4389b630492b3d174fa4d0)) by @yeongseon
-* clarify sqlalchemy-cubrid local issue and PR evidence ([aaf8b19](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/aaf8b1974383688d5be4da8822689110d4364a4f)) by @yeongseon
-* complete missing comparison links across published historical releases ([250ae53](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/250ae53129b2201342f7640d6d8deb8336859bd2)) by @yeongseon
-* consolidate v1.12.1 release notes into reader-focused changes ([4e26ebe](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4e26ebee313aa92d68c7119cb5b3a73b4e9e9eee)) by @yeongseon
-* credit human PR author of v1.2.2 Alembic fixes ([98ce55e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/98ce55e83ce2cb2356ba9bf95c9671a1d5a29624)) by @yeongseon
-* credit verified human author of v1.11.7 documentation change ([da75b8f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/da75b8f2601765047db2e9bf39b33888dbfb4c5a)) by @yeongseon
-* credit verified human author of v1.5.1 fixes ([856b6c8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/856b6c854c20f63cc2f145368e4b412cb5b02270)) by @yeongseon
-* credit verified human PR author for v1.2.1 fixes and tests ([3ec0adb](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3ec0adb05d600e217655dacecb3f5a6bd5b73cee)) by @yeongseon
-* credit verified v1.12.1 human PR authors ([b115781](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b11578178805109bee2f06764d572ba6a191c113)) by @yeongseon
-* credit verified v1.5.0 feature and test authors ([fdf2cb4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/fdf2cb40fd3929ff6db2edb075db5c6445333ea5)) by @yeongseon
-* improve published release note spacing and reader summaries ([385d942](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/385d94267b9c5255891d0da9065f3628d5708a7a)) by @yeongseon
-* **release:** credit and link v1.9.0 added changes ([af55847](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/af55847107cb9a80703739b3d9ae34aa637b5b19)) by @yeongseon
-* **release:** credit v1.11.0 CI and test changes ([6569a42](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6569a421dc8a66b124a5c91b670a5e5fcde93984)) by @yeongseon
-* **release:** credit v1.11.0 upgrade and behavior changes ([19a07be](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/19a07beabac8b7f3d7b505c89dfed5a5dc75356a)) by @yeongseon
-* **release:** credit v1.11.5 CI and tests with source PRs ([b011986](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/b011986852b688512a2c63fb09697e3ad8e9299d)) by @yeongseon
-* **release:** credit v1.11.5 documentation and remove duplicate entry ([50dc7ee](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/50dc7ee7796b73369ca98fcf11882ebdf4590107)) by @yeongseon
-* **release:** credit verified human changes in v1.4.2 ([2d5c7d6](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2d5c7d6990a86955926247e3cbfc8a57e62d2f26)) by @yeongseon
-* **release:** deduplicate v1.10.0 and credit verified changes ([eff375f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/eff375fd51ef4b5d986f316b5eda8c9d1267a6c0)) by @yeongseon
-* **release:** finish v1.11.5 change credits and historical references ([20bacd8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/20bacd8efe48db356c149a6994a046ed1c3bddb4)) by @yeongseon
-* **release:** improve v1.11.0 user-facing notes ([a2c7701](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a2c770103c1b38d914e12080e19ac8aa2a3cbcc5)) by @yeongseon
-* **release:** make historical draft v0.2.0 reader-friendly ([24eed61](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/24eed61b7be2b7da242cd45adc7f14daa724d86f)) by @yeongseon
-* **release:** make historical draft v0.3.0 reader-friendly ([dfb3d02](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/dfb3d027fe2693df0c2567c4bcadada22f381ae1)) by @yeongseon
-* **release:** make historical draft v0.3.2 reader-friendly ([845d086](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/845d08655dfd7a7afe0dfa5eca347eaa5bfcde6a)) by @yeongseon
-* **release:** make historical draft v0.4.0 reader-friendly ([7fc6997](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7fc6997903350938a3f351e555a832feb8571ffd)) by @yeongseon
-* **release:** make historical draft v0.5.0 reader-friendly ([7d6b234](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7d6b234b291dfa9947365ee8f5a0f4a0b7be414c)) by @yeongseon
-* **release:** make historical draft v0.7.0 reader-friendly ([d1ceba0](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d1ceba0bba6716bb307b49be44cd222f4398ccc4)) by @yeongseon
-* **release:** make v1.7.1 detailed notes easier to read ([a9003ee](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a9003ee8362615c6b061719cf89779bb71d2707c)) by @yeongseon
-* **release:** make v1.8.0 detailed notes easier to read ([5dc314f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5dc314f0a1546ff9a9ddedfe0352a041663de004)) by @yeongseon
-* **release:** make v1.9.0 detailed notes easier to read ([5dd50e8](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/5dd50e8774aa52d622f5fae2d1ee7843f69d54ea)) by @yeongseon
-* **release:** reconcile and credit v1.12.0 changes ([7b66526](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/7b66526b4c16c212a476784df7500ce881c83b9d)) by @yeongseon
-* **release:** restore omitted v1.10.0 CI and dependency updates ([c0d0afa](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c0d0afa24bb323c6ebc44a7b1f54b1e6894578a4)) by @yeongseon
-* **release:** restore omitted v1.11.6 release automation change ([e496ce2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e496ce244ffa9ba994afb9fccf4cd78c8dca1b58)) by @yeongseon
-* **release:** simplify v1.10.0 historical notes ([1dfbd59](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/1dfbd59d2e4d82748d030ae82b0d4b03feddd33a)) by @yeongseon
-* rewrite three historical release notes with clear upgrade guidance ([6890392](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6890392c56db038e7fd594b07fdb726c70c537d7)) by @yeongseon
-* track issue work without project boards ([c80d6e4](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c80d6e47bb0e420a72166d46927617f3adeba3c9)) by @yeongseon
 
 ### CI
 
