@@ -37,9 +37,16 @@ maintained release-note format.
   they may need to take. Put compatibility, security, migration and breaking
   behavior in the appropriate standard sections, especially Upgrade notes.
 - Lead each entry with the observable result, then explain why it matters.
-  Prefer a short paragraph over a list of implementation steps, internal
-  identifiers or every changed helper. Add essential limitations and commands
-  when users need them; do not enforce a fixed word or bullet limit.
+  Avoid lists of implementation steps, internal identifiers or every changed
+  helper. Add essential limitations and commands when users need them.
+- Keep each entry to one or two sentences, about 250 characters as a guide,
+  plus its links and credit; put details a reader can do without behind the
+  PR link. Upgrade notes and Security entries may be longer when every
+  sentence is something a user must know or do. This is a writing guide, not
+  a new automated limit; the quality gate below is unchanged.
+- Group `CI`, `Tests` and `Documentation` changes by outcome into a few
+  entries that cite all their PRs. A release with many changes is long
+  because of its count: shorten the entries first, then accept the length.
 - Keep `Added`, `Changed`, `Fixed`, `Documentation`, `CI`, `Tests`
   and the other established categories whenever they contain real changes.
   Documentation and test contributors deserve the same accurate attribution
