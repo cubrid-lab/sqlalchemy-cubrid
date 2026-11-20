@@ -15,7 +15,12 @@ Usage::
     from sqlalchemy import create_engine, text
     from sqlalchemy_cubrid.trace import trace_query
 
-    engine = create_engine("cubrid://dba@localhost:33000/demodb")
+    # Disposable local lab database only (for example the Docker test database
+    # from CONTRIBUTING.md). Replace the host, port, database and credentials
+    # with your own values, loaded from configuration rather than committed.
+    # ``cubrid+pycubrid://`` is the recommended pure-Python driver
+    # (``pip install "sqlalchemy-cubrid[pycubrid]"``).
+    engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
     with engine.connect() as conn:
         result = trace_query(conn, text("SELECT * FROM users WHERE id = 1"))
         print(result)
@@ -62,7 +67,9 @@ def trace_query(
         from sqlalchemy import create_engine, text
         from sqlalchemy_cubrid.trace import trace_query
 
-        engine = create_engine("cubrid://dba@localhost:33000/demodb")
+        # Disposable local lab database only; supply your own URL from
+        # configuration instead of committing credentials or deployed hosts.
+        engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
         with engine.connect() as conn:
             traces = trace_query(conn, text("SELECT * FROM users WHERE id = 1"))
             for line in traces:
