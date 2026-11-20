@@ -453,8 +453,12 @@ cd ../..
 
 # setup.py의 CCI 재빌드를 건너뛰고 설치
 printf '#!/bin/bash\nexit 0\n' > build_cci.sh
-pip install .
+CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion" pip install .
 ```
+
+GCC 14 이상(예: Ubuntu 26.04의 GCC 15.2)은 v11.3.0.51 C 확장의 포인터·정수 변환을 이전
+컴파일러처럼 경고가 아닌 오류로 처리합니다. 위 `CFLAGS`는 이를 다시 경고로 바꾸어 이전과
+같이 빌드되게 하며, GCC 13 이하에서는 아무 영향이 없습니다.
 
 소스 빌드는 `cubrid_python` 배포판을 설치합니다. 버전의 네 번째 자리는 릴리스 태그가 아니라 git
 커밋 수이므로, v11.3.0.51의 얕은 클론은 `11.3.0.0001`로 표시됩니다.
