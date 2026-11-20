@@ -14,6 +14,10 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
+### Documentation
+
+- **README demo** — The demo GIF no longer shows an invented 1.7.0 install line; it quotes the extra, states the `pycubrid>=1.8.0,<2.0` requirement and shows the `python` step. It is still rendered from a script, not a live install ([#1095](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1095)) by @yeongseon.
+
 ## [1.12.3] - 2026-11-18
 
 This maintenance release revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. It also fixes paged queries that could return the wrong rows, `BIGINT` results returned as strings and `Boolean` results read as `True` from the string `'0'`, with the PyPI CUBRIDdb 9.3 driver. SQL generation for other drivers, reflection and connection behavior are unchanged.
