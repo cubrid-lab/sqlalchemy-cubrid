@@ -72,10 +72,14 @@ python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 
-# dev 의존성 그룹과 함께 편집 가능 모드로 설치 (pip >= 25.1)
+# 의존성 그룹을 사용하려면 pip 25.1 이상으로 업그레이드
 python -m pip install --upgrade "pip>=25.1"
-pip install -e . --group dev
 
+# 실제 CUBRID 테스트용 권장 pycubrid 드라이버 설치
+pip install -e ".[pycubrid]" --group dev
+
+# 오프라인 전용 개발의 경우 선택적 드라이버 생략
+# pip install -e . --group dev
 # pre-commit 훅 설치
 pre-commit install
 ```

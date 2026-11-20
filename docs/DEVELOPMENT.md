@@ -71,10 +71,14 @@ python3 -m venv venv
 source venv/bin/activate  # Linux/macOS
 # venv\Scripts\activate   # Windows
 
-# Install in editable mode with the dev dependency group (pip >= 25.1)
+# Upgrade pip (dependency groups require pip >= 25.1)
 python -m pip install --upgrade "pip>=25.1"
-pip install -e . --group dev
 
+# For live CUBRID tests, install the recommended pycubrid driver
+pip install -e ".[pycubrid]" --group dev
+
+# For offline-only development, omit the optional driver
+# pip install -e . --group dev
 # Install pre-commit hooks
 pre-commit install
 ```
