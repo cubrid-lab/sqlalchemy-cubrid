@@ -14,9 +14,13 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
+## [1.12.4] - 2026-11-20
+
 ### Documentation
 
 - **README demo** — The demo GIF no longer shows an invented 1.7.0 install line; it quotes the extra, states the `pycubrid>=1.8.0,<2.0` requirement and shows the `python` step. It is still rendered from a script, not a live install ([#1095](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1095)) by @yeongseon.
+
+* re-render the README demo without stale install output ([#1362](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1362)) ([98d1f34](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/98d1f342d7783ce87d021b3521d97d3d28c249c9)) by @yeongseon
 
 ## [1.12.3] - 2026-11-18
 
