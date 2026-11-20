@@ -658,8 +658,13 @@ cd ../..
 
 # Skip setup.py's own CCI rebuild, then install
 printf '#!/bin/bash\nexit 0\n' > build_cci.sh
-pip install .
+CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion" pip install .
 ```
+
+GCC 14 and later (for example GCC 15.2 on Ubuntu 26.04) reject pointer and integer
+conversions in the v11.3.0.51 C extension that earlier compilers only warned about.
+The `CFLAGS` above turn them back into warnings, so the driver builds as before;
+with GCC 13 or older they change nothing.
 
 A build from source installs the `cubrid_python` distribution. Its fourth version
 component is a git commit count, not the release tag, so a shallow clone of v11.3.0.51
