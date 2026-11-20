@@ -76,18 +76,31 @@ def main() -> None:
 
         if args.compare:
             module = importlib.import_module(args.compare)
-            declared_meta = None
+            declared_registries: list[MetaData] = []
             for attr in dir(module):
                 obj = getattr(module, attr)
                 if isinstance(obj, type) and hasattr(obj, "metadata"):
                     meta = getattr(obj, "metadata", None)
-                    if isinstance(meta, MetaData):
-                        declared_meta = meta
-                        break
+                    if isinstance(meta, MetaData) and all(
+                        meta is not seen for seen in declared_registries
+                    ):
+                        declared_registries.append(meta)
 
-            if declared_meta is None:
+            if not declared_registries:
                 print(f"\nNo MetaData found in {args.compare}", file=sys.stderr)
                 sys.exit(1)
+
+            if len(declared_registries) > 1:
+                print(
+                    f"\n{args.compare} declares {len(declared_registries)} distinct "
+                    "MetaData registries; --compare only compares a single registry "
+                    "and the others would be silently skipped. Point --compare at a "
+                    "module that uses one DeclarativeBase metadata.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+
+            declared_meta = declared_registries[0]
 
             reflected_meta = MetaData()
             reflected_meta.reflect(bind=engine)
