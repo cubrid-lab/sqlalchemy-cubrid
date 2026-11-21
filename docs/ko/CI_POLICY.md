@@ -348,7 +348,9 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
 유지해야 합니다. 적중을 증거로 보지 않습니다. 매 실행이 wheel을 설치하고 `CUBRIDdb`를 import하며,
 준비 확인 단계가 스위트 실행 전에 실제 서버에 연결합니다.
 `test/test_workflow_cubriddb_cache.py`가 키 구성 요소와 적중 시에만 빌드를 건너뛰는지를
-검증합니다.
+검증합니다. GCC 14 이상(ubuntu-26.04 이미지의 GCC 15.2)은 고정된 v11.3.0.51 소스의
+`incompatible-pointer-types`와 `int-conversion`을 오류로 처리하므로, 빌드는 `CFLAGS`로
+이를 경고로 낮춥니다. 이 절차 변경에 맞춰 접두사를 `v2`로 올렸습니다.
 
 ## CUBRIDdb PyPI 9.3 레인
 

@@ -16,11 +16,11 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ### Fixed
 
-- **Async sample** — `samples/async_basic.py` now disposes its async engine in a `finally`, so an error while connecting, inserting or cleaning up no longer skips `engine.dispose()` ([#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381)).
+- **Async sample** — `samples/async_basic.py` now disposes its async engine in a `finally`, so an error while connecting, inserting or cleaning up no longer skips `engine.dispose()` ([#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381), [#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1387)) by @Dio77799 (first contribution 🎉).
 
-## [1.12.3] - 2026-11-18
+## [1.12.4] - 2026-11-20
 
-This maintenance release revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. It also fixes paged queries that could return the wrong rows, `BIGINT` results returned as strings and `Boolean` results read as `True` from the string `'0'`, with the PyPI CUBRIDdb 9.3 driver. SQL generation for other drivers, reflection and connection behavior are unchanged.
+This release ships the changes prepared for 1.12.3, which was merged but never published because its release build failed on a new CI runner image. It revises one deprecation warning, rewords the missing-CUBRIDdb error and raises the setuptools version needed to build from source. It also fixes paged queries that could return the wrong rows, `BIGINT` results returned as strings and `Boolean` results read as `True` from the string `'0'`, with the PyPI CUBRIDdb 9.3 driver. SQL generation for other drivers, reflection and connection behavior are unchanged.
 
 ### Upgrade notes
 
@@ -72,11 +72,15 @@ This maintenance release revises one deprecation warning, rewords the missing-CU
 - **Dialect options and `MERGE` documentation** — the dialect options, the `merge()` builder and the string type arguments are documented ([#1292](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1292), [#1315](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1315)) by @yeongseon.
 - **Help menu support links** — added direct links to Discussions, the issue chooser and SECURITY.md from the documentation site's Help menu ([#1294](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1294), [#1297](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1297)) by @aashnayadav (first contribution 🎉).
 
+- **README demo** — The demo GIF no longer shows an invented 1.7.0 install line; it quotes the extra, states the `pycubrid>=1.8.0,<2.0` requirement and shows the `python` step. It is still rendered from a script, not a live install ([#1095](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1095), [#1362](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1362)) by @yeongseon.
+
 ### CI
 
 - **Release-note publication gate (#1356)** — New release candidates must have a reader-focused introduction, curated change entries, and reasonable per-entry and total description lengths without exact duplicates. Release preparation reports violations without blocking candidate creation; final-head PR checks and the existing guarded publisher reject uncurated notes. Earlier released versions are not silently rewritten by this check ([#1356](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1356), [#1357](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1357)) by @yeongseon.
 - **Manual CI lane for the PyPI CUBRIDdb 9.3 driver** — the new manual-only `cubriddb-pypi.yml` workflow installs the project with the `[cubriddb]` extra, as users do (pip and uv currently install the PyPI 9.3.0 source archive `9.3.0.0001` as 9.3.0.1), records the driver's distribution and compiled-in `_cubrid.__version__`, and runs `make integration` on Python 3.12 and CUBRID 11.4, listing every failing test. It is evidence, not a required check or release gate, and is expected to fail until the known driver limitations are resolved. The driver-version report in the other live lanes now also prints `_cubrid.__version__` ([#1146](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1146)) by @yeongseon.
 - **Each change is listed once in release candidates** — when a curated `[Unreleased]` entry already cites a pull request or issue, the release changelog composer now drops the release-please entry generated for the same pull request or referenced issue, instead of listing the change twice. Generated entries without a matching reference, or crediting a contributor the curated entry does not credit, are kept, and released sections are unchanged ([#1100](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1100), [#1317](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1317)) by @yeongseon.
+
+- **CUBRIDdb builds with GCC 14 and later** — CI builds the pinned cubrid-python v11.3.0.51 driver with two flags that newer compilers need, and the source-build guide shows them ([#1386](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1386), [#1389](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1389)) by @yeongseon.
 
 ### Tests
 
