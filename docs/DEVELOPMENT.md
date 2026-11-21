@@ -79,6 +79,7 @@ pip install -e ".[pycubrid]" --group dev
 
 # For offline-only development, omit the optional driver
 # pip install -e . --group dev
+
 # Install pre-commit hooks
 pre-commit install
 ```

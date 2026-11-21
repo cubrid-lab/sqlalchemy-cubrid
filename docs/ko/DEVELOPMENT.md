@@ -80,6 +80,7 @@ pip install -e ".[pycubrid]" --group dev
 
 # 오프라인 전용 개발의 경우 선택적 드라이버 생략
 # pip install -e . --group dev
+
 # pre-commit 훅 설치
 pre-commit install
 ```
