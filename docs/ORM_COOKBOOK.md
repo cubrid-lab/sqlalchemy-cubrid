@@ -476,7 +476,7 @@ session.query(Config).filter(Config.data["key"] == "value")
 ```
 
 > **CUBRID < 10.2 workaround:** Store JSON as `STRING`/`VARCHAR` and
-> serialize/deserialize in Python. See [Troubleshooting](../docs/TROUBLESHOOTING.md#json-type-usage).
+> serialize/deserialize in Python. See [Troubleshooting](TROUBLESHOOTING.md#json-type-usage).
 
 ### 4. Collection Types Instead of ARRAY
 

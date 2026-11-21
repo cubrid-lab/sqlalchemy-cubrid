@@ -6,7 +6,9 @@ candidate. Generated headers belong in RELEASE_CHANGELOG.md; publication keeps
 its strict bracket/date contract. Curated and generated entries are merged under
 the standard ``###`` headings in the standard order, so the candidate passes
 scripts/lint_changelog.py. Generated issue references are rendered as "refs",
-not "closes" (see GENERATED_REFERENCES). Call only after the freeze-label check.
+not "closes" (see GENERATED_REFERENCES). A generated entry whose pull request or
+referenced issue a curated entry already cites is dropped, so a change is listed
+once (see _drop_curated_duplicates). Call only after the freeze-label check.
 
 With ``--pr-body``, read a GitHub pull request JSON instead and apply the same
 reference rewrite to the release PR body, so GitHub does not treat the
@@ -54,6 +56,19 @@ GENERATED_ALIASES = {"⚠ BREAKING CHANGES": "Upgrade notes"}
 # keyword is lost, so "closes" can be false; "refs" is true for every trailer.
 # The match is tied to the commit-hash link that precedes the reference list.
 GENERATED_REFERENCES = re.compile(r"(\(\[[0-9a-f]{7,40}\]\([^)\s]+\)\)), closes (?=\[)")
+# The reference tail of a generated entry: an optional squash-merge pull request
+# link, then the commit-hash link, then any ", refs [#N](...)" issue links. Text
+# before it is the commit subject, whose "#N" mentions are not references.
+GENERATED_TAIL = re.compile(r"(?:\(\[#[0-9]+\]\([^)\s]+\)\) )?\(\[[0-9a-f]{7,40}\]\([^)\s]+\)\)")
+GENERATED_NUMBER = re.compile(r"\[#([0-9]+)\]\(")
+# References a curated entry cites: a link to this repository's issue or pull
+# request, or a bare "(#N)" / "(#N, #M)" group. A plain "#N" in prose (such as
+# "first proposed in #1110") is a mention, not a reference to the entry's change.
+CURATED_LINK = re.compile(
+    r"\[#([0-9]+)\]\(https://github\.com/cubrid-lab/sqlalchemy-cubrid/(?:issues|pull)/\1\)"
+)
+CURATED_GROUP = re.compile(r"\((#[0-9]+(?:, ?#[0-9]+)*)\)")
+CREDIT = re.compile(r"\bby @([-\w]+)")
 
 
 def _find(pattern: re.Pattern[str], text: str, origin: str) -> list[re.Match[str]]:
@@ -108,6 +123,89 @@ def _rewrite_references(notes: str) -> str:
                 fence = None
         lines.append(line)
     return "".join(lines)
+
+
+def _entries(body: str) -> list[tuple[str, bool]]:
+    """Split a section body into top-level list entries with their continuation lines.
+
+    Returns ``(text, is_entry)`` chunks in order; non-entry chunks (blank lines,
+    prose, fenced code outside an entry) are kept as they are.
+    """
+    chunks: list[tuple[str, bool]] = []
+    fence: str | None = None
+    for line in body.splitlines(keepends=True):
+        starts = fence is None and line.startswith(("* ", "- "))
+        continues = bool(chunks) and chunks[-1][1] and (fence is not None or line[:1] in " \t")
+        if starts:
+            chunks.append((line, True))
+        elif continues:
+            chunks[-1] = (chunks[-1][0] + line, True)
+        else:
+            chunks.append((line, False))
+        match = FENCE.match(line)
+        if match:
+            marker = match.group(1)
+            if fence is None:
+                fence = marker
+            elif (
+                marker[0] == fence[0]
+                and len(marker) >= len(fence)
+                and not line[match.end() :].strip()
+            ):
+                fence = None
+    return chunks
+
+
+def _curated_references(bodies: dict[str, list[str]]) -> dict[int, set[str]]:
+    """Map each issue/PR number a curated entry cites to the contributors it credits."""
+    cited: dict[int, set[str]] = {}
+    for parts in bodies.values():
+        for body in parts:
+            for text, is_entry in _entries(body):
+                if not is_entry:
+                    continue
+                numbers = {int(n) for n in CURATED_LINK.findall(text)}
+                for group in CURATED_GROUP.findall(text):
+                    numbers.update(int(n) for n in re.findall(r"#([0-9]+)", group))
+                credits = set(CREDIT.findall(text))
+                for number in numbers:
+                    cited.setdefault(number, set()).update(credits)
+    return cited
+
+
+def _drop_curated_duplicates(body: str, cited: dict[int, set[str]]) -> str:
+    """Drop generated entries for a change a curated entry already describes (#1100).
+
+    release-please lists every merged change again with its own entry. A generated
+    entry is a duplicate when its pull request number or a "refs" issue number is
+    cited by a curated entry, and every contributor it credits is credited by those
+    curated entries too, so condensing never drops a participating contributor.
+    Entries without a correlating reference are kept.
+    """
+    kept: list[str] = []
+    dropped = False
+    for text, is_entry in _entries(body):
+        # A blank line after a dropped entry is dropped too when it would double up.
+        if dropped and not text.strip() and (not kept or not kept[-1].strip()):
+            continue
+        dropped = False
+        tail = GENERATED_TAIL.search(text) if is_entry else None
+        if tail:
+            numbers = {int(n) for n in GENERATED_NUMBER.findall(text, tail.start())}
+            matched = numbers & cited.keys()
+            credited = set().union(*(cited[n] for n in matched)) if matched else set()
+            if matched and set(CREDIT.findall(text, tail.start())) <= credited:
+                # Log each drop so the release-please run shows what was condensed.
+                refs = ", ".join(f"#{n}" for n in sorted(matched))
+                subject = text.splitlines()[0][2:].strip()
+                print(
+                    f"dropped generated entry already curated ({refs}): {subject}",
+                    file=sys.stderr,
+                )
+                dropped = True
+                continue
+        kept.append(text)
+    return "".join(kept).strip("\n")
 
 
 def _split(text: str, origin: str, aliases: dict[str, str]) -> tuple[str, dict[str, list[str]]]:
@@ -166,6 +264,13 @@ def compose(base: str, generated: str, version: str) -> str:
     curated_preamble, curated_bodies = _split(
         base[head.end() : history_start], "curated [Unreleased]", {}
     )
+    cited = _curated_references(curated_bodies)
+    for title, parts in list(generated_bodies.items()):
+        parts = [p for p in (_drop_curated_duplicates(p, cited) for p in parts) if p.strip()]
+        if parts:
+            generated_bodies[title] = parts
+        else:
+            del generated_bodies[title]
     # Merge curated and generated entries under one standard heading each, in the
     # standard order; curated text comes first and is copied unchanged.
     blocks = [curated_preamble] if curated_preamble.strip() else []

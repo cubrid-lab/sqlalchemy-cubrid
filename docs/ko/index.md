@@ -79,12 +79,13 @@ engine.dispose()
   [Alembic으로 마이그레이션 실행](ALEMBIC.md), [CUBRID 전용 DML 사용하기](DML_EXTENSIONS.md),
   [격리 수준 고르기](ISOLATION_LEVELS.md).
 - **레퍼런스:** [타입 매핑](TYPES.md), [기능 지원](FEATURE_SUPPORT.md),
-  [지원 매트릭스](SUPPORT_MATRIX.md), 지원 CUBRIDdb C 확장 드라이버를 포함한
-  [드라이버 호환성](DRIVER_COMPAT.md).
-- **도움말:** [문제 해결](TROUBLESHOOTING.md). 버그와 질문은
-  [GitHub Issues](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues)에, 보안 문제는
-  [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md)에 따라 비공개로
-  제보하세요.
+  [지원 매트릭스](SUPPORT_MATRIX.md), [드라이버 호환성](DRIVER_COMPAT.md)과
+  [데이터베이스·드라이버·패키지 버전의 차이](DRIVER_COMPAT.md#데이터베이스와-드라이버-버전-구분).
+- **도움말:** 먼저 [문제 해결](TROUBLESHOOTING.md)을 확인하세요. 사용법 질문은
+  [GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)에,
+  재현 가능한 버그는 [버그 신고 양식](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new?template=bug_report.yml)에,
+  보안 문제는 [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md)에
+  따라 비공개로 제보하세요. 자세한 경로는 [지원 안내](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SUPPORT.md)를 참고하세요.
 - **프로젝트와 내부 구조:** 기여자를 위한 [아키텍처](ARCHITECTURE.md),
   [SQLAlchemy 내부 API 호환성](SA_COMPAT.md), [성능](PERFORMANCE.md), [개발](DEVELOPMENT.md),
   [CI 실행 정책](CI_POLICY.md).

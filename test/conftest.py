@@ -2,7 +2,7 @@
 
 The SA testing plugin (pytestplugin) is only loaded when running the full
 SA test suite against a live CUBRID instance via ``--dburi``.  Offline tests
-(test_dialects, test_compiler, test_types) work without it.
+(test_dialect_offline, test_compiler, test_types) work without it.
 
 When the compliance suite runs, a strict xfail is applied to every node id
 listed in ``test/known_failures.txt`` for the current lane (driver from the
@@ -72,7 +72,6 @@ REPO_TOOLING_MODULES = frozenset(
         "test_sqlalchemy_range.py",
         "test_support_claims.py",
         "test_verify_dist.py",
-        "test_bench_artifact.py",
         "test_bench_dialect_baseline.py",
         "test_check_agents_docs.py",
         "test_check_docs_links.py",
@@ -82,6 +81,9 @@ REPO_TOOLING_MODULES = frozenset(
         "test_check_integration_connection.py",
         "test_reflection_probe.py",
         "test_reflection_probe_shape.py",
+        "test_generate_llms_full.py",
+        "test_annotate_release_contributors.py",
+        "test_check_release_note_wrap.py",
     }
 )
 _missing_repo_modules = sorted(

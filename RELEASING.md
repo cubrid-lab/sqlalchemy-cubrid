@@ -10,7 +10,8 @@ Key invariants:
 - The version is single-sourced from `sqlalchemy_cubrid/__init__.py` (`__version__`).
 - `RELEASE_CHANGELOG.md` contains generated Conventional Commit entries.
   `CHANGELOG.md` combines them with reviewed Upgrade notes and remains the
-  publication source; historical sections are preserved byte for byte.
+  publication source; historical sections are preserved byte for byte in normal
+  releases (an explicitly reviewed retrospective cleanup is the sole exception).
 - A release is decided from git facts on `main`, never from a PR title.
 - The workflows never delete PyPI files, never move a tag and never create a
   version that was not merged through a release PR.
@@ -36,9 +37,105 @@ version comparison or a bot PR body:
 When PyPI or the GitHub API cannot be read, the state is **unknown**, not
 "absent" and not "the newest release": record it as unknown and check again.
 
+## Release cadence
+
+Aim to **review and publish one meaningful release about every two weeks**.
+This is a planning target, not a scheduled deployment, mandatory version bump
+or guaranteed release date. Skip a cycle without worthwhile changes, and delay
+a candidate rather than bypassing tests, compatibility review or publication
+checks.
+
+Urgent security vulnerabilities, correctness defects or regressions may justify
+an earlier reviewed PATCH/MINOR as appropriate. Before an expedited release,
+confirm its exact contents and downstream impact on SQLAlchemy, Alembic and the
+supported CUBRID drivers; do not accidentally ship unrelated unfinished
+changes or break existing dependency/support contracts.
+
+`release-please.yml` continues to **prepare/update** a candidate when
+`main` changes. Preparing a PR never publishes it: maintainers control when
+to review and **merge** the release PR, which triggers the existing guarded
+publisher. No cron job, forced tag, bypass, new CI gate or workflow change is
+needed. This cadence is **independent** of release dates and version numbers
+in `pycubrid` and other sibling repositories; coordinate compatibility when
+necessary, but do not require synchronized releases.
+
+## Public API compatibility in 1.x
+
+`sqlalchemy-cubrid` follows a **repository-local, proportionate** approach to
+public API changes. Its SQLAlchemy dialect behavior, Core/ORM integration,
+compiled SQL, parameter/value correctness, reflection, Alembic migration
+semantics and supported-driver contract remain protected. The corresponding
+SQLAlchemy compliance and CUBRID integration checks are not optional.
+
+Public **dialect-specific convenience APIs** should normally remain
+compatible, but an *individually justified* removal or incompatible change
+may ship in a **1.x MINOR** instead of waiting for 2.0 when:
+
+1. An issue identifies the exact public calls, real-world usage risk,
+   alternatives and why keeping the deprecated behavior is not worthwhile.
+   Being outside SQLAlchemy's standard API is not by itself approval.
+2. The maintainer makes an explicit, reviewable decision, with clear
+   **Upgrade notes and before/after migration examples** in the breaking
+   MINOR. Include both keyword and positional call forms where applicable.
+   The caller may have a `<2.0` dependency range; warn that such a range can
+   select the breaking MINOR without intervention.
+3. Prefer a warning in an earlier published version when practical. **No
+   universal 28-day waiting period** or extra approval workflow applies.
+   **A prior published, specific removal promise must not be silently
+   contradicted.** If an API was already documented or warned as removable
+   *only in a future MAJOR*, first publish a revised API-specific warning and
+   migration notice before the removal release. The subsequent MINOR must
+   independently pass final-head review and full release validation.
+4. PATCH releases remain backward compatible. Urgent security or
+   correctness fixes may be expedited but may not use PATCH to bypass this
+   compatibility rule. Core SQLAlchemy and database correctness must not be
+   reclassified as convenience functionality to justify a MINOR break.
+
+For example, **#892** concerns ignored, already deprecated
+`display_width` on `SMALLINT`/`BIGINT` and `values` on character types.
+Removing them affects constructor calls, including positional
+`SMALLINT(11)`/`BIGINT(20)`, but not emitted CUBRID DDL. The shipped warning
+currently promises a future **MAJOR**. A reviewed plan may instead remove
+them in a later **MINOR** *after* the revised notice is actually published.
+The policy change alone does not rewrite that warning or authorize an
+immediate removal on `main`.
+
+The existing `release-please.yml` process remains in charge of candidate
+generation. A reviewed, intentional breaking MINOR must be explicitly marked
+and versioned through the existing Conventional Commit/`Release-As` procedure;
+do not use a normal PATCH or bypass any review, tests or publish safeguards.
+This policy does not depend on or govern the independent `pycubrid` repository.
+
+## Release-note quality and publication block
+
+In addition to headings, Markdown wrapping, author evidence and package
+consistency, `make release-check VERSION=X.Y.Z` runs the strict reader-quality
+gate from `scripts/check_release_note_quality.py` on the **candidate version
+only**. The `lint` PR job checks release-please candidate heads before merge.
+The guarded PyPI publisher also invokes `make release-check` without
+`RELEASE_NOTES_ADVISORY`; a failure blocks tagging and publishing.
+
+The preparation workflow uses `RELEASE_NOTES_ADVISORY=1` only to let the bot
+compose and push a candidate that may still contain generated entries. An
+advisory warning is **not** a passed release review. The maintainer freezes the
+candidate using the existing `autorelease: review` procedure, curates the
+generated entries in the canonical `CHANGELOG.md` and validates the final
+head. Follow `docs/RELEASE_NOTES_STYLE.md` and retain contributor credits and
+upgrade warnings. This editorial gate does not change version selection,
+release cadence or the existing approval/publisher permissions.
+
 ## Normal flow
 
 `release-please.yml` → reviewed release PR → squash merge → `publish-pypi.yml`.
+
+The public release-note layout and `by @username` / first-contribution rules
+are defined in [`docs/RELEASE_NOTES_STYLE.md`](docs/RELEASE_NOTES_STYLE.md).
+`release-please.yml` decorates a temporary copy of generated entries with
+verified PR-author credits before composing the candidate's `CHANGELOG.md`.
+Unverified attribution is omitted. Maintain the original wrapped Markdown
+links and paragraph boundaries; run the release-note format regression tests.
+A retrospective cleanup is a separately reviewed, backed-up migration and
+must not alter tag refs, publication state or release artifacts.
 
 ### 1. Prepare the release PR
 
@@ -93,8 +190,14 @@ passes `scripts/lint_changelog.py`. Generated issue references are written as
 trailer in a commit's final footer block into a reference and renders every
 reference as `, closes [#N](…)`, which is false for `Refs`. `RELEASE_CHANGELOG.md`
 keeps the raw generator output; `CHANGELOG.md`, the publication source, has the
-rewritten form. It preserves released history and one empty
-Unreleased section. An unknown generated or curated heading fails closed.
+rewritten form. A generated entry is dropped when a curated entry already cites
+its squash-merge pull request number or one of its `refs` issue numbers (as a link
+to this repository or a `(#N)` group) and credits every contributor the generated
+entry credits, so each change is listed once (#1100). A bare `#N` mention in
+curated prose does not count, and entries without such a reference are kept. Each
+dropped entry is printed in the release-please workflow log so the reviewer can
+check what was condensed. It preserves released history and one empty Unreleased
+section. An unknown generated or curated heading fails closed.
 Stale main runs fail before generation and before pushing composed notes. The
 candidate must pass `make release-check VERSION=X.Y.Z`.
 
@@ -116,6 +219,14 @@ candidate must pass `make release-check VERSION=X.Y.Z`.
   regeneration. Edits made only on the candidate branch require the freeze
   label. Removing that label permits upstream regeneration and may overwrite
   those branch-only edits; first move essential text to main if needed.
+- Freeze only when the maintainer starts reviewing that candidate for release
+  (see [Release cadence](#release-cadence)), not days ahead. A frozen candidate
+  is not regenerated, so each later merge to `main` leaves its notes and
+  final-head CI short of `main`. Between releases, keep it unfrozen and merge
+  ordinary PRs normally; once the review starts, hold ordinary merges until the
+  release PR merges or the review is dropped. An agent may regenerate, freeze,
+  curate and validate a candidate, but merging the release PR, which publishes,
+  is the maintainer's decision.
 - The workflow uses `GITHUB_TOKEN`. When it creates or updates the release PR,
   GitHub does create `pull_request` runs for the new head, but as
   `github-actions[bot]` they start no jobs: they wait with conclusion

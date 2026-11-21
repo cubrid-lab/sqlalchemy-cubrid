@@ -97,9 +97,24 @@ wheel/sdist의 새 환경 설치를 확인합니다. 지원 범위:
 
 | 드라이버 | 설치 | URL 스킴 | 상태 |
 |---|---|---|---|
-| CUBRIDdb (CCI) | cubrid-python v11.3.0.51+에서 빌드 ([방법](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)). `[cubrid]` / `[cubriddb]` extra는 폐기 예정이며 테스트되지 않은 PyPI 9.3.x를 설치 | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원되는 C 확장 드라이버 (v11.3.0.51+만) |
+| CUBRIDdb (CCI) | 유지되는 두 가지 설치 방법: `[cubrid]` / `[cubriddb]` extra로 PyPI `CUBRID-Python` 9.3.0 릴리스를 설치하거나, cubrid-python v11.3.0.51을 소스에서 빌드 ([방법](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)) | `cubrid://` / `cubrid+cubriddb://` | ✅ 지원되는 C 확장 드라이버 (두 드라이버 계열 모두. 아래 검증 현황 참고) |
 | pycubrid (순수 Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ 지원 |
 | pycubrid 비동기 | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ 지원 |
+
+새 프로젝트에는 pycubrid를 권장합니다. CUBRID 네이티브 라이브러리가 필요 없고
+[드라이버 호환성](DRIVER_COMPAT.md#알려진-문제)의 CUBRIDdb 제약을 피할 수 있습니다.
+
+#### 드라이버 검증 현황
+
+지원 정책(위 표)과 검증(이 표)은 별개입니다. 지원되는 드라이버 계열이라도 기록된 통과 실행이
+없을 수 있으며, 이런 조합은 지원되지만 검증되지 않은 상태입니다. 아래 드라이버 버전은 Python
+드라이버 버전이며 CUBRID 서버 버전이 아닙니다.
+
+| 드라이버 계열 | 검증된 조합 | 알려진 제약 |
+|---|---|---|
+| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (소스 압축 파일 `9.3.0.0001` / `9.3.0.0002`) | 검증되지 않음: 통합 테스트를 통과하지 못함. 수동 실행 `cubriddb-pypi.yml` lane(2026-11-13, 드라이버 `9.3.0.1`, CUBRID 11.4, Python 3.12)에서 방언 수정 후 691개 중 55개 실패, 첫 로컬 실행(2026-11-12)에서는 677개 중 100개 실패, 2개 오류(#1143). 다른 CUBRID 및 Python 버전은 검증되지 않음 | `BIGINT` 값을 `str`로 반환하고 바인딩 매개변수를 문자열로 보냄. 방언이 `BIGINT` 결과를 변환하고 `LIMIT offset, count` 값을 SQL에 직접 씀(#583, #1145, #1299). `bytes`를 바인딩할 수 없고, 제약 조건 위반이 `DatabaseError`로 발생하며, 재귀 CTE와 `SET` 바인딩이 실패하고, 닫힌 연결을 다시 닫으면 `SystemError`가 남을 수 있음(#585, #1143, #1320). [드라이버 호환성](DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약) 참고 |
+| CUBRIDdb, cubrid-python v11.3.0.51 소스 빌드 | PR CI에서 CUBRID 11.4 SQLAlchemy 호환성(compliance) 레인, 전체 매트릭스(수동 실행과 모든 릴리스)에서 CUBRID 10.2–11.4 통합 테스트. [CI 매트릭스](#ci-매트릭스) 참고 | [드라이버 호환성, 알려진 문제](DRIVER_COMPAT.md#알려진-문제) |
+| pycubrid (동기 및 비동기) | PR과 main CI의 통합 및 SQLAlchemy 호환성(compliance) 레인, 전체 매트릭스에서 CUBRID 10.2–11.4 통합 테스트. [CI 매트릭스](#ci-매트릭스) 참고 | [드라이버 호환성, 알려진 문제](DRIVER_COMPAT.md#알려진-문제) |
 
 ---
 

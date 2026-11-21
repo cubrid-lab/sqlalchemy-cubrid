@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Troubleshooting the sqlalchemy-cubrid dialect
+    url: https://cubrid-lab.github.io/sqlalchemy-cubrid/TROUBLESHOOTING/
+    about: Check installation, drivers, connection errors and known limitations before filing a bug
+  - name: Ask a question in sqlalchemy-cubrid Discussions
+    url: https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions
+    about: Ask usage questions and get help; use Bug Report for reproducible defects
   - name: SQLAlchemy Documentation
     url: https://docs.sqlalchemy.org/
     about: Official SQLAlchemy documentation and guides

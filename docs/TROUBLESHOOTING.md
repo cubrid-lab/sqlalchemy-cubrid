@@ -7,9 +7,10 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 ## Table of Contents
 
 - [Installation Issues](#installation-issues)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
-  - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
+  - [ImportError: Could not import CUBRIDdb](#importerror-could-not-import-cubriddb)
+  - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
+  - [Missing greenlet for async engines](#missing-greenlet-for-async-engines)
 - [Connection Issues](#connection-issues)
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Database Server Host Not Found After Recreating the Container](#database-server-host-not-found-after-recreating-the-container)
@@ -74,22 +75,28 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 
 ## Installation Issues
 
-### ImportError: No module named 'CUBRIDdb'
+### ImportError: Could not import CUBRIDdb
 
 **Symptom:**
 
 ```
-ImportError: No module named 'CUBRIDdb'
+ImportError: Could not import CUBRIDdb. The cubrid:// and cubrid+cubriddb:// URLs use the CUBRIDdb C-extension driver. Install it with pip install "sqlalchemy-cubrid[cubriddb]" (the CUBRID-Python distribution on PyPI), or build CUBRIDdb from the official CUBRID/cubrid-python source. Alternatively, use the pure-Python pycubrid driver with pip install "sqlalchemy-cubrid[pycubrid]" and a cubrid+pycubrid:// URL. Check driver and server version compatibility separately.
 ```
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
-cubrid-python v11.3.0.51 or later, see
-[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
-CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
-9.3.x release, see
-[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
+**Fix — Option A: Install the CUBRIDdb C-extension driver:** install the PyPI
+CUBRID-Python package using the installation extra, or build the driver from
+[official CUBRID/cubrid-python source](https://github.com/CUBRID/cubrid-python):
+
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"
+```
+
+Source builds require appropriate CUBRID CCI headers and a C compiler; see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source).
+Check driver, Python, and CUBRID server version compatibility separately. The
+availability of an installation method does not prove every combination was tested.
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
@@ -109,12 +116,12 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 ---
 
-### ImportError: No module named 'pycubrid'
+### ModuleNotFoundError: No module named 'pycubrid'
 
 **Symptom:**
 
 ```
-ImportError: No module named 'pycubrid'
+ModuleNotFoundError: No module named 'pycubrid'
 ```
 
 **Fix:**
@@ -144,6 +151,34 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ---
 
+### Missing greenlet for async engines
+
+**Symptom:** creating an async SQLAlchemy engine fails before connecting:
+
+```text
+ImportError: The SQLAlchemy asyncio module requires that the Python 'greenlet' library is installed.
+```
+
+**Cause:** In SQLAlchemy 2.1, installing the base SQLAlchemy package alone
+does not necessarily install `greenlet`. An environment with `pycubrid` but
+without SQLAlchemy's asyncio dependencies cannot use `create_async_engine()`.
+
+**Fix:** install the supported dialect extra, which includes the async
+dependencies, or install SQLAlchemy's asyncio extra explicitly:
+
+```bash
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+# If the dialect and driver are already installed:
+python -m pip install "sqlalchemy[asyncio]"
+```
+
+Some Python/platform combinations do not have a compatible `greenlet` wheel
+and require a compiler/build tools. Check that the install command succeeded
+in the **same virtual environment** used by the async application. Use
+`cubrid+aiopycubrid://` for the async dialect, not `cubrid://`.
+
+---
+
 ## Connection Issues
 
 ### Connection Refused on Port 33000
@@ -152,24 +187,39 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ```
 OperationalError: (CUBRIDdb.DatabaseError) Connection refused
+OperationalError: (pycubrid.exceptions.OperationalError) failed to connect to CUBRID broker
 ```
 
 **Fixes:**
 
-1. **Check the CUBRID broker is running:**
+1. **Check the broker inside the container** (not on the host, unless CUBRID is installed there):
 
    ```bash
-   cubrid broker status
-   cubrid service status
+   docker compose ps
+   docker compose exec -T cubrid cubrid broker status
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
 
-2. **Docker container not ready:**
+2. **Wait for database login readiness, not an arbitrary delay:**
 
    ```bash
    docker compose up -d
-   sleep 10  # Wait for full initialization
-   docker compose ps  # Verify "running" status
+   docker compose ps
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
+
+   For the **Lesson 1 `docker run` lab** instead of Compose:
+
+   ```bash
+   docker ps --filter name=sqlalchemy-cubrid-quickstart
+   docker logs sqlalchemy-cubrid-quickstart
+   docker exec sqlalchemy-cubrid-quickstart cubrid broker status
+   docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+   ```
+
+   If `SELECT 1` is not ready yet, use the **up-to-three-minute readiness loop** in
+   [Lesson 1](LESSON_PREPARE.md) rather than repeatedly restarting the container.
+   A running container or an available broker alone does not prove database login readiness.
 
 3. **Wrong port:** Check `cubrid_broker.conf` for the actual broker port.
 
@@ -216,20 +266,24 @@ database. Use it only for a volume whose data you do not need.
 
 ### Authentication Failed
 
-**Symptom:**
+**Symptom:** Depending on driver and SQLAlchemy's exception wrapper, the
+underlying CUBRID error can contain either of these messages:
 
-```
-OperationalError: Authentication failed
+```text
+User "..." is invalid
+Incorrect or missing password
 ```
 
-**Fix:** CUBRID's default `dba` user has **no password**:
+**Fix:** Check the username, database and password in the URL. The **local
+disposable Docker lab** creates a `dba` user without a password; do not
+assume that a production server allows an empty DBA password:
 
 ```python
-# Correct — no password
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+# Disposable local lab only — empty password
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
-# Correct — with password (if set)
-engine = create_engine("cubrid://dba:mypassword@localhost:33000/testdb")
+# Server with an explicitly configured password
+engine = create_engine("cubrid+pycubrid://dba:mypassword@localhost:33000/testdb")
 ```
 
 ---
@@ -1261,6 +1315,16 @@ No configuration needed — it works automatically.
 
 ## Docker Issues
 
+**Apple silicon / arm64 Docker image:** The course's
+`cubrid/cubrid:11.4` lab image is documented for amd64, not native arm64.
+On a Mac with Apple silicon, try adding `--platform linux/amd64` to the
+[Lesson 1 `docker run` example](LESSON_PREPARE.md#option-b-i-need-a-disposable-local-database)
+to request Docker emulation; then use the existing three-minute database
+readiness loop and inspect the container logs. This is **unverified** and can
+be slower. If emulation does not work, use a reachable pre-existing CUBRID
+server (Lesson 1 Option A). Do not replace the loopback port binding or
+assume the image has native arm64 support.
+
 ### Container Starts but Cannot Connect
 
 **Fix:**
@@ -1269,8 +1333,15 @@ No configuration needed — it works automatically.
 # 1. Check container is actually running
 docker compose ps
 
-# 2. Wait for broker initialization (takes ~10 seconds)
-docker compose up -d && sleep 10
+# 2. Wait until the Compose healthcheck / actual database login succeeds
+docker compose up -d
+docker compose ps
+docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
+
+# For the separate Lesson 1 lab use:
+# docker logs sqlalchemy-cubrid-quickstart
+# docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+# See Lesson 1's up-to-three-minute readiness loop before troubleshooting further.
 
 # 3. Test connection
 python3 -c "
@@ -1290,11 +1361,11 @@ with engine.connect() as conn:
 ```yaml
 services:
   cubrid:
-    image: cubrid/cubrid:11.2
+    image: cubrid/cubrid:11.4
     environment:
       CUBRID_DB: testdb  # Only this database is created
     ports:
-      - "33000:33000"
+      - "127.0.0.1:33000:33000"
 ```
 
 If your connection URL uses a different database name, it will fail. Match `CUBRID_DB` with your connection URL.
@@ -1314,14 +1385,16 @@ CUBRID_VERSION=11.4 docker compose up -d
 CUBRID_VERSION=10.2 docker compose up -d
 ```
 
-**Known version differences:**
+**Version-specific checks:**
 
-| Feature | CUBRID 10.2 | CUBRID 11.0+ |
+| Feature | CUBRID 10.2 | CUBRID 11.0–11.4 |
 |---|---|---|
-| `LIMIT` in `UPDATE` | ❌ | ✅ |
-| `CTE` (WITH clause) | ❌ | ✅ |
-| `MERGE` | ✅ | ✅ |
-| Index comments | ❌ | ✅ |
+| `LIMIT` in `UPDATE` | Not verified | Not verified |
+| `CTE` (`WITH` / `WITH RECURSIVE`) | ✅ Verified | ✅ Verified |
+| `MERGE` | Not verified by version | Not verified by version |
+| Index comments | Not verified | Not verified |
+
+`WITH` and `WITH RECURSIVE` were checked live on 10.2, 11.0, 11.2 and 11.4; see [CTE tests and boundaries](FEATURE_SUPPORT.md#query-features) and the [support matrix](SUPPORT_MATRIX.md#dml-extensions). “Not verified” denotes missing per-version evidence in this guide, **not** a claim that the database lacks the feature.
 
 ---
 
@@ -1339,7 +1412,7 @@ flowchart TD
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
-    i1 -->|CUBRIDdb| i2[Install CUBRID-Python and CCI dependencies]
+    i1 -->|CUBRIDdb| i2["Install sqlalchemy-cubrid[cubriddb], build CUBRIDdb from cubrid-python v11.3.0.51, or switch to cubrid+pycubrid"]
     i1 -->|pycubrid| i3[Install pycubrid and use cubrid+pycubrid URL]
 
     conn --> c1{Broker reachable?}
@@ -1396,11 +1469,12 @@ print(engine.dialect.server_version_info)  # (11, 2, 0, 378)
 ### Inspect Compiled SQL
 
 ```python
-from sqlalchemy.dialects import registry
+from sqlalchemy import column, select, table
 
 # Compile a statement for CUBRID without executing
 from sqlalchemy_cubrid.dialect import CubridDialect
 
+users = table("users", column("id"), column("name"))
 stmt = select(users).where(users.c.name == "Alice")
 compiled = stmt.compile(dialect=CubridDialect())
 print(str(compiled))

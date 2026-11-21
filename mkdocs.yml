@@ -22,18 +22,21 @@ theme:
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: deep orange
-      accent: orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-night
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      primary: deep orange
-      accent: orange
+      primary: custom
+      accent: custom
       toggle:
         icon: material/weather-sunny
         name: Switch to light mode
+
+extra_css:
+  - stylesheets/brand.css
 
 nav:
   - Home: index.md
@@ -57,6 +60,9 @@ nav:
       - Driver Compatibility: DRIVER_COMPAT.md
   - Help:
       - Troubleshooting: TROUBLESHOOTING.md
+      - "Ask a Question": https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions
+      - "Report a Bug": https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new/choose
+      - "Report a Vulnerability": https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md
   - Project and internals:
       - Architecture: ARCHITECTURE.md
       - SQLAlchemy Internal API Compatibility: SA_COMPAT.md

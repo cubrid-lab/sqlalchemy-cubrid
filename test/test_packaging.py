@@ -99,6 +99,21 @@ class TestEntryPoints:
         assert '[project.entry-points."sqlalchemy.dialects"]' in pyproject_text
         assert entry_line in pyproject_text
 
+    @pytest.mark.parametrize("extra", ["cubrid", "cubriddb"])
+    def test_cubriddb_extras_stay_maintained_options(self, extra: str):
+        """Both CUBRIDdb extras keep installing PyPI CUBRID-Python, unbounded (#1141)."""
+        import tomllib
+
+        pyproject_text = _read_pyproject()
+        extras = tomllib.loads(pyproject_text)["project"]["optional-dependencies"]
+
+        assert extras[extra] == ["CUBRID-Python"]
+        assert set(extras) >= {"cubrid", "cubriddb", "pycubrid"}
+        extras_block = pyproject_text.split("[project.optional-dependencies]", 1)[1]
+        extras_block = extras_block.split("\n[", 1)[0].lower()
+        for word in ("deprecated", "legacy", "unsupported", "removal"):
+            assert word not in extras_block
+
     def test_no_alembic_ddl_entry_point_declared(self):
         # Alembic never reads an ``alembic.ddl`` group; CubridImpl is registered
         # by the alembic.plugins entry point or the dialect module (#504, #595).

@@ -41,6 +41,7 @@ from typing import Any, NoReturn
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
 
 pytestmark = pytest.mark.integration
 
@@ -324,3 +325,338 @@ def test_stop_after_commit_invalidates(
     server.start()
     with engine.connect() as conn:
         assert conn.execute(_SELECT_1).scalar() == 1
+
+
+# ---------------------------------------------------------------------------
+# Broker (CAS) restarts under a QueuePool, with pycubrid (#1151)
+# ---------------------------------------------------------------------------
+#
+# ``cubrid broker restart`` replaces every CAS process while cub_server keeps
+# running. These tests cover the SQLAlchemy pool side of that event: idle
+# pooled connections are reused safely, work in flight fails as a disconnect
+# instead of being reported as committed or silently replayed, and fresh
+# requests succeed once the broker is back. The idle-reuse and mid-transaction
+# tests run with both drivers through ``driver_url``; the concurrent audited
+# workload runs with pycubrid.
+
+
+def _restart_broker(server: _Server) -> None:
+    result = _docker_exec(server.container, "cubrid broker restart")
+    if result.returncode != 0:
+        pytest.fail(
+            f"cubrid broker restart failed (rc={result.returncode}):\n"
+            f"{result.stdout}\n{result.stderr}",
+            pytrace=False,
+        )
+    server.wait_ready()
+
+
+@pytest.fixture
+def pycubrid_url(server: _Server) -> sa.engine.URL:
+    url = server.url.set(drivername=_DRIVERS["pycubrid"])
+    if not _can_connect(url):
+        _unavailable(f"pycubrid cannot connect to {url.render_as_string()}")
+    server.ready_url = url
+    return url
+
+
+@pytest.fixture
+def audit_table(pycubrid_url: sa.engine.URL) -> Iterator[sa.Table]:
+    """A table whose primary key makes every write attempt countable exactly once."""
+    table = sa.Table(
+        "restart_audit_1151", sa.MetaData(), sa.Column("id", sa.Integer, primary_key=True)
+    )
+    engine = sa.create_engine(pycubrid_url, poolclass=sa.pool.NullPool)
+    try:
+        table.drop(engine, checkfirst=True)
+        table.create(engine)
+        yield table
+        table.drop(engine, checkfirst=True)
+    finally:
+        engine.dispose()
+
+
+def _ids(url: sa.engine.URL, table: sa.Table) -> list[int]:
+    engine = sa.create_engine(url, poolclass=sa.pool.NullPool)
+    try:
+        with engine.connect() as conn:
+            return [row[0] for row in conn.execute(sa.select(table.c.id).order_by(table.c.id))]
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("pre_ping", [False, True], ids=["no_pre_ping", "pre_ping"])
+def test_broker_restart_while_idle_reuses_pool_safely(
+    server: _Server, driver_url: sa.engine.URL, pre_ping: bool
+) -> None:
+    """Idle pooled connections survive a broker restart; every checkout works.
+
+    Observed with pycubrid 1.17.0 on CUBRID 11.4 and 10.2, and with CUBRIDdb
+    v11.3.0.51 and the PyPI 9.3 release on CUBRID 11.4: the first statement on
+    each pooled connection succeeds after the restart, with and without
+    ``pool_pre_ping``.
+    """
+    engine = sa.create_engine(
+        driver_url, pool_size=3, max_overflow=0, pool_pre_ping=pre_ping, pool_timeout=30
+    )
+    try:
+        conns = [engine.connect() for _ in range(3)]
+        for conn in conns:
+            assert conn.execute(_SELECT_1).scalar() == 1
+            conn.close()
+        _restart_broker(server)
+
+        conns = [engine.connect() for _ in range(3)]
+        try:
+            for conn in conns:
+                assert conn.execute(_SELECT_1).scalar() == 1
+        finally:
+            for conn in conns:
+                conn.close()
+        assert isinstance(engine.pool, sa.pool.QueuePool)
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+@pytest.mark.parametrize("step", ["commit", "statement"])
+def test_broker_restart_mid_transaction_fails_without_replay(
+    server: _Server,
+    driver_url: sa.engine.URL,
+    pycubrid_url: sa.engine.URL,
+    audit_table: sa.Table,
+    step: str,
+) -> None:
+    """Work interrupted by a broker restart fails as a disconnect and is not stored.
+
+    ``commit``: the INSERT ran before the restart and the COMMIT after it.
+    ``statement``: the transaction began before the restart and the INSERT ran
+    after it. Either way the error invalidates the connection, the row is not
+    committed, nothing replays it, and the next request succeeds. CUBRIDdb
+    reports the lost CAS as ``InterfaceError`` -20004 ("Cannot communicate with
+    server"), which the dialect classifies as a disconnect. The table is read
+    back through pycubrid, independently of the driver under test.
+    """
+    engine = sa.create_engine(driver_url, pool_size=1, max_overflow=0)
+    try:
+        conn = engine.connect()
+        try:
+            if step == "commit":
+                conn.execute(audit_table.insert().values(id=1))
+            else:
+                conn.execute(_SELECT_1)
+            old = _dbapi_connection(conn)
+            _restart_broker(server)
+
+            with pytest.raises(DBAPIError) as info:
+                if step == "statement":
+                    conn.execute(audit_table.insert().values(id=1))
+                conn.commit()
+            assert info.value.connection_invalidated
+            conn.rollback()
+        finally:
+            conn.close()
+
+        assert _ids(pycubrid_url, audit_table) == []
+        with engine.begin() as conn:
+            assert _dbapi_connection(conn) is not old
+            conn.execute(audit_table.insert().values(id=2))
+        assert _ids(pycubrid_url, audit_table) == [2]
+    finally:
+        engine.dispose()
+
+
+def test_concurrent_requests_across_broker_restart_are_audited(
+    server: _Server,
+    pycubrid_url: sa.engine.URL,
+    audit_table: sa.Table,
+    record_property: Callable[[str, object], None],
+) -> None:
+    """Concurrent short write requests on a QueuePool, with a broker restart midway.
+
+    Each request inserts one unique id in its own transaction. After the run:
+
+    * every acknowledged id is stored exactly once (no lost commits);
+    * nothing is stored that was never attempted (no replay or invention);
+    * a failed request is reported as a failure. Its id may still be stored,
+      once, only when the failure came from the COMMIT itself: the server
+      applied the commit and the reply was lost ("connection lost during
+      receive"), the in-doubt case an application must check, not retry
+      blindly. A request that failed before COMMIT never leaves a row, which
+      would mean a silent replay;
+    * requests started after the restart succeed, and the pool ends with no
+      connection checked out.
+    """
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    engine = sa.create_engine(
+        pycubrid_url, pool_size=4, max_overflow=2, pool_timeout=60, pool_pre_ping=True
+    )
+    invalidations: list[object] = []
+    sa.event.listen(engine, "invalidate", lambda *args: invalidations.append(args[0]))
+    acknowledged: set[int] = set()
+    failed_at: dict[int, str] = {}
+    lock = threading.Lock()
+
+    def request(request_id: int) -> None:
+        stage = "checkout"
+        try:
+            with engine.connect() as conn:
+                stage = "insert"
+                conn.execute(audit_table.insert().values(id=request_id))
+                stage = "select"
+                conn.execute(_SELECT_1)
+                stage = "commit"
+                conn.commit()
+        except DBAPIError:
+            with lock:
+                failed_at[request_id] = stage
+        else:
+            with lock:
+                acknowledged.add(request_id)
+
+    try:
+        restart_done = threading.Event()
+
+        def restart_midway() -> None:
+            time.sleep(0.5)
+            _restart_broker(server)
+            restart_done.set()
+
+        restarter = threading.Thread(target=restart_midway)
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            restarter.start()
+            request_id = 0
+            while not restart_done.is_set():
+                batch = [request_id + n for n in range(8)]
+                request_id += 8
+                list(executor.map(request, batch))
+            restarter.join()
+            after = list(range(request_id, request_id + 32))
+            list(executor.map(request, after))
+
+        stored = _ids(pycubrid_url, audit_table)
+        failed = set(failed_at)
+        # Recorded in the JUnit report: whether the restart hit in-flight work
+        # differs from run to run, and the counts are the evidence (#1151).
+        for name, value in (
+            ("requests", request_id + len(after)),
+            ("acknowledged", len(acknowledged)),
+            ("failed", len(failed)),
+            ("failed_but_stored", len(failed & set(stored))),
+            ("pool_invalidations", len(invalidations)),
+        ):
+            record_property(name, value)
+        assert len(stored) == len(set(stored))
+        assert acknowledged <= set(stored), "an acknowledged commit was lost"
+        assert set(stored) <= acknowledged | failed, "a row appeared that was never attempted"
+        in_doubt = {request_id: failed_at[request_id] for request_id in failed & set(stored)}
+        assert set(in_doubt.values()) <= {"commit"}, (
+            f"a write failed before COMMIT yet was stored: {in_doubt}"
+        )
+        assert set(after) <= acknowledged, "requests after the restart must succeed"
+        assert isinstance(engine.pool, sa.pool.QueuePool)
+        assert engine.pool.checkedout() == 0
+    finally:
+        engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# Broker (CAS) restarts under an AsyncAdaptedQueuePool, with aiopycubrid (#1151)
+# ---------------------------------------------------------------------------
+#
+# The same broker-restart contract for the supported async engine path,
+# ``cubrid+aiopycubrid`` (pycubrid.aio), whose default pool is
+# ``AsyncAdaptedQueuePool``. Evidence is kept separate from the sync tests
+# above: the async adapter has its own socket and reconnect code in the driver.
+
+
+@pytest.fixture
+def aio_url(pycubrid_url: sa.engine.URL) -> sa.engine.URL:
+    """The async URL for the same server; readiness is still probed through sync pycubrid."""
+    try:
+        import greenlet  # noqa: F401 - SQLAlchemy's asyncio extension needs it
+    except ImportError:
+        _unavailable("greenlet is not installed (pip install 'sqlalchemy[asyncio]')")
+    return pycubrid_url.set(drivername="cubrid+aiopycubrid")
+
+
+async def _driver_connection(conn: AsyncConnection) -> Any:
+    return (await conn.get_raw_connection()).driver_connection
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("pre_ping", [False, True], ids=["no_pre_ping", "pre_ping"])
+async def test_async_broker_restart_while_idle_reuses_pool_safely(
+    server: _Server, aio_url: sa.engine.URL, pre_ping: bool
+) -> None:
+    """Idle async pooled connections survive a broker restart; every checkout works."""
+    engine = create_async_engine(
+        aio_url, pool_size=3, max_overflow=0, pool_pre_ping=pre_ping, pool_timeout=30
+    )
+    try:
+        conns = [await engine.connect() for _ in range(3)]
+        for conn in conns:
+            assert (await conn.execute(_SELECT_1)).scalar() == 1
+            await conn.close()
+        _restart_broker(server)
+
+        conns = [await engine.connect() for _ in range(3)]
+        try:
+            for conn in conns:
+                assert (await conn.execute(_SELECT_1)).scalar() == 1
+        finally:
+            for conn in conns:
+                await conn.close()
+        pool = engine.sync_engine.pool
+        assert isinstance(pool, sa.pool.AsyncAdaptedQueuePool)
+        assert pool.checkedout() == 0
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("step", ["commit", "statement"])
+async def test_async_broker_restart_mid_transaction_fails_without_replay(
+    server: _Server,
+    aio_url: sa.engine.URL,
+    pycubrid_url: sa.engine.URL,
+    audit_table: sa.Table,
+    step: str,
+) -> None:
+    """Async work interrupted by a broker restart fails as a disconnect and is not stored.
+
+    The steps match the sync test: ``commit`` runs the INSERT before the restart
+    and the COMMIT after it; ``statement`` begins the transaction before the
+    restart and runs the INSERT after it. The connection is invalidated, the row
+    is not committed or replayed, and a fresh checkout stores the next request.
+    """
+    engine = create_async_engine(aio_url, pool_size=1, max_overflow=0, pool_timeout=30)
+    try:
+        conn = await engine.connect()
+        try:
+            if step == "commit":
+                await conn.execute(audit_table.insert().values(id=1))
+            else:
+                await conn.execute(_SELECT_1)
+            old = await _driver_connection(conn)
+            _restart_broker(server)
+
+            with pytest.raises(DBAPIError) as info:
+                if step == "statement":
+                    await conn.execute(audit_table.insert().values(id=1))
+                await conn.commit()
+            assert info.value.connection_invalidated
+            await conn.rollback()
+        finally:
+            await conn.close()
+
+        assert _ids(pycubrid_url, audit_table) == []
+        async with engine.begin() as conn:
+            assert await _driver_connection(conn) is not old
+            await conn.execute(audit_table.insert().values(id=2))
+        assert _ids(pycubrid_url, audit_table) == [2]
+        assert engine.sync_engine.pool.checkedout() == 0
+    finally:
+        await engine.dispose()

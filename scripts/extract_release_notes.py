@@ -12,8 +12,9 @@ Usage:
 On success, writes the section body (without the header line) to
 RELEASE_NOTES.md in the current working directory, followed by exactly one
 ``**Full Changelog**: <REPO_URL>/compare/<PREV_TAG>...<TAG>`` line. PREV_TAG is
-the next older version section of the CHANGELOG; the link is omitted for the
-first release and when the section already contains a compare link.
+the next older *tagged* version section. The link is omitted for v0.1.0
+(the first existing Git tag; v0.0.1 is changelog-only), for the first release,
+or when the section already contains a compare link.
 
 Exit codes:
     0 — section extracted and written to RELEASE_NOTES.md
@@ -30,9 +31,14 @@ import sys
 REPO_URL = "https://github.com/cubrid-lab/sqlalchemy-cubrid"
 COMPARE_LINK = re.compile(r"https://github\.com/[^/\s]+/[^/\s]+/compare/")
 
+# v0.0.1 is a historical CHANGELOG entry, not an existing Git tag.
+FIRST_TAGGED_RELEASE = "v0.1.0"
+
 
 def full_changelog_link(tag: str, history: str) -> str | None:
-    """Compare link from the next older version section in ``history``, if any."""
+    """Compare link to an older Git tag, if one exists."""
+    if tag == FIRST_TAGGED_RELEASE:
+        return None
     previous = re.search(r"^## \[(\d+\.\d+\.\d+)\]", history, re.MULTILINE)
     if previous is None:
         return None

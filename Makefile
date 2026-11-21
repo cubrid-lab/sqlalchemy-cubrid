@@ -1,4 +1,4 @@
-.PHONY: help install doctor check-tool-versions lint format-check format typecheck security check-docs-reason check check-all agent-eval-check verify test test-fast test-repo test-offline test-all integration integration-local docker-up docker-down docker-clean docker-fix-db-host changelog clean clean-all release-check
+.PHONY: help install doctor check-tool-versions lint format-check format typecheck security check-docs-reason check agent-eval-check verify test test-fast test-repo test-offline test-all integration integration-local docker-up docker-down docker-clean docker-fix-db-host clean clean-all release-check
 
 # Every tool runs through the same interpreter, and each can be overridden from the
 # command line or the environment, e.g. `make check PYTHON=.venv/bin/python`.
@@ -10,7 +10,7 @@ BANDIT ?= $(PYTHON) -m bandit
 PRE_COMMIT ?= $(PYTHON) -m pre_commit
 SRC = sqlalchemy_cubrid
 TESTS = test
-LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples docs/source
+LINT_PATHS = $(SRC) _sqlalchemy_cubrid_alembic.py $(TESTS) scripts demos samples
 # make integration: the driver the suite connects with (pycubrid, the recommended
 # pure-Python driver, via cubrid+pycubrid://; or cubriddb, the CUBRIDdb C extension,
 # via cubrid://), an optional fixed Compose project name (default: a fresh name per
@@ -101,8 +101,6 @@ check-docs-reason: ## Check docs reasons and real event/workflow regressions
 check: lint format-check typecheck security check-docs-reason ## Complete non-test quality gate: lint, format-check, typecheck, security, check-docs-reason
 
 # Deprecated alias of `check`, kept for one minor release (#1009).
-check-all: check ## Deprecated alias of check (removed after the next minor release)
-	@echo "WARNING: 'make check-all' is deprecated and will be removed after the next minor release; use 'make check'." >&2
 
 agent-eval-check: ## Validate the agent-evals tasks and re-grade their fixtures (offline; no model, no DB)
 	$(PYTHON) scripts/agent_eval.py validate
@@ -225,9 +223,6 @@ docker-fix-db-host: ## Repair a running container's volume that registers testdb
 
 ##@ Maintenance
 
-changelog: ## Generate changelog with git-cliff
-	git-cliff --output CHANGELOG.md
-
 clean: ## Remove build artifacts and caches
 	rm -rf build/ dist/ *.egg-info .pytest_cache/ .coverage .ruff_cache/ __pycache__/ test-results/
 	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
@@ -242,6 +237,9 @@ release-check: ## Read-only release consistency gate (run by release-please.yml 
 		if [ "$$ACTUAL" != "$(VERSION)" ]; then echo "ERROR: $(SRC).__version__ is $$ACTUAL, expected $(VERSION)"; exit 1; fi; \
 		echo "OK: $(SRC).__version__ == $(VERSION)"
 	$(PYTHON) scripts/lint_changelog.py
+	# Only the release generator may use advisory mode to prepare a reviewable PR.
+	# The publisher and final-head CI use the strict default and fail closed.
+	$(PYTHON) scripts/check_release_note_quality.py --version $(VERSION) $(if $(filter 1,$(RELEASE_NOTES_ADVISORY)),--advisory,)
 	$(PYTHON) scripts/extract_release_notes.py v$(VERSION)
 	rm -f RELEASE_NOTES.md
 	rm -rf dist

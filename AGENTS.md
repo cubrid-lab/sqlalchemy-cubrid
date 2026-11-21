@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## Issue, PR, and commit writing (sqlalchemy-cubrid)
+
+Issue titles use **type only** (such as `feat: ...`, `bug: ...`), with no required module scope. Explain a clear human-readable problem or goal and verifiable acceptance criteria; separate verified observations from assumptions and omit personal comments/internal IDs. Triage evaluates validity, duplication, scope, priority and size; PRs/commits follow local Conventional Commits and existing PR validation gates. Follow the local [contribution guide](CONTRIBUTING.md) and issue templates.
+
 Project knowledge base for AI coding agents.
 
 ## Project Overview
@@ -116,7 +120,7 @@ make docker-clean                             # Stop and delete the test data vo
 
 ### Anti-Patterns (Never Do)
 
-- No `as any`, `@ts-ignore` equivalents — no type suppression
+- Avoid unscoped or unexplained type suppression. Use `# type: ignore[code]` **only when needed** for a documented, narrow third-party typing limitation; explain the reason at the call site and keep the specific mypy error code. Never use a bare `# type: ignore` or broad suppression to hide a real defect. Existing justified, error-coded ignores remain permitted.
 - No f-string interpolation in SQL queries (SQL injection risk)
 - No `super(ClassName, self)` — use `super()` only
 - No Python 2 constructs (`basestring`, `getargspec`, etc.)
@@ -313,8 +317,7 @@ canonical labels. Outside reporters do not need label-write permission: they can
 describe urgency and effort, but those descriptions help triage and do not
 themselves assign a label.
 
-Issue titles use the same `type(scope): description` format as pull request
-titles (see [CONTRIBUTING.md](CONTRIBUTING.md#pull-request-and-commit-titles)).
+Issue titles use `type: description` without a module scope, as described in [CONTRIBUTING.md](CONTRIBUTING.md) and the issue templates.
 `.github/workflows/issue-triage.yml` marks externally opened issues with
 `status: needs triage` without guessing priority/size. Authorized agents and
 workflows using `GITHUB_TOKEN` must include that label at issue creation;
@@ -379,10 +382,15 @@ follow-up. Korean-required checks and other-language advisory checks remain inta
 
 Do not mark work complete until code, tests, and documentation are consistent.
 
-Driver terminology: CUBRIDdb built from cubrid-python v11.3.0.51+ is the
-supported official C-extension driver. Recommend pycubrid for new projects,
-but describe the `[cubrid]` / `[cubriddb]` installation extras (which select an
-untested old PyPI package) as deprecated, not the supported driver itself.
+Driver terminology: the official CUBRIDdb C-extension driver is supported in
+both maintained lines, the PyPI `CUBRID-Python` 9.3.0 release installed by the
+`[cubrid]` / `[cubriddb]` extras and a build of the cubrid-python v11.3.0.51
+source release. Recommend pycubrid for new projects, but never describe a
+supported driver line or its extras as deprecated, legacy or unsupported.
+Report verification separately: CI tests the v11.3.0.51 build, while the 9.3.0
+line is supported but not verified on current Python versions, with its known
+limitations recorded in `docs/DRIVER_COMPAT.md`. Keep driver versions distinct
+from CUBRID server versions.
 Keep valid historical uses of “legacy,” such as CAS error-code formats.
 
 For README, support/driver/connection guides, PRD, packaging and release-note
@@ -400,7 +408,7 @@ need linked test/run evidence or an explicit untested qualifier in the PR body.
 
 ## Commit Convention
 
-Issue titles, pull request titles and commit subjects follow
+Pull request titles and commit subjects follow
 [CONTRIBUTING.md - Pull request and commit titles](CONTRIBUTING.md#pull-request-and-commit-titles):
 `type(scope)!: description` with types `feat`, `fix`, `docs`, `test`, `perf`,
 `refactor`, `ci`, `build`, `chore`, `style`, `revert`; English, lowercase start
@@ -446,6 +454,28 @@ a specific agent review sequence is a prerequisite for contributions.
 
 ## Release Process
 
+**1.x API compatibility:** keep SQLAlchemy Core/ORM, compiled SQL, types and
+value correctness, reflection, migrations and supported-driver semantics stable.
+An individually approved **dialect-specific convenience API** may change in a
+reviewed **MINOR** after an actual user-impact assessment and usable Upgrade
+notes; there is no automatic 2.0 wait or blanket 28-day delay. Do **not**
+retroactively erase an explicit published "future MAJOR" deprecation promise:
+first ship an API-specific revised warning/migration notice, then review its
+later removal independently. In particular, #892's ignored `display_width`
+and `values` constructor arguments are a candidate, **not** yet approved for
+immediate removal from `main`. Cover positional `SMALLINT(11)` and `BIGINT(20)`
+users too. Keep PATCH compatible and all existing CI and publish gates.
+Authoritative policy: [`RELEASING.md`](RELEASING.md#public-api-compatibility-in-1x).
+
+**Cadence:** review meaningful release candidates approximately every two
+weeks; skip empty cycles. Security/correctness emergencies may ship earlier
+only with normal review and validation. The schedule governs **merging a
+reviewed release PR**, not Release Please candidate generation or automatic
+publishing on a timer. Do not rush an unverified candidate or couple
+sqlalchemy-cubrid releases to pycubrid version/date changes. Keep all
+SQLAlchemy/Alembic compatibility, CI and publication checks intact.
+See [`RELEASING.md`](RELEASING.md#release-cadence) for the operating rule.
+
 Maintainers own release/tag/publication actions and repository credentials.
 Contributors provide the change and validation evidence through the normal PR path.
 
@@ -460,7 +490,15 @@ cookbook smoke test called as a pinned reusable workflow, no token) → summary 
 Freeze release PRs with `autorelease: review` before editing candidate notes; wait
 for preparation to finish and start required PR CI on the final head. Curated
 main Unreleased notes are preserved during regeneration; branch-only edits
-require the freeze.
+require the freeze. Freeze only when the maintainer starts reviewing that
+candidate for release (at the planned cadence or for an urgent fix), not days
+ahead: a frozen candidate is not regenerated, so every later merge to `main`
+leaves its notes and final-head CI short of `main`, and removing the label lets
+regeneration discard the branch-only edits. Between releases, leave the
+candidate unfrozen and merge ordinary PRs normally; once the review starts, hold
+ordinary merges until the release PR merges or the review is dropped. Agents may
+regenerate, freeze, curate and validate a candidate, but never merge a release
+PR: merging publishes to PyPI, which is the maintainer's decision.
 Ordinary PRs never change `__version__` or date a CHANGELOG section. Never push
 tags or publish by hand; the only manual entry point is the narrow recovery
 dispatch of `publish-pypi.yml`. A `last-release-sha` override is temporary:
@@ -509,9 +547,16 @@ These rules add to the release procedure above; the procedures and gates in
   after 1.10.0.
 - Use `Documentation`, not `Docs`. Put release automation and tooling entries under
   `CI` or `Changed`.
-- Never bulk-rewrite historical notes or regenerate them from current `main`. A
-  selective fix needs a dry-run diff and maintainer approval. Never invent PR or commit
-  references. Note formatting never changes tags, dates, artifacts or publish state.
+- Release notes follow [the release notes style](docs/RELEASE_NOTES_STYLE.md):
+  concise user-impact summaries, verified PR-author credits as `by @username`,
+  and `(first contribution 🎉)` only when earlier merged PR history verifies it.
+  No separate Contributors heading is used.
+- Never rewrite historical notes by default or regenerate them from current
+  code. A one-time, explicitly reviewed retrospective cleanup can cover every
+  published release only after preserving original bodies and checking each
+  version's diff and author evidence. Keep `CHANGELOG.md` canonical and synchronize
+  published Release bodies after the reviewed source changes merge. Never invent
+  PR/commit references or change tags, dates, assets or publish state.
 
 ## Human-readable communication (all agents)
 
@@ -528,7 +573,7 @@ documentation, presentations, and other maintainer-facing writing.
   Do not substitute `P1`/`P2` for repository priority labels.
 - When an internal identifier is necessary for accurate cross-reference,
   **describe the subject first**, then add the identifier in context:
-  `pycubrid introduction (0:20; storyboard shot P1)`. Use descriptive
+  `sqlalchemy-cubrid dialect introduction (0:20; section 1)`. Use descriptive
   names and timestamps, section titles, or paths wherever practical.
 - Use natural, actionable wording. Prefer `Listen to the full narration and
   verify the pronunciation of each project name` to `Maintainer full listen`.
@@ -543,5 +588,20 @@ documentation, presentations, and other maintainer-facing writing.
   separate lookup table. Edit an existing editable comment to correct unclear
   wording rather than adding redundant follow-up comments.
 
-This is a shared writing convention, not a new CI check, reviewer approval,
-or merge gate. Keep existing repository-specific technical and safety rules.
+Source comments, docstrings, test names, examples, PR descriptions and review
+replies follow the local explanation rule below.
+State the SQL behavior, why the dialect handles it that way, and the CUBRID
+limitation or invariant involved before an issue link such as `(#591)`; the
+link stays afterwards for traceability. Do not rename tests, fixtures,
+compatibility-suite requirements or exact SQL examples to satisfy this rule,
+and revise existing comments only where a new reader would be confused.
+
+These are repository-local writing expectations, not a new CI check, reviewer approval,
+or merge gate. This project's dialect compatibility, test, security and
+release requirements remain authoritative.
+
+## Local design and evidence authority
+
+This repository owns **the Python SQLAlchemy CUBRID dialect and its supported CUBRIDdb/pycubrid DB-API integrations**. Even when an issue, PR or release note mentions another CUBRID Lab project, its title, opening rationale, test evidence, ADR decision and implementation acceptance must be independently understandable using SQLAlchemy URL dialect selection, SQL compilation, ORM/pool integration, dialect compatibility and its own real CUBRID regressions. Do not copy another repository's language/tool requirements, issue tracking, architecture approval or release schedule.
+
+The pycubrid and CUBRIDdb drivers are real supported runtime integrations; refer to their tested public DB-API behavior, not their project roadmaps or release policies. Use external links as explicit dependency or research context; keep local tests, review decisions and issue closure local. Verify the relevant PR title/body, issue, contributor instructions and published docs for pasted foreign terminology. This is a manual writing check and leaves existing CI and maintainer approval unchanged.

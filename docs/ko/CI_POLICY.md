@@ -30,6 +30,11 @@ PR은 푸시와 같은 전체 오프라인 선택(`-m "not integration and not r
 저장소 도구 테스트는 도구가 바뀔 때 Linux 한 레인에서 실행합니다. 오프라인 레인은 이
 모듈을 실행하지 않으므로 도구에는 `agent-evals/**`와 모든 저장소 도구 테스트 모듈이
 포함됩니다(#964).
+풀 리퀘스트에서 `release_tooling` 필터에 나열된 릴리스 노트 스크립트, 그 테스트 모듈과
+`release-please.yml`은 런타임·라이브 레인 대신 `release-tests` 레인(도구 레인과 정적 검사
+포함)만 선택합니다. main 푸시, 주간 실행과 수동 실행에서는 계속 코드로 취급합니다.
+`release-tests`는 나열된 모듈을 실행하고 나열된 경로가 없으면 실패하므로, 모듈을 지우거나
+이름을 바꾸려면 `ci.yml`을 고쳐야 하며 그 수정은 전체 검증을 선택합니다(#1154).
 정적 린트 잡은 생성 문서 검사와 README 비동기 예제 테스트(`test/test_readme_async_examples.py`)를
 포함해 모든 이벤트에서 계속 실행되므로, README만 바꾸는 변경도 이 테스트를 실행합니다.
 
@@ -126,6 +131,7 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 | CUBRID 버전 차등 비교 | `integration-full.yml` `version-differential` | 수동 실행과 릴리스 |
 | 퍼즈와 메타모픽 | `make integration` 안의 `dev` 프로필, `integration-full.yml` `fuzz-bug-hunt`의 `nightly` 프로필 | PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | 뮤테이션 테스트(비차단) | `integration-full.yml` `mutation-testing` | 수동 실행만, 릴리스 호출에서는 건너뜀(#747) |
+| CUBRIDdb PyPI 9.3 드라이버 계열(근거 수집, 비차단) | `cubriddb-pypi.yml` `cubriddb-pypi` (`make integration`, Python 3.12, CUBRID 11.4) | 수동 실행만(#1146) |
 
 ### 통합 정리
 
@@ -312,7 +318,7 @@ Python 3.11/CUBRID 10.2와 Python 3.14/CUBRID 11.4 셀에서도 같은 명령과
 | 변경된 워크플로 | PR 검증 |
 | --- | --- |
 | `ci.yml` | 정의한 모든 레인과 도구 레인, 오프라인 스위트 |
-| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml` | 도구 레인과 오프라인 스위트, 그리고 PR head에서 해당 워크플로를 수동 `workflow_dispatch`로 실행하고 PR에 링크 |
+| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml`, `cubriddb-pypi.yml` | 도구 레인과 오프라인 스위트, 그리고 PR head에서 해당 워크플로를 수동 `workflow_dispatch`로 실행하고 PR에 링크 |
 | `publish-pypi.yml`, `release-please.yml` | 도구 레인과 오프라인 스위트(릴리스 워크플로 테스트) |
 | 그 밖의 워크플로 | 도구 레인과 오프라인 스위트. `pr-title.yml`, `docs-sync.yml`, `codeql.yml`, `security.yml`은 PR에서 스스로도 실행됨 |
 
@@ -342,7 +348,32 @@ Python 버전의 서버 셀들이 wheel을 공유합니다. 적중하면 CCI 컴
 유지해야 합니다. 적중을 증거로 보지 않습니다. 매 실행이 wheel을 설치하고 `CUBRIDdb`를 import하며,
 준비 확인 단계가 스위트 실행 전에 실제 서버에 연결합니다.
 `test/test_workflow_cubriddb_cache.py`가 키 구성 요소와 적중 시에만 빌드를 건너뛰는지를
-검증합니다.
+검증합니다. GCC 14 이상(ubuntu-26.04 이미지의 GCC 15.2)은 고정된 v11.3.0.51 소스의
+`incompatible-pointer-types`와 `int-conversion`을 오류로 처리하므로, 빌드는 `CFLAGS`로
+이를 경고로 낮춥니다. 이 절차 변경에 맞춰 접두사를 `v2`로 올렸습니다.
+
+## CUBRIDdb PyPI 9.3 레인
+
+두 CUBRIDdb 드라이버 계열은 모두 지원되지만([지원 매트릭스](SUPPORT_MATRIX.md) 참고), 위의 모든 레인은
+cubrid-python v11.3.0.51 소스 릴리스에서 CUBRIDdb를 빌드합니다. `cubriddb-pypi.yml`은 Python × CUBRID
+매트릭스를 늘리지 않고 PyPI `CUBRID-Python` 9.3.x 계열에 반복 가능한 근거 경로 하나를 제공합니다(#1146).
+
+- `uv pip install -e ".[cubriddb,pycubrid]"`로 프로젝트를 설치합니다. `[cubriddb]` extra와 같은
+  해석 결과입니다. PyPI 9.3.0에는 소스 압축 파일이 두 개 있으며, uv와 pip는 현재 메타데이터가 파일
+  이름과 맞지 않는 `9.3.0.0002`를 버리고 `9.3.0.0001`을 9.3.0.1로 설치합니다. 드라이버 빌드가
+  실패하면 설치 단계가 실패하므로, 설치할 수 없는 드라이버는 건너뛰지 않고 실패로 보고됩니다.
+- 배포판 버전과 컴파일된 `_cubrid.__version__`을 잡 요약에 기록합니다. 두 압축 파일 모두 같은 두
+  값을 보고하므로 요약만으로는 어느 파일을 빌드했는지 알 수 없으며, 설치 로그에 해석 결과가
+  나옵니다.
+- 대표 셀 하나(Python 3.12, CUBRID 11.4)에서 `make integration INTEGRATION_DRIVER=cubriddb`를 기본
+  `--maxfail=25` 없이 실행하므로, 요약과 업로드된 JUnit 보고서에 실패한 테스트가 모두 나옵니다.
+  pycubrid도 설치하므로 드라이버 차이 테스트가 두 드라이버를 비교합니다. 전체 건너뜀 가드(#486)가
+  적용됩니다.
+
+이 레인은 수동 전용이며 게이트가 아닌 근거 수집용입니다. 필수 검사가 아니며 `publish-pypi.yml`이
+호출하지 않습니다. 알려진 9.3.x 드라이버 제약 때문에 현재는 실패합니다
+([드라이버 호환성](DRIVER_COMPAT.md), #1143). 실패는 실패로 유지합니다. 메인테이너가 통과한 기준 실행을 검토한 뒤에만 필수 검사로 올리고,
+그 결정을 여기에 기록하세요.
 
 ## 잡 타임아웃
 

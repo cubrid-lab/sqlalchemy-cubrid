@@ -121,7 +121,10 @@ graph TD
     pkg --> alembic["alembic_impl.py - Alembic migration support"]
     pkg --> typed["py.typed - PEP 561 marker"]
 
-    tests --> tcomp["test_compiler.py - SQL compilation tests"]
+    tests --> tcomp["test_compiler.py - SELECT and cross-statement compilation tests"]
+    tests --> tcompdml["test_compiler_dml.py - DML construct compilation tests"]
+    tests --> tcompddl["test_compiler_ddl.py - DDL compilation tests"]
+    tests --> tcomptypes["test_compiler_types.py - Type compilation tests"]
     tests --> ttypes["test_types.py - Type system tests"]
     tests --> tdialect["test_dialect_offline.py - Dialect tests (no DB)"]
     tests --> tbase["test_base.py - Base module tests"]
@@ -338,7 +341,17 @@ pytest는 종료 코드 1로 끝납니다. 의도적으로 건너뛰려면 `CUBR
 `test/test_server_restart.py`(#565)는
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"`로
 `cub_server`를 중지·시작하고, 두 드라이버 모두에서 `pool_pre_ping` 사용 여부와
-무관하게 풀이 망가진 연결을 무효화하고 회복하는지 확인합니다.
+무관하게 풀이 망가진 연결을 무효화하고 회복하는지 확인합니다. 브로커 테스트(#1151)는
+pycubrid `QueuePool` 아래에서 `cubrid broker restart`를 실행합니다. 유휴 풀 연결은 안전하게
+재사용되어야 하고, 중단된 작업은 저장되거나 재실행되지 않고 연결 끊김으로 실패해야 하며,
+동시 쓰기 요청은 테이블과 대조해 감사합니다(실패로 보고된 id는 COMMIT 자체의 응답이
+유실된 경우에만 저장될 수 있습니다). JUnit 보고서에 그 테스트의 요청, 실패, 불확실(in-doubt),
+무효화 횟수가 기록됩니다.
+비동기 브로커 테스트는 `cubrid+aiopycubrid` 엔진과 그 `AsyncAdaptedQueuePool`로 유휴
+재사용과 중단된 트랜잭션 검사를 반복하므로, 비동기 경로는 별도의 근거를 갖습니다. 재시작이
+필요 없는 풀 수명 주기 검사(`pool_recycle`, 체크아웃 타임아웃, 반환 시 롤백)는
+`test/test_stress_pool.py`에 있으며 모든 `make integration`에서 실행됩니다.
+`test/test_server_restart.py`는
 `CUBRID_TEST_DOCKER_CONTAINER`가 `CUBRID_TEST_URL`을 제공하는 컨테이너를 가리키지
 않으면 건너뜁니다. 테스트가 데이터베이스를 내리므로 버려도 되는 컨테이너를
 지정하세요:
@@ -351,6 +364,37 @@ CUBRID_TEST_DOCKER_CONTAINER=<container> \
 
 CI는 각 통합 잡의 마지막 단계에서 `CUBRID_REQUIRE_SERVER_RESTART=1`로 실행하며,
 이 변수는 모든 건너뛰기를 실패로 바꿉니다.
+
+`test/test_pool_soak.py`(#1151)는 pycubrid 풀(`pool_size=4`, `max_overflow=2`,
+`pool_timeout=30`, `pool_pre_ping=True`)에서 혼합 요청 워크로드를 제한된 시간 동안
+실행합니다. 결과를 따로 내는 두 번의 실행으로, 동기 `cubrid+pycubrid` 엔진과 `QueuePool`에서
+워커 스레드 6개가, 비동기 `cubrid+aiopycubrid` 엔진과 `AsyncAdaptedQueuePool`에서 asyncio
+태스크 6개가 요청 역할을 합니다. 요청은 짧은 읽기,
+커밋하거나 롤백하는 쓰기 트랜잭션, 그리고 풀 연결을 재사용 전까지 쉬게 하는 유휴 구간입니다.
+요청 종류와 단계별 성공, 실패, 불확실(in-doubt) 횟수, 풀의 connect, checkout, checkin,
+invalidate 이벤트, 지연 시간 백분위수를 세고, 프로세스 RSS, 열린 파일 디스크립터와 소켓
+수를 주기적으로 기록합니다. 끝나면 모든 쓰기를 테이블과 대조해 감사합니다. 확인된 커밋은
+한 번 저장되고, 롤백한 쓰기는 저장되지 않으며, 실패한 쓰기는 COMMIT 응답이 유실된 경우에만
+저장될 수 있습니다. 기본값으로 모든 `make integration`에서 3초 동안 실행되며, 정상 서버에서
+실패와 무효화가 없어야 하는 작은 회귀 검사입니다. 브로커 재시작을 포함한 긴 실행은 수동이며
+어떤 CI 레인에도 포함되지 않습니다. 버려도 되는 컨테이너를 지정하세요:
+
+```bash
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+CUBRID_SOAK_SECONDS=300 CUBRID_SOAK_BROKER_RESTART=1 \
+CUBRID_SOAK_REPORT=test-results/soak-report.json \
+  pytest test/test_pool_soak.py -v -rs --junitxml=test-results/soak-junit.xml
+```
+
+`CUBRID_SOAK_BROKER_RESTART=1`은 실행 시간의 40% 지점에서 `cubrid broker restart`를
+실행하며, `CUBRID_TEST_DOCKER_CONTAINER`가 없으면 실패합니다. 브로커가 돌아온 뒤 시작한
+요청은 모두 성공해야 합니다. `CUBRID_SOAK_REPORT`는 횟수, 자원 샘플, 정확한 Python,
+SQLAlchemy, 방언, pycubrid, 서버 버전을 담은 JSON 보고서를 쓰며, 비동기 실행은 파일 이름에
+`-async`를 붙인 별도 보고서(`soak-report-async.json`)를 같은 위치에 씁니다. 주요 횟수는 JUnit
+속성에도 기록됩니다. `CUBRID_SOAK_DRIVER=CUBRIDdb`를 지정하면 동기 워크로드를 pycubrid 대신
+CUBRIDdb 드라이버(`cubrid://`)로 실행합니다. 비동기 실행은 항상 aiopycubrid를 쓰며, 보고서에는
+로드된 CUBRIDdb 버전이 기록됩니다.
 
 ### 전체 SA 테스트 스위트
 
@@ -721,8 +765,8 @@ SQLAlchemy/Alembic으로 프로젝트의 엄격한 설정에 따라 `sqlalchemy_
 `include = ["*.py", "*.pyi"]`와 동일한 훅 타입 설정으로 CLI, CI, 훅 모두 Python
 소스를 다루며 문서의 코드 스니펫을 다시 작성하지 않습니다.
 
-Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모, 샘플,
-`docs/source`의 Python 설정을 포함합니다. CI와 tox는 `make lint`와 `make format-check`를 실행하고,
+Makefile의 공통 `LINT_PATHS`는 패키지, 테스트, 스크립트, 데모와 샘플의
+Python 소스를 포함합니다. CI와 tox는 `make lint`와 `make format-check`를 실행하고,
 훅은 계속 모든 추적된 Python/pyi 파일을 검사합니다. 일관성 검사는 유지보수 대상
 디렉터리 누락이나 공통 타깃을 우회하는 실행 설정을 거부합니다.
 

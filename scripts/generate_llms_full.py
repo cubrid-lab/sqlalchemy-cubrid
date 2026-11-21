@@ -37,17 +37,21 @@ DOC_FILES: list[str] = [
 ]
 
 
-def main() -> None:
-    repo_root = pathlib.Path(__file__).resolve().parent.parent
+def generate(repo_root: pathlib.Path) -> None:
     docs_dir = repo_root / "docs"
     output = docs_dir / "llms-full.txt"
 
-    sections: list[str] = []
-    for filename in DOC_FILES:
-        filepath = docs_dir / filename
-        if filepath.exists():
-            content = filepath.read_text(encoding="utf-8").strip()
-            sections.append(content)
+    # Fail before writing anything: a renamed or moved page must not silently
+    # produce an incomplete llms-full.txt.
+    missing = [name for name in [*DOC_FILES, "llms.txt"] if not (docs_dir / name).is_file()]
+    if missing:
+        raise SystemExit(
+            f"generate_llms_full: missing canonical docs under {docs_dir}: "
+            f"{', '.join(missing)}. Restore the page(s) or update DOC_FILES in "
+            "scripts/generate_llms_full.py."
+        )
+
+    sections = [(docs_dir / filename).read_text(encoding="utf-8").strip() for filename in DOC_FILES]
 
     _ = output.write_text("\n\n---\n\n".join(sections) + "\n", encoding="utf-8")
     print(f"Generated {output} ({output.stat().st_size:,} bytes)")
@@ -55,6 +59,10 @@ def main() -> None:
     root_index = repo_root / "llms.txt"
     _ = root_index.write_bytes((docs_dir / "llms.txt").read_bytes())
     print(f"Synced {root_index} from docs/llms.txt")
+
+
+def main() -> None:
+    generate(pathlib.Path(__file__).resolve().parent.parent)
 
 
 if __name__ == "__main__":

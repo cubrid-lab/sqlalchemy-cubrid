@@ -51,7 +51,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
           version: "0.12.17"
@@ -80,7 +80,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/cubriddb-wheel
-          key: cubriddb-wheel-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
+          key: cubriddb-wheel-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
 
       - name: Install system dependencies
         if: steps.cubriddb-cache.outputs.cache-hit != 'true'
@@ -105,6 +105,11 @@ jobs:
           echo 'exit 0' >> build_cci.sh
           chmod +x build_cci.sh
 
+          # GCC 14+ (GCC 15.2 on the ubuntu-26.04 runner image) makes these
+          # long-standing warnings in cubrid-python v11.3.0.51 hard errors.
+          # Downgrade them back to warnings so the pinned driver builds as it
+          # did with earlier compilers; the driver source is not changed.
+          export CFLAGS="${CFLAGS:-} -Wno-error=incompatible-pointer-types -Wno-error=int-conversion"
           uv build --wheel --python "$(command -v python)" --out-dir /tmp/cubriddb-wheel .
 
       - name: Install the CUBRID Python driver
@@ -311,7 +316,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
           version: "0.12.17"
@@ -342,7 +347,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/cubriddb-wheel
-          key: cubriddb-wheel-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
+          key: cubriddb-wheel-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
 
       - name: Install system dependencies
         if: matrix.driver == 'cubriddb' && steps.cubriddb-cache.outputs.cache-hit != 'true'
@@ -367,6 +372,11 @@ jobs:
           echo 'exit 0' >> build_cci.sh
           chmod +x build_cci.sh
 
+          # GCC 14+ (GCC 15.2 on the ubuntu-26.04 runner image) makes these
+          # long-standing warnings in cubrid-python v11.3.0.51 hard errors.
+          # Downgrade them back to warnings so the pinned driver builds as it
+          # did with earlier compilers; the driver source is not changed.
+          export CFLAGS="${CFLAGS:-} -Wno-error=incompatible-pointer-types -Wno-error=int-conversion"
           uv build --wheel --python "$(command -v python)" --out-dir /tmp/cubriddb-wheel .
 
       - name: Install the CUBRID Python driver
@@ -430,7 +440,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
           version: "0.12.17"
@@ -503,7 +513,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
           version: "0.12.17"
@@ -534,7 +544,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.11"
           version: "0.12.17"
@@ -572,7 +582,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
           version: "0.12.17"
@@ -650,7 +660,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: ${{ matrix.python-version }}
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: ${{ matrix.python-version }}
           version: "0.12.17"
@@ -675,7 +685,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/cubriddb-wheel
-          key: cubriddb-wheel-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
+          key: cubriddb-wheel-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
 
       - name: Install system dependencies
         if: steps.cubriddb-cache.outputs.cache-hit != 'true'
@@ -700,6 +710,11 @@ jobs:
           echo 'exit 0' >> build_cci.sh
           chmod +x build_cci.sh
 
+          # GCC 14+ (GCC 15.2 on the ubuntu-26.04 runner image) makes these
+          # long-standing warnings in cubrid-python v11.3.0.51 hard errors.
+          # Downgrade them back to warnings so the pinned driver builds as it
+          # did with earlier compilers; the driver source is not changed.
+          export CFLAGS="${CFLAGS:-} -Wno-error=incompatible-pointer-types -Wno-error=int-conversion"
           uv build --wheel --python "$(command -v python)" --out-dir /tmp/cubriddb-wheel .
 
       - name: Install the CUBRID Python driver
@@ -897,7 +912,7 @@ jobs:
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           python-version: "3.12"
           version: "0.12.17"

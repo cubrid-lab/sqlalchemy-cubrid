@@ -8,7 +8,7 @@ import pytest
 @pytest.fixture
 def bdb() -> Any:
     # The script imports pycubrid at module level; the repo/offline lanes do
-    # not install the pycubrid extra (same pattern as test_bench_artifact.py).
+    # not install the pycubrid extra, so the module is skipped there.
     pytest.importorskip("pycubrid")
     from scripts import bench_dialect_baseline
 

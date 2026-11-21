@@ -23,13 +23,12 @@
 | `docs/SA_COMPAT.md` | SQLAlchemy internal APIs used by the dialect and their verified range |
 | `docs/QUICKSTART.md` | Start here: the first-connection course (one synchronous `cubrid+pycubrid://` path) |
 | `docs/LESSON_*.md` | Start here lessons 1–5: prepare, first query, save a row, rollback, clean up |
-| `benchmarks/` | Dated benchmark records with environment and exact commands |
 | `CONTRIBUTING.md` | Contribution guidelines |
 | `SECURITY.md` | Security vulnerability reporting |
 | `docs/DRIVER_COMPAT.md` | CUBRID-Python driver versions and known issues |
 | `docs/SUPPORT_MATRIX.md` | Supported Python, SQLAlchemy, CUBRID and driver versions |
 | `docs/CI_POLICY.md` | CI tiers, selected cells and gate requirements |
-| `docs/PERFORMANCE.md` | Performance measurements and benchmark pointers |
+| `docs/PERFORMANCE.md` | Performance guidance, known limitations and how to run the local measurement scripts |
 | `ROADMAP.md` | Current roadmap (public) |
 | `docs/TROUBLESHOOTING.md` | Common issues, error solutions, debugging techniques |
 
@@ -46,7 +45,7 @@ README translations under `docs/` are not site navigation sources.
 | --- | --- | --- | --- |
 | Start here | New to CUBRID: "how do I get a first result?" | `QUICKSTART.md`, `LESSON_PREPARE.md`, `LESSON_FIRST_QUERY.md`, `LESSON_SAVE_ROW.md`, `LESSON_TRANSACTIONS.md`, `LESSON_FINISH.md` | One lesson page per outcome: prepare, first SELECT, one saved row, a rollback, safe finish. `QUICKSTART.md` keeps its URL as the course landing, with the four-pieces explanation, the first-connection error table and next steps, and keeps its old anchors as short "moved to" sections at the end. |
 | How-to guides | "How do I do X in my application?" | `CONNECTION.md`, `ORM_COOKBOOK.md`, `ALEMBIC.md`, `DML_EXTENSIONS.md`, `ISOLATION_LEVELS.md` | Navigation-only move. `CONNECTION.md`'s exhaustive URL-option and driver-install material stays reachable from the task text; ORM, async (#941 owns its two README programs) and Alembic are the purpose-labelled next paths after Start here. |
-| Reference | "What exactly does the dialect do or support?" | `TYPES.md`, `FEATURE_SUPPORT.md`, `SUPPORT_MATRIX.md`, `DRIVER_COMPAT.md` | Navigation-only move. `DRIVER_COMPAT.md` (including the supported CUBRIDdb C-extension driver built from source) leaves the beginner sequence. |
+| Reference | "What exactly does the dialect do or support?" | `TYPES.md`, `FEATURE_SUPPORT.md`, `SUPPORT_MATRIX.md`, `DRIVER_COMPAT.md` | Navigation-only move. `DRIVER_COMPAT.md` (including both supported CUBRIDdb C-extension driver lines) leaves the beginner sequence. |
 | Help | "Something does not work." | `TROUBLESHOOTING.md`, GitHub Issues, `SECURITY.md` (private reports) | Own top-level entry. |
 | Project and internals | Contributors and maintainers | `ARCHITECTURE.md`, `SA_COMPAT.md`, `PERFORMANCE.md`, `DEVELOPMENT.md`, `CI_POLICY.md`, `PRD.md`, `RELEASE_PLEASE_VALIDATION.md`, translations, changelog, contributing | Navigation-only move; not application-user reference. |
 

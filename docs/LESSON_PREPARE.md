@@ -41,6 +41,19 @@ and a shell such as bash. The commands were verified on Linux on x86_64
 (amd64); the `cubrid/cubrid:11.4` image is published for amd64 only, so other
 architectures (for example Apple silicon) and Windows are unverified.
 
+**Apple silicon alternative (not verified in this project):** Docker Desktop may
+run the amd64 image under Linux/amd64 emulation. Try the same `docker run`
+command below **with `--platform linux/amd64` immediately after `docker run`**,
+keeping the localhost-only port mapping and the full `csql SELECT 1`
+readiness check. Emulation may be slower, may not work on every Docker
+installation and is **not** a claim of native arm64 support. If the container
+does not become ready, inspect `docker logs sqlalchemy-cubrid-quickstart`
+and use [Option A](#option-a-i-already-have-a-cubrid-database) with a CUBRID
+server accessible from your Mac rather than assuming the dialect is broken.
+Remove a failed disposable container before retrying:
+`docker rm -f -v sqlalchemy-cubrid-quickstart`. Do not publish the lab's
+empty-password DBA port beyond `127.0.0.1`.
+
 ```bash
 docker run -d --name sqlalchemy-cubrid-quickstart -e CUBRID_DB=testdb \
   -p 127.0.0.1:33000:33000 cubrid/cubrid:11.4
@@ -89,6 +102,22 @@ source .venv/bin/activate
 python -m pip install "sqlalchemy-cubrid[pycubrid]"
 python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
 ```
+
+**Windows (PowerShell), with an existing reachable database (Option A):**
+
+```powershell
+py --version  # Use Python 3.11 or later
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
+```
+
+If `py --version` selects an older interpreter, use an installed Python 3.11+
+explicitly (for example `py -3.12 -m venv .venv`). These **PowerShell**
+commands have not been verified on Windows in this change; the separate Docker
+lab above remains verified only on Linux/amd64. Do not confuse a working Python
+environment on Windows with verification of the Docker image.
 
 The `[pycubrid]` part installs the recommended pure-Python driver together with
 the dialect. The last command prints the three installed versions, for example

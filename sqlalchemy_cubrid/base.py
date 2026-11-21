@@ -10,8 +10,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Callable, Optional
 
+from sqlalchemy import types as sqltypes
 from sqlalchemy.engine import default
 from sqlalchemy.sql import compiler
 
@@ -388,8 +389,56 @@ class CubridIdentifierPreparer(compiler.IdentifierPreparer):
         super().__init__(dialect, initial_quote, final_quote, escape_quote, omit_schema)
 
 
+# DB-API type code CUBRIDdb reports in cursor.description for a BIGINT column
+# (CUBRIDdb.FIELD_TYPE.BIGINT, the CCI U_TYPE_BIGINT value).
+_CUBRIDDB_BIGINT_TYPE_CODE = 21
+
+
 class CubridExecutionContext(default.DefaultExecutionContext):
     """Execution context for CUBRID connections."""
+
+    def get_result_processor(
+        self, type_: Any, colname: str, coltype: Any
+    ) -> Optional[Callable[[Any], Any]]:
+        """Convert numbers that CUBRIDdb older than 11.3 returns as ``str``.
+
+        Those releases fetch BIGINT, ``COUNT(*)`` and ``ROWNUM`` values as
+        decimal strings (``'5'``), while CUBRIDdb 11.3 and pycubrid return
+        ``int`` (#1145). Only a ``str`` value in a column that the driver
+        reports as BIGINT and that SQLAlchemy types as an integer or leaves
+        untyped is converted, before the type's own result processor runs.
+
+        They also fetch columns without a fixed type (CCI type code 0, such as
+        ``PERCENTILE_DISC(...) WITHIN GROUP (ORDER BY <condition>)``) as
+        ``str``, and ``Boolean``'s processor would turn ``'0'`` into ``True``.
+        CUBRID has no BOOLEAN type, so a Boolean value is always a number: a
+        ``str`` in a Boolean-typed column of any type code is converted with
+        ``float()``, which also reads the ``'0.5000000000000000'`` of a
+        ``PERCENTILE_CONT`` the way pycubrid's ``0.5`` is read, and non-numeric
+        text raises ``ValueError`` instead of becoming ``True`` (#1143). Text
+        from any other column or type is never parsed, and DDL, casts and bind
+        processing are unaffected.
+        """
+        processor = super().get_result_processor(type_, colname, coltype)
+        if not getattr(self.dialect, "_bigint_results_as_str", False):
+            return processor
+        affinity = type_._type_affinity
+        if affinity is sqltypes.Boolean:
+            convert: Callable[[str], Any] = float
+        elif coltype == _CUBRIDDB_BIGINT_TYPE_CODE and affinity in (
+            sqltypes.Integer,
+            sqltypes.NullType,
+        ):
+            convert = int
+        else:
+            return processor
+
+        def process(value: Any) -> Any:
+            if isinstance(value, str):
+                value = convert(value)
+            return processor(value) if processor is not None else value
+
+        return process
 
     def get_lastrowid(self) -> int | None:  # type: ignore[override]
         """Return the last inserted row ID.
@@ -413,7 +462,10 @@ class CubridExecutionContext(default.DefaultExecutionContext):
         try:
             cursor.execute("SELECT LAST_INSERT_ID()")
             row = cursor.fetchone()
-            if row:
+            # LAST_INSERT_ID() is NULL until the connection has inserted into an
+            # AUTO_INCREMENT column. SQLAlchemy asks for lastrowid after every
+            # single-row INSERT, including tables without one (#1302).
+            if row and row[0] is not None:
                 return int(row[0])
         finally:
             cursor.close()

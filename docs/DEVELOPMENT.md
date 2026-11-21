@@ -120,7 +120,10 @@ graph TD
     pkg --> alembic["alembic_impl.py - Alembic migration support"]
     pkg --> typed["py.typed - PEP 561 marker"]
 
-    tests --> tcomp["test_compiler.py - SQL compilation and DML construct tests"]
+    tests --> tcomp["test_compiler.py - SELECT and cross-statement compilation tests"]
+    tests --> tcompdml["test_compiler_dml.py - DML construct compilation tests"]
+    tests --> tcompddl["test_compiler_ddl.py - DDL compilation tests"]
+    tests --> tcomptypes["test_compiler_types.py - Type compilation tests"]
     tests --> ttypes["test_types.py - Type system tests"]
     tests --> tdialect["test_dialect_offline.py - Dialect tests (no DB)"]
     tests --> tbase["test_base.py - Base module tests"]
@@ -348,7 +351,18 @@ session sharing that dedicated account would make the test fail closed.
 `test/test_server_restart.py` (#565) stops and starts `cub_server` with
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
 checks that the pool invalidates broken connections and recovers, through both
-drivers, with and without `pool_pre_ping`. It skips unless
+drivers, with and without `pool_pre_ping`. Its broker tests (#1151) run
+`cubrid broker restart` under a pycubrid `QueuePool`: idle pooled connections must
+be reused safely, interrupted work must fail as a disconnect without being stored
+or replayed, and concurrent write requests are audited against the table (an id
+reported as failed may be stored only when the COMMIT itself lost its reply). The
+JUnit report records that test's request, failure, in-doubt and invalidation counts.
+The async broker tests repeat the idle-reuse and interrupted-transaction checks
+with a `cubrid+aiopycubrid` engine and its `AsyncAdaptedQueuePool`, so the async
+path has its own evidence. The pool lifecycle checks that need no restart
+(`pool_recycle`, checkout timeout, rollback on checkin) are in
+`test/test_stress_pool.py` and run in every `make integration`.
+`test/test_server_restart.py` skips unless
 `CUBRID_TEST_DOCKER_CONTAINER` names the container that serves `CUBRID_TEST_URL`;
 point it at a disposable container, since the tests take the database down:
 
@@ -360,6 +374,40 @@ CUBRID_TEST_DOCKER_CONTAINER=<container> \
 
 CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
 which turns every skip into a failure.
+
+`test/test_pool_soak.py` (#1151) is a bounded mixed request workload on a pycubrid
+pool (`pool_size=4`, `max_overflow=2`, `pool_timeout=30`, `pool_pre_ping=True`). It
+runs twice, with separate results: six worker threads on a sync `cubrid+pycubrid`
+engine with a `QueuePool`, and six asyncio tasks on an async `cubrid+aiopycubrid`
+engine with an `AsyncAdaptedQueuePool`. The requests are
+short reads, write transactions that commit or roll back, and idle gaps that leave
+pooled connections unused before reuse. It counts successful, failed and in-doubt
+requests by kind and stage, the pool's connect, checkout, checkin and invalidate
+events, latency percentiles, and samples the process RSS, open file descriptors
+and sockets. At the end each write is audited against the table: an acknowledged
+commit is stored once, a rolled-back write is never stored, and a failed write may
+be stored only when its COMMIT lost the reply. By default it runs for 3 seconds
+inside every `make integration`, a small regression that expects no failures and
+no invalidations against a healthy server. The longer run with a broker restart is
+manual and not part of any CI lane; point it at a disposable container:
+
+```bash
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+CUBRID_SOAK_SECONDS=300 CUBRID_SOAK_BROKER_RESTART=1 \
+CUBRID_SOAK_REPORT=test-results/soak-report.json \
+  pytest test/test_pool_soak.py -v -rs --junitxml=test-results/soak-junit.xml
+```
+
+`CUBRID_SOAK_BROKER_RESTART=1` runs `cubrid broker restart` 40% into the run and
+fails without `CUBRID_TEST_DOCKER_CONTAINER`; requests that start after the broker
+is back must all succeed. `CUBRID_SOAK_REPORT` writes a JSON report with the
+counts, resource samples and the exact Python, SQLAlchemy, dialect, pycubrid and
+server versions, and the async run writes its own report next to it with `-async`
+added to the file name (`soak-report-async.json`); the main counts are also in the
+JUnit properties. `CUBRID_SOAK_DRIVER=CUBRIDdb` runs the sync workload with the
+CUBRIDdb driver (`cubrid://`) instead of pycubrid; the async run always uses
+aiopycubrid, and the report records the loaded CUBRIDdb version.
 
 ### Full SA Test Suite
 
@@ -747,7 +795,7 @@ explicit `include = ["*.py", "*.pyi"]` and the matching hook types keep CLI, CI
 and hooks on Python sources rather than rewriting documentation snippets.
 
 The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
-demos, samples and `docs/source` Python configuration. CI and tox invoke
+demos and samples. CI and tox invoke
 `make lint` and `make format-check`; the hooks keep checking all tracked Python/pyi files. The drift
 checker rejects omitted maintained directories or a runner that bypasses this
 shared target.
@@ -1030,4 +1078,4 @@ rule-5 cutoff gating, only `SECTION_POLICY_CUTOFF` differs.
 
 ---
 
-*See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
+*See also: [Contributing Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*

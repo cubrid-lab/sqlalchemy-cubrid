@@ -2,14 +2,12 @@
 
 > 🌐 [PRD.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/PRD.md)의 번역입니다. 영어 원문이 표준이며, CI가 영어 원문과의 구조 일치를 검사합니다.
 
-> 이 PRD에는 1.8.0 시기의 계획과 상태 기록이 포함돼 있습니다. Python 및 CI 매트릭스
-> 설명은 현재 지원 안내가 아닙니다. 현재 정책은 [지원 매트릭스](SUPPORT_MATRIX.md)를
-> 참고하세요. 해당 설명의 나머지 갱신은 [#697](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/697)에서 담당합니다.
+> **과거 기록(v1.8.0)** — 이 문서는 당시 요구사항과 개발 상태를 보존한 자료로, 현재 릴리스·API·지원 버전·CI 정책 안내가 아닙니다. 최신 정책은 [지원 매트릭스](../SUPPORT_MATRIX.md)와 [CI 정책](../CI_POLICY.md)을 참고하세요. 아래 계획과 상태는 현재 지원 약속을 의미하지 않습니다.
 
 ## 1. 개요
 
 **프로젝트**: sqlalchemy-cubrid
-**현재 버전**: 1.8.0
+**스냅샷 당시 버전**: 1.8.0
 **상태**: Production/Stable (활발히 유지보수 중; 비동기 + JSON 제공 완료)
 **저장소**: [github.com/cubrid-lab/sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
 **라이선스**: MIT
@@ -277,7 +275,7 @@ stmt = (
 
 오프라인 스위트는 `test/test_compiler.py`, `test_types.py`,
 `test_requirements.py`, `test_dialect_offline.py`, `test_base.py`,
-`test_alembic*.py`, `test_dialects.py`, `test_trace.py`와
+`test_alembic*.py`, `test_trace.py`와
 리플렉션, 컬렉션, Alembic 플러그인 등록, 드라이버 계약, 저장소 도구를 다루는
 그 밖의 많은 모듈에 걸쳐 있습니다. 파일별 및 전체 테스트 수는 거의 모든 PR마다
 바뀌므로, 여기에 고정된 스냅숏을 두는 대신 `pytest test/ -m "not integration and
@@ -331,18 +329,18 @@ not repo" --collect-only`를 실행하거나 `offline-tests` CI job 출력에서
 
 ## 6. 문서
 
-| 문서 | 줄 수 | 내용 |
-|---|---|---|
-| [`README.md`](../../README.md) | 80 | 간결한 랜딩 페이지 |
-| [`docs/CONNECTION.md`](CONNECTION.md) | 258 | 연결 문자열, URL 형식, 드라이버 설정 |
-| [`docs/TYPES.md`](TYPES.md) | 313 | 전체 타입 매핑, CUBRID 전용 타입 |
-| [`docs/ISOLATION_LEVELS.md`](ISOLATION_LEVELS.md) | 206 | CUBRID의 세 가지 MVCC 격리 수준 |
-| [`docs/DML_EXTENSIONS.md`](DML_EXTENSIONS.md) | 361 | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
-| [`docs/ALEMBIC.md`](ALEMBIC.md) | 376 | Alembic 마이그레이션 가이드, 한계 |
-| [`docs/FEATURE_SUPPORT.md`](FEATURE_SUPPORT.md) | 442 | MySQL/PG/SQLite와의 기능 비교 |
-| [`docs/DEVELOPMENT.md`](DEVELOPMENT.md) | 383 | 개발 환경 설정, 테스트, Docker, CI/CD |
-| [`CHANGELOG.md`](../../CHANGELOG.md) | 119 | 릴리스 이력 (Keep a Changelog) |
-| [`CONTRIBUTING.md`](../../CONTRIBUTING.md) | 225 | 기여 가이드라인 |
+| 문서 | 내용 |
+|---|---|
+| [`README.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) | 간결한 랜딩 페이지 |
+| [`docs/CONNECTION.md`](../CONNECTION.md) | 연결 문자열, URL 형식, 드라이버 설정 |
+| [`docs/TYPES.md`](../TYPES.md) | 전체 타입 매핑, CUBRID 전용 타입 |
+| [`docs/ISOLATION_LEVELS.md`](../ISOLATION_LEVELS.md) | CUBRID의 세 가지 MVCC 격리 수준 |
+| [`docs/DML_EXTENSIONS.md`](../DML_EXTENSIONS.md) | ON DUPLICATE KEY UPDATE, MERGE, GROUP_CONCAT |
+| [`docs/ALEMBIC.md`](../ALEMBIC.md) | Alembic 마이그레이션 가이드, 한계 |
+| [`docs/FEATURE_SUPPORT.md`](../FEATURE_SUPPORT.md) | MySQL/PG/SQLite와의 기능 비교 |
+| [`docs/DEVELOPMENT.md`](../DEVELOPMENT.md) | 개발 환경 설정, 테스트, Docker, CI/CD |
+| [`CHANGELOG.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md) | 릴리스 이력 (Keep a Changelog) |
+| [`CONTRIBUTING.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) | 기여 가이드라인 |
 
 ---
 

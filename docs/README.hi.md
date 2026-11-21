@@ -10,7 +10,7 @@
 
 **CUBRID डेटाबेस के लिए SQLAlchemy 2.0–2.1 dialect** — SQLAlchemy और CUBRID-विशिष्ट types के लिए Python ORM, schema reflection, Alembic migrations, और type mapping प्रदान करता है।
 
-[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -24,7 +24,17 @@
 
 ---
 
-> **स्थिति: Production/Stable** — CUBRID 10.2–11.4 और SQLAlchemy 2.0–2.1 के लिए स्थिर रूप से रखरखाव किया गया dialect। प्रत्येक PR को लाइव DB इंटीग्रेशन CI द्वारा सत्यापित किया जाता है।
+> **स्थिति: Production/Stable** — CUBRID 10.2–11.4 और SQLAlchemy 2.0–2.1 के लिए स्थिर रूप से रखरखाव किया गया dialect। सामान्य PR पर ऑफ़लाइन CI चलता है; अधिक जोखिम वाले बदलावों के लिए लाइव DB इंटीग्रेशन परीक्षण जोड़े जाते हैं।
+
+## यहाँ से शुरू करें
+
+CUBRID एक **अलग डेटाबेस सर्वर** है: `sqlalchemy-cubrid` या `pycubrid`
+इंस्टॉल करने से सर्वर इंस्टॉल नहीं होता और न कोई डेटाबेस बनता है।
+पहली बार उपयोग करने वालों के लिए
+[SQLAlchemy से CUBRID का पहला कनेक्शन](QUICKSTART.md) (अंग्रेज़ी) उपलब्ध है।
+इसमें पहले से चल रहे CUBRID सर्वर या लोकल Docker लैब की तैयारी,
+अनुशंसित `sqlalchemy-cubrid[pycubrid]` ड्राइवर से पहली क्वेरी और पहली
+पंक्ति सेव करने का तरीका बताया गया है। इसके बाद नीचे दिए गए संदर्भ उदाहरण देखें।
 
 ## sqlalchemy-cubrid क्यों?
 
@@ -68,7 +78,8 @@ flowchart TD
 
 - Python 3.11 या उससे नया संस्करण
 - SQLAlchemy 2.0 – 2.1
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python) (C-extension) **या** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python)
+- **अनुशंसित:** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, sync/async; `cubrid+pycubrid://`)
+- **वैकल्पिक:** CUBRIDdb C-extension (`cubrid://`), दो समर्थित इंस्टॉलेशन विकल्पों में से एक के साथ: `pip install "sqlalchemy-cubrid[cubriddb]"` (या `[cubrid]`) PyPI का `CUBRID-Python` 9.3.0 इंस्टॉल करता है, या इसे [cubrid-python v11.3.0.51](https://github.com/CUBRID/cubrid-python) स्रोत रिलीज़ से बनाएं, जिसका CI में परीक्षण होता है। PyPI 9.3.0 CI में नहीं चलता और इसकी ज्ञात सीमाएँ हैं ([driver मार्गदर्शन](DRIVER_COMPAT.md))।
 
 ## इंस्टॉलेशन
 
@@ -99,7 +110,7 @@ pip install "sqlalchemy-cubrid[alembic]"
 ```python
 from sqlalchemy import create_engine, text
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 with engine.connect() as conn:
     result = conn.execute(text("SELECT 1"))
@@ -125,7 +136,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
 
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -211,7 +222,7 @@ if __name__ == "__main__":
 
 ```python
 from sqlalchemy import create_engine
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
 Pure Python driver के लिए (CUBRID native libraries की आवश्यकता नहीं): `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`। `[pycubrid]` extra की `greenlet` dependency के लिए compatible wheel उपलब्ध न होने पर build tools आवश्यक हो सकते हैं।
@@ -235,8 +246,16 @@ Python 3.11, 3.12, 3.13, 3.14, और 3.15 (मानक GIL बिल्ड)।
 ### मैं CUBRID के साथ ON DUPLICATE KEY UPDATE कैसे उपयोग करूँ?
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### `cubrid://` और `cubrid+pycubrid://` में क्या अंतर है?
@@ -255,18 +274,17 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ## रोडमैप
 
-इस परियोजना की दिशा और अगले milestones के लिए [`ROADMAP.md`](../ROADMAP.md) देखें।
+इस परियोजना की दिशा और अगले milestones के लिए [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md) देखें।
 
-पूरे ecosystem के दृष्टिकोण के लिए [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md) देखें।
 
 ## योगदान
 
-दिशानिर्देशों के लिए [CONTRIBUTING.md](../CONTRIBUTING.md) और development setup के लिए [docs/DEVELOPMENT.md](DEVELOPMENT.md) देखें।
+दिशानिर्देशों के लिए [CONTRIBUTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) और development setup के लिए [docs/DEVELOPMENT.md](DEVELOPMENT.md) देखें।
 
 ## सुरक्षा
 
-कमज़ोरियों की रिपोर्ट GitHub की निजी vulnerability reporting के माध्यम से करें (वैकल्पिक रूप से ईमेल) -- विवरण के लिए [SECURITY.md](../SECURITY.md) देखें। सुरक्षा चिंताओं के लिए सार्वजनिक issues न खोलें।
+कमज़ोरियों की रिपोर्ट GitHub की निजी vulnerability reporting के माध्यम से करें (वैकल्पिक रूप से ईमेल) -- विवरण के लिए [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md) देखें। सुरक्षा चिंताओं के लिए सार्वजनिक issues न खोलें।
 
 ## लाइसेंस
 
-MIT -- [LICENSE](../LICENSE) देखें.
+MIT -- [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE) देखें.

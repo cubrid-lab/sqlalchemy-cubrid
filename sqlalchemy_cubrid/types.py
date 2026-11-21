@@ -53,7 +53,7 @@ def _warn_ignored_argument(name: str, type_name: str) -> None:
         stacklevel += 1
     warnings.warn(
         f"The {name!r} argument of {type_name} has no effect and is deprecated; "
-        "it will be removed in a future major release (#870)",
+        "it may be removed in a future 1.x MINOR release; omit this ignored argument (#892)",
         DeprecationWarning,
         stacklevel=stacklevel,
     )
@@ -231,7 +231,9 @@ class CHAR(_StringType, sqltypes.CHAR):  # pyright: ignore[reportUnsafeMultipleI
     def __init__(self, length: int | None = None, **kwargs: Any) -> None:
         """Construct a CHAR.
 
-        :param length: The number of characters.
+        :param length: The number of characters. When omitted, bare ``CHAR`` is
+          emitted. A length below 1 raises ``CompileError`` at DDL time.
+        :param national: If True, emit ``NCHAR`` instead (same as :class:`NCHAR`).
         """
         super().__init__(length=length, **kwargs)
 
@@ -244,7 +246,10 @@ class VARCHAR(_StringType, sqltypes.VARCHAR):  # pyright: ignore[reportUnsafeMul
     def __init__(self, length: int | None = None, **kwargs: Any) -> None:
         """Construct a VARCHAR.
 
-        :param length: The number of characters.
+        :param length: The number of characters. When omitted, ``VARCHAR(4096)``
+          is emitted. A length below 1 raises ``CompileError`` at DDL time.
+        :param national: If True, emit ``NCHAR VARYING`` instead (same as
+          :class:`NVARCHAR`).
         """
         super().__init__(length=length, **kwargs)
 
@@ -296,6 +301,13 @@ class STRING(_StringType):
     __visit_name__ = "STRING"
 
     def __init__(self, length: int | None = None, national: bool = False, **kwargs: Any) -> None:
+        """Construct a STRING.
+
+        :param length: Not rendered for ``STRING``, which is always the maximum
+          length. Used only when *national* is True.
+        :param national: If True, emit ``NCHAR VARYING(length)`` instead of
+          ``STRING`` (``NCHAR VARYING(4096)`` when *length* is omitted).
+        """
         super().__init__(length=length, national=national, **kwargs)
 
 

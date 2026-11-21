@@ -1,0 +1,104 @@
+name: CUBRIDdb PyPI 9.3 Lane
+
+# One manually requested lane for the PyPI CUBRID-Python 9.3.x driver line (#1146).
+# Both CUBRIDdb lines are supported (docs/SUPPORT_MATRIX.md), but routine and
+# release CI build CUBRIDdb from the cubrid-python v11.3.0.51 source release only.
+# This lane installs the driver exactly as the [cubriddb] extra does and runs the whole
+# integration suite against one representative cell, Python 3.12 and CUBRID 11.4,
+# instead of multiplying the full matrix. It is evidence, not a gate: it is not a
+# required check and publish-pypi.yml does not call it. Known driver limitations
+# make it fail today (docs/DRIVER_COMPAT.md, #1143); a failure is reported as a
+# failure, never skipped. Promote it to a required check only after a reviewed
+# green baseline (docs/CI_POLICY.md).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cubriddb-pypi-${{ github.ref }}
+  # Queue a second dispatch instead of discarding a long evidence run.
+  cancel-in-progress: false
+
+jobs:
+  cubriddb-pypi:
+    name: make integration (CUBRIDdb PyPI 9.3, Python 3.12, CUBRID 11.4)
+    runs-on: ubuntu-latest
+    # The 9.3 driver's failing tests run to their own timeouts; a local run of
+    # the whole suite took 40 to 55 minutes (#1143), and the driver's bundled CCI
+    # is compiled twice while the resolver discards the 9.3.0.0002 archive.
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          python-version: "3.12"
+          version: "0.12.17"
+          enable-cache: auto
+          cache-dependency-glob: pyproject.toml
+          cache-suffix: ${{ github.job }}
+
+      - name: Install project with the PyPI CUBRIDdb driver
+        # The [cubriddb] extra builds CUBRID-Python from its PyPI source archive;
+        # a build failure fails this step, so an uninstallable driver is reported.
+        # pycubrid is installed too: the driver-differential tests compare both.
+        run: |
+          uv pip install --system -e ".[cubriddb,pycubrid]" --group dev
+          uv pip freeze --system
+
+      - name: Record the driver provenance
+        # PyPI 9.3.0 has two source archives. Both declare version 9.3.0.1 and
+        # compile in b'9.3.0.0001', so these values cannot tell them apart; pip
+        # and uv currently discard 9.3.0.0002 (its metadata contradicts its file
+        # name) and install 9.3.0.0001, whose bundled CCI differs.
+        run: |
+          set -o pipefail
+          python - <<'PY' | tee -a "$GITHUB_STEP_SUMMARY"
+          import importlib.metadata as metadata
+
+          import _cubrid
+          import CUBRIDdb
+
+          print("### CUBRIDdb driver under test\n")
+          print("| Component | Value |\n|---|---|")
+          print(f"| Distribution | `CUBRID-Python {metadata.version('CUBRID-Python')}` (PyPI source archive) |")
+          print(f"| `_cubrid.__version__` | `{_cubrid.__version__!r}` |")
+          print(f"| Module | `{CUBRIDdb.__file__}` |\n")
+          PY
+
+      - name: Run make integration
+        env:
+          CUBRID_VERSION: "11.4"
+        # Without the default --maxfail=25 the run reports every failing test
+        # instead of stopping at the first 25.
+        run: |
+          set -o pipefail
+          make integration INTEGRATION_DRIVER=cubriddb \
+            PYTEST="python -m pytest --maxfail=10000" 2>&1 | tee make-integration.log
+      - name: Guard against an all-skipped make integration run (#486)
+        # Also after a failed run (this lane is expected to fail), but only when
+        # the suite produced a log.
+        if: ${{ !cancelled() && hashFiles('make-integration.log') != '' }}
+        run: |
+          python -m scripts.check_not_all_skipped make-integration.log \
+            --label "make integration (CUBRIDdb PyPI 9.3, CUBRID 11.4)"
+      - name: Publish live results summary
+        if: always()
+        run: python -m scripts.report_test_results step-summary --summary test-results/integration/summary.json --title "make integration (CUBRIDdb PyPI 9.3, Python 3.12, CUBRID 11.4)" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload pytest logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: pytest-logs-cubriddb-pypi-cubrid11.4
+          path: |
+            make-integration.log
+            test-results/integration/
+          retention-days: 14
+          if-no-files-found: warn

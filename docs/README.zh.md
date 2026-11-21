@@ -10,7 +10,7 @@
 
 **适用于 CUBRID 数据库的 SQLAlchemy 2.0–2.1 方言** — 为 SQLAlchemy 与 CUBRID 特有类型提供 Python ORM、模式反射、Alembic 迁移和类型映射。
 
-[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -24,7 +24,16 @@
 
 ---
 
-> **状态：Production/Stable** — 支持 CUBRID 10.2–11.4 和 SQLAlchemy 2.0–2.1 的稳定维护方言。每个 PR 均通过实时数据库集成 CI 验证。
+> **状态：Production/Stable** — 支持 CUBRID 10.2–11.4 和 SQLAlchemy 2.0–2.1 的稳定维护方言。普通 PR 运行离线 CI；高风险变更才额外执行真实数据库集成测试。
+
+## 从这里开始
+
+CUBRID 是**需要单独运行的数据库服务器**。安装
+`sqlalchemy-cubrid` 或 `pycubrid` 并不会安装 CUBRID，也不会自动创建数据库。
+如果是第一次使用，请先阅读[首次连接 CUBRID 的教程](QUICKSTART.md)（英文）：
+使用现有数据库或临时的本地 Docker 实验环境，安装推荐的
+`sqlalchemy-cubrid[pycubrid]`，完成第一条查询并保存第一行数据。
+本页其余部分可在连接成功后作为参考。
 
 ## 为什么选择 sqlalchemy-cubrid？
 
@@ -67,7 +76,8 @@ flowchart TD
 
 - Python 3.11 或更高版本
 - SQLAlchemy 2.0 – 2.1
-- [CUBRID-Python](https://github.com/CUBRID/cubrid-python)（C 扩展）**或** [pycubrid](https://github.com/cubrid-lab/pycubrid)（纯 Python）
+- **推荐：**[pycubrid](https://github.com/cubrid-lab/pycubrid)（纯 Python，同步及异步；`cubrid+pycubrid://`）
+- **可选：**CUBRIDdb C 扩展（`cubrid://`），有两种受支持的安装方式：`pip install "sqlalchemy-cubrid[cubriddb]"`（或 `[cubrid]`）安装 PyPI 上的 `CUBRID-Python` 9.3.0，或从 CI 中测试的 [cubrid-python v11.3.0.51](https://github.com/CUBRID/cubrid-python) 源码发布版构建。PyPI 9.3.0 未在 CI 中运行，且有已知限制（参阅[驱动兼容性说明](DRIVER_COMPAT.md)）。
 
 ## 安装
 
@@ -98,7 +108,7 @@ pip install "sqlalchemy-cubrid[alembic]"
 ```python
 from sqlalchemy import create_engine, text
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 with engine.connect() as conn:
     result = conn.execute(text("SELECT 1"))
@@ -124,7 +134,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
 
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -210,7 +220,7 @@ if __name__ == "__main__":
 
 ```python
 from sqlalchemy import create_engine
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
 对于纯 Python 驱动（无需 CUBRID 原生库）：`create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`。`[pycubrid]` extra 中的 `greenlet` 在没有兼容 wheel 时可能需要构建工具。
@@ -234,8 +244,16 @@ engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 ### 如何在 CUBRID 中使用 ON DUPLICATE KEY UPDATE？
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### `cubrid://` 和 `cubrid+pycubrid://` 有什么区别？
@@ -254,18 +272,17 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ## 路线图
 
-项目方向和后续里程碑请参见 [`ROADMAP.md`](../ROADMAP.md)。
+项目方向和后续里程碑请参见 [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md)。
 
-生态系统全貌请参见 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)。
 
 ## 贡献
 
-贡献指南请参阅 [CONTRIBUTING.md](../CONTRIBUTING.md)，开发环境设置请参阅 [docs/DEVELOPMENT.md](DEVELOPMENT.md)。
+贡献指南请参阅 [CONTRIBUTING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md)，开发环境设置请参阅 [docs/DEVELOPMENT.md](DEVELOPMENT.md)。
 
 ## 安全
 
-请通过 GitHub 私密漏洞报告（private vulnerability reporting）报告漏洞（备用方式为电子邮件）-- 详见 [SECURITY.md](../SECURITY.md)。请勿就安全问题创建公开 issue。
+请通过 GitHub 私密漏洞报告（private vulnerability reporting）报告漏洞（备用方式为电子邮件）-- 详见 [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md)。请勿就安全问题创建公开 issue。
 
 ## 许可证
 
-MIT -- 参见 [LICENSE](../LICENSE)。
+MIT -- 参见 [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE)。

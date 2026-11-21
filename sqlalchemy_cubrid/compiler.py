@@ -61,11 +61,20 @@ class _BaseDMLCompiler(Protocol):
     def _render_cte_clause(
         self, nesting_level: int | None = None, include_following_stack: bool = False
     ) -> str:
-        """Render the pending WITH clause (private SQLAlchemy hook, used for #591)."""
+        """Render the pending WITH clause (private SQLAlchemy hook).
+
+        ``visit_replace()`` records its result to find where the INSERT verb
+        starts, so REPLACE keeps a leading WITH clause intact (#591).
+        """
 
 
 class _BaseSelectCompiler(Protocol):
-    """Typed boundaries for the boolean-grouping hooks used for #966, #968 and #970."""
+    """Private SQLAlchemy SELECT-compiler hooks wrapped to parenthesize booleans.
+
+    CUBRID rejects a bare ``EXISTS``, ``NOT`` or ``AND``/``OR`` expression as a
+    SELECT column, ORDER BY item or function argument, so the overrides below
+    call these hooks and add parentheses (#966, #968, #970).
+    """
 
     def _label_select_column(self, select: Any, column: Any, *args: Any, **kw: Any) -> Any: ...
 
@@ -550,18 +559,34 @@ class CubridCompiler(compiler.SQLCompiler):
         offset_clause = get_offset_clause(select)
         if limit_clause is None and offset_clause is None:
             return ""
+        literal = offset_clause is not None and self._limit_values_as_literals()
+
+        def render(clause: Any) -> str:
+            if literal and select._simple_int_clause(clause):
+                clause = clause.render_literal_execute()
+            return str(self.process(clause, **kw))
+
         if limit_clause is None:
             assert offset_clause is not None
-            return " \n LIMIT %s, %s" % (
-                self.process(offset_clause, **kw),
-                _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT,
-            )
+            return " \n LIMIT %s, %s" % (render(offset_clause), _CUBRID_OFFSET_NO_LIMIT_ROW_COUNT)
         if offset_clause is not None:
-            return " \n LIMIT %s, %s" % (
-                self.process(offset_clause, **kw),
-                self.process(limit_clause, **kw),
-            )
-        return " \n LIMIT %s" % (self.process(limit_clause, **kw),)
+            return " \n LIMIT %s, %s" % (render(offset_clause), render(limit_clause))
+        return " \n LIMIT %s" % (render(limit_clause),)
+
+    def _limit_values_as_literals(self) -> bool:
+        """True when plain integer ``LIMIT offset, count`` values must be inlined.
+
+        CUBRIDdb releases older than 11.3 (the PyPI ``CUBRID-Python`` 9.3.x line)
+        send every bound parameter to the server as a string, and CUBRID then
+        applies a bound two-value ``LIMIT ?, ?`` incorrectly: ``(1, 2)`` returned
+        four rows instead of two, with no error. A single bound ``LIMIT ?``
+        returned the right rows, so only the two-value form, rendered whenever an
+        offset is present, has its integers written into the SQL at execution time
+        (``render_literal_execute``). Such a statement cannot run through
+        ``executemany()``. The dialect sets the flag at first connect for those
+        drivers only (#1299).
+        """
+        return bool(getattr(self.dialect, "_limit_values_as_literals", False))
 
     def fetch_clause(
         self,
@@ -586,12 +611,16 @@ class CubridCompiler(compiler.SQLCompiler):
         if options.get("with_ties"):
             raise CompileError("CUBRID does not support FETCH FIRST ... WITH TIES")
 
+        offset_clause = select._offset_clause
+        literal = use_literal_execute_for_simple_int or (
+            offset_clause is not None and self._limit_values_as_literals()
+        )
+
         def render(clause: Any) -> str:
-            if use_literal_execute_for_simple_int and select._simple_int_clause(clause):
+            if literal and select._simple_int_clause(clause):
                 clause = clause.render_literal_execute()
             return str(self.process(clause, **kw))
 
-        offset_clause = select._offset_clause
         if fetch_clause is None:
             if offset_clause is None:
                 return ""

@@ -6,11 +6,11 @@
 
 # sqlalchemy-cubrid
 
-> 🌐 Translated from [README.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) — 한국어는 심사 기간 동안 동기화가 **필수**입니다: README.md가 바뀌면 같은 PR에서 이 파일도 업데이트하세요 (`translation-sync` CI 검사, 보류 시 `translations-deferred` 라벨). English is canonical.
+> 🌐 Translated from [README.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) — 한국어 README 번역 동기화는 **필수**입니다: README.md가 바뀌면 같은 PR에서 이 파일도 업데이트하세요 (`translation-sync` CI 검사, 예외는 유지보수자가 승인한 `translations-deferred` 라벨과 후속 작업 기록이 필요). English is canonical.
 
 **CUBRID 데이터베이스를 위한 SQLAlchemy 2.0–2.1 방언** — SQLAlchemy 및 CUBRID 전용 타입을 위한 Python ORM, 스키마 리플렉션, Alembic 마이그레이션, 타입 매핑을 제공합니다.
 
-[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](../README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
+[🇰🇷 한국어](README.ko.md) · [🇺🇸 English](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md) · [🇨🇳 中文](README.zh.md) · [🇮🇳 हिन्दी](README.hi.md) · [🇩🇪 Deutsch](README.de.md) · [🇷🇺 Русский](README.ru.md)
 
 <!-- BADGES:START -->
 [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
@@ -24,7 +24,7 @@
 
 ---
 
-> **상태: Production/Stable** — CUBRID 10.2–11.4 및 SQLAlchemy 2.0–2.1을 지원하는 유지보수 다이얼렉트입니다. 모든 PR에 대해 라이브 DB 통합 CI가 실행됩니다.
+> **상태: Production/Stable** — CUBRID 10.2–11.4 및 SQLAlchemy 2.0–2.1을 지원하는 유지보수 다이얼렉트입니다. 일반 PR은 오프라인 CI를 실행하며, 고위험 변경은 라이브 DB 통합 검사를 추가합니다.
 
 ## 여기서 시작하세요
 
@@ -69,6 +69,10 @@ flowchart TD
 
 Broker, CAS, CCI 경로는 [전체 통신 아키텍처](ko/ARCHITECTURE.md#종단-간-통신-아키텍처)에서 볼 수 있습니다.
 
+CUBRID 데이터베이스 서버, CUBRIDdb GitHub 소스 태그, PyPI 패키지 릴리스와
+실제 설치된 드라이버의 버전 번호는 서로 다릅니다.
+[서버와 드라이버 버전 구분](ko/DRIVER_COMPAT.md#데이터베이스와-드라이버-버전-구분)을 참고하세요.
+
 ```mermaid
 flowchart TD
     expr["SQL Expression"] --> compiler["CubridSQLCompiler"] --> sql["SQL String"]
@@ -85,7 +89,7 @@ flowchart TD
 
 - Python 3.11 이상
 - SQLAlchemy 2.0 – 2.1
-- [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상에서 빌드한 공식 CUBRIDdb C 확장
+- [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** PyPI(`CUBRID-Python` 9.3.0)에서 설치하거나 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스 릴리스에서 빌드한 공식 CUBRIDdb C 확장
 
 ## 설치
 
@@ -109,17 +113,26 @@ Alembic 지원 포함:
 pip install "sqlalchemy-cubrid[alembic]"
 ```
 
-CUBRIDdb C 확장 드라이버(`cubrid://` URL)를 쓰려면 [cubrid-python](https://github.com/CUBRID/cubrid-python)
-v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko/DRIVER_COMPAT.md#소스에서-cubriddb-빌드)을 참고하세요.
+CUBRIDdb C 확장 드라이버(`cubrid://` URL, 명시적으로 선택하려면 `cubrid+cubriddb://`)를 쓰려면
+지원되는 두 가지 설치 방법 중 하나를 고르세요:
 
-> **`[cubrid]`와 `[cubriddb]` extra는 폐기 예정(deprecated)입니다.** 이 extra는 PyPI의
-> `CUBRID-Python` 패키지를 설치하는데, 최신 릴리스가 9.3.x(2015년)입니다. 이 릴리스는 이 방언과
-> 함께 테스트되지 않았습니다. `BIGINT`를 `str`로 반환하고 통합 테스트 일부가 실패합니다. 방언은
-> 첫 연결 시 11.3보다 오래된 CUBRIDdb를 발견하면 경고(`SAWarning`)를 냅니다. 새 프로젝트에는
-> 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요. CUBRIDdb C 확장
-> 드라이버를 명시적으로 선택하려면 `cubrid+cubriddb://` URL을 사용하세요.
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"   # PyPI CUBRID-Python 9.3.0 ([cubrid]도 동일)
+```
 
-<img src="https://github.com/cubrid-lab/sqlalchemy-cubrid/raw/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>
+또는 CI에서 테스트하는 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스
+릴리스에서 CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](ko/DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요.
+
+> **PyPI 9.3.0 드라이버에는 알려진 제약이 있습니다.** 필수 CI에 포함되지 않으며, CUBRID 11.4와
+> Python 3.12에서 수동으로 실행하는 lane에서 통합 테스트 일부가 여전히 실패합니다. 드라이버는
+> `bytes`를 바인딩할 수 없고, 제약 조건 위반을 `DatabaseError`로 내며, 바인딩 매개변수를 문자열로
+> 보내 서버가 재귀 CTE와 `SET` 값에서 이를 거부합니다. 방언은 `BIGINT` 결과를 `int`로 변환하고
+> 페이지 쿼리의 `LIMIT` 값을 SQL에 직접 씁니다. 첫 연결 시 11.3보다 오래된 CUBRIDdb를 발견하면
+> 경고(`SAWarning`)를 냅니다.
+> [알려진 제약](ko/DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약)을 참고하세요.
+> 새 프로젝트에는 권장 순수 Python `[pycubrid]` 드라이버(`cubrid+pycubrid://` URL)를 사용하세요.
+
+<img src="https://raw.githubusercontent.com/cubrid-lab/sqlalchemy-cubrid/main/docs/demo.gif" alt="sqlalchemy-cubrid 데모" width="100%"/>
 
 ## 빠른 시작
 
@@ -133,7 +146,7 @@ v11.3.0.51 이상에서 CUBRIDdb를 빌드하세요. [드라이버 호환성](ko
 ```python
 from sqlalchemy import create_engine, text
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 with engine.connect() as conn:
     result = conn.execute(text("SELECT 1"))
@@ -159,7 +172,7 @@ class User(Base):
     email: Mapped[str] = mapped_column(String(200), unique=True)
 
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
@@ -331,7 +344,7 @@ Core 삽입에서 자동 증가 PK가 필요하면 문장 실행 후 `SELECT LAS
 
 ```python
 from sqlalchemy import create_engine
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 ```
 
 순수 Python 드라이버(CUBRID 네이티브 라이브러리 불필요)를 쓰려면: `create_engine("cubrid+pycubrid://dba@localhost:33000/demodb")`. `[pycubrid]` extra의 `greenlet`은 호환 wheel이 없으면 빌드 도구가 필요할 수 있습니다.
@@ -355,8 +368,16 @@ Python 3.11, 3.12, 3.13, 3.14, 3.15(표준 GIL 빌드)를 지원합니다.
 ### CUBRID에서 ON DUPLICATE KEY UPDATE는 어떻게 사용하나요?
 
 ```python
+from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy_cubrid import insert
-stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Updated")
+
+users = Table(
+    "users",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("name", String(50)),
+)
+stmt = insert(users).values(id=1, name="Alice").on_duplicate_key_update(name="Alice Updated")
 ```
 
 ### `cubrid://`와 `cubrid+pycubrid://`의 차이는 무엇인가요?
@@ -375,9 +396,8 @@ stmt = insert(users).values(name="Alice").on_duplicate_key_update(name="Alice Up
 
 ## 로드맵
 
-이 프로젝트의 방향과 다음 마일스톤은 [`ROADMAP.md`](../ROADMAP.md)를 참고하세요.
+이 프로젝트의 방향과 다음 마일스톤은 [`ROADMAP.md`](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/ROADMAP.md)를 참고하세요.
 
-생태계 전체 관점은 [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)를 참고하세요.
 
 ## 기여하기
 
@@ -395,13 +415,23 @@ CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선�
 
 열려 있는 [`good first issue`](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) 작업을 둘러보세요.
 
+## 도움받기
+
+먼저 [첫 연결 가이드](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/)와
+[문제 해결 안내](https://cubrid-lab.github.io/sqlalchemy-cubrid/TROUBLESHOOTING/)를
+확인하세요. 사용법 질문은
+[GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)에,
+재현 가능한 버그는 [버그 신고 양식](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new?template=bug_report.yml)에
+남겨 주세요. 전체 안내는 [SUPPORT.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SUPPORT.md)를
+참고하세요. 보안 취약점은 공개 이슈가 아닌 비공개 채널로 제보해야 합니다.
+
 ## 보안
 
-취약점은 GitHub의 비공개 취약점 제보(private vulnerability reporting)로 제보해 주세요(대체 수단은 이메일) -- 자세한 내용은 [SECURITY.md](../SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
+취약점은 GitHub의 비공개 취약점 제보(private vulnerability reporting)로 제보해 주세요(대체 수단은 이메일) -- 자세한 내용은 [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md)를 참고하세요. 보안 관련 사항은 공개 이슈로 등록하지 마세요.
 
 ## 라이선스
 
-MIT -- [LICENSE](../LICENSE) 참조.
+MIT -- [LICENSE](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/LICENSE) 참조.
 
 ## PR 검증 범위
 

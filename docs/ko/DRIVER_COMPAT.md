@@ -8,6 +8,7 @@
 
 ## 목차
 
+- [데이터베이스와 드라이버 버전 구분](#데이터베이스와-드라이버-버전-구분)
 - [드라이버 개요](#드라이버-개요)
 - [버전 호환성 매트릭스](#버전-호환성-매트릭스)
 - [예외 계층](#예외-계층)
@@ -15,14 +16,70 @@
 - [알려진 문제](#알려진-문제)
 - [설치 참고](#설치-참고)
 
+## 데이터베이스와 드라이버 버전 구분
+
+CUBRID Python 드라이버의 릴리스 버전은 CUBRID Database 제품 버전과 비슷하게 보일 수 있습니다. 관련 릴리스 계열의 이름을 따른 것으로 해석할 수 있지만, **각 번호가 가리키는 구성 요소는 서로 다릅니다.** 주·부 버전이 같아야 접속할 수 있다는 뜻도 아니며, 숫자가 비슷하다고 모든 조합의 호환성이 보장되는 것도 아닙니다.
+
+| 구분 | 예시 | 버전이 의미하는 대상 |
+|---|---|---|
+| CUBRID 데이터베이스 서버 | `11.4.1` | 실행 중인 DBMS 버전. `SELECT VERSION()`으로 확인 |
+| CUBRIDdb 공식 소스 릴리스 | [`v11.3.0.51`](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51) | Python C 확장 드라이버의 **GitHub 소스 릴리스**. 서버 버전도, PyPI의 11.3 패키지도 아님 |
+| CCI 클라이언트 라이브러리 | `11.2.0` | 해당 드라이버 릴리스에 사용된 네이티브 C 클라이언트 인터페이스 |
+| PyPI 배포판 릴리스 | [`CUBRID-Python 9.3.0`](https://pypi.org/project/CUBRID-Python/9.3.0/) | PyPI에 등록된 C 확장 드라이버 패키지 릴리스 버전 |
+| PyPI 소스 압축 파일 식별자 | `9.3.0.0001`, `9.3.0.0002` | 2014년과 2015년에 각각 업로드된, **같은 PyPI 9.3.0 릴리스 내 두 소스 파일**의 이름 |
+| 설치된 C 확장 모듈 버전 | 예: `11.3.0.0001` | 빌드된 `_cubrid.__version__` 값. 네 번째 부분은 Git 커밋 수로 생성될 수 있어 공식 소스 태그의 끝자리와 다를 수 있음 |
+| SQLAlchemy Dialect 버전 | 예: `sqlalchemy-cubrid 1.x` | 이 저장소에서 별도로 배포하는 Python 패키지 버전 |
+
+2025년 9월 8일 게시된 [공식 CUBRID Python `v11.3.0.51` 릴리스 노트](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51)는 **CCI 11.2.0**으로 빌드하여 **CUBRID 서버 11.4.1**과의 적합성을 확인했다고 밝힙니다. 한 릴리스 설명 안에서도 버전 번호가 서로 다르게 나타나는 사례입니다. 해당 GitHub 릴리스에서는 소스 아카이브를 받을 수 있지만 **별도 바이너리 첨부 파일은 없으며**, PyPI에 `CUBRID-Python 11.3`으로 게시된 릴리스도 아닙니다.
+
+[PyPI의 `CUBRID-Python` 프로젝트](https://pypi.org/project/CUBRID-Python/)는 9.3.0 패키지를 CUBRID Database 9.3.0용 커넥터로 설명합니다. 이는 제품 버전과 연계된 당시의 명명 방식에 관한 자료이지, 다른 서버에 연결할 수 없다는 증거는 아닙니다. 과거 [9.3.0.1 드라이버와 CUBRID 11.4 조합의 테스트](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/583)에서는 연결은 가능했으나 `BIGINT` 반환 타입 차이가 확인되었습니다. 지원 정책, 연결 가능 여부, 실제 검증 조합, 알려진 제약은 구분해서 기록해야 합니다.
+
+### 연결 구조
+
+```mermaid
+flowchart TD
+    app["Application / SQLAlchemy Core & ORM"] --> dialect["sqlalchemy-cubrid dialect"]
+    dialect --> pure["pycubrid / pycubrid.aio"]
+    dialect --> native["CUBRIDdb (_cubrid C extension)"]
+    native --> cci["CCI client library"]
+    cci --> cas["CUBRID Broker / CAS"]
+    pure --> cas
+    cas --> database["CUBRID database server"]
+```
+
+`[cubrid]`, `[cubriddb]`, `[pycubrid]` extra는 **설치할 의존성을 고르는 옵션**이지 데이터베이스 서버 버전이 아닙니다. `cubrid://`와 `cubrid+cubriddb://`는 CUBRIDdb를, `cubrid+pycubrid://`와 `cubrid+aiopycubrid://`는 각각 pycubrid 드라이버를 선택합니다. 이 URL에는 드라이버 릴리스 버전이 들어 있지 않습니다.
+
+### 환경에서 실제 버전 확인
+
+```python
+from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version
+
+for name in ("sqlalchemy-cubrid", "pycubrid", "CUBRID-Python"):
+    try:
+        print(f"{name}: {version(name)}")
+    except PackageNotFoundError:
+        print(f"{name}: not installed")
+
+try:
+    cubriddb = import_module("CUBRIDdb")
+except ImportError:
+    print("CUBRIDdb C extension: not importable")
+else:
+    extension = getattr(cubriddb, "_cubrid", None)
+    print("CUBRIDdb C extension:", getattr(extension, "__version__", "unknown"))
+```
+
+`CUBRID-Python`과 `cubrid_python`은 배포판 이름을 정규화한 표기 차이이며 **서로 다른 두 드라이버가 아닙니다.** 실행 중인 **데이터베이스 서버** 버전은 실제 연결에서 `SELECT VERSION()`을 실행해 확인합니다. CUBRIDdb를 소스에서 직접 빌드했다면 사용한 Git 태그 또는 커밋도 별도로 남깁니다. 설치된 패키지 버전만으로 서버 버전이나 전체 기능 호환성을 추정해서는 안 됩니다.
+
 ---
 
 ## 드라이버 개요
 
 | 속성 | 값 |
 |---|---|
-| 지원하는 설치 방법 | [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 이상을 소스에서 빌드 ([방법](#소스에서-cubriddb-빌드)) |
-| PyPI 패키지 | `CUBRID-Python`, 최신 릴리스 9.3.x(2015년): **테스트되지 않음, 지원하지 않음** ([상세](#pypi-cubrid-python-93x는-지원하지-않음)) |
+| 설치 방법 | `[cubrid]` / `[cubriddb]` extra가 설치하는 PyPI `CUBRID-Python` 9.3.0 릴리스, 또는 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스 빌드 ([방법](#소스에서-cubriddb-빌드)) |
+| PyPI 패키지 | `CUBRID-Python` 9.3.0, PyPI의 최신 릴리스(2014년과 2015년의 소스 압축 파일): **지원하지만 현재 Python 버전에서는 검증되지 않음** ([알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
 | 임포트 이름 | `CUBRIDdb` |
 | 타입 | C 확장 (CPython 전용) |
 | DBAPI 수준 | DB-API 2.0 (PEP 249) |
@@ -30,7 +87,7 @@
 | 소스 | [github.com/CUBRID/cubrid-python](https://github.com/CUBRID/cubrid-python) |
 
 이 드라이버는 CUBRID CCI(C Client Interface) 라이브러리를 감쌉니다. 순수 Python 드라이버가 **아니며** CCI 헤더에 대한 컴파일이 필요합니다.
-위의 소스 빌드 CUBRIDdb 드라이버는 이 방언에서 지원합니다. 폐기 예정인 `[cubrid]` / `[cubriddb]` 설치 extra가 테스트되지 않은 PyPI 패키지를 선택하는 것이며, 드라이버 인터페이스 자체가 폐기된 것은 아닙니다. 새 프로젝트에는 CUBRID 네이티브 라이브러리가 필요 없고 아래 CUBRIDdb 제약을 피할 수 있는 `pycubrid`를 권장합니다.
+이 방언은 두 CUBRIDdb 드라이버 계열을 모두 지원합니다. `[cubrid]` / `[cubriddb]` extra가 설치하는 PyPI 9.3.0 릴리스와, v11.3.0.51 소스 릴리스의 빌드입니다. 지원은 유지 정책이지 테스트 결과가 아닙니다. 아래 표에는 실제로 실행한 조합과 그 실행에서 확인된 알려진 제약을 기록합니다. 새 프로젝트에는 CUBRID 네이티브 라이브러리가 필요 없고 아래 CUBRIDdb 제약을 피할 수 있는 `pycubrid`를 권장합니다.
 
 ---
 
@@ -45,7 +102,9 @@
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ CI에서 테스트 |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ CI에서 테스트 |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ 테스트됨 |
-| 전체 | PyPI `CUBRID-Python` 9.3.x | 전체 | 전체 | ❌ 테스트되지 않음, 지원하지 않음 ([상세](#pypi-cubrid-python-93x는-지원하지-않음)) |
+| `main` (2026-09-29) | PyPI `CUBRID-Python` 9.3.x (드라이버 `9.3.0.1`) | 11.4 | 3.10 | ⚠️ CI가 아닌 이전 실행 한 건: 연결 성공, `BIGINT`를 `str`로 반환, 통합 테스트 25개 실패 ([알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
+| `main` (2026-11-12) | PyPI `CUBRID-Python` 9.3.x (드라이버 `9.3.0.1`) | 11.4 | 3.12 | ❌ CI가 아닌 로컬 실행: 빌드와 연결 성공, 통합 테스트 677개 중 100개 실패, 2개 오류 (#1143, [알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
+| `main` (2026-11-13) | PyPI `CUBRID-Python` 9.3.x (드라이버 `9.3.0.1`) | 11.4 | 3.12 | ❌ 수동 실행 lane, 필수 검사 아님: 방언 수정 후 통합 테스트 691개 중 55개 실패, 오류 없음 ([실행 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850), #1143, [알려진 제약](#pypi-cubrid-python-93x의-알려진-제약)) |
 
 ### CUBRID 서버 버전 지원
 
@@ -53,7 +112,7 @@
 |---|---|---|
 | 11.4 | v11.3.0.51 | 최신 안정 |
 | 11.2 | v11.3.0.51 | LTS 릴리스 |
-| 11.0 | v11.3.0.51 | 레거시 지원 |
+| 11.0 | v11.3.0.51 | |
 | 10.2 | v11.3.0.51 | 최소 지원 |
 | 12.x | — | 미출시. 출시되면 테스트 예정 |
 
@@ -292,23 +351,90 @@ pycubrid는 바인딩한 값을 SQL 문자열에 써 넣은 뒤 보내고, CUBRI
 유지됩니다. pycubrid 드라이버 자체는 순수 Python이지만, 호환 wheel이 없으면
 `greenlet` 설치에 빌드 도구가 필요할 수 있습니다.
 
-### PyPI `CUBRID-Python` 9.3.x는 지원하지 않음
+### PyPI `CUBRID-Python` 9.3.x의 알려진 제약
 
-PyPI의 최신 `CUBRID-Python` 릴리스는 9.3.0.2입니다(sdist만 있으며 2015년 업로드). PyPI에는
-11.x 릴리스가 없습니다. `[cubrid]`와 `[cubriddb]` extra는 버전 제한 없이 `CUBRID-Python`에
-의존하므로 9.3.x를 설치합니다. 이 드라이버는 이 방언과 함께 테스트되지 않았습니다. CUBRID
-11.4에서 `BIGINT` 값(`COUNT(*)` 포함)을 `str`로 반환하고(#583), 통합 테스트 일부가
-실패합니다: autocommit, 대용량 객체 왕복, fetch 결과 형태, ping, 재귀 CTE(#585).
+PyPI의 최신 `CUBRID-Python` 릴리스는 9.3.0이며, 소스 압축 파일 두 개(2014년의
+`9.3.0.0001`, 2015년의 `9.3.0.0002`)만 있고 wheel은 없습니다. PyPI에는 11.x 릴리스가 없습니다.
+pip는 압축 파일 이름에서 버전을 읽어 `9.3.0.1`과 `9.3.0.2`를 보지만, `9.3.0.0002` 압축 파일의
+메타데이터 자체는 `9.3.0.1`을 선언합니다. 현재 pip는 이 압축 파일을 버전 불일치로 버리고 2014년의
+`9.3.0.0001` 압축 파일을 `CUBRID-Python 9.3.0.1`로 설치합니다(`_cubrid.__version__`은
+`b'9.3.0.0001'`). `[cubrid]`와 `[cubriddb]` extra는 버전 제한 없이 `CUBRID-Python`에 의존하므로
+같은 드라이버를 설치합니다. 두 extra는 지원되는 드라이버 계열을 위한, 유지되는 설치 방법입니다.
 
-- **`[cubrid]`와 `[cubriddb]` extra는 폐기 예정(deprecated)입니다.** 기존 설치가 계속
-  해석되도록 유지하지만, 지원되는 드라이버를 설치할 수는 없습니다.
+이 드라이버 계열은 필수 CI에 포함되지 않습니다. 수동으로 실행하는
+`CUBRIDdb PyPI 9.3 Lane`(`.github/workflows/cubriddb-pypi.yml`)이 extra와 같은 방식으로 이 드라이버를
+설치하고 Python 3.12, CUBRID 11.4에서 전체 통합 테스트를 실행합니다. 그 결과는 근거 자료이지 머지
+조건이 아닙니다. `main`의 `c80d6e4`에서(2026-11-13,
+[실행 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850)) 선택된
+테스트 691개 중 55개가 실패했고 오류는 없었습니다(#1143). 아래 방언 변경 전의 첫 로컬 실행
+(2026-11-12)에서는 677개 중 100개가 실패하고 2개가 오류였으며, 이전 실행(2026-09, Python 3.10)은
+25개 실패 후 중단되었습니다(#585). 다른 CUBRID 및 Python 버전은 검증되지 않았습니다. 같은 서버에서
+직접 확인한, 실패의 원인이 되는 드라이버 동작과 방언의 처리는 다음과 같습니다:
+
+- `COUNT(*)`와 `ROWNUM`을 포함한 `BIGINT` 값을 `str`로 반환합니다(#583). 연결된 CUBRIDdb가
+  11.3보다 오래되었으면, 방언은 드라이버가 `BIGINT`로 보고하는 정수 타입 및 타입 없는(`text()`)
+  결과 컬럼을 `int`로 변환합니다(#1145). `String` 같은 다른 타입의 컬럼은 해석하지 않으며, DB-API
+  커서에서 직접 읽은 행은 변환하지 않습니다. 방언 자체의 카탈로그 카운트는 이전부터 `int()`로
+  변환했습니다(#584).
+- 고정 타입이 없는 결과 컬럼(`cursor.description`의 타입 코드 0), 예를 들어
+  `PERCENTILE_DISC(...) WITHIN GROUP (...)`, `PERCENTILE_CONT`, `MEDIAN`도 `str`
+  (`'0'`, `'1.5000000000000000'`)로 반환합니다. pycubrid는 숫자를 반환합니다. SQLAlchemy의
+  `Boolean` 결과 처리기는 `'0'`을 `True`로 읽으므로, 이 드라이버에서 방언은 `Boolean` 결과 컬럼의
+  문자열을 먼저 숫자로 읽고, 숫자가 아닌 텍스트는 `ValueError`를 냅니다(#1143). 다른 타입은
+  문자열 그대로 둡니다. `Integer` 타입의 `percentile_disc()`는 `'1'`을 반환합니다. `CASE`,
+  `COALESCE`, `NVL`, `IF`는 고정 타입이 있어 숫자를 반환합니다.
+- 바인딩 매개변수를 문자열로 서버에 보냅니다. `(1, 2)`를 바인딩한 `LIMIT ?, ?`가 두 행 대신 네
+  행을 반환했습니다. 연결된 CUBRIDdb가 11.3보다 오래되었으면, 방언은 `LIMIT offset, count`의
+  정수를 바인딩하지 않고 SQL에 직접 써 넣으므로(#1299) `.offset()`과 함께 쓴 `.limit()` /
+  `.fetch()`가 올바른 행을 반환합니다. 이런 문장은 `executemany()`로 실행할 수 없습니다. offset이
+  없는 limit은 그대로 바인딩합니다. CTE의 `VALUES` 목록처럼 바인딩한 값을 다시 조회하면 문자열로
+  반환됩니다. 재귀 CTE와 `SET` 바인딩은 서버 오류 -456, -494로 실패하며, 방언은 이를 우회하지
+  않습니다.
+- `bytes` 매개변수를 바인딩할 수 없습니다. 모든 매개변수를 UTF-8로 디코딩하므로 임의의 바이트를
+  `BLOB`이나 `BIT VARYING` 컬럼에 바인딩하면 `UnicodeDecodeError`가 납니다. 모듈에 `Binary`도
+  없어 SQLAlchemy `LargeBinary`와 `BLOB` 쓰기는 그보다 먼저 `AttributeError`로 실패합니다.
+  이 드라이버로는 바이너리 데이터를 쓸 수 없습니다.
+- 서버 오류를 `DatabaseError`로 냅니다. 제약 조건 위반(`NOT NULL`, 유일, 외래 키)은
+  `IntegrityError`가 아니고 구문 오류(-493)는 `ProgrammingError`가 아니므로, SQLAlchemy는 이를
+  `sqlalchemy.exc.DatabaseError`로 보고합니다.
+- `cursor.description`의 `null_ok`가 반대로 보고됩니다. `NOT NULL` 컬럼은 `True`, NULL 허용 컬럼은
+  `False`입니다. 리플렉션은 카탈로그에서 NULL 허용 여부를 읽으므로 영향을 받지 않습니다.
+- 연결에 `ping()`이 없습니다. 방언은 `pool_pre_ping`에서 대신 `SELECT 1`로 확인하므로 살아 있는
+  풀 연결이 유지됩니다(#1304).
+- 행을 `tuple`이 아닌 `list`로 반환합니다. `SELECT LAST_INSERT_ID()`는 연결이 `AUTO_INCREMENT`
+  컬럼에 삽입하기 전까지 `NULL`을 반환하며, 방언은 이를 생성된 키가 없다는 뜻으로 읽습니다(#1302).
+- 이미 닫힌 연결을 다시 닫으면(풀이 닫은 연결이 나중에 가비지 컬렉션될 때 일어납니다) 드라이버
+  안에 Python 예외가 설정된 채로 남습니다. 해제 함수가 연결을 한 번 더 닫고, 두 번째 연결 해제가
+  `InterfaceError(-20002)`로 실패하지만 그 오류를 지우지 않기 때문입니다. 그러면 같은 스레드의
+  관련 없는 이후 호출에서 `SystemError`가 날 수 있으며, `test/test_stress_pool.py`의
+  `engine.dispose()`에서 확인되었습니다(#1320). 드라이버만으로 재현하는 방법:
+
+  ```python
+  import threading, CUBRIDdb
+  conn = CUBRIDdb.connect("CUBRID:localhost:33000:testdb:::", "dba", "")
+  conn.close()
+  del conn                  # 해제 함수가 한 번 더 닫음
+  with threading.RLock():   # InterfaceError(-20002)로 인한 SystemError
+      pass
+  ```
+
+  방언은 계속 연결을 명시적으로 닫습니다. 닫기를 해제 함수에 맡기면 이 오류는 피하지만 브로커
+  세션이 누수됩니다. CUBRID 11.4에서 시험한 결과, 그렇게 버린 풀 연결마다 가비지 컬렉션 후에도
+  CAS 프로세스가 사용 중으로 남았고(연결 4개씩 5회 반복 후 20개), 명시적으로 닫으면 하나도 남지
+  않았습니다.
+- 풀을 쓰는 워크로드에서 프로세스 메모리가 계속 늘어납니다. CUBRID 11.4에서
+  `CUBRID_SOAK_DRIVER=CUBRIDdb`로 `test/test_pool_soak.py`를 5분간 실행한 결과(`QueuePool`에서
+  요청 약 2,600건), RSS가 64 MB에서 84 MB로, 요청당 약 7 KiB씩 늘었습니다. 같은 실행을 CUBRIDdb
+  v11.3.0.51로 하면 1 MB 이내였습니다. 드라이버 내부 원인은 조사하지 않았으므로, 오래 실행되는
+  애플리케이션은 메모리를 지켜봐야 합니다(#1151).
 - `cubrid://` 또는 `cubrid+cubriddb://` 엔진은 첫 연결 시 로드된 드라이버의 버전
   (`_cubrid.__version__`)을 읽고, 11.3보다 오래되었으면 `sqlalchemy.exc.SAWarning`을 냅니다.
-  기존 배포가 계속 동작하도록 연결을 거부하지 않고 경고만 합니다. 즉시 실패하게 하려면 경고를
-  오류로 바꾸세요:
+  연결을 거부하지 않고 경고만 합니다. 즉시 실패하게 하려면 경고를 오류로 바꾸세요:
   `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
-- 지원되는 방법: 권장 순수 Python 드라이버(`pip install "sqlalchemy-cubrid[pycubrid]"`,
-  `cubrid+pycubrid://`)를 사용하거나, 아래처럼 CUBRIDdb를 소스에서 빌드하세요.
+
+이 제약이 애플리케이션에 영향을 준다면 권장 순수 Python 드라이버
+(`pip install "sqlalchemy-cubrid[pycubrid]"`, `cubrid+pycubrid://`)를 사용하거나, 아래처럼
+v11.3.0.51 소스 릴리스에서 CUBRIDdb를 빌드하세요.
 
 ### 소스에서 CUBRIDdb 빌드
 
@@ -327,8 +453,12 @@ cd ../..
 
 # setup.py의 CCI 재빌드를 건너뛰고 설치
 printf '#!/bin/bash\nexit 0\n' > build_cci.sh
-pip install .
+CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion" pip install .
 ```
+
+GCC 14 이상(예: Ubuntu 26.04의 GCC 15.2)은 v11.3.0.51 C 확장의 포인터·정수 변환을 이전
+컴파일러처럼 경고가 아닌 오류로 처리합니다. 위 `CFLAGS`는 이를 다시 경고로 바꾸어 이전과
+같이 빌드되게 하며, GCC 13 이하에서는 아무 영향이 없습니다.
 
 소스 빌드는 `cubrid_python` 배포판을 설치합니다. 버전의 네 번째 자리는 릴리스 태그가 아니라 git
 커밋 수이므로, v11.3.0.51의 얕은 클론은 `11.3.0.0001`로 표시됩니다.

@@ -7,14 +7,10 @@
 > latest release on [PyPI](https://pypi.org/project/sqlalchemy-cubrid/); supported Python, SQLAlchemy,
 > CUBRID and driver versions are kept in
 > [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md), which this page does not repeat.
-> For the ecosystem-wide view, see the
-> [CUBRID Labs Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md).
 
 ## Links
 
 - 📋 [GitHub Milestones](https://github.com/cubrid-lab/sqlalchemy-cubrid/milestones)
-- 🗂️ [Org Project Board](https://github.com/orgs/cubrid-lab/projects/2)
-- 🌐 [Ecosystem Roadmap](https://github.com/cubrid-lab/.github/blob/main/ROADMAP.md)
 
 ## Current Focus — Stable Maintenance & Polish
 
@@ -24,9 +20,10 @@
 
 ## Next — Performance & Ecosystem
 
-- Performance work driven by measurements: the same-CUBRID baseline of 2026-10-12 in
-  [docs/PERFORMANCE.md](docs/PERFORMANCE.md#current-baseline-2026-10-12) is the reference
-  for later comparisons (#830)
+- Performance work driven by measurements: the local scripts in
+  [docs/PERFORMANCE.md](docs/PERFORMANCE.md#measuring-locally) measure the dialect, and
+  [cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark) owns reproducible
+  cross-driver experiments (#830, #1290)
 - Ecosystem examples and cookbook expansion
 - SQLAlchemy 2.1 is released and tested (CI pins 2.1.1); forward-compatibility investigation continues for SA 2.2+ pre-releases via the non-gating canary CI job
 

@@ -227,6 +227,24 @@ class TestExecutionContext:
         cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
         cursor.close.assert_called_once_with()
 
+    @pytest.mark.parametrize("value", [None, "7"])
+    def test_get_lastrowid_fallback_handles_null_and_string(self, value):
+        # The PyPI CUBRIDdb 9.3 driver has no get_last_insert_id(), and
+        # LAST_INSERT_ID() is NULL before any AUTO_INCREMENT insert on the
+        # connection, or a BIGINT string with that driver (#1302).
+        context = object.__new__(CubridExecutionContext)
+        setattr(
+            context,
+            "root_connection",
+            types.SimpleNamespace(connection=types.SimpleNamespace(dbapi_connection=object())),
+        )
+        cursor = MagicMock()
+        cursor.fetchone.return_value = [value]
+        context._dbapi_connection = types.SimpleNamespace(cursor=lambda: cursor)
+
+        assert context.get_lastrowid() == (None if value is None else 7)
+        cursor.close.assert_called_once_with()
+
     def test_get_lastrowid_returns_none_when_fallback_has_no_row(self):
         context = object.__new__(CubridExecutionContext)
 

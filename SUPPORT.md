@@ -2,9 +2,11 @@
 
 ## Getting Help
 
-- **Documentation**: [docs/](docs/)
-- **Issues**: [GitHub Issues](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)
+- **Start here**: [First connection guide](https://cubrid-lab.github.io/sqlalchemy-cubrid/QUICKSTART/)
+- **Documentation**: [Documentation site](https://cubrid-lab.github.io/sqlalchemy-cubrid/)
+- **Troubleshooting**: [Common errors and fixes](https://cubrid-lab.github.io/sqlalchemy-cubrid/TROUBLESHOOTING/)
+- **Questions and usage help**: [GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions)
+- **Reproducible defects and feature requests**: [GitHub Issues](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues)
 
 ## Reporting Bugs
 

@@ -86,11 +86,13 @@ engine.dispose()
   [choose an isolation level](ISOLATION_LEVELS.md).
 - **Reference:** [type mapping](TYPES.md), [feature support](FEATURE_SUPPORT.md),
   [support matrix](SUPPORT_MATRIX.md) and [driver compatibility](DRIVER_COMPAT.md),
-  including the supported CUBRIDdb C-extension driver.
-- **Help:** [troubleshooting](TROUBLESHOOTING.md); report bugs and ask questions on
-  [GitHub Issues](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues), and
-  security problems privately as described in
+  including [how server, driver and package version numbers differ](DRIVER_COMPAT.md#server-driver-and-distribution-versions).
+- **Help:** start with [troubleshooting](TROUBLESHOOTING.md); ask usage questions in
+  [GitHub Discussions](https://github.com/cubrid-lab/sqlalchemy-cubrid/discussions),
+  report reproducible bugs through the [bug report template](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new?template=bug_report.yml),
+  and report security problems privately as described in
   [SECURITY.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SECURITY.md).
+  See [Support](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/SUPPORT.md) for all help routes.
 - **Project and internals:** [architecture](ARCHITECTURE.md),
   [SQLAlchemy internal API compatibility](SA_COMPAT.md),
   [performance](PERFORMANCE.md), [development](DEVELOPMENT.md) and the
@@ -180,7 +182,7 @@ with objects; it builds on the same engine and connection ideas.
 - [README Usage](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/README.md#quick-start): short Core, ORM and async examples.
 - [ORM Cookbook](ORM_COOKBOOK.md): models, relationships and common ORM patterns.
 - [Connection Guide](CONNECTION.md): every URL form, connection options and the async `cubrid+aiopycubrid://` driver.
-- [Driver Compatibility](DRIVER_COMPAT.md): the supported CUBRIDdb C-extension driver, built from source, and what differs between drivers.
+- [Driver Compatibility](DRIVER_COMPAT.md): the two installation options for the CUBRIDdb C-extension driver (the PyPI 9.3.0 release or a v11.3.0.51 source build), and what differs between drivers.
 - [Alembic Migrations](ALEMBIC.md), [Type Mapping](TYPES.md) and [Feature Support](FEATURE_SUPPORT.md), including CUBRID's limits such as no `RETURNING` clause.
 
 ---
@@ -265,6 +267,19 @@ and a shell such as bash. The commands were verified on Linux on x86_64
 (amd64); the `cubrid/cubrid:11.4` image is published for amd64 only, so other
 architectures (for example Apple silicon) and Windows are unverified.
 
+**Apple silicon alternative (not verified in this project):** Docker Desktop may
+run the amd64 image under Linux/amd64 emulation. Try the same `docker run`
+command below **with `--platform linux/amd64` immediately after `docker run`**,
+keeping the localhost-only port mapping and the full `csql SELECT 1`
+readiness check. Emulation may be slower, may not work on every Docker
+installation and is **not** a claim of native arm64 support. If the container
+does not become ready, inspect `docker logs sqlalchemy-cubrid-quickstart`
+and use [Option A](#option-a-i-already-have-a-cubrid-database) with a CUBRID
+server accessible from your Mac rather than assuming the dialect is broken.
+Remove a failed disposable container before retrying:
+`docker rm -f -v sqlalchemy-cubrid-quickstart`. Do not publish the lab's
+empty-password DBA port beyond `127.0.0.1`.
+
 ```bash
 docker run -d --name sqlalchemy-cubrid-quickstart -e CUBRID_DB=testdb \
   -p 127.0.0.1:33000:33000 cubrid/cubrid:11.4
@@ -313,6 +328,22 @@ source .venv/bin/activate
 python -m pip install "sqlalchemy-cubrid[pycubrid]"
 python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
 ```
+
+**Windows (PowerShell), with an existing reachable database (Option A):**
+
+```powershell
+py --version  # Use Python 3.11 or later
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+python -c "import sqlalchemy, sqlalchemy_cubrid, pycubrid; print(sqlalchemy.__version__, sqlalchemy_cubrid.__version__, pycubrid.__version__)"
+```
+
+If `py --version` selects an older interpreter, use an installed Python 3.11+
+explicitly (for example `py -3.12 -m venv .venv`). These **PowerShell**
+commands have not been verified on Windows in this change; the separate Docker
+lab above remains verified only on Linux/amd64. Do not confuse a working Python
+environment on Windows with verification of the Docker image.
 
 The `[pycubrid]` part installs the recommended pure-Python driver together with
 the dialect. The last command prints the three installed versions, for example
@@ -623,6 +654,8 @@ Alembic.
 
 This guide covers how to install the CUBRID Python driver, configure SQLAlchemy connection strings, and understand the connection lifecycle.
 
+The CUBRID database server, the Python drivers (CUBRIDdb and pycubrid), their package names and this dialect are versioned independently: a driver release number is not a server version, and an installation extra does not choose the URL. See [Server, driver, and distribution versions](DRIVER_COMPAT.md#server-driver-and-distribution-versions) for the names, a connection-path diagram and how to check each version.
+
 ---
 
 ## Table of Contents
@@ -646,7 +679,7 @@ This guide covers how to install the CUBRID Python driver, configure SQLAlchemy 
 | Python             | 3.11+           |
 | SQLAlchemy         | 2.0 – 2.1       |
 | CUBRID Server      | 10.2 – 11.4     |
-| CUBRID Python Driver | pycubrid (recommended) or CUBRIDdb built from cubrid-python v11.3.0.51+ (supported C extension) |
+| CUBRID Python Driver | pycubrid (recommended) or the supported CUBRIDdb C extension (PyPI `CUBRID-Python` 9.3.0 through the `[cubrid]` / `[cubriddb]` extras, or built from cubrid-python v11.3.0.51) |
 
 ---
 
@@ -685,21 +718,26 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 The official CUBRIDdb C-extension driver from
 [cubrid-python](https://github.com/CUBRID/cubrid-python) is the driver bound to the bare
-`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. The
-supported way to install it is to build cubrid-python v11.3.0.51 or later from source,
-see [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
-then install the dialect on its own:
+`cubrid://` URL; select it explicitly with the `cubrid+cubriddb://` URL scheme. It has
+two maintained installation options:
 
-```bash
-pip install sqlalchemy-cubrid
-```
+- `pip install "sqlalchemy-cubrid[cubrid]"` (or the identical `[cubriddb]` extra) installs
+  the PyPI `CUBRID-Python` 9.3.0 release (pip resolves it as `9.3.0.1`). PyPI has only
+  source archives for it, so pip builds it locally.
+- Build cubrid-python v11.3.0.51 from source, see
+  [Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source), and
+  then install the dialect on its own:
 
-> **Warning**: do not install the driver from PyPI (`pip install CUBRID-Python`, or the
-> deprecated `[cubrid]` / `[cubriddb]` extras). PyPI only has `CUBRID-Python` 9.3.x, which
-> is untested with this dialect: it returns `BIGINT` as `str` and fails parts of the
-> integration suite. A `cubrid://` engine emits a `SAWarning` at its first connection
-> when the loaded CUBRIDdb is older than 11.3. See
-> [PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
+  ```bash
+  pip install sqlalchemy-cubrid
+  ```
+
+> **Note**: CI tests the v11.3.0.51 build. The PyPI 9.3.0 release is supported but not
+> verified on Python 3.11 or later; an earlier run on CUBRID 11.4 returned `BIGINT` as
+> `str` and failed parts of the integration suite. A `cubrid://` engine emits a
+> `SAWarning` at its first connection when the loaded CUBRIDdb is older than 11.3. See
+> [PyPI `CUBRID-Python` 9.3.x known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
+
 ---
 
 ## Connection String Format
@@ -788,7 +826,7 @@ The dialect registers these SQLAlchemy entry points:
 | `cubrid+pycubrid://` | pycubrid    | Pure Python driver (no CUBRID native libraries) |
 | `cubrid+aiopycubrid://` | pycubrid.aio | Async pure Python driver          |
 
-For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, built from cubrid-python v11.3.0.51 or later; to select it explicitly use `cubrid+cubriddb://`.
+For new projects prefer `cubrid+pycubrid://` (pure Python driver, no CUBRID native libraries). The `[pycubrid]` extra's `greenlet` dependency may need build tools when no compatible wheel is available. The bare `cubrid://` URL binds the supported CUBRIDdb C-extension driver, either line of it; to select it explicitly use `cubrid+cubriddb://`.
 
 ---
 
@@ -1007,7 +1045,7 @@ The result (e.g., `11.2.0.0374`) is parsed into a tuple `(11, 2, 0, 374)` for in
 
 ### Common Connection Errors
 
-#### `ImportError: No module named 'CUBRIDdb'`
+#### `ImportError: Could not import CUBRIDdb`
 
 The CUBRIDdb C-extension driver that the `cubrid://` URL uses is not installed. Switch
 to the recommended pure-Python driver:
@@ -1016,9 +1054,12 @@ to the recommended pure-Python driver:
 pip install "sqlalchemy-cubrid[pycubrid]"   # then use cubrid+pycubrid://
 ```
 
-or build CUBRIDdb from cubrid-python v11.3.0.51 or later, see
-[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The
-`CUBRID-Python` 9.3.x release on PyPI is untested with this dialect.
+or install CUBRIDdb with `pip install "sqlalchemy-cubrid[cubriddb]"` or build it from
+cubrid-python v11.3.0.51, see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). The PyPI
+`CUBRID-Python` 9.3.x release that the extra installs is supported but not verified on
+Python 3.11 or later; see its
+[known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
 
 #### `Connection refused` on port 33000
 
@@ -1699,7 +1740,7 @@ session.query(Config).filter(Config.data["key"] == "value")
 ```
 
 > **CUBRID < 10.2 workaround:** Store JSON as `STRING`/`VARCHAR` and
-> serialize/deserialize in Python. See [Troubleshooting](../docs/TROUBLESHOOTING.md#json-type-usage).
+> serialize/deserialize in Python. See [Troubleshooting](TROUBLESHOOTING.md#json-type-usage).
 
 ### 4. Collection Types Instead of ARRAY
 
@@ -2561,6 +2602,20 @@ from sqlalchemy_cubrid import (
     JSON,
 )
 ```
+
+> **1.x migration notice (#892):** The dialect-specific `SMALLINT` and `BIGINT`
+> `display_width` argument and `CHAR`, `VARCHAR`, `NCHAR`, `NVARCHAR`,
+> `STRING` `values` argument are accepted but **ignored**, and still emit a
+> `DeprecationWarning`. The earlier warning promised removal in a future
+> MAJOR; this version **revises that notice**: they may be removed in a later
+> reviewed **1.x MINOR**, after this revised warning has been published.
+> Remove the unused keyword argument now (e.g. `SMALLINT(display_width=11)`
+> → `SMALLINT()`; `VARCHAR(30, values=["x"])` → `VARCHAR(30)`).
+> Positional `SMALLINT(11)` and `BIGINT(20)` also represent ignored widths
+> and should become `SMALLINT()` and `BIGINT()`. No DDL or data semantics
+> change when they are omitted. Applications allowing `sqlalchemy-cubrid<2.0`
+> may otherwise receive a breaking MINOR; test upgrades or use an explicit
+> dependency cap until migrated. **These calls remain accepted in this release.**
 
 ### Numeric Types
 
@@ -4753,9 +4808,24 @@ scope of the claim:
 
 | Driver | Install | URL Scheme | Status |
 |---|---|---|---|
-| CUBRIDdb (CCI) | Build from cubrid-python v11.3.0.51+ ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)); the `[cubrid]` / `[cubriddb]` extras are deprecated and install the untested PyPI 9.3.x | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported C-extension driver (v11.3.0.51+ only) |
+| CUBRIDdb (CCI) | Two maintained installation options: the `[cubrid]` / `[cubriddb]` extras install the PyPI `CUBRID-Python` 9.3.0 release, or build cubrid-python v11.3.0.51 from source ([how](DRIVER_COMPAT.md#building-cubriddb-from-source)) | `cubrid://` / `cubrid+cubriddb://` | ✅ Supported C-extension driver (both driver lines; see verification below) |
 | pycubrid (Pure Python) | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+pycubrid://` | ✅ Supported |
 | pycubrid async | `pip install "sqlalchemy-cubrid[pycubrid]"` | `cubrid+aiopycubrid://` | ✅ Supported |
+
+pycubrid is recommended for new projects: it needs no CUBRID native libraries and avoids
+the CUBRIDdb limitations in [Driver Compatibility](DRIVER_COMPAT.md#known-issues).
+
+#### Driver verification
+
+Support policy (the table above) and verification (this table) are separate. A supported
+driver line can still lack a recorded passing run; such a combination is supported but
+not verified. Driver versions below are Python driver versions, not CUBRID server versions.
+
+| Driver line | Verified combinations | Known limitations |
+|---|---|---|
+| CUBRIDdb, PyPI `CUBRID-Python` 9.3.0 (source archives `9.3.0.0001` / `9.3.0.0002`) | Not verified: the integration suite does not succeed with it. In the manually dispatched `cubriddb-pypi.yml` lane (2026-11-13, driver `9.3.0.1`, CUBRID 11.4, Python 3.12), 55 of 691 tests failed after the dialect changes; the first local run (2026-11-12) had 100 failures and 2 errors in 677 tests (#1143). Other CUBRID and Python versions are not verified | `BIGINT` values are returned as `str` and bound parameters are sent as strings; the dialect converts `BIGINT` results and writes `LIMIT offset, count` values into the SQL (#583, #1145, #1299). `bytes` cannot be bound, constraint violations raise `DatabaseError`, recursive CTE and `SET` binds fail, and closing a closed connection can leave a `SystemError` (#585, #1143, #1320); see [Driver Compatibility](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations) |
+| CUBRIDdb, built from cubrid-python v11.3.0.51 | SQLAlchemy compliance lane on CUBRID 11.4 in PR CI; integration tests on CUBRID 10.2–11.4 in the full matrix (manual dispatch and every release); see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
+| pycubrid (sync and async) | Integration and SQLAlchemy compliance lanes in PR and main CI; integration tests on CUBRID 10.2–11.4 in the full matrix; see the [CI Matrix](#ci-matrix) | [Driver Compatibility, Known Issues](DRIVER_COMPAT.md#known-issues) |
 
 ---
 
@@ -4915,7 +4985,7 @@ snapshot here.
 
 ---
 
-*See also: [Connection Guide](CONNECTION.md) · [Type System](TYPES.md) · [Feature Support](FEATURE_SUPPORT.md) · [Driver Compatibility](DRIVER_COMPAT.md) · [Changelog](../CHANGELOG.md)*
+*See also: [Connection Guide](CONNECTION.md) · [Type System](TYPES.md) · [Feature Support](FEATURE_SUPPORT.md) · [Driver Compatibility](DRIVER_COMPAT.md) · [Changelog](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CHANGELOG.md)*
 
 ---
 
@@ -4935,10 +5005,12 @@ sqlalchemy-cubrid is designed to provide a robust, modern interface between SQLA
 
 sqlalchemy-cubrid is an independent implementation written for SQLAlchemy 2.0. It
 contains no code from, and is not a port of, the legacy CUBRID SQLAlchemy dialect
-that shipped inside the old `CUBRID-Python` driver distribution. The optional
-`[cubrid]`/`[cubriddb]` extras install an old, untested PyPI driver package;
-the supported CUBRIDdb C extension is built from cubrid-python v11.3.0.51 or
-later. No source from the former dialect or driver is included or derived.
+that shipped inside the old `CUBRID-Python` driver distribution. The CUBRIDdb
+C-extension driver is a separate, supported runtime dependency with two installation
+options: the optional `[cubrid]`/`[cubriddb]` extras install the PyPI `CUBRID-Python`
+9.3.0 release, or it is built from the cubrid-python v11.3.0.51 source release
+(see [Driver Compatibility](DRIVER_COMPAT.md)). No source from the former dialect or
+driver is included or derived.
 
 ## High-Level Flow
 
@@ -5309,19 +5381,21 @@ cubrid (alembic)   → CubridImpl
 
 # Performance Guide
 
-This guide covers observed performance for `sqlalchemy-cubrid` and practical optimization patterns.
+This guide explains where time goes when an application uses `sqlalchemy-cubrid`,
+how to keep common workloads fast, and how to measure the dialect on your own
+machine. It does not publish benchmark numbers: reproducible performance
+experiments across drivers and databases live in
+[cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark).
 
 ---
 
 ## Table of Contents
 
 - [Overview](#overview)
-- [Current Baseline (2026-10-12)](#current-baseline-2026-10-12)
-- [Benchmark Artifact Contract](#benchmark-artifact-contract)
-- [Benchmark Results](#benchmark-results)
 - [Performance Characteristics](#performance-characteristics)
 - [Optimization Tips](#optimization-tips)
-- [Running Benchmarks](#running-benchmarks)
+- [Known Limitations](#known-limitations)
+- [Measuring Locally](#measuring-locally)
 
 ---
 
@@ -5349,478 +5423,45 @@ flowchart TD
 
 ---
 
-## Current Baseline (2026-10-12)
-
-A same-host, same-CUBRID baseline of the current dialect (#830): raw pycubrid,
-SQLAlchemy Core and the ORM run identical workloads against one CUBRID server.
-It is a reference for later comparisons, not a performance target, and it does
-not compare CUBRID with another database.
-
-**Conditions.** sqlalchemy-cubrid `main` at `a570ea4` (the `sqlalchemy_cubrid/`
-source equals v1.11.0 apart from one `typing` import in `dml.py`, #827; v1.10.0
-and v1.11.0 have identical dialect source), pycubrid 1.12.0 through
-`cubrid+pycubrid://`, SQLAlchemy 2.1.4 and 2.0.54, CPython 3.12.13, CUBRID
-11.4.6.1963 (`cubrid/cubrid:11.4` image `sha256:1248b77ad398` in Docker, port bound
-to 127.0.0.1), Intel
-Core i5-9400F (6 cores), Linux 5.15. The host was shared with other CUBRID
-containers. Autocommit off, default `QueuePool`, one connection per variant,
-no `pool_pre_ping`. Each figure is the median of 5 trials, with the
-interquartile range (IQR) of the trial values; every trial first runs one
-unrecorded warm-up pass.
-
-**Raw artifacts and commands**:
-[`benchmarks/2026-10-12-dialect-baseline/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-12-dialect-baseline)
-(`run.sh`, the worker `input.json`, `raw/`, `summary.json` and `aggregate.py`).
-The tools are `scripts/bench_dialect_baseline.py` (statement cache, fetch,
-batch DML and reflection; every result is checked), `scripts/bench_compile.py`,
-`scripts/profile_orm.py` and the cubrid-benchmark `orm-overhead` workers at
-`f5510d0` (single-row CRUD, 10 s per operation after 2 s warm-up, 1,000 seeded
-rows, batches of 100, zero errors in every trial).
-
-### Single-row operations and fetch
-
-Per-operation latency in ms (median of the trial p50 values, IQR in brackets),
-SQLAlchemy 2.1.4; SQLAlchemy 2.0.54 is in the last two columns.
-
-| Operation (orm-overhead workers) | raw pycubrid | Core | ORM | Core 2.0 | ORM 2.0 |
-|---|---:|---:|---:|---:|---:|
-| select_by_pk | 0.62 [0.61–0.63] | 0.75 [0.73–0.77] | 1.05 [1.01–1.09] | 0.78 | 1.11 |
-| select_full_scan (1,000 rows) | 3.86 [3.82–3.93] | 4.22 [4.20–4.27] | 7.61 [7.59–7.69] | 4.26 | 8.02 |
-| insert_single (with commit) | 59.2 [58.5–84.0] | 58.7 [58.5–61.8] | 73.5 [66.9–74.9] | 58.5 | 75.0 |
-| update_by_pk (with commit) | 50.5 [50.1–58.4] | 58.0 [58.0–58.0] | 66.6 [66.5–66.7] | 58.3 | 66.6 |
-| delete_by_pk (with commit) | 66.7 [50.2–67.4] | 58.5 [58.4–58.6] | 74.9 [67.2–75.0] | 58.5 | 74.8 |
-
-- Reads isolate the client layers: Core adds about 0.13 ms (21%) to a primary-key
-  SELECT and 9% to a 1,000-row fetch; the ORM roughly doubles the fetch
-  (object materialization).
-- Every committed write takes 50–75 ms in steps of about 8.3 ms whatever the
-  layer, so the server commit dominates and Core equals raw pycubrid within
-  that step. Write medians are a few hundred operations per trial and move by a
-  whole step between trials.
-- The workers' `insert_batch` steps are not like for like (raw uses
-  `executemany()`, Core one insertmanyvalues INSERT, the ORM a unit-of-work
-  flush that also deletes object by object), so they are only in the raw files.
-
-### Statement cache, fetch and batch DML
-
-`scripts/bench_dialect_baseline.py`, SQLAlchemy 2.1.4 (2.0.54 in the last
-column). One-row SELECT by primary key, 1,000 calls per variant, in µs:
-
-| Variant | 2.1.4 median [IQR] | 2.0.54 median |
-|---|---:|---:|
-| raw pycubrid | 661 [646–664] | 637 |
-| Core, statement cache (default) | 775 [748–847] | 838 |
-| Core, `compiled_cache=None` | 996 [984–1012] | 1035 |
-| ORM `select(Item)` | 999 [938–1098] | 951 |
-
-Turning the statement cache off costs about 220 µs per execution here
-(compilation plus result-metadata setup); offline, `scripts/bench_compile.py`
-(10,000 compilations, 5 trials) compiles a SELECT with LIMIT/OFFSET in 91.2 µs
-(2.0.54: 84.7), a simple INSERT in 65.4 µs (60.7), an INSERT … ON DUPLICATE KEY
-UPDATE in 124.5 µs (117.7) and a SELECT … FOR UPDATE in 70.8 µs (67.0).
-
-Batches of 1,000 rows, each statement timed with its commit and the table
-checked afterwards (row count and sum), in ms:
-
-| Variant | INSERT | UPDATE | DELETE |
-|---|---:|---:|---:|
-| raw `executemany()` | 480 [459–666] | 471 [441–497] | 619 [446–653] |
-| raw `executemany(prepared=True)` | 180 [174–195] | 221 [209–247] | 244 [238–288] |
-| Core (`insert()` list: insertmanyvalues; `update()`/`delete()` list: `executemany()`) | 99 [95–121] | 577 [421–590] | 567 [456–615] |
-| Core, experimental `prepared=True` in `do_executemany` | 116 [112–117] | 239 [223–245] | 280 [216–289] |
-| ORM (bulk INSERT, bulk UPDATE by primary key, unit-of-work DELETE) | 108 [105–129] | 466 [447–701] | 498 [440–533] |
-
-- A Core or ORM bulk INSERT is 4.4–4.8 times faster than the driver's own
-  `executemany()`: insertmanyvalues sends a few multi-row INSERT statements
-  instead of 1,000 single-row statements in one literal batch.
-- Core UPDATE/DELETE batches go through `PyCubridDialect.do_executemany()`,
-  which calls `cursor.executemany()` unchanged, so they cost the same as the raw
-  literal batch (the 2.0.54 medians, 974 and 948 ms, had an IQR of 421–1190 and
-  484–1065 ms on the shared host).
-- The experimental `prepared=True` override affects only `do_executemany()`, so
-  it changes the Core UPDATE and DELETE columns; its INSERT still goes through
-  insertmanyvalues (`do_execute()`), and the 116 versus 99 ms INSERT difference
-  is run-to-run variation, not an effect of the prepared path.
-- Reflecting the table (columns, primary key, foreign keys, indexes and unique
-  constraints with a fresh `Inspector`) takes 16.5 ms and 8 SQL statements;
-  `MetaData.reflect()` of the table 20.9 ms and 10 statements.
-
-### Where the time goes
-
-`scripts/profile_orm.py` (default workload: 20 single-row ORM CRUD loops and
-3 bulk inserts of 300 rows under cProfile) attributes 0.003% of the profiled
-request time to the dialect's own modules, 5.9% (2.0.54: 6.7%) to SQLAlchemy
-self time (Core and ORM together) and 5.9% to pycubrid self time; the remaining self time is outside
-those packages (standard library, socket and builtin calls, which include the
-wait for the server's replies).
-The script's separate compile-only pass (250 loops of five statements) ranks
-the dialect functions by cumulative time as `visit_insert`, `visit_update`,
-`visit_delete`, `visit_on_duplicate_key_update` and `limit_clause`. No dialect-specific hotspot or regression was found, so no
-dialect change is proposed from this baseline.
-
-### Prepared batch feasibility
-
-pycubrid 1.12.0's opt-in `executemany(..., prepared=True)` (its large-batch
-safety work, cubrid-lab/pycubrid#854, is complete) took 0.37–0.47 times the
-literal batch's time above, and about 0.4–0.5 times for Core UPDATE/DELETE
-through the benchmark-only `do_executemany` override. The dialect keeps the
-default path. Its contracts would allow an opt-in, but not a silent default:
-
-- SQLAlchemy sends `executemany()` for UPDATE and DELETE parameter lists and for
-  the INSERT fallback of #421; these start with `UPDATE`, `DELETE` or `INSERT`,
-  which the prepared path accepts. A statement starting with `WITH` is rejected
-  with `NotSupportedError` and there is no fallback.
-- On success `rowcount` is the sum of the per-row counts, as the dialect's
-  `supports_sane_multi_rowcount` needs; partial-failure, commit and rollback
-  behavior and the exception mapping match the literal batch.
-- Accepted values are narrower: empty `bytes`, NaN/infinity, collection
-  elements other than `str`/`int`/`None` and (with autocommit on) `Lob` values
-  are rejected before sending, and conversion errors read "Cannot coerce host
-  var" instead of the literal text. Every placeholder must be typable by the
-  server.
-
-### Follow-up: CUBRID versions, drivers, async and concurrency (2026-10-13)
-
-The same `scripts/bench_dialect_baseline.py`, extended with a CUBRIDdb route, an
-async mode and a concurrent-connections workload, was run on CUBRID 10.2.18.9024,
-11.0.16.0419, 11.2.9.0866 and 11.4.6.1963 (official `cubrid/cubrid` images in
-Docker, one benchmark server at a time, port bound to 127.0.0.1) through
-`cubrid+pycubrid://`, `cubrid://` (CUBRIDdb built from cubrid-python v11.3.0.51,
-reported as `11.3.0.1`) and `cubrid+aiopycubrid://`. Same host, CPython 3.12.13,
-pycubrid 1.12.0 and SQLAlchemy 2.1.4 as above. From the 11.0 async run onward, one
-to five CUBRID containers of unrelated work also ran on the host (mostly idle,
-3–5% CPU each when sampled). Each figure is the median of 5 trials; the IQRs,
-every trial value and the exact commands are in
-[`benchmarks/2026-10-13-dialect-baseline-followup/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-13-dialect-baseline-followup).
-The CUBRID 11.4 pycubrid reads match the 2026-10-12 run within the trial
-spread; batch timings vary widely in both runs.
-
-One connection, one-row SELECT by primary key in µs and SELECT of 1,000 rows in ms:
-
-| Server | Driver | raw | Core | Core, no cache | ORM | Core fetch | ORM fetch |
-|---|---|---:|---:|---:|---:|---:|---:|
-| 10.2 | pycubrid | 506 | 627 | 892 | 760 | 4.57 | 7.83 |
-| 10.2 | CUBRIDdb | 455 | 646 | 842 | 748 | 4.24 | 7.46 |
-| 10.2 | aiopycubrid | 553 | 767 | 946 | 986 | 4.51 | 8.15 |
-| 11.0 | pycubrid | 435 | 579 | 767 | 649 | 3.98 | 7.29 |
-| 11.0 | CUBRIDdb | 447 | 582 | 789 | 736 | 4.09 | 7.33 |
-| 11.0 | aiopycubrid | 635 | 859 | 1123 | 988 | 4.65 | 8.31 |
-| 11.2 | pycubrid | 730 | 762 | 1019 | 905 | 4.35 | 7.99 |
-| 11.2 | CUBRIDdb | 509 | 651 | 863 | 753 | 4.06 | 7.52 |
-| 11.2 | aiopycubrid | 1295 | 1367 | 1456 | 1508 | 4.84 | 8.30 |
-| 11.4 | pycubrid | 595 | 764 | 973 | 956 | 4.90 | 8.11 |
-| 11.4 | CUBRIDdb | 551 | 691 | 899 | 765 | 3.79 | 7.25 |
-| 11.4 | aiopycubrid | 653 | 876 | 1158 | 1062 | 4.49 | 8.03 |
-
-- No server version is consistently faster or slower; the differences between
-  rows are within the trial-to-trial spread.
-- The two sync drivers are close: a raw one-row SELECT takes 447–551 µs through
-  CUBRIDdb and 435–730 µs through pycubrid, and Core and ORM differ by less than
-  0.2 ms.
-- The async route adds 0.1–0.6 ms to a Core one-row SELECT on one connection
-  (event loop and greenlet bridge) and at most 0.7 ms to a Core 1,000-row fetch.
-- Reflection (sync drivers only) takes 13.3–16.2 ms with a fresh `Inspector` and
-  16.4–21.1 ms with `MetaData.reflect()`, with the same 8 and 10 SQL statements on
-  every server and both drivers.
-
-Batch UPDATE of 1,000 rows with its commit, in ms (INSERT through
-insertmanyvalues is in the last column):
-
-| Server | raw `executemany()` | raw `prepared=True` | Core, pycubrid | Core, CUBRIDdb | Core, async | Core INSERT, any driver |
-|---|---:|---:|---:|---:|---:|---:|
-| 10.2 | 798 | 257 | 1032 | 1047 | 351 | 126–190 |
-| 11.0 | 413 | 259 | 633 | 556 | 391 | 116–264 |
-| 11.2 | 703 | 231 | 778 | 497 | 805 | 82–125 |
-| 11.4 | 637 | 220 | 409 | 805 | 398 | 81–124 |
-
-- Literal batches (raw `executemany()` and Core UPDATE/DELETE lists) took
-  231–1,296 ms with wide IQRs and no consistent order by server or driver. The
-  prepared INSERT and UPDATE (164–261 ms) and the insertmanyvalues INSERT (72–264
-  ms, mostly 81–131 ms) stay the cheaper paths on every server and driver.
-- On CUBRIDdb, Core UPDATE/DELETE lists run one `execute()` per row (the
-  dialect's `do_executemany()` guard for CUBRIDdb's unbound `None` and last-row
-  `rowcount`), not the driver's own `executemany()`.
-
-Concurrent connections on CUBRID 11.4: N workers start together, each on its own
-connection (threads for the sync drivers, `asyncio` tasks for async); 500 one-row
-SELECTs or 50 committed single-row UPDATEs per worker, in operations per second
-from the first counted operation's start to the last one's end:
-
-| Driver | Connections | raw SELECT | Core SELECT | ORM SELECT | Core UPDATE + commit |
-|---|---:|---:|---:|---:|---:|
-| pycubrid (threads) | 4 | 4781 | 3672 | 3017 | 64 |
-| pycubrid (threads) | 8 | 5450 | 3814 | 3047 | 107 |
-| CUBRIDdb (threads) | 4 | 1623 | 390 | 433 | 28 |
-| CUBRIDdb (threads) | 8 | 839 | 479 | 581 | 25 |
-| aiopycubrid (tasks) | 4 | 4222 | 3030 | 2536 | 52 |
-| aiopycubrid (tasks) | 8 | 4814 | 3238 | 2598 | 89 |
-
-- pycubrid threads scale on every server: 4,781–5,771 raw and 3,672–3,966 Core
-  SELECTs/s with 4 connections, 5,450–5,982 and 3,587–3,916 with 8. Core and ORM
-  level off at about 3,600–3,900 and 2,700–3,100 SELECTs/s, which suggests the
-  client process (one Python interpreter) is the limit there.
-- The async route scales the same way, slightly lower: 4,222–5,184 raw and
-  3,030–3,378 Core SELECTs/s with 4 tasks, 4,814–5,955 and 3,238–3,405 with 8.
-- Committed UPDATEs, about 22/s on one connection, mostly rise to 30–64/s with 4
-  connections and 89–110/s with 8 through pycubrid and the async route, with a
-  p50 of 66–83 ms, so the server overlaps the commits. Two runs did not (11.0
-  pycubrid threads: 6, 15 and 30/s with 1, 4 and 8 connections, p50 155–218 ms;
-  10.2 async: 15 and 34/s with 4 and 8, p50 202–224 ms); the cause was not
-  investigated.
-- CUBRIDdb does not scale: with 4 or 8 threads it never exceeded one
-  connection's throughput (278–1,782 SELECTs/s; one connection alone does about
-  1,800–2,200 raw SELECTs/s, first table) and stayed at 20–28 committed UPDATEs/s
-  on every server. Its C extension (`cubrid_ext/python_cubrid.c` at v11.3.0.51)
-  contains no `Py_BEGIN_ALLOW_THREADS`, so it holds the GIL during server round
-  trips and the threads wait for each other. Multi-threaded applications should
-  use pycubrid.
-- The one-connection row of this workload varied widely between servers and
-  trials (433–2,046 raw SELECTs/s), so the single-connection comparison uses the
-  first table.
-
-Not measured: `pool_pre_ping`, Python other than 3.12, SQLAlchemy 2.0 on the
-follow-up's servers and drivers, more than 8 connections or several client
-processes, the async route's reflection (it runs the same synchronous dialect
-code through `run_sync`), remote networks and server-side resource use.
-
----
-
-## Benchmark Artifact Contract
-
-A versioned manifest (#901) lets an external consumer, such as
-[cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark), check a baseline
-or candidate run without unrecorded assumptions. It is advisory: no CI job
-requires it, and no threshold fails a pull request.
-
-`scripts/bench_dialect_baseline.py` produces the report. It now also records:
-
-- `workload.script_sha256`, the SHA-256 of the script, as the workload identity;
-- `target`, the DSN without its password, as the connection identity;
-- `pool_pre_ping` (off) and autocommit (off);
-- the dialect's `use_insertmanyvalues` and `insertmanyvalues_page_size`;
-- `"status": "complete"`. A report is written only after every check of the run
-  passed;
-- the provenance of the measured dialect (#903): `dialect_package_sha256`, a
-  SHA-256 over the installed `sqlalchemy_cubrid/*.py` files, and
-  `source_verification`;
-- the `--server-image-digest`, `--host-label` and `--comparable-group` you pass
-  to the benchmark.
-
-Before measuring, the benchmark checks the installed dialect against
-`--source-sha`, and a mismatch stops the run:
-
-- For an install from a local git checkout (`pip`/`uv pip install <dir>`,
-  editable or not), the installed `*.py` files must equal those of that commit
-  in the checkout (`source_verification: local_checkout`).
-- For a VCS install (`git+https://...@<sha>`), the recorded commit must equal it
-  (`vcs_info`).
-- Any other install, such as a wheel from PyPI, is recorded as `unverified`, and
-  `export` rejects it.
-
-Run the benchmark with `python -I`. Otherwise an `sqlalchemy_cubrid.egg-info`
-in the current directory can hide the installed distribution's metadata.
-
-`scripts/bench_artifact.py` handles the manifest:
-
-- `export` turns one complete, verified report into `manifest.json`.
-- `validate` checks a manifest. It re-hashes the files it lists and rebuilds the
-  manifest from them. An edited, corrupt or mixed-revision input therefore fails,
-  and so does an in-place edit of the image digest, host label, group, source SHA
-  or package hash, because those now come from the hashed report. With
-  `--source-repo DIR`, it also recomputes the package hash from the source SHA in
-  that git repository. Editing the report and the manifest together is not
-  detected, so keep artifacts in git.
-- `compare` reports per-metric medians and ratios for a baseline and a candidate.
-  It does so only when they share a group and differ in nothing but the dialect
-  (source SHA, version, package hash and verification method); otherwise it
-  prints `not comparable` with the reasons. It takes `--source-repo` as well.
-
-Exit codes: 0 valid or comparable, 1 invalid, 2 usage error, 3 not comparable.
-
-```bash
-python -I scripts/bench_dialect_baseline.py --dsn <dsn> --trials 5 \
-    --source-sha <40-character SHA of the installed dialect> \
-    --server-image-digest sha256:<64 hex> --host-label <label> --comparable-group <name> \
-    --output raw/bench_dialect_baseline.json > raw/bench_dialect_baseline.txt
-python scripts/bench_artifact.py export raw/bench_dialect_baseline.json \
-    --log raw/bench_dialect_baseline.txt --output manifest.json
-python scripts/bench_artifact.py validate manifest.json --source-repo <checkout>
-python scripts/bench_artifact.py compare baseline/manifest.json candidate/manifest.json
-```
-
-**Contract `sqlalchemy-cubrid-benchmark-artifact/2`.** Version 2 (#903) adds the
-provenance fields and moves the digest, host label and group into the report.
-`validate` rejects `/1` manifests.
-
-- `environment`:
-  - the dialect source SHA (40 characters) and sqlalchemy-cubrid version;
-  - `dialect_package_sha256` and `source_verification` (`local_checkout` or
-    `vcs_info`);
-  - SQLAlchemy, 2.0.x or 2.1.x only;
-  - the driver and its version, and the pycubrid version;
-  - the CUBRID server version and its image digest;
-  - Python, implementation, platform, CPU and the host label;
-  - the connection target (the DSN without its password);
-  - the pool, `pool_pre_ping`, autocommit and the insertmanyvalues settings.
-- `workload`: the script, its SHA-256, the table and every argument except
-  `source_sha`. The argument `rows` must be 1,000.
-- `trials`: at least 3 independent trials.
-- `files`: the report (`raw`) and its log (`log`), each with a relative path and
-  SHA-256. Duplicate paths are rejected.
-- `metrics`: the advisory set. Each metric has its unit, rows per timed call, SQL
-  shape, commit policy, warm-up, verified condition, every trial value and the
-  median.
-
-| Metric | Unit | SQL shape | Commit |
-|---|---|---|---|
-| `select_pk.raw`, `.core_cached`, `.core_uncached`, `.orm` | µs per statement | one-row SELECT by primary key: raw cursor, Core with the compiled cache, Core with `compiled_cache=None`, ORM | none |
-| `fetch_all.raw`, `.core`, `.orm` | µs per fetch | SELECT of 1,000 rows: `fetchall()`, `.all()`, `scalars().all()` | none |
-| `batch.raw.{insert,update,delete}` | ms per batch | raw `executemany()` of literal-rendered rows: one EXECUTE_BATCH (FC20) | timed, one per batch |
-| `batch.raw_prepared.{insert,update,delete}` (pycubrid only) | ms per batch | opt-in `executemany(prepared=True)`: PREPARE + EXECUTE_ARRAY (FC2 + FC21) | timed, one per batch |
-| `batch.core.insert` | ms per batch | Core `insert()` executemany through insertmanyvalues: multi-row `INSERT ... VALUES` | timed, one per batch |
-| `batch.core.update`, `batch.core.delete` | ms per batch | Core executemany through `PyCubridDialect.do_executemany` (literal FC20; the dialect passes no `prepared` flag) | timed, one per batch |
-| `batch.orm.insert`, `.update`, `.delete` | ms per batch | ORM bulk INSERT (insertmanyvalues), bulk UPDATE by primary key (`do_executemany`), unit-of-work DELETE | timed, one per batch |
-
-For `cubrid://` (CUBRIDdb) reports, the SQL shapes follow that driver:
-`batch.raw.*` is CUBRIDdb's own `executemany()`, and `batch.core.update`,
-`batch.core.delete` and `batch.orm.update` go through
-`CubridDialect.do_executemany`, one `cursor.execute()` per parameter set (#502).
-
-The experimental `core_prepared_experiment` batch, reflection and the concurrency
-workload stay in the report but are not part of the contract.
-
-**Pinned pair (2026-10-14, contract 2).**
-[`benchmarks/2026-10-14-artifact-pair-v2/`](https://github.com/cubrid-lab/sqlalchemy-cubrid/tree/main/benchmarks/2026-10-14-artifact-pair-v2)
-holds `run.sh`, both raw reports and logs, both manifests and `compare.json`.
-Only the installed dialect varies, and both installs were verified as
-`local_checkout`:
-
-- baseline: v1.11.0, `3a0c289`;
-- candidate: `main` at `0dfe938`.
-
-Everything else is shared: the same script, pycubrid 1.12.0, SQLAlchemy 2.1.4,
-CPython 3.12.13, and CUBRID 11.4.6.1963 from image `sha256:1248b77ad398` on one
-host. Each run had 5 trials. `compare` reports `comparable`. Figures are medians,
-with the interquartile range of the trial values:
-
-| Metric | Unit | Baseline v1.11.0 | Candidate `0dfe938` | Ratio |
-|---|---|---:|---:|---:|
-| `select_pk.raw` | us | 732.6 (582.2–2963.6) | 561.8 (558.9–566.3) | 0.77 |
-| `select_pk.core_cached` | us | 802.2 (727.2–803.9) | 752.3 (743.7–793.9) | 0.94 |
-| `select_pk.core_uncached` | us | 916.1 (912.2–1012.8) | 1007.1 (988.3–1049.2) | 1.10 |
-| `select_pk.orm` | us | 837.9 (804.0–872.9) | 849.8 (826.1–865.0) | 1.01 |
-| `fetch_all.raw` | us | 3948.9 (3830.1–3971.4) | 3923.6 (3848.8–4026.4) | 0.99 |
-| `fetch_all.core` | us | 4303.6 (4228.0–4539.3) | 4340.0 (4111.8–4525.4) | 1.01 |
-| `fetch_all.orm` | us | 7781.8 (7596.0–7869.8) | 7734.3 (7730.4–7775.9) | 0.99 |
-| `batch.raw.insert` | ms | 1758.5 (1740.3–1954.4) | 1472.8 (1073.9–1531.7) | 0.84 |
-| `batch.raw_prepared.insert` | ms | 157.1 (152.5–197.6) | 205.9 (197.5–215.0) | 1.31 |
-| `batch.raw.update` | ms | 1146.3 (1112.4–1455.3) | 1346.3 (854.3–1547.2) | 1.17 |
-| `batch.raw_prepared.update` | ms | 178.9 (170.6–196.1) | 188.2 (179.9–204.6) | 1.05 |
-| `batch.raw.delete` | ms | 1429.5 (880.6–1463.6) | 1818.0 (1371.4–1888.1) | 1.27 |
-| `batch.raw_prepared.delete` | ms | 288.9 (256.3–315.8) | 554.4 (355.4–637.7) | 1.92 |
-| `batch.core.insert` | ms | 114.4 (99.5–115.7) | 131.7 (116.0–132.4) | 1.15 |
-| `batch.core.update` | ms | 798.0 (597.4–880.1) | 1513.4 (1506.0–1531.7) | 1.90 |
-| `batch.core.delete` | ms | 1507.8 (1281.9–1515.1) | 1531.8 (781.9–2098.6) | 1.02 |
-| `batch.orm.insert` | ms | 91.2 (89.6–107.2) | 114.5 (108.8–132.3) | 1.26 |
-| `batch.orm.update` | ms | 622.5 (443.9–636.2) | 767.5 (655.3–1108.7) | 1.23 |
-| `batch.orm.delete` | ms | 444.2 (377.5–460.0) | 476.0 (403.4–487.0) | 1.07 |
-
-These ratios show the noise floor of one host. They are not a regression
-finding. The `raw` and `raw_prepared` rows do not run the dialect at all, yet
-`select_pk.raw` moved by 0.77 and the raw batch rows between 0.84 and 1.92.
-`batch.orm.update` is 1.23 here and was 1.84 in the contract 1 pair of the same
-day. Batch DML varies widely from trial to trial on this host. A future candidate result means something only against this kind
-of spread, from the same environment.
-
-The first pinned pair, `2026-10-14-artifact-pair` (contract 1, #901), is kept
-unchanged. `validate` rejects it as `/1`: the benchmark did not verify its installs, and its
-digest, host label and group were `export` arguments.
-
-The #830 archives (`2026-10-12-dialect-baseline` and
-`2026-10-13-dialect-baseline-followup`) stay unchanged and historical. Their
-reports predate the contract: they have no `status`, workload identity or pool
-fields. `export` rejects them, so they cannot be compared with a new artifact.
-
----
-
-## Benchmark Results
-
-The results in this section are historical. They were measured on earlier
-releases and other hosts and do not describe v1.11.0; see
-[Current Baseline (2026-10-12)](#current-baseline-2026-10-12) for current numbers.
-
-Source: [cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark)
-
-Environment: Intel Core i5-9400F @ 2.90GHz, 6 cores, Linux x86_64, Docker containers.
-
-Baseline driver workload (2026-03-16, cubrid-benchmark `baseline-multilang`): Python `pycubrid` vs `PyMySQL`, 10000 rows x 5 rounds.
-
-| Scenario | CUBRID (pycubrid baseline) | MySQL (PyMySQL) | Ratio (CUBRID/MySQL) |
-|---|---:|---:|---:|
-| insert_sequential | 10.47s | 1.74s | 6.0x |
-| select_by_pk | 15.99s | 3.52s | 4.5x |
-| select_full_scan | 10.31s | 1.86s | 5.5x |
-| update_indexed | 10.70s | 2.19s | 4.9x |
-| delete_sequential | 10.75s | 2.10s | 5.1x |
-
-Note: SQLAlchemy adds extra overhead for SQL compilation, ORM identity mapping, and object creation.
-
-### Issue #104 — ORM dialect profile and optimization
-
-Measured in April 2026 on the local benchmark environment used for Issue #104:
-
-| Scenario | Before | After | Delta |
-|---|---:|---:|---:|
-| Tier 2 single-row CRUD (mean) | 155.99 ms | 268.41 ms | 72.1% slower* |
-| Tier 2 bulk insert (100 rows, mean) | 370.33 ms | 356.09 ms | **3.9% faster** |
-| Tier 2 bulk insert (1000 rows, mean) | 2864.56 ms | 2511.52 ms | **12.3% faster** |
-| Tier 2 query builder select-all (mean) | 39.76 ms | 31.83 ms | **19.9% faster** |
-
-Profiling with `scripts/profile_orm.py` showed that dialect-layer self time is a very small fraction of total
-request time on CRUD-heavy ORM paths, with most elapsed time still spent in SQLAlchemy ORM/Core coordination
-and the `pycubrid` driver. In the profiled workload captured for Issue #104:
-
-- dialect-layer self time was **0.0009% of total request time**
-- SQLAlchemy Core self time was **6.55% of total request time**
-- `pycubrid` self time was **7.01% of total request time**
-- ORM select overhead vs raw SQL select was **18.08% of ORM select time**
-
-Top dialect-layer hotspots from the compilation-focused profiler pass were:
-
-1. `compiler.py:visit_on_duplicate_key_update`
-2. `compiler.py:limit_clause`
-3. `compiler.py:update_limit_clause`
-4. `compiler.py:<dictcomp>` inside `visit_on_duplicate_key_update`
-5. `compiler.py:replace` inside `visit_on_duplicate_key_update`
-
-Shipped optimization:
-
-- Enabled SQLAlchemy 2.x `insertmanyvalues` for the CUBRID dialect (`use_insertmanyvalues=True` and
-  `use_insertmanyvalues_wo_returning=True`) so ORM bulk inserts can batch into multi-values INSERT forms
-  without changing the public API.
-
-\* The single-row CRUD benchmark showed high variance in this local run, so the clear repeatable improvement from
-this change set is the bulk insert path rather than singleton unit-of-work latency.
-
----
-
 ## Performance Characteristics
 
-- The dialect inherits `pycubrid` transport behavior and CAS protocol costs.
-- Core query compilation is fast but non-zero; repeated dynamic SQL can accumulate overhead.
-- ORM paths add identity map and model materialization costs compared to raw DBAPI usage.
-- Pool configuration strongly impacts latency under concurrency.
-- Bulk APIs and Core statements generally outperform row-by-row ORM unit-of-work patterns.
+- The dialect inherits the driver's transport behavior and the CAS protocol's
+  round-trip costs. For committed single-row writes the server round trip and
+  the commit dominate the elapsed time; for reads, the SQLAlchemy and ORM
+  layers add a measurable share.
+- SQL compilation is fast but not free. SQLAlchemy's statement cache (on by
+  default) reuses compiled statements, so repeated statements of the same shape
+  skip compilation; turning the cache off (`execution_options(compiled_cache=None)`, or
+  `query_cache_size=0` on the engine) adds the compilation cost to every
+  execution.
+- The ORM adds identity-map and object-materialization costs compared with Core
+  or raw DB-API usage; the difference grows with the number of rows loaded.
+- Core and ORM bulk INSERTs of a parameter list use SQLAlchemy's
+  insertmanyvalues feature: a few multi-row `INSERT ... VALUES` statements
+  instead of one statement per row. An INSERT into a column whose type has a
+  `bind_expression()` falls back to the driver's `executemany()`.
+- With pycubrid (sync and async), Core UPDATE and DELETE parameter lists go
+  through the driver's `executemany()`, so they cost about the same as a raw
+  `executemany()` call. CUBRIDdb is different; see Known Limitations.
+- Profiling of the dialect on 2026-10-12 (sqlalchemy-cubrid 1.11.0, pycubrid
+  1.12.0, CUBRID 11.4) found no dialect-specific hotspot: the dialect's own
+  modules took a negligible share of request time, and most time was spent in
+  SQLAlchemy, the driver and waiting for the server. Re-measure before relying
+  on this for other versions.
 
 ---
 
 ## Optimization Tips
 
-- Configure pooling explicitly (example: `pool_size`, `max_overflow`, `pool_pre_ping=True`).
-- Use SQLAlchemy Core for high-volume bulk writes and large read pipelines.
-- Use `executemany`-friendly patterns for insert/update bursts.
-- Keep transactions explicit and avoid autocommit-style tiny transactions.
-- Limit ORM object hydration when only scalar/tuple output is needed.
+- Configure pooling explicitly (for example `pool_size`, `max_overflow` and
+  `pool_pre_ping=True`) and size the pool for the number of concurrent workers.
+- Keep the statement cache on, and prefer statements whose shape does not change
+  from call to call, so SQLAlchemy can reuse the compiled form.
+- Send many rows in one call: pass a list of parameter dictionaries to Core
+  `insert()`, or use ORM bulk INSERT/UPDATE, instead of one statement per row.
+- Keep transactions explicit and group related writes; every commit costs a
+  server round trip.
+- Use Core, or load only the columns you need, when you do not need ORM objects.
 
 ```mermaid
 flowchart TD
@@ -5835,30 +5476,92 @@ flowchart TD
 
 ---
 
-## Running Benchmarks
+## Known Limitations
 
-1. Clone: `git clone https://github.com/cubrid-lab/cubrid-benchmark`.
-2. Start the benchmark database containers per the benchmark documentation.
-3. Run the Python benchmark suite to establish DBAPI baseline metrics.
-4. Run SQLAlchemy-specific scenarios on the same host and dataset shape.
-5. Compare driver baseline vs ORM/Core runs to isolate framework overhead.
+- **CUBRIDdb and threads.** The CUBRIDdb C extension (checked in the
+  cubrid-python v11.3.0.51 source, which has no `Py_BEGIN_ALLOW_THREADS`; not
+  verified for the 9.3.0 line) holds Python's global interpreter lock during server round trips, so several threads in one
+  process do not run queries in parallel through it. A measurement on
+  2026-10-13 with the cubrid-python v11.3.0.51 build showed no throughput gain
+  from 4 or 8 threads. Multi-threaded applications should use pycubrid.
+- **Batch UPDATE and DELETE on CUBRIDdb.** On the CUBRIDdb driver the dialect
+  sends a Core UPDATE/DELETE parameter list as one `execute()` per row, because
+  that driver's `executemany()` does not bind `None` (a row silently reuses the
+  previous row's value) and its `rowcount` reports only the last row. Each row is a separate server round
+  trip, and this path cannot use pycubrid's batch or prepared paths.
+- **Prepared batches are not the default.** pycubrid has an opt-in
+  `executemany(..., prepared=True)` that was faster for large batches in local
+  measurements, but it accepts a narrower set of values and rejects statements
+  that start with `WITH`. The dialect keeps the driver's default batch path.
+- **Reflection sends several statements per table.** Reflecting a table's
+  columns, keys, indexes and constraints issues several CUBRID catalog queries,
+  so reflect only the tables you need on large schemas.
+- **Async adds a bridge.** `cubrid+aiopycubrid://` runs SQLAlchemy's async API
+  through an event-loop bridge, which adds a small per-statement cost compared
+  with the synchronous driver on one connection.
 
-Use the benchmark repository documentation for the exact command set and runner scripts.
+---
 
-The current baseline is reproduced with
-`benchmarks/2026-10-12-dialect-baseline/run.sh`, which runs
-`scripts/bench_dialect_baseline.py`, `scripts/bench_compile.py`,
-`scripts/profile_orm.py` and the cubrid-benchmark `orm-overhead` workers against
-one CUBRID container; `python aggregate.py` in that directory rebuilds
-`summary.json` from `raw/`. The 2026-10-13 follow-up is reproduced with
-`benchmarks/2026-10-13-dialect-baseline-followup/run.sh`, which starts each CUBRID
-version in turn and runs `scripts/bench_dialect_baseline.py` through the three
-drivers with `--concurrency 1,4,8`.
+## Measuring Locally
 
-The pinned artifact pair is reproduced with
-`benchmarks/2026-10-14-artifact-pair-v2/run.sh`. It runs one script against two
-installed dialect revisions, then exports, validates and compares their
-manifests (see [Benchmark Artifact Contract](#benchmark-artifact-contract)).
+Three scripts in this repository measure the dialect on your own machine. They
+are debugging aids for dialect work, not performance gates: CI does not run them
+against a server and their numbers are only comparable when taken on the same
+host, CUBRID server and package versions. Run them from a checkout with the
+development install (`make install`; the `cubrid://` route of
+`bench_dialect_baseline.py` also needs the `[cubrid]` extra). The two scripts that connect to CUBRID
+create and drop their own tables (`bench_users` and `bench_dialect_baseline`),
+so point them at a disposable test database such as the one `make docker-up`
+starts.
+
+### Compilation timing
+
+`scripts/bench_compile.py` times the dialect's SQL compilation (SELECT with
+LIMIT/OFFSET, `INSERT ... ON DUPLICATE KEY UPDATE`, simple INSERT and
+`SELECT ... FOR UPDATE`) without a server:
+
+```bash
+python scripts/bench_compile.py --iterations 10000
+```
+
+### ORM profile
+
+`scripts/profile_orm.py` runs single-row ORM CRUD loops, bulk inserts and
+selects under `cProfile`, attributes the time to the dialect, SQLAlchemy and the
+driver, and writes a JSON report:
+
+```bash
+python scripts/profile_orm.py \
+    --dsn cubrid+pycubrid://dba@localhost:33000/testdb --output profile_orm_report.json
+```
+
+### Raw driver, Core and ORM baseline
+
+`scripts/bench_dialect_baseline.py` runs the same workloads through the raw
+driver, SQLAlchemy Core (with and without the statement cache) and the ORM on
+one table, repeated over trials, and checks each result: one-row SELECT by
+primary key, a fetch of every seeded row, batch INSERT/UPDATE/DELETE (including
+pycubrid's prepared batch variants), reflection with its statement counts, and,
+with `--concurrency`, concurrent connections. It accepts `cubrid+pycubrid://`,
+`cubrid://` (CUBRIDdb) and `cubrid+aiopycubrid://` URLs. The JSON report
+records the environment, the package versions, the connection target without
+its password and the script's SHA-256:
+
+```bash
+python scripts/bench_dialect_baseline.py \
+    --dsn cubrid+pycubrid://dba@localhost:33000/testdb \
+    --trials 5 --concurrency 1,4,8 --output bench_dialect_baseline.json
+```
+
+Run `python scripts/bench_dialect_baseline.py --help` for the workload sizes
+(`--rows`, `--iterations`, `--batch` and others).
+
+### Cross-driver experiments
+
+Comparisons with other drivers or databases, and results meant to be published
+or repeated by others, belong in
+[cubrid-benchmark](https://github.com/cubrid-lab/cubrid-benchmark), which owns
+reproducible performance experiments for CUBRID drivers.
 
 ---
 
@@ -5871,9 +5574,10 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 ## Table of Contents
 
 - [Installation Issues](#installation-issues)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
-  - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
+  - [ImportError: Could not import CUBRIDdb](#importerror-could-not-import-cubriddb)
+  - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
+  - [Missing greenlet for async engines](#missing-greenlet-for-async-engines)
 - [Connection Issues](#connection-issues)
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Database Server Host Not Found After Recreating the Container](#database-server-host-not-found-after-recreating-the-container)
@@ -5938,22 +5642,28 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
 
 ## Installation Issues
 
-### ImportError: No module named 'CUBRIDdb'
+### ImportError: Could not import CUBRIDdb
 
 **Symptom:**
 
 ```
-ImportError: No module named 'CUBRIDdb'
+ImportError: Could not import CUBRIDdb. The cubrid:// and cubrid+cubriddb:// URLs use the CUBRIDdb C-extension driver. Install it with pip install "sqlalchemy-cubrid[cubriddb]" (the CUBRID-Python distribution on PyPI), or build CUBRIDdb from the official CUBRID/cubrid-python source. Alternatively, use the pure-Python pycubrid driver with pip install "sqlalchemy-cubrid[pycubrid]" and a cubrid+pycubrid:// URL. Check driver and server version compatibility separately.
 ```
 
 **Cause:** The CUBRID C-extension Python driver is not installed.
 
-**Fix — Option A: Build the C-extension driver from source:** build CUBRIDdb from
-cubrid-python v11.3.0.51 or later, see
-[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source). This needs
-CMake and a C compiler. Do not use `pip install CUBRID-Python`: PyPI only has the untested
-9.3.x release, see
-[PyPI `CUBRID-Python` 9.3.x is not supported](DRIVER_COMPAT.md#pypi-cubrid-python-93x-is-not-supported).
+**Fix — Option A: Install the CUBRIDdb C-extension driver:** install the PyPI
+CUBRID-Python package using the installation extra, or build the driver from
+[official CUBRID/cubrid-python source](https://github.com/CUBRID/cubrid-python):
+
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"
+```
+
+Source builds require appropriate CUBRID CCI headers and a C compiler; see
+[Building CUBRIDdb from Source](DRIVER_COMPAT.md#building-cubriddb-from-source).
+Check driver, Python, and CUBRID server version compatibility separately. The
+availability of an installation method does not prove every combination was tested.
 
 **Fix — Option B: Use the pure Python driver instead (recommended):**
 
@@ -5973,12 +5683,12 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 ---
 
-### ImportError: No module named 'pycubrid'
+### ModuleNotFoundError: No module named 'pycubrid'
 
 **Symptom:**
 
 ```
-ImportError: No module named 'pycubrid'
+ModuleNotFoundError: No module named 'pycubrid'
 ```
 
 **Fix:**
@@ -6008,6 +5718,34 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ---
 
+### Missing greenlet for async engines
+
+**Symptom:** creating an async SQLAlchemy engine fails before connecting:
+
+```text
+ImportError: The SQLAlchemy asyncio module requires that the Python 'greenlet' library is installed.
+```
+
+**Cause:** In SQLAlchemy 2.1, installing the base SQLAlchemy package alone
+does not necessarily install `greenlet`. An environment with `pycubrid` but
+without SQLAlchemy's asyncio dependencies cannot use `create_async_engine()`.
+
+**Fix:** install the supported dialect extra, which includes the async
+dependencies, or install SQLAlchemy's asyncio extra explicitly:
+
+```bash
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+# If the dialect and driver are already installed:
+python -m pip install "sqlalchemy[asyncio]"
+```
+
+Some Python/platform combinations do not have a compatible `greenlet` wheel
+and require a compiler/build tools. Check that the install command succeeded
+in the **same virtual environment** used by the async application. Use
+`cubrid+aiopycubrid://` for the async dialect, not `cubrid://`.
+
+---
+
 ## Connection Issues
 
 ### Connection Refused on Port 33000
@@ -6016,24 +5754,39 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ```
 OperationalError: (CUBRIDdb.DatabaseError) Connection refused
+OperationalError: (pycubrid.exceptions.OperationalError) failed to connect to CUBRID broker
 ```
 
 **Fixes:**
 
-1. **Check the CUBRID broker is running:**
+1. **Check the broker inside the container** (not on the host, unless CUBRID is installed there):
 
    ```bash
-   cubrid broker status
-   cubrid service status
+   docker compose ps
+   docker compose exec -T cubrid cubrid broker status
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
 
-2. **Docker container not ready:**
+2. **Wait for database login readiness, not an arbitrary delay:**
 
    ```bash
    docker compose up -d
-   sleep 10  # Wait for full initialization
-   docker compose ps  # Verify "running" status
+   docker compose ps
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
+
+   For the **Lesson 1 `docker run` lab** instead of Compose:
+
+   ```bash
+   docker ps --filter name=sqlalchemy-cubrid-quickstart
+   docker logs sqlalchemy-cubrid-quickstart
+   docker exec sqlalchemy-cubrid-quickstart cubrid broker status
+   docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+   ```
+
+   If `SELECT 1` is not ready yet, use the **up-to-three-minute readiness loop** in
+   [Lesson 1](LESSON_PREPARE.md) rather than repeatedly restarting the container.
+   A running container or an available broker alone does not prove database login readiness.
 
 3. **Wrong port:** Check `cubrid_broker.conf` for the actual broker port.
 
@@ -6080,20 +5833,24 @@ database. Use it only for a volume whose data you do not need.
 
 ### Authentication Failed
 
-**Symptom:**
+**Symptom:** Depending on driver and SQLAlchemy's exception wrapper, the
+underlying CUBRID error can contain either of these messages:
 
-```
-OperationalError: Authentication failed
+```text
+User "..." is invalid
+Incorrect or missing password
 ```
 
-**Fix:** CUBRID's default `dba` user has **no password**:
+**Fix:** Check the username, database and password in the URL. The **local
+disposable Docker lab** creates a `dba` user without a password; do not
+assume that a production server allows an empty DBA password:
 
 ```python
-# Correct — no password
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+# Disposable local lab only — empty password
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
-# Correct — with password (if set)
-engine = create_engine("cubrid://dba:mypassword@localhost:33000/testdb")
+# Server with an explicitly configured password
+engine = create_engine("cubrid+pycubrid://dba:mypassword@localhost:33000/testdb")
 ```
 
 ---
@@ -7125,6 +6882,16 @@ No configuration needed — it works automatically.
 
 ## Docker Issues
 
+**Apple silicon / arm64 Docker image:** The course's
+`cubrid/cubrid:11.4` lab image is documented for amd64, not native arm64.
+On a Mac with Apple silicon, try adding `--platform linux/amd64` to the
+[Lesson 1 `docker run` example](LESSON_PREPARE.md#option-b-i-need-a-disposable-local-database)
+to request Docker emulation; then use the existing three-minute database
+readiness loop and inspect the container logs. This is **unverified** and can
+be slower. If emulation does not work, use a reachable pre-existing CUBRID
+server (Lesson 1 Option A). Do not replace the loopback port binding or
+assume the image has native arm64 support.
+
 ### Container Starts but Cannot Connect
 
 **Fix:**
@@ -7133,8 +6900,15 @@ No configuration needed — it works automatically.
 # 1. Check container is actually running
 docker compose ps
 
-# 2. Wait for broker initialization (takes ~10 seconds)
-docker compose up -d && sleep 10
+# 2. Wait until the Compose healthcheck / actual database login succeeds
+docker compose up -d
+docker compose ps
+docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
+
+# For the separate Lesson 1 lab use:
+# docker logs sqlalchemy-cubrid-quickstart
+# docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+# See Lesson 1's up-to-three-minute readiness loop before troubleshooting further.
 
 # 3. Test connection
 python3 -c "
@@ -7154,11 +6928,11 @@ with engine.connect() as conn:
 ```yaml
 services:
   cubrid:
-    image: cubrid/cubrid:11.2
+    image: cubrid/cubrid:11.4
     environment:
       CUBRID_DB: testdb  # Only this database is created
     ports:
-      - "33000:33000"
+      - "127.0.0.1:33000:33000"
 ```
 
 If your connection URL uses a different database name, it will fail. Match `CUBRID_DB` with your connection URL.
@@ -7178,14 +6952,16 @@ CUBRID_VERSION=11.4 docker compose up -d
 CUBRID_VERSION=10.2 docker compose up -d
 ```
 
-**Known version differences:**
+**Version-specific checks:**
 
-| Feature | CUBRID 10.2 | CUBRID 11.0+ |
+| Feature | CUBRID 10.2 | CUBRID 11.0–11.4 |
 |---|---|---|
-| `LIMIT` in `UPDATE` | ❌ | ✅ |
-| `CTE` (WITH clause) | ❌ | ✅ |
-| `MERGE` | ✅ | ✅ |
-| Index comments | ❌ | ✅ |
+| `LIMIT` in `UPDATE` | Not verified | Not verified |
+| `CTE` (`WITH` / `WITH RECURSIVE`) | ✅ Verified | ✅ Verified |
+| `MERGE` | Not verified by version | Not verified by version |
+| Index comments | Not verified | Not verified |
+
+`WITH` and `WITH RECURSIVE` were checked live on 10.2, 11.0, 11.2 and 11.4; see [CTE tests and boundaries](FEATURE_SUPPORT.md#query-features) and the [support matrix](SUPPORT_MATRIX.md#dml-extensions). “Not verified” denotes missing per-version evidence in this guide, **not** a claim that the database lacks the feature.
 
 ---
 
@@ -7203,7 +6979,7 @@ flowchart TD
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
-    i1 -->|CUBRIDdb| i2[Install CUBRID-Python and CCI dependencies]
+    i1 -->|CUBRIDdb| i2["Install sqlalchemy-cubrid[cubriddb], build CUBRIDdb from cubrid-python v11.3.0.51, or switch to cubrid+pycubrid"]
     i1 -->|pycubrid| i3[Install pycubrid and use cubrid+pycubrid URL]
 
     conn --> c1{Broker reachable?}
@@ -7260,11 +7036,12 @@ print(engine.dialect.server_version_info)  # (11, 2, 0, 378)
 ### Inspect Compiled SQL
 
 ```python
-from sqlalchemy.dialects import registry
+from sqlalchemy import column, select, table
 
 # Compile a statement for CUBRID without executing
 from sqlalchemy_cubrid.dialect import CubridDialect
 
+users = table("users", column("id"), column("name"))
 stmt = select(users).where(users.c.name == "Alice")
 compiled = stmt.compile(dialect=CubridDialect())
 print(str(compiled))
@@ -7424,7 +7201,10 @@ graph TD
     pkg --> alembic["alembic_impl.py - Alembic migration support"]
     pkg --> typed["py.typed - PEP 561 marker"]
 
-    tests --> tcomp["test_compiler.py - SQL compilation and DML construct tests"]
+    tests --> tcomp["test_compiler.py - SELECT and cross-statement compilation tests"]
+    tests --> tcompdml["test_compiler_dml.py - DML construct compilation tests"]
+    tests --> tcompddl["test_compiler_ddl.py - DDL compilation tests"]
+    tests --> tcomptypes["test_compiler_types.py - Type compilation tests"]
     tests --> ttypes["test_types.py - Type system tests"]
     tests --> tdialect["test_dialect_offline.py - Dialect tests (no DB)"]
     tests --> tbase["test_base.py - Base module tests"]
@@ -7652,7 +7432,18 @@ session sharing that dedicated account would make the test fail closed.
 `test/test_server_restart.py` (#565) stops and starts `cub_server` with
 `docker exec -u cubrid <container> bash -lc "cubrid server stop|start <db>"` and
 checks that the pool invalidates broken connections and recovers, through both
-drivers, with and without `pool_pre_ping`. It skips unless
+drivers, with and without `pool_pre_ping`. Its broker tests (#1151) run
+`cubrid broker restart` under a pycubrid `QueuePool`: idle pooled connections must
+be reused safely, interrupted work must fail as a disconnect without being stored
+or replayed, and concurrent write requests are audited against the table (an id
+reported as failed may be stored only when the COMMIT itself lost its reply). The
+JUnit report records that test's request, failure, in-doubt and invalidation counts.
+The async broker tests repeat the idle-reuse and interrupted-transaction checks
+with a `cubrid+aiopycubrid` engine and its `AsyncAdaptedQueuePool`, so the async
+path has its own evidence. The pool lifecycle checks that need no restart
+(`pool_recycle`, checkout timeout, rollback on checkin) are in
+`test/test_stress_pool.py` and run in every `make integration`.
+`test/test_server_restart.py` skips unless
 `CUBRID_TEST_DOCKER_CONTAINER` names the container that serves `CUBRID_TEST_URL`;
 point it at a disposable container, since the tests take the database down:
 
@@ -7664,6 +7455,40 @@ CUBRID_TEST_DOCKER_CONTAINER=<container> \
 
 CI runs it last in each integration job with `CUBRID_REQUIRE_SERVER_RESTART=1`,
 which turns every skip into a failure.
+
+`test/test_pool_soak.py` (#1151) is a bounded mixed request workload on a pycubrid
+pool (`pool_size=4`, `max_overflow=2`, `pool_timeout=30`, `pool_pre_ping=True`). It
+runs twice, with separate results: six worker threads on a sync `cubrid+pycubrid`
+engine with a `QueuePool`, and six asyncio tasks on an async `cubrid+aiopycubrid`
+engine with an `AsyncAdaptedQueuePool`. The requests are
+short reads, write transactions that commit or roll back, and idle gaps that leave
+pooled connections unused before reuse. It counts successful, failed and in-doubt
+requests by kind and stage, the pool's connect, checkout, checkin and invalidate
+events, latency percentiles, and samples the process RSS, open file descriptors
+and sockets. At the end each write is audited against the table: an acknowledged
+commit is stored once, a rolled-back write is never stored, and a failed write may
+be stored only when its COMMIT lost the reply. By default it runs for 3 seconds
+inside every `make integration`, a small regression that expects no failures and
+no invalidations against a healthy server. The longer run with a broker restart is
+manual and not part of any CI lane; point it at a disposable container:
+
+```bash
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" \
+CUBRID_TEST_DOCKER_CONTAINER=<container> \
+CUBRID_SOAK_SECONDS=300 CUBRID_SOAK_BROKER_RESTART=1 \
+CUBRID_SOAK_REPORT=test-results/soak-report.json \
+  pytest test/test_pool_soak.py -v -rs --junitxml=test-results/soak-junit.xml
+```
+
+`CUBRID_SOAK_BROKER_RESTART=1` runs `cubrid broker restart` 40% into the run and
+fails without `CUBRID_TEST_DOCKER_CONTAINER`; requests that start after the broker
+is back must all succeed. `CUBRID_SOAK_REPORT` writes a JSON report with the
+counts, resource samples and the exact Python, SQLAlchemy, dialect, pycubrid and
+server versions, and the async run writes its own report next to it with `-async`
+added to the file name (`soak-report-async.json`); the main counts are also in the
+JUnit properties. `CUBRID_SOAK_DRIVER=CUBRIDdb` runs the sync workload with the
+CUBRIDdb driver (`cubrid://`) instead of pycubrid; the async run always uses
+aiopycubrid, and the report records the loaded CUBRIDdb version.
 
 ### Full SA Test Suite
 
@@ -8051,7 +7876,7 @@ explicit `include = ["*.py", "*.pyi"]` and the matching hook types keep CLI, CI
 and hooks on Python sources rather than rewriting documentation snippets.
 
 The shared `LINT_PATHS` in the Makefile covers the package, tests, scripts,
-demos, samples and `docs/source` Python configuration. CI and tox invoke
+demos and samples. CI and tox invoke
 `make lint` and `make format-check`; the hooks keep checking all tracked Python/pyi files. The drift
 checker rejects omitted maintained directories or a runner that bypasses this
 shared target.
@@ -8334,7 +8159,7 @@ rule-5 cutoff gating, only `SECTION_POLICY_CUTOFF` differs.
 
 ---
 
-*See also: [Contributing Guide](../CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
+*See also: [Contributing Guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/CONTRIBUTING.md) · [Feature Support](FEATURE_SUPPORT.md) · [Connection Guide](CONNECTION.md)*
 
 ---
 
@@ -8371,6 +8196,12 @@ offline suite instead (see
 [Workflow change impact](#workflow-change-impact)). Repository tooling tests run in one Linux lane when tooling changes; tooling includes
 `agent-evals/**` and every repository-tooling test module, because the offline lanes
 never run those modules (#964).
+On a pull request, the release-note scripts, their test modules and `release-please.yml`
+listed in the `release_tooling` filter select only the `release-tests` lane (plus the
+tooling lane and static checks), not the runtime or live lanes. Main pushes, weekly runs
+and dispatches still treat them as code. `release-tests` runs the listed modules and
+fails when a listed path no longer exists, so deleting or renaming one requires a
+`ci.yml` edit, which selects full validation (#1154).
 The static lint job continues on all events, including generated documentation checks
 and the README async example test (`test/test_readme_async_examples.py`), so a
 README-only change still runs it.
@@ -8470,6 +8301,7 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 | CUBRID version differential | `integration-full.yml` `version-differential` | Dispatch and release |
 | Fuzz and metamorphic | `dev` profile inside `make integration`; `nightly` profile in `integration-full.yml` `fuzz-bug-hunt` | Non-PR code; dispatch and release |
 | Mutation testing (non-gating) | `integration-full.yml` `mutation-testing` | Dispatch only; skipped on the release call (#747) |
+| CUBRIDdb PyPI 9.3 driver line (evidence, not gating) | `cubriddb-pypi.yml` `cubriddb-pypi` (`make integration`, Python 3.12, CUBRID 11.4) | Dispatch only (#1146) |
 
 ### Consolidation
 
@@ -8671,7 +8503,7 @@ adds no detection.
 | Changed workflow | PR validation |
 | --- | --- |
 | `ci.yml` | All lanes it defines, plus tooling and the offline suite |
-| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
+| `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml`, `cubriddb-pypi.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
 | `publish-pypi.yml`, `release-please.yml` | Tooling and offline suite (release workflow tests) |
 | Other workflows | Tooling and offline suite; `pr-title.yml`, `docs-sync.yml`, `codeql.yml` and `security.yml` also run themselves on the PR |
 
@@ -8704,7 +8536,37 @@ recipe or toolchain needs a manual bump of the `cubriddb-wheel-v` prefix, and th
 three copies of the recipe must stay identical. A hit is never treated as evidence: every
 run installs the wheel, imports `CUBRIDdb`, and the readiness step connects to the
 live server before any suite runs. `test/test_workflow_cubriddb_cache.py` enforces
-the key components and that the build is skipped only on a hit.
+the key components and that the build is skipped only on a hit. The build sets
+`CFLAGS` to downgrade `incompatible-pointer-types` and `int-conversion` to warnings,
+because GCC 14 and later (GCC 15.2 on the ubuntu-26.04 image) make them errors in the
+pinned v11.3.0.51 source; the prefix was bumped to `v2` for that recipe change.
+
+## CUBRIDdb PyPI 9.3 lane
+
+Both CUBRIDdb driver lines are supported (see [Support Matrix](SUPPORT_MATRIX.md)),
+but every lane above builds CUBRIDdb from the cubrid-python v11.3.0.51 source release.
+`cubriddb-pypi.yml` gives the PyPI `CUBRID-Python` 9.3.x line one repeatable evidence
+path (#1146) without multiplying the Python × CUBRID matrix:
+
+- It installs the project with `uv pip install -e ".[cubriddb,pycubrid]"`, the same
+  resolution as the `[cubriddb]` extra. PyPI 9.3.0 has two source archives; uv and pip
+  currently discard `9.3.0.0002`, whose metadata contradicts its file name, and install
+  `9.3.0.0001` as 9.3.0.1. A failed driver build fails the install step, so an
+  uninstallable driver is reported, not skipped.
+- It records the distribution version and the compiled-in `_cubrid.__version__` in
+  the job summary. Both archives report the same two values, so the summary cannot
+  tell which one was built; the install log shows the resolution.
+- It runs `make integration INTEGRATION_DRIVER=cubriddb` on one representative cell,
+  Python 3.12 and CUBRID 11.4, without the default `--maxfail=25`, so the summary
+  and the uploaded JUnit report list every failing test. pycubrid is installed too,
+  so the driver-differential tests compare the two drivers. The all-skipped guard
+  (#486) applies.
+
+The lane is manual-only and is evidence, not a gate: it is not a required check and
+`publish-pypi.yml` does not call it. Known 9.3.x driver limitations make it fail
+today ([Driver Compatibility](DRIVER_COMPAT.md), #1143); a failure stays a failure.
+Promote it to a required check only after a maintainer reviews a green baseline,
+and record that decision here.
 
 ## Job timeouts
 
@@ -9047,6 +8909,7 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 ## Table of Contents
 
+- [Server, driver, and distribution versions](#server-driver-and-distribution-versions)
 - [Driver Overview](#driver-overview)
 - [Version Compatibility Matrix](#version-compatibility-matrix)
 - [Exception Hierarchy](#exception-hierarchy)
@@ -9054,14 +8917,70 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 - [Known Issues](#known-issues)
 - [Installation Notes](#installation-notes)
 
+## Server, driver, and distribution versions
+
+Some CUBRID Python driver release numbers resemble CUBRID Database product versions. The names reflect related release families, but **the numbers identify different components**. Matching major/minor numbers is not a requirement for connecting, nor proof that every cross-version combination works.
+
+| Identifier | Example | What the version identifies |
+|---|---|---|
+| CUBRID database server | `11.4.1` | The running database; check with `SELECT VERSION()` |
+| CUBRIDdb upstream source release | [`v11.3.0.51`](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51) | A published **GitHub source release** of the Python C-extension driver, not a CUBRID server release or a PyPI 11.3 package |
+| CCI client library | `11.2.0` | Native C client interface used by that specific upstream driver release |
+| PyPI distribution release | [`CUBRID-Python 9.3.0`](https://pypi.org/project/CUBRID-Python/9.3.0/) | The version listed on PyPI for the C-extension driver package |
+| PyPI source archive revision | `9.3.0.0001`, `9.3.0.0002` | Filenames for two source archives **within the same PyPI 9.3.0 release**, uploaded in 2014 and 2015 respectively |
+| Installed C-extension version | For example, `11.3.0.0001` | `_cubrid.__version__` in a particular build; its fourth field can be a Git commit count rather than the upstream source tag suffix |
+| SQLAlchemy dialect version | For example, `sqlalchemy-cubrid 1.x` | This project's independently published Python package version |
+
+The [official CUBRID Python `v11.3.0.51` release notes](https://github.com/CUBRID/cubrid-python/releases/tag/v11.3.0.51) (published 2025-09-08) state that it was built with **CCI 11.2.0** and conforms to **CUBRID server 11.4.1**. That is an explicit example of different version numbers in one working release context. Its GitHub release has source archives but **no attached binary release assets**; this is not a `CUBRID-Python 11.3` release on PyPI.
+
+The [PyPI `CUBRID-Python` project](https://pypi.org/project/CUBRID-Python/) describes its 9.3.0 package as a connector for CUBRID Database 9.3.0. This is historical naming context, **not** proof that it cannot connect to another server version. An earlier [9.3.0.1 driver / CUBRID 11.4 test](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/583) did connect but exposed a `BIGINT` conversion difference; support policy, successful connection, tested combinations, and known limitations must be kept separate.
+
+### Connection path
+
+```mermaid
+flowchart TD
+    app["Application / SQLAlchemy Core & ORM"] --> dialect["sqlalchemy-cubrid dialect"]
+    dialect --> pure["pycubrid / pycubrid.aio"]
+    dialect --> native["CUBRIDdb (_cubrid C extension)"]
+    native --> cci["CCI client library"]
+    cci --> cas["CUBRID Broker / CAS"]
+    pure --> cas
+    cas --> database["CUBRID database server"]
+```
+
+The `[cubrid]`, `[cubriddb]` and `[pycubrid]` extras are **dependency installation choices**, not server versions. `cubrid://` and `cubrid+cubriddb://` select CUBRIDdb; `cubrid+pycubrid://` and `cubrid+aiopycubrid://` select the respective pycubrid drivers. Neither URL embeds a driver release number.
+
+### Check the versions in an environment
+
+```python
+from importlib import import_module
+from importlib.metadata import PackageNotFoundError, version
+
+for name in ("sqlalchemy-cubrid", "pycubrid", "CUBRID-Python"):
+    try:
+        print(f"{name}: {version(name)}")
+    except PackageNotFoundError:
+        print(f"{name}: not installed")
+
+try:
+    cubriddb = import_module("CUBRIDdb")
+except ImportError:
+    print("CUBRIDdb C extension: not importable")
+else:
+    extension = getattr(cubriddb, "_cubrid", None)
+    print("CUBRIDdb C extension:", getattr(extension, "__version__", "unknown"))
+```
+
+`CUBRID-Python` and `cubrid_python` are spelling variants of the normalized distribution name; they do **not** mean two independent drivers. To inspect the running **server** instead, execute `SELECT VERSION()` through a live connection. Record the upstream Git tag or source commit separately when you built CUBRIDdb yourself. Do not infer server version, source tag, or full feature compatibility from the installed package version alone.
+
 ---
 
 ## Driver Overview
 
 | Property | Value |
 |---|---|
-| Supported install | Built from source, [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 or later ([how](#building-cubriddb-from-source)) |
-| PyPI package | `CUBRID-Python`, newest release 9.3.x (2015): **untested, not supported** ([details](#pypi-cubrid-python-93x-is-not-supported)) |
+| Installation options | The PyPI `CUBRID-Python` 9.3.0 release, installed by the `[cubrid]` / `[cubriddb]` extras, or a build of [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 from source ([how](#building-cubriddb-from-source)) |
+| PyPI package | `CUBRID-Python` 9.3.0, the newest release on PyPI (source archives from 2014 and 2015): **supported, not verified** on current Python versions ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
 | Import name | `CUBRIDdb` |
 | Type | C extension (CPython only) |
 | DBAPI level | DB-API 2.0 (PEP 249) |
@@ -9070,10 +8989,12 @@ the CUBRID Python driver (`CUBRIDdb`), and CUBRID server versions.
 
 The driver wraps the CUBRID CCI (C Client Interface) library. It is **not** a pure
 Python driver and requires compilation against the CCI headers.
-The source-built CUBRIDdb driver above is supported by this dialect; the deprecated
-`[cubrid]` / `[cubriddb]` installation extras select the untested PyPI package,
-not a deprecated driver interface. For new projects, `pycubrid` is recommended
-because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations below.
+This dialect supports both CUBRIDdb driver lines: the PyPI 9.3.0 release that the
+`[cubrid]` / `[cubriddb]` extras install, and a build of the v11.3.0.51 source release.
+Support is a maintenance policy, not a test result: the tables below record which
+combinations were actually run and which known limitations they found. For new projects,
+`pycubrid` is recommended because it needs no CUBRID native libraries and avoids the
+CUBRIDdb limitations below.
 
 ---
 
@@ -9088,7 +9009,9 @@ because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations 
 | 0.4.0 | v11.3.0.51 | 11.0 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.4.0 | v11.3.0.51 | 10.2 | 3.10 – 3.14 | ✅ Tested in CI |
 | 0.3.x | v11.3.0.51 | 10.2 – 11.4 | 3.10 – 3.13 | ✅ Tested |
-| any | PyPI `CUBRID-Python` 9.3.x | any | any | ❌ Not tested, not supported ([details](#pypi-cubrid-python-93x-is-not-supported)) |
+| `main` (2026-09-29) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.10 | ⚠️ One earlier run, not in CI: connected; `BIGINT` returned as `str` and 25 integration failures ([known limitations](#pypi-cubrid-python-93x-known-limitations)) |
+| `main` (2026-11-12) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.12 | ❌ Local run, not in CI: builds and connects; 100 of 677 integration tests failed and 2 errored (#1143, [known limitations](#pypi-cubrid-python-93x-known-limitations)) |
+| `main` (2026-11-13) | PyPI `CUBRID-Python` 9.3.x (driver `9.3.0.1`) | 11.4 | 3.12 | ❌ Manually dispatched lane, not a required check: after the dialect changes, 55 of 691 integration tests failed, no errors ([run 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850), #1143, [known limitations](#pypi-cubrid-python-93x-known-limitations)) |
 
 ### CUBRID Server Version Support
 
@@ -9096,7 +9019,7 @@ because it needs no CUBRID native libraries and avoids the CUBRIDdb limitations 
 |---|---|---|
 | 11.4 | v11.3.0.51 | Latest stable |
 | 11.2 | v11.3.0.51 | LTS release |
-| 11.0 | v11.3.0.51 | Legacy support |
+| 11.0 | v11.3.0.51 | |
 | 10.2 | v11.3.0.51 | Minimum supported |
 | 12.x | — | Not yet released; will be tested when available |
 
@@ -9529,25 +9452,96 @@ contributor `test` dependency group (part of `dev`) also includes this bridge fo
 keeps its existing SQLAlchemy dependency. The pycubrid driver remains pure Python,
 but `greenlet` may require build tools when no compatible wheel is available.
 
-### PyPI `CUBRID-Python` 9.3.x is not supported
+### PyPI `CUBRID-Python` 9.3.x known limitations
 
-The newest `CUBRID-Python` release on PyPI is 9.3.0.2 (sdist only, uploaded in 2015).
-There is no 11.x release on PyPI. The `[cubrid]` and `[cubriddb]` extras depend on
-`CUBRID-Python` without a version bound, so they install 9.3.x. That driver is not
-tested with this dialect. On CUBRID 11.4 it returns `BIGINT` values (including
-`COUNT(*)`) as `str` (#583) and fails parts of the integration suite: autocommit,
-large-object round-trips, fetch shapes, ping and recursive CTEs (#585).
+The newest `CUBRID-Python` release on PyPI is 9.3.0, with two source archives
+(`9.3.0.0001` from 2014 and `9.3.0.0002` from 2015) and no wheels. There is no 11.x
+release on PyPI. pip reads the version from the archive name, so it sees `9.3.0.1` and
+`9.3.0.2`, but the `9.3.0.0002` archive's own metadata declares `9.3.0.1`. Current pip
+discards that archive as inconsistent and installs the 2014 `9.3.0.0001` archive as
+`CUBRID-Python 9.3.0.1` (its `_cubrid.__version__` is `b'9.3.0.0001'`). The `[cubrid]` and
+`[cubriddb]` extras depend on `CUBRID-Python` without a version bound, so they install that
+same driver. Both extras are maintained installation options for a supported driver line.
 
-- **The `[cubrid]` and `[cubriddb]` extras are deprecated.** They are kept so that
-  existing installs keep resolving, but they cannot install a supported driver.
+This driver line is not part of the required CI. The manually dispatched
+`CUBRIDdb PyPI 9.3 Lane` (`.github/workflows/cubriddb-pypi.yml`) installs it the way the
+extras do and runs the whole integration suite on Python 3.12 and CUBRID 11.4. Its result is
+evidence, not a merge gate. On `main` at `c80d6e4` (2026-11-13,
+[run 43413050850](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/runs/43413050850)),
+55 of the 691 selected tests failed, with no errors (#1143). The first local run (2026-11-12),
+before the dialect changes below, had 100 failures and 2 errors in 677 tests, and an earlier
+run (2026-09, Python 3.10) failed 25 tests before stopping (#585). Other CUBRID and Python
+versions are not verified. The driver behaviour behind those failures, checked directly
+against the same server, and what the dialect does about it:
+
+- `BIGINT` values, including `COUNT(*)` and `ROWNUM`, are returned as `str` (#583). When the
+  connected CUBRIDdb is older than 11.3, the dialect converts integer-typed and untyped
+  (`text()`) result columns that the driver reports as `BIGINT` to `int` (#1145). Columns of
+  other types, such as `String`, are never parsed, and rows read from a raw DB-API cursor are
+  not converted. The dialect's own catalog counts were already converted with `int()` (#584).
+- Result columns without a fixed type (type code 0 in `cursor.description`), such as
+  `PERCENTILE_DISC(...) WITHIN GROUP (...)`, `PERCENTILE_CONT` and `MEDIAN`, are also returned
+  as `str` (`'0'`, `'1.5000000000000000'`); pycubrid returns numbers. SQLAlchemy's `Boolean`
+  result processor would read `'0'` as `True`, so with this driver the dialect reads a string
+  in a `Boolean` result column as a number first, and non-numeric text raises `ValueError`
+  (#1143). Other types are left as strings: an `Integer`-typed `percentile_disc()` returns
+  `'1'`. `CASE`, `COALESCE`, `NVL` and `IF` have a fixed type and return numbers.
+- Bound parameters are sent to the server as strings. A bound `LIMIT ?, ?` with `(1, 2)`
+  returned four rows instead of two. When the connected CUBRIDdb is older than 11.3, the
+  dialect writes the plain integers of a `LIMIT offset, count` clause into the SQL instead of
+  binding them (#1299), so `.limit()` / `.fetch()` with `.offset()` return the right rows;
+  such a statement cannot run through `executemany()`. A limit without an offset is still
+  bound. A bound value that is selected back, such as a `VALUES` list in a CTE, is returned
+  as a string. Recursive CTEs and `SET` binds fail with server errors -456 and -494; the
+  dialect does not work around these.
+- It cannot bind `bytes` parameters: it decodes every parameter as UTF-8, so binding
+  arbitrary bytes to a `BLOB` or `BIT VARYING` column raises `UnicodeDecodeError`. The module
+  also has no `Binary`, so SQLAlchemy `LargeBinary` and `BLOB` writes fail earlier with
+  `AttributeError`. Binary data cannot be written through this driver.
+- Server errors are raised as `DatabaseError`: constraint violations (`NOT NULL`, unique,
+  foreign key) are not `IntegrityError`, and a syntax error (-493) is not `ProgrammingError`,
+  so SQLAlchemy reports them as `sqlalchemy.exc.DatabaseError`.
+- `cursor.description` reports `null_ok` inverted: `True` for `NOT NULL` columns and `False`
+  for nullable ones. Reflection reads nullability from the catalog and is not affected.
+- Connections have no `ping()`. For `pool_pre_ping` the dialect checks them with `SELECT 1`
+  instead, so a live pooled connection is kept (#1304).
+- Rows are returned as `list` rather than `tuple`. `SELECT LAST_INSERT_ID()` returns `NULL`
+  until the connection inserts into an `AUTO_INCREMENT` column; the dialect reads that as no
+  generated key (#1302).
+- Closing a connection that is already closed, as happens when the pool closes a connection
+  that is later garbage-collected, leaves a Python exception set inside the driver: its
+  deallocator closes the connection a second time, the second disconnect fails with
+  `InterfaceError(-20002)`, and the error is never cleared. A later, unrelated call in the
+  same thread can then raise `SystemError`; this was seen during `engine.dispose()` in
+  `test/test_stress_pool.py` (#1320). Reproduction with the driver alone:
+
+  ```python
+  import threading, CUBRIDdb
+  conn = CUBRIDdb.connect("CUBRID:localhost:33000:testdb:::", "dba", "")
+  conn.close()
+  del conn                  # the deallocator closes it again
+  with threading.RLock():   # SystemError, caused by InterfaceError(-20002)
+      pass
+  ```
+
+  The dialect keeps closing connections explicitly. Leaving the close to the deallocator
+  avoids the error but leaks broker sessions: in a test on CUBRID 11.4, each pooled
+  connection discarded that way kept a CAS process busy after garbage collection (20 busy
+  sessions after five rounds of four connections), while explicit closing left none.
+- Process memory grows steadily under a pooled workload. In a 5-minute run of
+  `test/test_pool_soak.py` with `CUBRID_SOAK_DRIVER=CUBRIDdb` on CUBRID 11.4 (about 2,600
+  requests on a `QueuePool`), the RSS grew from 64 MB to 84 MB, about 7 KiB per request,
+  while the same run with CUBRIDdb v11.3.0.51 stayed within 1 MB. The cause inside the driver
+  was not investigated; long-running applications should watch their memory (#1151).
 - At the first connection, a `cubrid://` or `cubrid+cubriddb://` engine reads the loaded
   driver's version (`_cubrid.__version__`) and emits a `sqlalchemy.exc.SAWarning` if it is
-  older than 11.3. It warns rather than refusing to connect, so existing deployments
-  keep working. To fail fast instead, turn the warning into an error:
+  older than 11.3. It warns rather than refusing to connect. To fail fast instead, turn the
+  warning into an error:
   `warnings.filterwarnings("error", message="CUBRIDdb .* is older", category=SAWarning)`.
-- Supported paths: use the recommended pure-Python driver
-  (`pip install "sqlalchemy-cubrid[pycubrid]"`, `cubrid+pycubrid://`), or build CUBRIDdb
-  from source as shown below.
+
+If these limitations affect your application, use the recommended pure-Python driver
+(`pip install "sqlalchemy-cubrid[pycubrid]"`, `cubrid+pycubrid://`), or build CUBRIDdb from
+the v11.3.0.51 source release as shown below.
 
 ### Building CUBRIDdb from Source
 
@@ -9566,8 +9560,13 @@ cd ../..
 
 # Skip setup.py's own CCI rebuild, then install
 printf '#!/bin/bash\nexit 0\n' > build_cci.sh
-pip install .
+CFLAGS="-Wno-error=incompatible-pointer-types -Wno-error=int-conversion" pip install .
 ```
+
+GCC 14 and later (for example GCC 15.2 on Ubuntu 26.04) reject pointer and integer
+conversions in the v11.3.0.51 C extension that earlier compilers only warned about.
+The `CFLAGS` above turn them back into warnings, so the driver builds as before;
+with GCC 13 or older they change nothing.
 
 A build from source installs the `cubrid_python` distribution. Its fourth version
 component is a git commit count, not the release tag, so a shallow clone of v11.3.0.51

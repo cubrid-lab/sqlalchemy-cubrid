@@ -206,9 +206,6 @@ make check
 make doctor
 ```
 
-`make check-all` still works as a deprecated alias of `make check` for one minor
-release and prints a deprecation notice on stderr.
-
 ### Pre-commit Hooks
 
 If you installed pre-commit hooks, these checks run automatically on `git commit`.
@@ -256,6 +253,49 @@ pre-commit run --all-files
 - Reference related issues in the PR body (e.g., `Fixes #42`), not in the title.
 - Update documentation if your change affects the public API.
 - Update `CHANGELOG.md` with a summary of your change.
+
+### Temporary scripts and repair tools
+
+A one-off script, probe, dataset, workflow or manual repair tool is acceptable
+when a bounded task needs it (for example a one-time data repair or a profiling
+run) and nothing permanent already covers it. Keep it small and remove it when
+the task is done. A PR that adds one states, in the PR description or next to
+the tool:
+
+- why it exists and why existing tools do not cover it;
+- the local owner and the repository issue that tracks it;
+- the removal trigger, the specific event that ends its use;
+- where the evidence it must produce will be recorded (usually that issue);
+- the next review point. An unknown expiry is not permission to keep it
+  indefinitely: name the event that reopens the decision.
+
+Run it locally or manually by default. Add a CI job or tests only in proportion
+to how risky and hard to reverse its effects are, and explain what protection
+they add that existing checks do not.
+
+At the trigger, the owner reviews the tool in the tracking issue and either
+removes it or records a concrete remaining caller and a new review point. Having
+no search hits does not prove nobody uses it. Before removing it, map its callers,
+tests and fixtures, Makefile targets, CI path filters, packaging and release
+consumers, docs, dependency declarations and compatibility promises. Delete only
+what is confirmed irrelevant, and keep independent product regression tests. The
+removal PR lists each path with a remove or retain reason and the validation run
+on its final head.
+
+Permanent release automation (for example `publish-pypi.yml` and its scripts) and
+supported older-driver compatibility paths (for example the CUBRIDdb workarounds)
+are not temporary tooling; they follow the release and compatibility rules instead.
+
+Examples from this repository:
+
+- The one-time historical release sync helpers (three scripts with their tests and
+  an audit record) were tracked in #1182 with the removal trigger "after the release
+  publication and credit checks finish". Once #1220 verified every published Release
+  body, they were removed with their CI path filters checked.
+- The former `check-all` Make alias of `make check` shows the full cycle: its
+  1.11.5 deprecation notice named the trigger (removal after the next minor
+  release), and after 1.12.0 shipped it was removed in PR #1314 with its callers
+  checked.
 
 ### Review Process
 
@@ -353,8 +393,7 @@ Existing tests, docs requirements and PR review/merge policies remain unchanged.
 
 ## Pull request and commit titles
 
-This rule covers issue titles, pull request titles and commit subjects in every
-cubrid-lab repository. Pull requests are squash-merged and the pull request
+This section covers pull request titles and commit subjects. Issue titles use type-only prefixes such as `feat:` and `bug:`; use the local issue templates and [AGENTS.md](AGENTS.md) guidance. Pull requests are squash-merged and the pull request
 title becomes the commit title on `main`, so the pull request title is the one
 that must be right. The `PR title` check enforces it.
 
@@ -429,10 +468,7 @@ release. Maintainers prepare release PRs with `release-please.yml`; see
 ## Reporting Issues
 
 Search for an existing issue first, then use the closest issue form. Keep its
-prefilled title prefix (`fix:`, `feat:`, or `chore:`); for a custom issue, use
-the same `type(scope): description` format as pull request titles (see
-[Pull request and commit titles](#pull-request-and-commit-titles)), for example
-`fix(reflection): ...` or `docs: ...`.
+prefilled title prefix (`bug:`, `feat:`, or `chore:`); for a custom issue, use `bug: ...`, `feat: ...`, or another type-only prefix without a module scope.
 
 Reporters describe impact and reproduction; they do **not** need permission
 to apply GitHub labels. Maintainers assign a type label, one
@@ -490,3 +526,54 @@ Follow the [CI execution policy](docs/CI_POLICY.md). PRs run the full offline su
 with the 95% coverage floor, but live integration on PRs is representative, not
 full-matrix evidence. Run relevant regression tests locally and report
 commands/results; request exact-head full validation where compatibility requires it.
+
+
+## Issue handoff and development progress
+
+Use the issue and PR's actual state as evidence. Classification, authorization,
+implementation, review and completion are **different decisions**:
+
+1. **Intake / triage:** A newly filed issue starts with `status: needs triage`.
+   Check evidence or reproduction, duplicate open/closed issues and overlapping
+   PRs, repository scope, type, priority, size, dependencies, and verifiable
+   acceptance criteria. A maintainer removes the intake label only after
+   confirming the saved GitHub metadata. Do not infer priority, size, or triage
+   completion automatically from the title or an AI suggestion.
+2. **Ready:** Triage completion alone does not authorize development. Record
+   the Ready decision in the issue only when the intended outcome and non-goals are bounded, blockers
+   have been resolved, and any repository-specific product, architecture,
+   safety or compatibility decisions have been accepted. Unresolved research
+   remains investigation; blocked work records its dependency and next action.
+3. **In Progress:** Before maintainer-directed or autonomous implementation,
+   identify the actual implementer in the GitHub Assignee field, check whether
+   another open PR already owns the change, and link the implementation PR to
+   its issue. Human-led outside contributors may propose a change on an
+   unclaimed issue without prior assignment or an AI-tool-specific approval;
+   coordinate with existing assignees and follow the local contribution rules.
+4. **In Review:** A PR is in review only when its scoped change and verification
+   evidence are available. Check the required CI on the final PR head, test
+   coverage appropriate to the risk, unresolved review findings and any
+   repository-specific independent review or live-system validation. A bot
+   review or passing CI cannot replace an outstanding product/safety decision.
+5. **Done:** Record the actual disposition: a merged and validated change,
+   a completed investigation with evidence, or an explained duplicate/not-
+   planned closure. Use an issue-closing PR keyword only if merging actually
+   satisfies its acceptance criteria. A merged PR is not proof that any
+   deferred integration, fault, security or release verification has passed.
+
+**Tracking without boards:** GitHub Issues and pull requests are the only
+workflow tracker. The sole lifecycle label is `status: needs triage` for
+unreviewed intake. Once triage is completed, remove that label after checking
+the actual saved issue metadata; do not create `status: ready`, `status: in
+progress`, or other duplicate workflow labels. Record the **Ready** decision,
+remaining dependencies, and next action in the issue. For **In Progress**,
+identify the actual implementer using Assignees and add a concise start/handoff
+comment; link the working PR when it exists. **In Review** is visible from the
+linked open, non-draft PR and its actual review/check status. A **Blocked**
+issue records the blocker, responsible party, and unblock condition in a
+comment. **Done** is the issue's Closed state with the recorded validated
+outcome or explained disposition, not merely the existence of a merged PR.
+Do not configure or depend on GitHub Projects/boards. Priority measures impact,
+and size estimates effort; neither represents work-in-progress.
+This guidance introduces no new automated merge gate and does not supersede
+this repository's design, testing, security, or release requirements.

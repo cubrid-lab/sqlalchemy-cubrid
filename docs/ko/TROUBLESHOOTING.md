@@ -9,9 +9,10 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
 ## 목차
 
 - [설치 문제](#설치-문제)
-  - [ImportError: No module named 'CUBRIDdb'](#importerror-no-module-named-cubriddb)
-  - [ImportError: No module named 'pycubrid'](#importerror-no-module-named-pycubrid)
+  - [ImportError: Could not import CUBRIDdb](#importerror-could-not-import-cubriddb)
+  - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C 확장 빌드 실패](#c-확장-빌드-실패)
+  - [비동기 엔진에서 greenlet 누락](#비동기-엔진에서-greenlet-누락)
 - [연결 문제](#연결-문제)
   - [포트 33000 연결 거부](#포트-33000-연결-거부)
   - [컨테이너를 다시 만든 뒤 데이터베이스 서버 호스트를 찾을 수 없음](#컨테이너를-다시-만든-뒤-데이터베이스-서버-호스트를-찾을-수-없음)
@@ -76,21 +77,28 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
 
 ## 설치 문제
 
-### ImportError: No module named 'CUBRIDdb'
+### ImportError: Could not import CUBRIDdb
 
 **증상:**
 
 ```
-ImportError: No module named 'CUBRIDdb'
+ImportError: Could not import CUBRIDdb. The cubrid:// and cubrid+cubriddb:// URLs use the CUBRIDdb C-extension driver. Install it with pip install "sqlalchemy-cubrid[cubriddb]" (the CUBRID-Python distribution on PyPI), or build CUBRIDdb from the official CUBRID/cubrid-python source. Alternatively, use the pure-Python pycubrid driver with pip install "sqlalchemy-cubrid[pycubrid]" and a cubrid+pycubrid:// URL. Check driver and server version compatibility separately.
 ```
 
 **원인:** CUBRID C 확장 Python 드라이버가 설치되지 않음.
 
-**해결 — 옵션 A: C 확장 드라이버를 소스에서 빌드:** cubrid-python v11.3.0.51 이상에서
-CUBRIDdb를 빌드하세요. [소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를
-참고하세요. CMake와 C 컴파일러가 필요합니다. `pip install CUBRID-Python`은 사용하지 마세요.
-PyPI에는 테스트되지 않은 9.3.x 릴리스만 있습니다.
-[PyPI `CUBRID-Python` 9.3.x는 지원하지 않음](DRIVER_COMPAT.md#pypi-cubrid-python-93x는-지원하지-않음)을 참고하세요.
+**해결 — 옵션 A: CUBRIDdb C 확장 드라이버 설치:** PyPI의 CUBRID-Python 패키지를
+설치 extra로 설치하거나 [공식 CUBRID/cubrid-python 소스](https://github.com/CUBRID/cubrid-python)에서
+드라이버를 빌드하세요:
+
+```bash
+pip install "sqlalchemy-cubrid[cubriddb]"
+```
+
+소스 빌드에는 CUBRID CCI 헤더와 C 컴파일러가 필요합니다.
+[소스에서 CUBRIDdb 빌드](DRIVER_COMPAT.md#소스에서-cubriddb-빌드)를 참고하세요.
+드라이버, Python, CUBRID 서버 버전의 호환성을 각각 확인하세요. 설치 방법을 지원한다는
+사실이 모든 버전 조합의 테스트 완료를 의미하지는 않습니다.
 
 **해결 — 옵션 B: 순수 Python 드라이버 사용 (권장):**
 
@@ -110,12 +118,12 @@ engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
 ---
 
-### ImportError: No module named 'pycubrid'
+### ModuleNotFoundError: No module named 'pycubrid'
 
 **증상:**
 
 ```
-ImportError: No module named 'pycubrid'
+ModuleNotFoundError: No module named 'pycubrid'
 ```
 
 **해결:**
@@ -145,6 +153,33 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ---
 
+### 비동기 엔진에서 greenlet 누락
+
+**증상:** 비동기 SQLAlchemy 엔진 생성 시 연결 전에 다음 오류가 발생합니다.
+
+```text
+ImportError: The SQLAlchemy asyncio module requires that the Python 'greenlet' library is installed.
+```
+
+**원인:** SQLAlchemy 2.1에서는 기본 패키지만 설치할 때 `greenlet`이
+자동 설치되지 않을 수 있습니다. `pycubrid`만 설치하고 SQLAlchemy의 비동기
+의존성을 설치하지 않았다면 `create_async_engine()`이 실패합니다.
+
+**해결:** 비동기 의존성이 포함된 권장 방언 extra 또는 SQLAlchemy의 asyncio
+extra를 설치합니다.
+
+```bash
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+# 방언과 드라이버가 이미 설치된 경우:
+python -m pip install "sqlalchemy[asyncio]"
+```
+
+해당 Python·플랫폼에 맞는 `greenlet` wheel이 없으면 컴파일러 등 빌드 도구가
+필요할 수 있습니다. 애플리케이션과 **동일한 가상 환경**에 설치되었는지 확인하세요.
+비동기 방언 URL은 `cubrid+aiopycubrid://`를 사용하며 `cubrid://`가 아닙니다.
+
+---
+
 ## 연결 문제
 
 ### 포트 33000 연결 거부
@@ -153,24 +188,38 @@ pip install "sqlalchemy-cubrid[pycubrid]"
 
 ```
 OperationalError: (CUBRIDdb.DatabaseError) Connection refused
+OperationalError: (pycubrid.exceptions.OperationalError) failed to connect to CUBRID broker
 ```
 
 **해결:**
 
-1. **CUBRID 브로커 실행 확인:**
+1. **컨테이너 내부에서 브로커와 DB 로그인을 확인**하세요(호스트에 CUBRID가 설치되지 않았다면 호스트에서 `cubrid` 명령을 실행할 수 없음):
 
    ```bash
-   cubrid broker status
-   cubrid service status
+   docker compose ps
+   docker compose exec -T cubrid cubrid broker status
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
 
-2. **Docker 컨테이너 미준비:**
+2. **고정 시간 대기 대신 실제 DB 연결 준비 여부를 확인**하세요:
 
    ```bash
    docker compose up -d
-   sleep 10  # 전체 초기화 대기
-   docker compose ps  # "running" 상태 확인
+   docker compose ps
+   docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
    ```
+
+   **레슨 1의 `docker run` 실습 컨테이너**를 사용한다면 Compose 명령 대신:
+
+   ```bash
+   docker ps --filter name=sqlalchemy-cubrid-quickstart
+   docker logs sqlalchemy-cubrid-quickstart
+   docker exec sqlalchemy-cubrid-quickstart cubrid broker status
+   docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+   ```
+
+   아직 `SELECT 1`이 실패하면 [레슨 1의 최대 3분 준비 확인 루프](../LESSON_PREPARE.md)를
+   사용하세요. 실행 중인 컨테이너나 브로커 상태만으로 DB 로그인 준비가 확인되는 것은 아닙니다.
 
 3. **잘못된 포트:** 실제 브로커 포트는 `cubrid_broker.conf`에서 확인.
 
@@ -216,20 +265,24 @@ make docker-fix-db-host
 
 ### 인증 실패
 
-**증상:**
+**증상:** 사용한 드라이버와 SQLAlchemy 예외 래핑 방식에 따라
+기반 CUBRID 오류 메시지에 다음과 같은 문구가 나타납니다:
 
-```
-OperationalError: Authentication failed
+```text
+User "..." is invalid
+Incorrect or missing password
 ```
 
-**해결:** CUBRID 기본 `dba` 사용자에게는 **비밀번호가 없습니다**:
+**해결:** URL의 사용자, 데이터베이스 및 비밀번호를 확인하세요. 비밀번호가 없는
+`dba` 계정은 **로컬 일회용 Docker 실습 환경**의 설정이며 운영 서버에도
+적용된다고 가정하면 안 됩니다:
 
 ```python
-# 올바름 — 비밀번호 없음
-engine = create_engine("cubrid://dba@localhost:33000/testdb")
+# 로컬 일회용 실습 환경에서만 비밀번호 없음
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 
-# 올바름 — 비밀번호 설정 시
-engine = create_engine("cubrid://dba:mypassword@localhost:33000/testdb")
+# 서버에 비밀번호가 설정된 경우
+engine = create_engine("cubrid+pycubrid://dba:mypassword@localhost:33000/testdb")
 ```
 
 ---
@@ -1244,6 +1297,16 @@ engine = create_engine(
 
 ## Docker 문제
 
+**Apple silicon / arm64에서 Docker 이미지 실행:** 실습에 사용하는
+`cubrid/cubrid:11.4` 이미지는 amd64용으로 안내되어 있으며 arm64 네이티브
+지원은 확인되지 않았습니다. Apple silicon Mac에서는
+[레슨 1의 `docker run` 명령](../LESSON_PREPARE.md#option-b-i-need-a-disposable-local-database)에
+`--platform linux/amd64`를 추가하여 Docker 에뮬레이션을 시도할 수 있습니다.
+기존 최대 3분 DB 연결 준비 확인 루프와 로그 점검도 그대로 적용하세요.
+이 방법은 **실제 검증되지 않았고** 속도가 느리거나 실행되지 않을 수 있습니다.
+동작하지 않으면 기존에 실행 중인 CUBRID 서버를 사용하는 레슨 1 옵션 A로
+진행하세요. 로컬 포트의 `127.0.0.1` 바인딩은 유지해야 합니다.
+
 ### 컨테이너는 시작되는데 연결 안 됨
 
 **해결:**
@@ -1252,8 +1315,15 @@ engine = create_engine(
 # 1. 컨테이너가 실제로 실행 중인지 확인
 docker compose ps
 
-# 2. 브로커 초기화 대기 (~10초 소요)
-docker compose up -d && sleep 10
+# 2. 고정 시간 대기 대신 Compose 헬스체크/실제 DB 로그인 확인
+docker compose up -d
+docker compose ps
+docker compose exec -T cubrid csql -u dba testdb -c "SELECT 1"
+
+# 레슨 1 실습 컨테이너를 사용한다면:
+# docker logs sqlalchemy-cubrid-quickstart
+# docker exec sqlalchemy-cubrid-quickstart csql -u dba testdb -c "SELECT 1"
+# 먼저 레슨 1의 최대 3분 준비 확인 루프를 사용하세요.
 
 # 3. 연결 테스트
 python3 -c "
@@ -1273,11 +1343,11 @@ with engine.connect() as conn:
 ```yaml
 services:
   cubrid:
-    image: cubrid/cubrid:11.2
+    image: cubrid/cubrid:11.4
     environment:
       CUBRID_DB: testdb  # 이 데이터베이스만 생성됨
     ports:
-      - "33000:33000"
+      - "127.0.0.1:33000:33000"
 ```
 
 연결 URL이 다른 데이터베이스 이름을 사용하면 실패합니다. `CUBRID_DB`를 연결 URL과 일치시키세요.
@@ -1297,14 +1367,16 @@ CUBRID_VERSION=11.4 docker compose up -d
 CUBRID_VERSION=10.2 docker compose up -d
 ```
 
-**알려진 버전 차이:**
+**버전별 검증 현황:**
 
-| 기능 | CUBRID 10.2 | CUBRID 11.0+ |
+| 기능 | CUBRID 10.2 | CUBRID 11.0–11.4 |
 |---|---|---|
-| `UPDATE`의 `LIMIT` | ❌ | ✅ |
-| `CTE` (WITH 절) | ❌ | ✅ |
-| `MERGE` | ✅ | ✅ |
-| 인덱스 코멘트 | ❌ | ✅ |
+| `UPDATE`의 `LIMIT` | 검증되지 않음 | 검증되지 않음 |
+| `CTE` (`WITH` / `WITH RECURSIVE`) | ✅ 검증됨 | ✅ 검증됨 |
+| `MERGE` | 버전별 검증 근거 없음 | 버전별 검증 근거 없음 |
+| 인덱스 코멘트 | 검증되지 않음 | 검증되지 않음 |
+
+`WITH`와 `WITH RECURSIVE`는 CUBRID 10.2, 11.0, 11.2, 11.4에서 실제로 검증되었습니다. [CTE 검증 근거](../FEATURE_SUPPORT.md#query-features) 및 [지원 매트릭스](../SUPPORT_MATRIX.md#dml-extensions)를 참고하세요. “검증되지 않음”은 이 문서에 버전별 검증 근거가 없다는 뜻이며, 기능 미지원이라는 뜻이 아닙니다.
 
 ---
 
@@ -1322,7 +1394,7 @@ flowchart TD
     kind -->|Performance issue| perf[Check pool settings, indexes, statement patterns]
 
     install --> i1{CUBRIDdb or pycubrid?}
-    i1 -->|CUBRIDdb| i2[Install CUBRID-Python and CCI dependencies]
+    i1 -->|CUBRIDdb| i2["sqlalchemy-cubrid[cubriddb] 설치, cubrid-python v11.3.0.51에서 CUBRIDdb 빌드, 또는 cubrid+pycubrid로 전환"]
     i1 -->|pycubrid| i3[Install pycubrid and use cubrid+pycubrid URL]
 
     conn --> c1{Broker reachable?}
@@ -1379,11 +1451,12 @@ print(engine.dialect.server_version_info)  # (11, 2, 0, 378)
 ### 컴파일된 SQL 검사
 
 ```python
-from sqlalchemy.dialects import registry
+from sqlalchemy import column, select, table
 
 # 실행 없이 CUBRID용 문장 컴파일
 from sqlalchemy_cubrid.dialect import CubridDialect
 
+users = table("users", column("id"), column("name"))
 stmt = select(users).where(users.c.name == "Alice")
 compiled = stmt.compile(dialect=CubridDialect())
 print(str(compiled))
