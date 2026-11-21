@@ -371,7 +371,10 @@ recipe or toolchain needs a manual bump of the `cubriddb-wheel-v` prefix, and th
 three copies of the recipe must stay identical. A hit is never treated as evidence: every
 run installs the wheel, imports `CUBRIDdb`, and the readiness step connects to the
 live server before any suite runs. `test/test_workflow_cubriddb_cache.py` enforces
-the key components and that the build is skipped only on a hit.
+the key components and that the build is skipped only on a hit. The build sets
+`CFLAGS` to downgrade `incompatible-pointer-types` and `int-conversion` to warnings,
+because GCC 14 and later (GCC 15.2 on the ubuntu-26.04 image) make them errors in the
+pinned v11.3.0.51 source; the prefix was bumped to `v2` for that recipe change.
 
 ## CUBRIDdb PyPI 9.3 lane
 
