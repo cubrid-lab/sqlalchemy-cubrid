@@ -725,7 +725,7 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: /tmp/cubriddb-wheel
-          key: cubriddb-wheel-v1-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
+          key: cubriddb-wheel-v2-${{ runner.os }}-${{ runner.arch }}-${{ steps.cubriddb-src.outputs.image }}-${{ steps.cubriddb-src.outputs.soabi }}-${{ steps.cubriddb-src.outputs.commit }}
 
       - name: Install system dependencies
         if: steps.cubriddb-cache.outputs.cache-hit != 'true'
@@ -750,6 +750,11 @@ jobs:
           echo 'exit 0' >> build_cci.sh
           chmod +x build_cci.sh
 
+          # GCC 14+ (GCC 15.2 on the ubuntu-26.04 runner image) makes these
+          # long-standing warnings in cubrid-python v11.3.0.51 hard errors.
+          # Downgrade them back to warnings so the pinned driver builds as it
+          # did with earlier compilers; the driver source is not changed.
+          export CFLAGS="${CFLAGS:-} -Wno-error=incompatible-pointer-types -Wno-error=int-conversion"
           uv build --wheel --python "$(command -v python)" --out-dir /tmp/cubriddb-wheel .
 
       - name: Install the CUBRID Python driver

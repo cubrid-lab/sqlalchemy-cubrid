@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.12.4](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.3...v1.12.4) (2026-11-20)
+
+
+### Documentation
+
+* re-render the README demo without stale install output ([#1362](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1362)) ([98d1f34](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/98d1f342d7783ce87d021b3521d97d3d28c249c9))
+
 ## [1.12.3](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.2...v1.12.3) (2026-11-18)
 
 
