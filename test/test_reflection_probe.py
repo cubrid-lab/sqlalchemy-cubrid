@@ -180,10 +180,10 @@ def test_compare_accepts_classes_sharing_one_metadata(
     main()
 
     assert engine.dispose_calls == 1
-    out = capsys.readouterr().out
-    assert "users: not in database" in out
-    assert "posts: not in database" in out
-    assert "distinct MetaData" not in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert "users: not in database" in captured.out
+    assert "posts: not in database" in captured.out
+    assert "distinct MetaData" not in captured.err
 
 
 def test_compare_fails_actionably_on_multiple_registries(
