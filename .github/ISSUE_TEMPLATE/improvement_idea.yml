@@ -1,0 +1,36 @@
+name: Improvement Idea
+description: Report a rough edge, confusing doc, missing test, or idea in a few sentences; no solution needed.
+labels: ["status: needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us what you noticed while using sqlalchemy-cubrid. An observation is enough;
+        a proposed fix, reproducer, acceptance criteria, and implementation are
+        NOT required to open an idea. Maintainers triage and scope it later.
+        Use a descriptive English title (docs:, test:, feat:, etc. if known).
+        Search for an existing issue if convenient. Do not share credentials,
+        private logs, customer data, or vulnerability details publicly.
+        New ideas do not authorize API, security, release, or scope changes.
+  - type: textarea
+    id: observation
+    attributes:
+      label: What did you notice?
+      description: What was confusing, missing, unexpectedly hard, or could be better?
+      placeholder: "I tried ... and noticed ..."
+    validations:
+      required: true
+  - type: textarea
+    id: location
+    attributes:
+      label: Where did you notice it? (optional)
+      description: A page, file, command, version or public link, if known.
+    validations:
+      required: false
+  - type: textarea
+    id: outcome
+    attributes:
+      label: What would help? (optional)
+      description: An outcome or suggestion, if you have one. No design is necessary.
+    validations:
+      required: false

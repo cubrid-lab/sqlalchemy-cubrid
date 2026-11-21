@@ -3,6 +3,34 @@
 Thank you for your interest in contributing! This document provides guidelines
 and instructions for contributing to the project.
 
+
+## Suggest improvements and credit problem discovery
+
+We welcome **issues proposed by users**, not only pull requests solving
+maintainer-written tasks. Confusing documentation or setup, missing regression
+tests, unexpected behavior, error messages, accessibility and usability
+problems are all useful observations. Open an **Improvement Idea** from
+[New issue](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/new/choose); one
+clear observation is sufficient. You do not have to identify the root cause,
+write code, design a solution or supply acceptance criteria just to report it.
+The maintainer will assess duplication, evidence, scope, priority and
+testable completion conditions during triage.
+
+Search for similar reports when practical; do not include secrets, private
+data or security vulnerabilities in public issues. An idea is not permission
+to change public APIs or skip design, CI, security or release reviews.
+A separate issue is **not compulsory solely to precede a small PR** where
+this repository's contribution and implementation rules permit direct PRs.
+Check open PRs, owners and existing issue claims before coding.
+
+When a community report leads to a fix, link the originating issue and
+acknowledge its verified reporter **as a reporter** in PR discussion. Keep
+verified code-author/co-author credits separate, respecting the existing
+release-note credit style and publication checks. When relevant, a curated
+release note may distinguish `reported by @handle` from the implementation
+author; do not invent identities, credit bots as people, or make this a
+mandatory boilerplate field.
+
 ## Table of Contents
 
 - [Development Setup](#development-setup)
