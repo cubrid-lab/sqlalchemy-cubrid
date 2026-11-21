@@ -14,14 +14,22 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
+## [1.12.5] - 2026-11-21
+
 ### Fixed
 
 - **Async sample** — `samples/async_basic.py` now disposes its async engine in a `finally`, so an error while connecting, inserting or cleaning up no longer skips `engine.dispose()` ([#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381), [#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1387)) by @Dio77799 (first contribution 🎉).
 - **Basic engine sample** — importing `samples/create_engine.py` no longer opens a database connection; the query runs in `main()` and `engine.dispose()` runs in a `finally` even when the query fails ([#1380](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1380), [#1388](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1388)) by @Dio77799.
 
+* fail reflection_probe --compare when a module declares multiple MetaData registries ([#1385](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1385)) ([ded7bf2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ded7bf20d5bd6eb4e01b3e88826290d7e131ea36)) by @bfs2021
+
 ### Documentation
 
 - **`trace_query` examples use the recommended driver** — the `sqlalchemy_cubrid/trace.py` docstring examples now connect with `cubrid+pycubrid://` to a disposable local lab database and ask readers to supply their own connection values ([#1377](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1377), [#1379](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1379)) by @RiccardoBifulco (first contribution 🎉).
+
+* add Windows PowerShell contributor setup ([#1376](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1376)) ([e41d57a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e41d57afa400250b3b1300d982fbbf0f48868cb6)) by @ebanatrm100 (first contribution 🎉)
+* fix manual contributor installation instructions ([#1394](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1394)) ([36bafb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/36bafb3d97a3540b40b85e0f64f9eb945bb644fc)) by @Kareenashinde15 (first contribution 🎉)
+* welcome community improvement ideas ([#1398](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1398)) ([c1f14d7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c1f14d727cee7ae419ccf327e3a4a0e481995406)) by @yeongseon
 
 ## [1.12.4] - 2026-11-20
 

@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.12.5](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.4...v1.12.5) (2026-11-21)
+
+
+### Fixed
+
+* avoid database access when importing the basic engine sample ([#1388](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1388)) ([30d7cbc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/30d7cbcdee405dbee930bcd132c28e3de7fef99a)), closes [#1380](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1380)
+* dispose the async sample engine even when a step fails ([#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1387)) ([4909431](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4909431b29b802ac9c074fcd463c5a8f32d761fe)), closes [#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381)
+* fail reflection_probe --compare when a module declares multiple MetaData registries ([#1385](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1385)) ([ded7bf2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ded7bf20d5bd6eb4e01b3e88826290d7e131ea36))
+
+
+### Documentation
+
+* add Windows PowerShell contributor setup ([#1376](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1376)) ([e41d57a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e41d57afa400250b3b1300d982fbbf0f48868cb6))
+* fix manual contributor installation instructions ([#1394](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1394)) ([36bafb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/36bafb3d97a3540b40b85e0f64f9eb945bb644fc))
+* **trace:** use the pycubrid URL in trace_query examples ([#1379](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1379)) ([43b4b1f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/43b4b1f0eb403fe48d32f5c931740d1d8d6a5e32))
+* welcome community improvement ideas ([#1398](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1398)) ([c1f14d7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c1f14d727cee7ae419ccf327e3a4a0e481995406))
+
 ## [1.12.4](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.3...v1.12.4) (2026-11-20)
 
 
