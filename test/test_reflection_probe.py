@@ -119,3 +119,107 @@ def test_missing_url_exits_without_creating_engine(
     assert excinfo.value.code == 1
     assert create_engine_calls == []
     assert "Set CUBRID_TEST_URL" in capsys.readouterr().err
+
+
+def _fake_reflect(self: object, bind: object = None, **kwargs: object) -> None:
+    """Leave MetaData.tables empty so reflection never touches a database."""
+
+
+def _patch_reflection(
+    monkeypatch: pytest.MonkeyPatch, module_namespace: types.SimpleNamespace
+) -> None:
+    monkeypatch.setattr(MODULE.importlib, "import_module", lambda name: module_namespace)
+    monkeypatch.setattr(MODULE.MetaData, "reflect", _fake_reflect)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "reflection_probe.py",
+            "--url",
+            "cubrid://dba@localhost:33000/testdb",
+            "--compare",
+            "mymod",
+        ],
+    )
+
+
+def test_compare_accepts_classes_sharing_one_metadata(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy import Column, Integer
+    from sqlalchemy.orm import DeclarativeBase
+
+    class Base(DeclarativeBase):
+        pass
+
+    class User(Base):
+        __tablename__ = "users"
+
+        id = Column(Integer, primary_key=True)
+
+    class Post(Base):
+        __tablename__ = "posts"
+
+        id = Column(Integer, primary_key=True)
+
+    engine, _ = _run_main(
+        monkeypatch,
+        ["--url", "cubrid://dba@localhost:33000/testdb", "--compare", "mymod"],
+    )
+    _patch_reflection(
+        monkeypatch,
+        types.SimpleNamespace(
+            Base=Base,
+            User=User,
+            Post=Post,
+            users_metadata=User.metadata,
+            posts_metadata=Post.metadata,
+        ),
+    )
+
+    main()
+
+    assert engine.dispose_calls == 1
+    captured = capsys.readouterr()
+    assert "users: not in database" in captured.out
+    assert "posts: not in database" in captured.out
+    assert "distinct MetaData" not in captured.err
+
+
+def test_compare_fails_actionably_on_multiple_registries(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy import Column, Integer
+    from sqlalchemy.orm import DeclarativeBase
+
+    class BaseA(DeclarativeBase):
+        pass
+
+    class UserA(BaseA):
+        __tablename__ = "users"
+
+        id = Column(Integer, primary_key=True)
+
+    class BaseB(DeclarativeBase):
+        pass
+
+    class AuditLog(BaseB):
+        __tablename__ = "audit_log"
+
+        id = Column(Integer, primary_key=True)
+
+    engine, _ = _run_main(
+        monkeypatch,
+        ["--url", "cubrid://dba@localhost:33000/testdb", "--compare", "mymod"],
+    )
+    _patch_reflection(
+        monkeypatch,
+        types.SimpleNamespace(UserA=UserA, AuditLog=AuditLog),
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        main()
+
+    assert excinfo.value.code == 1
+    assert engine.dispose_calls == 1
+    assert "2 distinct MetaData registries" in capsys.readouterr().err
