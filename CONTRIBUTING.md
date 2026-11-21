@@ -43,6 +43,26 @@ pip install -e . --group dev
 pre-commit install
 ```
 
+#### Windows PowerShell
+
+The following PowerShell instructions are provided as a Windows-specific alternative. This setup has not yet been verified on Windows. Windows live CUBRID/Docker integration is not claimed as tested.
+
+```powershell
+# Create and activate a virtual environment
+py -m venv venv
+.\venv\Scripts\Activate.ps1
+
+# Install in development mode with the dev dependency group (pip >= 25.1)
+python -m pip install --upgrade "pip>=25.1"
+python -m pip install -e . --group dev
+
+# Install pre-commit hooks
+pre-commit install
+
+# Run one offline test without Make, Docker, or a CUBRID instance
+python -m pytest test/test_compiler.py -v
+```
+
 ---
 
 ## Running Tests
