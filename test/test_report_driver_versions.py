@@ -53,6 +53,44 @@ def test_collect_reports_missing_package_and_unset_url_without_database(
     ]
 
 
+def test_collect_probes_each_driver_with_a_configured_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A configured URL probes both drivers in label order, without a connection (#1375)."""
+    url = "cubrid+pycubrid://dba@localhost:33000/testdb"
+    server_versions = {"cubrid+pycubrid": "11.4.0.1234", "cubrid": "10.2.0.8797"}
+    probes: list[tuple[str, str]] = []
+
+    def fake_server_version(url_arg: str, drivername: str) -> str:
+        probes.append((url_arg, drivername))
+        return server_versions[drivername]
+
+    def unexpected_create_engine(*args: object, **kwargs: object) -> None:
+        pytest.fail(f"create_engine called with {args!r}, {kwargs!r}")
+
+    versions = {
+        "sqlalchemy-cubrid": "1.12.4",
+        "SQLAlchemy": "2.1.9",
+        "pycubrid": "0.5.1",
+        "cubrid_python": "11.3.0.51",
+    }
+
+    monkeypatch.setattr(report_driver_versions, "version", lambda dist: versions[dist])
+    monkeypatch.setattr(report_driver_versions, "create_engine", unexpected_create_engine)
+    monkeypatch.setattr(report_driver_versions, "_cubrid_build_version", lambda: "11.3.0.0001")
+    monkeypatch.setattr(report_driver_versions, "_server_version", fake_server_version)
+    monkeypatch.setenv("CUBRID_TEST_URL", url)
+    monkeypatch.delenv("CUBRIDDB_SOURCE_REF", raising=False)
+
+    rows = report_driver_versions.collect()
+
+    assert probes == [(url, "cubrid+pycubrid"), (url, "cubrid")]
+    assert rows[-2:] == [
+        ("CUBRID server via pycubrid", "11.4.0.1234"),
+        ("CUBRID server via CUBRIDdb", "10.2.0.8797"),
+    ]
+
+
 def test_server_probe_failure_reports_only_exception_type(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

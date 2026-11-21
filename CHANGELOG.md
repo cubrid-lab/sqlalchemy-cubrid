@@ -14,6 +14,10 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Async sample** — `samples/async_basic.py` now disposes its async engine in a `finally`, so an error while connecting, inserting or cleaning up no longer skips `engine.dispose()` ([#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381), [#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1387)) by @Dio77799 (first contribution 🎉).
+
 ### Documentation
 
 - **`trace_query` examples use the recommended driver** — the `sqlalchemy_cubrid/trace.py` docstring examples now connect with `cubrid+pycubrid://` to a disposable local lab database and ask readers to supply their own connection values ([#1377](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1377), [#1379](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1379)) by @RiccardoBifulco (first contribution 🎉).
