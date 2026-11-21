@@ -4,6 +4,8 @@ from collections.abc import Iterator
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import NoSuchTableError
+from sqlalchemy.sql import quoted_name
 
 from sqlalchemy_cubrid.dialect import CubridDialect
 
@@ -33,6 +35,7 @@ class _MockConnection:
     _db_attribute: list[tuple[Any, ...]]
 
     def __init__(self) -> None:
+        self.ddl_queries: list[str] = []
         self._show_columns = [
             ("id", "INTEGER", "NO", "PRI", None, "auto_increment"),
             ("email", "VARCHAR(200)", "NO", "UNI", None, ""),
@@ -83,6 +86,7 @@ CREATE TABLE [users] (
         if sql.startswith("SHOW INDEXES IN"):
             return _Result(self._show_indexes)
         if sql.startswith("SHOW CREATE TABLE"):
+            self.ddl_queries.append(sql)
             return _Result(self._show_create)
         # The UNIQUE-constraint catalog query reads is_unique as well as the
         # PK / FK flags (#610). Dispatch it separately from the general
@@ -163,6 +167,78 @@ def test_get_unique_constraints_golden(
     unique_constraints = dialect.get_unique_constraints(mock_connection, "users")
     assert unique_constraints == [
         {"name": "uq_users_email", "column_names": ["email"], "duplicates_index": "uq_users_email"}
+    ]
+
+
+def test_reflection_shares_ddl_within_an_inspector_cache(
+    dialect: CubridDialect, mock_connection: _MockConnection
+) -> None:
+    dialect.server_version_info = (11, 0)
+    mock_connection._show_columns[1] = ("email", "VARCHAR(200)", "NO", "UNI", "old", "")
+    table, ddl = mock_connection._show_create[0]
+    mock_connection._show_create = [
+        (table, ddl.replace("VARCHAR(200) NOT NULL", "VARCHAR(200) DEFAULT 'old'"))
+    ]
+    info_cache: dict = {}
+
+    columns = dialect.get_columns(mock_connection, "users", info_cache=info_cache)
+    keys = dialect.get_foreign_keys(mock_connection, "users", info_cache=info_cache)
+    assert columns[1]["default"] == "'old'"
+    assert keys[0]["referred_table"] == "teams"
+
+    # A catalog result wins even with DDL in the cache.
+    mock_connection._db_unique_names = []
+    assert dialect.get_unique_constraints(mock_connection, "users", info_cache=info_cache) == []
+    assert len(mock_connection.ddl_queries) == 1
+
+    # The empty catalog path still reflects the DDL's unique constraint.
+    mock_connection._db_index = []
+    info_cache.clear()
+    dialect.get_foreign_keys(mock_connection, "users", info_cache=info_cache)
+    unique = dialect.get_unique_constraints(mock_connection, "users", info_cache=info_cache)
+    assert unique[0]["column_names"] == ["email"]
+    assert len(mock_connection.ddl_queries) == 2
+
+    mock_connection._show_create = [
+        (table, mock_connection._show_create[0][1].replace("DEFAULT 'old'", "DEFAULT 'new'"))
+    ]
+    assert (
+        dialect.get_columns(mock_connection, "users", info_cache=info_cache)[1]["default"]
+        == "'old'"
+    )
+    info_cache.clear()
+    assert (
+        dialect.get_columns(mock_connection, "users", info_cache=info_cache)[1]["default"]
+        == "'new'"
+    )
+    assert len(mock_connection.ddl_queries) == 3
+
+
+def test_ddl_cache_scope_and_failed_lookups(
+    dialect: CubridDialect, mock_connection: _MockConnection
+) -> None:
+    info_cache: dict = {}
+    show_create = mock_connection._show_create
+    mock_connection._show_create = []
+    with pytest.raises(NoSuchTableError):
+        dialect.get_foreign_keys(mock_connection, "users", info_cache=info_cache)
+
+    mock_connection._show_create = show_create
+    dialect.get_foreign_keys(mock_connection, "users", info_cache=info_cache)
+    dialect.get_foreign_keys(mock_connection, "users", info_cache=info_cache)
+    dialect.get_foreign_keys(mock_connection, "users", info_cache={})
+    dialect.get_foreign_keys(mock_connection, "teams", info_cache=info_cache)
+    dialect.get_foreign_keys(mock_connection, quoted_name("users", True), info_cache=info_cache)
+    dialect.get_foreign_keys(mock_connection, "users")
+    dialect.get_foreign_keys(mock_connection, "users")
+    assert mock_connection.ddl_queries == [
+        'SHOW CREATE TABLE "users"',  # failed lookup
+        'SHOW CREATE TABLE "users"',  # retry
+        'SHOW CREATE TABLE "users"',  # independent Inspector
+        'SHOW CREATE TABLE "teams"',  # another table
+        'SHOW CREATE TABLE "users"',  # explicit quoting
+        'SHOW CREATE TABLE "users"',  # direct calls
+        'SHOW CREATE TABLE "users"',
     ]
 
 
