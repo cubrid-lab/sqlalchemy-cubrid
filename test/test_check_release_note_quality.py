@@ -90,7 +90,7 @@ def test_large_number_of_entries_does_not_bypass_total_length_gate() -> None:
 
 
 def test_publisher_and_candidate_ci_keep_strict_quality_review() -> None:
-    publish = (ROOT / ".github/workflows/publish-pypi.yml").read_text()
+    publish = (ROOT / ".github/workflows/publish.yml").read_text()
     prepare = (ROOT / ".github/workflows/release-please.yml").read_text()
     ci = (ROOT / ".github/workflows/ci.yml").read_text()
     makefile = (ROOT / "Makefile").read_text()

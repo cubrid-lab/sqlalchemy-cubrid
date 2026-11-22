@@ -68,7 +68,7 @@ maintained release-note format.
 A Markdown parser and a GitHub Release/CHANGELOG equality check do not establish
 editorial quality. The `scripts/check_release_note_quality.py` gate checks **only
 the candidate version** and must pass on the final release PR head and in the
-`publish-pypi.yml` release consistency job. Existing historical notes are
+`publish.yml` release consistency job. Existing historical notes are
 reviewed separately; unrelated changes must not rewrite their factual record.
 
 The checker requires:

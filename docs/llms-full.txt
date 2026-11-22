@@ -7942,9 +7942,9 @@ pre-commit run --all-files
 | Workflow | File | Trigger |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | PRs, main, weekly, manual |
-| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `publish-pypi.yml` |
+| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `publish.yml` |
 | Prepare Release | `.github/workflows/release-please.yml` | Push to main or manual dispatch; prepares the reviewed release PR |
-| Release | `.github/workflows/publish-pypi.yml` | Push to main (releases only a merged release PR), recovery dispatch |
+| Release | `.github/workflows/publish.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
@@ -8147,7 +8147,7 @@ with its reason. The check compares structure, not wording.
 
 Releases are maintainer-only and follow [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md):
 `release-please.yml` opens a release PR (version bump + dated CHANGELOG section, checked
-with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `publish-pypi.yml`
+with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `publish.yml`
 runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
 automatically. Nobody pushes tags or publishes by hand.
 
@@ -8279,7 +8279,7 @@ workflow shape changed often in early October, so windows are short.
 | Main push, code | 2026-10-05..09 (20) | 17 | 19.3 | 29.5 | 6.6 | 0 / 4 |
 | Weekly `ci.yml` schedule | 2026-10-05 (1) | 17 | 21.2 | 32 | 7.3 | 0 / 0 |
 | Upstream pycubrid canary | 2026-08-10..10-08 (19) | 2 | 1.9 | 4 | 1.2 | 3 canary jobs (drift, reported) / 0 |
-| Release (`publish-pypi.yml` with `integration-full.yml`) | 2026-10-04..09 (2) | 35 | 82.4 | 103.5 | 14.2 | 1 (cookbook verification) / 0 |
+| Release (`publish.yml` with `integration-full.yml`) | 2026-10-04..09 (2) | 35 | 82.4 | 103.5 | 14.2 | 1 (cookbook verification) / 0 |
 | `integration-full.yml` dispatch | 2026-09-27..10-08 (8) | 24 | 73.4 | 85.5 | 8.0 | 0 / 0 |
 
 Over the 72 code pushes to `main` from 2026-10-01 to 2026-10-09 (a "code push" is
@@ -8303,7 +8303,7 @@ typecheck 0.4, lint 0.4. The advisory CUBRIDdb compliance step of the oldest
 | Offline suite, 95% floor | `ci.yml` `offline-tests`; `integration-full.yml` `offline-endpoints` | PR: Python 3.12. Main push, weekly, dispatch: 3.11 and 3.15. Release: 3.11 and 3.15 |
 | Type checking | `ci.yml` `typecheck` (Python 3.13, SQLAlchemy 2.1.1); `integration-full.yml` `typecheck` (same cell) | Every code event; dispatch and release |
 | Alembic compatibility | `ci.yml` `alembic-compat` (latest Alembic); `integration-full.yml` `alembic-compat` (same cell); offline Alembic tests in `offline-tests`; live Alembic operations in `integration-tests`, `make-integration` and `integration-full`; transactional DDL in `integration-tests` and `integration-full` | Risk PR and non-PR code; dispatch and release |
-| Packaging | `ci.yml` `packaging-smoke-test`; `integration-full.yml` `packaging-smoke-test` (same steps, including the pycubrid extra and Alembic checks); `publish-pypi.yml` `build` | Risk PR and non-PR code; dispatch and release |
+| Packaging | `ci.yml` `packaging-smoke-test`; `integration-full.yml` `packaging-smoke-test` (same steps, including the pycubrid extra and Alembic checks); `publish.yml` `build` | Risk PR and non-PR code; dispatch and release |
 | Representative live smoke | `ci.yml` `make-integration` (pycubrid, CUBRID 11.4, Python 3.12), which absorbed `live-smoke` | Main push, weekly, dispatch |
 | `make integration` | `ci.yml` `make-integration`; `integration-full.yml` `make-integration` (both drivers, CUBRID 10.2 and 11.4) | Non-PR code; dispatch and release |
 | CUBRID/Python endpoints | `ci.yml` `integration-tests` (3.14/11.4 on risk PRs, plus 3.11/10.2 on non-PR code); `integration-full.yml` `integration-full` (5 × 4) | Risk PR, non-PR code; dispatch and release |
@@ -8388,9 +8388,9 @@ on Python 3.14/CUBRID 11.4 and the gating released-pycubrid lane on both
 SHA, are not selected by changed paths, and run on every `integration-full.yml`
 run (manual dispatch and the release call). `full-matrix-result` lists them in
 `needs` and fails unless each one succeeds, so a failed, cancelled or skipped
-lane blocks `publish-pypi.yml`, whose `build` and `publish` jobs need the called
+lane blocks `publish.yml`, whose `build` and `publish` jobs need the called
 workflow. The advisory CUBRIDdb compliance lane of the oldest cell gates nothing
-and is not repeated. `publish-pypi.yml` is unchanged: it is kept identical across
+and is not repeated. `publish.yml` is unchanged: it is kept identical across
 cubrid-lab repositories, which ruled out option (a) (`actions: read` and a
 required `ci.yml` push run). The copies add three short jobs (about 1.4 runner
 minutes from the medians above) and two live compliance cells per release;
@@ -8399,7 +8399,7 @@ minutes from the medians above) and two live compliance cells per release;
 ### Release commit push
 
 A release commit is pushed to `main` once, and two workflows start on that SHA:
-`ci.yml`'s push run and `publish-pypi.yml`, whose `matrix` job calls
+`ci.yml`'s push run and `publish.yml`, whose `matrix` job calls
 `integration-full.yml`. The release call already runs every runtime lane of a
 `main` push: the Python 3.11/3.15 offline cells, type checking, `alembic-compat`,
 the packaging smoke test, `make integration` (both drivers, CUBRID 10.2 and 11.4),
@@ -8410,7 +8410,7 @@ repeating that work (14.1 runner minutes and 18 rounded minutes in 8 jobs on
 1.11.0, the first release after the consolidation).
 
 `ci.yml`'s `detect-changes` therefore runs `scripts/release_detect.py --mode push`
-on push events to `main`, the same script, mode and SHA that `publish-pypi.yml`'s
+on push events to `main`, the same script, mode and SHA that `publish.yml`'s
 `detect` job uses. When it selects a release (`build=true`), the `code`, `live` and
 `extended` outputs are false, so `typecheck`, `offline-tests`, `alembic-compat`,
 `packaging-smoke-test`, `integration-tests` and `make-integration` are
@@ -8451,8 +8451,8 @@ several other CI changes merged in the same days, noted below the table.
 | Main push, code | 2026-10-03..09 (48) | 18.9 / 28.5 | 2026-10-09..12 (47) | 17.0 / 27 | 0 / 4 |
 | Weekly `ci.yml` schedule | 2026-10-05 (1) | 21.2 / 32 | 2026-10-12 (1) | 18.8 / 29 | 0 / 0 |
 | Upstream pycubrid canary | 2026-09-21..10-08 (13) | 2.0 / 4 | none yet (first Thursday run 2026-10-15) | not measured | not measured |
-| Release (`publish-pypi.yml` push) | 2026-10-04, 10-09 (2) | 93.8 and 143.9 / 118 and 185 | 2026-10-12 (1) | 103.8 / 133 | 0 / 0 |
-| Release rehearsal (`publish-pypi.yml` dry-run dispatch) | none | not measured | 2026-10-11 (5) | 92.8 / 118 | 0 / 0 |
+| Release (`publish.yml` push) | 2026-10-04, 10-09 (2) | 93.8 and 143.9 / 118 and 185 | 2026-10-12 (1) | 103.8 / 133 | 0 / 0 |
+| Release rehearsal (`publish.yml` dry-run dispatch) | none | not measured | 2026-10-11 (5) | 92.8 / 118 | 0 / 0 |
 | `integration-full.yml` dispatch | 2026-10-04..09 (8) | 73.4 / 85.5 | 2026-10-10..12 (11) | 82.1 / 102 | 0 / 1 |
 
 - Main pushes dropped about 1.9 runner minutes at the median: `live-smoke` and the
@@ -8518,7 +8518,7 @@ adds no detection.
 | --- | --- |
 | `ci.yml` | All lanes it defines, plus tooling and the offline suite |
 | `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml`, `cubriddb-pypi.yml` | Tooling and offline suite, plus a manual `workflow_dispatch` of that workflow on the PR head, linked in the PR |
-| `publish-pypi.yml`, `release-please.yml` | Tooling and offline suite (release workflow tests) |
+| `publish.yml`, `release-please.yml` | Tooling and offline suite (release workflow tests) |
 | Other workflows | Tooling and offline suite; `pr-title.yml`, `docs-sync.yml`, `codeql.yml` and `security.yml` also run themselves on the PR |
 
 `test/test_workflow_path_impact.py` evaluates the filters against every workflow
@@ -8577,7 +8577,7 @@ path (#1146) without multiplying the Python × CUBRID matrix:
   (#486) applies.
 
 The lane is manual-only and is evidence, not a gate: it is not a required check and
-`publish-pypi.yml` does not call it. Known 9.3.x driver limitations make it fail
+`publish.yml` does not call it. Known 9.3.x driver limitations make it fail
 today ([Driver Compatibility](DRIVER_COMPAT.md), #1143); a failure stays a failure.
 Promote it to a required check only after a maintainer reviews a green baseline,
 and record that decision here.
@@ -8597,7 +8597,7 @@ run with `if: always()` and a short timeout; a timed-out dependency reports a
 non-success result (`cancelled`/`failure`), which the gate treats as a failure.
 
 Jobs that call a reusable workflow cannot set `timeout-minutes`. Repo-local
-callees (`publish-pypi.yml` → `integration-full.yml`) are covered through their
+callees (`publish.yml` → `integration-full.yml`) are covered through their
 own jobs. The externally owned callees are an explicit allowlist in
 `test/test_workflow_timeouts.py`: the shared `doc-lint`, `live-smoke` (used by
 the fuzz bug hunt in `integration-full.yml`) and `codeql` workflows in `cubrid-lab/.github`, and the
@@ -8684,7 +8684,7 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   (`nightly` remains the name of the Hypothesis profile). Gating is unchanged:
   fuzz gates the release, mutation testing is non-gating. No required status
   check refers to these job names.
-- **Mutation testing off the release path (#747).** `publish-pypi.yml` calls
+- **Mutation testing off the release path (#747).** `publish.yml` calls
   `integration-full.yml` and its `build` job waits for the whole called
   workflow, so the non-gating `mutation-testing` job delayed every release by
   its run time (historical median 9.6, maximum 18.1 minutes) without being able
@@ -8696,7 +8696,7 @@ dependency; `matrix-result` is covered by `test/test_ci_policy.py`.
   and so cannot tell a release call from a manual run. The Hypothesis fuzz
   pass keeps gating the release unchanged. `full-matrix-result` never needed
   the mutation job, so a skipped run can neither fail the gate nor count as a
-  pass of a required job. `publish-pypi.yml` is unchanged (it stays identical
+  pass of a required job. `publish.yml` is unchanged (it stays identical
   to the canonical copy). `test/test_ci_policy.py` pins the condition, that no
   job waits on mutation testing, and that fuzz still runs on the release call.
 
@@ -8715,7 +8715,7 @@ its own cache. The same input exports `UV_PYTHON`, and `uv pip install --system`
 picks the first matching interpreter on `PATH`, which is setup-python's. Routine CI and the
 canary always cache (`enable-cache: true`); `integration-full.yml` uses `auto`, which
 disables caching only for tag pushes, `release`, `pull_request_target` and
-`workflow_run` events. The release path (`publish-pypi.yml` on a `main` push, or its
+`workflow_run` events. The release path (`publish.yml` on a `main` push, or its
 recovery dispatch) therefore still restores caches. That is safe because a uv cache
 holds only downloaded and built wheels: every run re-resolves from the same
 constraints, so a cache can speed an install but cannot change the resolved versions.

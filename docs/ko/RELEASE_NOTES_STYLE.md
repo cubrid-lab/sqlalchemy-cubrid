@@ -58,7 +58,7 @@ GitHub Release 제목은 태그와 완전히 같아야 합니다(예: v1.12.3).
 
 Markdown 구조 검사와 GitHub Release 및 CHANGELOG의 일치 여부만으로는 읽기 쉬운 문서인지
 확인할 수 없습니다. `scripts/check_release_note_quality.py`는 **현재 릴리즈 후보
-버전만** 검사합니다. 최종 릴리즈 PR의 CI와 `publish-pypi.yml`의 발행 검증에서 반드시
+버전만** 검사합니다. 최종 릴리즈 PR의 CI와 `publish.yml`의 발행 검증에서 반드시
 통과해야 합니다. 기존 과거 버전은 별도로 검토하며, 무관한 변경으로 임의 수정하지 않습니다.
 
 검사 항목은 다음과 같습니다.

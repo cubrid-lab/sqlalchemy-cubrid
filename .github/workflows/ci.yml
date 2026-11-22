@@ -46,7 +46,7 @@ jobs:
         run: |
           base=$(git rev-list -1 --before="7 days ago" HEAD)
           echo "base=${base:-$(git rev-list --max-parents=0 HEAD)}" >> "$GITHUB_OUTPUT"
-      # #737: on the push of a release commit, publish-pypi.yml calls
+      # #737: on the push of a release commit, publish.yml calls
       # integration-full.yml at the same SHA, which runs every runtime lane of a
       # main push (offline endpoints, type checking, alembic-compat, packaging,
       # make integration, both endpoint cells and the gating compliance lanes)

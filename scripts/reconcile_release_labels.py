@@ -32,7 +32,7 @@ import re
 import subprocess
 from datetime import UTC, datetime, timedelta
 
-# A merge with no publish-pypi.yml run yet is normal right after the merge (the
+# A merge with no publish.yml run yet is normal right after the merge (the
 # push event may not have created the run). The publisher is created within
 # seconds and runs well under an hour, so after this window a missing run is a
 # block, not latency. Queued/in-progress runs are never blocked by age.
@@ -44,6 +44,23 @@ BLOCKED = "blocked"
 def gh(*args: str) -> object:
     result = subprocess.run(["gh", *args], check=True, text=True, capture_output=True)
     return json.loads(result.stdout) if result.stdout.strip() else None
+
+
+def publisher_runs(repository: str, sha: str, api=gh) -> dict:
+    """Read current runs, retaining proof from the earlier workflow filename."""
+    for workflow in ("publish.yml", "publish-pypi.yml"):
+        try:
+            runs = api(
+                "api",
+                f"repos/{repository}/actions/workflows/{workflow}/runs?head_sha={sha}&per_page=100",
+            )
+        except subprocess.CalledProcessError as exc:
+            if "HTTP 404" not in (exc.stderr or ""):
+                raise
+            continue
+        if runs["workflow_runs"]:
+            return runs
+    return {"workflow_runs": []}
 
 
 def ready(repository: str, sha: str, api=gh, strict: bool = False) -> bool:
@@ -67,10 +84,7 @@ def ready(repository: str, sha: str, api=gh, strict: bool = False) -> bool:
             ref = api("api", f"repos/{repository}/git/tags/{ref['sha']}")["object"]
         if ref["type"] != "commit" or ref["sha"] != sha:
             return False
-        runs = api(
-            "api",
-            f"repos/{repository}/actions/workflows/publish-pypi.yml/runs?head_sha={sha}&per_page=100",
-        )
+        runs = publisher_runs(repository, sha, api)
         for run in runs["workflow_runs"]:
             if run.get("head_sha") != sha or run.get("conclusion") != "success":
                 continue
@@ -118,19 +132,16 @@ def classify(
     )
     head = f"Release PR #{number} (merge {sha}) is still autorelease: pending"
     try:
-        runs = api(
-            "api",
-            f"repos/{repository}/actions/workflows/publish-pypi.yml/runs?head_sha={sha}&per_page=100",
-        )["workflow_runs"]
+        runs = publisher_runs(repository, sha, api)["workflow_runs"]
         runs = [run for run in runs if run.get("head_sha") == sha]
         age = now - _parse_time(merged_at)
     except (subprocess.CalledProcessError, KeyError, ValueError, TypeError) as exc:
         return BLOCKED, f"{head}; publisher state could not be read ({exc!r}). {recovery}"
     if not runs:
         if age < PUBLISHER_START_GRACE:
-            return IN_PROGRESS, f"{head}; no publish-pypi.yml run yet, merged {_age(age)} ago."
+            return IN_PROGRESS, f"{head}; no publish.yml run yet, merged {_age(age)} ago."
         return BLOCKED, (
-            f"{head}; no publish-pypi.yml run for that SHA {_age(age)} after the merge. "
+            f"{head}; no publish.yml run for that SHA {_age(age)} after the merge. "
             f"Check why the publisher did not start or detected no release. {recovery}"
         )
     # Any unfinished run (including a re-run of an older, lower-id run) is progress.

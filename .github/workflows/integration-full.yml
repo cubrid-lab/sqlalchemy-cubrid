@@ -3,7 +3,7 @@ name: Integration Full Matrix
 # Full Python x CUBRID compatibility validation.
 # Routine CI uses representative combinations; see docs/CI_POLICY.md.
 # Full verification runs only on explicit dispatch or a release workflow call.
-# (workflow_dispatch), and as the release gate: publish-pypi.yml calls it through
+# (workflow_dispatch), and as the release gate: publish.yml calls it through
 # workflow_call with the release commit SHA.
 
 on:
@@ -11,7 +11,7 @@ on:
   workflow_call:
     inputs:
       sha:
-        description: "Full commit SHA to test (publish-pypi.yml passes the release commit)"
+        description: "Full commit SHA to test (publish.yml passes the release commit)"
         required: true
         type: string
 
@@ -564,7 +564,7 @@ jobs:
           python -m pytest test/test_alembic_plugin.py test/test_alembic_registration.py \
             test/test_alembic.py test/test_packaging.py -m "not integration" -v --tb=short -rs
 
-  # Copy of ci.yml `packaging-smoke-test`. publish-pypi.yml's build job smoke-tests
+  # Copy of ci.yml `packaging-smoke-test`. publish.yml's build job smoke-tests
   # the release artifact itself, but not the [pycubrid] extra or the Alembic
   # CubridImpl registration from the wheel; this job adds those on the release SHA.
   packaging-smoke-test:
@@ -891,7 +891,7 @@ jobs:
   # actually verifies compiler.py logic, not just executes it. Non-gating
   # (continue-on-error) because a mutation-score dip is a signal to strengthen a
   # test, not a reason to block the release; the run needs no database.
-  # It runs on manual dispatch only (#747): a release call (publish-pypi.yml
+  # It runs on manual dispatch only (#747): a release call (publish.yml
   # through workflow_call, which always passes `sha`) skips it, because the
   # caller's `build` waits for every job here and a non-gating job should not
   # delay the release. The `sha` input is the explicit release marker;

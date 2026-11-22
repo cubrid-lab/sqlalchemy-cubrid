@@ -47,7 +47,7 @@ def test_pending_transition_requires_completed_publication(
             return {"object": {"type": "commit", "sha": tag_sha}}
         if "/workflows/" in endpoint:
             assert endpoint == (
-                "repos/cubrid-lab/sqlalchemy-cubrid/actions/workflows/publish-pypi.yml/runs"
+                "repos/cubrid-lab/sqlalchemy-cubrid/actions/workflows/publish.yml/runs"
                 "?head_sha=abc&per_page=100"
             )
             return {
@@ -268,7 +268,7 @@ def test_missing_publisher_run_threshold(hours_ago, expected):
         "cubrid-lab/sqlalchemy-cubrid", 704, SHA, merged(hours_ago), NOW, fake_api([], [])
     )
     assert state == expected
-    assert "no publish-pypi.yml run" in message
+    assert "no publish.yml run" in message
 
 
 def test_recent_merge_without_run_is_a_notice(tmp_path, capsys):
@@ -606,3 +606,31 @@ def test_replacement_still_pending_stays_active():
         replacement_labels=["autorelease: pending"],
     )
     assert status(api)[0] == "active"
+
+
+@pytest.mark.parametrize("current_absent", [False, True])
+def test_publisher_runs_retains_previous_filename_history(current_absent):
+    import subprocess
+
+    recorded = {"workflow_runs": [{"id": 123, "head_sha": "abc"}]}
+
+    def api(*args):
+        path = args[1]
+        if "/publish.yml/" in path:
+            if current_absent:
+                raise subprocess.CalledProcessError(1, args, stderr="HTTP 404")
+            return {"workflow_runs": []}
+        assert "/publish-pypi.yml/" in path
+        return recorded
+
+    assert MODULE.publisher_runs("cubrid-lab/example", "abc", api) == recorded
+
+
+def test_publisher_runs_does_not_hide_current_api_failure():
+    import subprocess
+
+    def api(*args):
+        raise subprocess.CalledProcessError(1, args, stderr="HTTP 403")
+
+    with pytest.raises(subprocess.CalledProcessError):
+        MODULE.publisher_runs("cubrid-lab/example", "abc", api)

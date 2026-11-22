@@ -3,7 +3,7 @@
 
 The GitHub Release policy (AGENTS.md) requires every Release title, drafts
 included, to equal its stable tag ``vMAJOR.MINOR.PATCH``: no package name,
-feature, date or suffix. publish-pypi.yml creates Releases with
+feature, date or suffix. publish.yml creates Releases with
 ``--title "$TAG"``; on a resume or recovery run that finds an existing Release,
 it runs this check and stops instead of silently reusing a mistitled Release.
 The check never renames anything; a maintainer fixes the title by hand

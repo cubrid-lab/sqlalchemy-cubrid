@@ -95,7 +95,7 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 | main 코드 푸시 | 2026-10-05..09 (20) | 17 | 19.3 | 29.5 | 6.6 | 0 / 4 |
 | 주간 `ci.yml` 일정 | 2026-10-05 (1) | 17 | 21.2 | 32 | 7.3 | 0 / 0 |
 | 업스트림 pycubrid 카나리 | 2026-08-10..10-08 (19) | 2 | 1.9 | 4 | 1.2 | 카나리 잡 3개(드리프트, 보고됨) / 0 |
-| 릴리스(`publish-pypi.yml`과 `integration-full.yml`) | 2026-10-04..09 (2) | 35 | 82.4 | 103.5 | 14.2 | 1 (cookbook 검증) / 0 |
+| 릴리스(`publish.yml`과 `integration-full.yml`) | 2026-10-04..09 (2) | 35 | 82.4 | 103.5 | 14.2 | 1 (cookbook 검증) / 0 |
 | `integration-full.yml` 수동 실행 | 2026-09-27..10-08 (8) | 24 | 73.4 | 85.5 | 8.0 | 0 / 0 |
 
 2026-10-01부터 2026-10-09까지 `main`으로의 코드 푸시 72건("코드 푸시"는 `offline-tests` 또는
@@ -119,7 +119,7 @@ integration은 PR에서 PR이 아닌 코드 검증으로 미뤄지며 예전 라
 | 오프라인 스위트, 95% 기준 | `ci.yml` `offline-tests`, `integration-full.yml` `offline-endpoints` | PR: Python 3.12. main 푸시, 주간, 수동 실행: 3.11과 3.15. 릴리스: 3.11과 3.15 |
 | 타입 검사 | `ci.yml` `typecheck`(Python 3.13, SQLAlchemy 2.1.1), `integration-full.yml` `typecheck`(같은 셀) | 모든 코드 이벤트, 수동 실행과 릴리스 |
 | Alembic 호환성 | `ci.yml` `alembic-compat`(최신 Alembic), `integration-full.yml` `alembic-compat`(같은 셀), `offline-tests`의 오프라인 Alembic 테스트, `integration-tests`·`make-integration`·`integration-full`의 라이브 Alembic 연산, `integration-tests`와 `integration-full`의 트랜잭션 DDL | 고위험 PR과 PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
-| 패키징 | `ci.yml` `packaging-smoke-test`, `integration-full.yml` `packaging-smoke-test`(pycubrid extra와 Alembic 검사를 포함한 같은 단계), `publish-pypi.yml` `build` | 고위험 PR과 PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
+| 패키징 | `ci.yml` `packaging-smoke-test`, `integration-full.yml` `packaging-smoke-test`(pycubrid extra와 Alembic 검사를 포함한 같은 단계), `publish.yml` `build` | 고위험 PR과 PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | 대표 라이브 스모크 | `live-smoke`를 흡수한 `ci.yml` `make-integration`(pycubrid, CUBRID 11.4, Python 3.12) | main 푸시, 주간, 수동 실행 |
 | `make integration` | `ci.yml` `make-integration`, `integration-full.yml` `make-integration`(두 드라이버, CUBRID 10.2와 11.4) | PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
 | CUBRID/Python 엔드포인트 | `ci.yml` `integration-tests`(고위험 PR은 3.14/11.4, PR이 아닌 코드 이벤트는 3.11/10.2 추가), `integration-full.yml` `integration-full`(5 × 4) | 고위험 PR, PR이 아닌 코드 이벤트, 수동 실행과 릴리스 |
@@ -196,9 +196,9 @@ CUBRIDdb 레인을, 3.14/11.4와 3.11/10.2 두 셀에서 차단 릴리스된 pyc
 고정됩니다. 이 잡들은 릴리스 SHA를 체크아웃하고, 변경 경로로 선택되지 않으며, 모든
 `integration-full.yml` 실행(수동 실행과 릴리스 호출)에서 실행됩니다.
 `full-matrix-result`는 이들을 `needs`에 두고 각각이 성공하지 않으면 실패하므로,
-실패·취소·건너뜀 레인은 호출된 워크플로를 필요로 하는 `publish-pypi.yml`의 `build`와
+실패·취소·건너뜀 레인은 호출된 워크플로를 필요로 하는 `publish.yml`의 `build`와
 `publish` 잡을 막습니다. 가장 오래된 셀의 권고용 CUBRIDdb 컴플라이언스 레인은 아무것도
-차단하지 않으므로 반복하지 않습니다. `publish-pypi.yml`은 바뀌지 않습니다. 이 워크플로는
+차단하지 않으므로 반복하지 않습니다. `publish.yml`은 바뀌지 않습니다. 이 워크플로는
 cubrid-lab 저장소 사이에서 동일하게 유지되며, 이 때문에 옵션 (a)(`actions: read`와
 필수 `ci.yml` 푸시 실행)를 채택하지 않았습니다. 사본은 릴리스마다 짧은 잡 세 개(위의
 중앙값으로 약 1.4 러너 분)와 라이브 컴플라이언스 셀 두 개를 추가하며,
@@ -208,7 +208,7 @@ cubrid-lab 저장소 사이에서 동일하게 유지되며, 이 때문에 옵�
 
 릴리스 커밋은 `main`에 한 번 푸시되고, 그 SHA에서 두 워크플로가 시작합니다.
 `ci.yml`의 푸시 실행과, `matrix` 잡이 `integration-full.yml`을 호출하는
-`publish-pypi.yml`입니다. 릴리스 호출은 이미 `main` 푸시의 모든 런타임 레인을
+`publish.yml`입니다. 릴리스 호출은 이미 `main` 푸시의 모든 런타임 레인을
 실행합니다. Python 3.11/3.15 오프라인 셀, 타입 검사, `alembic-compat`, 패키징
 스모크 테스트, `make integration`(두 드라이버, CUBRID 10.2와 11.4), 차단
 컴플라이언스 레인, 20개 Python × CUBRID 셀 모두이며, fail-closed인
@@ -217,7 +217,7 @@ cubrid-lab 저장소 사이에서 동일하게 유지되며, 이 때문에 옵�
 정리 후 첫 릴리스인 1.11.0에서 잡 8개, 14.1 러너 분, 올림 18분).
 
 그래서 `ci.yml`의 `detect-changes`는 `main` 푸시 이벤트에서
-`scripts/release_detect.py --mode push`를 실행합니다. `publish-pypi.yml`의
+`scripts/release_detect.py --mode push`를 실행합니다. `publish.yml`의
 `detect` 잡과 같은 스크립트, 같은 모드, 같은 SHA입니다. 릴리스를
 선택하면(`build=true`) `code`, `live`, `extended` 출력이 false가 되어
 `typecheck`, `offline-tests`, `alembic-compat`, `packaging-smoke-test`,
@@ -258,8 +258,8 @@ Python 3.11/CUBRID 10.2와 Python 3.14/CUBRID 11.4 셀에서도 같은 명령과
 | main 푸시, 코드 | 2026-10-03..09 (48) | 18.9 / 28.5 | 2026-10-09..12 (47) | 17.0 / 27 | 0 / 4 |
 | 주간 `ci.yml` 스케줄 | 2026-10-05 (1) | 21.2 / 32 | 2026-10-12 (1) | 18.8 / 29 | 0 / 0 |
 | 업스트림 pycubrid 카나리 | 2026-09-21..10-08 (13) | 2.0 / 4 | 아직 없음(첫 목요일 실행 2026-10-15) | 측정 안 함 | 측정 안 함 |
-| 릴리스(`publish-pypi.yml` 푸시) | 2026-10-04, 10-09 (2) | 93.8과 143.9 / 118과 185 | 2026-10-12 (1) | 103.8 / 133 | 0 / 0 |
-| 릴리스 리허설(`publish-pypi.yml` dry-run 디스패치) | 없음 | 측정 안 함 | 2026-10-11 (5) | 92.8 / 118 | 0 / 0 |
+| 릴리스(`publish.yml` 푸시) | 2026-10-04, 10-09 (2) | 93.8과 143.9 / 118과 185 | 2026-10-12 (1) | 103.8 / 133 | 0 / 0 |
+| 릴리스 리허설(`publish.yml` dry-run 디스패치) | 없음 | 측정 안 함 | 2026-10-11 (5) | 92.8 / 118 | 0 / 0 |
 | `integration-full.yml` 디스패치 | 2026-10-04..09 (8) | 73.4 / 85.5 | 2026-10-10..12 (11) | 82.1 / 102 | 0 / 1 |
 
 - main 푸시는 중앙값 약 1.9 러너 분 줄었습니다. `live-smoke`와 푸시 시점
@@ -319,7 +319,7 @@ Python 3.11/CUBRID 10.2와 Python 3.14/CUBRID 11.4 셀에서도 같은 명령과
 | --- | --- |
 | `ci.yml` | 정의한 모든 레인과 도구 레인, 오프라인 스위트 |
 | `integration-full.yml`, `upstream-canary.yml`, `python-canary.yml`, `cubriddb-pypi.yml` | 도구 레인과 오프라인 스위트, 그리고 PR head에서 해당 워크플로를 수동 `workflow_dispatch`로 실행하고 PR에 링크 |
-| `publish-pypi.yml`, `release-please.yml` | 도구 레인과 오프라인 스위트(릴리스 워크플로 테스트) |
+| `publish.yml`, `release-please.yml` | 도구 레인과 오프라인 스위트(릴리스 워크플로 테스트) |
 | 그 밖의 워크플로 | 도구 레인과 오프라인 스위트. `pr-title.yml`, `docs-sync.yml`, `codeql.yml`, `security.yml`은 PR에서 스스로도 실행됨 |
 
 `test/test_workflow_path_impact.py`가 모든 워크플로 파일과 대표 경로에 대해 필터를
@@ -370,7 +370,7 @@ cubrid-python v11.3.0.51 소스 릴리스에서 CUBRIDdb를 빌드합니다. `cu
   pycubrid도 설치하므로 드라이버 차이 테스트가 두 드라이버를 비교합니다. 전체 건너뜀 가드(#486)가
   적용됩니다.
 
-이 레인은 수동 전용이며 게이트가 아닌 근거 수집용입니다. 필수 검사가 아니며 `publish-pypi.yml`이
+이 레인은 수동 전용이며 게이트가 아닌 근거 수집용입니다. 필수 검사가 아니며 `publish.yml`이
 호출하지 않습니다. 알려진 9.3.x 드라이버 제약 때문에 현재는 실패합니다
 ([드라이버 호환성](DRIVER_COMPAT.md), #1143). 실패는 실패로 유지합니다. 메인테이너가 통과한 기준 실행을 검토한 뒤에만 필수 검사로 올리고,
 그 결정을 여기에 기록하세요.
@@ -389,7 +389,7 @@ cubrid-python v11.3.0.51 소스 릴리스에서 CUBRIDdb를 빌드합니다. `cu
 (`cancelled`/`failure`)로 보고되며 게이트는 이를 실패로 처리합니다.
 
 재사용 워크플로를 호출하는 잡에는 `timeout-minutes`를 지정할 수 없습니다. 저장소
-내부 피호출 워크플로(`publish-pypi.yml` → `integration-full.yml`)는 그 워크플로의
+내부 피호출 워크플로(`publish.yml` → `integration-full.yml`)는 그 워크플로의
 잡에서 검증합니다. 외부 소유 피호출 워크플로는 `test/test_workflow_timeouts.py`의
 명시적 허용 목록입니다. `cubrid-lab/.github`의 공유 `doc-lint`, `live-smoke`(`integration-full.yml`의 fuzz
 버그 탐색에서 사용), `codeql` 워크플로와 cookbook 스모크 테스트가 여기에
@@ -465,7 +465,7 @@ cubrid-python v11.3.0.51 소스 릴리스에서 CUBRIDdb를 빌드합니다. `cu
   `mutation-testing` 잡 이름에서 "nightly"를 뺐습니다(`nightly`는 Hypothesis 프로파일
   이름으로 유지). 게이트 동작은 그대로입니다. 퍼즈는 릴리스를 게이트하고 뮤테이션
   테스트는 비차단입니다. 필수 상태 검사는 이 잡 이름을 참조하지 않습니다.
-- **릴리스 경로에서 뮤테이션 테스트 제외 (#747).** `publish-pypi.yml`은
+- **릴리스 경로에서 뮤테이션 테스트 제외 (#747).** `publish.yml`은
   `integration-full.yml`을 호출하고 그 `build` 잡은 호출된 워크플로 전체를 기다리므로,
   비차단 `mutation-testing` 잡은 릴리스를 막을 수 없으면서도 실행 시간만큼(과거 측정
   중앙값 9.6분, 최대 18.1분) 모든 릴리스를 늦췄습니다. 이제 이 잡에는
@@ -476,7 +476,7 @@ cubrid-python v11.3.0.51 소스 릴리스에서 CUBRIDdb를 빌드합니다. `cu
   `workflow_dispatch`)라서 릴리스 호출과 수동 실행을 구분하지 못합니다. Hypothesis 퍼즈
   패스는 그대로 릴리스를 게이트합니다. `full-matrix-result`는 원래 뮤테이션 잡을 필요로
   하지 않으므로, 건너뛴 실행은 게이트를 실패시키지도, 필수 잡의 통과로 간주되지도
-  않습니다. `publish-pypi.yml`은 바뀌지 않습니다(정본 사본과 동일하게 유지).
+  않습니다. `publish.yml`은 바뀌지 않습니다(정본 사본과 동일하게 유지).
   `test/test_ci_policy.py`가 이 조건, 어떤 잡도 뮤테이션 테스트를 기다리지 않는다는 점,
   릴리스 호출에서도 퍼즈가 실행된다는 점을 고정합니다.
 
@@ -494,7 +494,7 @@ cubrid-python v11.3.0.51 소스 릴리스에서 CUBRIDdb를 빌드합니다. `cu
 `PATH`에서 처음 일치하는 인터프리터, 즉 setup-python의 인터프리터를 고릅니다. 일상 CI와 카나리는 항상 캐시하고(`enable-cache: true`), 릴리스
 게이트인 `integration-full.yml`은 `auto`를 사용하며, 이는 태그 푸시, `release`,
 `pull_request_target`, `workflow_run` 이벤트에서만 캐시를 끕니다. 따라서 릴리스 경로
-(`main` 푸시에서 실행되는 `publish-pypi.yml` 또는 복구용 수동 실행)는 여전히 캐시를
+(`main` 푸시에서 실행되는 `publish.yml` 또는 복구용 수동 실행)는 여전히 캐시를
 복원합니다. uv 캐시에는 내려받거나 빌드한 wheel만 들어 있고 매 실행이 같은 제약에서
 다시 해석하므로, 캐시는 설치를 빠르게 할 뿐 해석된 버전을 바꿀 수 없어 안전합니다. 바뀌는 것은 설치 도구뿐입니다. 전환 전에 Python
 3.12에서 `.[dev]`, `.[dev,alembic]`, `.[dev,pycubrid]`를 pip와 uv로 해석한 결과는 같은

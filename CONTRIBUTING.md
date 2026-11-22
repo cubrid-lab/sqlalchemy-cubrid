@@ -341,7 +341,7 @@ what is confirmed irrelevant, and keep independent product regression tests. The
 removal PR lists each path with a remove or retain reason and the validation run
 on its final head.
 
-Permanent release automation (for example `publish-pypi.yml` and its scripts) and
+Permanent release automation (for example `publish.yml` and its scripts) and
 supported older-driver compatibility paths (for example the CUBRIDdb workarounds)
 are not temporary tooling; they follow the release and compatibility rules instead.
 

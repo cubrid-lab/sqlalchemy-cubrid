@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the single run summary of publish-pypi.yml and name its final state.
+"""Render the single run summary of publish.yml and name its final state.
 
 The ``summary`` job always runs and passes ``toJSON(needs)`` in ``NEEDS``. This
 script renders one Markdown table (SHA, tag, version, artifact hashes, matrix
@@ -39,7 +39,10 @@ PRE_PUBLISH = ("consistency", "matrix", "build", "require-candidate")
 
 
 def job(needs: dict[str, Any], name: str) -> tuple[str, dict[str, str]]:
-    entry = needs.get(name) or {}
+    entry = needs.get(name)
+    if entry is None and name == "publish-production":
+        entry = needs.get("publish")
+    entry = entry or {}
     return str(entry.get("result") or "not run"), dict(entry.get("outputs") or {})
 
 
@@ -50,7 +53,7 @@ def verification_due(needs: dict[str, Any]) -> bool:
     _, detect = job(needs, "detect")
     if detect.get("verify") != "true":
         return False
-    return job(needs, "publish")[0] == "success" or detect.get("mode") == "verify-only"
+    return job(needs, "publish-production")[0] == "success" or detect.get("mode") == "verify-only"
 
 
 def built_wheel_digest(needs: dict[str, Any]) -> str:
@@ -145,7 +148,7 @@ def final_state(needs: dict[str, Any]) -> str:
             return f"{prefix} in {name} ({result}); nothing was tagged, released or uploaded"
     if mode == "dry-run":
         return f"dry run passed; nothing published; candidate verification {candidate(needs)[0]}"
-    publish_result, _ = job(needs, "publish")
+    publish_result, _ = job(needs, "publish-production")
     if publish_result != "success":
         return (
             f"publish {publish_result}; the tag, draft Release or PyPI upload may be partial "
@@ -173,7 +176,7 @@ def render(needs: dict[str, Any], env: dict[str, str]) -> str:
     _, detect = job(needs, "detect")
     version, tag, sha = detect.get("version", ""), detect.get("tag", ""), detect.get("sha", "")
     mode = detect.get("mode", "")
-    published = job(needs, "publish")[0] == "success"
+    published = job(needs, "publish-production")[0] == "success"
     matrix_result, _ = job(needs, "matrix")
     _, build = job(needs, "build")
     status, reason = verification(needs)
@@ -202,7 +205,7 @@ def render(needs: dict[str, Any], env: dict[str, str]) -> str:
         ("Build", job(needs, "build")[0]),
         ("Artifact SHA-256", hashes_cell(build)),
         ("Candidate verification", candidate_cell),
-        ("Publish", job(needs, "publish")[0]),
+        ("Publish", job(needs, "publish-production")[0]),
         (
             "PyPI",
             f"https://pypi.org/project/{package}/{version}/"

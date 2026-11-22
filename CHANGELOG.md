@@ -36,6 +36,8 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ### CI
 
+- Standardize the package publisher as `publish.yml` with job `publish-production` and environment `production`, including release tooling and recovery documentation ([#1410](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1410)).
+
 - **Reflection comparison with several model bases** — `scripts/reflection_probe.py --compare` now stops with an explicit error when a module declares more than one `MetaData` registry, instead of silently comparing only the first ([#1382](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1382), [#1385](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1385)) by @bfs2021.
 
 ### Tests

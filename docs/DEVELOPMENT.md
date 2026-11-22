@@ -852,9 +852,9 @@ pre-commit run --all-files
 | Workflow | File | Trigger |
 |---|---|---|
 | CI | `.github/workflows/ci.yml` | PRs, main, weekly, manual |
-| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `publish-pypi.yml` |
+| Integration Full | `.github/workflows/integration-full.yml` | Manual dispatch, called by `publish.yml` |
 | Prepare Release | `.github/workflows/release-please.yml` | Push to main or manual dispatch; prepares the reviewed release PR |
-| Release | `.github/workflows/publish-pypi.yml` | Push to main (releases only a merged release PR), recovery dispatch |
+| Release | `.github/workflows/publish.yml` | Push to main (releases only a merged release PR), recovery dispatch |
 
 ### CI Pipeline Steps
 
@@ -1057,7 +1057,7 @@ with its reason. The check compares structure, not wording.
 
 Releases are maintainer-only and follow [RELEASING.md](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/RELEASING.md):
 `release-please.yml` opens a release PR (version bump + dated CHANGELOG section, checked
-with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `publish-pypi.yml`
+with `make release-check VERSION=X.Y.Z`); after review and squash-merge, `publish.yml`
 runs the full matrix, builds once, tags, publishes to PyPI and verifies the cookbook
 automatically. Nobody pushes tags or publishes by hand.
 

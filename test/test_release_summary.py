@@ -56,7 +56,7 @@ def needs(mode: str = "push", **results: Any) -> dict[str, Any]:
             },
         },
         "require-candidate": {"result": "success", "outputs": {}},
-        "publish": {
+        "publish-production": {
             "result": "success" if detect["publish"] == "true" else "skipped",
             "outputs": {},
         },
@@ -73,6 +73,8 @@ def needs(mode: str = "push", **results: Any) -> dict[str, Any]:
     }
     for name, value in results.items():
         name = name.replace("_", "-")
+        if name == "publish":
+            name = "publish-production"
         if isinstance(value, dict):
             data[name] = value
         else:
@@ -369,3 +371,9 @@ def test_main_writes_the_step_summary(tmp_path: Path, capsys: pytest.CaptureFixt
     assert "::notice::published and verified" in capsys.readouterr().out
     assert summary.main({"NEEDS": "not json"}) == 1
     assert summary.main({"NEEDS": "[]"}) == 1
+
+
+def test_summary_accepts_previous_publication_job_id() -> None:
+    data = needs()
+    data["publish"] = data.pop("publish-production")
+    assert summary.final_state(data) == "published and verified"
