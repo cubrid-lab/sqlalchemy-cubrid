@@ -14,16 +14,24 @@ Usage:
     #   docker run -d --name sqlalchemy-cubrid-quickstart -e CUBRID_DB=testdb \
     #     -p 127.0.0.1:33000:33000 cubrid/cubrid:11.4
     python samples/async_basic.py
+
+    # Another disposable database: set CUBRID_SAMPLE_URL instead of editing
+    # this file, and keep real credentials out of files you commit.
+    #   CUBRID_SAMPLE_URL="cubrid+aiopycubrid://user:pass@host:33000/db" \
+    #     python samples/async_basic.py
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 
 from sqlalchemy import Column, Integer, MetaData, String, Table, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-DB_URL = "cubrid+aiopycubrid://dba:@127.0.0.1:33000/testdb"
+# The local quickstart lab from docs/LESSON_PREPARE.md; CUBRID_SAMPLE_URL overrides it.
+DEFAULT_DB_URL = "cubrid+aiopycubrid://dba:@127.0.0.1:33000/testdb"
+DB_URL = os.environ.get("CUBRID_SAMPLE_URL") or DEFAULT_DB_URL
 
 
 async def main() -> None:
