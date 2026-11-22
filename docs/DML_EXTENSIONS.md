@@ -49,6 +49,7 @@ INSERT INTO users (id, name, email)
 VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = 'updated_alice'
 ```
+> **Note:** The SQL above is illustrative and shows example values for readability. During normal SQLAlchemy execution, values are passed separately as bound parameters rather than being interpolated directly into the SQL statement.
 
 ### Referencing Inserted Values
 

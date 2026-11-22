@@ -51,6 +51,7 @@ INSERT INTO users (id, name, email)
 VALUES (1, 'alice', 'alice@example.com')
 ON DUPLICATE KEY UPDATE name = 'updated_alice'
 ```
+> **참고:** 위 SQL은 이해를 돕기 위해 예시 값을 표시한 것입니다. 일반적인 SQLAlchemy 실행에서는 값을 SQL 문에 직접 삽입하지 않고 바인드 파라미터로 별도로 전달합니다.
 
 ### 삽입되는 값 참조
 
