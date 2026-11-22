@@ -154,6 +154,10 @@ python scripts/profile_orm.py \
     --dsn cubrid+pycubrid://dba@localhost:33000/testdb --output profile_orm_report.json
 ```
 
+The profiler only works on a `bench_users` table it creates itself: if one already
+exists in the database it stops with an error before touching it, and on exit,
+also after a failure, it drops only the table created by that run.
+
 ### Raw driver, Core and ORM baseline
 
 `scripts/bench_dialect_baseline.py` runs the same workloads through the raw
@@ -174,6 +178,11 @@ python scripts/bench_dialect_baseline.py \
 
 Run `python scripts/bench_dialect_baseline.py --help` for the workload sizes
 (`--rows`, `--iterations`, `--batch` and others).
+
+The baseline only works on a `bench_dialect_baseline` table it creates itself, in
+both the sync and the async route: if one already exists in the database it stops
+with an error before touching it, and on exit, also after a failure, it drops only
+the table created by that run.
 
 ### Cross-driver experiments
 
