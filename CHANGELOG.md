@@ -16,7 +16,7 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ### Changed
 
-- **Async sample connection URL** — `samples/async_basic.py` reads its database URL from `CUBRID_SAMPLE_URL` and falls back to the local quickstart lab, so another database no longer requires editing the file ([#1403](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1403)).
+- **Async sample connection URL** — `samples/async_basic.py` reads its database URL from `CUBRID_SAMPLE_URL` and falls back to the local quickstart lab, so another database no longer requires editing the file ([#1403](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1403), [#1409](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1409)) by @yeongseon.
 
 ### Fixed
 
