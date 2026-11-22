@@ -18,7 +18,7 @@
 | `docs/ORM_COOKBOOK.md` | Practical ORM usage examples with CUBRID |
 | `docs/PRD.md` | Product requirements document |
 | `CHANGELOG.md` | Release history (Keep a Changelog format) |
-| `RELEASING.md` | Release procedure (release-please + `publish-pypi.yml`), failure matrix, recovery |
+| `RELEASING.md` | Release procedure (release-please + `publish.yml`), failure matrix, recovery |
 | `docs/ARCHITECTURE.md` | Dialect architecture and design objectives |
 | `docs/SA_COMPAT.md` | SQLAlchemy internal APIs used by the dialect and their verified range |
 | `docs/QUICKSTART.md` | Start here: the first-connection course (one synchronous `cubrid+pycubrid://` path) |

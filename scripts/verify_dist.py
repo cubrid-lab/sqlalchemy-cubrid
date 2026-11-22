@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Fail unless a directory holds exactly the files a JSON digest map names.
 
-``publish-pypi.yml`` runs this in the ``publish`` job before the tag step, once
+``publish.yml`` runs this in the ``publish`` job before the tag step, once
 for ``dist/`` against the ``build`` job output ``sha256`` and once for
 ``release-meta/`` against ``meta_sha256``. A finished job's outputs cannot be
 changed by a later job of the run, while any job of the run (the cookbook

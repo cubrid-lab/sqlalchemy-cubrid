@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKFLOW = ROOT / ".github" / "workflows" / "publish-pypi.yml"
+WORKFLOW = ROOT / ".github" / "workflows" / "publish.yml"
 _spec = importlib.util.spec_from_file_location(
     "_pypi_duplicate_guard", ROOT / "scripts" / "pypi_duplicate_guard.py"
 )
@@ -269,7 +269,9 @@ def test_invalid_project_or_version_is_rejected(dist, output, monkeypatch) -> No
 
 def _publish_job() -> str:
     text = WORKFLOW.read_text()
-    match = re.search(r"^  publish:\n(.*?)(?=^  [\w-]+:\n)", text, re.MULTILINE | re.DOTALL)
+    match = re.search(
+        r"^  publish-production:\n(.*?)(?=^  [\w-]+:\n)", text, re.MULTILINE | re.DOTALL
+    )
     assert match is not None
     return match.group(1)
 

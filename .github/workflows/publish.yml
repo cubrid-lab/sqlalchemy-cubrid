@@ -23,7 +23,7 @@
 #                release-dist, release commit and the build's files
 #   publish      re-checks the artifacts against the build job outputs, annotated
 #                tag at the SHA, draft GitHub Release + SBOM, PyPI upload of
-#                that artifact through the duplicate guard (OIDC, `pypi`
+#                that artifact through the duplicate guard (OIDC, `production`
 #                environment), then the Release is published
 #   verify-cookbook  cubrid-cookbook-python smoke-test.yml for that exact version
 #                from PyPI, called as a reusable workflow (jobs of this run, no token)
@@ -31,9 +31,9 @@
 #   summary      one table; always runs
 #
 # Recovery dispatch (main only for resume/verify-only; see RELEASING.md):
-#   gh workflow run publish-pypi.yml -f action=resume -f version=X.Y.Z
-#   gh workflow run publish-pypi.yml -f action=verify-only -f version=X.Y.Z
-#   gh workflow run publish-pypi.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
+#   gh workflow run publish.yml -f action=resume -f version=X.Y.Z
+#   gh workflow run publish.yml -f action=verify-only -f version=X.Y.Z
+#   gh workflow run publish.yml --ref <branch> -f action=dry-run -f version=X.Y.Z
 # It never creates a new version, never moves a tag and never deletes PyPI files.
 #
 # Canonical cubrid-lab release workflow, kept identical across pycubrid,
@@ -404,7 +404,7 @@ jobs:
           print(f"Cookbook verified candidate {wheels[0]} sha256 {expected} from {env['SHA']} (report artifact {report_name})")
           PY
 
-  publish:
+  publish-production:
     name: Tag, GitHub Release and PyPI
     needs: [detect, consistency, matrix, build, require-candidate]
     # !cancelled() plus explicit results: only these jobs gate publish, and
@@ -416,7 +416,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
-      name: pypi
+      name: production
       url: https://pypi.org/project/${{ env.PACKAGE }}/${{ needs.detect.outputs.version }}/
     permissions:
       contents: write # annotated tag and GitHub Release
@@ -549,12 +549,12 @@ jobs:
   # moves the pin to the newest `main` commit (see RELEASING.md).
   verify-cookbook:
     name: Cookbook release verification
-    needs: [detect, build, publish]
+    needs: [detect, build, publish-production]
     # After a successful publish, or for verify-only. A dry run publishes
     # nothing, so it is verified by verify-candidate instead.
     if: >-
       !cancelled() && needs.detect.outputs.verify == 'true' &&
-      (needs.publish.result == 'success' || needs.detect.outputs.mode == 'verify-only')
+      (needs.publish-production.result == 'success' || needs.detect.outputs.mode == 'verify-only')
     permissions:
       contents: read # all the called workflow needs
     uses: cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml@9cefe1ec09ed1a4ebafb1f94e0229cfeb97fda37 # main
@@ -601,7 +601,7 @@ jobs:
       - build
       - verify-candidate
       - require-candidate
-      - publish
+      - publish-production
       - verify-cookbook
       - require-cookbook
     if: always()

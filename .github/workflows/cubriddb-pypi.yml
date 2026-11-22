@@ -6,7 +6,7 @@ name: CUBRIDdb PyPI 9.3 Lane
 # This lane installs the driver exactly as the [cubriddb] extra does and runs the whole
 # integration suite against one representative cell, Python 3.12 and CUBRID 11.4,
 # instead of multiplying the full matrix. It is evidence, not a gate: it is not a
-# required check and publish-pypi.yml does not call it. Known driver limitations
+# required check and publish.yml does not call it. Known driver limitations
 # make it fail today (docs/DRIVER_COMPAT.md, #1143); a failure is reported as a
 # failure, never skipped. Promote it to a required check only after a reviewed
 # green baseline (docs/CI_POLICY.md).

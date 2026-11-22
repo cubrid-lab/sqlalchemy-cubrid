@@ -1,8 +1,8 @@
 """Static contract checks for the automated release workflows (#601).
 
-Parses publish-pypi.yml, release-please.yml and integration-full.yml offline (PyYAML
+Parses publish.yml, release-please.yml and integration-full.yml offline (PyYAML
 comes from the test dependency group). Shared release behavior across pycubrid,
-sqlalchemy-cubrid and cubrid-mcp-server; this repo retains its registered publisher filename.
+sqlalchemy-cubrid and cubrid-mcp-server; this repo uses the registered publish.yml identity.
 """
 
 from __future__ import annotations
@@ -34,7 +34,7 @@ def load(name: str) -> dict[str, Any]:
     return dict(data)
 
 
-RELEASE = load("publish-pypi.yml")
+RELEASE = load("publish.yml")
 PREPARE = load("release-please.yml")
 FULL = load("integration-full.yml")
 
@@ -52,7 +52,7 @@ def checkouts(job: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def test_registered_publisher_is_the_only_release_path() -> None:
-    assert (WORKFLOWS / "publish-pypi.yml").exists()
+    assert (WORKFLOWS / "publish.yml").exists()
     assert not (WORKFLOWS / "release.yml").exists()
     assert not (WORKFLOWS / "create-release.yml").exists()
     for path in WORKFLOWS.glob("*.yml"):
@@ -60,16 +60,16 @@ def test_registered_publisher_is_the_only_release_path() -> None:
         assert "create-release.yml" not in text, path.name
         for job in load(path.name).get("jobs", {}).values():
             if job.get("permissions", {}).get("id-token") == "write":
-                assert path.name == "publish-pypi.yml"
-                assert job["environment"]["name"] == "pypi"
+                assert path.name == "publish.yml"
+                assert job["environment"]["name"] == "production"
             for step in steps(job):
                 if str(step.get("uses", "")).startswith("pypa/gh-action-pypi-publish@"):
-                    assert path.name == "publish-pypi.yml"
-                    assert job["environment"]["name"] == "pypi"
+                    assert path.name == "publish.yml"
+                    assert job["environment"]["name"] == "production"
                     assert job["permissions"]["id-token"] == "write"
-    publish = load("publish-pypi.yml")["jobs"]["publish"]
+    publish = load("publish.yml")["jobs"]["publish-production"]
     assert publish["permissions"]["id-token"] == "write"
-    assert publish["environment"]["name"] == "pypi"
+    assert publish["environment"]["name"] == "production"
 
 
 def test_release_triggers() -> None:
@@ -94,9 +94,7 @@ def test_prepare_release_is_pr_only() -> None:
     assert action["if"] == "steps.freeze.outputs.frozen == 'false'"
 
 
-@pytest.mark.parametrize(
-    "workflow", ["publish-pypi.yml", "release-please.yml", "integration-full.yml"]
-)
+@pytest.mark.parametrize("workflow", ["publish.yml", "release-please.yml", "integration-full.yml"])
 def test_actions_are_sha_pinned(workflow: str) -> None:
     data = load(workflow)
     for name, job in data["jobs"].items():
@@ -109,7 +107,7 @@ def test_actions_are_sha_pinned(workflow: str) -> None:
                 assert PINNED.match(step["uses"]), (name, step["uses"])
 
 
-@pytest.mark.parametrize("workflow", ["publish-pypi.yml", "release-please.yml"])
+@pytest.mark.parametrize("workflow", ["publish.yml", "release-please.yml"])
 def test_no_expression_interpolation_in_run(workflow: str) -> None:
     # Inputs, outputs and secrets reach shell code only through env:.
     for name, job in load(workflow)["jobs"].items():
@@ -124,7 +122,7 @@ EXPECTED_PERMISSIONS = {
     "build": {"contents": "read"},
     "verify-candidate": {"contents": "read"},
     "require-candidate": {},
-    "publish": {"contents": "write", "id-token": "write"},
+    "publish-production": {"contents": "write", "id-token": "write"},
     "verify-cookbook": {"contents": "read"},
     "require-cookbook": {},
     "summary": {"contents": "read"},
@@ -149,7 +147,7 @@ def test_concurrency_never_cancels_a_release() -> None:
     assert RELEASE["concurrency"]["cancel-in-progress"] is False
     assert "inputs.version" in RELEASE["concurrency"]["group"]
     assert "github.sha" in RELEASE["concurrency"]["group"]
-    publish = RELEASE["jobs"]["publish"]["concurrency"]
+    publish = RELEASE["jobs"]["publish-production"]["concurrency"]
     assert publish == {
         "group": "release-publish-${{ needs.detect.outputs.tag }}",
         "cancel-in-progress": False,
@@ -167,14 +165,14 @@ def test_job_graph() -> None:
     assert jobs["build"]["needs"] == ["detect", "matrix"]
     assert jobs["verify-candidate"]["needs"] == ["detect", "build"]
     assert jobs["require-candidate"]["needs"] == ["detect", "build", "verify-candidate"]
-    assert jobs["publish"]["needs"] == [
+    assert jobs["publish-production"]["needs"] == [
         "detect",
         "consistency",
         "matrix",
         "build",
         "require-candidate",
     ]
-    assert jobs["verify-cookbook"]["needs"] == ["detect", "build", "publish"]
+    assert jobs["verify-cookbook"]["needs"] == ["detect", "build", "publish-production"]
     assert jobs["require-cookbook"]["needs"] == ["detect", "verify-cookbook"]
     assert jobs["summary"]["needs"] == [
         "detect",
@@ -183,7 +181,7 @@ def test_job_graph() -> None:
         "build",
         "verify-candidate",
         "require-candidate",
-        "publish",
+        "publish-production",
         "verify-cookbook",
         "require-cookbook",
     ]
@@ -193,24 +191,24 @@ def test_job_graph() -> None:
     # resume alike. Builds are not reproducible, so a resume (which rebuilds)
     # never inherits an earlier run's verification; there is no tag-state skip.
     assert jobs["verify-candidate"]["if"] == "needs.build.result == 'success'"
-    for name in ("verify-candidate", "require-candidate", "publish"):
+    for name in ("verify-candidate", "require-candidate", "publish-production"):
         assert "tag_state" not in str(jobs[name].get("if", "")), name
     # A status function, so a failed verify-candidate still reaches the gate,
     # which lists every failed check.
     assert jobs["require-candidate"]["if"] == "!cancelled() && needs.build.result == 'success'"
     # !cancelled() plus explicit results: only these results gate publish.
-    assert " ".join(jobs["publish"]["if"].split()) == (
+    assert " ".join(jobs["publish-production"]["if"].split()) == (
         "!cancelled() && needs.detect.outputs.publish == 'true' && "
         "needs.consistency.result == 'success' && needs.matrix.result == 'success' && "
         "needs.build.result == 'success' && needs.require-candidate.result == 'success'"
     )
-    assert jobs["publish"]["environment"]["name"] == "pypi"
+    assert jobs["publish-production"]["environment"]["name"] == "production"
     verify_if = " ".join(jobs["verify-cookbook"]["if"].split())
     # Not always(): cancelling a run must not start the cookbook smoke test. A dry
     # run publishes nothing, so only verify-candidate verifies it.
     assert verify_if == (
         "!cancelled() && needs.detect.outputs.verify == 'true' && "
-        "(needs.publish.result == 'success' || needs.detect.outputs.mode == 'verify-only')"
+        "(needs.publish-production.result == 'success' || needs.detect.outputs.mode == 'verify-only')"
     )
     assert jobs["require-cookbook"]["if"] == (
         "always() && needs.verify-cookbook.result != 'skipped'"
@@ -228,7 +226,7 @@ def test_release_content_comes_from_the_detected_sha() -> None:
     # Tooling-only jobs sparse-check out their scripts from the workflow commit.
     for name, script in (
         (
-            "publish",
+            "publish-production",
             "scripts/pypi_duplicate_guard.py\nscripts/check_release_title.py\n"
             "scripts/verify_dist.py\n",
         ),
@@ -247,7 +245,7 @@ def test_release_content_comes_from_the_detected_sha() -> None:
 
 
 def test_publish_order_tag_draft_pypi_undraft() -> None:
-    names = [s.get("name", s.get("uses", "")) for s in steps(RELEASE["jobs"]["publish"])]
+    names = [s.get("name", s.get("uses", "")) for s in steps(RELEASE["jobs"]["publish-production"])]
     order = [
         "Check dist/ and release-meta/ against the build job outputs",
         "Check the distribution against the recorded hashes",
@@ -258,7 +256,7 @@ def test_publish_order_tag_draft_pypi_undraft() -> None:
         "Publish the GitHub Release",
     ]
     assert [n for n in names if n in order] == order
-    body = {s.get("name"): s.get("run", "") for s in steps(RELEASE["jobs"]["publish"])}
+    body = {s.get("name"): s.get("run", "") for s in steps(RELEASE["jobs"]["publish-production"])}
     assert "tags are never moved" in body["Create the annotated tag"]
     assert (
         'gh release create "$TAG" --draft --verify-tag'
@@ -284,7 +282,7 @@ def test_publish_order_tag_draft_pypi_undraft() -> None:
     assert "|| true" not in create and "|| :" not in create
     assert "gh release edit" not in create
     assert body["Publish the GitHub Release"] == 'gh release edit "$TAG" --draft=false'
-    text = (WORKFLOWS / "publish-pypi.yml").read_text()
+    text = (WORKFLOWS / "publish.yml").read_text()
     assert (
         "gh release delete" not in text
         and "git push --delete" not in text
@@ -303,7 +301,7 @@ def test_build_once_with_hashes_and_recoverable_artifacts() -> None:
     ]
     assert {u["name"] for u in uploads} == {"release-dist", "release-meta"}
     assert all(u["retention-days"] == 14 for u in uploads)
-    publish_runs = "\n".join(s.get("run", "") for s in steps(RELEASE["jobs"]["publish"]))
+    publish_runs = "\n".join(s.get("run", "") for s in steps(RELEASE["jobs"]["publish-production"]))
     assert "python -m build" not in publish_runs
     assert RELEASE["jobs"]["build"]["outputs"] == {
         "sha256": "${{ steps.hashes.outputs.sha256 }}",
@@ -317,7 +315,7 @@ def test_build_once_with_hashes_and_recoverable_artifacts() -> None:
 
 
 def test_publish_checks_artifacts_against_the_build_job_outputs() -> None:
-    publish = steps(RELEASE["jobs"]["publish"])
+    publish = steps(RELEASE["jobs"]["publish-production"])
     (check,) = [
         s
         for s in publish
@@ -342,7 +340,7 @@ def test_publish_checks_artifacts_against_the_build_job_outputs() -> None:
 def test_every_cookbook_reference_uses_one_pinned_main_commit() -> None:
     lines = [
         line
-        for line in (WORKFLOWS / "publish-pypi.yml").read_text().splitlines()
+        for line in (WORKFLOWS / "publish.yml").read_text().splitlines()
         if "cubrid-cookbook-python/.github/workflows/smoke-test.yml@" in line
     ]
     assert len(lines) == 2, lines
@@ -384,7 +382,7 @@ def test_candidate_is_verified_before_publish_through_the_same_workflow() -> Non
     # publish uploads the same artifact the cookbook verified, never a rebuild.
     downloads = [
         s["with"]["name"]
-        for s in steps(RELEASE["jobs"]["publish"])
+        for s in steps(RELEASE["jobs"]["publish-production"])
         if str(s.get("uses", "")).startswith("actions/download-artifact@")
     ]
     assert verify["with"]["candidate_artifact"] in downloads
@@ -486,7 +484,7 @@ def test_cookbook_is_verified_through_the_pinned_reusable_workflow() -> None:
 
 
 def test_no_secrets_or_dispatch_token() -> None:
-    text = (WORKFLOWS / "publish-pypi.yml").read_text()
+    text = (WORKFLOWS / "publish.yml").read_text()
     assert "secrets." not in text and "secrets: inherit" not in text
     assert "COOKBOOK_DISPATCH_TOKEN" not in text
     assert "cookbook_wait" not in text

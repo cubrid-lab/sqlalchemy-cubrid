@@ -32,10 +32,10 @@ EXTERNAL_REUSABLE_CALLERS = {
     ("integration-full.yml", "fuzz-bug-hunt"): (
         "cubrid-lab/.github/.github/workflows/live-smoke.yml"
     ),
-    ("publish-pypi.yml", "verify-candidate"): (
+    ("publish.yml", "verify-candidate"): (
         "cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml"
     ),
-    ("publish-pypi.yml", "verify-cookbook"): (
+    ("publish.yml", "verify-cookbook"): (
         "cubrid-lab/cubrid-cookbook-python/.github/workflows/smoke-test.yml"
     ),
 }

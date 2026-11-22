@@ -523,7 +523,7 @@ def test_fuzz_still_runs_and_gates_on_the_release_call() -> None:
     # Skipped only when a recovery run tests an older commit than github.sha.
     assert job["if"] == "${{ !inputs.sha || inputs.sha == github.sha }}"
     assert "continue-on-error" not in job
-    release = workflow("publish-pypi.yml")["jobs"]
+    release = workflow("publish.yml")["jobs"]
     assert release["matrix"]["uses"] == "./.github/workflows/integration-full.yml"
     assert "matrix" in release["build"]["needs"]
 
@@ -664,8 +664,8 @@ def test_release_commit_is_detected_with_the_release_workflow_decision() -> None
     steps = detect()["steps"]
     step = next(s for s in steps if s.get("id") == "release")
     assert step["if"] == "github.event_name == 'push' && github.ref == 'refs/heads/main'"
-    # Same script, mode and SHA as publish-pypi.yml's detect job.
-    publish = workflow("publish-pypi.yml")
+    # Same script, mode and SHA as publish.yml's detect job.
+    publish = workflow("publish.yml")
     decide = next(s for s in publish["jobs"]["detect"]["steps"] if s.get("id") == "detect")
     assert "scripts/release_detect.py --mode" in decide["run"]
     assert '--sha "$GITHUB_SHA"' in decide["run"]
