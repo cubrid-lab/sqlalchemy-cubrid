@@ -14,14 +14,14 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
-### Changed
-
-- **Reflection** — one SQLAlchemy Inspector reuses `SHOW CREATE TABLE` results across column defaults, foreign keys, and the unique-constraint fallback. Clearing the Inspector cache refreshes the table definition ([#1396](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1396)).
-
 ### Fixed
 
 - **Async sample** — `samples/async_basic.py` now disposes its async engine in a `finally`, so an error while connecting, inserting or cleaning up no longer skips `engine.dispose()` ([#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381), [#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1387)) by @Dio77799 (first contribution 🎉).
 - **Basic engine sample** — importing `samples/create_engine.py` no longer opens a database connection; the query runs in `main()` and `engine.dispose()` runs in a `finally` even when the query fails ([#1380](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1380), [#1388](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1388)) by @Dio77799.
+
+### Performance
+
+- **Reflection reuses table DDL** — one SQLAlchemy Inspector now reads `SHOW CREATE TABLE` once per table for column defaults, foreign keys and the unique-constraint fallback; `Inspector.clear_cache()` refreshes it ([#1396](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1396), [#1400](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1400)) by @imshah-id (first contribution 🎉).
 
 ### Documentation
 
