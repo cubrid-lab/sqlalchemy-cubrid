@@ -95,3 +95,30 @@ def test_engine_disposed_once_when_a_step_fails(monkeypatch, fail_on):
     with pytest.raises(RuntimeError, match="injected failure"):
         _run(monkeypatch, engine)
     assert engine.dispose_calls == 1
+
+
+def test_url_defaults_to_the_local_lab(monkeypatch):
+    monkeypatch.delenv("CUBRID_SAMPLE_URL", raising=False)
+    sample = _load_sample()
+    assert sample.DB_URL == sample.DEFAULT_DB_URL
+    assert sample.DB_URL == "cubrid+aiopycubrid://dba:@127.0.0.1:33000/testdb"
+
+
+def test_empty_url_uses_the_default(monkeypatch):
+    monkeypatch.setenv("CUBRID_SAMPLE_URL", "")
+    assert _load_sample().DB_URL == "cubrid+aiopycubrid://dba:@127.0.0.1:33000/testdb"
+
+
+def test_url_is_read_from_the_environment(monkeypatch):
+    url = "cubrid+aiopycubrid://lab:secret@db.example:33100/labdb"
+    monkeypatch.setenv("CUBRID_SAMPLE_URL", url)
+    sample = _load_sample()
+    seen = []
+
+    def fake_create_async_engine(db_url, **kwargs):
+        seen.append(db_url)
+        return FakeEngine()
+
+    monkeypatch.setattr(sample, "create_async_engine", fake_create_async_engine)
+    asyncio.run(sample.main())
+    assert seen == [url]
