@@ -973,7 +973,9 @@ class CubridDialect(default.DefaultDialect):
             not all(_default_is_shown_as_sql(column) for column in columns)
             and self._get_class_type(connection, table_name, **kw) == "CLASS"
         ):
-            self._quote_defaults_from_ddl(connection, table_name, columns)
+            self._quote_defaults_from_ddl(
+                connection, table_name, columns, info_cache=kw.get("info_cache")
+            )
 
         return columns
 
@@ -1100,10 +1102,12 @@ class CubridDialect(default.DefaultDialect):
             raise NoSuchTableError(table_name)
         if class_type == "VCLASS":
             return []
-        return self._get_foreign_keys_from_ddl(connection, table_name, schema)
+        return self._get_foreign_keys_from_ddl(
+            connection, table_name, schema, info_cache=kw.get("info_cache")
+        )
 
     def _quote_defaults_from_ddl(
-        self, connection: Any, table_name: str, columns: list[ReflectedColumn]
+        self, connection: Any, table_name: str, columns: list[ReflectedColumn], **kw: Any
     ) -> None:
         """Replace non-numeric ``SHOW COLUMNS`` defaults with their DDL SQL (#865).
 
@@ -1112,7 +1116,7 @@ class CubridDialect(default.DefaultDialect):
         itself, so ``CreateTable`` and Alembic re-emit them unchanged. A
         default the DDL parser cannot find keeps the ``SHOW COLUMNS`` text.
         """
-        ddl = self._get_show_create_table_ddl(connection, table_name)
+        ddl = self._get_show_create_table_ddl(connection, table_name, **kw)
         try:
             defaults = _column_defaults_from_ddl(ddl)
         except ValueError:
@@ -1124,8 +1128,9 @@ class CubridDialect(default.DefaultDialect):
             if column["name"] in defaults:
                 column["default"] = defaults[column["name"]]
 
-    def _get_show_create_table_ddl(self, connection: Any, table_name: str) -> str:
-        """Return the ``SHOW CREATE TABLE`` DDL of *table_name*.
+    @reflection.cache
+    def _get_show_create_table_ddl(self, connection: Any, table_name: str, **kw: Any) -> str:
+        """Return the ``SHOW CREATE TABLE`` DDL, cached per Inspector.
 
         Raises :class:`NoSuchTableError` when the server reports the table
         missing (``Unknown class``, #530) or returns no row for it. Any other
@@ -1148,6 +1153,7 @@ class CubridDialect(default.DefaultDialect):
         connection: Any,
         table_name: str,
         schema: str | None,
+        **kw: Any,
     ) -> list[ReflectedForeignKeyConstraint]:
         """Parse SHOW CREATE TABLE output for FK constraints.
 
@@ -1156,7 +1162,7 @@ class CubridDialect(default.DefaultDialect):
         or column metadata for foreign keys.
         """
         foreign_keys: list[ReflectedForeignKeyConstraint] = []
-        ddl = self._get_show_create_table_ddl(connection, table_name)
+        ddl = self._get_show_create_table_ddl(connection, table_name, **kw)
         for fk_match in _RE_FOREIGN_KEY.finditer(ddl):
             constraint_name = fk_match.group("name")
             constrained_columns = [
@@ -1402,7 +1408,9 @@ class CubridDialect(default.DefaultDialect):
             return uqs
 
         # Fallback: DDL regex (legacy path)
-        return self._get_unique_constraints_from_ddl(connection, table_name)
+        return self._get_unique_constraints_from_ddl(
+            connection, table_name, info_cache=kw.get("info_cache")
+        )
 
     def _get_unique_constraints_from_catalog(
         self,
@@ -1487,10 +1495,11 @@ class CubridDialect(default.DefaultDialect):
         self,
         connection: Any,
         table_name: str,
+        **kw: Any,
     ) -> list[ReflectedUniqueConstraint]:
         """Parse SHOW CREATE TABLE output for UNIQUE constraints (legacy fallback)."""
         unique_constraints: list[ReflectedUniqueConstraint] = []
-        ddl = self._get_show_create_table_ddl(connection, table_name)
+        ddl = self._get_show_create_table_ddl(connection, table_name, **kw)
         for uc_match in _RE_UNIQUE_KEY.finditer(ddl):
             constraint_name = uc_match.group("name")
             column_names = [
