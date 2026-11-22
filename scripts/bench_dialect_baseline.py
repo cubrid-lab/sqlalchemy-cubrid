@@ -933,6 +933,54 @@ def environment(
     return env
 
 
+TABLE_EXISTS_MESSAGE = (
+    f"error: table {TABLE!r} already exists in this database. The baseline only works on a table "
+    "it creates, so it will not reuse, clear or drop that one. Use a disposable database, or drop "
+    "the table yourself if it is a leftover from an earlier run."
+)
+
+
+def claim_table(engine: Engine) -> None:
+    """Create the benchmark table, refusing to reuse one this run did not create (#1402)."""
+    with engine.connect() as conn:
+        if inspect(conn).has_table(TABLE):
+            raise SystemExit(TABLE_EXISTS_MESSAGE)
+    # No checkfirst: if another process created the table after the check, this fails
+    # instead of silently reusing it.
+    Base.metadata.tables[TABLE].create(engine)
+
+
+def drop_owned_table(engine: Engine, *, keep_original_error: bool) -> None:
+    """Drop the table this run created; a cleanup error never hides the run's own failure."""
+    try:
+        Base.metadata.drop_all(engine)
+    except Exception as exc:
+        if not keep_original_error:
+            raise
+        print(f"warning: could not drop {TABLE!r}: {exc}", file=sys.stderr)
+
+
+async def async_claim_table(engine: AsyncEngine) -> None:
+    """Async variant of claim_table."""
+    async with engine.connect() as conn:
+        exists = await conn.run_sync(lambda sync_conn: inspect(sync_conn).has_table(TABLE))
+    if exists:
+        raise SystemExit(TABLE_EXISTS_MESSAGE)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.tables[TABLE].create)
+
+
+async def async_drop_owned_table(engine: AsyncEngine, *, keep_original_error: bool) -> None:
+    """Async variant of drop_owned_table."""
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+    except Exception as exc:
+        if not keep_original_error:
+            raise
+        print(f"warning: could not drop {TABLE!r}: {exc}", file=sys.stderr)
+
+
 def run_sync(args: argparse.Namespace) -> dict[str, Any]:
     pool_size = max([5, *args.concurrency])
     engine = create_engine(args.dsn, pool_size=pool_size, pool_pre_ping=POOL_PRE_PING)
@@ -941,20 +989,22 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
         "this baseline needs cubrid+pycubrid://, cubrid:// or cubrid+aiopycubrid://",
     )
     prepared_engine = None
-    if engine.dialect.driver == "pycubrid":
-        prepared_engine = prepared_executemany_engine(args.dsn)
-    with engine.begin() as conn:
-        conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
-    Base.metadata.create_all(engine)
-    raw_connect = raw_connector(engine)
-    raw = raw_connect()
-    with engine.connect() as conn:
-        server = conn.execute(text("SELECT version()")).scalar()
-    env = environment(
-        str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
-    )
-    report: dict[str, Any] = {"environment": env, "trials": []}
+    raw = None
+    created = False
+    failed = True
     try:
+        if engine.dialect.driver == "pycubrid":
+            prepared_engine = prepared_executemany_engine(args.dsn)
+        claim_table(engine)
+        created = True
+        raw_connect = raw_connector(engine)
+        raw = raw_connect()
+        with engine.connect() as conn:
+            server = conn.execute(text("SELECT version()")).scalar()
+        env = environment(
+            str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
+        )
+        report: dict[str, Any] = {"environment": env, "trials": []}
         for trial in range(args.trials):
             print(f"trial {trial + 1}/{args.trials}", file=sys.stderr, flush=True)
             with engine.connect() as conn:
@@ -974,31 +1024,37 @@ def run_sync(args: argparse.Namespace) -> dict[str, Any]:
                 engine, prepared_engine, raw, args.batch, args.batch_rounds, trial
             )
             report["trials"].append(result)
+        failed = False
     finally:
-        raw.close()
-        with engine.begin() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
-        engine.dispose()
-        if prepared_engine is not None:
-            prepared_engine.dispose()
+        try:
+            if raw is not None:
+                raw.close()
+            if created:
+                drop_owned_table(engine, keep_original_error=failed)
+        finally:
+            engine.dispose()
+            if prepared_engine is not None:
+                prepared_engine.dispose()
     return report
 
 
 async def run_async(args: argparse.Namespace) -> dict[str, Any]:
     pool_size = max([5, *args.concurrency])
     engine = create_async_engine(args.dsn, pool_size=pool_size, pool_pre_ping=POOL_PRE_PING)
-    async with engine.begin() as conn:
-        await conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
-        await conn.run_sync(Base.metadata.create_all)
-    raw_kw = raw_kwargs(engine)
-    raw = await pycubrid.aio.connect(**raw_kw, autocommit=False)
-    async with engine.connect() as conn:
-        server = (await conn.execute(text("SELECT version()"))).scalar()
-    env = environment(
-        str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
-    )
-    report: dict[str, Any] = {"environment": env, "trials": []}
+    raw = None
+    created = False
+    failed = True
     try:
+        await async_claim_table(engine)
+        created = True
+        raw_kw = raw_kwargs(engine)
+        raw = await pycubrid.aio.connect(**raw_kw, autocommit=False)
+        async with engine.connect() as conn:
+            server = (await conn.execute(text("SELECT version()"))).scalar()
+        env = environment(
+            str(server), engine.dialect.driver, type(engine.pool).__name__, args, engine.dialect
+        )
+        report: dict[str, Any] = {"environment": env, "trials": []}
         for trial in range(args.trials):
             print(f"trial {trial + 1}/{args.trials}", file=sys.stderr, flush=True)
             await async_reset(engine, args.rows)
@@ -1020,11 +1076,15 @@ async def run_async(args: argparse.Namespace) -> dict[str, Any]:
                 engine, raw, args.batch, args.batch_rounds, trial
             )
             report["trials"].append(result)
+        failed = False
     finally:
-        await raw.close()
-        async with engine.begin() as conn:
-            await conn.execute(text("DROP TABLE IF EXISTS bench_dialect_baseline"))
-        await engine.dispose()
+        try:
+            if raw is not None:
+                await raw.close()
+            if created:
+                await async_drop_owned_table(engine, keep_original_error=failed)
+        finally:
+            await engine.dispose()
     return report
 
 

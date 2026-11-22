@@ -176,6 +176,10 @@ python scripts/bench_dialect_baseline.py \
 작업 크기(`--rows`, `--iterations`, `--batch` 등)는
 `python scripts/bench_dialect_baseline.py --help`로 확인하세요.
 
+기준 측정 스크립트는 동기 경로와 비동기 경로 모두에서 자신이 직접 만든
+`bench_dialect_baseline` 테이블에서만 작업합니다. 데이터베이스에 그 테이블이 이미 있으면
+손대기 전에 오류로 멈추고, 종료할 때는 실패한 경우에도 그 실행이 만든 테이블만 삭제합니다.
+
 ### 드라이버 간 실험
 
 다른 드라이버나 데이터베이스와의 비교, 그리고 게시하거나 다른 사람이 반복할
