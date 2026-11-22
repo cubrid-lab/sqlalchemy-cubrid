@@ -16,7 +16,7 @@ from sqlalchemy import Column, Integer, MetaData, String, Table, create_engine
 from sqlalchemy_cubrid import BIGINT, SET, STRING, VARCHAR
 
 # Replace with your CUBRID connection details
-engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
+DB_URL = "cubrid+pycubrid://dba:password@localhost:33000/demodb"
 
 metadata = MetaData()
 
@@ -38,7 +38,17 @@ products = Table(
     Column("tags", SET(VARCHAR(50))),
 )
 
-# Create tables (SA 2.0 style)
-metadata.create_all(engine)
 
-engine.dispose()
+def main() -> None:
+    """Create the example tables in the configured CUBRID database."""
+    engine = create_engine(DB_URL)
+    try:
+        # Create tables (SQLAlchemy 2.0 style)
+        metadata.create_all(engine)
+    finally:
+        # Release the pool even when table creation fails.
+        engine.dispose()
+
+
+if __name__ == "__main__":
+    main()

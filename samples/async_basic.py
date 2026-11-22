@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """Minimal async usage example for sqlalchemy-cubrid.
 
+WARNING:
+    This example drops the `async_sample_users` table before recreating it
+    and during cleanup. Run it only against a disposable database.
+    Existing data in a table with this name will be deleted.
+
 Requirements:
     pip install "sqlalchemy-cubrid[pycubrid]"
 

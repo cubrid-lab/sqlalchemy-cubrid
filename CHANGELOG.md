@@ -21,7 +21,18 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ### Documentation
 
+- **Package docstring** — the `sqlalchemy_cubrid` module docstring now calls the `cubrid+cubriddb://` C-extension driver supported instead of legacy, matching docs/DRIVER_COMPAT.md ([#1383](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1383), [#1399](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1399)) by @RiccardoBifulco.
 - **`trace_query` examples use the recommended driver** — the `sqlalchemy_cubrid/trace.py` docstring examples now connect with `cubrid+pycubrid://` to a disposable local lab database and ask readers to supply their own connection values ([#1377](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1377), [#1379](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1379)) by @RiccardoBifulco (first contribution 🎉).
+- **Contributor setup** — CONTRIBUTING.md adds a Windows PowerShell setup path, not yet verified on Windows ([#1364](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1364), [#1376](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1376)) by @ebanatrm100 (first contribution 🎉). The manual setup in docs/DEVELOPMENT.md now installs the `[pycubrid]` extra for live tests and keeps a driver-free option for offline work ([#1384](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1384), [#1394](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1394)) by @Kareenashinde15 (first contribution 🎉).
+- **Improvement ideas** — a new issue form invites improvement ideas, and CONTRIBUTING.md explains how problem reporters are credited ([#1398](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1398)) by @yeongseon.
+
+### CI
+
+- **Reflection comparison with several model bases** — `scripts/reflection_probe.py --compare` now stops with an explicit error when a module declares more than one `MetaData` registry, instead of silently comparing only the first ([#1382](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1382), [#1385](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1385)) by @bfs2021.
+
+### Tests
+
+- **Driver version report** — a new offline test checks that `scripts/report_driver_versions.py` probes both drivers with a configured database URL ([#1375](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1375), [#1393](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1393)) by @aka-khannaji (first contribution 🎉).
 
 ## [1.12.4] - 2026-11-20
 

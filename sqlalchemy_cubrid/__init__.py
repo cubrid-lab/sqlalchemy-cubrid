@@ -19,7 +19,7 @@ Connection URL forms::
 
     # Pure-Python driver (recommended, no build tools):
     create_engine("cubrid+pycubrid://dba:pw@localhost:33000/demodb")
-    # Legacy C-extension driver (bare `cubrid://` selects CUBRIDdb):
+    # Supported C-extension driver (bare `cubrid://` selects CUBRIDdb):
     create_engine("cubrid+cubriddb://dba:pw@localhost:33000/demodb")
     # Async pure-Python driver:
     create_async_engine("cubrid+aiopycubrid://dba:pw@localhost:33000/demodb")
