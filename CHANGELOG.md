@@ -41,6 +41,7 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 ### Tests
 
 - **Driver version report** — a new offline test checks that `scripts/report_driver_versions.py` probes both drivers with a configured database URL ([#1375](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1375), [#1393](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1393)) by @aka-khannaji (first contribution 🎉).
+- **Async sample live run** — `samples/async_basic.py` now runs unmodified against the integration lab, with checks that its rows are real, its table is gone afterwards and a connection failure exits nonzero ([#1403](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1403)).
 
 ## [1.12.4] - 2026-11-20
 
