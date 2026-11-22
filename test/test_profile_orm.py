@@ -101,3 +101,136 @@ def test_results_are_ordered_by_cumulative_time_and_capped_at_max_results() -> N
 @pytest.mark.parametrize("pseudo_file", ["<string>", "<built-in>", "<frozen importlib._bootstrap>"])
 def test_normalized_path_returns_pseudo_file_names_unchanged(pseudo_file: str) -> None:
     assert MODULE._normalized_path(pseudo_file) == pseudo_file
+
+
+# --- #1401: the profiler only creates, clears and drops a table it owns -----------------
+
+from sqlalchemy import create_engine as _create_engine  # noqa: E402
+from sqlalchemy import inspect as _inspect  # noqa: E402
+from sqlalchemy import text as _text  # noqa: E402
+
+
+def _run_main(monkeypatch: pytest.MonkeyPatch, dsn: str, output: Path) -> None:
+    argv = [
+        "profile_orm.py",
+        "--dsn",
+        dsn,
+        "--crud-loops",
+        "1",
+        "--bulk-count",
+        "2",
+        "--bulk-rounds",
+        "1",
+        "--select-rounds",
+        "1",
+        "--select-seed-count",
+        "2",
+        "--compile-loops",
+        "1",
+        "--output",
+        str(output),
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    MODULE.main()
+
+
+def _table_names(dsn: str) -> list[str]:
+    engine = _create_engine(dsn)
+    try:
+        return _inspect(engine).get_table_names()
+    finally:
+        engine.dispose()
+
+
+def test_existing_bench_users_table_is_left_untouched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dsn = f"sqlite:///{tmp_path / 'user.db'}"
+    engine = _create_engine(dsn)
+    with engine.begin() as connection:
+        connection.execute(_text("CREATE TABLE bench_users (id INTEGER PRIMARY KEY, name TEXT)"))
+        connection.execute(_text("INSERT INTO bench_users (id, name) VALUES (1, 'sentinel')"))
+    engine.dispose()
+
+    with pytest.raises(SystemExit, match="already exists"):
+        _run_main(monkeypatch, dsn, tmp_path / "report.json")
+
+    engine = _create_engine(dsn)
+    with engine.connect() as connection:
+        rows = connection.execute(_text("SELECT id, name FROM bench_users")).all()
+    engine.dispose()
+    assert rows == [(1, "sentinel")]
+    assert not (tmp_path / "report.json").exists()
+
+
+def test_fresh_run_creates_and_drops_only_its_own_table(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dsn = f"sqlite:///{tmp_path / 'scratch.db'}"
+    # The compile workload renders CUBRID's ON DUPLICATE KEY UPDATE, which SQLite cannot compile.
+    monkeypatch.setattr(MODULE, "_run_compile_workload", lambda *_args: None)
+    _run_main(monkeypatch, dsn, tmp_path / "report.json")
+
+    assert "bench_users" not in _table_names(dsn)
+    assert (tmp_path / "report.json").exists()
+
+
+def test_failed_workload_drops_owned_table_and_keeps_the_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dsn = f"sqlite:///{tmp_path / 'scratch.db'}"
+
+    def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("workload failed")
+
+    monkeypatch.setattr(MODULE, "_run_bulk_insert", boom)
+    with pytest.raises(RuntimeError, match="workload failed"):
+        _run_main(monkeypatch, dsn, tmp_path / "report.json")
+
+    assert "bench_users" not in _table_names(dsn)
+
+
+def test_cleanup_error_does_not_hide_the_workload_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    dsn = f"sqlite:///{tmp_path / 'scratch.db'}"
+
+    def boom(*_args: Any, **_kwargs: Any) -> None:
+        raise RuntimeError("workload failed")
+
+    def broken_drop(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("drop failed")
+
+    monkeypatch.setattr(MODULE, "_run_bulk_insert", boom)
+    monkeypatch.setattr(MODULE.Base.metadata, "drop_all", broken_drop)
+    with pytest.raises(RuntimeError, match="workload failed"):
+        _run_main(monkeypatch, dsn, tmp_path / "report.json")
+
+    assert "could not drop 'bench_users': drop failed" in capsys.readouterr().err
+
+
+def test_table_created_after_the_check_is_not_reused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    dsn = f"sqlite:///{tmp_path / 'race.db'}"
+    engine = _create_engine(dsn)
+    with engine.begin() as connection:
+        connection.execute(_text("CREATE TABLE bench_users (id INTEGER PRIMARY KEY, name TEXT)"))
+        connection.execute(_text("INSERT INTO bench_users (id, name) VALUES (1, 'sentinel')"))
+    engine.dispose()
+
+    class _StaleInspector:
+        """Simulates another process creating the table right after the existence check."""
+
+        def has_table(self, _name: str) -> bool:
+            return False
+
+    monkeypatch.setattr(MODULE, "inspect", lambda _engine: _StaleInspector())
+    with pytest.raises(Exception, match="already exists"):
+        _run_main(monkeypatch, dsn, tmp_path / "report.json")
+
+    engine = _create_engine(dsn)
+    with engine.connect() as connection:
+        rows = connection.execute(_text("SELECT id, name FROM bench_users")).all()
+    engine.dispose()
+    assert rows == [(1, "sentinel")]

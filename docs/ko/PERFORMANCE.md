@@ -152,6 +152,10 @@ python scripts/profile_orm.py \
     --dsn cubrid+pycubrid://dba@localhost:33000/testdb --output profile_orm_report.json
 ```
 
+프로파일러는 자신이 직접 만든 `bench_users` 테이블에서만 작업합니다. 데이터베이스에 그
+테이블이 이미 있으면 손대기 전에 오류로 멈추고, 종료할 때는 실패한 경우에도 그 실행이
+만든 테이블만 삭제합니다.
+
 ### raw 드라이버, Core, ORM 기준 측정
 
 `scripts/bench_dialect_baseline.py`는 같은 작업을 raw 드라이버, SQLAlchemy

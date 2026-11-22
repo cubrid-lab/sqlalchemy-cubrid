@@ -12,7 +12,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any, cast
 
-from sqlalchemy import DateTime, Integer, String, Table, create_engine, select, text
+from sqlalchemy import DateTime, Integer, String, Table, create_engine, inspect, select, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column, sessionmaker
 
@@ -386,13 +386,39 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _create_owned_table(engine: Engine) -> None:
+    """Create the profiler table, refusing to reuse one this run did not create (#1401)."""
+    if inspect(engine).has_table(BenchUser.__tablename__):
+        raise SystemExit(
+            f"error: table {BenchUser.__tablename__!r} already exists in this database. The profiler "
+            "only works on a table it creates, so it will not reuse, clear or drop that one. Use a "
+            "disposable database, or drop the table yourself if it is a leftover from an earlier run."
+        )
+    # No checkfirst: if another process created the table after the check, this fails
+    # instead of silently reusing it.
+    BenchUser.__table__.create(engine)
+
+
+def _drop_owned_table(engine: Engine, *, keep_original_error: bool) -> None:
+    """Drop the table this run created; a cleanup error never hides the workload's own failure."""
+    try:
+        Base.metadata.drop_all(engine)
+    except Exception as exc:
+        if not keep_original_error:
+            raise
+        print(f"warning: could not drop {BenchUser.__tablename__!r}: {exc}", file=sys.stderr)
+
+
 def main() -> None:
     args = parse_args()
     engine = create_engine(args.dsn)
-    Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    created = False
+    failed = True
 
     try:
+        _create_owned_table(engine)
+        created = True
+        session_factory = sessionmaker(bind=engine, expire_on_commit=False)
         profiler = cProfile.Profile()
 
         def workload() -> None:
@@ -401,8 +427,10 @@ def main() -> None:
 
         total_started_at = perf_counter()
         profiler.enable()
-        workload()
-        profiler.disable()
+        try:
+            workload()
+        finally:
+            profiler.disable()
         total_wall_time_s = perf_counter() - total_started_at
 
         _seed_users(session_factory, engine, args.select_seed_count, "orm_profile")
@@ -434,10 +462,13 @@ def main() -> None:
 
         args.output.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         print(f"\nWrote JSON report to {args.output}")
+        failed = False
     finally:
-        _clear_users(engine)
-        Base.metadata.drop_all(engine)
-        engine.dispose()
+        try:
+            if created:
+                _drop_owned_table(engine, keep_original_error=failed)
+        finally:
+            engine.dispose()
 
 
 if __name__ == "__main__":
