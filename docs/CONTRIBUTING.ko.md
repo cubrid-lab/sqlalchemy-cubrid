@@ -421,6 +421,10 @@ type(scope)!: description
 | `style` | 포맷만 변경 |
 | `revert` | 앞선 변경 되돌리기; 설명에 대상 변경을 명시 |
 
+type은 다음 릴리스 버전도 정합니다. `feat`는 MINOR 릴리스를, `fix`·`perf`·`docs`는
+PATCH 릴리스를 요청합니다. `samples/`나 기여자 도구에만 국한된 변경은 배포
+패키지에 기능을 더하지 않으므로 `feat` 대신 `docs`·`test`·`chore`를 사용하세요.
+
 예시:
 
 ```text

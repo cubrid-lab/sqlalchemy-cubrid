@@ -494,6 +494,11 @@ type(scope)!: description
 | `style` | Formatting only |
 | `revert` | Reverts an earlier change; name it in the description |
 
+The type also sets the next release version: `feat` asks for a MINOR release,
+and `fix`, `perf` and `docs` for a PATCH. A change confined to `samples/` or
+contributor tooling adds no capability to the published package, so give it
+`docs`, `test` or `chore` rather than `feat`.
+
 Examples:
 
 ```text
