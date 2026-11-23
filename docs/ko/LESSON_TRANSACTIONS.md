@@ -51,6 +51,11 @@ Rows inside the transaction: 2
 Rows after the rollback: [(1, 'my first saved row')]
 ```
 
+![터미널 스크린샷: python rollback_row.py 명령이 "Rows inside the transaction: 2"에 이어 "Rows after the rollback: [(1, 'my first saved row')]"를 출력합니다.](../assets/lessons/lesson-rollback-output.png)
+
+스크린샷은 로컬 실습 환경에서 이 스크립트를 실제로 실행한 결과입니다. 트랜잭션 안에서는 두 번째 행이
+세어지고 롤백 뒤에는 사라지는 것을 보여 줍니다.
+
 롤백한 행은 사라졌습니다. 아무것도 커밋하지 않았으므로 몇 번을 실행해도 같은 결과가 나옵니다.
 `Unknown class "dba.sqlalchemy_quickstart_notes"`로 실패하면 테이블이 없는 것이니 먼저 3강의
 `save_row.py`를 실행하세요.

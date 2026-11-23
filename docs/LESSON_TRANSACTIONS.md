@@ -52,6 +52,11 @@ Rows inside the transaction: 2
 Rows after the rollback: [(1, 'my first saved row')]
 ```
 
+![Terminal screenshot: the command python rollback_row.py prints "Rows inside the transaction: 2" and then "Rows after the rollback: [(1, 'my first saved row')]".](assets/lessons/lesson-rollback-output.png)
+
+The screenshot is a real run of this script against the local lab. It shows
+the second row counted inside the transaction and gone after the rollback.
+
 The rolled-back row is gone. Nothing was committed, so you can run the file as
 often as you like and get the same output. If it fails with
 `Unknown class "dba.sqlalchemy_quickstart_notes"`, the table does not exist:
