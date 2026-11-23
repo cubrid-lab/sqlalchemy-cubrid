@@ -433,6 +433,7 @@ New to CUBRID? Pick the repository that matches what you want to work on:
 - Documentation and runnable examples: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
 - Pure-Python driver fixes: [pycubrid](https://github.com/cubrid-lab/pycubrid)
 - SQLAlchemy dialect fixes: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+- CUBRID MCP server contributions: [cubrid-mcp-server](https://github.com/cubrid-lab/cubrid-mcp-server) — MCP server for inspecting CUBRID schemas and running read-only queries; start with its open [good first issues](https://github.com/cubrid-lab/cubrid-mcp-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee).
 
 Most first issues can be developed and tested with the offline checks in CONTRIBUTING.md — no Docker or CUBRID server needed. Live CUBRID verification can be completed by CI and maintainers.
 
