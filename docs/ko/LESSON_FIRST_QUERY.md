@@ -47,6 +47,11 @@ python first_query.py
 2
 ```
 
+![터미널 스크린샷: python first_query.py 명령이 한 줄 2를 출력합니다.](../assets/lessons/lesson-first-query-output.png)
+
+스크린샷은 로컬 실습 환경에서 이 스크립트를 실제로 실행한 결과입니다. 위 텍스트와 같은 결과이므로
+자신의 터미널과 비교해 볼 수 있습니다.
+
 ---
 
 ## 실패하면

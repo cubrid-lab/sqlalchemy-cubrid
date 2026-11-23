@@ -46,6 +46,11 @@ reached the server:
 2
 ```
 
+![Terminal screenshot: the command python first_query.py prints the single line 2.](assets/lessons/lesson-first-query-output.png)
+
+The screenshot is a real run of this script against the local lab. It shows
+the same result as the text above, so you can compare it with your own terminal.
+
 ---
 
 ## If it fails
