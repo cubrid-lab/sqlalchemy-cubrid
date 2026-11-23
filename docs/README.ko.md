@@ -410,6 +410,7 @@ CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선�
 - 문서와 실행 가능한 예제: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
 - 순수 Python 드라이버 수정: [pycubrid](https://github.com/cubrid-lab/pycubrid)
 - SQLAlchemy 방언 수정: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+- CUBRID MCP 서버 기여: [cubrid-mcp-server](https://github.com/cubrid-lab/cubrid-mcp-server) — CUBRID 스키마를 살펴보고 읽기 전용 쿼리를 실행하는 MCP 서버입니다. 열려 있는 [good first issue](https://github.com/cubrid-lab/cubrid-mcp-server/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee)부터 시작하세요.
 
 대부분의 첫 이슈는 CONTRIBUTING.md의 오프라인 검사만으로 개발하고 테스트할 수 있습니다 — Docker나 CUBRID 서버가 필요 없습니다. 실제 CUBRID 검증은 CI와 메인테이너가 완료할 수 있습니다.
 
