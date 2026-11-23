@@ -1,7 +1,7 @@
 # Pinned documentation build tools for `mkdocs build --strict` (#761).
 # Installed by .github/workflows/docs.yml; Dependabot updates these pins.
 mkdocs==1.6.1
-mkdocs-material==9.8.1
-pymdown-extensions==13.1
+mkdocs-material==9.8.2
+pymdown-extensions==13.1.1
 # The deterministic documentation checks in ci.yml's docs-check job (#908).
 markdown-it-py==4.3.0
