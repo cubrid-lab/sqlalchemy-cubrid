@@ -35,6 +35,7 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 - **Improvement ideas** — a new issue form invites improvement ideas, and CONTRIBUTING.md explains how problem reporters are credited ([#1398](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1398)) by @yeongseon.
 - **Async example warning** — the `samples/async_basic.py` docstring now warns that the example drops and recreates `async_sample_users`, so it should run only against a disposable database ([#1371](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1371), [#1404](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1404)) by @Hanshal-aether (first contribution 🎉).
 - **Commit type and release version** — CONTRIBUTING.md explains that `feat` asks for a MINOR release and `fix`, `perf` and `docs` for a PATCH, and that changes confined to `samples/` or contributor tooling do not use `feat` ([#1415](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1415)) by @yeongseon.
+- **DML example SQL** — docs/DML_EXTENSIONS.md notes that its SQL examples show values inline for readability, while SQLAlchemy sends them as bound parameters ([#1370](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1370), [#1416](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1416)) by @Kareenashinde15.
 
 ### CI
 
