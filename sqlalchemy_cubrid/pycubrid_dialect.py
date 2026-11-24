@@ -156,22 +156,8 @@ class PyCubridExecutionContext(CubridExecutionContext):
 
     def get_lastrowid(self) -> int | None:  # type: ignore[override]
         """Return the last inserted row ID from pycubrid's cursor."""
-        try:
-            lastrowid = self.cursor.lastrowid
-            return None if lastrowid is None else int(lastrowid)
-        except AttributeError:
-            pass
-
-        # Fallback: use SQL function
-        cursor = self._dbapi_connection.cursor()
-        try:
-            cursor.execute("SELECT LAST_INSERT_ID()")
-            row = cursor.fetchone()
-            if row:
-                return int(row[0])
-        finally:
-            cursor.close()
-        return None
+        lastrowid = self.cursor.lastrowid
+        return None if lastrowid is None else int(lastrowid)
 
 
 class PyCubridDialect(CubridDialect):
@@ -191,9 +177,6 @@ class PyCubridDialect(CubridDialect):
     driver = "pycubrid"
     supports_statement_cache = True
     execution_ctx_cls = PyCubridExecutionContext
-
-    # pycubrid uses qmark paramstyle natively
-    default_paramstyle = "qmark"
 
     # Read by the SET/MULTISET/SEQUENCE bind processors (sqlalchemy_cubrid.types,
     # #484): this DB-API (sync, and async via the subclass) is pycubrid.

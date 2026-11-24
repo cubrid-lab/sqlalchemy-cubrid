@@ -191,36 +191,6 @@ class TestPyCubridExecutionContext:
         assert ctx.get_lastrowid() is None
         ctx._dbapi_connection.cursor.assert_not_called()
 
-    def test_get_lastrowid_fallback_on_attribute_error(self):
-        ctx = PyCubridExecutionContext.__new__(PyCubridExecutionContext)
-        # Cursor without lastrowid attribute
-        ctx.cursor = cast(Any, object())
-
-        mock_server_cursor = MagicMock()
-        mock_server_cursor.fetchone.return_value = ("99",)
-        ctx._dbapi_connection = MagicMock()
-        ctx._dbapi_connection.cursor.return_value = mock_server_cursor
-
-        result = ctx.get_lastrowid()
-
-        assert result == 99
-        mock_server_cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
-        mock_server_cursor.close.assert_called_once()
-
-    def test_get_lastrowid_fallback_returns_none_when_no_rows(self):
-        ctx = PyCubridExecutionContext.__new__(PyCubridExecutionContext)
-        ctx.cursor = cast(Any, object())
-
-        mock_server_cursor = MagicMock()
-        mock_server_cursor.fetchone.return_value = None
-        ctx._dbapi_connection = MagicMock()
-        ctx._dbapi_connection.cursor.return_value = mock_server_cursor
-
-        result = ctx.get_lastrowid()
-
-        assert result is None
-        mock_server_cursor.close.assert_called_once()
-
 
 class TestPyCubridEntryPointRegistration:
     def test_dialect_module_attribute(self):

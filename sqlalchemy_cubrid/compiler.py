@@ -640,30 +640,16 @@ class CubridCompiler(compiler.SQLCompiler):
 
     def update_post_criteria_clause(self, update_stmt: dml.Update, **kw: Any) -> str | None:
         # SA 2.1 replaced the dialect-level ``update_limit_clause`` hook with
-        # ``update_post_criteria_clause``. SA 2.0 never calls this method, so
-        # the override is harmless there.
+        # ``update_post_criteria_clause``. Only SA 2.1 calls this method, and
+        # its base compiler always defines the hook; SA 2.0 never calls it.
         parts: list[str] = []
-        try:
-            base = cast(_BaseDMLCompiler, super()).update_post_criteria_clause(update_stmt, **kw)
-        except AttributeError:  # pragma: no cover — SA 2.0 base class lacks this hook
-            base = None
+        base = cast(_BaseDMLCompiler, super()).update_post_criteria_clause(update_stmt, **kw)
         if base:
             parts.append(base)
         limit_text = self.update_limit_clause(update_stmt)
         if limit_text:
             parts.append(limit_text)
         return " ".join(parts) if parts else None
-
-    def update_tables_clause(
-        self,
-        update_stmt: Any,
-        from_table: Any,
-        extra_froms: Any,
-        **kw: Any,
-    ) -> str:
-        return ", ".join(
-            t._compiler_dispatch(self, asfrom=True, **kw) for t in [from_table] + list(extra_froms)
-        )
 
     def update_from_clause(
         self,

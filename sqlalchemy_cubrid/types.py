@@ -30,14 +30,7 @@ from sqlalchemy.sql import sqltypes
 # ---------------------------------------------------------------------------
 
 
-class _NumericType:
-    """Base for CUBRID numeric types."""
-
-    def __init__(self, **kw: Any) -> None:
-        super().__init__(**kw)
-
-
-class _FloatType(_NumericType, sqltypes.Float[Any]):  # pyright: ignore[reportUnsafeMultipleInheritance]
+class _FloatType(sqltypes.Float[Any]):
     def __init__(self, precision: int | None = None, **kw: Any) -> None:
         super().__init__(precision=precision, **kw)
 
@@ -59,7 +52,7 @@ def _warn_ignored_argument(name: str, type_name: str) -> None:
     )
 
 
-class _IntegerType(_NumericType, sqltypes.Integer):
+class _IntegerType(sqltypes.Integer):
     def __init__(self, display_width: int | None = None, **kw: Any) -> None:
         # Accepted for compatibility only; CUBRID has no display width.
         if display_width is not None:
@@ -113,7 +106,7 @@ class BIGINT(_IntegerType, sqltypes.BIGINT):
     __visit_name__ = "BIGINT"
 
 
-class NUMERIC(_NumericType, sqltypes.NUMERIC[Any]):  # pyright: ignore[reportUnsafeMultipleInheritance]
+class NUMERIC(sqltypes.NUMERIC[Any]):
     """CUBRID NUMERIC type."""
 
     __visit_name__ = "NUMERIC"
@@ -129,7 +122,7 @@ class NUMERIC(_NumericType, sqltypes.NUMERIC[Any]):  # pyright: ignore[reportUns
         super().__init__(precision=precision, scale=scale, **kw)
 
 
-class DECIMAL(_NumericType, sqltypes.DECIMAL[Any]):  # pyright: ignore[reportUnsafeMultipleInheritance]
+class DECIMAL(sqltypes.DECIMAL[Any]):
     """CUBRID DECIMAL type."""
 
     __visit_name__ = "DECIMAL"

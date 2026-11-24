@@ -262,10 +262,9 @@ class TestExecutionContext:
         cursor.execute.assert_called_once_with("SELECT LAST_INSERT_ID()")
         cursor.close.assert_called_once_with()
 
-    @pytest.mark.parametrize("context_cls", [CubridExecutionContext, PyCubridExecutionContext])
     @pytest.mark.parametrize("failure", ["execute", "fetchone", "conversion"])
-    def test_get_lastrowid_fallback_closes_cursor_on_error(self, context_cls, failure):
-        context = context_cls()
+    def test_get_lastrowid_fallback_closes_cursor_on_error(self, failure):
+        context = CubridExecutionContext()
         context.root_connection = types.SimpleNamespace(
             connection=types.SimpleNamespace(dbapi_connection=object())
         )

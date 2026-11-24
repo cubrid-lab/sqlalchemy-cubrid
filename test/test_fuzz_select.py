@@ -93,10 +93,6 @@ def _compile(stmt: Any) -> Any:
     return stmt.compile(dialect=CubridDialect())
 
 
-def _compile_literal(stmt: Any) -> Any:
-    return stmt.compile(dialect=CubridDialect(), compile_kwargs={"literal_binds": True})
-
-
 def _assert_param_count_matches(compiled: Any) -> None:
     """Positional placeholders must equal the number of bound parameters.
 

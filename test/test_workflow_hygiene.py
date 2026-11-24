@@ -20,15 +20,6 @@ def _workflow(name: str) -> dict:
     return yaml.safe_load((WORKFLOWS / name).read_text())
 
 
-def _runs(workflow: dict) -> list[str]:
-    return [
-        step["run"]
-        for job in workflow["jobs"].values()
-        for step in job.get("steps", [])
-        if "run" in step
-    ]
-
-
 def test_docs_requirements_pin_every_docs_tool_exactly() -> None:
     lines = [
         line.strip()
