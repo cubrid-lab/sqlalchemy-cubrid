@@ -20,7 +20,7 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ### Removed
 
-- **Unused dialect attributes** — `CubridDialect` no longer defines `supports_twophase_commit` and `supports_native_lateral`, which SQLAlchemy 2.0 and 2.1 never read; unreachable compatibility branches and repeated inherited settings were removed too, with no change to compiled SQL or driver behavior ([#1427](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1427)) by @yeongseon.
+- **Unused dialect attributes** — `CubridDialect` no longer defines `supports_twophase_commit` and `supports_native_lateral`, which SQLAlchemy 2.0 and 2.1 never read; unreachable compatibility branches and repeated inherited settings were removed too, with no change to compiled SQL or driver behavior ([#1427](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1427), [#1433](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1433)) by @yeongseon.
 
 ### Fixed
 
