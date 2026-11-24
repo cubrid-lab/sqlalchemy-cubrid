@@ -75,7 +75,13 @@ def test_support_matrix_marks_every_minor_from_the_cap_up_as_unsupported() -> No
     for rel in ("docs/SUPPORT_MATRIX.md", "docs/ko/SUPPORT_MATRIX.md"):
         text = _read(rel)
         for minor in range(cap_minor):
-            assert re.search(rf"^\| {major}\.{minor}\.x \| ✅", text, re.M), (rel, minor)
+            # A patch-level floor (#1428) is listed as "2.0.53 and later 2.0.x"
+            # ("2.0.53 이후 2.0.x" in the Korean page).
+            assert re.search(
+                rf"^\| (?:{major}\.{minor}\.\d+ (?:and later|이후) )?{major}\.{minor}\.x \| ✅",
+                text,
+                re.M,
+            ), (rel, minor)
         assert re.search(rf"^\| ≥ {major}\.{cap_minor} \| ❌", text, re.M), rel
         assert f"`<{major}.{cap_minor}`" in text, rel
 
