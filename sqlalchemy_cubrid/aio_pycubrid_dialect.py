@@ -27,7 +27,7 @@ from sqlalchemy_cubrid._compat import DBAPIModule
 from sqlalchemy.engine.url import URL
 from sqlalchemy.util.concurrency import await_only
 
-from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect, PyCubridExecutionContext
+from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
 
 # AsyncAdapt_terminate (terminate support for garbage-collected connections)
 # arrived in SQLAlchemy 2.0.44; before it the pool keeps its "cannot be safely
@@ -52,8 +52,6 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class AsyncAdapt_pycubrid_cursor(AsyncAdapt_dbapi_cursor):
-    _awaitable_cursor_close: bool = True
-
     def setinputsizes(self, *inputsizes: Any) -> None:
         pass
 
@@ -170,7 +168,6 @@ class PyCubridAsyncDialect(PyCubridDialect):
     is_async = True
     has_terminate = _HAS_TERMINATE
     supports_statement_cache = True
-    execution_ctx_cls = PyCubridExecutionContext
 
     @classmethod
     def get_pool_class(cls, url: URL) -> type[pool_module.Pool]:

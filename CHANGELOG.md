@@ -18,6 +18,10 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 - **Async sample connection URL** — `samples/async_basic.py` reads its database URL from `CUBRID_SAMPLE_URL` and falls back to the local quickstart lab, so another database no longer requires editing the file ([#1403](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1403), [#1409](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1409)) by @yeongseon.
 
+### Removed
+
+- **Unused dialect attributes** — `CubridDialect` no longer defines `supports_twophase_commit` and `supports_native_lateral`, which SQLAlchemy 2.0 and 2.1 never read; unreachable compatibility branches and repeated inherited settings were removed too, with no change to compiled SQL or driver behavior ([#1427](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1427), [#1433](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1433)) by @yeongseon.
+
 ### Fixed
 
 - **Async sample** — `samples/async_basic.py` now disposes its async engine in a `finally`, so an error while connecting, inserting or cleaning up no longer skips `engine.dispose()` ([#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381), [#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1387)) by @Dio77799 (first contribution 🎉).

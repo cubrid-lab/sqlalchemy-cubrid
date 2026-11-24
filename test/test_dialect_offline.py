@@ -96,11 +96,6 @@ class TestDialectBasics:
         assert dialect.isolation_level == expected
         assert dialect._builtin_onconnect() is not None
 
-    def test_supports_twophase_commit_is_false(self):
-        """CUBRID does not support two-phase commit."""
-        dialect = CubridDialect()
-        assert dialect.supports_twophase_commit is False
-
     def test_insert_returning_is_the_returning_switch(self):
         # Regression for #396: `insert_returning = False` is the SQLAlchemy 2.x
         # switch that disables implicit INSERT...RETURNING. The legacy 1.x
