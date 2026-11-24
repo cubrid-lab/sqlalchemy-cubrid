@@ -32,7 +32,7 @@ classifiers = [
     "Topic :: Database :: Front-Ends",
 ]
 dependencies = [
-    "sqlalchemy>=2.0,<2.2",
+    "sqlalchemy>=2.0.53,<2.2",
 ]
 
 [project.optional-dependencies]
@@ -52,7 +52,7 @@ alembic = [
 ]
 pycubrid = [
     "pycubrid>=1.8.0,<2.0",
-    "sqlalchemy[asyncio]>=2.0,<2.2",
+    "sqlalchemy[asyncio]>=2.0.53,<2.2",
 ]
 
 # Contributor tooling (PEP 735, #765). Dependency groups are not part of the
@@ -64,7 +64,7 @@ pycubrid = [
 # Documentation tools stay in .github/docs-requirements/requirements.txt (#761).
 [dependency-groups]
 test = [
-    "sqlalchemy[asyncio]>=2.0,<2.2",
+    "sqlalchemy[asyncio]>=2.0.53,<2.2",
     "pytest>=7.0",
     "pytest-cov",
     "pytest-asyncio",

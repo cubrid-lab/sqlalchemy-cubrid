@@ -88,7 +88,7 @@ flowchart TD
 새로 만든 뒤 애플리케이션을 검증하세요.
 
 - Python 3.11 이상
-- SQLAlchemy 2.0 – 2.1
+- SQLAlchemy 2.0.53 – 2.1
 - [pycubrid](https://github.com/cubrid-lab/pycubrid) (순수 Python, 권장) **또는** PyPI(`CUBRID-Python` 9.3.0)에서 설치하거나 [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 소스 릴리스에서 빌드한 공식 CUBRIDdb C 확장
 
 ## 설치

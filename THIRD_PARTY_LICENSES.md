@@ -23,7 +23,7 @@ sqlalchemy-cubrid` command can request it.
 
 **greenlet.** SQLAlchemy 2.1 no longer installs `greenlet` by default; it comes
 with `sqlalchemy[asyncio]`, which the `[pycubrid]` extra and the `dev` dependency group request.
-The declared range `sqlalchemy>=2.0,<2.2` also admits SQLAlchemy 2.0.x, whose
+The declared range `sqlalchemy>=2.0.53,<2.2` also admits SQLAlchemy 2.0.x, whose
 default install adds `greenlet` (MIT AND PSF-2.0) on common platforms. Either
 way the license is the one listed in the `[pycubrid]` table.
 

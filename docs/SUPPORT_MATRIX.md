@@ -10,7 +10,8 @@ Compatibility and feature support for sqlalchemy-cubrid releases.
 
 | SQLAlchemy Version | Status | Notes |
 |---|---|---|
-| 2.0.x | ✅ Supported | Minimum required version |
+| 2.0.53 and later 2.0.x | ✅ Supported | Minimum required version is 2.0.53, the oldest release CI tests |
+| 2.0.0 – 2.0.52 | ❌ Not supported | Below the declared `>=2.0.53` floor and not tested; some of these releases cannot import the dialect (#1428) |
 | 2.1.x | ✅ Supported | CI-tested on SQLAlchemy 2.1.1 |
 | ≥ 2.2 | ❌ Not supported | Excluded by the `<2.2` cap until 2.2 ships and passes the full matrix; code uses private SA internals (see below) |
 | < 2.0 | ❌ Not supported | SA 1.x API removed |

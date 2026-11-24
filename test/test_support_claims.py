@@ -185,10 +185,12 @@ def test_test_group_and_pycubrid_sqlalchemy_bounds_must_match_project() -> None:
         start = METADATA.index(f"{group} = [")
         end = METADATA.index("\n]", start)
         section = METADATA[start:end]
-        assert section.count("sqlalchemy[asyncio]>=2.0,<2.2") == 1
+        assert section.count("sqlalchemy[asyncio]>=2.0.53,<2.2") == 1
         metadata = (
             METADATA[:start]
-            + section.replace("sqlalchemy[asyncio]>=2.0,<2.2", "sqlalchemy[asyncio]>=2.0,<2.3")
+            + section.replace(
+                "sqlalchemy[asyncio]>=2.0.53,<2.2", "sqlalchemy[asyncio]>=2.0.53,<2.3"
+            )
             + METADATA[end:]
         )
         assert (
@@ -202,6 +204,26 @@ def test_current_sqlalchemy_support_disagreement_is_rejected() -> None:
     assert "docs/SUPPORT_MATRIX.md: SQLAlchemy 2.2+ must be excluded" in check_claims(
         METADATA, README, matrix
     )
+
+
+def test_patch_level_sqlalchemy_floor_needs_matching_matrix_rows() -> None:
+    """#1428: a 2.0.53 floor lists 2.0.53+ as supported and 2.0.0 – 2.0.52 as excluded."""
+    matrix = MATRIX.replace("| 2.0.53 and later 2.0.x | ✅", "| 2.0.x | ✅")
+    assert "docs/SUPPORT_MATRIX.md: SQLAlchemy 2.0.53 must be supported" in check_claims(
+        METADATA, README, matrix
+    )
+    matrix = MATRIX.replace("| 2.0.0 – 2.0.52 | ❌ Not supported", "| 2.0.0 – 2.0.43 | ❌")
+    assert "docs/SUPPORT_MATRIX.md: SQLAlchemy 2.0.0 – 2.0.52 must be excluded" in check_claims(
+        METADATA, README, matrix
+    )
+
+
+def test_minor_level_sqlalchemy_floor_is_still_checked() -> None:
+    metadata = METADATA.replace(">=2.0.53,<2.2", ">=2.1,<2.2")
+    readme = README.replace(">=2.0.53,<2.2", ">=2.1,<2.2").replace(
+        "- SQLAlchemy 2.0.53 – 2.1", "- SQLAlchemy 2.1 – 2.1"
+    )
+    assert check_claims(metadata, readme, MATRIX) == []
 
 
 def test_pycubrid_driver_floor_must_match_readme() -> None:
@@ -264,12 +286,13 @@ def test_extras_must_admit_the_pypi_release() -> None:
 
 
 def test_readme_requirements_sqlalchemy_range_must_match_metadata() -> None:
-    readme = README.replace("- SQLAlchemy 2.0 – 2.1", "- SQLAlchemy 2.0 – 2.2")
+    readme = README.replace("- SQLAlchemy 2.0.53 – 2.1", "- SQLAlchemy 2.0.53 – 2.2")
     assert "README.md: SQLAlchemy Requirements range differs" in check_claims(
         METADATA, readme, MATRIX
     )
     readme = README.replace(
-        "Supported matrix: SQLAlchemy `>=2.0,<2.2`", "Supported matrix: SQLAlchemy `>=2.0,<2.3`"
+        "Supported matrix: SQLAlchemy `>=2.0.53,<2.2`",
+        "Supported matrix: SQLAlchemy `>=2.0.53,<2.3`",
     )
     assert "README.md: SQLAlchemy support matrix bound differs" in check_claims(
         METADATA, readme, MATRIX

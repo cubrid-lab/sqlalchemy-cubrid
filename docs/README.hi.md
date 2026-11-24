@@ -77,7 +77,7 @@ flowchart TD
 ## आवश्यकताएँ
 
 - Python 3.11 या उससे नया संस्करण
-- SQLAlchemy 2.0 – 2.1
+- SQLAlchemy 2.0.53 – 2.1
 - **अनुशंसित:** [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, sync/async; `cubrid+pycubrid://`)
 - **वैकल्पिक:** CUBRIDdb C-extension (`cubrid://`), दो समर्थित इंस्टॉलेशन विकल्पों में से एक के साथ: `pip install "sqlalchemy-cubrid[cubriddb]"` (या `[cubrid]`) PyPI का `CUBRID-Python` 9.3.0 इंस्टॉल करता है, या इसे [cubrid-python v11.3.0.51](https://github.com/CUBRID/cubrid-python) स्रोत रिलीज़ से बनाएं, जिसका CI में परीक्षण होता है। PyPI 9.3.0 CI में नहीं चलता और इसकी ज्ञात सीमाएँ हैं ([driver मार्गदर्शन](DRIVER_COMPAT.md))।
 

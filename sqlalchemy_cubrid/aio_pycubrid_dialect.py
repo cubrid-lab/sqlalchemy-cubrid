@@ -10,11 +10,12 @@ from __future__ import annotations
 import contextlib
 import logging
 from importlib import import_module
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 from sqlalchemy.connectors.asyncio import (
     AsyncAdapt_dbapi_connection,
     AsyncAdapt_dbapi_cursor,
+    AsyncAdapt_terminate,
 )
 
 # AsyncAdapt_dbapi_module was added in SQLAlchemy 2.1.
@@ -29,25 +30,6 @@ from sqlalchemy.util.concurrency import await_only
 
 from sqlalchemy_cubrid.pycubrid_dialect import PyCubridDialect
 
-# AsyncAdapt_terminate (terminate support for garbage-collected connections)
-# arrived in SQLAlchemy 2.0.44; before it the pool keeps its "cannot be safely
-# terminated" fallback.
-if TYPE_CHECKING:
-    from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate as _TerminateMixin
-
-    _HAS_TERMINATE = True
-else:
-    try:
-        from sqlalchemy.connectors.asyncio import AsyncAdapt_terminate as _TerminateMixin
-
-        _HAS_TERMINATE = True
-    except ImportError:  # SQLAlchemy 2.0.0 to 2.0.43
-
-        class _TerminateMixin:
-            """Empty stand-in: ``object`` itself would give an inconsistent MRO."""
-
-        _HAS_TERMINATE = False
-
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -59,7 +41,7 @@ class AsyncAdapt_pycubrid_cursor(AsyncAdapt_dbapi_cursor):
         pass
 
 
-class AsyncAdapt_pycubrid_connection(_TerminateMixin, AsyncAdapt_dbapi_connection):
+class AsyncAdapt_pycubrid_connection(AsyncAdapt_terminate, AsyncAdapt_dbapi_connection):
     _cursor_cls = AsyncAdapt_pycubrid_cursor
     # SA 2.0 exposed ``await_`` on AsyncAdapt_dbapi_connection; SA 2.1 dropped
     # it in favour of the module-level helper. Redeclare so ``self.await_(...)``
@@ -166,7 +148,7 @@ class PyCubridAsyncDialect(PyCubridDialect):
 
     driver = "aiopycubrid"
     is_async = True
-    has_terminate = _HAS_TERMINATE
+    has_terminate = True
     supports_statement_cache = True
 
     @classmethod
