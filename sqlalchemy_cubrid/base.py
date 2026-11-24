@@ -386,7 +386,17 @@ class CubridIdentifierPreparer(compiler.IdentifierPreparer):
         escape_quote: str = '"',
         omit_schema: bool = False,
     ) -> None:
-        super().__init__(dialect, initial_quote, final_quote, escape_quote, omit_schema)
+        # Pass by keyword: SQLAlchemy's fifth positional parameter is
+        # ``quote_case_sensitive_collations``, not ``omit_schema`` (#1425).
+        # Keep it False so COLLATE names stay unquoted, as they always have.
+        super().__init__(
+            dialect,
+            initial_quote=initial_quote,
+            final_quote=final_quote,
+            escape_quote=escape_quote,
+            quote_case_sensitive_collations=False,
+            omit_schema=omit_schema,
+        )
 
 
 # DB-API type code CUBRIDdb reports in cursor.description for a BIGINT column

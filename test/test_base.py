@@ -141,6 +141,15 @@ class TestIdentifierPreparer:
         assert preparer.final_quote == '"'
         assert preparer.escape_quote == '"'
         assert preparer.omit_schema is False
+        assert preparer.quote_case_sensitive_collations is False
+
+    def test_omit_schema_is_passed_through(self):
+        # omit_schema must reach SQLAlchemy's omit_schema, not the positional
+        # quote_case_sensitive_collations slot before it (#1425).
+        preparer = CubridIdentifierPreparer(CubridDialect(), omit_schema=True)
+
+        assert preparer.omit_schema is True
+        assert preparer.quote_case_sensitive_collations is False
 
     @pytest.mark.parametrize("word", ["day", "count", "group"])
     def test_reserved_identifier_is_quoted(self, word):
