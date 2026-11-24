@@ -80,7 +80,7 @@
 - **MERGE**: CUBRID는 완전한 SQL MERGE 문을 지원합니다. `.using()`, `.on()`, `.when_matched_then_update()`, `.when_not_matched_then_insert()`와 함께 `sqlalchemy_cubrid.dml.merge(target)`을 사용하세요. [CUBRID 전용 DML 구성](#cubrid-전용-dml-구성) 참고.
 - **FOR UPDATE**: CUBRID는 `SELECT … FOR UPDATE [OF col1, col2]`를 지원합니다. NOWAIT와 SKIP LOCKED는 미지원.
 - **LIMIT를 가진 UPDATE**: CUBRID와 MySQL 모두 `UPDATE … LIMIT n`을 지원합니다. PostgreSQL과 SQLite는 미지원.
-- **다중 테이블 UPDATE**: SQLAlchemy의 다중 테이블 UPDATE 패턴은 `UPDATE t1, t2 SET ... WHERE ...`로 컴파일되며, CUBRID가 받는 MySQL 스타일 구문과 일치합니다. 방언은 추가 `FROM` 절이 필요 없기 때문에 의도적으로 `update_from_clause()`를 비활성화합니다.
+- **다중 테이블 UPDATE**: 미지원. 둘 이상의 테이블을 참조하는 SQLAlchemy `update()`(UPDATE ... FROM)는 `update_from_clause()`에서 `CompileError("CUBRID does not support UPDATE ... FROM (multi-table UPDATE). Use a subquery in the SET clause instead.")`를 발생시킵니다. SET 절의 서브쿼리를 사용하거나, 다른 테이블의 값으로 갱신하려면 `sqlalchemy_cubrid.dml.merge()`를 사용하세요.
 - **TRUNCATE**: CUBRID는 `TRUNCATE TABLE`을 지원합니다. 다른 문과 마찬가지로 연결의 트랜잭션 안에서 실행되며 커밋될 때만 반영됩니다 ([SQL 텍스트 기반 오토커밋 없음](CONNECTION.md#sql-텍스트-기반-오토커밋-없음) 참고).
 - **IS DISTINCT FROM**: CUBRID에는 SQL 표준 구문이 없지만 NULL-안전 등가 연산자 `<=>`를 지원합니다. 방언은 `a IS DISTINCT FROM b`를 `(a <=> b) = 0`으로, `a IS NOT DISTINCT FROM b`를 `a <=> b`로 에뮬레이트하여 술어와 SELECT 프로젝션 모두에서 NULL-안전 의미를 보존합니다 (#344, #377). CUBRID의 `IS`는 `NULL`, `TRUE`, `FALSE`만 받으므로, 값과의 `IS`/`IS NOT`(예: Boolean `col.is_(True)`)도 같은 방식(`col <=> 1`, `(col <=> 1) = 0`)으로 렌더링합니다 (#465). [불리언 조건식](TYPES.md#불리언-조건식)을 참고하세요.
 
