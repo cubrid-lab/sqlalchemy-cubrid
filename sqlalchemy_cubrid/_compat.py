@@ -2,13 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from sqlalchemy.engine.interfaces import DBAPIModule
 from sqlalchemy.sql import elements, visitors
-
-# DBAPIModule was added in SQLAlchemy 2.1; fall back to Any for 2.0 compat.
-try:
-    from sqlalchemy.engine.interfaces import DBAPIModule
-except ImportError:  # pragma: no cover — SA 2.0
-    DBAPIModule = Any  # type: ignore[assignment,misc]
 
 __all__ = [
     "DBAPIModule",

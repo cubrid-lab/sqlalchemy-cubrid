@@ -110,14 +110,25 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
         else:
             sqlalchemy_rows = _section(matrix, "SQLAlchemy")
             for version in lower:
-                if not re.search(
-                    rf"^\| {re.escape(version)}\.x \| ✅ Supported \|",
-                    sqlalchemy_rows,
-                    re.M,
-                ):
+                # A patch-level floor such as 2.0.53 is listed as "2.0.53 and later
+                # 2.0.x", with the earlier patch releases of that series excluded.
+                major_minor, _, patch = version.rpartition(".")
+                if version.count(".") == 2:
+                    supported = rf"{re.escape(version)} and later {re.escape(major_minor)}\.x"
+                else:
+                    supported = rf"{re.escape(version)}\.x"
+                if not re.search(rf"^\| {supported} \| ✅ Supported \|", sqlalchemy_rows, re.M):
                     problems.append(
                         f"docs/SUPPORT_MATRIX.md: SQLAlchemy {version} must be supported"
                     )
+                if version.count(".") == 2 and int(patch) > 0:
+                    below = f"{major_minor}.0 – {major_minor}.{int(patch) - 1}"
+                    if not re.search(
+                        rf"^\| {re.escape(below)} \| ❌ Not supported \|", sqlalchemy_rows, re.M
+                    ):
+                        problems.append(
+                            f"docs/SUPPORT_MATRIX.md: SQLAlchemy {below} must be excluded"
+                        )
             for version in upper:
                 if not re.search(
                     rf"^\| ≥ {re.escape(version)} \| ❌ Not supported \|",
@@ -138,7 +149,7 @@ def check_claims(metadata: str, readme: str, matrix: str) -> list[str]:
             lower_parts = lower[0].split(".")
             upper_parts = upper[0].split(".")
             if (
-                len(lower_parts) != 2
+                len(lower_parts) not in (2, 3)
                 or len(upper_parts) != 2
                 or lower_parts[0] != upper_parts[0]
                 or int(upper_parts[1]) <= int(lower_parts[1])

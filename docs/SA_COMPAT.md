@@ -4,7 +4,7 @@ This document tracks every SQLAlchemy internal or semi-private API used by
 `sqlalchemy-cubrid`, why it is used, the SQLAlchemy version range verified by
 tests, and what would break if SQLAlchemy changes the API.
 
-Verified against: SQLAlchemy `2.0.x` and `2.1.x` (project pin: `>=2.0,<2.2`).
+Verified against: SQLAlchemy `2.0.x` and `2.1.x` (project pin: `>=2.0.53,<2.2`).
 
 ## Internal API Inventory
 

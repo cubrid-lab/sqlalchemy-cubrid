@@ -860,13 +860,11 @@ async with engine.connect() as conn:
 
 Return connections with `async with` or `await conn.close()`. If an application loses a
 checked-out connection without closing it, the garbage collector's cleanup terminates it
-on SQLAlchemy 2.0.44 and later, which provide the terminate support the dialect uses
-(#872). The dialect closes the socket synchronously and retires the pycubrid session, even
+through SQLAlchemy's terminate support (#872). The dialect closes the socket synchronously and retires the pycubrid session, even
 after the connection's event loop has closed, so there is no "cannot be safely
 terminated" message and no `ResourceWarning` for an unclosed stream. SQLAlchemy still
 warns that the connection was not checked in. An invalidated connection is closed with
-the normal `CLOSE_DATABASE` shutdown. On SQLAlchemy 2.0.0 to 2.0.43 the pool keeps its
-previous behavior and drops such a connection without terminating it.
+the normal `CLOSE_DATABASE` shutdown.
 
 **Python 3.15 with SQLAlchemy 2.1:** SQLAlchemy's pool does not run this cleanup for a
 connection that Python's cycle collector reclaims. That is the usual case for a
@@ -4731,7 +4729,8 @@ Compatibility and feature support for sqlalchemy-cubrid releases.
 
 | SQLAlchemy Version | Status | Notes |
 |---|---|---|
-| 2.0.x | ✅ Supported | Minimum required version |
+| 2.0.53 and later 2.0.x | ✅ Supported | Minimum required version is 2.0.53, the oldest release CI tests |
+| 2.0.0 – 2.0.52 | ❌ Not supported | Below the declared `>=2.0.53` floor and not tested; some of these releases cannot import the dialect (#1428) |
 | 2.1.x | ✅ Supported | CI-tested on SQLAlchemy 2.1.1 |
 | ≥ 2.2 | ❌ Not supported | Excluded by the `<2.2` cap until 2.2 ships and passes the full matrix; code uses private SA internals (see below) |
 | < 2.0 | ❌ Not supported | SA 1.x API removed |

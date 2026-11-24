@@ -13,7 +13,7 @@ It provides SQL compilation, type mapping, schema reflection, DDL/DML extensions
 Alembic migration support, and PEP 561 typing.
 
 - **Language**: Python 3.11+ (`requires-python = ">=3.11"`)
-- **Framework**: SQLAlchemy 2.0 – 2.1 (`sqlalchemy>=2.0,<2.2`)
+- **Framework**: SQLAlchemy 2.0.53 – 2.1 (`sqlalchemy>=2.0.53,<2.2`)
 - **Supported versions**: Python, SQLAlchemy, CUBRID and driver versions are maintained in
   [docs/SUPPORT_MATRIX.md](docs/SUPPORT_MATRIX.md); `pyproject.toml` owns dependency bounds
 - **License**: MIT

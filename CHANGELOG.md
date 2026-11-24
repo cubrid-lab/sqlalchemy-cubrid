@@ -14,6 +14,10 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **SQLAlchemy 2.0.53 or later required** — the dependency floor rises from `sqlalchemy>=2.0` to `sqlalchemy>=2.0.53` (still `<2.2`), the oldest release CI tests, because some earlier 2.0 releases cannot import the dialect; projects pinned to SQLAlchemy 2.0.0–2.0.52 must upgrade ([#1428](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1428), [#1434](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1434)) by @yeongseon.
+
 ### Changed
 
 - **Async sample connection URL** — `samples/async_basic.py` reads its database URL from `CUBRID_SAMPLE_URL` and falls back to the local quickstart lab, so another database no longer requires editing the file ([#1403](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1403), [#1409](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1409)) by @yeongseon.

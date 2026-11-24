@@ -47,7 +47,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 - Full SQLAlchemy 2.0–2.1 dialect with **statement caching** and **PEP 561 typing**
 - **Extensive offline test suite** — no database required to run it; CI enforces a minimum 95% line-coverage gate (`--cov-fail-under=95` in the `offline-tests` job, [CI badge above](https://github.com/cubrid-lab/sqlalchemy-cubrid/actions/workflows/ci.yml))
 - **Concurrency stress tests** — `QueuePool` sync threaded + asyncio.gather workloads validated against live CUBRID
-- **SQLAlchemy 2.1-ready compat shim** — private API access wrapped in `_compat.py`; dependency cap `>=2.0,<2.2` covering SA 2.0 and 2.1
+- **SQLAlchemy 2.1-ready compat shim** — private API access wrapped in `_compat.py`; dependency range `>=2.0.53,<2.2` covering SA 2.0 and 2.1
 - Tested against **4 CUBRID versions** (10.2, 11.0, 11.2, 11.4) across **Python 3.11 -- 3.15**
 - CUBRID-specific DML constructs: `ON DUPLICATE KEY UPDATE`, `MERGE`, `REPLACE INTO`
 - Alembic migration support out of the box
@@ -56,7 +56,7 @@ actively maintained SQLAlchemy dialect that supports the modern 2.0–2.1 API.
 ## Support Status
 
 - **Status**: Production/Stable [![PyPI version](https://img.shields.io/pypi/v/sqlalchemy-cubrid)](https://pypi.org/project/sqlalchemy-cubrid)
-- Supported matrix: SQLAlchemy `>=2.0,<2.2`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.11`–`3.15`
+- Supported matrix: SQLAlchemy `>=2.0.53,<2.2`, CUBRID `10.2`, `11.0`, `11.2`, `11.4`, Python `3.11`–`3.15`
 - Ordinary PRs run the full offline suite with the 95% coverage floor on one Ubuntu/Python 3.12 lane; high-risk changes add Python 3.14/CUBRID 11.4 live integration. Main/changed-weekly runs add Python 3.11/CUBRID 10.2 and run the offline suite on the oldest and newest supported Python (3.11, 3.15). The full supported integration matrix remains manual and release-gated. See [CI execution policy](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/CI_POLICY.md).
 - An advisory SQLAlchemy pre-release canary logs its resolved version; a passing run alone does not establish 2.2 beta compatibility (see #778)
 - See [Known Limitations](#known-limitations) for behavior boundaries and unsupported features
@@ -96,7 +96,7 @@ keeps installing 1.9.x. Upgrade your interpreter, recreate your virtual
 environment and validate your application before upgrading.
 
 - Python 3.11 or later
-- SQLAlchemy 2.0 – 2.1
+- SQLAlchemy 2.0.53 – 2.1
 - [pycubrid](https://github.com/cubrid-lab/pycubrid) (pure Python, recommended) **or** the official CUBRIDdb C extension, installed from PyPI (`CUBRID-Python` 9.3.0) or built from the [cubrid-python](https://github.com/CUBRID/cubrid-python) v11.3.0.51 source release
 
 ## Installation
