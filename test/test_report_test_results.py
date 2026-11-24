@@ -36,7 +36,7 @@ def _junit(tmp_path: Path, *cases: str) -> Path:
     return path
 
 
-def _coverage(tmp_path: Path, rate: float) -> Path:
+def _coverage(tmp_path: Path, rate: float | str) -> Path:
     path = tmp_path / "coverage.xml"
     path.write_text(f'<?xml version="1.0"?><coverage line-rate="{rate}"/>', encoding="utf-8")
     return path
@@ -115,6 +115,88 @@ def test_missing_coverage_is_incomplete(tmp_path):
     assert summary["status"] == "INCOMPLETE"
     assert summary["coverage"]["percent"] is None
     assert "coverage" in summary["problems"][0]
+
+
+@pytest.mark.parametrize(
+    ("raw_rate", "expected_percent", "threshold", "expected_status", "expected_met"),
+    [
+        ("0", 0.0, 95, "FAIL", False),
+        ("0", 0.0, None, "PASS", None),
+        ("1", 100.0, 95, "PASS", True),
+        ("1", 100.0, None, "PASS", None),
+    ],
+)
+def test_coverage_valid_boundary_line_rates(
+    tmp_path, raw_rate, expected_percent, threshold, expected_status, expected_met
+):
+    cov = _coverage(tmp_path, raw_rate)
+    assert mod.parse_coverage(cov) == expected_percent
+    summary = mod.build_summary(
+        lane="test",
+        junit=_junit(tmp_path, PASSING),
+        coverage=cov,
+        threshold=threshold,
+        pytest_exit=0,
+    )
+    assert summary["status"] == expected_status
+    assert summary["coverage"] == {
+        "percent": expected_percent,
+        "threshold": threshold,
+        "threshold_met": expected_met,
+    }
+    assert summary["problems"] == []
+
+
+@pytest.mark.parametrize("raw_rate", ["-0.01", "-1", "1.01", "2", "nan", "inf", "-inf", "Infinity"])
+@pytest.mark.parametrize("threshold", [95, None])
+def test_invalid_coverage_line_rate_is_incomplete(tmp_path, raw_rate, threshold):
+    cov = _coverage(tmp_path, raw_rate)
+    with pytest.raises(ValueError, match="line-rate"):
+        mod.parse_coverage(cov)
+    summary = mod.build_summary(
+        lane="test",
+        junit=_junit(tmp_path, PASSING),
+        coverage=cov,
+        threshold=threshold,
+        pytest_exit=0,
+    )
+    assert summary["status"] == "INCOMPLETE"
+    assert summary["coverage"] == {"percent": None, "threshold": threshold, "threshold_met": None}
+    assert any("coverage" in problem for problem in summary["problems"])
+    # Serialized JSON must stay strictly finite (no NaN/Infinity).
+    json.dumps(summary, allow_nan=False)
+
+
+@pytest.mark.parametrize("raw_rate", ["-0.5", "1.5", "nan", "inf"])
+def test_invalid_coverage_line_rate_with_test_failure_is_fail(tmp_path, raw_rate):
+    cov = _coverage(tmp_path, raw_rate)
+    summary = _summary(tmp_path, _junit(tmp_path, PASSING, FAILED), cov, exit_code=1)
+    assert summary["status"] == "FAIL"
+    assert summary["coverage"]["percent"] is None
+    assert summary["coverage"]["threshold_met"] is None
+    assert any("coverage" in problem for problem in summary["problems"])
+
+
+def test_main_rejects_infinite_line_rate_without_nonstandard_json(tmp_path, capsys):
+    out = tmp_path / "summary.json"
+    code = mod.main(
+        [
+            "--lane", "test",
+            "--junit", str(_junit(tmp_path, PASSING)),
+            "--coverage", str(_coverage(tmp_path, "inf")),
+            "--threshold", "95",
+            "--pytest-exit", "0",
+            "--output", str(out),
+        ]
+    )  # fmt: skip
+    assert code == 1
+    raw_json = out.read_text(encoding="utf-8")
+    assert "Infinity" not in raw_json
+    assert "NaN" not in raw_json
+    data = json.loads(raw_json)
+    assert data["status"] == "INCOMPLETE"
+    assert data["coverage"]["percent"] is None
+    assert "test: INCOMPLETE" in capsys.readouterr().out
 
 
 def test_zero_test_cases_is_incomplete(tmp_path):
