@@ -17,7 +17,6 @@
 /scripts/compose_release_changelog.py   @yeongseon @paikend
 /scripts/extract_release_notes.py       @yeongseon @paikend
 /scripts/lint_changelog.py              @yeongseon @paikend
-/scripts/prepare_release.py             @yeongseon @paikend
 /scripts/pypi_duplicate_guard.py        @yeongseon @paikend
 /scripts/reconcile_release_labels.py    @yeongseon @paikend
 /scripts/release_detect.py              @yeongseon @paikend

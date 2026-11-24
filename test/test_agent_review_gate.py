@@ -1082,4 +1082,6 @@ def test_workflow_triggers_and_permissions_are_read_only() -> None:
     assert '-f ref="$BASE_REF"' in run
     assert "?ref=" not in run
     assert "python3 -I" in run
-    assert '[ "$HEAD_REPO" = "$GITHUB_REPOSITORY" ]' in run
+    # Only the base branch's copy of the gate runs; the PR's copy never does.
+    assert '-f ref="$HEAD_SHA"' not in run
+    assert "--bootstrap" not in run

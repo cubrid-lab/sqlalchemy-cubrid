@@ -169,8 +169,7 @@ The workflow is named **Prepare release**. It never creates
 tags or GitHub Releases (`skip-github-release: true`). The offline migration
 validation and the live evidence since the cutover are recorded in
 [`docs/RELEASE_PLEASE_VALIDATION.md`](docs/RELEASE_PLEASE_VALIDATION.md). The former
-`prepare-release.yml` entry point is removed; `prepare_release.py` remains only
-as tested legacy transformation code, without an active workflow caller.
+`prepare-release.yml` entry point and its `prepare_release.py` script are removed.
 
 Before proposing another release, the preparer reconciles merged
 `autorelease: pending` PRs only when their manifest version, tag commit,
