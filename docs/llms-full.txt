@@ -955,7 +955,7 @@ kwargs = {"host": host, "port": port, "database": database, "user": user, "passw
 
 ```python
 engine = create_engine(
-    "cubrid://dba@localhost:33000/testdb",
+    "cubrid+pycubrid://dba@localhost:33000/testdb",
 
     # Set default isolation level for all connections
     isolation_level="REPEATABLE READ",
@@ -969,6 +969,7 @@ engine = create_engine(
     echo=True,
 )
 ```
+**Practice database:** This example uses the local lab URL. The lab's empty-password `dba` account is only for the disposable local container. For other environments, use a practice database and an appropriate account with your own connection details. Do not use a production database or its `dba` account. See [Preparing a CUBRID database](LESSON_PREPARE.md).
 
 ### Per-Connection Isolation Level
 

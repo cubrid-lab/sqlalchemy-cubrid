@@ -258,7 +258,7 @@ kwargs = {"host": host, "port": port, "database": database, "user": user, "passw
 
 ```python
 engine = create_engine(
-    "cubrid://dba@localhost:33000/testdb",
+    "cubrid+pycubrid://dba@localhost:33000/testdb",
 
     # 모든 연결의 기본 격리 수준 설정
     isolation_level="REPEATABLE READ",
@@ -272,7 +272,7 @@ engine = create_engine(
     echo=True,
 )
 ```
-
+**실습 데이터베이스:** 이 예제는 로컬 실습용 URL을 사용합니다. 비밀번호가 없는 실습용 `dba` 계정은 폐기 가능한 로컬 컨테이너에서만 사용해야 합니다. 다른 환경에서는 자체 연결 정보와 적절한 계정을 사용하는 실습 데이터베이스를 사용하세요. 운영 데이터베이스나 운영 환경의 `dba` 계정은 사용하지 마세요. [CUBRID 데이터베이스 준비](LESSON_PREPARE.md)를 참고하세요.
 ### 연결별 격리 수준
 
 ```python
