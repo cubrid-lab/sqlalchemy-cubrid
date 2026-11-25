@@ -17,8 +17,9 @@ from sqlalchemy.exc import CompileError
 from sqlalchemy_cubrid.dialect import CubridDialect
 from test._compiler_helpers import _compile, _norm, metadata, users
 
-# Reserved-word column names (all in ``RESERVED_WORDS``) for the #1454 write-path
-# quoting tests; SELECT coverage lives in ``test/test_base.py``.
+# Column names that are CUBRID reserved words (all in ``RESERVED_WORDS``). CUBRID
+# reads a bare reserved word as a keyword, so the dialect must quote these on the
+# write path too (#1454); SELECT coverage lives in ``test/test_base.py``.
 _reserved_cols = Table(
     "reserved_cols",
     MetaData(),
@@ -128,7 +129,8 @@ class TestInsertCompilation:
         assert sql.startswith("INSERT INTO t (id) WITH RECURSIVE c(n) AS ("), sql
 
     def test_reserved_column_names_are_quoted_in_insert(self) -> None:
-        """#1454: reserved-word columns are double-quoted in the INSERT column list."""
+        """Reserved words used as column names are double-quoted in the INSERT
+        column list so CUBRID reads them as identifiers, not keywords (#1454)."""
         stmt = sa.insert(_reserved_cols).values(day=1, count=2, value="x")
         sql = _norm(stmt.compile(dialect=CubridDialect()).string)
         assert sql == 'INSERT INTO reserved_cols ("day", "count", "value") VALUES (?, ?, ?)'
@@ -248,7 +250,8 @@ class TestUpdateCompilation:
             stmt.compile(dialect=CubridDialect())
 
     def test_reserved_column_names_are_quoted_in_update_set(self) -> None:
-        """#1454: reserved-word columns are double-quoted in the UPDATE SET clause."""
+        """Reserved words used as column names are double-quoted in the UPDATE SET
+        clause so CUBRID reads them as identifiers, not keywords (#1454)."""
         stmt = (
             sa.update(_reserved_cols)
             .where(_reserved_cols.c.id == 1)
@@ -260,7 +263,8 @@ class TestUpdateCompilation:
         )
 
     def test_reserved_column_names_are_quoted_in_update_expressions(self) -> None:
-        """#1454: reserved-word columns stay quoted in SET expressions and WHERE."""
+        """Reserved-word columns stay double-quoted when they appear inside SET
+        expressions and WHERE, where CUBRID would otherwise parse a keyword (#1454)."""
         stmt = (
             sa.update(_reserved_cols)
             .where(_reserved_cols.c.day == 1)
