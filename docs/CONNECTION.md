@@ -104,7 +104,7 @@ from sqlalchemy import create_engine
 # Basic connection
 engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
-# Without password (CUBRID allows passwordless dba access by default)
+# Without password (for disposable local practice databases only)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
 # With explicit driver name (C-extension)
@@ -118,7 +118,7 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 | Component  | Default     | Description                            |
 |------------|-------------|----------------------------------------|
-| `user`     | *(required)* | Database username (typically `dba`)   |
+| `user`     | *(required)* | Database username (prefer an application-specific account with only required privileges) |
 | `password` | *(empty)*   | Database password                      |
 | `host`     | `localhost` | CUBRID server hostname or IP           |
 | `port`     | `33000`     | CUBRID broker port                     |
@@ -502,7 +502,7 @@ This prevents "stale connection" errors that occur when:
 ```python
 # Production-recommended configuration
 engine = create_engine(
-    "cubrid://dba@localhost:33000/mydb",
+    "cubrid://app_user:YOUR_PASSWORD@localhost:33000/mydb",
     pool_pre_ping=True,
     pool_recycle=1800,
 )
@@ -517,7 +517,7 @@ CUBRID's broker has a `SESSION_TIMEOUT` setting (default varies by version, typi
 ```python
 # If CUBRID broker SESSION_TIMEOUT is 300 (5 minutes)
 engine = create_engine(
-    "cubrid://dba@localhost:33000/mydb",
+    "cubrid://app_user:YOUR_PASSWORD@localhost:33000/mydb",
     pool_recycle=240,  # Recycle before broker timeout
 )
 ```
