@@ -17,6 +17,17 @@ from sqlalchemy.exc import CompileError
 from sqlalchemy_cubrid.dialect import CubridDialect
 from test._compiler_helpers import _compile, _norm, metadata, users
 
+# Reserved-word column names (all in ``RESERVED_WORDS``) for the #1454 write-path
+# quoting tests; SELECT coverage lives in ``test/test_base.py``.
+_reserved_cols = Table(
+    "reserved_cols",
+    MetaData(),
+    Column("id", Integer, primary_key=True),
+    Column("day", Integer),
+    Column("count", Integer),
+    Column("value", String(50)),
+)
+
 
 @pytest.mark.parametrize("operation", ["insert", "update", "delete"])
 def test_dml_visitors_accept_framework_positional_arguments(operation):
@@ -115,6 +126,12 @@ class TestInsertCompilation:
         stmt = sa.insert(target).from_select(["id"], select(cte.c.n))
         sql = _norm(_compile(stmt))
         assert sql.startswith("INSERT INTO t (id) WITH RECURSIVE c(n) AS ("), sql
+
+    def test_reserved_column_names_are_quoted_in_insert(self) -> None:
+        """#1454: reserved-word columns are double-quoted in the INSERT column list."""
+        stmt = sa.insert(_reserved_cols).values(day=1, count=2, value="x")
+        sql = _norm(stmt.compile(dialect=CubridDialect()).string)
+        assert sql == 'INSERT INTO reserved_cols ("day", "count", "value") VALUES (?, ?, ?)'
 
 
 class TestReturningCompilation:
@@ -229,6 +246,31 @@ class TestUpdateCompilation:
 
         with pytest.raises(CompileError, match=r"UPDATE \.\.\. FROM"):
             stmt.compile(dialect=CubridDialect())
+
+    def test_reserved_column_names_are_quoted_in_update_set(self) -> None:
+        """#1454: reserved-word columns are double-quoted in the UPDATE SET clause."""
+        stmt = (
+            sa.update(_reserved_cols)
+            .where(_reserved_cols.c.id == 1)
+            .values(day=1, count=2, value="x")
+        )
+        sql = _norm(stmt.compile(dialect=CubridDialect()).string)
+        assert sql == (
+            'UPDATE reserved_cols SET "day"=?, "count"=?, "value"=? WHERE reserved_cols.id = ?'
+        )
+
+    def test_reserved_column_names_are_quoted_in_update_expressions(self) -> None:
+        """#1454: reserved-word columns stay quoted in SET expressions and WHERE."""
+        stmt = (
+            sa.update(_reserved_cols)
+            .where(_reserved_cols.c.day == 1)
+            .values(count=_reserved_cols.c.count + 1)
+        )
+        sql = _norm(stmt.compile(dialect=CubridDialect()).string)
+        assert sql == (
+            'UPDATE reserved_cols SET "count"=(reserved_cols."count" + ?) '
+            'WHERE reserved_cols."day" = ?'
+        )
 
 
 class TestOnDuplicateKeyUpdateCompilation:
