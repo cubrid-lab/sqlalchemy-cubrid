@@ -13,6 +13,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C 확장 빌드 실패](#c-확장-빌드-실패)
   - [비동기 엔진에서 greenlet 누락](#비동기-엔진에서-greenlet-누락)
+  - [ModuleNotFoundError: No module named 'pycubrid.aio'](#modulenotfounderror-no-module-named-pycubridaio)
 - [연결 문제](#연결-문제)
   - [포트 33000 연결 거부](#포트-33000-연결-거부)
   - [컨테이너를 다시 만든 뒤 데이터베이스 서버 호스트를 찾을 수 없음](#컨테이너를-다시-만든-뒤-데이터베이스-서버-호스트를-찾을-수-없음)
@@ -36,6 +37,7 @@ sqlalchemy-cubrid의 흔한 문제에 대한 종합 해결책 — 연결 설정,
   - [LOB 컬럼 동작](#lob-컬럼-동작)
   - [컬렉션 타입 (SET, MULTISET, SEQUENCE)](#컬렉션-타입-set-multiset-sequence)
   - [Decimal 정밀도](#decimal-정밀도)
+  - [BIGINT와 COUNT(*) 값이 문자열로 반환됨 (CUBRIDdb 9.3.x)](#bigint와-count-값이-문자열로-반환됨-cubriddb-93x)
 - [스키마 리플렉션 문제](#스키마-리플렉션-문제)
   - [리플렉션 중 테이블을 찾을 수 없음](#리플렉션-중-테이블을-찾을-수-없음)
   - [테이블 이름의 대소문자 구분](#테이블-이름의-대소문자-구분)
@@ -177,6 +179,34 @@ python -m pip install "sqlalchemy[asyncio]"
 해당 Python·플랫폼에 맞는 `greenlet` wheel이 없으면 컴파일러 등 빌드 도구가
 필요할 수 있습니다. 애플리케이션과 **동일한 가상 환경**에 설치되었는지 확인하세요.
 비동기 방언 URL은 `cubrid+aiopycubrid://`를 사용하며 `cubrid://`가 아닙니다.
+
+---
+
+### ModuleNotFoundError: No module named 'pycubrid.aio'
+
+**증상:** `cubrid+aiopycubrid://` URL로 비동기 엔진을 만들 때, 방언이 드라이버를
+불러오는 단계에서 실패합니다.
+
+```text
+ModuleNotFoundError: No module named 'pycubrid.aio'
+```
+
+**원인:** 비동기 방언은 `pycubrid.aio`를 가져오는데, pycubrid는 1.1.0부터 이 모듈을
+제공합니다(changelog의 1.1.0 항목 참고). 다른 요구 사항이 고정했거나 `--no-deps`로 설치한
+오래된 pycubrid는 `cubrid+pycubrid://`에서는 가져올 수 있지만 비동기 모듈이 없습니다.
+
+**해결:** 애플리케이션과 같은 환경에 지원되는 pycubrid 버전을 설치하세요.
+
+```bash
+python -m pip install "pycubrid>=1.8.0,<2.0"
+# 또는 같은 범위를 지정하는 extra를 다시 설치합니다.
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+```
+
+1.1.0부터 1.8.0 전까지의 pycubrid에는 모듈이 있지만 지원 하한보다 낮으며 테스트되지
+않았습니다. [지원 매트릭스](SUPPORT_MATRIX.md)와 [드라이버 가이드](DRIVER_COMPAT.md)를
+참고하세요. 비동기 방언에는 항상 `cubrid+aiopycubrid://`가 필요하며, 접두사 없는
+`cubrid://`는 동기 CUBRIDdb 드라이버를 선택합니다.
 
 ---
 
@@ -760,6 +790,31 @@ class Product(Base):
 ```
 
 CUBRID는 최대 38자리 정밀도를 지원합니다.
+
+---
+
+### BIGINT와 COUNT(*) 값이 문자열로 반환됨 (CUBRIDdb 9.3.x)
+
+**증상:** PyPI `CUBRID-Python` 9.3.x의 CUBRIDdb 드라이버(`[cubrid]` / `[cubriddb]`
+extra가 설치)를 쓰면, raw DB-API 커서나 `String` 타입 컬럼에서 `COUNT(*)`, `ROWNUM` 같은
+`BIGINT` 결과가 `3` 대신 `'3'`처럼 `str`로 반환됩니다.
+
+**원인:** 이 드라이버 계열은 `BIGINT` 값을 문자열로 반환합니다(#583). 연결된 CUBRIDdb가
+11.3보다 오래되면 방언은 드라이버가 `BIGINT`로 보고한 `Integer` 타입 및 타입 없는
+(`text()`) 결과 컬럼을 이미 `int`로 변환합니다(#1145). raw DB-API 커서로 읽은 행과
+`String` 등 다른 타입의 컬럼은 변환되지 않습니다.
+
+**해결:**
+
+- raw 커서 대신 정수 타입으로 SQLAlchemy를 통해 읽거나(예: `func.count()`,
+  `text(...).columns(n=Integer)`) `int()`로 변환하세요.
+- 새 프로젝트에는 숫자를 반환하는 pycubrid 드라이버와 `cubrid+pycubrid://` URL을
+  사용하세요. 접두사 없는 `cubrid://`도 유효하며 CUBRIDdb를 선택합니다.
+
+이 드라이버 계열의 다른 동작과 검증된 테스트는
+[PyPI CUBRID-Python 9.3.x의 알려진 제약](DRIVER_COMPAT.md#pypi-cubrid-python-93x의-알려진-제약)에
+기록되어 있습니다. 모든 9.3.x 구성이 똑같이 영향을 받지는 않으며, 다른 CUBRID와 Python
+버전은 검증되지 않았습니다.
 
 ---
 

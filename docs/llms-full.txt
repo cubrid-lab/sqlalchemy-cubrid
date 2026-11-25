@@ -5598,6 +5598,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [ModuleNotFoundError: No module named 'pycubrid'](#modulenotfounderror-no-module-named-pycubrid)
   - [C Extension Build Failure](#c-extension-build-failure)
   - [Missing greenlet for async engines](#missing-greenlet-for-async-engines)
+  - [ModuleNotFoundError: No module named 'pycubrid.aio'](#modulenotfounderror-no-module-named-pycubridaio)
 - [Connection Issues](#connection-issues)
   - [Connection Refused on Port 33000](#connection-refused-on-port-33000)
   - [Database Server Host Not Found After Recreating the Container](#database-server-host-not-found-after-recreating-the-container)
@@ -5621,6 +5622,7 @@ Comprehensive solutions for common sqlalchemy-cubrid issues — connection setup
   - [LOB Column Behavior](#lob-column-behavior)
   - [Collection Types (SET, MULTISET, SEQUENCE)](#collection-types-set-multiset-sequence)
   - [Decimal Precision](#decimal-precision)
+  - [BIGINT and COUNT(*) Values Returned as Strings (CUBRIDdb 9.3.x)](#bigint-and-count-values-returned-as-strings-cubriddb-93x)
 - [Schema Reflection Issues](#schema-reflection-issues)
   - [Table Not Found During Reflection](#table-not-found-during-reflection)
   - [Case Sensitivity in Table Names](#case-sensitivity-in-table-names)
@@ -5763,6 +5765,35 @@ Some Python/platform combinations do not have a compatible `greenlet` wheel
 and require a compiler/build tools. Check that the install command succeeded
 in the **same virtual environment** used by the async application. Use
 `cubrid+aiopycubrid://` for the async dialect, not `cubrid://`.
+
+---
+
+### ModuleNotFoundError: No module named 'pycubrid.aio'
+
+**Symptom:** creating an async engine with a `cubrid+aiopycubrid://` URL fails while
+the dialect loads its driver:
+
+```text
+ModuleNotFoundError: No module named 'pycubrid.aio'
+```
+
+**Cause:** the async dialect imports `pycubrid.aio`, which pycubrid only ships from 1.1.0
+(see the 1.1.0 entry in the changelog). An older pycubrid installed in the environment, for
+example pinned by another requirement or installed with `--no-deps`, imports fine for
+`cubrid+pycubrid://` but has no async module.
+
+**Fix:** install the supported pycubrid line in the same environment as the application:
+
+```bash
+python -m pip install "pycubrid>=1.8.0,<2.0"
+# or reinstall the extra, which carries the same bound:
+python -m pip install "sqlalchemy-cubrid[pycubrid]"
+```
+
+pycubrid releases from 1.1.0 up to 1.8.0 have the module but are below the supported
+floor and are not tested. See the [support matrix](SUPPORT_MATRIX.md) and the
+[driver guide](DRIVER_COMPAT.md). The async dialect always needs `cubrid+aiopycubrid://`;
+bare `cubrid://` selects the synchronous CUBRIDdb driver.
 
 ---
 
@@ -6348,6 +6379,33 @@ class Product(Base):
 ```
 
 CUBRID supports precision up to 38 digits.
+
+---
+
+### BIGINT and COUNT(*) Values Returned as Strings (CUBRIDdb 9.3.x)
+
+**Symptom:** with the CUBRIDdb driver from PyPI `CUBRID-Python` 9.3.x (installed by the
+`[cubrid]` / `[cubriddb]` extras), `BIGINT` results such as `COUNT(*)` or `ROWNUM` come
+back as `str`, for example `'3'` instead of `3`, from a raw DB-API cursor or a
+`String`-typed column.
+
+**Cause:** that driver line returns `BIGINT` values as strings (#583). When the connected
+CUBRIDdb is older than 11.3, the dialect already converts `Integer`-typed and untyped
+(`text()`) result columns that the driver reports as `BIGINT` to `int` (#1145). Rows read
+from a raw DB-API cursor and columns typed as something else, such as `String`, are not
+converted.
+
+**Fix:**
+
+- Read the value through SQLAlchemy with an integer type (for example `func.count()`, or
+  `text(...).columns(n=Integer)`) instead of a raw cursor, or convert it with `int()`.
+- For new projects, use the pycubrid driver with a `cubrid+pycubrid://` URL, which returns
+  numbers. Bare `cubrid://` stays valid and selects CUBRIDdb.
+
+Other behaviour of this driver line, and which tests were checked against it, is recorded in
+[PyPI CUBRID-Python 9.3.x known limitations](DRIVER_COMPAT.md#pypi-cubrid-python-93x-known-limitations).
+Not every 9.3.x configuration is affected the same way; other CUBRID and Python versions are
+not verified.
 
 ---
 
