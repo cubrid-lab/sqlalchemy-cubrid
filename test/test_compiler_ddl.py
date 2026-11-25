@@ -127,7 +127,9 @@ class TestDDLCompilation:
         assert "VARCHAR(100)" in ddl
 
     def test_reserved_column_names_are_quoted_in_create_table(self) -> None:
-        """#1454: reserved-word column names are double-quoted in CREATE TABLE.
+        """DAY, COUNT and VALUE are CUBRID reserved words, so the dialect must
+        double-quote them as column names in CREATE TABLE or CUBRID rejects
+        the DDL (#1454).
 
         SELECT and preparer coverage for reserved identifiers lives in
         ``test/test_base.py`` (``TestReservedWords``, ``TestIdentifierPreparer``).
@@ -150,7 +152,8 @@ class TestDDLCompilation:
         assert "PRIMARY KEY (id)" in lines
 
     def test_reserved_column_names_are_quoted_in_constraints(self) -> None:
-        """#1454: reserved-word columns are quoted inside PRIMARY KEY and UNIQUE."""
+        """Reserved-word columns stay double-quoted inside PRIMARY KEY and UNIQUE,
+        because CUBRID parses a bare reserved word there as a keyword (#1454)."""
         m = MetaData()
         t = Table(
             "test_reserved_pk",
