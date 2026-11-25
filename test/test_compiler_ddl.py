@@ -152,11 +152,12 @@ class TestDDLCompilation:
         ],
     )
     def test_cubrid_specific_column_types_in_create_table(self, type_, expected) -> None:
-        """#1455: bit-string, collection and LOB columns compose into CREATE TABLE.
+        """CUBRID's bit-string, collection and LOB types compose into CREATE TABLE.
 
         The type compiler output itself is covered in test_compiler_types.py;
         this checks the column definition the DDL compiler builds around it.
-        SEQUENCE here is the CUBRID collection type, not a sequence generator.
+        SEQUENCE here is the CUBRID collection type, not a sequence generator
+        (#1455).
         """
         t = Table(
             "t1455",
