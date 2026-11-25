@@ -303,10 +303,10 @@ Core 삽입에서 자동 증가 PK가 필요하면 문장 실행 후 `SELECT LAS
 
 ## 알려진 제한 사항
 
-- **`RETURNING` 미지원** — `INSERT/UPDATE/DELETE ... RETURNING`은 지원되지 않으며, 대신 `cursor.lastrowid` 또는 `LAST_INSERT_ID()`를 사용해야 합니다
-- **시퀀스 없음** — CUBRID는 `AUTO_INCREMENT`만 사용합니다
+- **`RETURNING` 미지원** — `INSERT/UPDATE/DELETE ... RETURNING`은 지원되지 않으며, 대신 `cursor.lastrowid` 또는 `LAST_INSERT_ID()`를 사용해야 합니다([생성된 기본 키](ko/TROUBLESHOOTING.md#autoincrement와-lastrowid))
+- **시퀀스 없음** — CUBRID는 `AUTO_INCREMENT`만 사용합니다([예제](ko/TROUBLESHOOTING.md#시퀀스-없음--auto_increment-사용))
 - **멀티 스키마 미지원** — 데이터베이스당 단일 스키마 모델입니다
-- **커밋되지 않은 DDL은 스키마 잠금을 유지** — CUBRID의 DDL은 트랜잭션으로 처리되므로(`ROLLBACK`이 되돌리며, 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) 기본적으로 Alembic 업그레이드 전체가 하나의 트랜잭션(`transactional_ddl = True`)이고, 커밋할 때까지 건드린 테이블을 잠급니다. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True`를 사용하세요
+- **커밋되지 않은 DDL은 스키마 잠금을 유지** — CUBRID의 DDL은 트랜잭션으로 처리되므로(`ROLLBACK`이 되돌리며, 먼저 커밋하는 것은 방언이 끄는 클라이언트 자동 커밋뿐) 기본적으로 Alembic 업그레이드 전체가 하나의 트랜잭션(`transactional_ddl = True`)이고, 커밋할 때까지 건드린 테이블을 잠급니다. 긴 마이그레이션이나 큰 테이블에는 `transaction_per_migration=True`를 사용하세요([Alembic 가이드](ko/ALEMBIC.md#트랜잭션-ddl))
 - **SQLAlchemy 2.0–2.1만 지원** — 공식 지원 범위는 `<2.2`입니다. 2.2 호환성 shim이 존재하더라도, 권고용 프리릴리스 카나리가 실제 공개된 2.2 베타를 설치·검증했다는 증거는 아직 없습니다([#778](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/778), [자세한 내용](ARCHITECTURE.md)).
 - **Async는 pycubrid >= 1.8.0,<2.0 필요** — `cubrid+aiopycubrid://` 드라이버는 현재 이 프로젝트가 지원하는 async 가능 pycubrid 패키지 라인이 필요합니다
 
