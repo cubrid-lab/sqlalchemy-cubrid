@@ -126,6 +126,43 @@ class TestDDLCompilation:
         assert "INTEGER" in ddl
         assert "VARCHAR(100)" in ddl
 
+    def test_reserved_column_names_are_quoted_in_create_table(self) -> None:
+        """#1454: reserved-word column names are double-quoted in CREATE TABLE.
+
+        SELECT and preparer coverage for reserved identifiers lives in
+        ``test/test_base.py`` (``TestReservedWords``, ``TestIdentifierPreparer``).
+        """
+        m = MetaData()
+        t = Table(
+            "test_reserved_cols",
+            m,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("day", Integer),
+            Column("count", Integer, nullable=False),
+            Column("value", String(50)),
+        )
+        ddl = self._compile_ddl(t)
+        lines = [line.strip().rstrip(",") for line in ddl.strip().splitlines()]
+        assert lines[0] == "CREATE TABLE test_reserved_cols ("
+        assert '"day" INTEGER' in lines
+        assert '"count" INTEGER NOT NULL' in lines
+        assert '"value" VARCHAR(50)' in lines
+        assert "PRIMARY KEY (id)" in lines
+
+    def test_reserved_column_names_are_quoted_in_constraints(self) -> None:
+        """#1454: reserved-word columns are quoted inside PRIMARY KEY and UNIQUE."""
+        m = MetaData()
+        t = Table(
+            "test_reserved_pk",
+            m,
+            Column("day", Integer, primary_key=True, autoincrement=False),
+            Column("value", String(50)),
+            sa.UniqueConstraint("value", name="uq_value"),
+        )
+        ddl = " ".join(self._compile_ddl(t).split())
+        assert 'PRIMARY KEY ("day")' in ddl
+        assert 'CONSTRAINT uq_value UNIQUE ("value")' in ddl
+
 
 class TestCommentCompilation:
     def test_column_comment_in_ddl(self):
