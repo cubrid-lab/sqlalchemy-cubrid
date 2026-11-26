@@ -101,31 +101,6 @@ class TestDDLCompilation:
             if "name" in line.lower() and "id" not in line.lower():
                 assert "NOT NULL" not in line
 
-    def test_column_default_value(self):
-        """Column defaults should emit DEFAULT clause."""
-        m = MetaData()
-        t = Table(
-            "test_default",
-            m,
-            Column("id", Integer, primary_key=True, autoincrement=False),
-            Column("status", Integer, server_default="0"),
-        )
-        ddl = self._compile_ddl(t)
-        assert "DEFAULT" in ddl
-
-    def test_ddl_type_output(self):
-        """Verify type names appear correctly in DDL."""
-        m = MetaData()
-        t = Table(
-            "test_types",
-            m,
-            Column("id", Integer, primary_key=True),
-            Column("name", String(100)),
-        )
-        ddl = self._compile_ddl(t)
-        assert "INTEGER" in ddl
-        assert "VARCHAR(100)" in ddl
-
     def test_reserved_column_names_are_quoted_in_create_table(self) -> None:
         """DAY, COUNT and VALUE are CUBRID reserved words, so the dialect must
         double-quote them as column names in CREATE TABLE or CUBRID rejects
@@ -165,6 +140,31 @@ class TestDDLCompilation:
         ddl = " ".join(self._compile_ddl(t).split())
         assert 'PRIMARY KEY ("day")' in ddl
         assert 'CONSTRAINT uq_value UNIQUE ("value")' in ddl
+
+    def test_column_default_value(self):
+        """Column defaults should emit DEFAULT clause."""
+        m = MetaData()
+        t = Table(
+            "test_default",
+            m,
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("status", Integer, server_default="0"),
+        )
+        ddl = self._compile_ddl(t)
+        assert "DEFAULT" in ddl
+
+    def test_ddl_type_output(self):
+        """Verify type names appear correctly in DDL."""
+        m = MetaData()
+        t = Table(
+            "test_types",
+            m,
+            Column("id", Integer, primary_key=True),
+            Column("name", String(100)),
+        )
+        ddl = self._compile_ddl(t)
+        assert "INTEGER" in ddl
+        assert "VARCHAR(100)" in ddl
 
 
 class TestCommentCompilation:
