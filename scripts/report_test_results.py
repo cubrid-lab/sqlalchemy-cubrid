@@ -460,7 +460,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--lane", required=True, help="lane name recorded in summary.json")
     parser.add_argument("--junit", required=True, type=Path, help="pytest --junitxml file")
     parser.add_argument("--coverage", type=Path, default=None, help="Cobertura coverage.xml")
-    parser.add_argument("--threshold", type=float, default=None, help="coverage floor in percent")
+    parser.add_argument(
+        "--threshold", type=float, default=None, help="coverage floor (0 to 100 percent inclusive)"
+    )
     parser.add_argument("--pytest-exit", required=True, type=int, help="pytest's exit status")
     parser.add_argument("--output", required=True, type=Path, help="summary.json to write")
     parser.add_argument(
@@ -470,6 +472,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--reason", default="", help="why the run stopped early; a problem")
     args = parser.parse_args(argv)
+    if args.threshold is not None and not 0 <= args.threshold <= 100:
+        parser.error("--threshold must be a finite percentage between 0 and 100 inclusive")
 
     summary = build_summary(
         lane=args.lane,
@@ -480,8 +484,13 @@ def main(argv: list[str] | None = None) -> int:
         require_executed=args.require_executed,
         reason=args.reason,
     )
+    try:
+        document = json.dumps(summary, indent=2, allow_nan=False)
+    except ValueError as exc:
+        print(f"ERROR: could not serialize the test summary: {exc}", file=sys.stderr)
+        return 1
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(summary, indent=2) + "\n", encoding="utf-8")
+    args.output.write_text(document + "\n", encoding="utf-8")
     print(f"{format_line(summary)} -> {args.output}")
     return 0 if summary["status"] == "PASS" else 1
 

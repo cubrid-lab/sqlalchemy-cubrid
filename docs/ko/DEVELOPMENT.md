@@ -643,6 +643,8 @@ coverage 96.10% (threshold 95% met) -> test-results/test/summary.json`). pytest�
 일반 통과이므로 `passed`로 집계됩니다. 이 디렉터리는 gitignore 대상이며
 `make clean`이 제거합니다. 파일은 `scripts/report_test_results.py`가 작성하며, 레인 이름과
 파일 경로를 인자로 받으므로 다른 레인에서도 재사용할 수 있습니다.
+`--threshold`를 지정하는 경우 0부터 100까지(양 끝값 포함)의 유한한 백분율이어야 합니다.
+잘못된 임계값을 지정하면 `summary.json`을 쓰기 전에 명령줄 오류가 발생합니다.
 
 ### CI 결과
 

@@ -7765,6 +7765,8 @@ JUnit or coverage file is missing or empty. A non-strict `xpass` is a plain pass
 JUnit and counts as `passed`. The directory is gitignored and removed by
 `make clean`. The files are written by `scripts/report_test_results.py`, which takes
 the lane name and file paths as arguments so another lane can reuse it.
+When supplied, `--threshold` must be a finite percentage from 0 to 100 inclusive.
+An invalid threshold causes a command-line error before `summary.json` is written.
 
 ### CI results
 
