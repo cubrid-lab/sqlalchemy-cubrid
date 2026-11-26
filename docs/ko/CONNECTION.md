@@ -92,7 +92,7 @@ from sqlalchemy import create_engine
 # 기본 연결
 engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
 
-# 비밀번호 없이 (CUBRID는 기본적으로 dba의 비밀번호 없는 접근을 허용)
+# 비밀번호 없이 (폐기 가능한 로컬 실습 데이터베이스에서만 사용)
 engine = create_engine("cubrid://dba@localhost:33000/testdb")
 
 # 명시적 드라이버 이름 (C 확장)
@@ -106,7 +106,7 @@ engine = create_engine("cubrid+pycubrid://dba:password@localhost:33000/demodb")
 
 | 구성 요소  | 기본값        | 설명                                   |
 |------------|---------------|----------------------------------------|
-| `user`     | *(필수)*      | 데이터베이스 사용자 이름 (보통 `dba`)  |
+| `user`     | *(필수)*      | 데이터베이스 사용자 이름 (필요한 권한만 가진 애플리케이션 전용 계정 권장) |
 | `password` | *(비어 있음)* | 데이터베이스 비밀번호                  |
 | `host`     | `localhost`   | CUBRID 서버 호스트명 또는 IP           |
 | `port`     | `33000`       | CUBRID 브로커 포트                     |
@@ -447,7 +447,7 @@ engine = create_engine(
 ```python
 # 프로덕션 권장 구성
 engine = create_engine(
-    "cubrid://dba@localhost:33000/mydb",
+    "cubrid://app_user:YOUR_PASSWORD@localhost:33000/mydb",
     pool_pre_ping=True,
     pool_recycle=1800,
 )
@@ -462,7 +462,7 @@ CUBRID 브로커에는 `SESSION_TIMEOUT` 설정이 있습니다 (버전에 따�
 ```python
 # CUBRID 브로커 SESSION_TIMEOUT이 300(5분)이면
 engine = create_engine(
-    "cubrid://dba@localhost:33000/mydb",
+    "cubrid://app_user:YOUR_PASSWORD@localhost:33000/mydb",
     pool_recycle=240,  # 브로커 타임아웃 전에 재활용
 )
 ```
