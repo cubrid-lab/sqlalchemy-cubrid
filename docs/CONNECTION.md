@@ -186,14 +186,23 @@ Install `sqlalchemy-cubrid[pycubrid]` to include the driver and SQLAlchemy's asy
 bridge. If installing the packages separately, also install `SQLAlchemy[asyncio]`.
 
 ```python
+import asyncio
+
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy import text
 
-engine = create_async_engine("cubrid+aiopycubrid://dba@localhost:33000/testdb")
 
-async with engine.connect() as conn:
-    result = await conn.execute(text("SELECT 1"))
-    print(result.scalar())
+async def main():
+    engine = create_async_engine("cubrid+aiopycubrid://dba@localhost:33000/testdb")
+    try:
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT 1"))
+            print(result.scalar())
+    finally:
+        await engine.dispose()
+
+
+asyncio.run(main())
 ```
 
 Return connections with `async with` or `await conn.close()`. If an application loses a
