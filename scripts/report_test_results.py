@@ -61,6 +61,7 @@ from __future__ import annotations
 import argparse
 import html
 import json
+import math
 import os
 import platform
 import re
@@ -120,7 +121,11 @@ def parse_junit(path: Path) -> dict[str, int]:
 def parse_coverage(path: Path) -> float:
     """Total line coverage, in percent, from a Cobertura ``coverage.xml``."""
     root = ElementTree.parse(path).getroot()
-    return round(float(root.attrib["line-rate"]) * 100, 2)
+    raw = root.attrib["line-rate"]
+    rate = float(raw)
+    if not math.isfinite(rate) or not 0.0 <= rate <= 1.0:
+        raise ValueError(f"invalid line-rate {raw!r}: expected a finite value in [0, 1]")
+    return round(rate * 100, 2) + 0.0
 
 
 def build_summary(
