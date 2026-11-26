@@ -13,6 +13,7 @@ import sqlalchemy as sa
 from sqlalchemy import Column, Integer, MetaData, String, Table
 from sqlalchemy.exc import CompileError
 
+from sqlalchemy_cubrid import types as cubrid_types
 from sqlalchemy_cubrid.dialect import CubridDialect
 
 
@@ -125,6 +126,50 @@ class TestDDLCompilation:
         ddl = self._compile_ddl(t)
         assert "INTEGER" in ddl
         assert "VARCHAR(100)" in ddl
+
+    @pytest.mark.parametrize(
+        ("type_", "expected"),
+        [
+            pytest.param(cubrid_types.BIT(), "BIT(1)", id="BIT-default"),
+            pytest.param(cubrid_types.BIT(8), "BIT(8)", id="BIT"),
+            pytest.param(
+                cubrid_types.BIT(length=None, varying=True), "BIT VARYING", id="BIT-VARYING"
+            ),
+            pytest.param(
+                cubrid_types.BIT(256, varying=True), "BIT VARYING(256)", id="BIT-VARYING-length"
+            ),
+            pytest.param(
+                cubrid_types.SET(cubrid_types.VARCHAR(20), sa.Integer),
+                "SET(VARCHAR(20),INTEGER)",
+                id="SET",
+            ),
+            pytest.param(cubrid_types.MULTISET(sa.Integer()), "MULTISET(INTEGER)", id="MULTISET"),
+            pytest.param(
+                cubrid_types.SEQUENCE(sa.String(10)), "SEQUENCE(VARCHAR(10))", id="SEQUENCE"
+            ),
+            pytest.param(cubrid_types.BLOB(), "BLOB", id="BLOB"),
+            pytest.param(cubrid_types.CLOB(), "CLOB", id="CLOB"),
+        ],
+    )
+    def test_cubrid_specific_column_types_in_create_table(self, type_, expected) -> None:
+        """CUBRID's bit-string, collection and LOB types compose into CREATE TABLE.
+
+        The type compiler output itself is covered in test_compiler_types.py;
+        this checks the column definition the DDL compiler builds around it.
+        SEQUENCE here is the CUBRID collection type, not a sequence generator
+        (#1455).
+        """
+        t = Table(
+            "t1455",
+            MetaData(),
+            Column("id", Integer, primary_key=True, autoincrement=False),
+            Column("payload", type_, nullable=False),
+        )
+        ddl = " ".join(self._compile_ddl(t).split())
+        assert ddl == (
+            "CREATE TABLE t1455 ( id INTEGER NOT NULL, "
+            f"payload {expected} NOT NULL, PRIMARY KEY (id) )"
+        )
 
 
 class TestCommentCompilation:
