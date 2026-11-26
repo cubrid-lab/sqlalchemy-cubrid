@@ -900,6 +900,29 @@ class TestFunctionCompilation:
         sql = _compile(stmt)
         assert "UTC_TIMESTAMP()" in sql
 
+    def test_cardinality_func_raises_compile_error(self) -> None:
+        """CARDINALITY() is refused at compile time with a workaround.
+
+        CUBRID documents CARDINALITY() for collection columns, but the server
+        returns a runtime error for it, so the compiler raises CompileError
+        that names the server bug and suggests counting the unnested
+        collection with COUNT(*) over TABLE(column) instead (#158, #1456).
+        """
+        tagged = Table(
+            "tagged_items",
+            MetaData(),
+            Column("id", Integer, primary_key=True),
+            Column("tags", cubrid_types.SET(String(20))),
+        )
+        stmt = select(sa.func.cardinality(tagged.c.tags))
+        with pytest.raises(CompileError) as excinfo:
+            stmt.compile(dialect=CubridDialect())
+        message = str(excinfo.value)
+        assert "CARDINALITY()" in message
+        assert "server bug" in message
+        assert "COUNT(*)" in message
+        assert "TABLE(" in message
+
     def test_cast_string_to_integer(self):
         """Test casting string column to integer."""
         stmt = select(sa.cast(users.c.name, Integer))
