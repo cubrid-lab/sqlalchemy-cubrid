@@ -15,6 +15,7 @@ unusable). Credentials are never printed.
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 import time
 
@@ -30,10 +31,25 @@ def _probe(engine) -> None:  # noqa: ANN001
             raise RuntimeError("unexpected SELECT 1 result")
 
 
+def _seconds(value: str) -> float:
+    """Return *value* as a finite, nonnegative number of seconds for ``argparse``.
+
+    ``float()`` alone accepts ``nan`` and ``inf``: a NaN deadline never passes, an
+    infinite one waits forever, and a negative interval makes ``time.sleep`` raise.
+    """
+    try:
+        seconds = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a finite, nonnegative number of seconds") from exc
+    if not math.isfinite(seconds) or seconds < 0:
+        raise argparse.ArgumentTypeError("must be a finite, nonnegative number of seconds")
+    return seconds
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--timeout", type=float, default=180.0, help="seconds to wait")
-    parser.add_argument("--interval", type=float, default=2.0, help="seconds between attempts")
+    parser.add_argument("--timeout", type=_seconds, default=180.0, help="seconds to wait")
+    parser.add_argument("--interval", type=_seconds, default=2.0, help="seconds between attempts")
     args = parser.parse_args(argv)
 
     try:

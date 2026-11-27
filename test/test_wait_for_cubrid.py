@@ -127,3 +127,30 @@ def test_bounds_each_pycubrid_attempt(monkeypatch, url, expected):
     monkeypatch.setenv("CUBRID_TEST_URL", url)
     assert wait_for_cubrid.main(["--interval", "0"]) == 0
     assert seen["connect_args"] == expected
+
+
+@pytest.mark.parametrize("option", ["--timeout", "--interval"])
+@pytest.mark.parametrize("value", ["-1", "-0.5", "nan", "inf", "-inf", "soon"])
+def test_rejects_invalid_seconds_before_connecting(monkeypatch, capsys, option, value):
+    # #1463: a NaN timeout never reaches the deadline, an infinite one waits
+    # forever, and a negative interval makes time.sleep() raise.
+    def unexpected(*args, **kwargs):  # noqa: ANN002, ANN003, ANN202
+        raise AssertionError("the value must be rejected before connecting or sleeping")
+
+    monkeypatch.setenv("CUBRID_TEST_URL", "cubrid+pycubrid://dba:secret@localhost:33000/testdb")
+    monkeypatch.setattr(wait_for_cubrid, "create_engine", unexpected)
+    monkeypatch.setattr(wait_for_cubrid.time, "sleep", unexpected)
+    # "--option=value" keeps argparse from reading "-inf" as an unknown flag.
+    with pytest.raises(SystemExit) as exc_info:
+        wait_for_cubrid.main([f"{option}={value}"])
+    assert exc_info.value.code == 2
+    assert "finite, nonnegative number of seconds" in capsys.readouterr().err
+
+
+def test_accepts_zero_and_finite_seconds(fake_engine):
+    engine = fake_engine(failures=1)
+    assert wait_for_cubrid.main(["--timeout", "0.0", "--interval", "0"]) == 1
+    assert engine.attempts == 1
+    engine = fake_engine(failures=1)
+    assert wait_for_cubrid.main(["--timeout", "1.5", "--interval", "0"]) == 0
+    assert engine.attempts == 2
