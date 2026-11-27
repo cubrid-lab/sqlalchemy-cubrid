@@ -1306,7 +1306,8 @@ For DML extensions reference, see [DML_EXTENSIONS.md](DML_EXTENSIONS.md).
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+# Disposable local practice database; see LESSON_PREPARE.md
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 ---
