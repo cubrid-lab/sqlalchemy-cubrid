@@ -59,6 +59,15 @@ def test_only_the_requested_release_is_inspected() -> None:
         MODULE.release_section(changelog, "9.9.9")
 
 
+@pytest.mark.parametrize("marker", [chr(96), "~"])
+def test_shorter_fence_and_trailing_text_do_not_end_an_example(marker: str) -> None:
+    notes = (
+        f"{marker * 4}text\n{marker * 3}\n# 123\n"
+        f"{marker * 4} literal\nby @example\n{marker * 5}\nby @outside\n"
+    )
+    assert MODULE.violations(notes) == ["line 7: byline must stay on the change bullet"]
+
+
 def test_heading_requires_a_blank_line_before_its_content() -> None:
     assert MODULE.violations("### Fixed\n- Missing heading gap.\n")
 
