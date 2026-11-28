@@ -175,6 +175,75 @@ def test_main_exits_nonzero_and_records_fail(tmp_path, capsys):
     assert "test: FAIL" in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("threshold", ["-1", "101", "nan", "inf", "-inf"])
+def test_main_rejects_invalid_threshold_before_writing_summary(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], threshold: str
+) -> None:
+    out = tmp_path / "out" / "summary.json"
+    with pytest.raises(SystemExit) as exc:
+        mod.main(
+            [
+                "--lane", "test",
+                "--junit", str(_junit(tmp_path, PASSING)),
+                "--coverage", str(_coverage(tmp_path, 0.01)),
+                f"--threshold={threshold}",
+                "--pytest-exit", "0",
+                "--output", str(out),
+            ]
+        )  # fmt: skip
+    assert exc.value.code == 2
+    captured = capsys.readouterr()
+    assert "--threshold must be a finite percentage between 0 and 100" in captured.err
+    assert captured.out == ""
+    assert not out.parent.exists()
+
+
+@pytest.mark.parametrize(("threshold", "rate"), [(0, 0.0), (100, 1.0)])
+def test_main_accepts_threshold_at_either_boundary(
+    tmp_path: Path, threshold: int, rate: float
+) -> None:
+    out = tmp_path / "summary.json"
+    code = mod.main(
+        [
+            "--lane", "test",
+            "--junit", str(_junit(tmp_path, PASSING)),
+            "--coverage", str(_coverage(tmp_path, rate)),
+            "--threshold", str(threshold),
+            "--pytest-exit", "0",
+            "--output", str(out),
+        ]
+    )  # fmt: skip
+    assert code == 0
+    data = json.loads(
+        out.read_text(encoding="utf-8"),
+        parse_constant=lambda value: pytest.fail(f"non-standard JSON constant: {value}"),
+    )
+    assert data["status"] == "PASS"
+    assert data["coverage"] == {"percent": threshold, "threshold": threshold, "threshold_met": True}
+
+
+def test_main_reports_nonfinite_summary_without_writing_it(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(mod, "parse_coverage", lambda _path: float("inf"))
+    out = tmp_path / "out" / "summary.json"
+    code = mod.main(
+        [
+            "--lane", "test",
+            "--junit", str(_junit(tmp_path, PASSING)),
+            "--coverage", str(_coverage(tmp_path, 0.99)),
+            "--threshold", "95",
+            "--pytest-exit", "0",
+            "--output", str(out),
+        ]
+    )  # fmt: skip
+    assert code == 1
+    captured = capsys.readouterr()
+    assert "could not serialize the test summary" in captured.err
+    assert captured.out == ""
+    assert not out.parent.exists()
+
+
 def test_call_and_teardown_failures_of_one_test_are_selected_once(tmp_path):
     # pytest writes one <testcase> per failing phase for the same test.
     call = '<testcase classname="t" name="both"><failure message="assert 0">t</failure></testcase>'
