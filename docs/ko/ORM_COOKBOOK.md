@@ -31,7 +31,8 @@ CUBRID를 위한 실용적인 SQLAlchemy 2.0 ORM 패턴. 이 가이드는 현대
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-engine = create_engine("cubrid://dba:password@localhost:33000/demodb")
+# 폐기 가능한 로컬 실습 데이터베이스 예시입니다. LESSON_PREPARE.md를 참고하세요.
+engine = create_engine("cubrid+pycubrid://dba@localhost:33000/testdb")
 ```
 
 ---
