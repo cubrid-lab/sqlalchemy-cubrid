@@ -354,7 +354,7 @@ Alembic upgrades are now atomic by default, non-DBA users get more complete refl
 
 ### Removed
 
-- **SQLAlchemy 1.x hooks** — Removed obsolete autocommit and legacy `dbapi()` hooks ([#488](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/488)) by @yeongseon, following an earlier autocommit fix by @biggdawg320 ([#468](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/468)).
+- **SQLAlchemy 1.x hooks** — Removed obsolete autocommit and legacy `dbapi()` hooks ([#488](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/488)) by @yeongseon, after an earlier autocommit proposal by @biggdawg320 ([#468](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/468)).
 
 ### Fixed
 
