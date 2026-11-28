@@ -42,15 +42,11 @@ maintained release-note format.
 - Keep each entry to one or two sentences, about 250 characters as a guide,
   plus its links and credit; put details a reader can do without behind the
   PR link. Upgrade notes and Security entries may be longer when every
-  sentence is something a user must know or do. This is a writing guide, not
-  a new automated limit; the quality gate below is unchanged.
+  sentence is something a user must know or do. The publication checks are
+  listed below.
 - Group `CI`, `Tests` and `Documentation` changes by outcome into a few
-  entries that cite all their PRs. A release with many changes is long
-  because of its count: shorten the entries first, then accept the length.
-- Keep `Added`, `Changed`, `Fixed`, `Documentation`, `CI`, `Tests`
-  and the other established categories whenever they contain real changes.
-  Documentation and test contributors deserve the same accurate attribution
-  as runtime-code contributors.
+  entries when the changes matter to users or contributors. Keep test setups,
+  CI mechanics and internal maintenance history in the linked PRs.
 - Credit each verified human PR author or co-author **beside the change**,
   retaining first-contribution markers when proven and direct PR/commit links.
   Condensing duplicate changes must not drop a participating contributor.
@@ -78,9 +74,9 @@ The checker requires:
 - Each change presented as `- **Affected area** — observable outcome ...`,
   not the raw `* commit subject (hash)` emitted by release-please.
 - No exact duplicate entries, no entry longer than 1,100 visible characters,
-  and a proportional overall readability budget of 850 visible characters per
-  entry (at least 6,000 and at most 30,000 characters overall). URLs and invisible
-  HTML comments do not count as reader-facing characters.
+  and a fixed maximum of 4,000 visible characters for the body. Adding entries
+  does not increase that maximum. Markdown link destinations and HTML comments
+  do not count toward it.
 - All compatibility, deprecation, security, migration and support boundaries
   remain technically correct. Split long explanations by user-relevant topic or
   link supporting PRs and documentation; **do not remove essential warnings or
