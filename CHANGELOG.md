@@ -14,49 +14,40 @@ Core SQLAlchemy/database semantics and PATCH compatibility remain protected.
 
 ## [Unreleased]
 
+## [1.12.5] - 2026-11-28
+
+This release fixes identifier preparation and sample connection cleanup, and speeds up schema reflection. Upgrade to SQLAlchemy 2.0.53 or later before installing it.
+
 ### Upgrade notes
 
-- **SQLAlchemy 2.0.53 or later required** — the dependency floor rises from `sqlalchemy>=2.0` to `sqlalchemy>=2.0.53` (still `<2.2`), the oldest release CI tests, because some earlier 2.0 releases cannot import the dialect; projects pinned to SQLAlchemy 2.0.0–2.0.52 must upgrade ([#1428](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1428), [#1434](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1434)) by @yeongseon.
+- **SQLAlchemy 2.0.53 or later required** — The supported range is now `>=2.0.53,<2.2`. Upgrade if pinned to 2.0.0–2.0.52 to avoid dialect import failures ([#1434](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1434)) by @yeongseon.
 
 ### Changed
 
-- **Async sample connection URL** — `samples/async_basic.py` reads its database URL from `CUBRID_SAMPLE_URL` and falls back to the local quickstart lab, so another database no longer requires editing the file ([#1403](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1403), [#1409](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1409)) by @yeongseon.
-
-### Removed
-
-- **Unused dialect attributes** — `CubridDialect` no longer defines `supports_twophase_commit` and `supports_native_lateral`, which SQLAlchemy 2.0 and 2.1 never read; unreachable compatibility branches and repeated inherited settings were removed too, with no change to compiled SQL or driver behavior ([#1427](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1427), [#1433](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1433)) by @yeongseon.
+- **Async sample configuration** — Set `CUBRID_SAMPLE_URL` to use a different disposable database. The sample recreates its table ([#1409](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1409)) by @yeongseon and ([#1404](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1404)) by @Hanshal-aether (first contribution 🎉).
 
 ### Fixed
 
-- **Async sample** — `samples/async_basic.py` now disposes its async engine in a `finally`, so an error while connecting, inserting or cleaning up no longer skips `engine.dispose()` ([#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381), [#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1387)) by @Dio77799 (first contribution 🎉).
-- **Basic engine sample** — importing `samples/create_engine.py` no longer opens a database connection; the query runs in `main()` and `engine.dispose()` runs in a `finally` even when the query fails ([#1380](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1380), [#1388](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1388)) by @Dio77799.
+- **Identifier preparation** — `CubridIdentifierPreparer(..., omit_schema=True)` now honors the option ([#1431](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1431)) by @yeongseon.
+- **Sample connections** — The basic sample connects only when run, and both basic and async samples dispose their engines even on error ([#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1387), [#1388](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1388)) by @Dio77799 (first contribution 🎉).
 
 ### Performance
 
-- **Reflection reuses table DDL** — one SQLAlchemy Inspector now reads `SHOW CREATE TABLE` once per table for column defaults, foreign keys and the unique-constraint fallback; `Inspector.clear_cache()` refreshes it ([#1396](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1396), [#1400](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1400)) by @imshah-id (first contribution 🎉).
+- **Schema reflection** — An Inspector reuses one `SHOW CREATE TABLE` result across reflection calls for a table. Use `Inspector.clear_cache()` to refresh it ([#1400](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1400)) by @imshah-id (first contribution 🎉).
 
 ### Documentation
 
-- **Lesson screenshots** — Lesson 2 (first query) and Lesson 4 (rollback) of the Start here course each show a terminal screenshot of the real script output, in English and Korean; the text outputs are unchanged ([#1397](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1397), [#1419](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1419)) by @yeongseon.
-- **Package docstring** — the `sqlalchemy_cubrid` module docstring now calls the `cubrid+cubriddb://` C-extension driver supported instead of legacy, matching docs/DRIVER_COMPAT.md ([#1383](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1383), [#1399](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1399)) by @RiccardoBifulco.
-- **`trace_query` examples use the recommended driver** — the `sqlalchemy_cubrid/trace.py` docstring examples now connect with `cubrid+pycubrid://` to a disposable local lab database and ask readers to supply their own connection values ([#1377](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1377), [#1379](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1379)) by @RiccardoBifulco (first contribution 🎉).
-- **Contributor setup** — CONTRIBUTING.md adds a Windows PowerShell setup path, not yet verified on Windows ([#1364](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1364), [#1376](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1376)) by @ebanatrm100 (first contribution 🎉). The manual setup in docs/DEVELOPMENT.md now installs the `[pycubrid]` extra for live tests and keeps a driver-free option for offline work ([#1384](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1384), [#1394](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1394)) by @Kareenashinde15 (first contribution 🎉).
-- **Improvement ideas** — a new issue form invites improvement ideas, and CONTRIBUTING.md explains how problem reporters are credited ([#1398](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1398)) by @yeongseon.
-- **Async example warning** — the `samples/async_basic.py` docstring now warns that the example drops and recreates `async_sample_users`, so it should run only against a disposable database ([#1371](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1371), [#1404](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1404)) by @Hanshal-aether (first contribution 🎉).
-- **Commit type and release version** — CONTRIBUTING.md explains that `feat` asks for a MINOR release and `fix`, `perf` and `docs` for a PATCH, and that changes confined to `samples/` or contributor tooling do not use `feat` ([#1415](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1415)) by @yeongseon.
-- **DML example SQL** — docs/DML_EXTENSIONS.md notes that its SQL examples show values inline for readability, while SQLAlchemy sends them as bound parameters ([#1370](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1370), [#1416](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1416)) by @Kareenashinde15.
+- **Driver and connection examples** — Clarified C-extension support and recommended driver examples ([#1379](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1379), [#1399](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1399)) by @RiccardoBifulco (first contribution 🎉). Updated pooling and cookbook examples and documented least-privilege accounts ([#1439](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1439), [#1441](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1441), [#1465](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1465)) by @Kareenashinde15.
+- **Contributor setup** — Added a PowerShell setup path that still awaits Windows verification ([#1376](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1376)) by @ebanatrm100 (first contribution 🎉) and clarified live-test driver installation ([#1394](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1394)) by @Kareenashinde15 (first contribution 🎉).
+- **Multi-table UPDATE** — Documented the compile error and the subquery and `MERGE` alternatives ([#1432](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1432)) by @yeongseon.
 
 ### CI
 
-- **Unused tooling removed** — the uncalled `scripts/prepare_release.py`, the weekly `maintenance.yml` lint and security run that repeated CI, `scripts/reflection_probe.py` and the agent-review bootstrap branch that could not run were removed, with their tests and path filters ([#1429](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1429), [#1435](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1435)) by @yeongseon.
-- **Publisher workflow names** — PyPI releases are now published by `publish.yml`, job `publish-production`, in the GitHub environment `production`; the release tooling and recovery docs use the new names ([#1410](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1410), [#1412](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1412)) by @yeongseon.
-- **Reflection comparison with several model bases** — `scripts/reflection_probe.py --compare` now stops with an explicit error when a module declares more than one `MetaData` registry, instead of silently comparing only the first ([#1382](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1382), [#1385](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1385)) by @bfs2021.
-- **Benchmark scripts leave existing tables alone** — `scripts/profile_orm.py` and `scripts/bench_dialect_baseline.py` now stop with an error when their fixed table (`bench_users`, `bench_dialect_baseline`) already exists, and drop only a table they created, also after a failure ([#1401](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1401), [#1406](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1406), [#1402](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1402), [#1407](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1407)) by @Dio77799.
+- **Local tooling** — Benchmark scripts preserve pre-existing tables, and the readiness script rejects invalid timing values ([#1406](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1406), [#1407](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1407), [#1464](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1464)) by @Dio77799. The experimental reflection probe was removed ([#1435](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1435)) by @yeongseon after its multiple-registry handling was tightened ([#1385](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1385)) by @bfs2021.
 
 ### Tests
 
-- **Driver version report** — a new offline test checks that `scripts/report_driver_versions.py` probes both drivers with a configured database URL ([#1375](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1375), [#1393](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1393)) by @aka-khannaji (first contribution 🎉).
-- **Async sample live run** — `samples/async_basic.py` now runs unmodified against the integration lab, with checks that its rows are real, its table is gone afterwards and a connection failure exits nonzero ([#1403](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1403), [#1414](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1414)) by @yeongseon.
+- **Driver and sample validation** — Added an offline test for driver version reporting ([#1393](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1393)) by @aka-khannaji (first contribution 🎉) and a live test for async sample output and cleanup ([#1414](https://github.com/cubrid-lab/sqlalchemy-cubrid/pull/1414)) by @yeongseon.
 
 ## [1.12.4] - 2026-11-20
 
