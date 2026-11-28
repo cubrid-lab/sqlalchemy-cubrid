@@ -19,6 +19,7 @@ BROKEN_LABEL = re.compile(r"\[[^\]\n]{1,100}\n[^\]\n]{1,100}\]\(")
 BROKEN_DESTINATION = re.compile(r"\[[^\]\n]{1,100}\]\s*\n\s*\(")
 ISSUE_LINE = re.compile(r"^\s{0,3}#\s*\d+(?:\s|$)")
 BYLINE = re.compile(r"^\s*(?:by @\S+|\(first contribution 🎉\))")
+FENCE = re.compile(r"^\s*(`{3,}|~{3,})(.*)$")
 
 
 def release_section(text: str, version: str) -> str:
@@ -37,13 +38,18 @@ def violations(text: str) -> list[str]:
     fence: str | None = None
     lines = text.splitlines()
     for n, line in enumerate(lines, start=1):
-        content = line.lstrip()
-        marker = content[:1] if content.startswith((chr(96) * 3, "~" * 3)) else None
-        if marker is not None:
-            fence = None if fence == marker else marker
-            continue
+        match = FENCE.match(line)
         if fence is not None:
+            if match:
+                marker, suffix = match.groups()
+                if marker[0] == fence[0] and len(marker) >= len(fence) and not suffix.strip():
+                    fence = None
             continue
+        if match:
+            marker, suffix = match.groups()
+            if marker[0] == "~" or "`" not in suffix:
+                fence = marker
+                continue
         if line.startswith("### ") and n < len(lines) and lines[n].strip():
             errors.append(f"line {n}: add a blank line after the section heading")
         if ISSUE_LINE.match(line):
