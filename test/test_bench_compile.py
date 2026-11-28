@@ -41,3 +41,12 @@ def test_small_positive_iteration_count_generates_benchmark_table(
     assert "INSERT ON DUPLICATE KEY UPDATE" in output
     assert "SELECT FOR UPDATE" in output
     assert "Done. Compare results before/after optimization attempts." in output
+
+
+def test_two_iterations_use_plural_label(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    MODULE.main(["--iterations", "2"])
+
+    output = capsys.readouterr().out
+    assert "Benchmarking CUBRID dialect compilation (2 iterations each)" in output
