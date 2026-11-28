@@ -148,6 +148,53 @@ def test_server_probe_engine_creation_failure_reports_only_exception_type(
     assert password not in result
 
 
+@pytest.mark.parametrize("query_fails", [False, True])
+def test_collect_continues_after_disposal_failure(
+    monkeypatch: pytest.MonkeyPatch, query_fails: bool
+) -> None:
+    class ProbeError(RuntimeError):
+        pass
+
+    class CleanupError(RuntimeError):
+        pass
+
+    attempts: list[str] = []
+
+    class Engine:
+        def __init__(self, driver: str) -> None:
+            self.driver = driver
+
+        def connect(self):
+            from contextlib import nullcontext
+
+            return nullcontext(self)
+
+        def execute(self, _statement):
+            if query_fails and self.driver == "cubrid+pycubrid":
+                raise ProbeError("private query detail")
+            return self
+
+        def scalar_one(self) -> str:
+            return "11.4.0.1234"
+
+        def dispose(self) -> None:
+            attempts.append(self.driver)
+            if self.driver == "cubrid+pycubrid":
+                raise CleanupError("private cleanup detail")
+
+    monkeypatch.setenv("CUBRID_TEST_URL", "cubrid://dba@localhost:33000/testdb")
+    monkeypatch.setattr(report_driver_versions, "create_engine", lambda url: Engine(url.drivername))
+    rows = report_driver_versions.collect()
+    expected = (
+        "unavailable (ProbeError)" if query_fails else "unavailable (CleanupError during cleanup)"
+    )
+    assert rows[-2:] == [
+        ("CUBRID server via pycubrid", expected),
+        ("CUBRID server via CUBRIDdb", "11.4.0.1234"),
+    ]
+    assert attempts == ["cubrid+pycubrid", "cubrid"]
+
+
 def test_main_appends_readable_step_summary(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
