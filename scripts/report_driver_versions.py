@@ -56,13 +56,20 @@ def _server_version(url: str, drivername: str) -> str:
         engine = create_engine(make_url(url).set(drivername=drivername))
     except Exception as exc:
         return f"unavailable ({type(exc).__name__})"
+    query_failed = False
     try:
         with engine.connect() as conn:
-            return str(conn.execute(text("SELECT VERSION()")).scalar_one())
+            result = str(conn.execute(text("SELECT VERSION()")).scalar_one())
     except Exception as exc:
-        return f"unavailable ({type(exc).__name__})"
+        query_failed = True
+        result = f"unavailable ({type(exc).__name__})"
     finally:
-        engine.dispose()
+        try:
+            engine.dispose()
+        except Exception as exc:
+            if not query_failed:
+                result = f"unavailable ({type(exc).__name__} during cleanup)"
+    return result
 
 
 def collect() -> list[tuple[str, str]]:
