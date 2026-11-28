@@ -82,11 +82,12 @@ def test_large_body_requires_consolidation_even_when_each_entry_is_short() -> No
 def test_large_number_of_entries_does_not_bypass_total_length_gate() -> None:
     notes = "This release corrects many SQL compilation edge cases.\n\n### Fixed\n\n"
     notes += "".join(
-        f"- **Compiler case {n}** — " + "Corrected operator compilation. " * 18 + "\n"
-        for n in range(70)
+        f"- **Compiler case {n}** — Corrected operator compilation with a bound parameter "
+        "when the expression appears in a nested query.\n"
+        for n in range(47)
     )
     problems = MODULE.violations(notes)
-    assert any("release body" in p and "30000" in p for p in problems), problems
+    assert len(problems) == 1 and "release body" in problems[0], problems
 
 
 def test_publisher_and_candidate_ci_keep_strict_quality_review() -> None:

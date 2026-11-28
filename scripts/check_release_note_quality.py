@@ -28,9 +28,7 @@ LENGTH_EXCEPTION = re.compile(
 
 MAX_SUMMARY_CHARS = 900
 MAX_ENTRY_CHARS = 1100
-CHARS_PER_ENTRY = 850
-MIN_BODY_BUDGET = 6000
-MAX_BODY_CHARS = 30000
+MAX_BODY_CHARS = 4000
 
 
 def release_section(changelog: str, version: str) -> str:
@@ -152,11 +150,10 @@ def violations(section: str, version: str | None = None) -> list[str]:
         else:
             seen[key] = line_no
     body_chars = len(_readable(section))
-    budget = min(MAX_BODY_CHARS, max(MIN_BODY_BUDGET, CHARS_PER_ENTRY * len(entries)))
-    if body_chars > budget and not reviewed_length:
+    if body_chars > MAX_BODY_CHARS and not reviewed_length:
         issues.append(
             f"release body is {body_chars} readable characters for {len(entries)} entries "
-            f"(review budget {budget}); group implementation details and link to PRs"
+            f"(max {MAX_BODY_CHARS}); group changes by user impact and link to PRs"
         )
     return issues
 
