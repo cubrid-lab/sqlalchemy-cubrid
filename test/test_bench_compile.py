@@ -35,7 +35,7 @@ def test_small_positive_iteration_count_generates_benchmark_table(
     MODULE.main(["--iterations", "1"])
 
     output = capsys.readouterr().out
-    assert "Benchmarking CUBRID dialect compilation (1 iterations each)" in output
+    assert "Benchmarking CUBRID dialect compilation (1 iteration each)" in output
     assert "SELECT + LIMIT/OFFSET" in output
     assert "INSERT (simple)" in output
     assert "INSERT ON DUPLICATE KEY UPDATE" in output

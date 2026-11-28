@@ -94,7 +94,11 @@ def main(argv: list[str] | None = None) -> None:
 
     engine, users = create_test_objects()
 
-    print(f"Benchmarking CUBRID dialect compilation ({n} iterations each)\n")
+    iteration_word = "iteration" if n == 1 else "iterations"
+    print(
+    f"Benchmarking CUBRID dialect compilation "
+    f"({n} {iteration_word} each)\n"
+)
     print(f"{'Benchmark':<35} {'Total (ms)':>12} {'Per-op (µs)':>12}")
     print("-" * 62)
 
