@@ -1,5 +1,49 @@
 # Changelog
 
+## [1.12.5](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.4...v1.12.5) (2026-11-28)
+
+
+### Added
+
+* **samples:** read the async sample URL from CUBRID_SAMPLE_URL ([#1409](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1409)) ([f2bc327](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f2bc3273af58a886eef9bf360ed05866af4128bf))
+
+
+### Fixed
+
+* avoid database access when importing the basic engine sample ([#1388](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1388)) ([30d7cbc](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/30d7cbcdee405dbee930bcd132c28e3de7fef99a)), closes [#1380](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1380)
+* **compiler:** pass CubridIdentifierPreparer arguments to SQLAlchemy by keyword ([#1431](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1431)) ([303b812](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/303b8126ea0cb5f5984ea40f73252b922be14ef4)), closes [#1425](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1425)
+* dispose the async sample engine even when a step fails ([#1387](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1387)) ([4909431](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4909431b29b802ac9c074fcd463c5a8f32d761fe)), closes [#1381](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1381)
+* fail reflection_probe --compare when a module declares multiple MetaData registries ([#1385](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1385)) ([ded7bf2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ded7bf20d5bd6eb4e01b3e88826290d7e131ea36))
+* keep the dialect baseline away from tables it did not create ([#1407](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1407)) ([0f1518a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/0f1518aba4e8942e78e5229d9f16730d0e317d1c))
+* keep the ORM profiler away from tables it did not create ([#1406](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1406)) ([935784f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/935784f0e902fae3ea2429fcd66c66a8d10b6f65))
+* **packaging:** raise the SQLAlchemy floor to 2.0.53 ([#1434](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1434)) ([6f93750](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/6f9375058ac3d958c1778fd2f452f178e9d7f526)), closes [#1428](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1428)
+* reject invalid readiness timeout and retry interval values ([#1464](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1464)) ([d64aad7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/d64aad7f3b0b33850b25b6a6c2a7174841176821)), closes [#1463](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1463)
+
+
+### Performance
+
+* reuse table DDL across reflection methods ([#1400](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1400)) ([4f2da66](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/4f2da66aabb2ba71aa00bd66e69f311c9ecfc97e))
+
+
+### Documentation
+
+* add MCP server to first contribution list ([#1424](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1424)) ([f978c85](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/f978c8566d50f412243ac2c36c98d30c8a7228a3))
+* add Windows PowerShell contributor setup ([#1376](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1376)) ([e41d57a](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e41d57afa400250b3b1300d982fbbf0f48868cb6))
+* **changelog:** curate the unreleased contributor tooling and docs entries ([#1408](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1408)) ([ae732e2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/ae732e253825cdae442250dd85ce874c8ec6e435))
+* clarify bound parameters in DML examples ([#1416](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1416)) ([c7e074c](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c7e074c409ecaef543412e8f6e1bf6702c09a0bc))
+* **connection:** recommend least-privilege database users ([#1441](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1441)) ([cb84996](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/cb849960ce4e127ced1cc19a07ff184ab1f00285)), closes [#1368](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1368)
+* **contributing:** explain how the commit type sets the release version ([#1415](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1415)) ([e074b63](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/e074b63e62d7dc64a1dc4444e22a1fd8fbe629d7))
+* correct the multi-table UPDATE note in the feature support page ([#1432](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1432)) ([3ee6802](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3ee6802bdeddf690d7788f1034c0ec0b1074239e)), closes [#1426](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1426)
+* describe supported CUBRIDdb as maintained rather than legacy ([#1399](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1399)) ([a7f36f9](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a7f36f9d73976b956c7c0213c856a88a2782145a))
+* fix manual contributor installation instructions ([#1394](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1394)) ([36bafb3](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/36bafb3d97a3540b40b85e0f64f9eb945bb644fc))
+* **lessons:** add terminal screenshots to the first query and rollback lessons ([#1419](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1419)) ([0664a02](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/0664a02d2c558ac12087516905b4f34d58fee644)), closes [#1397](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1397)
+* **review:** align approval and change-request outcomes ([2261a4e](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/2261a4eaeb4baf70a12f7f5d269e792dec3281fb)), closes [#1411](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1411)
+* **trace:** use the pycubrid URL in trace_query examples ([#1379](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1379)) ([43b4b1f](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/43b4b1f0eb403fe48d32f5c931740d1d8d6a5e32))
+* update CUBRID ORM cookbook connection examples ([#1465](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1465)) ([523c006](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/523c0066fddc78e56293b90222ad6f6bf4ac786f))
+* use pycubrid driver in pooling example ([#1439](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1439)) ([a6f8da2](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/a6f8da23869e59cbf14ced20105257f221811854))
+* warn about destructive table cleanup in async example ([#1404](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1404)) ([3e21e8d](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/3e21e8dd49a84917923160f2591d3ef87fe974c8))
+* welcome community improvement ideas ([#1398](https://github.com/cubrid-lab/sqlalchemy-cubrid/issues/1398)) ([c1f14d7](https://github.com/cubrid-lab/sqlalchemy-cubrid/commit/c1f14d727cee7ae419ccf327e3a4a0e481995406))
+
 ## [1.12.4](https://github.com/cubrid-lab/sqlalchemy-cubrid/compare/v1.12.3...v1.12.4) (2026-11-20)
 
 
